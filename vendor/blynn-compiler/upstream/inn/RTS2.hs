@@ -51,56 +51,77 @@ static u *mem, *altmem, *sp, *spTop, hp;
 static inline u isAddr(u n) { return n>=128; }
 static u evac(u n) {
   if (!isAddr(n)) return n;
-  u x = mem[n];
-  while (isAddr(x) && mem[x] == _T) {
-    mem[n] = mem[n + 1];
-    mem[n + 1] = mem[x + 1];
-    x = mem[n];
+  u *pn = mem + n * sizeof(u);
+  u x = *pn;
+  while (isAddr(x)) {
+    u *px = mem + x * sizeof(u);
+    if (*px != _T) break;
+    u *pn1 = mem + (n + 1) * sizeof(u);
+    u *px1 = mem + (x + 1) * sizeof(u);
+    *pn = *pn1;
+    *pn1 = *px1;
+    x = *pn;
   }
-  if (isAddr(x) && mem[x] == _K) {
-    mem[n + 1] = mem[x + 1];
-    x = mem[n] = _I;
+  if (isAddr(x)) {
+    u *px = mem + x * sizeof(u);
+    if (*px == _K) {
+      u *pn1 = mem + (n + 1) * sizeof(u);
+      u *px1 = mem + (x + 1) * sizeof(u);
+      *pn1 = *px1;
+      x = _I;
+      *pn = x;
+    }
   }
-  u y = mem[n + 1];
+  u *pn1 = mem + (n + 1) * sizeof(u);
+  u y = *pn1;
   switch(x) {
     case FORWARD: return y;
     case REDUCING:
-      mem[n] = FORWARD;
-      mem[n + 1] = hp;
+      *pn = FORWARD;
+      *pn1 = hp;
       hp += 2;
-      return mem[n + 1];
+      return *pn1;
     case _I:
-      mem[n] = REDUCING;
+      *pn = REDUCING;
       y = evac(y);
-      if (mem[n] == FORWARD) {
-        altmem[mem[n + 1]] = _I;
-        altmem[mem[n + 1] + 1] = y;
+      if (*pn == FORWARD) {
+        u *pa = altmem + *pn1 * sizeof(u);
+        *pa = _I;
+        pa = altmem + (*pn1 + 1) * sizeof(u);
+        *pa = y;
       } else {
-        mem[n] = FORWARD;
-        mem[n + 1] = y;
+        *pn = FORWARD;
+        *pn1 = y;
       }
-      return mem[n + 1];
+      return *pn1;
     default: break;
   }
   u z = hp;
   hp += 2;
-  mem[n] = FORWARD;
-  mem[n + 1] = z;
-  altmem[z] = x;
-  altmem[z + 1] = y;
+  *pn = FORWARD;
+  *pn1 = z;
+  u *pa = altmem + z * sizeof(u);
+  *pa = x;
+  pa = altmem + (z + 1) * sizeof(u);
+  *pa = y;
   return z;
 }
 
 static void gc() {
   hp = 128;
   u di = hp;
-  sp = altmem + TOP - 1;
-  for(u *r = root; *r; r = r + 1) *r = evac(*r);
+  sp = altmem + (TOP - 1) * sizeof(u);
+  for(u *r = root; *r; r = r + sizeof(u)) *r = evac(*r);
   *sp = evac(*spTop);
   while (di < hp) {
-    u x = altmem[di] = evac(altmem[di]);
+    u *pd = altmem + di * sizeof(u);
+    u x = evac(*pd);
+    *pd = x;
     di = di + 1;
-    if (x != _NUM) altmem[di] = evac(altmem[di]);
+    if (x != _NUM) {
+      pd = altmem + di * sizeof(u);
+      *pd = evac(*pd);
+    }
     di = di + 1;
   }
   spTop = sp;
@@ -109,39 +130,68 @@ static void gc() {
   altmem = tmp;
 }
 
-static inline u app(u f, u x) { mem[hp] = f; mem[hp + 1] = x; return (hp += 2) - 2; }
-static inline u arg(u n) { return mem[sp [n] + 1]; }
-static inline int num(u n) { return mem[arg(n) + 1]; }
-static inline void lazy2(u height, u f, u x) {
-  u *p = mem + sp[height];
+static inline u app(u f, u x) {
+  u *p = mem + hp * sizeof(u);
   *p = f;
-  p = p + 1;
+  p = mem + (hp + 1) * sizeof(u);
   *p = x;
-  sp += height - 1;
+  hp += 2;
+  return hp - 2;
+}
+static inline u arg(u n) {
+  u *p = sp + n * sizeof(u);
+  p = mem + (*p + 1) * sizeof(u);
+  return *p;
+}
+static inline int num(u n) {
+  u a = arg(n);
+  u *p = mem + (a + 1) * sizeof(u);
+  return *p;
+}
+static inline void lazy2(u height, u f, u x) {
+  u *p = sp + height * sizeof(u);
+  p = mem + *p * sizeof(u);
+  *p = f;
+  p = p + sizeof(u);
+  *p = x;
+  sp = sp + (height - 1) * sizeof(u);
   *sp = f;
 }
 static void lazy3(u height,u x1,u x2,u x3){
-  u *p = mem + sp[height];
-  sp[height - 1] = app(x1, x2);
-  *p = sp[height - 1];
-  p = p + 1;
+  u *p = sp + height * sizeof(u);
+  p = mem + *p * sizeof(u);
+  u *ps = sp + (height - 1) * sizeof(u);
+  *ps = app(x1, x2);
+  *p = *ps;
+  p = p + sizeof(u);
   *p = x3;
-  sp = sp + height - 2;
+  sp = sp + (height - 2) * sizeof(u);
   *sp = x1;
 }
 typedef unsigned long long uu;
-static inline u app64d(double d) {
-  mem[hp] = _NUM64;
-  mem[hp+1] = 0;
-  *((uu*) (mem + hp + 2)) = *((uu*) &d);
-  return (hp += 4) - 4;
+static inline u app64uu(uu n) {
+  u *p = mem + hp * sizeof(u);
+  *p = _NUM64;
+  p = mem + (hp + 1) * sizeof(u);
+  *p = 0;
+  p = mem + (hp + 2) * sizeof(u);
+  uu *q = (uu*) p;
+  *q = n;
+  hp += 4;
+  return hp - 4;
 }
-static inline double flo(u n) { return *((double*) (mem + arg(n) + 2)); }
+static inline u app64d(uu n) { return app64uu(n); }
+static inline uu flo(u n) {
+  u a = arg(n);
+  u *p = mem + (a + 2) * sizeof(u);
+  uu *q = (uu*) p;
+  return *q;
+}
 static inline void lazyDub(uu n) { lazy3(4, _V, app(_NUM, n), app(_NUM, n >> 32)); }
 static inline uu dub(u lo, u hi) { return ((uu)num(hi) << 32) + (u)num(lo); }
 static inline u ite(int cond) { if (cond) return _K; return _KI; }
-static inline u fle(double x, double y) { return ite(x <= y); }
-static inline u feq(double x, double y) { return ite(x == y); }
+static inline u fle(uu x, uu y) { return ite(x <= y); }
+static inline u feq(uu x, uu y) { return ite(x == y); }
 static inline u ule(int x, int y) { return ite((u)x <= (u)y); }
 static inline int ashr(int x, int y) { if (x < 0) return ~(~x >> y); return x >> y; }
 |]
@@ -149,7 +199,7 @@ static inline int ashr(int x, int y) { if (x < 0) return ~(~x >> y); return x >>
 -- Main VM loop.
 comdefsrc = [r|
 F x = "foreign(num(1));"
-Y x = x "sp[1]"
+Y x = "{u *p = sp + sizeof(u); lazy2(1, arg(1), *p);}"
 Q x y z = z(y x)
 QQ f a b c d = d(c(b(a(f))))
 S x y z = x z(y z)
@@ -161,13 +211,13 @@ V x y z = z x y
 T x y = y x
 K x y = "_I" x
 KI x y = "_I" y
-I x = "sp[1] = arg(1); sp = sp + 1;"
+I x = "{u *p = sp + sizeof(u); *p = arg(1); sp = sp + sizeof(u);}"
 LEFT x y z = y x
 CONS x y z w = w x y
-NUM x y = y "sp[1]"
-NUM64 x y = y "sp[1]"
-FLO x = "lazy2(1, _I, app64d((double) num(1)));"
-FLW x = "lazy2(1, _I, app64d((double) (u) num(1)));"
+NUM x y = "{u *p = sp + sizeof(u); lazy2(2, arg(2), *p);}"
+NUM64 x y = "{u *p = sp + sizeof(u); lazy2(2, arg(2), *p);}"
+FLO x = "lazy2(1, _I, app64d((u) num(1)));"
+FLW x = "lazy2(1, _I, app64d((u) num(1)));"
 OLF x = "_NUM" "((int) flo(1))"
 FADD x y = "lazy2(2, _I, app64d(flo(1) + flo(2)));"
 FSUB x y = "lazy2(2, _I, app64d(flo(1) - flo(2)));"
@@ -175,7 +225,7 @@ FMUL x y = "lazy2(2, _I, app64d(flo(1) * flo(2)));"
 FDIV x y = "lazy2(2, _I, app64d(flo(1) / flo(2)));"
 FLE x y = "lazy2(2, _I, fle(flo(1), flo(2)));"
 FEQ x y = "lazy2(2, _I, feq(flo(1), flo(2)));"
-PAIR64 x = "{uu n = (*((uu*) (mem + arg(1) + 2)));lazy2(1, app(_V, app(_NUM, n)), app(_NUM, n >> 32));}"
+PAIR64 x = "{u *p = mem + (arg(1) + 2) * sizeof(u); uu *q = (uu*) p; uu n = *q; lazy2(1, app(_V, app(_NUM, n)), app(_NUM, n >> 32));}"
 DADD x y = "lazyDub(dub(1,2) + dub(3,4));"
 DSUB x y = "lazyDub(dub(1,2) - dub(3,4));"
 DMUL x y = "lazyDub(dub(1,2) * dub(3,4));"
@@ -201,12 +251,12 @@ LE x y = "lazy2(2, _I, ite(num(1) <= num(2)));"
 U_DIV x y = "_NUM" "(u) num(1) / (u) num(2)"
 U_MOD x y = "_NUM" "(u) num(1) % (u) num(2)"
 U_LE x y = "lazy2(2, _I, ule(num(1), num(2)));"
-REF x y = y "sp[1]"
+REF x y = "{u *p = sp + sizeof(u); lazy2(2, arg(2), *p);}"
 NEWREF x y z = z ("_REF" x) y
 READREF x y z = z "num(1)" y
-WRITEREF x y z w = "{mem[arg(2) + 1] = arg(1); lazy3(4, arg(4), _K, arg(3));}"
+WRITEREF x y z w = "{u *p = mem + (arg(2) + 1) * sizeof(u); *p = arg(1); lazy3(4, arg(4), _K, arg(3));}"
 END = "return;"
-ERR = "sp[1]=app(app(arg(1),_ERREND),_ERR2);sp = sp + 1;"
+ERR = "{u *p = sp + sizeof(u); *p = app(app(arg(1), _ERREND), _ERR2); sp = sp + sizeof(u);}"
 ERR2 = "lazy3(2, arg(1), _ERROUT, arg(2));"
 ERROUT = "errchar(num(1)); lazy2(2, _ERR, arg(2));"
 ERREND = "errexit(); return;"
@@ -289,9 +339,9 @@ static int mod(int a, int b) { int r = a%b; return r + (((u)(a^b)) >> 31)*(!!r)*
 
 static void run() {
   while(1) {
-    if (mem + hp > sp - 8) gc();
+    if (mem + hp * sizeof(u) > sp - 8 * sizeof(u)) gc();
     u x = *sp;
-    if (isAddr(x)) { sp = sp - 1; *sp = mem[x]; } else switch(x) {
+    if (isAddr(x)) { u *p = mem + x * sizeof(u); sp = sp - sizeof(u); *sp = *p; } else switch(x) {
 |]++)
   . foldr (.) id (genComb <$> comdefs)
   . ([r|
@@ -304,8 +354,8 @@ rtsAPI opts = ([r|
 void rts_init() {
   mem = malloc(TOP * sizeof(u)); altmem = malloc(TOP * sizeof(u));
   hp = 128;
-  for (u i = 0; i < sizeof(prog)/sizeof(*prog); i = i + 1) { mem[hp] = prog[i]; hp = hp + 1; }
-  spTop = mem + TOP - 1;
+  for (u i = 0; i < prog_size; i = i + 1) { u *p = mem + hp * sizeof(u); *p = prog[i]; hp = hp + 1; }
+  spTop = mem + (TOP - 1) * sizeof(u);
 }
 |]++)
   . rtsReduce opts
@@ -415,7 +465,7 @@ compileWith topSize libc opts mods = do
     . ("};\n"++)
     . ("static const u prog[]={" ++)
     . foldr (.) id (map (\n -> shows n . (',':)) mem)
-    . ("};\nstatic u root[]={" ++)
+    . ("};\nstatic const u prog_size="++) . shows (length mem) . (";\nstatic u root[]={"++)
     . foldr (.) id (map (\(addr, _) -> shows addr . (',':)) $ elems ffes)
     . ("0};\n" ++)
     . (preamble++)
@@ -433,10 +483,10 @@ compile = compileWith "16777216" libcHost []
 
 declWarts = ([r|#define IMPORT(m,n) __attribute__((import_module(m))) __attribute__((import_name(n)));
 enum {
-  ROOT_BASE = 1<<9,  // 0-terminated array of exported functions
+  ROOT_BASE = 512,  // 0-terminated array of exported functions
   // HEAP_BASE - 4: program size
-  HEAP_BASE = (1<<20) - 128 * sizeof(u),  // program
-  TOP = 1<<22
+  HEAP_BASE = 1048576 - 128 * sizeof(u),  // program
+  TOP = 4194304
 };
 static u *root = (u*) ROOT_BASE;
 void errchar(int c) {}
@@ -446,8 +496,8 @@ void errexit() {}
 rtsAPIWarts opts = ([r|
 static inline void rts_init() {
   mem = (u*) HEAP_BASE; altmem = (u*) (HEAP_BASE + (TOP - 128) * sizeof(u));
-  hp = 128 + mem[127];
-  spTop = mem + TOP - 1;
+  { u *p = mem + 127 * sizeof(u); hp = 128 + *p; }
+  spTop = mem + (TOP - 1) * sizeof(u);
 }
 
 // Export so we can later find it in the wasm binary.
