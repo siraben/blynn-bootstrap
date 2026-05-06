@@ -1490,7 +1490,7 @@ V x y z = z x y
 T x y = y x
 K x y = "_I" x
 KI x y = "_I" y
-I x = "sp[1] = arg(1); sp++;"
+I x = "sp[1] = arg(1); sp = sp + 1;"
 LEFT x y z = y x
 CONS x y z w = w x y
 NUM x y = y "sp[1]"
@@ -1499,14 +1499,14 @@ SUB x y = "_NUM" "num(1) - num(2)"
 MUL x y = "_NUM" "num(1) * num(2)"
 DIV x y = "_NUM" "num(1) / num(2)"
 MOD x y = "_NUM" "num(1) % num(2)"
-EQ x y = "num(1) == num(2) ? lazy2(2, _I, _K) : lazy2(2, _K, _I);"
-LE x y = "num(1) <= num(2) ? lazy2(2, _I, _K) : lazy2(2, _K, _I);"
+EQ x y = "if (num(1) == num(2)) lazy2(2, _I, _K); else lazy2(2, _K, _I);"
+LE x y = "if (num(1) <= num(2)) lazy2(2, _I, _K); else lazy2(2, _K, _I);"
 REF x y = y "sp[1]"
 NEWREF x y z = z ("_REF" x) y
 READREF x y z = z "num(1)" y
-WRITEREF x y z w = w "((mem[arg(2) + 1] = arg(1)), _K)" z
+WRITEREF x y z w = "{mem[arg(2) + 1] = arg(1); lazy3(4, arg(4), _K, arg(3));}"
 END = "return;"
-ERR = "sp[1]=app(app(arg(1),_ERREND),_ERR2);sp++;"
+ERR = "sp[1]=app(app(arg(1),_ERREND),_ERR2);sp = sp + 1;"
 ERR2 = "lazy3(2, arg(1), _ERROUT, arg(2));"
 ERROUT = "errchar(num(1)); lazy2(2, _ERR, arg(2));"
 ERREND = "errexit(); return;"
@@ -1523,7 +1523,7 @@ comName i = maybe undefined id $ lookup i $ zip [1..] (fst <$> comdefs)
 preamble = [r|#define EXPORT(f, sym, n) void f() asm(sym) __attribute__((export_name(sym))); void f(){rts_reduce(root[n]);}
 void *malloc(unsigned long);
 enum { FORWARD = 127, REDUCING = 126 };
-enum { TOP = 1<<24 };
+enum { TOP = 16777216 };
 static u *mem, *altmem, *sp, *spTop, hp;
 static inline u isAddr(u n) { return n>=128; }
 static u evac(u n) {
@@ -1572,13 +1572,13 @@ static void gc() {
   hp = 128;
   u di = hp;
   sp = altmem + TOP - 1;
-  for(u *r = root; *r; r++) *r = evac(*r);
+  for(u *r = root; *r; r = r + 1) *r = evac(*r);
   *sp = evac(*spTop);
   while (di < hp) {
     u x = altmem[di] = evac(altmem[di]);
-    di++;
+    di = di + 1;
     if (x != _NUM) altmem[di] = evac(altmem[di]);
-    di++;
+    di = di + 1;
   }
   spTop = sp;
   u *tmp = mem;
@@ -1592,18 +1592,27 @@ static inline int num(u n) { return mem[arg(n) + 1]; }
 static inline void lazy2(u height, u f, u x) {
   u *p = mem + sp[height];
   *p = f;
-  *++p = x;
+  p = p + 1;
+  *p = x;
   sp += height - 1;
   *sp = f;
 }
-static void lazy3(u height,u x1,u x2,u x3){u*p=mem+sp[height];sp[height-1]=*p=app(x1,x2);*++p=x3;*(sp+=height-2)=x1;}
+static void lazy3(u height,u x1,u x2,u x3){
+  u *p = mem + sp[height];
+  sp[height - 1] = app(x1, x2);
+  *p = sp[height - 1];
+  p = p + 1;
+  *p = x3;
+  sp = sp + height - 2;
+  *sp = x1;
+}
 |]
 
 runFun = ([r|static void run() {
-  for(;;) {
+  while(1) {
     if (mem + hp > sp - 8) gc();
     u x = *sp;
-    if (isAddr(x)) *--sp = mem[x]; else switch(x) {
+    if (isAddr(x)) { sp = sp - 1; *sp = mem[x]; } else switch(x) {
 |]++)
   . foldr (.) id (genComb <$> comdefs)
   . ([r|
@@ -1614,13 +1623,14 @@ runFun = ([r|static void run() {
 void rts_init() {
   mem = malloc(TOP * sizeof(u)); altmem = malloc(TOP * sizeof(u));
   hp = 128;
-  for (u i = 0; i < prog_size; i++) mem[hp++] = prog[i];
+  for (u i = 0; i < prog_size; i = i + 1) { mem[hp] = prog[i]; hp = hp + 1; }
   spTop = mem + TOP - 1;
 }
 
 void rts_reduce(u n) {
   static u ready;if (!ready){ready=1;rts_init();}
-  *(sp = spTop) = app(app(n, _UNDEFINED), _END);
+  sp = spTop;
+  *sp = app(app(n, _UNDEFINED), _END);
   run();
 }
 |]++)

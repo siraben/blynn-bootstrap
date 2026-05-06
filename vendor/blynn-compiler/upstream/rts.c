@@ -8,7 +8,7 @@ static const u root_size;
 
 enum { FORWARD = 27, REDUCING = 9 };
 
-enum { TOP = 1<<24 };
+enum { TOP = 16777216 };
 u *mem, *altmem, *sp, *spTop, hp;
 
 static inline u isAddr(u n) { return n>=128; }
@@ -59,13 +59,13 @@ static void gc() {
   hp = 128;
   u di = hp;
   sp = altmem + TOP - 1;
-  for(u i = 0; i < root_size; i++) root[i] = evac(root[i]);
+  for(u i = 0; i < root_size; i = i + 1) root[i] = evac(root[i]);
   *sp = evac(*spTop);
   while (di < hp) {
     u x = altmem[di] = evac(altmem[di]);
-    di++;
+    di = di + 1;
     if (x != 'F' && x != '#') altmem[di] = evac(altmem[di]);
-    di++;
+    di = di + 1;
   }
   spTop = sp;
   u *tmp = mem;
@@ -86,22 +86,31 @@ static inline u num(u n) { return mem[arg(n) + 1]; }
 static inline void lazy(u height, u f, u x) {
   u *p = mem + sp[height];
   *p = f;
-  *++p = x;
+  p = p + 1;
+  *p = x;
   sp += height - 1;
   *sp = f;
 }
 
-static void lazy3(u height,u x1,u x2,u x3){u*p=mem+sp[height];sp[height-1]=*p=app(x1,x2);*++p=x3;*(sp+=height-2)=x1;}
+static void lazy3(u height,u x1,u x2,u x3){
+  u *p = mem + sp[height];
+  sp[height - 1] = app(x1, x2);
+  *p = sp[height - 1];
+  p = p + 1;
+  *p = x3;
+  sp = sp + height - 2;
+  *sp = x1;
+}
 
 static inline u apparg(u i, u j) { return app(arg(i), arg(j)); }
 
 static void foreign(u n);
 
 static void run() {
-  for(;;) {
+  while(1) {
     if (mem + hp > sp - 8) gc();
     u x = *sp;
-    if (isAddr(x)) *--sp = mem[x]; else switch(x) {
+    if (isAddr(x)) { sp = sp - 1; *sp = mem[x]; } else switch(x) {
       case 'F': foreign(arg(1)); break;
       case 'Y': lazy(1, arg(1), sp[1]); break;
       case 'Q': lazy(3, arg(3), apparg(2, 1)); break;
@@ -110,13 +119,13 @@ static void run() {
       case 'C': lazy3(3, arg(1), arg(3), arg(2)); break;
       case 'R': lazy3(3, arg(2), arg(3), arg(1)); break;
       case 'V': lazy3(3, arg(3), arg(1), arg(2)); break;
-      case 'I': sp[1] = arg(1); sp++; break;
+      case 'I': sp[1] = arg(1); sp = sp + 1; break;
       case 'T': lazy(2, arg(2), arg(1)); break;
       case 'K': lazy(2, 'I', arg(1)); break;
       case ':': lazy3(4, arg(4), arg(1), arg(2)); break;
       case '#': lazy(2, arg(2), sp[1]); break;
-      case '=': num(1) == num(2) ? lazy(2, 'I', 'K') : lazy(2, 'K', 'I'); break;
-      case 'L': num(1) <= num(2) ? lazy(2, 'I', 'K') : lazy(2, 'K', 'I'); break;
+      case '=': if (num(1) == num(2)) lazy(2, 'I', 'K'); else lazy(2, 'K', 'I'); break;
+      case 'L': if (num(1) <= num(2)) lazy(2, 'I', 'K'); else lazy(2, 'K', 'I'); break;
       case '*': lazy(2, '#', num(1) * num(2)); break;
       case '/': lazy(2, '#', num(1) / num(2)); break;
       case '%': lazy(2, '#', num(1) % num(2)); break;
@@ -130,7 +139,8 @@ static void run() {
 }
 
 void rts_reduce(u n) {
-  *(sp = spTop) = app(app(n, '?'), '.');
+  sp = spTop;
+  *sp = app(app(n, '?'), '.');
   run();
 }
 
@@ -140,7 +150,7 @@ void rts_init() __attribute__((export_name("rts_init")));
 void rts_init() {
   mem = malloc(TOP * sizeof(u)); altmem = malloc(TOP * sizeof(u));
   hp = 128;
-  for (u i = 0; i < prog_size; i++) mem[hp++] = prog[i];
+  for (u i = 0; i < prog_size; i = i + 1) { mem[hp] = prog[i]; hp = hp + 1; }
   spTop = mem + TOP - 1;
 }
 

@@ -10,39 +10,49 @@ set -euo pipefail
 
 : "${METHODICALLY:?set METHODICALLY=path/to/methodically}"
 : "${UPSTREAM_DIR:?set UPSTREAM_DIR=path/to/upstream}"
-: "${CC:=cc}"
-: "${CFLAGS:=-D_GNU_SOURCE -std=c99 -O2}"
+: "${M2_ARCH:=amd64}"
+: "${M2_OS:=Linux}"
 
 INN="$UPSTREAM_DIR/inn"
 
 step() { printf '\n=== %s ===\n' "$*"; }
 
-# Stage 0: methodically(party.hs) -> party.c, then patch open_files() so
-# that the resulting `party` binary uses stdin/stdout (upstream's
-# Makefile-driven convention) instead of methodically's argc==3 file
-# convention. From `party` onward, each generated binary emits its own
-# main and we don't need this patch.
-step "methodically -> party.c"
-"$METHODICALLY" "$UPSTREAM_DIR/party.hs" party.c.raw
-perl -0pe 's/void open_files\(\) \{\n(?:.*\n)*?\}\n/void open_files() { input_file = stdin; destination_file = stdout; }\n/' \
-  party.c.raw > party.c
-rm party.c.raw
+compile_m2() {
+  local src=$1; local out=$2; shift 2
+  M2-Mesoplanet --operating-system "$M2_OS" --architecture "$M2_ARCH" \
+    -f "$src" "$@" -o "$out"
+  chmod 555 "$out"
+}
 
-step "cc party.c (linking upstream shims)"
-$CC $CFLAGS party.c "$UPSTREAM_DIR/party_shims.c" -o party
+# Stage 0: methodically(party.hs) -> party.c. The resulting `party` binary
+# still has methodically's argc==3 file-opening main, but upstream party's
+# FFI shims read stdin and write stdout. We therefore pass dummy argv paths
+# when running only this first binary, and drive its real IO with redirection.
+step "methodically -> party.c"
+"$METHODICALLY" "$UPSTREAM_DIR/party.hs" party.c
+
+step "M2-Mesoplanet party.c (linking upstream shims)"
+compile_m2 party.c party -f "$UPSTREAM_DIR/party_shims.c"
 
 # Helper: cat a list of inn/ modules + a leaf source, pipe through prev,
-# emit next stage's .c, then cc it. Module list is space-separated names
-# from $INN/<name>.hs; leaf is also $INN/<leaf>.hs.
+# emit next stage's .c, then compile it with minimal-bootstrap's M2 path.
+# Module list is space-separated names from $INN/<name>.hs; leaf is also
+# $INN/<leaf>.hs.
 party_step() {
   local out=$1; local prev=$2; local leaf=$3; shift 3
   local files=()
   for m in "$@"; do files+=("$INN/$m.hs"); done
   files+=("$INN/$leaf.hs")
+  local input="$out.input.hs"
   step "$prev -> $out.c"
-  cat "${files[@]}" | "./$prev" > "$out.c"
-  step "cc $out.c"
-  $CC $CFLAGS -lm "$out.c" -o "$out"
+  cat "${files[@]}" > "$input"
+  if [ "$prev" = party ]; then
+    "./$prev" /dev/null /dev/null < "$input" > "$out.c"
+  else
+    "./$prev" < "$input" > "$out.c"
+  fi
+  step "M2-Mesoplanet $out.c"
+  compile_m2 "$out.c" "$out"
 }
 
 party_step multiparty  party       party  Base0 System Ast  Map  Parser  Kiselyov Unify  RTS  Typer

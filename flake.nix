@@ -19,7 +19,7 @@
         };
 
         blynn-precisely = pkgs.callPackage ./nix/blynn-precisely.nix {
-          inherit blynn-compiler;
+          inherit blynn-compiler minimalBootstrap;
           src = ./vendor/blynn-compiler/upstream;
         };
       in {

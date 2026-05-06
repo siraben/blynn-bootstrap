@@ -1,4 +1,10 @@
-{ stdenv, lib, blynn-compiler, src }:
+{
+  stdenvNoCC,
+  lib,
+  blynn-compiler,
+  minimalBootstrap,
+  src,
+}:
 
 # Builds the upstream blynn/compiler party→precisely chain on top of
 # orians' methodically. Result: an upstream-flavoured `precisely` capable
@@ -18,15 +24,21 @@
 # `cat ... | party > out`. From `party` onwards each binary emits its
 # own main and the patch isn't needed.
 
-stdenv.mkDerivation {
+stdenvNoCC.mkDerivation {
   pname = "blynn-precisely";
   version = "0-unstable-2026-05-06";
 
   inherit src;
 
-  nativeBuildInputs = [ blynn-compiler ];
+  nativeBuildInputs = [
+    blynn-compiler
+    minimalBootstrap.stage0-posix.mescc-tools
+  ];
 
   enableParallelBuilding = false;
+
+  M2_ARCH = minimalBootstrap.stage0-posix.m2libcArch;
+  M2_OS = minimalBootstrap.stage0-posix.m2libcOS;
 
   buildPhase = ''
     runHook preBuild

@@ -83,7 +83,7 @@ ERROUT = "errchar(num(1)); lazy2(2, _ERR, arg(2));"
 ERREND = "errexit(); return 2;"
 VMRUN = "vmrun();"
 VMPTR = "lazy3(3, arg(3), app(_NUM, arg(1)), arg(2));"
-SUSPEND = "*(sp = spTop) = app(app(arg(1), _UNDEFINED), _END); suspend_status = 0; return 1;"
+SUSPEND = "sp = spTop; *sp = app(app(arg(1), _UNDEFINED), _END); suspend_status = 0; return 1;"
 |]
 
 espy x = do

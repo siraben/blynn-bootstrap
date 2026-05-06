@@ -95,13 +95,13 @@ static void gc() {
   hp = 128;
   u di = hp;
   sp = altmem + TOP - 1;
-  for(u *r = root; *r; r++) *r = evac(*r);
+  for(u *r = root; *r; r = r + 1) *r = evac(*r);
   *sp = evac(*spTop);
   while (di < hp) {
     u x = altmem[di] = evac(altmem[di]);
-    di++;
+    di = di + 1;
     if (x != _NUM) altmem[di] = evac(altmem[di]);
-    di++;
+    di = di + 1;
   }
   spTop = sp;
   u *tmp = mem;
@@ -115,11 +115,20 @@ static inline int num(u n) { return mem[arg(n) + 1]; }
 static inline void lazy2(u height, u f, u x) {
   u *p = mem + sp[height];
   *p = f;
-  *++p = x;
+  p = p + 1;
+  *p = x;
   sp += height - 1;
   *sp = f;
 }
-static void lazy3(u height,u x1,u x2,u x3){u*p=mem+sp[height];sp[height-1]=*p=app(x1,x2);*++p=x3;*(sp+=height-2)=x1;}
+static void lazy3(u height,u x1,u x2,u x3){
+  u *p = mem + sp[height];
+  sp[height - 1] = app(x1, x2);
+  *p = sp[height - 1];
+  p = p + 1;
+  *p = x3;
+  sp = sp + height - 2;
+  *sp = x1;
+}
 typedef unsigned long long uu;
 static inline u app64d(double d) {
   mem[hp] = _NUM64;
@@ -130,6 +139,11 @@ static inline u app64d(double d) {
 static inline double flo(u n) { return *((double*) (mem + arg(n) + 2)); }
 static inline void lazyDub(uu n) { lazy3(4, _V, app(_NUM, n), app(_NUM, n >> 32)); }
 static inline uu dub(u lo, u hi) { return ((uu)num(hi) << 32) + (u)num(lo); }
+static inline u ite(int cond) { if (cond) return _K; return _KI; }
+static inline u fle(double x, double y) { return ite(x <= y); }
+static inline u feq(double x, double y) { return ite(x == y); }
+static inline u ule(int x, int y) { return ite((u)x <= (u)y); }
+static inline int ashr(int x, int y) { if (x < 0) return ~(~x >> y); return x >> y; }
 |]
 
 -- Main VM loop.
@@ -147,7 +161,7 @@ V x y z = z x y
 T x y = y x
 K x y = "_I" x
 KI x y = "_I" y
-I x = "sp[1] = arg(1); sp++;"
+I x = "sp[1] = arg(1); sp = sp + 1;"
 LEFT x y z = y x
 CONS x y z w = w x y
 NUM x y = y "sp[1]"
@@ -159,8 +173,8 @@ FADD x y = "lazy2(2, _I, app64d(flo(1) + flo(2)));"
 FSUB x y = "lazy2(2, _I, app64d(flo(1) - flo(2)));"
 FMUL x y = "lazy2(2, _I, app64d(flo(1) * flo(2)));"
 FDIV x y = "lazy2(2, _I, app64d(flo(1) / flo(2)));"
-FLE x y = "lazy2(2, _I, flo(1) <= flo(2) ? _K : _KI);"
-FEQ x y = "lazy2(2, _I, flo(1) == flo(2) ? _K : _KI);"
+FLE x y = "lazy2(2, _I, fle(flo(1), flo(2)));"
+FEQ x y = "lazy2(2, _I, feq(flo(1), flo(2)));"
 PAIR64 x = "{uu n = (*((uu*) (mem + arg(1) + 2)));lazy2(1, app(_V, app(_NUM, n)), app(_NUM, n >> 32));}"
 DADD x y = "lazyDub(dub(1,2) + dub(3,4));"
 DSUB x y = "lazyDub(dub(1,2) - dub(3,4));"
@@ -180,19 +194,19 @@ XOR x y = "_NUM" "num(1) ^ num(2)"
 AND x y = "_NUM" "num(1) & num(2)"
 OR x y = "_NUM" "num(1) | num(2)"
 SHL x y = "_NUM" "num(1) << num(2)"
-SHR x y = "_NUM" "num(1) < 0 ? ~(~num(1) >> num(2)) : num(1) >> num(2)"
+SHR x y = "_NUM" "ashr(num(1), num(2))"
 U_SHR x y = "_NUM" "(u) num(1) >> (u) num(2)"
-EQ x y = "lazy2(2, _I, num(1) == num(2) ? _K : _KI);"
-LE x y = "lazy2(2, _I, num(1) <= num(2) ? _K : _KI);"
+EQ x y = "lazy2(2, _I, ite(num(1) == num(2)));"
+LE x y = "lazy2(2, _I, ite(num(1) <= num(2)));"
 U_DIV x y = "_NUM" "(u) num(1) / (u) num(2)"
 U_MOD x y = "_NUM" "(u) num(1) % (u) num(2)"
-U_LE x y = "lazy2(2, _I, (u) num(1) <= (u) num(2) ? _K : _KI);"
+U_LE x y = "lazy2(2, _I, ule(num(1), num(2)));"
 REF x y = y "sp[1]"
 NEWREF x y z = z ("_REF" x) y
 READREF x y z = z "num(1)" y
-WRITEREF x y z w = w "((mem[arg(2) + 1] = arg(1)), _K)" z
+WRITEREF x y z w = "{mem[arg(2) + 1] = arg(1); lazy3(4, arg(4), _K, arg(3));}"
 END = "return;"
-ERR = "sp[1]=app(app(arg(1),_ERREND),_ERR2);sp++;"
+ERR = "sp[1]=app(app(arg(1),_ERREND),_ERR2);sp = sp + 1;"
 ERR2 = "lazy3(2, arg(1), _ERROUT, arg(2));"
 ERROUT = "errchar(num(1)); lazy2(2, _ERR, arg(2));"
 ERREND = "errexit(); return;"
@@ -274,10 +288,10 @@ static int div(int a, int b) { int q = a/b; return q - (((u)(a^b)) >> 31)*(q*b!=
 static int mod(int a, int b) { int r = a%b; return r + (((u)(a^b)) >> 31)*(!!r)*b; }
 
 static void run() {
-  for(;;) {
+  while(1) {
     if (mem + hp > sp - 8) gc();
     u x = *sp;
-    if (isAddr(x)) *--sp = mem[x]; else switch(x) {
+    if (isAddr(x)) { sp = sp - 1; *sp = mem[x]; } else switch(x) {
 |]++)
   . foldr (.) id (genComb <$> comdefs)
   . ([r|
@@ -290,7 +304,7 @@ rtsAPI opts = ([r|
 void rts_init() {
   mem = malloc(TOP * sizeof(u)); altmem = malloc(TOP * sizeof(u));
   hp = 128;
-  for (u i = 0; i < sizeof(prog)/sizeof(*prog); i++) mem[hp++] = prog[i];
+  for (u i = 0; i < sizeof(prog)/sizeof(*prog); i = i + 1) { mem[hp] = prog[i]; hp = hp + 1; }
   spTop = mem + TOP - 1;
 }
 |]++)
@@ -415,7 +429,7 @@ compileWith topSize libc opts mods = do
     . foldr (.) id (zipWith (\(expName, (_, ourType)) n -> ("EXPORT(f"++) . shows n . (", \""++) . (expName++) . ("\")\n"++) . genExport ourType n) (toAscList ffes) [0..])
     $ mainStr
 
-compile = compileWith "1<<24" libcHost []
+compile = compileWith "16777216" libcHost []
 
 declWarts = ([r|#define IMPORT(m,n) __attribute__((import_module(m))) __attribute__((import_name(n)));
 enum {
@@ -445,7 +459,8 @@ rtsReduce opts =
   . ([r|
 void rts_reduce(u n) {
   static u ready;if (!ready){ready=1;rts_init();}
-  *(sp = spTop) = app(app(n, _UNDEFINED), _END);
+  sp = spTop;
+  *sp = app(app(n, _UNDEFINED), _END);
 |]++)
   . (if "pre-post-run" `elem` opts then ("pre_run();run();post_run();"++) else ("run();"++))
   . ("\n}\n"++)
