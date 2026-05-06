@@ -22,9 +22,18 @@
           inherit blynn-compiler minimalBootstrap;
           src = ./vendor/blynn-compiler/upstream;
         };
+
+        hcc-ghc = pkgs.callPackage ./nix/hcc-ghc.nix {
+          ghc = pkgs.haskellPackages.ghcWithPackages (_: []);
+          src = ./vendor/hcc;
+        };
+
+        tinycc-boot-hcc = pkgs.callPackage ./nix/tinycc-boot-hcc.nix {
+          hcc = hcc-ghc;
+        };
       in {
         packages = {
-          inherit blynn-compiler blynn-precisely;
+          inherit blynn-compiler blynn-precisely hcc-ghc tinycc-boot-hcc;
           default = blynn-precisely;
         };
 
@@ -32,6 +41,7 @@
           packages = [
             minimalBootstrap.stage0-posix.mescc-tools
             pkgs.coreutils
+            hcc-ghc
             (pkgs.haskellPackages.ghcWithPackages (hpkgs: [
               hpkgs.raw-strings-qq
             ]))

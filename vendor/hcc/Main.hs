@@ -1,8 +1,11 @@
 module Main where
 
+import System.Directory (findExecutable)
 import System.Environment (getArgs)
+import System.Environment (lookupEnv)
 import System.Exit (exitFailure, exitSuccess)
 import System.IO (hPutStrLn, stderr)
+import System.Process (callProcess)
 
 import Hcc.Lexer
 import Hcc.Parser
@@ -18,10 +21,11 @@ main = do
     "--lex-dump":files -> lexDump files
     "--pp-dump":files -> ppDump files
     "--parse-dump":files -> parseDump files
-    _ -> die "hcc: only --lex-dump, --pp-dump, and --parse-dump are implemented"
+    "--check":files -> checkFiles files
+    _ -> compileWithCc args
 
 usage :: IO ()
-usage = putStrLn "usage: hcc --lex-dump FILE...\n       hcc --pp-dump FILE...\n       hcc --parse-dump FILE..."
+usage = putStrLn "usage: hcc [CC-ARGS...]\n       hcc --check FILE...\n       hcc --lex-dump FILE...\n       hcc --pp-dump FILE...\n       hcc --parse-dump FILE..."
 
 die :: String -> IO ()
 die msg = hPutStrLn stderr msg >> exitFailure
@@ -76,6 +80,34 @@ mapParseError :: Either ParseError a -> Either String a
 mapParseError result = case result of
   Left (ParseError pos msg) -> Left (showPos pos ++ ": " ++ msg)
   Right ast -> Right ast
+
+checkFiles :: [String] -> IO ()
+checkFiles files = case files of
+  [] -> die "hcc: no input files"
+  _ -> mapM_ checkFile files
+
+checkFile :: String -> IO ()
+checkFile path = do
+  source <- if path == "-" then getContents else readFile path
+  case preprocessSource source >>= mapParseError . parseProgram of
+    Left msg -> die (path ++ ":" ++ msg)
+    Right _ -> pure ()
+
+compileWithCc :: [String] -> IO ()
+compileWithCc args = do
+  cc <- resolveCc
+  callProcess cc args
+
+resolveCc :: IO FilePath
+resolveCc = do
+  override <- lookupEnv "HCC_BACKEND_CC"
+  case override of
+    Just cc -> pure cc
+    Nothing -> do
+      found <- findExecutable "cc"
+      case found of
+        Just cc -> pure cc
+        Nothing -> die "hcc: temporary cc backend needs `cc` on PATH or HCC_BACKEND_CC" >> pure "cc"
 
 showPos :: SrcPos -> String
 showPos (SrcPos line col) = show line ++ ":" ++ show col
