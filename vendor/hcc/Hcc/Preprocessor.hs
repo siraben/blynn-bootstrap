@@ -49,6 +49,8 @@ preprocess toks = go [] [] toks [] where
       if currentActive frames
       then go (undefObject name macros) frames xs acc
       else go macros frames xs acc
+    "#include":_ ->
+      go macros frames xs acc
     "#ifdef":name:_ ->
       go macros (pushIf frames (isDefined name macros)) xs acc
     "#ifndef":name:_ ->

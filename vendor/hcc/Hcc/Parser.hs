@@ -79,6 +79,8 @@ stmt = do
   case tokenKind tok of
     TokIdent "return" -> advanceToken >> parseReturn
     TokIdent "if" -> advanceToken >> parseIf
+    TokIdent "while" -> advanceToken >> parseWhile
+    TokIdent "do" -> advanceToken >> parseDoWhile
     TokPunct "{" -> SBlock <$> compound
     _ | startsType tok -> parseDeclStmt
     _ -> do
@@ -106,6 +108,24 @@ parseIf = do
   no <- if hasElse then stmtAsBlock else pure []
   pure (SIf cond yes no)
 
+parseWhile :: Parser Stmt
+parseWhile = do
+  needPunct "("
+  cond <- expr
+  needPunct ")"
+  body <- stmtAsBlock
+  pure (SWhile cond body)
+
+parseDoWhile :: Parser Stmt
+parseDoWhile = do
+  body <- stmtAsBlock
+  needIdentValue "while"
+  needPunct "("
+  cond <- expr
+  needPunct ")"
+  needPunct ";"
+  pure (SDoWhile body cond)
+
 stmtAsBlock :: Parser [Stmt]
 stmtAsBlock = do
   tok <- peek
@@ -129,6 +149,9 @@ ctype = skipQualifiers >> baseType where
       TokIdent "void" -> advanceToken >> pure CVoid
       TokIdent "int" -> advanceToken >> pure CInt
       TokIdent "char" -> advanceToken >> pure CChar
+      TokIdent "unsigned" -> advanceToken >> pure CUnsigned
+      TokIdent "long" -> advanceToken >> pure CLong
+      TokIdent name | isKnownTypeName name -> advanceToken >> pure (CNamed name)
       _ -> failAt tok "expected type"
 
 skipQualifiers :: Parser ()
@@ -252,8 +275,11 @@ arguments = do
 
 startsType :: Token -> Bool
 startsType tok = case tokenKind tok of
-  TokIdent name -> name `elem` ["void", "int", "char", "const", "volatile", "static", "extern", "register"]
+  TokIdent name -> name `elem` ["void", "int", "char", "unsigned", "long", "const", "volatile", "static", "extern", "register"] || isKnownTypeName name
   _ -> False
+
+isKnownTypeName :: String -> Bool
+isKnownTypeName name = name `elem` ["FILE", "FUNCTION", "size_t"]
 
 manyP :: Parser a -> Parser [a]
 manyP p = do
@@ -303,6 +329,13 @@ needIdent = do
   case tokenKind tok of
     TokIdent s -> advanceToken >> pure s
     _ -> failAt tok "expected identifier"
+
+needIdentValue :: String -> Parser ()
+needIdentValue expected = do
+  tok <- peek
+  case tokenKind tok of
+    TokIdent s | s == expected -> advanceToken
+    _ -> failAt tok ("expected " ++ show expected)
 
 peek :: Parser Token
 peek = Parser $ \toks -> case toks of

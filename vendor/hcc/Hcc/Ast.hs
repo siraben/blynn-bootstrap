@@ -15,6 +15,9 @@ data CType
   = CVoid
   | CInt
   | CChar
+  | CUnsigned
+  | CLong
+  | CNamed String
   | CPtr CType
   deriving (Eq, Show)
 
@@ -23,6 +26,8 @@ data Stmt
   | SReturn (Maybe Expr)
   | SExpr Expr
   | SIf Expr [Stmt] [Stmt]
+  | SWhile Expr [Stmt]
+  | SDoWhile [Stmt] Expr
   | SBlock [Stmt]
   deriving (Eq, Show)
 
