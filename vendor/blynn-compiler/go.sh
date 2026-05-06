@@ -8,38 +8,15 @@ mkdir -p bin
 # Place to put generated source files
 mkdir -p generated
 
-# compile pack_blobs.c
-M2-Planet --architecture x86 \
-	-f M2libc/sys/types.h \
-	-f M2libc/stddef.h \
-	-f M2libc/x86/Linux/unistd.h \
-	-f M2libc/stdlib.c \
-	-f M2libc/x86/Linux/fcntl.h \
-	-f M2libc/stdio.c \
-	-f M2libc/bootstrappable.c \
-	-f pack_blobs.c \
-	--debug \
-	-o bin/pack_blobs.M1
+M2_ARCH=${M2_ARCH:-x86}
+M2_OS=${M2_OS:-Linux}
 
-# Create dwarf stubs for pack_blobs
-blood-elf -f bin/pack_blobs.M1 --little-endian --entry _start -o bin/pack_blobs-footer.M1
+compile_m2() {
+	M2-Mesoplanet --operating-system "$M2_OS" --architecture "$M2_ARCH" -f "$1" -o "$2"
+	chmod 555 "$2"
+}
 
-# Convert to hex2 linker format
-M1 -f M2libc/x86/x86_defs.M1 \
-	-f M2libc/x86/libc-full.M1 \
-	-f bin/pack_blobs.M1 \
-	-f bin/pack_blobs-footer.M1 \
-	--little-endian \
-	--architecture x86 \
-	-o bin/pack_blobs.hex2
-
-# Link into final static binary
-hex2 -f M2libc/x86/ELF-x86-debug.hex2 \
-	-f bin/pack_blobs.hex2 \
-	--little-endian \
-	--architecture x86 \
-	--base-address 0x8048000 \
-	-o bin/pack_blobs
+compile_m2 pack_blobs.c bin/pack_blobs
 
 # Build blobs
 ./bin/pack_blobs -f blob/parenthetically.source -o generated/parenthetically
@@ -47,38 +24,7 @@ hex2 -f M2libc/x86/ELF-x86-debug.hex2 \
 ./bin/pack_blobs -f blob/practically.source -o generated/practically
 ./bin/pack_blobs -f blob/singularity.source -o generated/singularity_blob
 
-# Compile to assembly vm.c
-M2-Planet --architecture x86 \
-	-f M2libc/sys/types.h \
-	-f M2libc/stddef.h \
-	-f M2libc/x86/Linux/unistd.h \
-	-f M2libc/stdlib.c \
-	-f M2libc/x86/Linux/fcntl.h \
-	-f M2libc/stdio.c \
-	-f M2libc/bootstrappable.c \
-	-f vm.c \
-	--debug \
-	-o bin/vm.M1
-
-# Create dwarf stubs for vm
-blood-elf -f bin/vm.M1 --little-endian --entry _start -o bin/vm-footer.M1
-
-# Convert to hex2 linker format
-M1 -f M2libc/x86/x86_defs.M1 \
-	-f M2libc/x86/libc-full.M1 \
-	-f bin/vm.M1 \
-	-f bin/vm-footer.M1 \
-	--little-endian \
-	--architecture x86 \
-	-o bin/vm.hex2
-
-# Link into final static binary
-hex2 -f M2libc/x86/ELF-x86-debug.hex2 \
-	-f bin/vm.hex2 \
-	--little-endian \
-	--architecture x86 \
-	--base-address 0x8048000 \
-	-o bin/vm
+compile_m2 vm.c bin/vm
 
 # Generate raw file needed
 ./bin/vm --raw blob/root -pb bootstrap -lf generated/parenthetically -o bin/raw_l
@@ -119,126 +65,14 @@ hex2 -f M2libc/x86/ELF-x86-debug.hex2 \
 # Make virtually
 ./bin/vm -f virtually.hs --foreign 2 --raw generated/uniquely_raw.txt --rts_c run -o generated/virtually_raw.txt
 
-# Make marginally
 ./bin/vm -f marginally.hs --foreign 2 --raw generated/virtually_raw.txt --rts_c run -o generated/marginally.c
-M2-Planet --architecture x86 \
-	-f M2libc/sys/types.h \
-	-f M2libc/stddef.h \
-	-f M2libc/x86/Linux/unistd.h \
-	-f M2libc/stdlib.c \
-	-f M2libc/x86/Linux/fcntl.h \
-	-f M2libc/stdio.c \
-	-f M2libc/bootstrappable.c \
-	-f generated/marginally.c \
-	--debug \
-	-o bin/marginally.M1
+compile_m2 generated/marginally.c bin/marginally
 
-blood-elf -f bin/marginally.M1 --little-endian --entry _start -o bin/marginally-footer.M1
-
-M1 -f M2libc/x86/x86_defs.M1 \
-	-f M2libc/x86/libc-full.M1 \
-	-f bin/marginally.M1 \
-	-f bin/marginally-footer.M1 \
-	--little-endian \
-	--architecture x86 \
-	-o bin/marginally.hex2
-
-hex2 -f M2libc/x86/ELF-x86-debug.hex2 \
-	-f bin/marginally.hex2 \
-	--little-endian \
-	--architecture x86 \
-	--base-address 0x8048000 \
-	-o bin/marginally
-
-# Make methodically
 ./bin/marginally methodically.hs generated/methodically.c
-M2-Planet --architecture x86 \
-	-f M2libc/sys/types.h \
-	-f M2libc/stddef.h \
-	-f M2libc/x86/Linux/unistd.h \
-	-f M2libc/stdlib.c \
-	-f M2libc/x86/Linux/fcntl.h \
-	-f M2libc/stdio.c \
-	-f M2libc/bootstrappable.c \
-	-f generated/methodically.c \
-	--debug \
-	-o bin/methodically.M1
+compile_m2 generated/methodically.c bin/methodically
 
-blood-elf -f bin/methodically.M1 --little-endian --entry _start -o bin/methodically-footer.M1
-
-M1 -f M2libc/x86/x86_defs.M1 \
-	-f M2libc/x86/libc-full.M1 \
-	-f bin/methodically.M1 \
-	-f bin/methodically-footer.M1 \
-	--little-endian \
-	--architecture x86 \
-	-o bin/methodically.hex2
-
-hex2 -f M2libc/x86/ELF-x86-debug.hex2 \
-	-f bin/methodically.hex2 \
-	--little-endian \
-	--architecture x86 \
-	--base-address 0x8048000 \
-	-o bin/methodically
-
-# Make crossly
 ./bin/methodically crossly.hs generated/crossly.c
-M2-Planet --architecture x86 \
-	-f M2libc/sys/types.h \
-	-f M2libc/stddef.h \
-	-f M2libc/x86/Linux/unistd.h \
-	-f M2libc/stdlib.c \
-	-f M2libc/x86/Linux/fcntl.h \
-	-f M2libc/stdio.c \
-	-f M2libc/bootstrappable.c \
-	-f generated/crossly.c \
-	--debug \
-	-o bin/crossly.M1
+compile_m2 generated/crossly.c bin/crossly
 
-blood-elf -f bin/crossly.M1 --little-endian --entry _start -o bin/crossly-footer.M1
-
-M1 -f M2libc/x86/x86_defs.M1 \
-	-f M2libc/x86/libc-full.M1 \
-	-f bin/crossly.M1 \
-	-f bin/crossly-footer.M1 \
-	--little-endian \
-	--architecture x86 \
-	-o bin/crossly.hex2
-
-hex2 -f M2libc/x86/ELF-x86-debug.hex2 \
-	-f bin/crossly.hex2 \
-	--little-endian \
-	--architecture x86 \
-	--base-address 0x8048000 \
-	-o bin/crossly
-
-# Make precisely
 ./bin/crossly precisely.hs generated/precisely.c
-M2-Planet --architecture x86 \
-	-f M2libc/sys/types.h \
-	-f M2libc/stddef.h \
-	-f M2libc/x86/Linux/unistd.h \
-	-f M2libc/stdlib.c \
-	-f M2libc/x86/Linux/fcntl.h \
-	-f M2libc/stdio.c \
-	-f M2libc/bootstrappable.c \
-	-f generated/precisely.c \
-	--debug \
-	-o bin/precisely.M1
-
-blood-elf -f bin/precisely.M1 --little-endian --entry _start -o bin/precisely-footer.M1
-
-M1 -f M2libc/x86/x86_defs.M1 \
-	-f M2libc/x86/libc-full.M1 \
-	-f bin/precisely.M1 \
-	-f bin/precisely-footer.M1 \
-	--little-endian \
-	--architecture x86 \
-	-o bin/precisely.hex2
-
-hex2 -f M2libc/x86/ELF-x86-debug.hex2 \
-	-f bin/precisely.hex2 \
-	--little-endian \
-	--architecture x86 \
-	--base-address 0x8048000 \
-	-o bin/precisely
+compile_m2 generated/precisely.c bin/precisely

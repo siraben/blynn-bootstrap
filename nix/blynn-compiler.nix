@@ -19,6 +19,9 @@ stdenvNoCC.mkDerivation {
 
   nativeBuildInputs = [ minimalBootstrap.stage0-posix.mescc-tools ];
 
+  M2_ARCH = minimalBootstrap.stage0-posix.m2libcArch;
+  M2_OS = minimalBootstrap.stage0-posix.m2libcOS;
+
   postPatch = ''
     patchShebangs go.sh
   '';
