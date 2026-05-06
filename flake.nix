@@ -11,7 +11,10 @@
       let
         pkgs = import nixpkgs { inherit system; };
 
+        minimalBootstrap = pkgs.minimal-bootstrap;
+
         blynn-compiler = pkgs.callPackage ./nix/blynn-compiler.nix {
+          inherit minimalBootstrap;
           src = ./vendor/blynn-compiler;
         };
 
@@ -26,7 +29,10 @@
         };
 
         devShells.default = pkgs.mkShell {
-          packages = [ pkgs.clang pkgs.gnumake pkgs.coreutils ];
+          packages = [
+            minimalBootstrap.stage0-posix.mescc-tools
+            pkgs.coreutils
+          ];
           shellHook = ''
             echo "blynn-bootstrap dev shell — sources are in ./vendor/blynn-compiler"
           '';

@@ -1,27 +1,31 @@
-{ stdenv, lib, src }:
+{
+  stdenvNoCC,
+  lib,
+  minimalBootstrap,
+  src,
+}:
 
-# Builds blynn-compiler's bootstrap chain using the system C compiler.
+# Builds blynn-compiler's bootstrap chain using nixpkgs' minimal-bootstrap.
 #
-# The chain is deterministic and runs end-to-end through the vendored
-# Makefile, ending with `precisely` (a Haskell-subset compiler).
-#
-# This is the "trusted compiler" path — we use stdenv's cc rather than
-# the M2-Planet seed. Swapping in the seed is a follow-up so we can
-# reach precisely from a minimal trusted binary, à la live-bootstrap.
+# The M2/hex2 build recipe comes from the older siraben/mes-overlay package,
+# but the tool inputs come from the current minimal-bootstrap scope so this
+# package shares the same seed/toolchain lineage as nixpkgs.
 
-stdenv.mkDerivation {
+stdenvNoCC.mkDerivation {
   pname = "blynn-compiler";
   version = "0-unstable-2026-05-06";
 
   inherit src;
 
-  enableParallelBuilding = false;
+  nativeBuildInputs = [ minimalBootstrap.stage0-posix.mescc-tools ];
 
-  # Targets explicitly so we don't accidentally pick up a different
-  # default in the future.
+  postPatch = ''
+    patchShebangs go.sh
+  '';
+
   buildPhase = ''
     runHook preBuild
-    make vm pack_blobs precisely
+    ./go.sh
     runHook postBuild
   '';
 
