@@ -1,0 +1,5 @@
+:set "-Dhide_prelude_here=import Prelude hiding (getChar, putChar, getContents, putStr, putStrLn, interact) --"
+:set "-Dimport_qq_here=import Text.RawString.QQ --"
+:set -cpp -XQuasiQuotes
+:set -XBlockArguments -XLambdaCase -XTupleSections
+:set -XNoMonomorphismRestriction -XMonoLocalBinds

@@ -14,10 +14,15 @@
         blynn-compiler = pkgs.callPackage ./nix/blynn-compiler.nix {
           src = ./vendor/blynn-compiler;
         };
+
+        blynn-precisely = pkgs.callPackage ./nix/blynn-precisely.nix {
+          inherit blynn-compiler;
+          src = ./vendor/blynn-compiler/upstream;
+        };
       in {
         packages = {
-          inherit blynn-compiler;
-          default = blynn-compiler;
+          inherit blynn-compiler blynn-precisely;
+          default = blynn-precisely;
         };
 
         devShells.default = pkgs.mkShell {

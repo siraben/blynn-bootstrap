@@ -1,0 +1,123 @@
+module Ast where
+import Base
+import Map
+
+data Type = TC String | TV String | TAp Type Type
+arr a b = TAp (TAp (TC "->") a) b
+data Extra = Basic String | Const Int | ChrCon Char | StrCon String | Link String String Qual
+data Pat = PatLit Ast | PatVar String (Maybe Pat) | PatCon String [Pat]
+data Ast = E Extra | V String | A Ast Ast | L String Ast | Pa [([Pat], Ast)] | Proof Pred
+data Constr = Constr String [Type]
+data Pred = Pred String Type
+data Qual = Qual [Pred] Type
+
+instance Eq Type where
+  (TC s) == (TC t) = s == t
+  (TV s) == (TV t) = s == t
+  (TAp a b) == (TAp c d) = a == c && b == d
+  _ == _ = False
+
+instance Eq Pred where (Pred s a) == (Pred t b) = s == t && a == b
+
+data Instance = Instance
+  -- Type, e.g. Int for Eq Int.
+  Type
+  -- Dictionary name, e.g. "{Eq Int}"
+  String
+  -- Context.
+  [Pred]
+  -- Method definitions
+  (Map String Ast)
+
+data Tycl = Tycl [String] [Instance]
+
+data Neat = Neat
+  (Map String Tycl)
+  -- | Top-level definitions
+  [(String, Ast)]
+  -- | Typed ASTs, ready for compilation, including ADTs and methods,
+  -- e.g. (==), (Eq a => a -> a -> Bool, select-==)
+  [(String, (Qual, Ast))]
+  -- | Data constructor table.
+  (Map String [Constr])
+  -- | FFI declarations.
+  [(String, Type)]
+  -- | Exports.
+  [(String, String)]
+  -- | Module imports.
+  [String]
+
+patVars = \case
+  PatLit _ -> []
+  PatVar s m -> s : maybe [] patVars m
+  PatCon _ args -> concat $ patVars <$> args
+
+fvPro bound expr = case expr of
+  V s | not (elem s bound) -> [s]
+  A x y -> fvPro bound x `union` fvPro bound y
+  L s t -> fvPro (s:bound) t
+  Pa vsts -> foldr union [] $ map (\(vs, t) -> fvPro (concatMap patVars vs ++ bound) t) vsts
+  _ -> []
+
+overFreePro s f t = case t of
+  E _ -> t
+  V s' -> if s == s' then f t else t
+  A x y -> A (overFreePro s f x) (overFreePro s f y)
+  L s' t' -> if s == s' then t else L s' $ overFreePro s f t'
+  Pa vsts -> Pa $ map (\(vs, t) -> (vs, if any (elem s . patVars) vs then t else overFreePro s f t)) vsts
+
+beta s a t = case t of
+  E _ -> t
+  V v -> if s == v then a else t
+  A x y -> A (beta s a x) (beta s a y)
+  L v u -> if s == v then t else L v $ beta s a u
+
+instance Show Type where
+  showsPrec _ = \case
+    TC s -> (s++)
+    TV s -> (s++)
+    TAp (TAp (TC "->") a) b -> showParen True $ shows a . (" -> "++) . shows b
+    TAp a b -> showParen True $ shows a . (' ':) . shows b
+instance Show Pred where
+  showsPrec _ (Pred s t) = (s++) . (' ':) . shows t . (" => "++)
+instance Show Qual where
+  showsPrec _ (Qual ps t) = foldr (.) id (map shows ps) . shows t
+instance Show Extra where
+  showsPrec _ = \case
+    Basic s -> (s++)
+    Const i -> shows i
+    ChrCon c -> shows c
+    StrCon s -> shows s
+    Link im s _ -> (im++) . ('.':) . (s++)
+instance Show Pat where
+  showsPrec _ = \case
+    PatLit e -> shows e
+    PatVar s mp -> (s++) . maybe id ((('@':) .) . shows) mp
+    PatCon s ps -> (s++) . foldr (.) id (((' ':) .) . shows <$> ps)
+
+showVar s@(h:_) = showParen (elem h ":!#$%&*+./<=>?@\\^|-~") (s++)
+
+instance Show Ast where
+  showsPrec prec = \case
+    E e -> shows e
+    V s -> showVar s
+    A x y -> showParen (1 <= prec) $ shows x . (' ':) . showsPrec 1 y
+    L s t -> showParen True $ ('\\':) . (s++) . (" -> "++) . shows t
+    Pa vsts -> ('\\':) . showParen True (foldr (.) id $ intersperse (';':) $ map (\(vs, t) -> foldr (.) id (intersperse (' ':) $ map (showParen True . shows) vs) . (" -> "++) . shows t) vsts)
+    Proof p -> ("{Proof "++) . shows p . ("}"++)
+
+typedAsts (Neat _ _ tas _ _ _ _) = tas
+typeclasses (Neat tcs _ _ _ _ _ _) = tcs
+dataCons (Neat _ _ _ dcs _ _ _) = dcs
+
+depthFirstSearch = (foldl .) \relation st@(visited, sequence) vertex ->
+  if vertex `elem` visited then st else second (vertex:)
+    $ depthFirstSearch relation (vertex:visited, sequence) (relation vertex)
+
+spanningSearch   = (foldl .) \relation st@(visited, setSequence) vertex ->
+  if vertex `elem` visited then st else second ((:setSequence) . (vertex:))
+    $ depthFirstSearch relation (vertex:visited, []) (relation vertex)
+
+scc ins outs = spanning . depthFirst where
+  depthFirst = snd . depthFirstSearch outs ([], [])
+  spanning   = snd . spanningSearch   ins  ([], [])
