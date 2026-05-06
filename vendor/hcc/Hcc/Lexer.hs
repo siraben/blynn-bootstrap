@@ -3,7 +3,7 @@ module Hcc.Lexer
   , lexC
   ) where
 
-import Data.Char (isAlpha, isAlphaNum, isDigit, isSpace)
+import Data.Char (isAlpha, isAlphaNum, isDigit, isHexDigit, isSpace)
 import Data.List (isPrefixOf)
 
 import Hcc.Token
@@ -83,13 +83,25 @@ lexNumber st = (Token (Span start end) (TokInt text), st') where
 
 takeNumber :: LexState -> (String, LexState)
 takeNumber st = case lsInput st of
-  '0':'x':_ -> takeWhileState isNumberTail st
-  '0':'X':_ -> takeWhileState isNumberTail st
-  _ -> takeWhileState isNumberTail st
+  '0':'x':rest -> takeRadixNumber isHexDigit "0x" rest st
+  '0':'X':rest -> takeRadixNumber isHexDigit "0X" rest st
+  _ -> takeDecimalNumber st
 
-isNumberTail :: Char -> Bool
-isNumberTail c =
-  isAlphaNum c || c == '_' || c == '.' || c == '+' || c == '-'
+takeRadixNumber :: (Char -> Bool) -> String -> String -> LexState -> (String, LexState)
+takeRadixNumber isDigitInRadix prefix rest st =
+  let st0 = advanceMany prefix st { lsInput = rest }
+      (digits, st1) = takeWhileState isDigitInRadix st0
+      (suffix, st2) = takeWhileState isIntSuffix st1
+  in (prefix ++ digits ++ suffix, st2)
+
+takeDecimalNumber :: LexState -> (String, LexState)
+takeDecimalNumber st =
+  let (digits, st1) = takeWhileState isDigit st
+      (suffix, st2) = takeWhileState isIntSuffix st1
+  in (digits ++ suffix, st2)
+
+isIntSuffix :: Char -> Bool
+isIntSuffix c = elem c "uUlL"
 
 lexQuoted :: Char -> (String -> TokenKind) -> LexState -> Either LexError (Token, LexState)
 lexQuoted quote mkKind st = go (advance quote st { lsInput = drop 1 (lsInput st) }) [quote] where
