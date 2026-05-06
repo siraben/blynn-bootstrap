@@ -5,6 +5,7 @@ import System.Exit (exitFailure, exitSuccess)
 import System.IO (hPutStrLn, stderr)
 
 import Hcc.Lexer
+import Hcc.Parser
 import Hcc.Preprocessor
 import Hcc.Token
 
@@ -16,10 +17,11 @@ main = do
     ["--help"] -> usage >> exitSuccess
     "--lex-dump":files -> lexDump files
     "--pp-dump":files -> ppDump files
-    _ -> die "hcc: only --lex-dump is implemented"
+    "--parse-dump":files -> parseDump files
+    _ -> die "hcc: only --lex-dump, --pp-dump, and --parse-dump are implemented"
 
 usage :: IO ()
-usage = putStrLn "usage: hcc --lex-dump FILE...\n       hcc --pp-dump FILE..."
+usage = putStrLn "usage: hcc --lex-dump FILE...\n       hcc --pp-dump FILE...\n       hcc --parse-dump FILE..."
 
 die :: String -> IO ()
 die msg = hPutStrLn stderr msg >> exitFailure
@@ -57,6 +59,23 @@ mapPreprocessError :: Either PreprocessError a -> Either String a
 mapPreprocessError result = case result of
   Left (PreprocessError pos msg) -> Left (showPos pos ++ ": " ++ msg)
   Right toks -> Right toks
+
+parseDump :: [String] -> IO ()
+parseDump files = case files of
+  [] -> die "hcc: no input files"
+  _ -> mapM_ parseDumpFile files
+
+parseDumpFile :: String -> IO ()
+parseDumpFile path = do
+  source <- if path == "-" then getContents else readFile path
+  case preprocessSource source >>= mapParseError . parseProgram of
+    Left msg -> die (path ++ ":" ++ msg)
+    Right ast -> print ast
+
+mapParseError :: Either ParseError a -> Either String a
+mapParseError result = case result of
+  Left (ParseError pos msg) -> Left (showPos pos ++ ": " ++ msg)
+  Right ast -> Right ast
 
 showPos :: SrcPos -> String
 showPos (SrcPos line col) = show line ++ ":" ++ show col
