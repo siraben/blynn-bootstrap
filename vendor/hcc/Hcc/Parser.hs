@@ -37,7 +37,17 @@ parseProgram toks = case runParser program toks of
   Right (_, tok:_) -> Left (parseErrorAt tok "trailing tokens")
 
 program :: Parser Program
-program = Program <$> manyP topDecl
+program = Program <$> topDecls
+
+topDecls :: Parser [TopDecl]
+topDecls = do
+  mtok <- peekMaybe
+  case mtok of
+    Nothing -> pure []
+    Just _ -> do
+      decl <- topDecl
+      rest <- topDecls
+      pure (decl:rest)
 
 topDecl :: Parser TopDecl
 topDecl = do
@@ -81,6 +91,7 @@ stmt = do
     TokIdent "if" -> advanceToken >> parseIf
     TokIdent "while" -> advanceToken >> parseWhile
     TokIdent "do" -> advanceToken >> parseDoWhile
+    TokIdent "for" -> advanceToken >> parseFor
     TokPunct "{" -> SBlock <$> compound
     _ | startsType tok -> parseDeclStmt
     _ -> do
@@ -125,6 +136,25 @@ parseDoWhile = do
   needPunct ")"
   needPunct ";"
   pure (SDoWhile body cond)
+
+parseFor :: Parser Stmt
+parseFor = do
+  needPunct "("
+  initExpr <- optionalExprUntil ";"
+  cond <- optionalExprUntil ";"
+  stepExpr <- optionalExprUntil ")"
+  body <- stmtAsBlock
+  pure (SFor initExpr cond stepExpr body)
+
+optionalExprUntil :: String -> Parser (Maybe Expr)
+optionalExprUntil punct = do
+  done <- eatPunct punct
+  if done
+    then pure Nothing
+    else do
+      e <- expr
+      needPunct punct
+      pure (Just e)
 
 stmtAsBlock :: Parser [Stmt]
 stmtAsBlock = do

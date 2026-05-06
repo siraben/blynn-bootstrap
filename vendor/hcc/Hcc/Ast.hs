@@ -28,6 +28,7 @@ data Stmt
   | SIf Expr [Stmt] [Stmt]
   | SWhile Expr [Stmt]
   | SDoWhile [Stmt] Expr
+  | SFor (Maybe Expr) (Maybe Expr) (Maybe Expr) [Stmt]
   | SBlock [Stmt]
   deriving (Eq, Show)
 
