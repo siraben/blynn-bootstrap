@@ -1,0 +1,10 @@
+vm
+raw
+generated/
+bin/
+
+# GHC compilation artifacts
+*.o
+*.dyn*
+*.hi
+*/dist-newstyle/*
