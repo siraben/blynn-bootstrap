@@ -79,6 +79,9 @@ stdenv.mkDerivation {
   checkPhase = ''
     runHook preCheck
     ./tcc -version
+    printf '%s\n' 'int main(){return 13;}' > smoke.c
+    ./tcc -c smoke.c -o smoke.o
+    test -s smoke.o
     runHook postCheck
   '';
 
