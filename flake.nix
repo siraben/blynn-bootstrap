@@ -31,9 +31,15 @@
         tinycc-boot-hcc = pkgs.callPackage ./nix/tinycc-boot-hcc.nix {
           hcc = hcc-ghc;
         };
+
+        hcc-m1-smoke = pkgs.callPackage ./nix/hcc-m1-smoke.nix {
+          hcc = hcc-ghc;
+          inherit minimalBootstrap;
+          m2libc = ./vendor/blynn-compiler/M2libc;
+        };
       in {
         packages = {
-          inherit blynn-compiler blynn-precisely hcc-ghc tinycc-boot-hcc;
+          inherit blynn-compiler blynn-precisely hcc-ghc hcc-m1-smoke tinycc-boot-hcc;
           default = blynn-precisely;
         };
 

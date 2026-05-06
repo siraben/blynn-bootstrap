@@ -7,6 +7,7 @@ import System.Exit (exitFailure, exitSuccess)
 import System.IO (hPutStrLn, stderr)
 import System.Process (callProcess)
 
+import Hcc.CodegenM1
 import Hcc.Lexer
 import Hcc.Parser
 import Hcc.Preprocessor
@@ -22,10 +23,11 @@ main = do
     "--pp-dump":files -> ppDump files
     "--parse-dump":files -> parseDump files
     "--check":files -> checkFiles files
+    _ | "-S" `elem` args -> compileAssembly args
     _ -> compileWithCc args
 
 usage :: IO ()
-usage = putStrLn "usage: hcc [CC-ARGS...]\n       hcc --check FILE...\n       hcc --lex-dump FILE...\n       hcc --pp-dump FILE...\n       hcc --parse-dump FILE..."
+usage = putStrLn "usage: hcc [CC-ARGS...]\n       hcc -S [-o FILE] INPUT.c\n       hcc --check FILE...\n       hcc --lex-dump FILE...\n       hcc --pp-dump FILE...\n       hcc --parse-dump FILE..."
 
 die :: String -> IO ()
 die msg = hPutStrLn stderr msg >> exitFailure
@@ -97,6 +99,39 @@ compileWithCc :: [String] -> IO ()
 compileWithCc args = do
   cc <- resolveCc
   callProcess cc args
+
+compileAssembly :: [String] -> IO ()
+compileAssembly args = do
+  case assemblyArgs args of
+    Left msg -> die msg
+    Right (input, output) -> do
+      source <- readFile input
+      case preprocessSource source >>= mapParseError . parseProgram >>= mapCodegenError . codegenM1 of
+        Left msg -> die (input ++ ":" ++ msg)
+        Right asm -> writeFile output asm
+
+assemblyArgs :: [String] -> Either String (FilePath, FilePath)
+assemblyArgs args = go args Nothing Nothing where
+  go rest out input = case rest of
+    [] -> case input of
+      Nothing -> Left "hcc: no input files"
+      Just path -> Right (path, maybe (replaceExt path ".M1") id out)
+    "-S":xs -> go xs out input
+    "-o":path:xs -> go xs (Just path) input
+    flag:_ | take 1 flag == "-" -> Left ("hcc: unsupported -S option: " ++ flag)
+    path:xs -> go xs out (Just path)
+
+replaceExt :: FilePath -> String -> FilePath
+replaceExt path ext = reverse (dropExt (reverse path)) ++ ext where
+  dropExt xs = case xs of
+    [] -> []
+    '.':_ -> []
+    c:rest -> c : dropExt rest
+
+mapCodegenError :: Either CodegenError a -> Either String a
+mapCodegenError result = case result of
+  Left (CodegenError msg) -> Left msg
+  Right x -> Right x
 
 resolveCc :: IO FilePath
 resolveCc = do
