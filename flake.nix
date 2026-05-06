@@ -32,6 +32,9 @@
           packages = [
             minimalBootstrap.stage0-posix.mescc-tools
             pkgs.coreutils
+            (pkgs.haskellPackages.ghcWithPackages (hpkgs: [
+              hpkgs.raw-strings-qq
+            ]))
           ];
           shellHook = ''
             echo "blynn-bootstrap dev shell — sources are in ./vendor/blynn-compiler"
