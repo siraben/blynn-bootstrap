@@ -1,0 +1,22 @@
+diff --git a/inn/TyperPrecisely.hs b/inn/TyperPrecisely.hs
+index 9e1d53a..a99dc55 100644
+--- a/inn/TyperPrecisely.hs
++++ b/inn/TyperPrecisely.hs
+@@ -482,5 +482,6 @@ prims = let
+   wordy = foldr arr (TAp (TAp (TC ",") (TC "Word")) (TC "Word")) [TC "Word", TC "Word", TC "Word", TC "Word"]
+   bin s = A (ro "Q") (ro s)
++  debugTrap msg = A (V "primitiveError") (E $ Lit (TAp (TC "[]") (TC "Char"), msg))
+   in map (second (first $ Qual [])) $
+     [ ("doubleFromInt", (arr (TC "Int") (TC "Double"), A (ro "T") (ro "FLO")))
+     , ("intFromDouble", (arr (TC "Double") (TC "Int"), A (ro "T") (ro "OLF")))
+@@ -516,8 +517,8 @@ prims = let
+       A (A (ro "R") (ro "WRITEREF")) (ro "B")))
+     , ("exitSuccess", (TAp (TC "IO") (TV "a"), ro "END"))
+     , ("unsafePerformIO", (arr (TAp (TC "IO") (TV "a")) (TV "a"), A (A (ro "C") (A (ro "T") (ro "END"))) (ro "K")))
+-    , ("fail#", (TV "a", A (V "unsafePerformIO") (V "exitSuccess")))
+-    , ("join#", (TV "a", A (V "unsafePerformIO") (V "exitSuccess")))
++    , ("fail#", (TV "a", debugTrap "blynn-debug: fail#"))
++    , ("join#", (TV "a", debugTrap "blynn-debug: join#"))
+     , ("normalizeInt", (arr (TC "Int") (arr (TV "a") (TV "a")), A (A (ro "C") (ro "B")) (ro "K")))
+     , ("wordFromUU", (arr (TC "Word64") (TC "Word"), A (ro "T") (ro "UULO")))
+     , ("uuPad", (arr (TC "Word") (TC "Word64"), A (ro "T") (ro "UUPAD")))

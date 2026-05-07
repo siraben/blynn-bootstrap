@@ -23,32 +23,46 @@
           src = ./vendor/blynn-compiler/upstream;
         };
 
-        blynn-precisely-stdenv = pkgs.stdenv.mkDerivation {
-          pname = "blynn-precisely-stdenv";
+        preciselyStdenv = pname: precisely: shareName: description:
+        pkgs.stdenv.mkDerivation {
+          inherit pname;
           version = "0-unstable-2026-05-06";
 
           dontUnpack = true;
 
           buildPhase = ''
             runHook preBuild
-            $CC -O2 ${blynn-precisely}/share/blynn-precisely/precisely_up.c -o precisely_up
+            $CC -O2 ${precisely}/share/blynn-precisely/precisely_up.c -o precisely_up
             runHook postBuild
           '';
 
           installPhase = ''
             runHook preInstall
             install -Dm755 precisely_up $out/bin/precisely_up
-            install -Dm644 ${blynn-precisely}/share/blynn-precisely/precisely_up.c \
-              $out/share/blynn-precisely-stdenv/precisely_up.c
+            install -Dm644 ${precisely}/share/blynn-precisely/precisely_up.c \
+              $out/share/${shareName}/precisely_up.c
             runHook postInstall
           '';
 
           meta = with pkgs.lib; {
-            description = "Upstream Blynn precisely binary compiled with the normal stdenv C toolchain";
+            inherit description;
             homepage = "https://github.com/blynn/compiler";
             license = licenses.gpl3Only;
             platforms = platforms.linux;
           };
+        };
+
+        blynn-precisely-stdenv = preciselyStdenv
+          "blynn-precisely-stdenv"
+          blynn-precisely
+          "blynn-precisely-stdenv"
+          "Upstream Blynn precisely binary compiled with the normal stdenv C toolchain";
+
+        blynn-precisely-debug-ghc = pkgs.callPackage ./nix/blynn-precisely-debug-ghc.nix {
+          ghc = pkgs.haskellPackages.ghcWithPackages (hpkgs: [
+            hpkgs.raw-strings-qq
+          ]);
+          src = ./vendor/blynn-compiler/upstream;
         };
 
         hcc-ghc = pkgs.callPackage ./nix/hcc-ghc.nix {
@@ -77,13 +91,18 @@
         };
       in {
         packages = {
-          inherit blynn-compiler blynn-precisely blynn-precisely-stdenv hcc-ghc hcc-m1-smoke hcc-mescc-tests tinycc-boot-hcc;
+          inherit blynn-compiler blynn-precisely blynn-precisely-stdenv blynn-precisely-debug-ghc hcc-ghc hcc-m1-smoke hcc-mescc-tests tinycc-boot-hcc;
           default = blynn-precisely;
         };
 
         apps.blynn-precisely-stdenv = {
           type = "app";
           program = "${blynn-precisely-stdenv}/bin/precisely_up";
+        };
+
+        apps.blynn-precisely-debug-ghc = {
+          type = "app";
+          program = "${blynn-precisely-debug-ghc}/bin/precisely_up";
         };
 
         devShells.default = pkgs.mkShell {
