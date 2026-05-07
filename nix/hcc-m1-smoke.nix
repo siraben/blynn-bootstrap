@@ -19,28 +19,47 @@ stdenvNoCC.mkDerivation {
 
   buildPhase = ''
     runHook preBuild
+
+    assemble_and_run() {
+      name="$1"
+      expected="$2"
+
+      hcc -S -o "$name.M1" "$name.c"
+      M1 --architecture amd64 --little-endian \
+        -f ${m2libc}/amd64/amd64_defs.M1 \
+        -f ${m2libc}/amd64/libc-core.M1 \
+        -f "$name.M1" \
+        --output "$name.hex2"
+      printf ':ELF_end\n' > "$name-end.hex2"
+      hex2 --architecture amd64 --little-endian --base-address 0x00600000 \
+        --file ${m2libc}/amd64/ELF-amd64.hex2 \
+        --file "$name.hex2" \
+        --file "$name-end.hex2" \
+        --output "$name"
+      chmod +x "$name"
+      set +e
+      "./$name"
+      code=$?
+      set -e
+      test "$code" = "$expected"
+    }
+
     cat > ret13.c <<'EOF'
     int main(){return 13;}
     EOF
 
-    hcc -S -o ret13.M1 ret13.c
-    M1 --architecture amd64 --little-endian \
-      -f ${m2libc}/amd64/amd64_defs.M1 \
-      -f ${m2libc}/amd64/libc-core.M1 \
-      -f ret13.M1 \
-      --output ret13.hex2
-    printf ':ELF_end\n' > end.hex2
-    hex2 --architecture amd64 --little-endian --base-address 0x00600000 \
-      --file ${m2libc}/amd64/ELF-amd64.hex2 \
-      --file ret13.hex2 \
-      --file end.hex2 \
-      --output ret13
-    chmod +x ret13
-    set +e
-    ./ret13
-    code=$?
-    set -e
-    test "$code" = 13
+    cat > short-circuit.c <<'EOF'
+    int boom(int *p){return *p;}
+    int main(){
+      int *p = 0;
+      if (0 && boom(p)) return 1;
+      if ((0 && boom(p)) || (1 && 42)) return 42;
+      return 2;
+    }
+    EOF
+
+    assemble_and_run ret13 13
+    assemble_and_run short-circuit 42
     runHook postBuild
   '';
 
@@ -48,7 +67,7 @@ stdenvNoCC.mkDerivation {
     runHook preInstall
     mkdir -p $out/bin $out/share/hcc-m1-smoke
     cp ret13 $out/bin/
-    cp ret13.c ret13.M1 ret13.hex2 $out/share/hcc-m1-smoke/
+    cp *.c *.M1 *.hex2 $out/share/hcc-m1-smoke/
     runHook postInstall
   '';
 

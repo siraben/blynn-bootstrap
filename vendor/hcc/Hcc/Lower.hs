@@ -534,7 +534,8 @@ lowerDecl ty name initExpr = do
         pure [IConst temp 0]
       Just expr -> do
         (exprInstrs, op) <- lowerExpr expr
-        pure (exprInstrs ++ [ICopy temp op])
+        (coerceInstrs, coerceOp) <- coerceScalar ty op
+        pure (exprInstrs ++ coerceInstrs ++ [ICopy temp coerceOp])
 
 localStaticData :: CType -> Maybe Expr -> CompileM (Maybe String)
 localStaticData ty initExpr = case (ty, initExpr) of
@@ -662,8 +663,8 @@ lowerExpr expr = case expr of
     lowerIncDec True ISub target
   ECast CUnsignedChar x -> do
     (a, op) <- lowerExpr x
-    out <- freshTemp
-    pure (a ++ [IBin out IAnd op (OImm 255)], OTemp out)
+    (coerceInstrs, coerceOp) <- coerceScalar CUnsignedChar op
+    pure (a ++ coerceInstrs, coerceOp)
   ECast _ x -> lowerExpr x
   ESizeofType ty -> do
     size <- typeSize ty
@@ -684,16 +685,16 @@ lowerExpr expr = case expr of
     ai <- lowerSideEffect a
     (bi, bo) <- lowerExpr b
     pure (ai ++ bi, bo)
+  EBinary "&&" a b ->
+    lowerLogicalAnd a b
+  EBinary "||" a b ->
+    lowerLogicalOr a b
   EBinary "+" a b ->
     lowerAddExpr a b
   EBinary "-" a b ->
     lowerSubExpr a b
-  EBinary ">>" a b -> do
-    (ai, ao) <- lowerExpr a
-    (bi, bo) <- lowerExpr b
-    out <- freshTemp
-    op <- shiftRightOp a
-    pure (ai ++ bi ++ [IBin out op ao bo], OTemp out)
+  EBinary ">>" a b ->
+    lowerShiftExpr ">>" a b
   EBinary op a b | op `elem` ["<", "<=", ">", ">="] -> do
     (ai, ao) <- lowerExpr a
     (bi, bo) <- lowerExpr b
@@ -701,10 +702,9 @@ lowerExpr expr = case expr of
     iop <- comparisonOp op a b
     pure (ai ++ bi ++ [IBin out iop ao bo], OTemp out)
   EBinary op a b | Just iop <- lowerBinOp op -> do
-    (ai, ao) <- lowerExpr a
-    (bi, bo) <- lowerExpr b
-    out <- freshTemp
-    pure (ai ++ bi ++ [IBin out iop ao bo], OTemp out)
+    if op == "<<"
+      then lowerShiftExpr op a b
+      else lowerPlainBin iop a b
   EIndex{} ->
     readLValueExpr expr
   EPtrMember{} ->
@@ -748,6 +748,39 @@ lowerIndirectCall callee args = do
   let ops = map snd lowered
   pure (calleeInstrs ++ instrs ++ [ICallIndirect (Just out) calleeOp ops], OTemp out)
 
+lowerLogicalAnd :: Expr -> Expr -> CompileM ([Instr], Operand)
+lowerLogicalAnd left right = do
+  (leftInstrs, leftOp) <- lowerExpr left
+  (rightInstrs, rightBool) <- lowerTruthExpr right
+  out <- freshTemp
+  pure ([ICond out leftInstrs leftOp rightInstrs rightBool [] (OImm 0)], OTemp out)
+
+lowerLogicalOr :: Expr -> Expr -> CompileM ([Instr], Operand)
+lowerLogicalOr left right = do
+  (leftInstrs, leftOp) <- lowerExpr left
+  (rightInstrs, rightBool) <- lowerTruthExpr right
+  out <- freshTemp
+  pure ([ICond out leftInstrs leftOp [] (OImm 1) rightInstrs rightBool], OTemp out)
+
+lowerTruthExpr :: Expr -> CompileM ([Instr], Operand)
+lowerTruthExpr expr = do
+  (instrs, op) <- lowerExpr expr
+  out <- freshTemp
+  pure (instrs ++ [IBin out INe op (OImm 0)], OTemp out)
+
+lowerShiftExpr :: String -> Expr -> Expr -> CompileM ([Instr], Operand)
+lowerShiftExpr op left right = do
+  (leftInstrs, leftOp) <- lowerExpr left
+  (rightInstrs, rightOp) <- lowerExpr right
+  out <- freshTemp
+  iop <- case op of
+    ">>" -> shiftRightOp left
+    "<<" -> pure IShl
+    _ -> pure IShl
+  resultTy <- exprType (EBinary op left right)
+  (coerceInstrs, coerceOp) <- coerceMaybeScalar resultTy (OTemp out)
+  pure (leftInstrs ++ rightInstrs ++ [IBin out iop leftOp rightOp] ++ coerceInstrs, coerceOp)
+
 lowerAddExpr :: Expr -> Expr -> CompileM ([Instr], Operand)
 lowerAddExpr a b = do
   aty <- exprType a
@@ -785,8 +818,29 @@ lowerPlainBin :: BinOp -> Expr -> Expr -> CompileM ([Instr], Operand)
 lowerPlainBin op a b = do
   (ai, ao) <- lowerExpr a
   (bi, bo) <- lowerExpr b
+  commonTy <- usualArithmeticType a b
+  (acoerceInstrs, acoerceOp) <- coerceScalar commonTy ao
+  (bcoerceInstrs, bcoerceOp) <- coerceScalar commonTy bo
   out <- freshTemp
-  pure (ai ++ bi ++ [IBin out op ao bo], OTemp out)
+  let resultTy = if isComparisonBinOp op then CInt else commonTy
+  (coerceInstrs, coerceOp) <- coerceScalar resultTy (OTemp out)
+  pure ( ai ++ bi ++ acoerceInstrs ++ bcoerceInstrs ++
+         [IBin out op acoerceOp bcoerceOp] ++ coerceInstrs
+       , coerceOp)
+
+isComparisonBinOp :: BinOp -> Bool
+isComparisonBinOp op = case op of
+  IEq -> True
+  INe -> True
+  ILt -> True
+  ILe -> True
+  IGt -> True
+  IGe -> True
+  IULt -> True
+  IULe -> True
+  IUGt -> True
+  IUGe -> True
+  _ -> False
 
 pointerElementType :: Maybe CType -> Maybe CType
 pointerElementType mty = case mty of
@@ -798,8 +852,10 @@ lowerAssignment :: Expr -> Expr -> CompileM ([Instr], Operand)
 lowerAssignment lhs rhs = do
   (lhsInstrs, lvalue) <- lowerLValue lhs
   (rhsInstrs, rhsOp) <- lowerExpr rhs
-  writeInstrs <- writeLValue lvalue rhsOp
-  pure (lhsInstrs ++ rhsInstrs ++ writeInstrs, rhsOp)
+  targetTy <- lValueType lvalue
+  (coerceInstrs, coerceOp) <- coerceScalar targetTy rhsOp
+  writeInstrs <- writeLValue lvalue coerceOp
+  pure (lhsInstrs ++ rhsInstrs ++ coerceInstrs ++ writeInstrs, coerceOp)
 
 lowerIncDec :: Bool -> BinOp -> Expr -> CompileM ([Instr], Operand)
 lowerIncDec prefix op target = do
@@ -854,6 +910,49 @@ writeLValue lvalue value = case lvalue of
       else do
         store <- storeInstr ty addr value
         pure [store]
+
+lValueType :: LValue -> CompileM CType
+lValueType lvalue = case lvalue of
+  LLocal _ ty -> pure ty
+  LAddress _ ty -> pure ty
+
+coerceMaybeScalar :: Maybe CType -> Operand -> CompileM ([Instr], Operand)
+coerceMaybeScalar mty op = case mty of
+  Just ty -> coerceScalar ty op
+  Nothing -> pure ([], op)
+
+coerceScalar :: CType -> Operand -> CompileM ([Instr], Operand)
+coerceScalar ty op = do
+  integer <- isIntegerTypeM ty
+  if not integer
+    then pure ([], op)
+    else do
+      size <- typeSize ty
+      if size >= 8
+        then pure ([], op)
+        else if isSignedIntegerType ty
+          then signExtendScalar size op
+          else maskScalar size op
+
+maskScalar :: Int -> Operand -> CompileM ([Instr], Operand)
+maskScalar size op = do
+  out <- freshTemp
+  pure ([IBin out IAnd op (OImm (byteMask size))], OTemp out)
+
+signExtendScalar :: Int -> Operand -> CompileM ([Instr], Operand)
+signExtendScalar size op = do
+  masked <- freshTemp
+  flipped <- freshTemp
+  out <- freshTemp
+  let signBit = pow2 (size * 8 - 1)
+  pure ( [ IBin masked IAnd op (OImm (byteMask size))
+         , IBin flipped IXor (OTemp masked) (OImm signBit)
+         , IBin out ISub (OTemp flipped) (OImm signBit)
+         ]
+       , OTemp out)
+
+byteMask :: Int -> Int
+byteMask size = pow2 (size * 8) - 1
 
 copyObject :: Operand -> Operand -> CType -> CompileM [Instr]
 copyObject dst src ty = do
@@ -983,6 +1082,16 @@ exprType expr = case expr of
       Just ty -> pure (Just ty)
       Nothing -> lookupGlobalType name
   ECast ty _ -> pure (Just ty)
+  EUnary "+" value -> do
+    mty <- exprType value
+    maybe (pure Nothing) (fmap Just . promoteIntegerType) mty
+  EUnary "-" value -> do
+    mty <- exprType value
+    maybe (pure Nothing) (fmap Just . promoteIntegerType) mty
+  EUnary "~" value -> do
+    mty <- exprType value
+    maybe (pure Nothing) (fmap Just . promoteIntegerType) mty
+  EUnary "!" _ -> pure (Just CInt)
   EUnary "*" value -> do
     mty <- exprType value
     pure (case mty of
@@ -1008,18 +1117,28 @@ exprType expr = case expr of
   EBinary "+" left right -> do
     leftTy <- exprType left
     rightTy <- exprType right
+    arithmeticTy <- usualArithmeticType left right
     pure (case (pointerElementType leftTy, pointerElementType rightTy) of
       (Just{}, _) -> leftTy
       (_, Just{}) -> rightTy
-      _ -> Just CLong)
+      _ -> Just arithmeticTy)
   EBinary "-" left right -> do
     leftTy <- exprType left
     rightTy <- exprType right
+    arithmeticTy <- usualArithmeticType left right
     pure (case (pointerElementType leftTy, pointerElementType rightTy) of
       (Just{}, Just{}) -> Just CLong
       (Just{}, Nothing) -> leftTy
-      _ -> Just CLong)
+      _ -> Just arithmeticTy)
+  EBinary "<<" left _ -> do
+    leftTy <- exprType left
+    maybe (pure Nothing) (fmap Just . promoteIntegerType) leftTy
+  EBinary ">>" left _ -> do
+    leftTy <- exprType left
+    maybe (pure Nothing) (fmap Just . promoteIntegerType) leftTy
   EBinary "," _ right -> exprType right
+  EBinary "&&" _ _ -> pure (Just CInt)
+  EBinary "||" _ _ -> pure (Just CInt)
   EAssign lhs _ -> exprType lhs
   EPostfix _ value -> exprType value
   EUnary "++" value -> exprType value
@@ -1123,6 +1242,47 @@ isSignedNamedInteger :: String -> Bool
 isSignedNamedInteger name
   | name `elem` signedNamedIntegerTypes = True
   | otherwise = False
+
+isIntegerTypeM :: CType -> CompileM Bool
+isIntegerTypeM ty = case ty of
+  CChar -> pure True
+  CUnsignedChar -> pure True
+  CInt -> pure True
+  CUnsigned -> pure True
+  CLong -> pure True
+  CEnum{} -> pure True
+  CNamed name -> pure (maybe False (const True) (namedIntegerSize name))
+  _ -> pure False
+
+promoteIntegerType :: CType -> CompileM CType
+promoteIntegerType ty = do
+  integer <- isIntegerTypeM ty
+  if not integer
+    then pure ty
+    else do
+      size <- typeSize ty
+      pure (if size < 4 then CInt else ty)
+
+usualArithmeticType :: Expr -> Expr -> CompileM CType
+usualArithmeticType left right = do
+  leftTy <- promotedExprType left
+  rightTy <- promotedExprType right
+  leftSize <- typeSize leftTy
+  rightSize <- typeSize rightTy
+  let size = max leftSize rightSize
+  let unsigned = isUnsignedType leftTy || isUnsignedType rightTy
+  pure (case (size >= 8, unsigned) of
+    (True, True) -> CNamed "unsigned_long"
+    (True, False) -> CLong
+    (False, True) -> CUnsigned
+    (False, False) -> CInt)
+
+promotedExprType :: Expr -> CompileM CType
+promotedExprType expr = case expr of
+  EInt text | intLiteralIsUnsigned text -> pure CUnsigned
+  _ -> do
+    mty <- exprType expr
+    promoteIntegerType (maybe CLong id mty)
 
 storeInstr :: CType -> Operand -> Operand -> CompileM Instr
 storeInstr ty addr value = do
@@ -1485,16 +1645,14 @@ lowerBinOp op = case op of
 
 shiftRightOp :: Expr -> CompileM BinOp
 shiftRightOp expr = do
-  mty <- exprType expr
-  pure (case mty of
-    Just ty | isUnsignedType ty -> IShr
-    _ -> ISar)
+  ty <- promotedExprType expr
+  pure (if isUnsignedType ty then IShr else ISar)
 
 comparisonOp :: String -> Expr -> Expr -> CompileM BinOp
 comparisonOp op a b = do
-  au <- exprIsUnsigned a
-  bu <- exprIsUnsigned b
-  pure (case (au || bu, op) of
+  commonTy <- usualArithmeticType a b
+  let unsigned = isUnsignedType commonTy
+  pure (case (unsigned, op) of
     (False, "<") -> ILt
     (False, "<=") -> ILe
     (False, ">") -> IGt
@@ -1504,13 +1662,6 @@ comparisonOp op a b = do
     (True, ">") -> IUGt
     (True, ">=") -> IUGe
     _ -> IEq)
-
-exprIsUnsigned :: Expr -> CompileM Bool
-exprIsUnsigned expr = case expr of
-  EInt text -> pure (intLiteralIsUnsigned text)
-  _ -> do
-    mty <- exprType expr
-    pure (maybe False isUnsignedType mty)
 
 isUnsignedType :: CType -> Bool
 isUnsignedType ty = case ty of
