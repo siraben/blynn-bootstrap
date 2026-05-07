@@ -74,7 +74,9 @@ codegenInstrs alloc instrs = case instrs of
 
 codegenInstr :: Allocation -> Instr -> Either CodegenError [String]
 codegenInstr alloc instr = case instr of
-  IParam{} -> pure []
+  IParam temp index -> do
+    code <- loadParam index
+    storeTemp alloc temp code
   IConst temp value ->
     storeTemp alloc temp ["\tLOAD_IMMEDIATE_rax %" ++ show value]
   ICopy temp op -> do
@@ -121,6 +123,13 @@ argumentMove index = case index of
   1 -> Right ["\tHCC_COPY_rax_to_rsi"]
   2 -> Right ["\tHCC_COPY_rax_to_rdx"]
   _ -> Left (CodegenError ("unsupported call argument index: " ++ show index))
+
+loadParam :: Int -> Either CodegenError [String]
+loadParam index = case index of
+  0 -> Right ["\tPUSH_RDI", "\tPOP_RAX"]
+  1 -> Right ["\tHCC_COPY_rsi_to_rax"]
+  2 -> Right ["\tHCC_COPY_rdx_to_rax"]
+  _ -> Left (CodegenError ("unsupported parameter index: " ++ show index))
 
 binOpCode :: BinOp -> Either CodegenError [String]
 binOpCode op = case op of

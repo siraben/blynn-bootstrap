@@ -111,7 +111,7 @@ lowerUnreachableLabels stmts defaultTerm = case stmts of
 
 lowerSideEffect :: Expr -> CompileM [Instr]
 lowerSideEffect expr = case expr of
-  ECall (EVar "asm") _ ->
+  ECall (EVar name) _ | name `elem` ignoredSideEffectCalls ->
     pure []
   ECall (EVar name) args -> do
     lowered <- lowerExprs args
@@ -133,6 +133,9 @@ lowerSideEffect expr = case expr of
   _ -> do
     (instrs, _) <- lowerExpr expr
     pure instrs
+
+ignoredSideEffectCalls :: [String]
+ignoredSideEffectCalls = ["asm", "oputs", "eputs"]
 
 lowerExpr :: Expr -> CompileM ([Instr], Operand)
 lowerExpr expr = case expr of

@@ -45,9 +45,8 @@ allocateInstrs :: Int -> [(Temp, Location)] -> [Instr] -> Either String [(Temp, 
 allocateInstrs nextSlot acc instrs = case instrs of
   [] -> Right (reverse acc)
   instr:rest -> case instr of
-    IParam temp index -> do
-      loc <- paramLocation index
-      allocateInstrs nextSlot ((temp, loc):acc) rest
+    IParam temp _ ->
+      allocateDef nextSlot acc temp rest
     IConst temp _ ->
       allocateDef nextSlot acc temp rest
     ICopy temp _ ->
@@ -66,13 +65,6 @@ allocateDef nextSlot acc temp rest =
   if temp `elem` map fst acc
   then allocateInstrs nextSlot acc rest
   else allocateInstrs (nextSlot + 1) ((temp, OnStack nextSlot):acc) rest
-
-paramLocation :: Int -> Either String Location
-paramLocation index = case index of
-  0 -> Right (InReg Rdi)
-  1 -> Right (InReg Rsi)
-  2 -> Right (InReg Rdx)
-  _ -> Left ("unsupported parameter index: " ++ show index)
 
 blockInstrs :: BasicBlock -> [Instr]
 blockInstrs (BasicBlock _ instrs _) = instrs
