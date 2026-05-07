@@ -79,6 +79,7 @@ stdenvNoCC.mkDerivation {
     assemble_and_run 17-compare-assign 0
     assemble_and_run 17-compare-call 0
     assemble_and_run 17-compare-rotated 0
+    assemble_and_run 18-assign-shadow 0
     assemble_and_run 20-while 0
     assemble_and_run 21-char-array-simple 0
     assemble_and_run 21-char-array 0

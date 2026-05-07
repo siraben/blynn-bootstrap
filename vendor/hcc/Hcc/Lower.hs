@@ -49,8 +49,11 @@ lowerStatementsFrom bid instrs stmts defaultTerm = case stmts of
       (retInstrs, op) <- lowerExpr expr
       tailBlocks <- lowerUnreachableLabels rest defaultTerm
       pure (BasicBlock bid (instrs ++ retInstrs) (TRet (Just op)) : tailBlocks)
-  SBlock body:rest ->
-    lowerStatementsFrom bid instrs (body ++ rest) defaultTerm
+  SBlock body:rest -> do
+    restId <- freshBlock
+    bodyBlocks <- withVarScope (lowerStatementsFrom bid instrs body (TJump restId))
+    restBlocks <- lowerStatementsFrom restId [] rest defaultTerm
+    pure (bodyBlocks ++ restBlocks)
   SDecl _ name initExpr:rest -> do
     (declInstrs, temp) <- case initExpr of
       Nothing -> do

@@ -14,6 +14,7 @@ module Hcc.CompileM
   , runCompileM
   , throwC
   , withFunctionScope
+  , withVarScope
   ) where
 
 import Hcc.Ir
@@ -112,6 +113,12 @@ withFunctionScope action = CompileM $ \st ->
   case unCompileM action st { csVars = [], csLabels = [] } of
     Left err -> Left err
     Right (x, st') -> Right (x, st' { csVars = csVars st, csLabels = csLabels st })
+
+withVarScope :: CompileM a -> CompileM a
+withVarScope action = CompileM $ \st ->
+  case unCompileM action st of
+    Left err -> Left err
+    Right (x, st') -> Right (x, st' { csVars = csVars st })
 
 labelBlock :: String -> CompileM BlockId
 labelBlock name = CompileM $ \st -> case lookup name (csLabels st) of
