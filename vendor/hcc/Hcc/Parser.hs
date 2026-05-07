@@ -808,8 +808,11 @@ parseSizeof = do
 
 sizeofParen :: Parser Expr
 sizeofParen = Parser $ \env toks ->
-  case forceConsumed (runParser (typeName <* needPunct ")") env toks) of
-    Ok ty rest | not (postfixContinues rest) -> Consumed (Ok (ESizeofType ty) rest)
+  case toks of
+    tok:_ | tokenStartsTypeInEnv env tok ->
+      case forceConsumed (runParser (typeName <* needPunct ")") env toks) of
+        Ok ty rest | not (postfixContinues rest) -> Consumed (Ok (ESizeofType ty) rest)
+        _ -> runParser sizeofParenExpr env toks
     _ -> runParser sizeofParenExpr env toks
 
 sizeofParenExpr :: Parser Expr
@@ -923,6 +926,11 @@ tokenStartsType tok = case tokenKind tok of
   TokIdent name | startsType tok -> pure True
                 | otherwise -> isKnownTypeNameP name
   _ -> pure False
+
+tokenStartsTypeInEnv :: Set.Set String -> Token -> Bool
+tokenStartsTypeInEnv env tok = case tokenKind tok of
+  TokIdent name -> startsType tok || Set.member name env
+  _ -> False
 
 isKnownTypeNameP :: String -> Parser Bool
 isKnownTypeNameP name = Parser $ \env toks -> Empty (Ok (Set.member name env) toks)
