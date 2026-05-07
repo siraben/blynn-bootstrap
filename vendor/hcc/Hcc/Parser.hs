@@ -431,7 +431,7 @@ ctype = do
       TokIdent "char" -> advanceToken >> pure CChar
       TokIdent "signed" -> advanceToken >> signedBaseType
       TokIdent "unsigned" -> advanceToken >> unsignedBaseType
-      TokIdent "short" -> advanceToken >> pure CInt
+      TokIdent "short" -> advanceToken >> optionalShortInt
       TokIdent "long" -> advanceToken >> longBaseType
       TokIdent "float" -> advanceToken >> pure CFloat
       TokIdent "double" -> advanceToken >> pure CDouble
@@ -453,33 +453,48 @@ signedBaseType = do
   mtok <- peekMaybe
   case fmap tokenKind mtok of
     Just (TokIdent "char") -> advanceToken >> pure CChar
+    Just (TokIdent "short") -> advanceToken >> optionalShortInt
     Just (TokIdent "int") -> advanceToken >> pure CInt
     _ -> pure CInt
+
+optionalShortInt :: Parser CType
+optionalShortInt = do
+  mtok <- peekMaybe
+  case fmap tokenKind mtok of
+    Just (TokIdent "int") -> advanceToken >> pure (CNamed "signed_short")
+    _ -> pure (CNamed "signed_short")
 
 unsignedBaseType :: Parser CType
 unsignedBaseType = do
   mtok <- peekMaybe
   case fmap tokenKind mtok of
     Just (TokIdent "char") -> advanceToken >> pure CUnsignedChar
-    Just (TokIdent "short") -> advanceToken >> pure CUnsigned
+    Just (TokIdent "short") -> advanceToken >> optionalUnsignedShortInt
     Just (TokIdent "long") -> advanceToken >> unsignedLongTail
     Just (TokIdent "int") -> advanceToken >> pure CUnsigned
     _ -> pure CUnsigned
+
+optionalUnsignedShortInt :: Parser CType
+optionalUnsignedShortInt = do
+  mtok <- peekMaybe
+  case fmap tokenKind mtok of
+    Just (TokIdent "int") -> advanceToken >> pure (CNamed "unsigned_short")
+    _ -> pure (CNamed "unsigned_short")
 
 unsignedLongTail :: Parser CType
 unsignedLongTail = do
   mtok <- peekMaybe
   case fmap tokenKind mtok of
     Just (TokIdent "long") -> advanceToken >> optionalUnsignedLongInt
-    Just (TokIdent "int") -> advanceToken >> pure CUnsigned
-    _ -> pure CUnsigned
+    Just (TokIdent "int") -> advanceToken >> pure (CNamed "unsigned_long")
+    _ -> pure (CNamed "unsigned_long")
 
 optionalUnsignedLongInt :: Parser CType
 optionalUnsignedLongInt = do
   mtok <- peekMaybe
   case fmap tokenKind mtok of
-    Just (TokIdent "int") -> advanceToken >> pure CUnsigned
-    _ -> pure CUnsigned
+    Just (TokIdent "int") -> advanceToken >> pure (CNamed "unsigned_long")
+    _ -> pure (CNamed "unsigned_long")
 
 longBaseType :: Parser CType
 longBaseType = do

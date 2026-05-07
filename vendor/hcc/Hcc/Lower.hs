@@ -623,9 +623,13 @@ lowerExpr expr = case expr of
                 case globalTy of
                   Just CArray{} -> pure ([], OGlobal name)
                   Just ty -> do
-                    out <- freshTemp
-                    load <- loadInstr out ty (OGlobal name)
-                    pure ([load], OTemp out)
+                    aggregateStorage <- isAggregateTypeM ty
+                    if aggregateStorage
+                      then pure ([], OGlobal name)
+                      else do
+                        out <- freshTemp
+                        load <- loadInstr out ty (OGlobal name)
+                        pure ([load], OTemp out)
                   Nothing -> do
                     out <- freshTemp
                     pure ([ILoad64 out (OGlobal name)], OTemp out)
@@ -844,8 +848,12 @@ writeLValue lvalue value = case lvalue of
       then copyObject (OTemp temp) value ty
       else pure [ICopy temp value]
   LAddress addr ty -> do
-    store <- storeInstr ty addr value
-    pure [store]
+    aggregateStorage <- isAggregateTypeM ty
+    if aggregateStorage
+      then copyObject addr value ty
+      else do
+        store <- storeInstr ty addr value
+        pure [store]
 
 copyObject :: Operand -> Operand -> CType -> CompileM [Instr]
 copyObject dst src ty = do
@@ -997,6 +1005,21 @@ exprType expr = case expr of
     baseTy <- exprType base
     info <- memberInfoMaybe (Just (CPtr (maybe CLong id baseTy))) field
     pure (fmap fst info)
+  EBinary "+" left right -> do
+    leftTy <- exprType left
+    rightTy <- exprType right
+    pure (case (pointerElementType leftTy, pointerElementType rightTy) of
+      (Just{}, _) -> leftTy
+      (_, Just{}) -> rightTy
+      _ -> Just CLong)
+  EBinary "-" left right -> do
+    leftTy <- exprType left
+    rightTy <- exprType right
+    pure (case (pointerElementType leftTy, pointerElementType rightTy) of
+      (Just{}, Just{}) -> Just CLong
+      (Just{}, Nothing) -> leftTy
+      _ -> Just CLong)
+  EBinary "," _ right -> exprType right
   EAssign lhs _ -> exprType lhs
   EPostfix _ value -> exprType value
   EUnary "++" value -> exprType value
@@ -1091,14 +1114,14 @@ isSignedIntegerType :: CType -> Bool
 isSignedIntegerType ty = case ty of
   CChar -> True
   CInt -> True
+  CLong -> True
   CEnum{} -> True
   CNamed name -> isSignedNamedInteger name
   _ -> False
 
 isSignedNamedInteger :: String -> Bool
 isSignedNamedInteger name
-  | name `elem` ["int8_t", "int16_t", "int32_t"] = True
-  | name `elem` ["ssize_t", "time_t", "ptrdiff_t", "intptr_t"] = True
+  | name `elem` signedNamedIntegerTypes = True
   | otherwise = False
 
 storeInstr :: CType -> Operand -> Operand -> CompileM Instr
@@ -1135,17 +1158,28 @@ typeSize ty = case ty of
   CNamed name -> namedTypeSize name
 
 namedTypeSize :: String -> CompileM Int
-namedTypeSize name
-  | name `elem` ["int8_t", "uint8_t"] = pure 1
-  | name `elem` ["int16_t", "uint16_t"] = pure 2
-  | name `elem` ["int32_t", "uint32_t"] = pure 4
-  | name `elem` ["int64_t", "uint64_t"] = pure 8
-  | name `elem` ["size_t", "ssize_t", "time_t", "ptrdiff_t", "intptr_t", "uintptr_t", "addr_t"] = pure 8
-  | otherwise = do
+namedTypeSize name = case namedIntegerSize name of
+  Just size -> pure size
+  Nothing -> do
       fields <- lookupStruct name
       case fields of
         Just{} -> structSize name
         Nothing -> pure 8
+
+namedIntegerSize :: String -> Maybe Int
+namedIntegerSize name
+  | name `elem` ["int8_t", "uint8_t"] = Just 1
+  | name `elem` ["signed_short", "unsigned_short", "int16_t", "uint16_t", "Elf32_Half", "Elf64_Half", "Elf32_Section", "Elf64_Section", "Elf32_Versym", "Elf64_Versym"] = Just 2
+  | name `elem` ["int32_t", "uint32_t", "Elf32_Word", "Elf64_Word", "Elf32_Sword", "Elf64_Sword", "Elf32_Addr", "Elf32_Off"] = Just 4
+  | name `elem` ["unsigned_long", "int64_t", "uint64_t", "size_t", "ssize_t", "time_t", "ptrdiff_t", "intptr_t", "uintptr_t", "addr_t", "Elf32_Xword", "Elf32_Sxword", "Elf64_Xword", "Elf64_Sxword", "Elf64_Addr", "Elf64_Off"] = Just 8
+  | otherwise = Nothing
+
+signedNamedIntegerTypes :: [String]
+signedNamedIntegerTypes =
+  [ "signed_short", "int8_t", "int16_t", "int32_t", "int64_t"
+  , "ssize_t", "time_t", "ptrdiff_t", "intptr_t"
+  , "Elf32_Sword", "Elf64_Sword", "Elf32_Sxword", "Elf64_Sxword"
+  ]
 
 typeAlign :: CType -> CompileM Int
 typeAlign ty = do
@@ -1478,11 +1512,9 @@ isUnsignedType ty = case ty of
   CUnsignedChar -> True
   CPtr{} -> True
   CArray{} -> True
-  CNamed name -> name `elem`
-    [ "uint8_t", "uint16_t", "uint32_t", "uint64_t"
-    , "uintptr_t", "size_t", "addr_t", "Elf32_Word", "Elf64_Word"
-    , "Elf32_Addr", "Elf64_Addr", "Elf32_Off", "Elf64_Off"
-    ]
+  CNamed name -> case namedIntegerSize name of
+    Just{} -> not (name `elem` signedNamedIntegerTypes)
+    Nothing -> False
   _ -> False
 
 intLiteralIsUnsigned :: String -> Bool
