@@ -7,7 +7,10 @@ import Hcc.CompileM
 import Hcc.Ir
 
 lowerProgram :: Program -> Either CompileError ModuleIr
-lowerProgram (Program decls) = runCompileM (ModuleIr <$> lowerTopDecls decls)
+lowerProgram (Program decls) = runCompileM $ do
+  fns <- lowerTopDecls decls
+  dataItems <- getDataItems
+  pure (ModuleIr dataItems fns)
 
 lowerTopDecls :: [TopDecl] -> CompileM [FunctionIr]
 lowerTopDecls decls = case decls of
@@ -55,8 +58,8 @@ lowerStatementsFrom bid instrs stmts defaultTerm = case stmts of
         pure ([IConst t 0], t)
       Just expr -> do
         (exprInstrs, op) <- lowerExpr expr
-        t <- materialize op
-        pure (exprInstrs, t)
+        (copyInstrs, t) <- materialize op
+        pure (exprInstrs ++ copyInstrs, t)
     bindVar name temp
     lowerStatementsFrom bid (instrs ++ declInstrs) rest defaultTerm
   SExpr expr:rest -> do
@@ -136,6 +139,10 @@ lowerExpr expr = case expr of
   EChar text -> do
     temp <- freshTemp
     pure ([IConst temp (charValue text)], OTemp temp)
+  EString text -> do
+    label <- freshLabel
+    addDataItem (DataItem label (stringBytes text))
+    pure ([], OGlobal ("HCC_DATA_" ++ label))
   EVar name -> OTemp <$> lookupVar name >>= \op -> pure ([], op)
   EUnary "+" x -> lowerExpr x
   EUnary "-" x -> do
@@ -153,6 +160,12 @@ lowerExpr expr = case expr of
     (bi, bo) <- lowerExpr b
     out <- freshTemp
     pure (ai ++ bi ++ [IBin out iop ao bo], OTemp out)
+  EIndex base ix -> do
+    (baseInstrs, baseOp) <- lowerExpr base
+    (ixInstrs, ixOp) <- lowerExpr ix
+    addr <- freshTemp
+    out <- freshTemp
+    pure (baseInstrs ++ ixInstrs ++ [IBin addr IAdd baseOp ixOp, ILoad8 out (OTemp addr)], OTemp out)
   ECall (EVar name) args -> do
     lowered <- lowerExprs args
     out <- freshTemp
@@ -183,13 +196,15 @@ lowerExprs args = case args of
     rest <- lowerExprs xs
     pure (first:rest)
 
-materialize :: Operand -> CompileM Temp
+materialize :: Operand -> CompileM ([Instr], Temp)
 materialize op = case op of
-  OTemp temp -> pure temp
+  OTemp temp -> pure ([], temp)
   OImm value -> do
     temp <- freshTemp
-    pure temp <* pure value
-  OGlobal name -> throwC ("cannot materialize global yet: " ++ name)
+    pure ([IConst temp value], temp)
+  OGlobal _ -> do
+    temp <- freshTemp
+    pure ([ICopy temp op], temp)
 
 lowerBinOp :: String -> Maybe BinOp
 lowerBinOp op = case op of
@@ -242,3 +257,24 @@ charValue text = case text of
   '\'':'\\':'0':'\'':[] -> 0
   '\'':c:'\'':[] -> fromEnum c
   _ -> 0
+
+stringBytes :: String -> [Int]
+stringBytes text = go (stripQuotes text) where
+  go chars = case chars of
+    [] -> [0]
+    '\\':'n':rest -> 10 : go rest
+    '\\':'t':rest -> 9 : go rest
+    '\\':'a':rest -> 7 : go rest
+    '\\':'b':rest -> 8 : go rest
+    '\\':'0':rest -> 0 : go rest
+    '\\':c:rest -> fromEnum c : go rest
+    c:rest -> fromEnum c : go rest
+
+stripQuotes :: String -> String
+stripQuotes text = case text of
+  '"':rest -> reverse (dropQuote (reverse rest))
+  _ -> text
+  where
+    dropQuote xs = case xs of
+      '"':ys -> ys
+      _ -> xs

@@ -8,6 +8,8 @@ module Hcc.CompileM
   , freshTemp
   , labelBlock
   , initialCompileState
+  , addDataItem
+  , getDataItems
   , lookupVar
   , runCompileM
   , throwC
@@ -25,6 +27,7 @@ data CompileState = CompileState
   , csNextLabel :: Int
   , csVars :: [(String, Temp)]
   , csLabels :: [(String, BlockId)]
+  , csDataItems :: [DataItem]
   } deriving (Eq, Show)
 
 newtype CompileM a = CompileM
@@ -57,6 +60,7 @@ initialCompileState = CompileState
   , csNextLabel = 0
   , csVars = []
   , csLabels = []
+  , csDataItems = []
   }
 
 runCompileM :: CompileM a -> Either CompileError a
@@ -80,7 +84,14 @@ freshBlock = CompileM $ \st ->
 freshLabel :: CompileM String
 freshLabel = CompileM $ \st ->
   let n = csNextLabel st
-  in Right ("L" ++ show n, st { csNextLabel = n + 1 })
+    in Right ("L" ++ show n, st { csNextLabel = n + 1 })
+
+addDataItem :: DataItem -> CompileM ()
+addDataItem item = CompileM $ \st ->
+  Right ((), st { csDataItems = item : csDataItems st })
+
+getDataItems :: CompileM [DataItem]
+getDataItems = CompileM $ \st -> Right (reverse (csDataItems st), st)
 
 bindVar :: String -> Temp -> CompileM ()
 bindVar name temp = CompileM $ \st ->

@@ -50,8 +50,10 @@ allocateInstrs nextSlot acc instrs = case instrs of
       allocateInstrs nextSlot ((temp, loc):acc) rest
     IConst temp _ ->
       allocateDef nextSlot acc temp rest
-    ICopy{} ->
-      allocateInstrs nextSlot acc rest
+    ICopy temp _ ->
+      allocateDef nextSlot acc temp rest
+    ILoad8 temp _ ->
+      allocateDef nextSlot acc temp rest
     IBin temp _ _ _ ->
       allocateDef nextSlot acc temp rest
     ICall Nothing _ _ ->

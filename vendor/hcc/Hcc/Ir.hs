@@ -32,6 +32,7 @@ data Instr
   = IParam Temp Int
   | IConst Temp Int
   | ICopy Temp Operand
+  | ILoad8 Temp Operand
   | IBin Temp BinOp Operand Operand
   | ICall (Maybe Temp) String [Operand]
   deriving (Eq, Show)
@@ -45,8 +46,11 @@ data Terminator
 data BasicBlock = BasicBlock BlockId [Instr] Terminator
   deriving (Eq, Show)
 
+data DataItem = DataItem String [Int]
+  deriving (Eq, Show)
+
 data FunctionIr = FunctionIr String [String] [BasicBlock]
   deriving (Eq, Show)
 
-data ModuleIr = ModuleIr [FunctionIr]
+data ModuleIr = ModuleIr [DataItem] [FunctionIr]
   deriving (Eq, Show)

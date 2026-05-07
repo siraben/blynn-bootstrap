@@ -18,9 +18,9 @@ codegenM1 ast = do
   codegenModule ir
 
 codegenModule :: ModuleIr -> Either CodegenError String
-codegenModule (ModuleIr functions) = do
+codegenModule (ModuleIr dataItems functions) = do
   bodies <- mapM codegenFunction functions
-  pure (unlines (header ++ concat bodies))
+  pure (unlines (header ++ concat bodies ++ concatMap codegenDataItem dataItems))
 
 header :: [String]
 header =
@@ -78,6 +78,9 @@ codegenInstr alloc instr = case instr of
   ICopy temp op -> do
     code <- loadOperand alloc op
     storeTemp alloc temp code
+  ILoad8 temp op -> do
+    code <- loadOperand alloc op
+    storeTemp alloc temp (code ++ ["\tLOAD_BYTE", "\tMOVEZX"])
   IBin temp op a b -> do
     acode <- loadOperand alloc a
     bcode <- loadOperand alloc b
@@ -136,7 +139,7 @@ binOpCode op = case op of
 loadOperand :: Allocation -> Operand -> Either CodegenError [String]
 loadOperand alloc op = case op of
   OImm value -> Right ["\tLOAD_IMMEDIATE_rax %" ++ show value]
-  OGlobal name -> Left (CodegenError ("cannot load global yet: " ++ name))
+  OGlobal name -> Right ["\tLOAD_IMMEDIATE_rax &" ++ name]
   OTemp temp -> do
     loc <- mapAllocError (lookupLocation temp alloc)
     loadLocation loc
@@ -163,6 +166,22 @@ cleanupStack slots =
 
 blockRef :: BlockId -> String
 blockRef (BlockId n) = "HCC_BLOCK_" ++ show n
+
+codegenDataItem :: DataItem -> [String]
+codegenDataItem (DataItem label bytes) =
+  [":HCC_DATA_" ++ label, "\t" ++ joinWords (map byteHex bytes), ""]
+
+byteHex :: Int -> String
+byteHex value =
+  let digits = "0123456789ABCDEF"
+      b = value `mod` 256
+  in "'" ++ [digits !! (b `div` 16), digits !! (b `mod` 16)] ++ "'"
+
+joinWords :: [String] -> String
+joinWords xs = case xs of
+  [] -> ""
+  [x] -> x
+  x:rest -> x ++ " " ++ joinWords rest
 
 mapCompileError :: Either CompileError a -> Either CodegenError a
 mapCompileError result = case result of
