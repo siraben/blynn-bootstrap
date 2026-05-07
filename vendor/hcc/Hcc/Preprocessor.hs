@@ -7,7 +7,7 @@ import Data.Char (isAlpha, isAlphaNum, isDigit, isSpace)
 
 import Hcc.ConstExpr
 import Hcc.Lexer
-import qualified Hcc.SymbolTable as Symbols
+import Hcc.SymbolTable
 import Hcc.Token
 
 data PreprocessError = PreprocessError SrcPos String
@@ -24,7 +24,7 @@ data MacroArg = MacroArg
   }
   deriving (Eq, Show)
 
-type Macros = Symbols.SymbolMap Macro
+type Macros = SymbolMap Macro
 type Tokens = [Token] -> [Token]
 
 data Chunk = Chunk [String] [Token]
@@ -40,7 +40,7 @@ data IfFrame = IfFrame
   deriving (Eq, Show)
 
 preprocess :: [Token] -> Either PreprocessError [Token]
-preprocess toks = go Symbols.emptyMap [] (sourceFromTokens toks) id where
+preprocess toks = go symbolMapEmpty [] (sourceFromTokens toks) id where
   go macros frames rest acc = case rest of
     [] ->
       if null frames
@@ -154,7 +154,7 @@ defineMacro :: Macros -> Span -> String -> Either PreprocessError Macros
 defineMacro macros sp text =
   case parseMacroDefinition sp text of
     Left err -> Left err
-    Right macro -> Right (Symbols.mapInsert (macroName macro) macro macros)
+    Right macro -> Right (symbolMapInsert (macroName macro) macro macros)
 
 parseMacroDefinition :: Span -> String -> Either PreprocessError Macro
 parseMacroDefinition sp text = case dropSpaces text of
@@ -444,7 +444,7 @@ stripLineComment text = case text of
   c:rest -> c : stripLineComment rest
 
 lookupMacro :: String -> Macros -> Maybe Macro
-lookupMacro = Symbols.mapLookup
+lookupMacro = symbolMapLookup
 
 macroName :: Macro -> String
 macroName macro = case macro of
@@ -452,10 +452,10 @@ macroName macro = case macro of
   FunctionMacro name _ _ _ -> name
 
 isDefined :: String -> Macros -> Bool
-isDefined = Symbols.mapMember
+isDefined = symbolMapMember
 
 undefObject :: String -> Macros -> Macros
-undefObject = Symbols.mapDelete
+undefObject = symbolMapDelete
 
 relocate :: Span -> [Token] -> [Token]
 relocate sp toks = map replaceSpan toks where

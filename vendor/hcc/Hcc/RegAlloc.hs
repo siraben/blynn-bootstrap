@@ -7,7 +7,7 @@ module Hcc.RegAlloc
   , stackSlotCount
   ) where
 
-import qualified Hcc.FingerTree as FingerTree
+import Hcc.FingerTree
 import Hcc.Ir
 
 data PhysReg
@@ -24,7 +24,7 @@ data Location
   | StackObject Int Int
   deriving (Eq, Show)
 
-data Allocation = Allocation Int (FingerTree.FingerTree AllocationEntry)
+data Allocation = Allocation Int (FingerTree AllocationEntry)
   deriving (Eq, Show)
 
 data AllocationEntry = AllocationEntry Temp Location
@@ -32,7 +32,7 @@ data AllocationEntry = AllocationEntry Temp Location
 
 allocateFunction :: FunctionIr -> Either String Allocation
 allocateFunction (FunctionIr _ _ blocks) =
-  uncurry Allocation <$> allocateInstrs 0 FingerTree.empty (concatMap blockInstrs blocks)
+  uncurry Allocation <$> allocateInstrs 0 fingerEmpty (concatMap blockInstrs blocks)
 
 lookupLocation :: Temp -> Allocation -> Either String Location
 lookupLocation temp (Allocation _ locations) = case lookupEntry temp locations of
@@ -42,7 +42,7 @@ lookupLocation temp (Allocation _ locations) = case lookupEntry temp locations o
 stackSlotCount :: Allocation -> Int
 stackSlotCount (Allocation slots _) = slots
 
-allocateInstrs :: Int -> FingerTree.FingerTree AllocationEntry -> [Instr] -> Either String (Int, FingerTree.FingerTree AllocationEntry)
+allocateInstrs :: Int -> FingerTree AllocationEntry -> [Instr] -> Either String (Int, FingerTree AllocationEntry)
 allocateInstrs nextSlot acc instrs = case instrs of
   [] -> Right (nextSlot, acc)
   instr:rest -> case instr of
@@ -91,7 +91,7 @@ allocateInstrs nextSlot acc instrs = case instrs of
     ICallIndirect (Just temp) _ _ ->
       allocateDef nextSlot acc temp rest
 
-allocateStackObject :: Int -> FingerTree.FingerTree AllocationEntry -> Temp -> Int -> [Instr] -> Either String (Int, FingerTree.FingerTree AllocationEntry)
+allocateStackObject :: Int -> FingerTree AllocationEntry -> Temp -> Int -> [Instr] -> Either String (Int, FingerTree AllocationEntry)
 allocateStackObject nextSlot acc temp size rest =
   if allocationMember temp acc
   then allocateInstrs nextSlot acc rest
@@ -99,24 +99,24 @@ allocateStackObject nextSlot acc temp size rest =
     let slots = (max 1 size + 7) `div` 8
     in allocateInstrs (nextSlot + slots) (insertEntry temp (StackObject nextSlot slots) acc) rest
 
-allocateDef :: Int -> FingerTree.FingerTree AllocationEntry -> Temp -> [Instr] -> Either String (Int, FingerTree.FingerTree AllocationEntry)
+allocateDef :: Int -> FingerTree AllocationEntry -> Temp -> [Instr] -> Either String (Int, FingerTree AllocationEntry)
 allocateDef nextSlot acc temp rest =
   if allocationMember temp acc
   then allocateInstrs nextSlot acc rest
   else allocateInstrs (nextSlot + 1) (insertEntry temp (OnStack nextSlot) acc) rest
 
-allocationMember :: Temp -> FingerTree.FingerTree AllocationEntry -> Bool
+allocationMember :: Temp -> FingerTree AllocationEntry -> Bool
 allocationMember temp entries = case lookupEntry temp entries of
   Just _ -> True
   Nothing -> False
 
-insertEntry :: Temp -> Location -> FingerTree.FingerTree AllocationEntry -> FingerTree.FingerTree AllocationEntry
+insertEntry :: Temp -> Location -> FingerTree AllocationEntry -> FingerTree AllocationEntry
 insertEntry temp loc entries =
-  FingerTree.snoc entryRange entries (AllocationEntry temp loc)
+  fingerSnoc entryRange entries (AllocationEntry temp loc)
 
-lookupEntry :: Temp -> FingerTree.FingerTree AllocationEntry -> Maybe Location
+lookupEntry :: Temp -> FingerTree AllocationEntry -> Maybe Location
 lookupEntry temp@(Temp key) entries =
-  FingerTree.lookupWith entryRange (matchEntry temp) key entries
+  fingerLookupWith entryRange (matchEntry temp) key entries
 
 matchEntry :: Temp -> AllocationEntry -> Maybe Location
 matchEntry temp entry = case entry of
@@ -125,9 +125,9 @@ matchEntry temp entry = case entry of
     then Just loc
     else Nothing
 
-entryRange :: AllocationEntry -> FingerTree.Range
+entryRange :: AllocationEntry -> FingerRange
 entryRange entry = case entry of
-  AllocationEntry (Temp key) _ -> FingerTree.Range key key
+  AllocationEntry (Temp key) _ -> FingerRange key key
 
 blockInstrs :: BasicBlock -> [Instr]
 blockInstrs (BasicBlock _ instrs _) = instrs

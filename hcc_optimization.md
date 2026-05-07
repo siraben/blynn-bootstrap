@@ -192,3 +192,61 @@ nix shell nixpkgs#time -c time -v nix build --rebuild --no-link .#tinycc-boot-hc
 wall: 7.90s
 client max RSS: 44,688 KiB
 ```
+
+## Dialect audit: Blynn target
+
+Target dialect:
+
+- This repo's current Blynn target should be upstream `precisely_up`, built by `nix/blynn-precisely.nix` from `vendor/blynn-compiler/upstream`.
+- That is the last stage of the packaged upstream `party -> multiparty -> party1 -> party2 -> crossly_up -> crossly1 -> precisely_up` chain, not the older single-file `effectively` subset.
+- `precisely_up` is materially larger than the early stages: upstream `ParserPrecisely.hs` recognizes modules, imports, `qualified`, classes/instances, `data`, `deriving`, records, `type`, `do`, `case`, `\case`, guards, and FFI syntax.
+
+Important incompatibilities found in current HCC:
+
+- `ParserPrecisely.hs` parses module headers as a single constructor identifier, so `module Hcc.SymbolTable` and other hierarchical `Hcc.*` names need a flattening/renaming pass before direct Blynn compilation.
+- Its type grammar uses unqualified type constructors, so qualified type annotations such as `Symbols.SymbolSet` and `FingerTree.FingerTree` are the wrong shape.
+- `newtype` is reserved, but the audited parser path only handles `data` declarations. Treat `newtype` as unsupported until a direct probe says otherwise.
+- GHC/System imports (`System.Directory`, `System.Process`, `GHC.IO.Encoding`, etc.) are outside the Blynn prelude and will need replacement or host-side staging later. The data-structure pass does not address those.
+
+## Pass 4: Data-structure dialect shaping
+
+Goal: keep the handrolled data structures closer to the syntax accepted by `precisely_up`, while preserving the GHC development build.
+
+Changes:
+
+- Replaced `newtype SymbolMap` and `newtype SymbolSet` with `data` constructors.
+- Removed qualified imports/qualified type references for `Hcc.SymbolTable` and `Hcc.FingerTree`.
+- Renamed exported data-structure operations to globally distinct names (`symbolSetMember`, `fingerLookupWith`, etc.) so unqualified imports stay practical.
+- Removed the unnecessary `Prelude hiding` import from `Hcc.FingerTree`.
+
+Direct HCC compile of the same patched TinyCC source:
+
+```text
+hcc -S -o tcc-dialect-ds.M1 tcc-expanded.c
+wall: 2.70s
+max RSS: 207,164 KiB
+tcc-dialect-ds.M1: 508,341 lines, 14,903,462 bytes
+output identical to baseline M1
+```
+
+Current metrics:
+
+```text
+Haskell LOC total: 5,894
+hcc-ghc/bin/hcc: 4,486,184 bytes
+tinycc-boot-hcc/bin/tcc-hcc-stage1: 2,767,218 bytes
+tinycc-boot-hcc/bin/tcc: 338,120 bytes
+```
+
+Validation:
+
+```text
+nix build .#blynn-precisely --no-link --print-out-paths
+pass
+
+nix build .#hcc-ghc --no-link --print-out-paths
+pass
+
+nix build .#tinycc-boot-hcc .#hcc-m1-smoke .#hcc-mescc-tests
+pass
+```

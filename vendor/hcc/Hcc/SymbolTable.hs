@@ -1,16 +1,16 @@
 module Hcc.SymbolTable
   ( SymbolMap
   , SymbolSet
-  , emptyMap
-  , emptySet
-  , mapDelete
-  , mapInsert
-  , mapLookup
-  , mapMember
-  , setDelete
-  , setFromList
-  , setInsert
-  , setMember
+  , symbolMapDelete
+  , symbolMapEmpty
+  , symbolMapInsert
+  , symbolMapLookup
+  , symbolMapMember
+  , symbolSetDelete
+  , symbolSetEmpty
+  , symbolSetFromList
+  , symbolSetInsert
+  , symbolSetMember
   ) where
 
 data Tree a
@@ -18,47 +18,47 @@ data Tree a
   | Branch String a (Tree a) (Tree a)
   deriving (Eq, Show)
 
-newtype SymbolMap a = SymbolMap (Tree a)
+data SymbolMap a = SymbolMap (Tree a)
   deriving (Eq, Show)
 
-newtype SymbolSet = SymbolSet (Tree ())
+data SymbolSet = SymbolSet (Tree ())
   deriving (Eq, Show)
 
-emptyMap :: SymbolMap a
-emptyMap = SymbolMap Empty
+symbolMapEmpty :: SymbolMap a
+symbolMapEmpty = SymbolMap Empty
 
-emptySet :: SymbolSet
-emptySet = SymbolSet Empty
+symbolSetEmpty :: SymbolSet
+symbolSetEmpty = SymbolSet Empty
 
-mapLookup :: String -> SymbolMap a -> Maybe a
-mapLookup key (SymbolMap tree) = treeLookup key tree
+symbolMapLookup :: String -> SymbolMap a -> Maybe a
+symbolMapLookup key (SymbolMap tree) = treeLookup key tree
 
-mapInsert :: String -> a -> SymbolMap a -> SymbolMap a
-mapInsert key value (SymbolMap tree) = SymbolMap (treeInsert key value tree)
+symbolMapInsert :: String -> a -> SymbolMap a -> SymbolMap a
+symbolMapInsert key value (SymbolMap tree) = SymbolMap (treeInsert key value tree)
 
-mapDelete :: String -> SymbolMap a -> SymbolMap a
-mapDelete key (SymbolMap tree) = SymbolMap (treeDelete key tree)
+symbolMapDelete :: String -> SymbolMap a -> SymbolMap a
+symbolMapDelete key (SymbolMap tree) = SymbolMap (treeDelete key tree)
 
-mapMember :: String -> SymbolMap a -> Bool
-mapMember key table = case mapLookup key table of
+symbolMapMember :: String -> SymbolMap a -> Bool
+symbolMapMember key table = case symbolMapLookup key table of
   Just _ -> True
   Nothing -> False
 
-setFromList :: [String] -> SymbolSet
-setFromList names = case names of
-  [] -> emptySet
-  name:rest -> setInsert name (setFromList rest)
+symbolSetFromList :: [String] -> SymbolSet
+symbolSetFromList names = case names of
+  [] -> symbolSetEmpty
+  name:rest -> symbolSetInsert name (symbolSetFromList rest)
 
-setMember :: String -> SymbolSet -> Bool
-setMember key (SymbolSet tree) = case treeLookup key tree of
+symbolSetMember :: String -> SymbolSet -> Bool
+symbolSetMember key (SymbolSet tree) = case treeLookup key tree of
   Just _ -> True
   Nothing -> False
 
-setInsert :: String -> SymbolSet -> SymbolSet
-setInsert key (SymbolSet tree) = SymbolSet (treeInsert key () tree)
+symbolSetInsert :: String -> SymbolSet -> SymbolSet
+symbolSetInsert key (SymbolSet tree) = SymbolSet (treeInsert key () tree)
 
-setDelete :: String -> SymbolSet -> SymbolSet
-setDelete key (SymbolSet tree) = SymbolSet (treeDelete key tree)
+symbolSetDelete :: String -> SymbolSet -> SymbolSet
+symbolSetDelete key (SymbolSet tree) = SymbolSet (treeDelete key tree)
 
 treeLookup :: String -> Tree a -> Maybe a
 treeLookup key tree = case tree of

@@ -1,20 +1,18 @@
 module Hcc.FingerTree
   ( FingerTree
-  , Range(..)
-  , empty
-  , lookupWith
-  , snoc
+  , FingerRange(..)
+  , fingerEmpty
+  , fingerLookupWith
+  , fingerSnoc
   ) where
 
-import Prelude hiding (lookup)
-
-data Range = Range Int Int
+data FingerRange = FingerRange Int Int
   deriving (Eq, Show)
 
 data FingerTree a
   = Empty
   | Single a
-  | Deep Range (Digit a) (FingerTree (Node a)) (Digit a)
+  | Deep FingerRange (Digit a) (FingerTree (Node a)) (Digit a)
   deriving (Eq, Show)
 
 data Digit a
@@ -24,14 +22,14 @@ data Digit a
   | Four a a a a
   deriving (Eq, Show)
 
-data Node a = Node3 Range a a a
+data Node a = Node3 FingerRange a a a
   deriving (Eq, Show)
 
-empty :: FingerTree a
-empty = Empty
+fingerEmpty :: FingerTree a
+fingerEmpty = Empty
 
-snoc :: (a -> Range) -> FingerTree a -> a -> FingerTree a
-snoc measure tree value = case tree of
+fingerSnoc :: (a -> FingerRange) -> FingerTree a -> a -> FingerTree a
+fingerSnoc measure tree value = case tree of
   Empty -> Single value
   Single one -> deep measure (One one) Empty (One value)
   Deep _ prefix middle suffix -> case suffix of
@@ -39,10 +37,10 @@ snoc measure tree value = case tree of
     Two a b -> deep measure prefix middle (Three a b value)
     Three a b c -> deep measure prefix middle (Four a b c value)
     Four a b c d ->
-      deep measure prefix (snoc nodeRange middle (node3 measure a b c)) (Two d value)
+      deep measure prefix (fingerSnoc nodeRange middle (node3 measure a b c)) (Two d value)
 
-lookupWith :: (a -> Range) -> (a -> Maybe b) -> Int -> FingerTree a -> Maybe b
-lookupWith measure accept key tree = case tree of
+fingerLookupWith :: (a -> FingerRange) -> (a -> Maybe b) -> Int -> FingerTree a -> Maybe b
+fingerLookupWith measure accept key tree = case tree of
   Empty -> Nothing
   Single value ->
     if rangeContains key (measure value)
@@ -52,34 +50,34 @@ lookupWith measure accept key tree = case tree of
     if rangeContains key range
     then firstJust
       [ lookupDigitWith measure accept key prefix
-      , lookupWith nodeRange (lookupNodeWith measure accept key) key middle
+      , fingerLookupWith nodeRange (lookupNodeWith measure accept key) key middle
       , lookupDigitWith measure accept key suffix
       ]
     else Nothing
 
-lookupDigitWith :: (a -> Range) -> (a -> Maybe b) -> Int -> Digit a -> Maybe b
+lookupDigitWith :: (a -> FingerRange) -> (a -> Maybe b) -> Int -> Digit a -> Maybe b
 lookupDigitWith measure accept key digit = case digit of
   One a -> lookupValue measure accept key a
   Two a b -> firstJust [lookupValue measure accept key a, lookupValue measure accept key b]
   Three a b c -> firstJust [lookupValue measure accept key a, lookupValue measure accept key b, lookupValue measure accept key c]
   Four a b c d -> firstJust [lookupValue measure accept key a, lookupValue measure accept key b, lookupValue measure accept key c, lookupValue measure accept key d]
 
-lookupNodeWith :: (a -> Range) -> (a -> Maybe b) -> Int -> Node a -> Maybe b
+lookupNodeWith :: (a -> FingerRange) -> (a -> Maybe b) -> Int -> Node a -> Maybe b
 lookupNodeWith measure accept key node = case node of
   Node3 _ a b c ->
     firstJust [lookupValue measure accept key a, lookupValue measure accept key b, lookupValue measure accept key c]
 
-lookupValue :: (a -> Range) -> (a -> Maybe b) -> Int -> a -> Maybe b
+lookupValue :: (a -> FingerRange) -> (a -> Maybe b) -> Int -> a -> Maybe b
 lookupValue measure accept key value =
   if rangeContains key (measure value)
   then accept value
   else Nothing
 
-deep :: (a -> Range) -> Digit a -> FingerTree (Node a) -> Digit a -> FingerTree a
+deep :: (a -> FingerRange) -> Digit a -> FingerTree (Node a) -> Digit a -> FingerTree a
 deep measure prefix middle suffix =
   Deep (treeRange measure prefix middle suffix) prefix middle suffix
 
-treeRange :: (a -> Range) -> Digit a -> FingerTree (Node a) -> Digit a -> Range
+treeRange :: (a -> FingerRange) -> Digit a -> FingerTree (Node a) -> Digit a -> FingerRange
 treeRange measure prefix middle suffix =
   rangeUnions (digitRange measure prefix) (middleRanges ++ [digitRange measure suffix])
   where
@@ -87,35 +85,35 @@ treeRange measure prefix middle suffix =
       Nothing -> []
       Just range -> [range]
 
-fingerRange :: (a -> Range) -> FingerTree a -> Maybe Range
+fingerRange :: (a -> FingerRange) -> FingerTree a -> Maybe FingerRange
 fingerRange measure tree = case tree of
   Empty -> Nothing
   Single value -> Just (measure value)
   Deep range _ _ _ -> Just range
 
-digitRange :: (a -> Range) -> Digit a -> Range
+digitRange :: (a -> FingerRange) -> Digit a -> FingerRange
 digitRange measure digit = case digit of
   One a -> measure a
   Two a b -> rangeUnion (measure a) (measure b)
   Three a b c -> rangeUnions (measure a) [measure b, measure c]
   Four a b c d -> rangeUnions (measure a) [measure b, measure c, measure d]
 
-node3 :: (a -> Range) -> a -> a -> a -> Node a
+node3 :: (a -> FingerRange) -> a -> a -> a -> Node a
 node3 measure a b c =
   Node3 (rangeUnions (measure a) [measure b, measure c]) a b c
 
-nodeRange :: Node a -> Range
+nodeRange :: Node a -> FingerRange
 nodeRange node = case node of
   Node3 range _ _ _ -> range
 
-rangeContains :: Int -> Range -> Bool
-rangeContains key (Range lo hi) = key >= lo && key <= hi
+rangeContains :: Int -> FingerRange -> Bool
+rangeContains key (FingerRange lo hi) = key >= lo && key <= hi
 
-rangeUnion :: Range -> Range -> Range
-rangeUnion (Range alo ahi) (Range blo bhi) =
-  Range (min alo blo) (max ahi bhi)
+rangeUnion :: FingerRange -> FingerRange -> FingerRange
+rangeUnion (FingerRange alo ahi) (FingerRange blo bhi) =
+  FingerRange (min alo blo) (max ahi bhi)
 
-rangeUnions :: Range -> [Range] -> Range
+rangeUnions :: FingerRange -> [FingerRange] -> FingerRange
 rangeUnions range ranges = case ranges of
   [] -> range
   r:rest -> rangeUnions (rangeUnion range r) rest

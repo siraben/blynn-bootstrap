@@ -5,7 +5,7 @@ module Hcc.Parser
 
 import Hcc.Ast
 import Hcc.ConstExpr
-import qualified Hcc.SymbolTable as Symbols
+import Hcc.SymbolTable
 import Hcc.Token
 
 data ParseError = ParseError SrcPos String
@@ -19,7 +19,7 @@ data Reply a
   | Error ParseError
   deriving (Eq, Show)
 
-newtype Parser a = Parser { runParser :: Symbols.SymbolSet -> [Token] -> Consumed (Reply a) }
+newtype Parser a = Parser { runParser :: SymbolSet -> [Token] -> Consumed (Reply a) }
 
 instance Functor Parser where
   fmap f p = Parser $ \env toks -> mapConsumed (mapReply f) (runParser p env toks)
@@ -57,7 +57,7 @@ forceConsumed consumed = case consumed of
   Consumed x -> x
 
 parseProgram :: [Token] -> Either ParseError Program
-parseProgram toks = case forceConsumed (runParser program (Symbols.setFromList (builtinTypeNames ++ collectTypedefNames toks)) toks) of
+parseProgram toks = case forceConsumed (runParser program (symbolSetFromList (builtinTypeNames ++ collectTypedefNames toks)) toks) of
   Error err -> Left err
   Ok (Program decls) [] -> Right (Program (EnumConstants (collectEnumConstants toks) : decls))
   Ok _ (tok:_) -> Left (parseErrorAt tok "trailing tokens")
@@ -891,9 +891,9 @@ tokenStartsType tok = case tokenKind tok of
                 | otherwise -> isKnownTypeNameP name
   _ -> pure False
 
-tokenStartsTypeInEnv :: Symbols.SymbolSet -> Token -> Bool
+tokenStartsTypeInEnv :: SymbolSet -> Token -> Bool
 tokenStartsTypeInEnv env tok = case tokenKind tok of
-  TokIdent name -> startsType tok || Symbols.setMember name env
+  TokIdent name -> startsType tok || symbolSetMember name env
   _ -> False
 
 identifierStartsDeclaration :: Parser Bool
@@ -901,7 +901,7 @@ identifierStartsDeclaration = Parser $ \env toks -> Empty (Ok (go env toks) toks
   go env toks = case toks of
     Token _ (TokIdent name):rest
       | startsTypeName name -> True
-      | Symbols.setMember name env -> typedefDeclaratorFollows rest
+      | symbolSetMember name env -> typedefDeclaratorFollows rest
       | otherwise -> False
     _ -> False
 
@@ -919,7 +919,7 @@ identifierStartsDeclaration = Parser $ \env toks -> Empty (Ok (go env toks) toks
     _ -> toks
 
 isKnownTypeNameP :: String -> Parser Bool
-isKnownTypeNameP name = Parser $ \env toks -> Empty (Ok (Symbols.setMember name env) toks)
+isKnownTypeNameP name = Parser $ \env toks -> Empty (Ok (symbolSetMember name env) toks)
 
 manyP :: Parser a -> Parser [a]
 manyP p = do
@@ -1214,13 +1214,13 @@ splitTopLevelCommas = go 0 0 [] [] where
       _ -> go parens brackets (tok:current) acc rest
 
 unique :: [String] -> [String]
-unique = go Symbols.emptySet where
+unique = go symbolSetEmpty where
   go seen names = case names of
     [] -> []
     x:xs ->
-      if Symbols.setMember x seen
+      if symbolSetMember x seen
       then go seen xs
-      else x : go (Symbols.setInsert x seen) xs
+      else x : go (symbolSetInsert x seen) xs
 
 mapMaybe :: (a -> Maybe b) -> [a] -> [b]
 mapMaybe f xs = case xs of
