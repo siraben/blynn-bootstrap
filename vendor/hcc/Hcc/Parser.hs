@@ -641,81 +641,8 @@ arraySuffixes ty = do
     then do
       boundExpr <- optionalP expr
       needPunct "]"
-      arraySuffixes (CArray ty (boundValue boundExpr))
+      arraySuffixes (CArray ty boundExpr)
     else pure ty
-
-boundValue :: Maybe Expr -> Maybe Int
-boundValue value = case value of
-  Just (EInt text) -> Just (parseBoundInt text)
-  Just valueExpr -> evalBoundExpr valueExpr
-  _ -> Nothing
-
-evalBoundExpr :: Expr -> Maybe Int
-evalBoundExpr valueExpr = case valueExpr of
-  EInt text -> Just (parseBoundInt text)
-  EChar text -> Just (charBoundValue text)
-  EVar name -> parserConstant name
-  EUnary "+" value -> evalBoundExpr value
-  EUnary "-" value -> negate <$> evalBoundExpr value
-  EBinary op left right -> do
-    a <- evalBoundExpr left
-    b <- evalBoundExpr right
-    evalBoundBinOp op a b
-  _ -> Nothing
-
-evalBoundBinOp :: String -> Int -> Int -> Maybe Int
-evalBoundBinOp op a b = case op of
-  "+" -> Just (a + b)
-  "-" -> Just (a - b)
-  "*" -> Just (a * b)
-  "/" -> if b == 0 then Nothing else Just (a `div` b)
-  "%" -> if b == 0 then Nothing else Just (a `mod` b)
-  "<<" -> Just (a * powBound2 b)
-  ">>" -> Just (a `div` powBound2 b)
-  _ -> Nothing
-
-powBound2 :: Int -> Int
-powBound2 n = if n <= 0 then 1 else 2 * powBound2 (n - 1)
-
-parserConstant :: String -> Maybe Int
-parserConstant name = case name of
-  "BN_SIZE" -> Just 2
-  "CACHED_INCLUDES_HASH_SIZE" -> Just 512
-  "CH_EOF" -> Just (-1)
-  "IFDEF_STACK_SIZE" -> Just 64
-  "INCLUDE_STACK_SIZE" -> Just 32
-  "PACK_STACK_SIZE" -> Just 8
-  "STRING_MAX_SIZE" -> Just 1024
-  "TOK_HASH_SIZE" -> Just 16384
-  _ -> Nothing
-
-charBoundValue :: String -> Int
-charBoundValue text = case text of
-  c:_ -> fromEnum c
-  _ -> 0
-
-parseBoundInt :: String -> Int
-parseBoundInt text = case text of
-  '0':'x':xs -> readBoundHex xs
-  '0':'X':xs -> readBoundHex xs
-  _ -> read (stripBoundSuffix text)
-
-stripBoundSuffix :: String -> String
-stripBoundSuffix text = reverse (dropWhile isSuffix (reverse text)) where
-  isSuffix c = c `elem` "uUlL"
-
-readBoundHex :: String -> Int
-readBoundHex = go 0 . stripBoundSuffix where
-  go n xs = case xs of
-    [] -> n
-    c:rest -> go (n * 16 + hexDigit c) rest
-
-hexDigit :: Char -> Int
-hexDigit c
-  | c >= '0' && c <= '9' = fromEnum c - fromEnum '0'
-  | c >= 'a' && c <= 'f' = 10 + fromEnum c - fromEnum 'a'
-  | c >= 'A' && c <= 'F' = 10 + fromEnum c - fromEnum 'A'
-  | otherwise = 0
 
 expr :: Parser Expr
 expr = expression 0

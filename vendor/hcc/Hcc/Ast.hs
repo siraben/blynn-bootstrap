@@ -38,7 +38,7 @@ data CType
   | CUnionDef [Field]
   | CEnum String
   | CNamed String
-  | CArray CType (Maybe Int)
+  | CArray CType (Maybe Expr)
   | CPtr CType
   deriving (Eq, Show)
 

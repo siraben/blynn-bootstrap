@@ -12,6 +12,8 @@ CASES = [
     ("dynamic-aggregate", 0),
     ("conditional-aggregate-copy", 0),
     ("signed-char-cast", 0),
+    ("sizeof-member-array-bound", 0),
+    ("address-written-scalar", 0),
 ]
 
 

@@ -685,7 +685,9 @@ lowerExpr expr = case expr of
       Nothing -> do
         local <- lookupVarMaybe name
         case local of
-          Just temp -> pure ([], OTemp temp)
+          Just temp -> do
+            mty <- lookupVarType name
+            coerceScalar (maybe CLong id mty) (OTemp temp)
           Nothing -> do
             function <- lookupFunction name
             if function
@@ -953,8 +955,8 @@ readLValueExpr target = do
 
 readLValue :: LValue -> CompileM ([Instr], Operand)
 readLValue lvalue = case lvalue of
-  LLocal temp _ ->
-    pure ([], OTemp temp)
+  LLocal temp ty ->
+    coerceScalar ty (OTemp temp)
   LAddress addr ty -> case ty of
     CArray{} -> pure ([], addr)
     _ -> do
@@ -1381,7 +1383,8 @@ typeSize ty = case ty of
   CPtr{} -> pure 8
   CArray inner count -> do
     size <- typeSize inner
-    pure (size * maybe 1 id count)
+    bound <- arrayBoundSize count
+    pure (size * bound)
   CStruct name -> structSize name
   CUnion name -> structSize name
   CStructNamed name fields -> do
@@ -1481,12 +1484,17 @@ globalDataValue ty initExpr = case (ty, initExpr) of
   (_, Just (EInitList [expr])) | not (isAggregateType ty) ->
     globalDataValue ty (Just expr)
   (CArray CChar count, Just (EString text)) ->
-    pure (padData (maybe (length (stringBytes text)) id count) (bytesData (stringBytes text)))
+    do
+      size <- case count of
+        Nothing -> pure (length (stringBytes text))
+        Just bound -> constExprValue bound
+      pure (padData size (bytesData (stringBytes text)))
   (CArray inner count, Just (EInitList exprs)) -> do
     items <- globalArrayData inner exprs
     case count of
       Nothing -> pure items
-      Just n -> do
+      Just bound -> do
+        n <- constExprValue bound
         elemSize <- typeSize inner
         pure (padData (n * elemSize) items)
   (_, Just (EInitList exprs)) -> do
@@ -1598,6 +1606,10 @@ constExprValue :: Expr -> CompileM Int
 constExprValue expr = case expr of
   EInt text -> pure (parseInt text)
   EChar text -> pure (charValue text)
+  ESizeofType ty -> typeSize ty
+  ESizeofExpr value -> do
+    mty <- exprType value
+    maybe (pure 8) typeSize mty
   ECast _ (EUnary "&" (EPtrMember (ECast (CPtr ty) (EInt "0")) field)) -> do
     (_, offset) <- memberInfo (Just (CPtr ty)) field
     pure offset
@@ -1624,6 +1636,11 @@ constExprValue expr = case expr of
     c <- constExprValue cond
     constExprValue (if c /= 0 then yes else no)
   _ -> pure 0
+
+arrayBoundSize :: Maybe Expr -> CompileM Int
+arrayBoundSize bound = case bound of
+  Nothing -> pure 1
+  Just expr -> constExprValue expr
 
 constBinOp :: String -> Int -> Int -> Int
 constBinOp op a b = case op of
