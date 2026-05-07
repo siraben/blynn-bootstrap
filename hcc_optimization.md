@@ -297,3 +297,38 @@ pass
 nix build .#tinycc-boot-hcc .#hcc-m1-smoke .#hcc-mescc-tests
 pass
 ```
+
+## Pass 6: Local constant-expression bit operations
+
+Goal: remove `ConstExpr`'s dependency on GHC `Data.Bits`.
+
+Changes:
+
+- Replaced `Data.Bits` calls in `#if` constant-expression evaluation with local Integer operations.
+- Implemented `bitNotInteger`, `bitAndInteger`, `bitOrInteger`, `bitXorInteger`, and arithmetic shifts.
+- Preserved signed two's-complement-style identities for negative values:
+  `~x = -x - 1`, `x | y = ~(~x & ~y)`, and negative `&` reductions through nonnegative complements.
+
+Current remaining dialect blockers:
+
+- `Main` still depends on GHC/System modules for command-line arguments, file IO, process execution, path handling, and stderr/exit behavior.
+- `Main` still imports `Control.Monad.filterM`; this is now the only non-host helper import shown by the audit.
+
+Current metrics:
+
+```text
+Haskell LOC total: 5,997
+hcc-ghc/bin/hcc: 4,466,344 bytes
+tinycc-boot-hcc/bin/tcc-hcc-stage1: 2,767,218 bytes
+tinycc-boot-hcc/bin/tcc: 338,120 bytes
+```
+
+Validation:
+
+```text
+nix build .#hcc-ghc --no-link --print-out-paths
+pass
+
+nix build .#tinycc-boot-hcc .#hcc-m1-smoke .#hcc-mescc-tests
+pass
+```

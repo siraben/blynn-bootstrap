@@ -3,8 +3,6 @@ module ConstExpr
   , parseIntLiteral
   ) where
 
-import Data.Bits ((.&.), (.|.), complement, shiftL, shiftR, xor)
-
 import Token
 
 parseConstExpr :: [(String, Integer)] -> [Token] -> Either String (Integer, [Token])
@@ -49,7 +47,7 @@ parseConstExpr env = parseCond
         parseTail lhs rest = case rest of
           Token _ (TokPunct "|"):xs -> do
             (rhs, xs') <- parseBitXor xs
-            parseTail (lhs .|. rhs) xs'
+            parseTail (bitOrInteger lhs rhs) xs'
           _ -> Right (lhs, rest)
 
     parseBitXor toks = do
@@ -59,7 +57,7 @@ parseConstExpr env = parseCond
         parseTail lhs rest = case rest of
           Token _ (TokPunct "^"):xs -> do
             (rhs, xs') <- parseBitAnd xs
-            parseTail (lhs `xor` rhs) xs'
+            parseTail (bitXorInteger lhs rhs) xs'
           _ -> Right (lhs, rest)
 
     parseBitAnd toks = do
@@ -69,7 +67,7 @@ parseConstExpr env = parseCond
         parseTail lhs rest = case rest of
           Token _ (TokPunct "&"):xs -> do
             (rhs, xs') <- parseEq xs
-            parseTail (lhs .&. rhs) xs'
+            parseTail (bitAndInteger lhs rhs) xs'
           _ -> Right (lhs, rest)
 
     parseEq toks = do
@@ -99,10 +97,10 @@ parseConstExpr env = parseCond
         parseTail lhs rest = case rest of
           Token _ (TokPunct "<<"):xs -> do
             (rhs, xs') <- parseAdd xs
-            parseTail (lhs `shiftL` fromInteger (max 0 rhs)) xs'
+            parseTail (shiftLeftInteger lhs (max 0 rhs)) xs'
           Token _ (TokPunct ">>"):xs -> do
             (rhs, xs') <- parseAdd xs
-            parseTail (lhs `shiftR` fromInteger (max 0 rhs)) xs'
+            parseTail (shiftRightInteger lhs (max 0 rhs)) xs'
           _ -> Right (lhs, rest)
 
     parseAdd toks = do
@@ -144,7 +142,7 @@ parseConstExpr env = parseCond
         Right (-value, rest')
       Token _ (TokPunct "~"):rest -> do
         (value, rest') <- parseUnary rest
-        Right (complement value, rest')
+        Right (bitNotInteger value, rest')
       _ -> parsePrimary toks
 
     parsePrimary toks = case toks of
@@ -237,3 +235,46 @@ hexDigitValue c
 
 charCode :: Char -> Int
 charCode = fromEnum
+
+bitNotInteger :: Integer -> Integer
+bitNotInteger value = 0 - value - 1
+
+bitAndInteger :: Integer -> Integer -> Integer
+bitAndInteger lhs rhs
+  | lhs < 0 && rhs < 0 = bitNotInteger (bitOrInteger (bitNotInteger lhs) (bitNotInteger rhs))
+  | lhs < 0 = bitAndNegative lhs rhs
+  | rhs < 0 = bitAndNegative rhs lhs
+  | otherwise = bitAndNonNegative lhs rhs
+
+bitAndNegative :: Integer -> Integer -> Integer
+bitAndNegative negative nonnegative =
+  nonnegative - bitAndNonNegative nonnegative (bitNotInteger negative)
+
+bitAndNonNegative :: Integer -> Integer -> Integer
+bitAndNonNegative lhs rhs = go lhs rhs 1 0 where
+  go x y bit acc =
+    if x == 0 || y == 0
+    then acc
+    else
+      let acc' = if x `mod` 2 == 1 && y `mod` 2 == 1 then acc + bit else acc
+      in go (x `div` 2) (y `div` 2) (bit * 2) acc'
+
+bitOrInteger :: Integer -> Integer -> Integer
+bitOrInteger lhs rhs =
+  bitNotInteger (bitAndInteger (bitNotInteger lhs) (bitNotInteger rhs))
+
+bitXorInteger :: Integer -> Integer -> Integer
+bitXorInteger lhs rhs =
+  bitOrInteger (bitAndInteger lhs (bitNotInteger rhs)) (bitAndInteger (bitNotInteger lhs) rhs)
+
+shiftLeftInteger :: Integer -> Integer -> Integer
+shiftLeftInteger value amount = value * powerOfTwo amount
+
+shiftRightInteger :: Integer -> Integer -> Integer
+shiftRightInteger value amount = value `div` powerOfTwo amount
+
+powerOfTwo :: Integer -> Integer
+powerOfTwo amount =
+  if amount <= 0
+  then 1
+  else 2 * powerOfTwo (amount - 1)
