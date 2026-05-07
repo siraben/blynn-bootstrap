@@ -110,6 +110,8 @@ getArgs = Env.getArgs
 EOF
 
     perl -0pi -e 's/\n-- Hash consing\.\ninstance \(Ord a, Ord b\) => Ord \(Either a b\) where\n.*?\nmemget /\n-- Hash consing.\nmemget /s' RTS.hs
+    perl -0pi -e "s/Basic \[chr \\\$ intFromWord h\]/Basic ('#':show h)/" RTS.hs
+    perl -0pi -e "s/Basic \[h\] -> Right <\\\$> memget \(Right \\\$ comEnum \"NUM\", Right \\\$ ord h\)/Basic ('#':digits) -> Right <\\\$> memget (Right \\\$ comEnum \"NUM\", Right \\\$ fromInteger \\\$ readInteger digits)\\n    Basic [h] -> Right <\\\$> memget (Right \\\$ comEnum \"NUM\", Right \\\$ ord h)/" RTS.hs
 
     ghc \
       -cpp \
