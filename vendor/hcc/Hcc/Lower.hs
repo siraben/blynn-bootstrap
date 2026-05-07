@@ -161,6 +161,14 @@ lowerExpr expr = case expr of
     zero <- freshTemp
     out <- freshTemp
     pure (a ++ [IConst zero 0, IBin out IEq op (OTemp zero)], OTemp out)
+  EUnary "++" (EVar name) -> do
+    temp <- lookupVar name
+    one <- freshTemp
+    pure ([IConst one 1, IBin temp IAdd (OTemp temp) (OTemp one)], OTemp temp)
+  EUnary "--" (EVar name) -> do
+    temp <- lookupVar name
+    one <- freshTemp
+    pure ([IConst one 1, IBin temp ISub (OTemp temp) (OTemp one)], OTemp temp)
   ECast CUnsignedChar x -> do
     (a, op) <- lowerExpr x
     out <- freshTemp

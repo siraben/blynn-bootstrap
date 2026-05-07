@@ -277,7 +277,7 @@ expression minPrec = do
           TokPunct op | Just (prec, assoc) <- binop op, prec >= minPrec -> do
             advanceToken
             rhs <- expression (if assoc == RightAssoc then prec else prec + 1)
-            let node = if op == "=" then EAssign lhs rhs else EBinary op lhs rhs
+            let node = assignNode op lhs rhs
             climb node
           _ -> pure lhs
         Nothing -> pure lhs
@@ -288,6 +288,8 @@ data Assoc = LeftAssoc | RightAssoc
 binop :: String -> Maybe (Int, Assoc)
 binop op = case op of
   "=" -> Just (1, RightAssoc)
+  "+=" -> Just (1, RightAssoc)
+  "-=" -> Just (1, RightAssoc)
   "||" -> Just (2, LeftAssoc)
   "&&" -> Just (3, LeftAssoc)
   "|" -> Just (4, LeftAssoc)
@@ -312,6 +314,8 @@ unary :: Parser Expr
 unary = do
   tok <- peek
   case tokenKind tok of
+    TokPunct op | op `elem` ["++", "--"] ->
+      advanceToken >> EUnary op <$> (postfix =<< unary)
     TokPunct op | op `elem` ["+", "-", "!", "~", "*", "&"] ->
       advanceToken >> EUnary op <$> (postfix =<< unary)
     TokIdent "sizeof" ->
@@ -333,6 +337,13 @@ unary = do
           needPunct ")"
           pure e
     _ -> failAt tok "expected expression"
+
+assignNode :: String -> Expr -> Expr -> Expr
+assignNode op lhs rhs = case op of
+  "=" -> EAssign lhs rhs
+  "+=" -> EAssign lhs (EBinary "+" lhs rhs)
+  "-=" -> EAssign lhs (EBinary "-" lhs rhs)
+  _ -> EBinary op lhs rhs
 
 postfix :: Expr -> Parser Expr
 postfix base = do

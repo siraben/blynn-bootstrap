@@ -87,6 +87,7 @@ stdenvNoCC.mkDerivation {
     assemble_and_run 30-exit-0 0
     assemble_and_run 30-exit-42 42
     assemble_and_run 33-and-or 0
+    assemble_and_run 34-pre-post 0
     assemble_and_run 36-compare-arithmetic 0
     assemble_and_run 36-compare-arithmetic-negative 0
     assemble_and_run 37-compare-assign 0
