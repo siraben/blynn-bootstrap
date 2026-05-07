@@ -4,6 +4,7 @@
   fetchurl,
   hcc,
   minimalBootstrap,
+  mesLibc,
   m2libc,
 }:
 
@@ -17,10 +18,6 @@ let
     hash = "sha256-MRuqq3TKcfIahtUWdhAcYhqDiGPkAjS8UTMsDE+/jGU=";
   };
 
-  mesSrc = fetchurl {
-    url = "https://ftpmirror.gnu.org/mes/mes-0.27.1.tar.gz";
-    hash = "sha256-GDpA6kfqSfih470bnRLmdjdNZNY7x557wa59Zz398l0=";
-  };
 in
 stdenv.mkDerivation {
   pname = "tinycc-boot-hcc";
@@ -54,9 +51,8 @@ stdenv.mkDerivation {
     runHook preBuild
 
     tar xzf ${tccIncludeSrc}
-    tar xzf ${mesSrc}
     tcc_include_src="$PWD/tinycc-cb41cbf/include"
-    mes_include_src="$PWD/mes-0.27.1/include"
+    mes_include_src="${mesLibc}/include"
 
     cat > config.h <<'EOF'
     #define BOOTSTRAP 1
@@ -139,13 +135,45 @@ stdenv.mkDerivation {
       --output tcc
     chmod 555 tcc
 
+    make_ar_noindex() {
+      archive="$1"
+      shift
+      printf '!<arch>\n' > "$archive"
+      for object in "$@"; do
+        name="$(basename "$object")/"
+        size="$(wc -c < "$object")"
+        printf '%-16s%-12s%-6s%-6s%-8s%-10s`\n' "$name" 0 0 0 644 "$size" >> "$archive"
+        cat "$object" >> "$archive"
+        if [ $((size % 2)) -ne 0 ]; then
+          printf '\n' >> "$archive"
+        fi
+      done
+    }
+
+    mkdir -p bootstrap-libs
+    ./tcc -c -std=c11 -I "$mes_include_src" -I "$tcc_include_src" -o bootstrap-libs/crt1.o ${mesLibc}/lib/crt1.c
+    ./tcc -c -std=c11 -I "$mes_include_src" -I "$tcc_include_src" -o bootstrap-libs/crti.o ${mesLibc}/lib/crti.c
+    ./tcc -c -std=c11 -I "$mes_include_src" -I "$tcc_include_src" -o bootstrap-libs/crtn.o ${mesLibc}/lib/crtn.c
+    ./tcc -c -std=c11 -I "$mes_include_src" -I "$tcc_include_src" -o bootstrap-libs/libc.o ${mesLibc}/lib/libc.c
+    ./tcc -c -std=c11 -I "$mes_include_src" -I "$tcc_include_src" -o bootstrap-libs/libgetopt.o ${mesLibc}/lib/libgetopt.c
+    ./tcc -c -I "$mes_include_src" -I "$tcc_include_src" -D TCC_TARGET_X86_64=1 -o bootstrap-libs/libtcc1.o lib/libtcc1.c
+    ./tcc -c -I "$mes_include_src" -I "$tcc_include_src" -D TCC_TARGET_X86_64=1 -o bootstrap-libs/va_list.o lib/va_list.c
+    make_ar_noindex bootstrap-libs/libc.a bootstrap-libs/libc.o
+    make_ar_noindex bootstrap-libs/libgetopt.a bootstrap-libs/libgetopt.o
+    make_ar_noindex bootstrap-libs/libtcc1.a bootstrap-libs/libtcc1.o bootstrap-libs/va_list.o
+
     runHook postBuild
   '';
 
   installPhase = ''
     runHook preInstall
     install -Dm555 tcc $out/bin/tcc
+    mkdir -p $out/lib
+    cp bootstrap-libs/crt1.o bootstrap-libs/crti.o bootstrap-libs/crtn.o $out/lib/
+    cp bootstrap-libs/libc.a bootstrap-libs/libgetopt.a bootstrap-libs/libtcc1.a $out/lib/
     mkdir -p $out/include
+    cp -r ${mesLibc}/include/. $out/include/
+    chmod -R u+w $out/include
     cp -r include/. $out/include/
     runHook postInstall
   '';
@@ -183,7 +211,7 @@ stdenv.mkDerivation {
     ./tcc -c \
       -I . \
       -I tinycc-cb41cbf/include \
-      -I mes-0.27.1/include \
+      -I ${mesLibc}/include \
       -D __linux__=1 \
       -D BOOTSTRAP=1 \
       -D HAVE_LONG_LONG=1 \
@@ -197,7 +225,7 @@ stdenv.mkDerivation {
       -D CONFIG_TCC_CRTPREFIX=\"{B}\" \
       -D CONFIG_TCC_ELFINTERP=\"/mes/loader\" \
       -D CONFIG_TCC_LIBPATHS=\"{B}\" \
-      -D CONFIG_TCC_SYSINCLUDEPATHS=\"$PWD/tinycc-cb41cbf/include:$PWD/mes-0.27.1/include\" \
+      -D CONFIG_TCC_SYSINCLUDEPATHS=\"$PWD/tinycc-cb41cbf/include:${mesLibc}/include\" \
       -D TCC_LIBGCC=\"libc.a\" \
       -D TCC_LIBTCC1=\"libtcc1.a\" \
       -D CONFIG_TCC_LIBTCC1_MES=0 \
@@ -213,8 +241,8 @@ stdenv.mkDerivation {
 
     ./tcc -c \
       -I . \
+      -I ${mesLibc}/include \
       -I tinycc-cb41cbf/include \
-      -I mes-0.27.1/include \
       -D __linux__=1 \
       -D BOOTSTRAP=1 \
       -D HAVE_LONG_LONG=1 \
@@ -227,6 +255,13 @@ stdenv.mkDerivation {
       lib/libtcc1.c -o libtcc1.o
     ./tcc -ar rcs libtcc1.a libtcc1.o
     test -s libtcc1.a
+
+    ./tcc -B bootstrap-libs smoke.c -o smoke-linked
+    set +e
+    ./smoke-linked
+    smoke_status="$?"
+    set -e
+    test "$smoke_status" -eq 13
 
     runHook postCheck
   '';

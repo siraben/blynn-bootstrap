@@ -1423,9 +1423,11 @@ signedNamedIntegerTypes =
   ]
 
 typeAlign :: CType -> CompileM Int
-typeAlign ty = do
-  size <- typeSize ty
-  pure (if size >= 8 then 8 else if size >= 4 then 4 else if size >= 2 then 2 else 1)
+typeAlign ty = case ty of
+  CArray inner _ -> typeAlign inner
+  _ -> do
+    size <- typeSize ty
+    pure (if size >= 8 then 8 else if size >= 4 then 4 else if size >= 2 then 2 else 1)
 
 structSize :: String -> CompileM Int
 structSize name = do

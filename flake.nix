@@ -31,6 +31,7 @@
         tinycc-boot-hcc = pkgs.callPackage ./nix/tinycc-boot-hcc.nix {
           hcc = hcc-ghc;
           inherit minimalBootstrap;
+          mesLibc = minimalBootstrap.mes-libc;
           m2libc = ./vendor/blynn-compiler/M2libc;
         };
 
