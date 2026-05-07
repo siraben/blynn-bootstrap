@@ -607,14 +607,14 @@ lowerExpr expr = case expr of
     case constant of
       Just value -> pure ([], OImm value)
       Nothing -> do
-        function <- lookupFunction name
-        if function
-          then pure ([], OFunction name)
-          else do
-            local <- lookupVarMaybe name
-            case local of
-              Just temp -> pure ([], OTemp temp)
-              Nothing -> do
+        local <- lookupVarMaybe name
+        case local of
+          Just temp -> pure ([], OTemp temp)
+          Nothing -> do
+            function <- lookupFunction name
+            if function
+              then pure ([], OFunction name)
+              else do
                 globalTy <- lookupGlobalType name
                 case globalTy of
                   Just CArray{} -> pure ([], OGlobal name)
@@ -670,21 +670,8 @@ lowerExpr expr = case expr of
     (ci, co) <- lowerExpr cond
     (yi, yo) <- lowerExpr yes
     (ni, noOp) <- lowerExpr no
-    bool <- freshTemp
-    one <- freshTemp
-    inv <- freshTemp
-    ypart <- freshTemp
-    npart <- freshTemp
     out <- freshTemp
-    pure ( ci ++ yi ++ ni ++
-           [ IBin bool INe co (OImm 0)
-           , IConst one 1
-           , IBin inv ISub (OTemp one) (OTemp bool)
-           , IBin ypart IMul (OTemp bool) yo
-           , IBin npart IMul (OTemp inv) noOp
-           , IBin out IAdd (OTemp ypart) (OTemp npart)
-           ]
-         , OTemp out)
+    pure ([ICond out ci co yi yo ni noOp], OTemp out)
   EBinary "," a b -> do
     ai <- lowerSideEffect a
     (bi, bo) <- lowerExpr b
@@ -825,10 +812,17 @@ offsetAddress base offset =
 
 lowerLValueAddress :: Expr -> CompileM ([Instr], Operand)
 lowerLValueAddress (EVar name) = do
-  function <- lookupFunction name
-  if function
-    then pure ([], OFunction name)
-    else do
+  local <- lookupVarMaybe name
+  case local of
+    Nothing -> do
+      function <- lookupFunction name
+      if function
+        then pure ([], OFunction name)
+        else lowerNonFunctionAddress
+    Just _ ->
+      lowerNonFunctionAddress
+  where
+    lowerNonFunctionAddress = do
       (instrs, lvalue) <- lowerLValue (EVar name)
       case lvalue of
         LAddress addr _ -> pure (instrs, addr)

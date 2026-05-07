@@ -48,6 +48,7 @@ data Instr
   | IStore16 Operand Operand
   | IStore8 Operand Operand
   | IBin Temp BinOp Operand Operand
+  | ICond Temp [Instr] Operand [Instr] Operand [Instr] Operand
   | ICall (Maybe Temp) String [Operand]
   | ICallIndirect (Maybe Temp) Operand [Operand]
   deriving (Eq, Show)

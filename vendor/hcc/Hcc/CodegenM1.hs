@@ -79,7 +79,7 @@ codegenBlocks :: String -> Allocation -> Int -> [BasicBlock] -> Either CodegenEr
 codegenBlocks fnName alloc totalSlots blocks = case blocks of
   [] -> pure id
   BasicBlock bid instrs term:rest -> do
-    body <- codegenInstrs alloc totalSlots instrs
+    body <- codegenInstrs fnName alloc totalSlots instrs
     termCode <- codegenTerminator fnName alloc totalSlots term
     tailCode <- codegenBlocks fnName alloc totalSlots rest
     pure (linesFromList (blockLabel fnName bid) . linesFromList body . linesFromList termCode . tailCode)
@@ -88,16 +88,16 @@ blockLabel :: String -> BlockId -> [String]
 blockLabel _ (BlockId 0) = []
 blockLabel fnName (BlockId n) = [":" ++ blockRef fnName (BlockId n)]
 
-codegenInstrs :: Allocation -> Int -> [Instr] -> Either CodegenError [String]
-codegenInstrs alloc totalSlots instrs = case instrs of
+codegenInstrs :: String -> Allocation -> Int -> [Instr] -> Either CodegenError [String]
+codegenInstrs fnName alloc totalSlots instrs = case instrs of
   [] -> pure []
   instr:rest -> do
-    code <- codegenInstr alloc totalSlots instr
-    tailCode <- codegenInstrs alloc totalSlots rest
+    code <- codegenInstr fnName alloc totalSlots instr
+    tailCode <- codegenInstrs fnName alloc totalSlots rest
     pure (code ++ tailCode)
 
-codegenInstr :: Allocation -> Int -> Instr -> Either CodegenError [String]
-codegenInstr alloc totalSlots instr = case instr of
+codegenInstr :: String -> Allocation -> Int -> Instr -> Either CodegenError [String]
+codegenInstr fnName alloc totalSlots instr = case instr of
   IParam temp index -> do
     code <- loadParam totalSlots index
     storeTemp alloc temp code
@@ -145,6 +145,30 @@ codegenInstr alloc totalSlots instr = case instr of
     bcode <- loadOperand alloc b
     opCode <- binOpCode op
     storeTemp alloc temp (acode ++ ["\tPUSH_RAX", "\tPOP_RBX"] ++ bcode ++ opCode)
+  ICond temp condInstrs condOp trueInstrs trueOp falseInstrs falseOp -> do
+    condCode <- codegenInstrs fnName alloc totalSlots condInstrs
+    condLoad <- loadOperand alloc condOp
+    trueCode <- codegenInstrs fnName alloc totalSlots trueInstrs
+    trueLoad <- loadOperand alloc trueOp
+    falseCode <- codegenInstrs fnName alloc totalSlots falseInstrs
+    falseLoad <- loadOperand alloc falseOp
+    let Temp n = temp
+    let elseLabel = "HCC_COND_ELSE_" ++ fnName ++ "_" ++ show n
+    let doneLabel = "HCC_COND_DONE_" ++ fnName ++ "_" ++ show n
+    trueStore <- storeTemp alloc temp trueLoad
+    falseStore <- storeTemp alloc temp falseLoad
+    pure ( condCode ++ condLoad ++
+           [ "\tTEST"
+           , "\tJUMP_NE %" ++ doneLabel ++ "_TRUE"
+           , "\tJUMP %" ++ elseLabel
+           , ":" ++ doneLabel ++ "_TRUE"
+           ] ++
+           trueCode ++ trueStore ++
+           [ "\tJUMP %" ++ doneLabel
+           , ":" ++ elseLabel
+           ] ++
+           falseCode ++ falseStore ++
+           [":" ++ doneLabel])
   ICall result name args -> do
     argCode <- loadArguments alloc 0 args
     let callCode = argCode ++ ["\tCALL_IMMEDIATE %FUNCTION_" ++ name] ++ cleanupCallStack args

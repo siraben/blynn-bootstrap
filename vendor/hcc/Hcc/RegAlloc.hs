@@ -75,6 +75,8 @@ allocateInstrs nextSlot acc instrs = case instrs of
       allocateInstrs nextSlot acc rest
     IBin temp _ _ _ ->
       allocateDef nextSlot acc temp rest
+    ICond temp condInstrs _ trueInstrs _ falseInstrs _ ->
+      allocateInstrs nextSlot acc (condInstrs ++ trueInstrs ++ falseInstrs ++ [IConst temp 0] ++ rest)
     ICall Nothing _ _ ->
       allocateInstrs nextSlot acc rest
     ICall (Just temp) _ _ ->
