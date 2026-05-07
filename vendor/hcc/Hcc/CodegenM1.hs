@@ -49,6 +49,7 @@ header =
   , "DEFINE HCC_COPY_r9_to_rax 4C89C8"
   , "DEFINE HCC_PUSH_RSI 56"
   , "DEFINE HCC_PUSH_RDX 52"
+  , "DEFINE HCC_LOAD_IMMEDIATE64_rax 48B8"
   , "DEFINE HCC_SHL_rax_cl 48D3E0"
   , "DEFINE HCC_SHR_rax_cl 48D3E8"
   , "DEFINE HCC_SAR_rax_cl 48D3F8"
@@ -295,15 +296,11 @@ loadImmediate :: Int -> [String]
 loadImmediate value =
   if value >= (-2147483648) && value <= 2147483647
     then ["\tLOAD_IMMEDIATE_rax %" ++ show value]
-    else
-      [ "\tLOAD_IMMEDIATE_rax %" ++ show value
-      , "\tPUSH_RAX"
-      , "\tLOAD_IMMEDIATE_rax %32"
-      , "\tHCC_COPY_rax_to_rcx"
-      , "\tPOP_RAX"
-      , "\tHCC_SHL_rax_cl"
-      , "\tHCC_SHR_rax_cl"
-      ]
+    else ["\tHCC_LOAD_IMMEDIATE64_rax " ++ joinWords (map byteHex (word64Bytes value))]
+
+word64Bytes :: Int -> [Int]
+word64Bytes value = map byte ([0..7] :: [Int]) where
+  byte shift = (value `div` (256 ^ shift)) `mod` 256
 
 loadLocation :: Location -> Either CodegenError [String]
 loadLocation loc = case loc of

@@ -8,6 +8,7 @@ CASES = [
     ("ret13", 13),
     ("short-circuit", 42),
     ("local-aggregate", 3),
+    ("call-arg-immediate", 42),
 ]
 
 
