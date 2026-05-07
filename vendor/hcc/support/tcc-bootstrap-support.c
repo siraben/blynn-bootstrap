@@ -481,7 +481,11 @@ struct tm* localtime(time_t* value)
 }
 
 int execvp(char* file, char** argv) { return -1; }
-void* fdopen(int fd, char* mode) { return 0; }
+void* fdopen(int fd, char* mode)
+{
+    if (fd < 0) return 0;
+    return (void*)(long)fd;
+}
 char* getenv(char* name) { return 0; }
 char* realpath(char* path, char* out)
 {

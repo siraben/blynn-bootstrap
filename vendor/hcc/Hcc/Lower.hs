@@ -1528,6 +1528,7 @@ parseInt text =
   in case clean of
     '0':'x':xs -> readHex xs
     '0':'X':xs -> readHex xs
+    '0':xs -> readOctal xs
     _ -> readDecimalPrefix clean
 
 readDecimalPrefix :: String -> Int
@@ -1539,6 +1540,13 @@ readDecimalPrefix text =
 
 isDecimalDigit :: Char -> Bool
 isDecimalDigit c = c >= '0' && c <= '9'
+
+readOctal :: String -> Int
+readOctal = go 0 where
+  go n xs = case xs of
+    [] -> n
+    c:rest | c >= '0' && c <= '7' -> go (n * 8 + fromEnum c - fromEnum '0') rest
+    _ -> n
 
 stripIntSuffix :: String -> String
 stripIntSuffix text = reverse (dropWhile isSuffix (reverse text)) where
