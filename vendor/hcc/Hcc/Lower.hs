@@ -1210,6 +1210,14 @@ exprType expr = case expr of
   EBinary "," _ right -> exprType right
   EBinary "&&" _ _ -> pure (Just CInt)
   EBinary "||" _ _ -> pure (Just CInt)
+  ECond _ yes no -> do
+    yesTy <- exprType yes
+    noTy <- exprType no
+    pure (case (yesTy, noTy) of
+      (Just ty, Nothing) -> Just ty
+      (Nothing, Just ty) -> Just ty
+      (Just ty, Just _) -> Just ty
+      _ -> Nothing)
   EAssign lhs _ -> exprType lhs
   EPostfix _ value -> exprType value
   EUnary "++" value -> exprType value
