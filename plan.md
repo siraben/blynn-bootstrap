@@ -16,6 +16,36 @@ substrate.
 - We have `precisely_up` from upstream blynn/compiler, fixpointed.
   It accepts a strictly larger Haskell dialect than orians' `precisely`.
 
+## Current status as of 2026-05-07
+
+- `vendor/hcc` is no longer a stub. The GHC development build has a
+  lexer, preprocessor, parser, lowering, and M1 emitter for the C subset
+  currently needed by the smoke corpus and the TinyCC bootstrap probe.
+- `nix build .#hcc-ghc .#hcc-m1-smoke .#hcc-mescc-tests` is green.
+  The M1 smoke runner is a Python script with each fixture in its own C
+  file under `vendor/hcc/test/m1-smoke/examples/`.
+- hcc-generated M1 can be assembled by nixpkgs minimal-bootstrap's
+  `stage0-posix.mescc-tools` (`M1` + `hex2`) for the smoke corpus.
+- A GHC-built hcc can compile a pre-expanded TinyCC one-source input to
+  M1. Assembled through `M1`/`hex2`, that produces a TinyCC binary that
+  compiles TinyCC's one-source `tcc.c` to an ELF object.
+- That hcc-built TinyCC object links with the temporary freestanding
+  development harness and runs. With `TCC_MUSL=1`, TinyCC's own
+  `include/stdarg.h` first in the include path, and `lib/va_list.c`
+  linked, the resulting compiler compiles TinyCC again; the third
+  generation also links and compiles a smoke object.
+- The current `nix/tinycc-boot-hcc.nix` still uses hcc's temporary
+  `-o` path, which delegates final binary production to a backend C
+  compiler. It records the discovered bootstrap flags, but it is not yet
+  the final M1/hex2-only TinyCC derivation.
+
+The immediate remaining work is to replace the `/tmp` TinyCC self-host
+probe with a reproducible derivation: generate or vendor the guarded
+one-source TinyCC input, run `hcc -S`, assemble with `M1`, link with
+`hex2`, include the minimal runtime objects (`tcc-bootstrap-support`,
+TinyCC `lib/va_list.c`, start/syscall/memory support), then run the
+TinyCC-to-TinyCC self-host check in Nix.
+
 The remaining gap: **MesCC compiles tinycc.c**. To remove Mes, we need
 something else that compiles tinycc.c. That something must itself be
 buildable from `precisely`, i.e. written in the Haskell-subset that
