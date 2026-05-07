@@ -1,11 +1,4 @@
-module RegAlloc
-  ( Allocation
-  , Location(..)
-  , PhysReg(..)
-  , allocateFunction
-  , lookupLocation
-  , stackSlotCount
-  ) where
+module RegAlloc where
 
 import FingerTree
 import Ir

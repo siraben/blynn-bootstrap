@@ -1,7 +1,4 @@
-module Lower
-  ( lowerProgram
-  , lowerProgramWithDataPrefix
-  ) where
+module Lower where
 
 import Ast
 import CompileM
@@ -98,12 +95,12 @@ lowerTopDecls decls = case decls of
     fn <- lowerFunction name params body
     fns <- lowerTopDecls rest
     pure (fn:fns)
-  Prototype{}:rest -> lowerTopDecls rest
-  Global{}:rest -> lowerTopDecls rest
-  ExternGlobals{}:rest -> lowerTopDecls rest
-  Globals{}:rest -> lowerTopDecls rest
-  StructDecl{}:rest -> lowerTopDecls rest
-  EnumConstants{}:rest -> lowerTopDecls rest
+  Prototype _ _ _:rest -> lowerTopDecls rest
+  Global _ _ _:rest -> lowerTopDecls rest
+  ExternGlobals _:rest -> lowerTopDecls rest
+  Globals _:rest -> lowerTopDecls rest
+  StructDecl _ _ _:rest -> lowerTopDecls rest
+  EnumConstants _:rest -> lowerTopDecls rest
   TypeDecl:rest -> lowerTopDecls rest
 
 lowerFunction :: String -> [Param] -> [Stmt] -> CompileM FunctionIr
@@ -426,7 +423,7 @@ switchCases clauses = case clauses of
   _:rest -> switchCases rest
 
 lowerSwitchDispatch :: BlockId -> Operand -> BlockId -> [(Expr, BlockId)] -> CompileM [BasicBlock]
-lowerSwitchDispatch firstId valueOp defaultTarget cases = go firstId cases where
+lowerSwitchDispatch firstId valueOp defaultTarget switchCasePairs = go firstId switchCasePairs where
   go bid rest = case rest of
     [] -> pure [BasicBlock bid [] (TJump defaultTarget)]
     (caseExpr, target):tailCases -> do
@@ -547,9 +544,9 @@ lowerDecl ty name initExpr = do
 
 localAggregateTemplateData :: CType -> Maybe Expr -> CompileM (Maybe String)
 localAggregateTemplateData ty initExpr = case (ty, initExpr) of
-  (CArray{}, Just EInitList{}) -> localDataItem ty initExpr
-  (CArray{}, Just EString{}) -> localDataItem ty initExpr
-  (_, Just EInitList{}) -> do
+  (CArray _ _, Just (EInitList _)) -> localDataItem ty initExpr
+  (CArray _ _, Just (EString _)) -> localDataItem ty initExpr
+  (_, Just (EInitList _)) -> do
     aggregateStorage <- isAggregateTypeM ty
     if aggregateStorage then localDataItem ty initExpr else pure Nothing
   _ -> pure Nothing
@@ -695,7 +692,7 @@ lowerExpr expr = case expr of
               else do
                 globalTy <- lookupGlobalType name
                 case globalTy of
-                  Just CArray{} -> pure ([], OGlobal name)
+                  Just (CArray _ _) -> pure ([], OGlobal name)
                   Just ty -> do
                     aggregateStorage <- isAggregateTypeM ty
                     if aggregateStorage
@@ -777,11 +774,11 @@ lowerExpr expr = case expr of
     if op == "<<"
       then lowerShiftExpr op a b
       else lowerPlainBin iop a b
-  EIndex{} ->
+  EIndex _ _ ->
     readLValueExpr expr
-  EPtrMember{} ->
+  EPtrMember _ _ ->
     readLValueExpr expr
-  EMember{} ->
+  EMember _ _ ->
     readLValueExpr expr
   ECall (EVar name) args -> do
     direct <- lookupFunction name
@@ -958,7 +955,7 @@ readLValue lvalue = case lvalue of
   LLocal temp ty ->
     coerceScalar ty (OTemp temp)
   LAddress addr ty -> case ty of
-    CArray{} -> pure ([], addr)
+    CArray _ _ -> pure ([], addr)
     _ -> do
       aggregateStorage <- isAggregateTypeM ty
       if aggregateStorage
@@ -1143,11 +1140,11 @@ scaledIndex index size =
 
 exprType :: Expr -> CompileM (Maybe CType)
 exprType expr = case expr of
-  EInt{} -> pure (Just CInt)
-  EChar{} -> pure (Just CChar)
-  EString{} -> pure (Just (CPtr CChar))
-  ESizeofType{} -> pure (Just CInt)
-  ESizeofExpr{} -> pure (Just CInt)
+  EInt _ -> pure (Just CInt)
+  EChar _ -> pure (Just CChar)
+  EString _ -> pure (Just (CPtr CChar))
+  ESizeofType _ -> pure (Just CInt)
+  ESizeofExpr _ -> pure (Just CInt)
   EVar name -> do
     local <- lookupVarType name
     case local of
@@ -1191,16 +1188,16 @@ exprType expr = case expr of
     rightTy <- exprType right
     arithmeticTy <- usualArithmeticType left right
     pure (case (pointerElementType leftTy, pointerElementType rightTy) of
-      (Just{}, _) -> leftTy
-      (_, Just{}) -> rightTy
+      (Just _, _) -> leftTy
+      (_, Just _) -> rightTy
       _ -> Just arithmeticTy)
   EBinary "-" left right -> do
     leftTy <- exprType left
     rightTy <- exprType right
     arithmeticTy <- usualArithmeticType left right
     pure (case (pointerElementType leftTy, pointerElementType rightTy) of
-      (Just{}, Just{}) -> Just CLong
-      (Just{}, Nothing) -> leftTy
+      (Just _, Just _) -> Just CLong
+      (Just _, Nothing) -> leftTy
       _ -> Just arithmeticTy)
   EBinary "<<" left _ -> do
     leftTy <- exprType left
@@ -1314,7 +1311,7 @@ isSignedIntegerType ty = case ty of
   CChar -> True
   CInt -> True
   CLong -> True
-  CEnum{} -> True
+  CEnum _ -> True
   CNamed name -> isSignedNamedInteger name
   _ -> False
 
@@ -1330,7 +1327,7 @@ isIntegerTypeM ty = case ty of
   CInt -> pure True
   CUnsigned -> pure True
   CLong -> pure True
-  CEnum{} -> pure True
+  CEnum _ -> pure True
   CNamed name -> pure (maybe False (const True) (namedIntegerSize name))
   _ -> pure False
 
@@ -1380,7 +1377,7 @@ typeSize ty = case ty of
   CLong -> pure 8
   CDouble -> pure 8
   CLongDouble -> pure 16
-  CPtr{} -> pure 8
+  CPtr _ -> pure 8
   CArray inner count -> do
     size <- typeSize inner
     bound <- arrayBoundSize count
@@ -1395,7 +1392,7 @@ typeSize ty = case ty of
     aggregateSize True fields
   CStructDef fields -> aggregateSize False fields
   CUnionDef fields -> aggregateSize True fields
-  CEnum{} -> pure 4
+  CEnum _ -> pure 4
   CNamed name -> namedTypeSize name
 
 namedTypeSize :: String -> CompileM Int
@@ -1404,7 +1401,7 @@ namedTypeSize name = case namedIntegerSize name of
   Nothing -> do
       fields <- lookupStruct name
       case fields of
-        Just{} -> structSize name
+        Just _ -> structSize name
         Nothing -> pure 8
 
 namedIntegerSize :: String -> Maybe Int
@@ -1477,8 +1474,8 @@ globalData ty initExpr = do
 
 initializedSize :: CType -> [DataValue] -> Maybe Expr -> CompileM Int
 initializedSize ty values initExpr = case (ty, initExpr) of
-  (CArray _ Nothing, Just EInitList{}) -> pure (dataSize values)
-  (CArray CChar Nothing, Just EString{}) -> pure (dataSize values)
+  (CArray _ Nothing, Just (EInitList _)) -> pure (dataSize values)
+  (CArray CChar Nothing, Just (EString _)) -> pure (dataSize values)
   _ -> typeSize ty
 
 globalDataValue :: CType -> Maybe Expr -> CompileM [DataValue]
@@ -1570,27 +1567,27 @@ unionSizeFromFields fields = case fields of
 
 isAggregateType :: CType -> Bool
 isAggregateType ty = case ty of
-  CArray{} -> True
-  CStruct{} -> True
-  CUnion{} -> True
-  CStructNamed{} -> True
-  CUnionNamed{} -> True
-  CStructDef{} -> True
-  CUnionDef{} -> True
-  CNamed{} -> True
+  CArray _ _ -> True
+  CStruct _ -> True
+  CUnion _ -> True
+  CStructNamed _ _ -> True
+  CUnionNamed _ _ -> True
+  CStructDef _ -> True
+  CUnionDef _ -> True
+  CNamed _ -> True
   _ -> False
 
 isAggregateTypeM :: CType -> CompileM Bool
 isAggregateTypeM ty = case ty of
-  CArray{} -> pure True
-  CNamed{} -> do
+  CArray _ _ -> pure True
+  CNamed _ -> do
     aggregate <- aggregateFields ty
     pure (maybe False (const True) aggregate)
   _ -> pure (isAggregateType ty)
 
 isPointerType :: CType -> Bool
 isPointerType ty = case ty of
-  CPtr{} -> True
+  CPtr _ -> True
   CNamed name -> name `elem` ["intptr_t", "uintptr_t"]
   _ -> False
 
@@ -1707,8 +1704,8 @@ takeData size values =
 dataSize :: [DataValue] -> Int
 dataSize values = case values of
   [] -> 0
-  DByte{}:rest -> 1 + dataSize rest
-  DAddress{}:rest -> 8 + dataSize rest
+  DByte _:rest -> 1 + dataSize rest
+  DAddress _:rest -> 8 + dataSize rest
 
 zeroData :: Int -> [DataValue]
 zeroData n = if n <= 0 then [] else DByte 0 : zeroData (n - 1)
@@ -1764,10 +1761,10 @@ isUnsignedType :: CType -> Bool
 isUnsignedType ty = case ty of
   CUnsigned -> True
   CUnsignedChar -> True
-  CPtr{} -> True
-  CArray{} -> True
+  CPtr _ -> True
+  CArray _ _ -> True
   CNamed name -> case namedIntegerSize name of
-    Just{} -> not (name `elem` signedNamedIntegerTypes)
+    Just _ -> not (name `elem` signedNamedIntegerTypes)
     Nothing -> False
   _ -> False
 
@@ -1786,14 +1783,16 @@ parseInt text =
     _ -> readDecimalPrefix clean
 
 readDecimalPrefix :: String -> Int
-readDecimalPrefix text =
-  let digits = takeWhile isDecimalDigit text
-  in case reads digits of
-    [(n, "")] -> n
-    _ -> 0
+readDecimalPrefix text = go 0 text where
+  go acc xs = case xs of
+    c:rest | isDecimalDigit c -> go (acc * 10 + decimalDigit c) rest
+    _ -> acc
 
 isDecimalDigit :: Char -> Bool
 isDecimalDigit c = c >= '0' && c <= '9'
+
+decimalDigit :: Char -> Int
+decimalDigit c = fromEnum c - fromEnum '0'
 
 readOctal :: String -> Int
 readOctal = go 0 where

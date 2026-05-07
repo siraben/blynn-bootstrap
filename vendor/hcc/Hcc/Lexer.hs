@@ -1,7 +1,4 @@
-module Lexer
-  ( LexError(..)
-  , lexC
-  ) where
+module Lexer where
 
 import Token
 
@@ -19,7 +16,7 @@ lexC source = go (LexState source (SrcPos 1 1) True) [] where
   go st acc = case lsInput st of
     [] -> Right (reverse acc)
     c:cs
-      | isSpace c -> go (advance c st { lsInput = cs }) acc
+      | lexerIsSpace c -> go (advance c st { lsInput = cs }) acc
       | isDirectiveStart st c -> lexDirective st >>= \(tok, st') -> go st' (tok:acc)
       | startsLineComment (lsInput st) -> go (skipLineComment st) acc
       | startsBlockComment (lsInput st) -> case skipBlockComment st of
@@ -189,10 +186,14 @@ nextPos c (SrcPos line col) =
 
 nextBol :: Char -> Bool -> Bool
 nextBol c bol =
-  if c == '\n' then True else if isSpace c then bol else False
+  if c == '\n' then True else if lexerIsSpace c then bol else False
 
-isSpace :: Char -> Bool
-isSpace c = c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\v' || c == '\f'
+lexerIsSpace :: Char -> Bool
+lexerIsSpace c =
+  c == ' ' || c == '\n' || charCode c == 9 || charCode c == 13 || charCode c == 11 || charCode c == 12
+
+charCode :: Char -> Int
+charCode = fromEnum
 
 isDigit :: Char -> Bool
 isDigit c = c >= '0' && c <= '9'

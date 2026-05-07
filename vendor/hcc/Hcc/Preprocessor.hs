@@ -1,10 +1,7 @@
-module Preprocessor
-  ( PreprocessError(..)
-  , preprocess
-  ) where
+module Preprocessor where
 
-import ConstExpr
-import Lexer
+import ConstExpr hiding (charCode)
+import Lexer hiding (charCode, isAsciiAlpha, isAsciiAlphaNum, isIdentChar, isIdentStart, lexerIsSpace, prefixOf)
 import SymbolTable
 import Token
 
@@ -23,12 +20,9 @@ data MacroArg = MacroArg
   deriving (Eq, Show)
 
 type Macros = SymbolMap Macro
-type Tokens = [Token] -> [Token]
 
 data Chunk = Chunk [String] [Token]
   deriving (Eq, Show)
-
-type Source = [Chunk]
 
 data IfFrame = IfFrame
   { ifParentActive :: Bool
@@ -94,7 +88,7 @@ preprocess toks = go symbolMapEmpty [] (sourceFromTokens toks) id where
       then Left (PreprocessError (spanStart sp) ("unsupported directive: #" ++ name))
       else go macros frames xs acc
 
-dropInactiveToken :: Source -> Source
+dropInactiveToken :: [Chunk] -> [Chunk]
 dropInactiveToken toks = case toks of
   [] -> []
   Chunk _ []:xs -> dropInactiveToken xs
@@ -215,7 +209,7 @@ lexReplacement sp text = case lexC ("__hcc_macro_dummy " ++ dropSpaces text) of
   Right (_:toks) -> Right toks
   Right [] -> Right []
 
-expandNextSource :: Macros -> Bool -> [String] -> Source -> Either PreprocessError ([Token], Source)
+expandNextSource :: Macros -> Bool -> [String] -> [Chunk] -> Either PreprocessError ([Token], [Chunk])
 expandNextSource macros protectDefined disabled toks = case popSource toks of
   Nothing -> Right ([], [])
   Just (_, tok@(Token _ (TokIdent "defined")), xs) | protectDefined ->
@@ -237,7 +231,7 @@ expandTokens macros protectDefined disabled toks = go (sourceFromTokens toks) id
       (expanded, rest') <- expandNextSource macros protectDefined disabled rest
       go rest' (acc . tokens expanded)
 
-expandMacro :: Macros -> Bool -> [String] -> Token -> Span -> String -> Macro -> Source -> Either PreprocessError ([Token], Source)
+expandMacro :: Macros -> Bool -> [String] -> Token -> Span -> String -> Macro -> [Chunk] -> Either PreprocessError ([Token], [Chunk])
 expandMacro macros protectDefined disabled original sp name macro rest = case macro of
   ObjectMacro _ body -> do
     let replacement = relocate sp body
@@ -251,7 +245,7 @@ expandMacro macros protectDefined disabled original sp name macro rest = case ma
       Right (expanded, rest')
     _ -> Right ([original], rest)
 
-takeDefinedOperandSource :: Source -> ([Token], Source)
+takeDefinedOperandSource :: [Chunk] -> ([Token], [Chunk])
 takeDefinedOperandSource toks = case popSource toks of
   Just (_, open@(Token _ (TokPunct "(")), afterOpen) ->
     case popSource afterOpen of
@@ -263,9 +257,9 @@ takeDefinedOperandSource toks = case popSource toks of
   Just (_, name@(Token _ (TokIdent _)), rest) -> ([name], rest)
   _ -> ([], toks)
 
-collectInvocationArgs :: Span -> Source -> Either PreprocessError ([[Token]], Source)
+collectInvocationArgs :: Span -> [Chunk] -> Either PreprocessError ([[Token]], [Chunk])
 collectInvocationArgs sp toks = go 1 [] [] toks where
-  go :: Int -> [Token] -> [[Token]] -> Source -> Either PreprocessError ([[Token]], Source)
+  go :: Int -> [Token] -> [[Token]] -> [Chunk] -> Either PreprocessError ([[Token]], [Chunk])
   go depth current args rest = case popSource rest of
     Nothing -> Left (PreprocessError (spanStart sp) "unterminated macro invocation")
     Just (_, Token _ (TokPunct ")"), xs) | depth == 1 ->
@@ -415,21 +409,21 @@ replaceDefinedOperators macros toks = go toks id where
 
   definedToken sp name = Token sp (TokInt (if isDefined name macros then "1" else "0"))
 
-tokens :: [Token] -> Tokens
+tokens :: [Token] -> [Token] -> [Token]
 tokens xs = (xs ++)
 
-token :: Token -> Tokens
+token :: Token -> [Token] -> [Token]
 token x = (x :)
 
-sourceFromTokens :: [Token] -> Source
+sourceFromTokens :: [Token] -> [Chunk]
 sourceFromTokens toks =
   if null toks then [] else [Chunk [] toks]
 
-prependChunk :: [String] -> [Token] -> Source -> Source
+prependChunk :: [String] -> [Token] -> [Chunk] -> [Chunk]
 prependChunk hidden toks source =
   if null toks then source else Chunk hidden toks : source
 
-popSource :: Source -> Maybe ([String], Token, Source)
+popSource :: [Chunk] -> Maybe ([String], Token, [Chunk])
 popSource source = case source of
   [] -> Nothing
   Chunk _ []:rest -> popSource rest
@@ -469,7 +463,7 @@ tokenKind :: Token -> TokenKind
 tokenKind (Token _ kind) = kind
 
 dropSpaces :: String -> String
-dropSpaces = dropWhile isSpace
+dropSpaces = dropWhile ppIsSpace
 
 trim :: String -> String
 trim = reverse . dropSpaces . reverse . dropSpaces
@@ -486,8 +480,9 @@ isIdentStart c = isAsciiAlpha c || c == '_'
 isIdentChar :: Char -> Bool
 isIdentChar c = isAsciiAlphaNum c || c == '_'
 
-isSpace :: Char -> Bool
-isSpace c = c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\v' || c == '\f'
+ppIsSpace :: Char -> Bool
+ppIsSpace c =
+  c == ' ' || c == '\n' || charCode c == 9 || charCode c == 13 || charCode c == 11 || charCode c == 12
 
 isDigitChar :: Char -> Bool
 isDigitChar c = c >= '0' && c <= '9'
@@ -497,3 +492,6 @@ isAsciiAlpha c = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
 
 isAsciiAlphaNum :: Char -> Bool
 isAsciiAlphaNum c = isAsciiAlpha c || isDigitChar c
+
+charCode :: Char -> Int
+charCode = fromEnum

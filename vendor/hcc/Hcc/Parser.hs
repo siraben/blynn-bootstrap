@@ -1,7 +1,4 @@
-module Parser
-  ( ParseError(..)
-  , parseProgram
-  ) where
+module Parser where
 
 import Ast
 import ConstExpr
@@ -11,7 +8,7 @@ import Token
 data ParseError = ParseError SrcPos String
   deriving (Eq, Show)
 
-data Consumed a = Consumed a | Empty a
+data Consumed a = Consumed a | Unconsumed a
   deriving (Eq, Show)
 
 data Reply a
@@ -25,7 +22,7 @@ instance Functor Parser where
   fmap f p = Parser $ \env toks -> mapConsumed (mapReply f) (runParser p env toks)
 
 instance Applicative Parser where
-  pure x = Parser $ \_env toks -> Empty (Ok x toks)
+  pure x = Parser $ \_env toks -> Unconsumed (Ok x toks)
   pf <*> px = do
     f <- pf
     x <- px
@@ -34,8 +31,8 @@ instance Applicative Parser where
 instance Monad Parser where
   return = pure
   p >>= f = Parser $ \env toks -> case runParser p env toks of
-    Empty reply -> case reply of
-      Error err -> Empty (Error err)
+    Unconsumed reply -> case reply of
+      Error err -> Unconsumed (Error err)
       Ok x rest -> runParser (f x) env rest
     Consumed reply -> Consumed (case reply of
       Error err -> Error err
@@ -43,7 +40,7 @@ instance Monad Parser where
 
 mapConsumed :: (a -> b) -> Consumed a -> Consumed b
 mapConsumed f consumed = case consumed of
-  Empty x -> Empty (f x)
+  Unconsumed x -> Unconsumed (f x)
   Consumed x -> Consumed (f x)
 
 mapReply :: (a -> b) -> Reply a -> Reply b
@@ -53,7 +50,7 @@ mapReply f reply = case reply of
 
 forceConsumed :: Consumed a -> a
 forceConsumed consumed = case consumed of
-  Empty x -> x
+  Unconsumed x -> x
   Consumed x -> x
 
 parseProgram :: [Token] -> Either ParseError Program
@@ -134,11 +131,11 @@ globalDecl isExtern decls =
   where
     uninitialized (_, _, initExpr) = case initExpr of
       Nothing -> True
-      Just{} -> False
+      Just _ -> False
     externPair (ty, name, _) = (ty, name)
 
 leadingExternQualifier :: Parser Bool
-leadingExternQualifier = Parser $ \_env toks -> Empty (Ok (go toks) toks) where
+leadingExternQualifier = Parser $ \_env toks -> Unconsumed (Ok (go toks) toks) where
   go ts = case ts of
     Token _ (TokIdent "extern"):_ -> True
     Token _ (TokIdent name):rest | name `elem` ["const", "volatile", "static", "register", "inline"] -> go rest
@@ -233,7 +230,7 @@ parameters = do
 parameterVoidOnly :: Parser Bool
 parameterVoidOnly = Parser $ \_env toks -> case toks of
   Token _ (TokIdent "void"):Token _ (TokPunct ")"):rest -> Consumed (Ok True rest)
-  _ -> Empty (Ok False toks)
+  _ -> Unconsumed (Ok False toks)
 
 parseNonEmptyParams :: Parser [Param]
 parseNonEmptyParams = do
@@ -401,7 +398,7 @@ stmtAsBlock = do
     _ -> do
       first <- stmt
       case first of
-        SLabel{} -> do
+        SLabel _ -> do
           body <- stmt
           pure [first, body]
         _ -> pure [first]
@@ -897,7 +894,7 @@ tokenStartsTypeInEnv env tok = case tokenKind tok of
   _ -> False
 
 identifierStartsDeclaration :: Parser Bool
-identifierStartsDeclaration = Parser $ \env toks -> Empty (Ok (go env toks) toks) where
+identifierStartsDeclaration = Parser $ \env toks -> Unconsumed (Ok (go env toks) toks) where
   go env toks = case toks of
     Token _ (TokIdent name):rest
       | startsTypeName name -> True
@@ -919,7 +916,7 @@ identifierStartsDeclaration = Parser $ \env toks -> Empty (Ok (go env toks) toks
     _ -> toks
 
 isKnownTypeNameP :: String -> Parser Bool
-isKnownTypeNameP name = Parser $ \env toks -> Empty (Ok (symbolSetMember name env) toks)
+isKnownTypeNameP name = Parser $ \env toks -> Unconsumed (Ok (symbolSetMember name env) toks)
 
 manyP :: Parser a -> Parser [a]
 manyP p = do
@@ -966,14 +963,14 @@ skipBalanced open close = go (1 :: Int) where
 
 optionalP :: Parser a -> Parser (Maybe a)
 optionalP p = Parser $ \env toks -> case runParser p env toks of
-  Empty (Error _) -> Empty (Ok Nothing toks)
-  Empty (Ok x rest) -> Empty (Ok (Just x) rest)
+  Unconsumed (Error _) -> Unconsumed (Ok Nothing toks)
+  Unconsumed (Ok x rest) -> Unconsumed (Ok (Just x) rest)
   Consumed (Ok x rest) -> Consumed (Ok (Just x) rest)
   Consumed (Error err) -> Consumed (Error err)
 
 tryP :: Parser a -> Parser a
 tryP p = Parser $ \env toks -> case runParser p env toks of
-  Consumed (Error err) -> Empty (Error err)
+  Consumed (Error err) -> Unconsumed (Error err)
   other -> other
 
 ifM :: Parser Bool -> Parser a -> Parser a -> Parser a
@@ -984,7 +981,7 @@ ifM test yes no = do
 eatPunct :: String -> Parser Bool
 eatPunct s = Parser $ \_env toks -> case toks of
   Token _ (TokPunct p):rest | p == s -> Consumed (Ok True rest)
-  _ -> Empty (Ok False toks)
+  _ -> Unconsumed (Ok False toks)
 
 needPunct :: String -> Parser ()
 needPunct s = do
@@ -994,7 +991,7 @@ needPunct s = do
 eatIdent :: String -> Parser Bool
 eatIdent s = Parser $ \_env toks -> case toks of
   Token _ (TokIdent p):rest | p == s -> Consumed (Ok True rest)
-  _ -> Empty (Ok False toks)
+  _ -> Unconsumed (Ok False toks)
 
 needIdent :: Parser String
 needIdent = do
@@ -1019,16 +1016,16 @@ needIdentValue expected = do
 
 peek :: Parser Token
 peek = Parser $ \_env toks -> case toks of
-  [] -> Empty (Error (ParseError (SrcPos 1 1) "unexpected end of input"))
-  tok:_ -> Empty (Ok tok toks)
+  [] -> Unconsumed (Error (ParseError (SrcPos 1 1) "unexpected end of input"))
+  tok:_ -> Unconsumed (Ok tok toks)
 
 peekMaybe :: Parser (Maybe Token)
-peekMaybe = Parser $ \_env toks -> Empty (Ok (case toks of [] -> Nothing; tok:_ -> Just tok) toks)
+peekMaybe = Parser $ \_env toks -> Unconsumed (Ok (case toks of [] -> Nothing; tok:_ -> Just tok) toks)
 
 peekSecondPunct :: String -> Parser Bool
 peekSecondPunct punct = Parser $ \_env toks -> case toks of
-  _:Token _ (TokPunct p):_ | p == punct -> Empty (Ok True toks)
-  _ -> Empty (Ok False toks)
+  _:Token _ (TokPunct p):_ | p == punct -> Unconsumed (Ok True toks)
+  _ -> Unconsumed (Ok False toks)
 
 nextStartsType :: Parser Bool
 nextStartsType = do
@@ -1039,11 +1036,11 @@ nextStartsType = do
 
 advanceToken :: Parser ()
 advanceToken = Parser $ \_env toks -> case toks of
-  [] -> Empty (Error (ParseError (SrcPos 1 1) "unexpected end of input"))
+  [] -> Unconsumed (Error (ParseError (SrcPos 1 1) "unexpected end of input"))
   _:rest -> Consumed (Ok () rest)
 
 failAt :: Token -> String -> Parser a
-failAt tok msg = Parser $ \_env _ -> Empty (Error (parseErrorAt tok msg))
+failAt tok msg = Parser $ \_env _ -> Unconsumed (Error (parseErrorAt tok msg))
 
 parseErrorAt :: Token -> String -> ParseError
 parseErrorAt (Token (Span pos _) kind) msg = ParseError pos (msg ++ " near " ++ show (tokenText kind))

@@ -1,10 +1,4 @@
-module FingerTree
-  ( FingerTree
-  , FingerRange(..)
-  , fingerEmpty
-  , fingerLookupWith
-  , fingerSnoc
-  ) where
+module FingerTree where
 
 data FingerRange = FingerRange Int Int
   deriving (Eq, Show)

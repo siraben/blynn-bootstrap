@@ -1,7 +1,4 @@
-module ConstExpr
-  ( parseConstExpr
-  , parseIntLiteral
-  ) where
+module ConstExpr where
 
 import Token
 

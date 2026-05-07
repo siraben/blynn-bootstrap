@@ -1,33 +1,22 @@
 module Main where
 
-import GHC.IO.Encoding (setLocaleEncoding, utf8)
-import Control.Monad (filterM)
-import System.Directory (findExecutable)
-import System.Directory (canonicalizePath)
-import System.Directory (doesFileExist)
-import System.Environment (getArgs)
-import System.Environment (lookupEnv)
-import System.Exit (exitFailure, exitSuccess)
-import System.FilePath ((</>), takeDirectory, takeFileName)
-import System.IO (hPutStrLn, stderr)
-import System.Process (callProcess)
-
 import CompileM
-import CodegenM1
-import Lexer
+import CodegenM1 hiding (line, mapCompileError)
+import HccSystem
+import Lexer hiding (charCode, isAsciiAlpha, isAsciiAlphaNum, isDigit, isHexDigit, isIdentChar, isIdentStart, lexerIsSpace, prefixOf)
 import Lower
-import Parser
-import Preprocessor
+import Parser hiding (stringLiteral)
+import Preprocessor hiding (charCode, directiveName, dropSpaces, isAsciiAlpha, isAsciiAlphaNum, isDigitChar, isIdentChar, isIdentStart, ppIsSpace, prefixOf, spanStart, suffixOf, token, tokenKind, tokenStart, tokens, trim)
 import SymbolTable
 import Token
 
 main :: IO ()
 main = do
-  setLocaleEncoding utf8
-  args <- getArgs
+  hccInit
+  args <- hccArgs
   case args of
     [] -> die "hcc: no input files"
-    ["--help"] -> usage >> exitSuccess
+    ["--help"] -> usage >> hccExitSuccess
     "--lex-dump":files -> lexDump files
     "--pp-dump":files -> ppDump files
     "--expand-dump":dumpArgs -> expandDump dumpArgs
@@ -38,10 +27,10 @@ main = do
     _ -> compileWithCc args
 
 usage :: IO ()
-usage = putStrLn "usage: hcc [CC-ARGS...]\n       hcc -S [-o FILE] INPUT.c\n       hcc --check FILE...\n       hcc --lex-dump FILE...\n       hcc --pp-dump FILE...\n       hcc --expand-dump FILE...\n       hcc --parse-dump FILE...\n       hcc --ir-dump FILE..."
+usage = hccPutStrLn "usage: hcc [CC-ARGS...]\n       hcc -S [-o FILE] INPUT.c\n       hcc --check FILE...\n       hcc --lex-dump FILE...\n       hcc --pp-dump FILE...\n       hcc --expand-dump FILE...\n       hcc --parse-dump FILE...\n       hcc --ir-dump FILE..."
 
 die :: String -> IO ()
-die msg = hPutStrLn stderr msg >> exitFailure
+die msg = hccPutErrLine msg >> hccExitFailure
 
 lexDump :: [String] -> IO ()
 lexDump files = case files of
@@ -50,10 +39,10 @@ lexDump files = case files of
 
 lexDumpFile :: String -> IO ()
 lexDumpFile path = do
-  source <- if path == "-" then getContents else readFile path
+  source <- hccReadFileOrStdin path
   case lexC source of
     Left (LexError pos msg) -> die (path ++ ":" ++ showPos pos ++ ": " ++ msg)
-    Right toks -> mapM_ (putStrLn . renderToken) toks
+    Right toks -> mapM_ (hccPutStrLn . renderToken) toks
 
 ppDump :: [String] -> IO ()
 ppDump files = case files of
@@ -62,17 +51,17 @@ ppDump files = case files of
 
 ppDumpFile :: String -> IO ()
 ppDumpFile path = do
-  source <- if path == "-" then getContents else readFile path
+  source <- hccReadFileOrStdin path
   case preprocessSource source of
     Left msg -> die (path ++ ":" ++ msg)
-    Right toks -> mapM_ (putStrLn . renderToken) toks
+    Right toks -> mapM_ (hccPutStrLn . renderToken) toks
 
 expandDump :: [String] -> IO ()
 expandDump args = case assemblyArgs ("-S":args) of
   Left msg -> die msg
   Right opts -> do
     source <- readSourceWithIncludes (asmIncludeDirs opts) (asmDefines opts) (asmInput opts)
-    putStr (renderDefines (asmDefines opts) ++ source)
+    hccPutStr (renderDefines (asmDefines opts) ++ source)
 
 preprocessSource :: String -> Either String [Token]
 preprocessSource source = case lexC (stripComments (spliceContinuations source)) of
@@ -82,7 +71,10 @@ preprocessSource source = case lexC (stripComments (spliceContinuations source))
 spliceContinuations :: String -> String
 spliceContinuations source = case source of
   [] -> []
-  '\\':'\r':'\n':rest -> spliceContinuations rest
+  '\\':c:'\n':rest ->
+    if charCode c == 13
+      then spliceContinuations rest
+      else '\\' : c : '\n' : spliceContinuations rest
   '\\':'\n':rest -> spliceContinuations rest
   c:rest -> c : spliceContinuations rest
 
@@ -136,10 +128,10 @@ parseDump files = case files of
 
 parseDumpFile :: String -> IO ()
 parseDumpFile path = do
-  source <- if path == "-" then getContents else readFile path
+  source <- hccReadFileOrStdin path
   case preprocessSource source >>= mapParseError . parseProgram of
     Left msg -> die (path ++ ":" ++ msg)
-    Right ast -> print ast
+    Right ast -> hccPutStrLn (show ast)
 
 irDump :: [String] -> IO ()
 irDump files = case files of
@@ -148,10 +140,10 @@ irDump files = case files of
 
 irDumpFile :: String -> IO ()
 irDumpFile path = do
-  source <- if path == "-" then getContents else readFile path
+  source <- hccReadFileOrStdin path
   case preprocessSource source >>= mapParseError . parseProgram >>= mapCompileError . lowerProgram of
     Left msg -> die (path ++ ":" ++ msg)
-    Right ir -> print ir
+    Right ir -> hccPutStrLn (show ir)
 
 mapParseError :: Either ParseError a -> Either String a
 mapParseError result = case result of
@@ -165,7 +157,7 @@ checkFiles files = case files of
 
 checkFile :: String -> IO ()
 checkFile path = do
-  source <- if path == "-" then getContents else readFile path
+  source <- hccReadFileOrStdin path
   case preprocessSource source >>= mapParseError . parseProgram of
     Left msg -> die (path ++ ":" ++ msg)
     Right _ -> pure ()
@@ -173,7 +165,7 @@ checkFile path = do
 compileWithCc :: [String] -> IO ()
 compileWithCc args = do
   cc <- resolveCc
-  callProcess cc args
+  hccCallProcess cc args
 
 compileAssembly :: [String] -> IO ()
 compileAssembly args = do
@@ -184,13 +176,13 @@ compileAssembly args = do
       let sourceWithDefines = renderDefines (asmDefines opts) ++ source
       case preprocessSource sourceWithDefines >>= mapParseError . parseProgram >>= mapCodegenError . codegenM1WithDataPrefix (dataLabelPrefix (asmInput opts)) of
         Left msg -> die (asmInput opts ++ ":" ++ msg)
-        Right asm -> writeFile (asmOutput opts) asm
+        Right asm -> hccWriteFile (asmOutput opts) asm
 
-dataLabelPrefix :: FilePath -> String
+dataLabelPrefix :: String -> String
 dataLabelPrefix path =
   "HCC_DATA_" ++ sanitized
   where
-    sanitized = case sanitizeLabel (takeFileName path) of
+    sanitized = case sanitizeLabel (hccTakeFileName path) of
       [] -> "unit"
       text -> text
 
@@ -207,9 +199,9 @@ isAsciiAlphaNum c =
   (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
 
 data AsmOptions = AsmOptions
-  { asmInput :: FilePath
-  , asmOutput :: FilePath
-  , asmIncludeDirs :: [FilePath]
+  { asmInput :: String
+  , asmOutput :: String
+  , asmIncludeDirs :: [String]
   , asmDefines :: [(String, String)]
   } deriving (Eq, Show)
 
@@ -254,18 +246,18 @@ unescapeDefineValue value = case value of
 renderDefines :: [(String, String)] -> String
 renderDefines defs = renderDefinesBuilder defs ""
 
-renderDefinesBuilder :: [(String, String)] -> ShowS
+renderDefinesBuilder :: [(String, String)] -> String -> String
 renderDefinesBuilder defs = case defs of
   [] -> id
   (name, value):rest ->
-    showString "#define "
-    . showString name
-    . showChar ' '
-    . showString value
-    . showChar '\n'
+    ("#define "++)
+    . (name++)
+    . (' ':)
+    . (value++)
+    . ('\n':)
     . renderDefinesBuilder rest
 
-readSourceWithIncludes :: [FilePath] -> [(String, String)] -> FilePath -> IO String
+readSourceWithIncludes :: [String] -> [(String, String)] -> String -> IO String
 readSourceWithIncludes includeDirs defines path = do
   (builder, _, _) <- expandFile [] symbolSetEmpty initialMacros path
   pure (builder "")
@@ -273,22 +265,22 @@ readSourceWithIncludes includeDirs defines path = do
   initialMacros = symbolSetFromList (map fst defines)
 
   expandFile stack guards macros file = do
-    key <- canonicalizePath file
+    key <- hccCanonicalizePath file
     if key `elem` stack
       then pure (id, guards, macros)
       else do
-        source <- readFile key
+        source <- hccReadFile key
         case includeGuard key source of
           Just (PragmaOnce guard) | symbolSetMember guard guards ->
             pure (id, guards, macros)
           Just (IfndefGuard guard start end) | symbolSetMember guard guards ->
-            expandLines (takeDirectory key) (key:stack) guards macros [] (skipLineRange start end (lines source))
+            expandLines (hccTakeDirectory key) (key:stack) guards macros [] (skipLineRange start end (lines source))
           guardInfo -> do
             let guards' = case guardInfo of
                   Nothing -> guards
                   Just (PragmaOnce guard) -> symbolSetInsert guard guards
                   Just (IfndefGuard guard _ _) -> symbolSetInsert guard guards
-            expandLines (takeDirectory key) (key:stack) guards' macros [] (lines source)
+            expandLines (hccTakeDirectory key) (key:stack) guards' macros [] (lines source)
 
   expandLines currentDir stack guards macros frames ls = case ls of
     [] -> pure (id, guards, macros)
@@ -299,7 +291,7 @@ readSourceWithIncludes includeDirs defines path = do
 
   expandLine currentDir stack guards macros frames line =
     let active = includeActive frames
-        keep = showString line . showChar '\n'
+        keep = (line++) . ('\n':)
     in case directiveNameFromLine line of
       Just "ifdef" ->
         pure (keep, guards, macros, pushIncludeFrame frames (maybe False (`symbolSetMember` macros) (directiveArgument "ifdef" line)))
@@ -331,8 +323,8 @@ readSourceWithIncludes includeDirs defines path = do
         _ -> pure (keep, guards, macros, frames)
 
   findInclude currentDir name = do
-    let candidates = (currentDir </> name) : map (</> name) includeDirs
-    existing <- filterM doesFileExist candidates
+    let candidates = hccPathJoin currentDir name : map (`hccPathJoin` name) includeDirs
+    existing <- hccFilterExisting candidates
     pure (case existing of
       [] -> Nothing
       file:_ -> Just file)
@@ -461,7 +453,7 @@ data IncludeGuard
   | IfndefGuard String Int Int
   deriving (Eq, Show)
 
-includeGuard :: FilePath -> String -> Maybe IncludeGuard
+includeGuard :: String -> String -> Maybe IncludeGuard
 includeGuard path source =
   let cleanedLines = lines (stripCommentsForDirectives source)
       indexedLines = zip [0..] cleanedLines
@@ -532,9 +524,9 @@ directiveNameFromLine line = case words line of
   word:_ | "#" `prefixOf` word -> Just (drop 1 word)
   _ -> Nothing
 
-canonicalGuardName :: FilePath -> String -> Bool
+canonicalGuardName :: String -> String -> Bool
 canonicalGuardName path guard =
-  filenameTokens (takeFileName path) == guardTokens guard
+  filenameTokens (hccTakeFileName path) == guardTokens guard
 
 filenameTokens :: String -> [String]
 filenameTokens name = splitNameTokens (map toUpperAscii name)
@@ -603,9 +595,13 @@ stripCommentsForDirectives source = normal source where
     c:rest -> c : charLiteral rest
 
 isSpaceChar :: Char -> Bool
-isSpaceChar c = c == ' ' || c == '\t' || c == '\r' || c == '\n'
+isSpaceChar c =
+  c == ' ' || c == '\n' || charCode c == 9 || charCode c == 13
 
-replaceExt :: FilePath -> String -> FilePath
+charCode :: Char -> Int
+charCode = fromEnum
+
+replaceExt :: String -> String -> String
 replaceExt path ext = reverse (dropExt (reverse path)) ++ ext where
   dropExt xs = case xs of
     [] -> []
@@ -625,13 +621,13 @@ mapCompileError result = case result of
   Left (CompileError msg) -> Left msg
   Right x -> Right x
 
-resolveCc :: IO FilePath
+resolveCc :: IO String
 resolveCc = do
-  override <- lookupEnv "HCC_BACKEND_CC"
+  override <- hccLookupEnv "HCC_BACKEND_CC"
   case override of
     Just cc -> pure cc
     Nothing -> do
-      found <- findExecutable "cc"
+      found <- hccFindExecutable "cc"
       case found of
         Just cc -> pure cc
         Nothing -> die "hcc: temporary cc backend needs `cc` on PATH or HCC_BACKEND_CC" >> pure "cc"

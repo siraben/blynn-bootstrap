@@ -1,17 +1,4 @@
-module SymbolTable
-  ( SymbolMap
-  , SymbolSet
-  , symbolMapDelete
-  , symbolMapEmpty
-  , symbolMapInsert
-  , symbolMapLookup
-  , symbolMapMember
-  , symbolSetDelete
-  , symbolSetEmpty
-  , symbolSetFromList
-  , symbolSetInsert
-  , symbolSetMember
-  ) where
+module SymbolTable where
 
 data Tree a
   = Empty

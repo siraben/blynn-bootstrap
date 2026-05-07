@@ -1,38 +1,4 @@
-module CompileM
-  ( CompileError(..)
-  , CompileM
-  , CompileState(..)
-  , bindVar
-  , bindStruct
-  , bindGlobal
-  , bindConstant
-  , bindFunction
-  , freshBlock
-  , freshDataLabel
-  , freshLabel
-  , freshTemp
-  , currentBreakTarget
-  , currentContinueTarget
-  , labelBlock
-  , initialCompileState
-  , addDataItem
-  , getDataItems
-  , lookupVar
-  , lookupVarMaybe
-  , lookupVarType
-  , lookupGlobalType
-  , lookupConstant
-  , lookupFunction
-  , lookupStruct
-  , runCompileM
-  , runCompileMWithDataPrefix
-  , throwC
-  , withErrorContext
-  , withBreakTarget
-  , withFunctionScope
-  , withLoopTargets
-  , withVarScope
-  ) where
+module CompileM where
 
 import Ast
 import Ir

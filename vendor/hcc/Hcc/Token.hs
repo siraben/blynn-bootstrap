@@ -1,11 +1,4 @@
-module Token
-  ( SrcPos(..)
-  , Span(..)
-  , Token(..)
-  , TokenKind(..)
-  , tokenText
-  , renderToken
-  ) where
+module Token where
 
 data SrcPos = SrcPos Int Int
   deriving (Eq, Show)
