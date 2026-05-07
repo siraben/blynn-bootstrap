@@ -17,6 +17,10 @@ stdenv.mkDerivation {
     runHook preBuild
     mkdir -p build
     ghc -Wall -Werror -i. Main.hs -outputdir build -o hcc
+    ./hcc --lex-dump test/lexer-smoke.c >/dev/null
+    ./hcc --pp-dump test/pp-smoke.c >/dev/null
+    ./hcc --parse-dump test/parse-smoke.c >/dev/null
+    ./hcc --check test/parse-smoke.c
     runHook postBuild
   '';
 

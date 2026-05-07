@@ -12,6 +12,8 @@ import Hcc.RegAlloc
 data CodegenError = CodegenError String
   deriving (Eq, Show)
 
+type Lines = [String] -> [String]
+
 codegenM1 :: Program -> Either CodegenError String
 codegenM1 ast = do
   ir <- mapCompileError (lowerProgram ast)
@@ -20,7 +22,7 @@ codegenM1 ast = do
 codegenModule :: ModuleIr -> Either CodegenError String
 codegenModule (ModuleIr dataItems functions) = do
   bodies <- mapM codegenFunction functions
-  pure (unlines (header ++ concat bodies ++ concatMap codegenDataItem dataItems))
+  pure (renderLines (linesFromList header . composeLines bodies . composeLines (map (linesFromList . codegenDataItem) dataItems)))
 
 header :: [String]
 header =
@@ -55,24 +57,24 @@ header =
   , ""
   ]
 
-codegenFunction :: FunctionIr -> Either CodegenError [String]
+codegenFunction :: FunctionIr -> Either CodegenError Lines
 codegenFunction fn@(FunctionIr name _ blocks) = do
   alloc <- mapAllocError (allocateFunction fn)
   body <- codegenBlocks name alloc (stackSlotCount alloc) blocks
-  pure ((":FUNCTION_" ++ name) : prologue (stackSlotCount alloc) ++ body ++ [""])
+  pure (line (":FUNCTION_" ++ name) . linesFromList (prologue (stackSlotCount alloc)) . body . line "")
 
 prologue :: Int -> [String]
 prologue slots =
   if slots == 0 then [] else ["\tHCC_SUB_IMMEDIATE_from_rsp %" ++ show (slots * 8)]
 
-codegenBlocks :: String -> Allocation -> Int -> [BasicBlock] -> Either CodegenError [String]
+codegenBlocks :: String -> Allocation -> Int -> [BasicBlock] -> Either CodegenError Lines
 codegenBlocks fnName alloc totalSlots blocks = case blocks of
-  [] -> pure []
+  [] -> pure id
   BasicBlock bid instrs term:rest -> do
     body <- codegenInstrs alloc totalSlots instrs
     termCode <- codegenTerminator fnName alloc totalSlots term
     tailCode <- codegenBlocks fnName alloc totalSlots rest
-    pure (blockLabel fnName bid ++ body ++ termCode ++ tailCode)
+    pure (linesFromList (blockLabel fnName bid) . linesFromList body . linesFromList termCode . tailCode)
 
 blockLabel :: String -> BlockId -> [String]
 blockLabel _ (BlockId 0) = []
@@ -270,6 +272,24 @@ joinWords xs = case xs of
   [] -> ""
   [x] -> x
   x:rest -> x ++ " " ++ joinWords rest
+
+linesFromList :: [String] -> Lines
+linesFromList = (++)
+
+line :: String -> Lines
+line text = (text:)
+
+composeLines :: [Lines] -> Lines
+composeLines builders = case builders of
+  [] -> id
+  builder:rest -> builder . composeLines rest
+
+renderLines :: Lines -> String
+renderLines builder = go (builder []) "" where
+  go :: [String] -> ShowS
+  go lines' = case lines' of
+    [] -> id
+    text:rest -> showString text . showChar '\n' . go rest
 
 mapCompileError :: Either CompileError a -> Either CodegenError a
 mapCompileError result = case result of

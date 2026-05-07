@@ -4,6 +4,7 @@ module Hcc.Preprocessor
   ) where
 
 import Data.Char (isAlpha, isAlphaNum, isDigit, isSpace)
+import qualified Data.Map as Map
 
 import Hcc.ConstExpr
 import Hcc.Lexer
@@ -23,6 +24,14 @@ data MacroArg = MacroArg
   }
   deriving (Eq, Show)
 
+type Macros = Map.Map String Macro
+type Tokens = [Token] -> [Token]
+
+data Chunk = Chunk [String] [Token]
+  deriving (Eq, Show)
+
+type Source = [Chunk]
+
 data IfFrame = IfFrame
   { ifParentActive :: Bool
   , ifBranchTaken :: Bool
@@ -31,19 +40,24 @@ data IfFrame = IfFrame
   deriving (Eq, Show)
 
 preprocess :: [Token] -> Either PreprocessError [Token]
-preprocess toks = go [] [] toks [] where
+preprocess toks = go Map.empty [] (sourceFromTokens toks) id where
   go macros frames rest acc = case rest of
     [] ->
       if null frames
-      then Right (reverse acc)
+      then Right (acc [])
       else Left (PreprocessError (SrcPos 1 1) "unterminated conditional directive")
-    Token sp (TokDirective text):xs -> handleDirective macros frames sp text xs acc
-    _ ->
-      if currentActive frames
-      then do
-        (expanded, rest') <- expandNext macros False [] rest
-        go macros frames rest' (reverse expanded ++ acc)
-      else go macros frames (dropInactiveToken rest) acc
+    _ -> case popSource rest of
+      Nothing ->
+        if null frames
+        then Right (acc [])
+        else Left (PreprocessError (SrcPos 1 1) "unterminated conditional directive")
+      Just (_, Token sp (TokDirective text), xs) -> handleDirective macros frames sp text xs acc
+      Just _ ->
+        if currentActive frames
+        then do
+          (expanded, rest') <- expandNextSource macros False [] rest
+          go macros frames rest' (acc . tokens expanded)
+        else go macros frames (dropInactiveToken rest) acc
 
   handleDirective macros frames sp text xs acc = case parseDirective text of
     Directive "define" rest ->
@@ -82,10 +96,11 @@ preprocess toks = go [] [] toks [] where
       then Left (PreprocessError (spanStart sp) ("unsupported directive: #" ++ name))
       else go macros frames xs acc
 
-dropInactiveToken :: [Token] -> [Token]
+dropInactiveToken :: Source -> Source
 dropInactiveToken toks = case toks of
   [] -> []
-  _:xs -> xs
+  Chunk _ []:xs -> dropInactiveToken xs
+  Chunk hidden (_:xs):rest -> prependChunk hidden xs rest
 
 data Directive = Directive String String
   deriving (Eq, Show)
@@ -135,11 +150,11 @@ popIf sp frames = case frames of
   [] -> Left (PreprocessError (spanStart sp) "#endif without #if")
   _:rest -> Right rest
 
-defineMacro :: [Macro] -> Span -> String -> Either PreprocessError [Macro]
+defineMacro :: Macros -> Span -> String -> Either PreprocessError Macros
 defineMacro macros sp text =
   case parseMacroDefinition sp text of
     Left err -> Left err
-    Right macro -> Right (macro : undefObject (macroName macro) macros)
+    Right macro -> Right (Map.insert (macroName macro) macro macros)
 
 parseMacroDefinition :: Span -> String -> Either PreprocessError Macro
 parseMacroDefinition sp text = case dropSpaces text of
@@ -202,74 +217,89 @@ lexReplacement sp text = case lexC ("__hcc_macro_dummy " ++ dropSpaces text) of
   Right (_:toks) -> Right toks
   Right [] -> Right []
 
-expandNext :: [Macro] -> Bool -> [String] -> [Token] -> Either PreprocessError ([Token], [Token])
-expandNext macros protectDefined disabled toks = case toks of
-  [] -> Right ([], [])
-  tok@(Token _ (TokIdent "defined")):xs | protectDefined ->
-    let (protected, rest) = takeDefinedOperand xs
+expandNextSource :: Macros -> Bool -> [String] -> Source -> Either PreprocessError ([Token], Source)
+expandNextSource macros protectDefined disabled toks = case popSource toks of
+  Nothing -> Right ([], [])
+  Just (_, tok@(Token _ (TokIdent "defined")), xs) | protectDefined ->
+    let (protected, rest) = takeDefinedOperandSource xs
     in Right (tok:protected, rest)
-  tok@(Token sp (TokIdent name)):xs ->
-    if name `elem` disabled
+  Just (hidden, tok@(Token sp (TokIdent name)), xs) ->
+    if name `elem` (hidden ++ disabled)
     then Right ([tok], xs)
     else case lookupMacro name macros of
       Nothing -> Right ([tok], xs)
-      Just macro -> expandMacro macros protectDefined disabled tok sp name macro xs
-  tok:xs -> Right ([tok], xs)
+      Just macro -> expandMacro macros protectDefined (hidden ++ disabled) tok sp name macro xs
+  Just (_, tok, xs) -> Right ([tok], xs)
 
-expandTokens :: [Macro] -> Bool -> [String] -> [Token] -> Either PreprocessError [Token]
-expandTokens macros protectDefined disabled toks = go toks [] where
+expandTokens :: Macros -> Bool -> [String] -> [Token] -> Either PreprocessError [Token]
+expandTokens macros protectDefined disabled toks = go (sourceFromTokens toks) id where
   go rest acc = case rest of
-    [] -> Right (reverse acc)
+    [] -> Right (acc [])
     _ -> do
-      (expanded, rest') <- expandNext macros protectDefined disabled rest
-      go rest' (reverse expanded ++ acc)
+      (expanded, rest') <- expandNextSource macros protectDefined disabled rest
+      go rest' (acc . tokens expanded)
 
-expandMacro :: [Macro] -> Bool -> [String] -> Token -> Span -> String -> Macro -> [Token] -> Either PreprocessError ([Token], [Token])
+expandMacro :: Macros -> Bool -> [String] -> Token -> Span -> String -> Macro -> Source -> Either PreprocessError ([Token], Source)
 expandMacro macros protectDefined disabled original sp name macro rest = case macro of
   ObjectMacro _ body -> do
     let replacement = relocate sp body
     if replacement == [original]
       then Right ([original], rest)
-      else Right ([], replacement ++ rest)
-  FunctionMacro _ params variadic body -> case rest of
-    Token _ (TokPunct "("):afterOpen -> do
+      else Right ([], prependChunk [name] replacement rest)
+  FunctionMacro _ params variadic body -> case popSource rest of
+    Just (_, Token _ (TokPunct "("), afterOpen) -> do
       (args, rest') <- collectInvocationArgs sp afterOpen
       expanded <- expandFunctionMacro macros protectDefined disabled sp name params variadic body args
       Right (expanded, rest')
     _ -> Right ([original], rest)
 
-takeDefinedOperand :: [Token] -> ([Token], [Token])
-takeDefinedOperand toks = case toks of
-  Token _ (TokPunct "("):Token _ (TokIdent _):Token _ (TokPunct ")"):rest ->
-    (take 3 toks, rest)
-  Token _ (TokIdent _):rest -> (take 1 toks, rest)
+takeDefinedOperandSource :: Source -> ([Token], Source)
+takeDefinedOperandSource toks = case popSource toks of
+  Just (_, open@(Token _ (TokPunct "(")), afterOpen) ->
+    case popSource afterOpen of
+      Just (_, name@(Token _ (TokIdent _)), afterName) ->
+        case popSource afterName of
+          Just (_, close@(Token _ (TokPunct ")")), rest) -> ([open, name, close], rest)
+          _ -> ([], toks)
+      _ -> ([], toks)
+  Just (_, name@(Token _ (TokIdent _)), rest) -> ([name], rest)
   _ -> ([], toks)
 
-collectInvocationArgs :: Span -> [Token] -> Either PreprocessError ([[Token]], [Token])
+collectInvocationArgs :: Span -> Source -> Either PreprocessError ([[Token]], Source)
 collectInvocationArgs sp toks = go 1 [] [] toks where
-  go :: Int -> [Token] -> [[Token]] -> [Token] -> Either PreprocessError ([[Token]], [Token])
-  go depth current args rest = case rest of
-    [] -> Left (PreprocessError (spanStart sp) "unterminated macro invocation")
-    Token _ (TokPunct ")"):xs | depth == 1 ->
+  go :: Int -> [Token] -> [[Token]] -> Source -> Either PreprocessError ([[Token]], Source)
+  go depth current args rest = case popSource rest of
+    Nothing -> Left (PreprocessError (spanStart sp) "unterminated macro invocation")
+    Just (_, Token _ (TokPunct ")"), xs) | depth == 1 ->
       let finalArgs = if null args && null current then [] else reverse (reverse current : args)
       in Right (finalArgs, xs)
-    tok@(Token _ (TokPunct ")")):xs ->
+    Just (_, tok@(Token _ (TokPunct ")")), xs) ->
       go (depth - 1) (tok:current) args xs
-    tok@(Token _ (TokPunct "(")):xs ->
+    Just (_, tok@(Token _ (TokPunct "(")), xs) ->
       go (depth + 1) (tok:current) args xs
-    Token _ (TokPunct ","):xs | depth == 1 ->
+    Just (_, Token _ (TokPunct ","), xs) | depth == 1 ->
       go depth [] (reverse current : args) xs
-    tok:xs ->
+    Just (_, tok, xs) ->
       go depth (tok:current) args xs
 
-expandFunctionMacro :: [Macro] -> Bool -> [String] -> Span -> String -> [String] -> Maybe String -> [Token] -> [[Token]] -> Either PreprocessError [Token]
+expandFunctionMacro :: Macros -> Bool -> [String] -> Span -> String -> [String] -> Maybe String -> [Token] -> [[Token]] -> Either PreprocessError [Token]
 expandFunctionMacro macros protectDefined disabled sp name params variadic body args = do
-  argMap <- bindMacroArgs macros protectDefined sp params variadic args
+  argMap <- bindMacroArgs macros protectDefined disabled sp params variadic args
   replaced <- substituteMacroBody sp argMap body
-  expandTokens macros protectDefined (name:disabled) replaced
+  let argHidden = concatMap (argumentMacroNames macros . argRaw . snd) argMap
+  expandTokens macros protectDefined (name:argHidden ++ disabled) replaced
 
-bindMacroArgs :: [Macro] -> Bool -> Span -> [String] -> Maybe String -> [[Token]] -> Either PreprocessError [(String, MacroArg)]
-bindMacroArgs macros protectDefined sp params variadic args = do
+argumentMacroNames :: Macros -> [Token] -> [String]
+argumentMacroNames macros toks = case toks of
+  [] -> []
+  Token _ (TokIdent name):rest ->
+    if isDefined name macros
+    then name : argumentMacroNames macros rest
+    else argumentMacroNames macros rest
+  _:rest -> argumentMacroNames macros rest
+
+bindMacroArgs :: Macros -> Bool -> [String] -> Span -> [String] -> Maybe String -> [[Token]] -> Either PreprocessError [(String, MacroArg)]
+bindMacroArgs macros protectDefined disabled sp params variadic args = do
   let fixedCount = length params
   if length args < fixedCount || (variadic == Nothing && length args /= fixedCount)
     then Left (PreprocessError (spanStart sp) "wrong number of macro arguments")
@@ -292,7 +322,7 @@ bindMacroArgs macros protectDefined sp params variadic args = do
       _ -> Left (PreprocessError (spanStart sp) "wrong number of macro arguments")
 
     makeArg raw = do
-      expanded <- expandTokens macros protectDefined [] raw
+      expanded <- expandTokens macros protectDefined disabled raw
       Right (MacroArg raw expanded)
 
 joinVariadicArgs :: Span -> [[Token]] -> [Token]
@@ -360,7 +390,7 @@ escapeString text = case text of
   '"':xs -> '\\':'"':escapeString xs
   c:xs -> c : escapeString xs
 
-evalIf :: [Macro] -> String -> Either PreprocessError Bool
+evalIf :: Macros -> String -> Either PreprocessError Bool
 evalIf macros text = do
   toks <- case lexC (stripLineComment text) of
     Left (LexError pos msg) -> Left (PreprocessError pos msg)
@@ -372,20 +402,40 @@ evalIf macros text = do
     Right (_, tok:_) -> Left (PreprocessError (tokenStart tok) ("trailing tokens in #if expression near " ++ show (tokenText (tokenKind tok))))
     Left msg -> Left (PreprocessError (SrcPos 1 1) msg)
 
-replaceDefinedOperators :: [Macro] -> [Token] -> Either PreprocessError [Token]
-replaceDefinedOperators macros toks = go toks [] where
+replaceDefinedOperators :: Macros -> [Token] -> Either PreprocessError [Token]
+replaceDefinedOperators macros toks = go toks id where
   go rest acc = case rest of
-    [] -> Right (reverse acc)
+    [] -> Right (acc [])
     Token sp (TokIdent "defined"):Token _ (TokPunct "("):Token _ (TokIdent name):Token _ (TokPunct ")"):xs ->
-      go xs (definedToken sp name:acc)
+      go xs (acc . token (definedToken sp name))
     Token sp (TokIdent "defined"):Token _ (TokIdent name):xs ->
-      go xs (definedToken sp name:acc)
+      go xs (acc . token (definedToken sp name))
     Token sp (TokIdent "defined"):_ ->
       Left (PreprocessError (spanStart sp) "bad defined operator in #if expression")
     tok:xs ->
-      go xs (tok:acc)
+      go xs (acc . token tok)
 
   definedToken sp name = Token sp (TokInt (if isDefined name macros then "1" else "0"))
+
+tokens :: [Token] -> Tokens
+tokens xs = (xs ++)
+
+token :: Token -> Tokens
+token x = (x :)
+
+sourceFromTokens :: [Token] -> Source
+sourceFromTokens toks =
+  if null toks then [] else [Chunk [] toks]
+
+prependChunk :: [String] -> [Token] -> Source -> Source
+prependChunk hidden toks source =
+  if null toks then source else Chunk hidden toks : source
+
+popSource :: Source -> Maybe ([String], Token, Source)
+popSource source = case source of
+  [] -> Nothing
+  Chunk _ []:rest -> popSource rest
+  Chunk hidden (tok:toks):rest -> Just (hidden, tok, prependChunk hidden toks rest)
 
 stripLineComment :: String -> String
 stripLineComment text = case text of
@@ -393,29 +443,19 @@ stripLineComment text = case text of
   '/':'/':_ -> []
   c:rest -> c : stripLineComment rest
 
-lookupMacro :: String -> [Macro] -> Maybe Macro
-lookupMacro name macros = case macros of
-  [] -> Nothing
-  macro:rest ->
-    if name == macroName macro then Just macro else lookupMacro name rest
+lookupMacro :: String -> Macros -> Maybe Macro
+lookupMacro = Map.lookup
 
 macroName :: Macro -> String
 macroName macro = case macro of
   ObjectMacro name _ -> name
   FunctionMacro name _ _ _ -> name
 
-isDefined :: String -> [Macro] -> Bool
-isDefined name macros = case lookupMacro name macros of
-  Just _ -> True
-  Nothing -> False
+isDefined :: String -> Macros -> Bool
+isDefined = Map.member
 
-undefObject :: String -> [Macro] -> [Macro]
-undefObject name macros = case macros of
-  [] -> []
-  macro:rest ->
-    if name == macroName macro
-    then undefObject name rest
-    else macro : undefObject name rest
+undefObject :: String -> Macros -> Macros
+undefObject = Map.delete
 
 relocate :: Span -> [Token] -> [Token]
 relocate sp toks = map replaceSpan toks where

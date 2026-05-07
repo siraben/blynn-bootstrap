@@ -3,6 +3,8 @@ module Hcc.Parser
   , parseProgram
   ) where
 
+import qualified Data.Set as Set
+
 import Hcc.Ast
 import Hcc.ConstExpr
 import Hcc.Token
@@ -10,32 +12,56 @@ import Hcc.Token
 data ParseError = ParseError SrcPos String
   deriving (Eq, Show)
 
-newtype Parser a = Parser { runParser :: [String] -> [Token] -> Either ParseError (a, [Token]) }
+data Consumed a = Consumed a | Empty a
+  deriving (Eq, Show)
+
+data Reply a
+  = Ok a [Token]
+  | Error ParseError
+  deriving (Eq, Show)
+
+newtype Parser a = Parser { runParser :: Set.Set String -> [Token] -> Consumed (Reply a) }
 
 instance Functor Parser where
-  fmap f p = Parser $ \env toks -> case runParser p env toks of
-    Left err -> Left err
-    Right (x, rest) -> Right (f x, rest)
+  fmap f p = Parser $ \env toks -> mapConsumed (mapReply f) (runParser p env toks)
 
 instance Applicative Parser where
-  pure x = Parser $ \_env toks -> Right (x, toks)
-  pf <*> px = Parser $ \env toks -> case runParser pf env toks of
-    Left err -> Left err
-    Right (f, rest) -> case runParser px env rest of
-      Left err -> Left err
-      Right (x, rest') -> Right (f x, rest')
+  pure x = Parser $ \_env toks -> Empty (Ok x toks)
+  pf <*> px = do
+    f <- pf
+    x <- px
+    pure (f x)
 
 instance Monad Parser where
   return = pure
   p >>= f = Parser $ \env toks -> case runParser p env toks of
-    Left err -> Left err
-    Right (x, rest) -> runParser (f x) env rest
+    Empty reply -> case reply of
+      Error err -> Empty (Error err)
+      Ok x rest -> runParser (f x) env rest
+    Consumed reply -> Consumed (case reply of
+      Error err -> Error err
+      Ok x rest -> forceConsumed (runParser (f x) env rest))
+
+mapConsumed :: (a -> b) -> Consumed a -> Consumed b
+mapConsumed f consumed = case consumed of
+  Empty x -> Empty (f x)
+  Consumed x -> Consumed (f x)
+
+mapReply :: (a -> b) -> Reply a -> Reply b
+mapReply f reply = case reply of
+  Ok x rest -> Ok (f x) rest
+  Error err -> Error err
+
+forceConsumed :: Consumed a -> a
+forceConsumed consumed = case consumed of
+  Empty x -> x
+  Consumed x -> x
 
 parseProgram :: [Token] -> Either ParseError Program
-parseProgram toks = case runParser program (builtinTypeNames ++ collectTypedefNames toks) toks of
-  Left err -> Left err
-  Right (Program decls, []) -> Right (Program (EnumConstants (collectEnumConstants toks) : decls))
-  Right (_, tok:_) -> Left (parseErrorAt tok "trailing tokens")
+parseProgram toks = case forceConsumed (runParser program (Set.fromList (builtinTypeNames ++ collectTypedefNames toks)) toks) of
+  Error err -> Left err
+  Ok (Program decls) [] -> Right (Program (EnumConstants (collectEnumConstants toks) : decls))
+  Ok _ (tok:_) -> Left (parseErrorAt tok "trailing tokens")
 
 program :: Parser Program
 program = Program <$> topDecls
@@ -55,7 +81,7 @@ topDecl = do
   typedef <- eatIdent "typedef"
   if typedef
     then do
-      structDecl <- optionalP typedefAggregateDecl
+      structDecl <- optionalP (tryP typedefAggregateDecl)
       case structDecl of
         Just decl -> pure decl
         Nothing -> skipUntilTopLevelSemi >> pure TypeDecl
@@ -63,7 +89,7 @@ topDecl = do
 
 topDeclNoTypedef :: Parser TopDecl
 topDeclNoTypedef = do
-  structDecl <- optionalP standaloneAggregateDecl
+  structDecl <- optionalP (tryP standaloneAggregateDecl)
   case structDecl of
     Just decl -> pure decl
     Nothing -> topDeclNoStruct
@@ -79,6 +105,7 @@ topDeclNoStruct = do
       ifM (eatPunct "(")
         (do
           params <- parameters
+          skipAttributes
           isPrototype <- eatPunct ";"
           if isPrototype
             then pure (Prototype ty name params)
@@ -183,8 +210,8 @@ parameters = do
 
 parameterVoidOnly :: Parser Bool
 parameterVoidOnly = Parser $ \_env toks -> case toks of
-  Token _ (TokIdent "void"):Token _ (TokPunct ")"):rest -> Right (True, rest)
-  _ -> Right (False, toks)
+  Token _ (TokIdent "void"):Token _ (TokPunct ")"):rest -> Consumed (Ok True rest)
+  _ -> Empty (Ok False toks)
 
 parseNonEmptyParams :: Parser [Param]
 parseNonEmptyParams = do
@@ -368,6 +395,7 @@ declStmt decls = case decls of
 declarationItem :: CType -> Parser (CType, String, Maybe Expr)
 declarationItem ty0 = do
   (ty, name) <- declarator ty0
+  skipAttributes
   initExpr <- optionalP (eatPunct "=" >> initializerExpr)
   pure (ty, name, initExpr)
 
@@ -408,7 +436,7 @@ ctype = do
         known <- isKnownTypeNameP name
         if known
           then advanceToken >> pure (CNamed name)
-          else failAt tok "expected type"
+          else advanceToken >> pure (CNamed name)
       _ -> failAt tok "expected type"
 
 typeName :: Parser CType
@@ -491,20 +519,60 @@ skipQualifiers = do
   case fmap tokenKind tok of
     Just (TokIdent name) | name `elem` ["const", "volatile", "static", "extern", "register", "inline"] ->
       advanceToken >> skipQualifiers
+    Just (TokIdent name) | name `elem` ["__attribute__", "__extension__"] ->
+      skipAttributes >> skipQualifiers
     _ -> pure ()
+
+skipAttributes :: Parser ()
+skipAttributes = do
+  tok <- peekMaybe
+  case fmap tokenKind tok of
+    Just (TokIdent "__attribute__") -> do
+      advanceToken
+      skipOptionalBalancedParens
+      skipAttributes
+    Just (TokIdent "__extension__") ->
+      advanceToken >> skipAttributes
+    _ -> pure ()
+
+skipOptionalBalancedParens :: Parser ()
+skipOptionalBalancedParens = do
+  open <- eatPunct "("
+  if open then skipBalanced "(" ")" else pure ()
 
 declarator :: CType -> Parser (CType, String)
 declarator ty0 = do
   ty <- pointerStars ty0
-  name <- needIdent
-  ty' <- arraySuffixes ty
-  pure (ty', name)
+  directDeclarator ty
+
+directDeclarator :: CType -> Parser (CType, String)
+directDeclarator ty = do
+  grouped <- eatPunct "("
+  if grouped
+    then do
+      (innerTy, name) <- declarator ty
+      needPunct ")"
+      ty' <- groupedDeclaratorSuffixes innerTy
+      skipAttributes
+      pure (ty', name)
+    else do
+      name <- needIdent
+      ty' <- arraySuffixes ty
+      skipAttributes
+      pure (ty', name)
+
+groupedDeclaratorSuffixes :: CType -> Parser CType
+groupedDeclaratorSuffixes ty = do
+  open <- eatPunct "("
+  if open
+    then skipBalanced "(" ")" >> groupedDeclaratorSuffixes ty
+    else arraySuffixes ty
 
 pointerStars :: CType -> Parser CType
 pointerStars ty = do
   star <- eatPunct "*"
   if star
-    then pointerStars (CPtr ty)
+    then skipQualifiers >> pointerStars (CPtr ty)
     else pure ty
 
 arraySuffixes :: CType -> Parser CType
@@ -649,18 +717,25 @@ parseSizeof :: Parser Expr
 parseSizeof = do
   paren <- eatPunct "("
   if paren
-    then do
-      isTy <- nextStartsType
-      if isTy
-        then do
-          ty <- typeName
-          needPunct ")"
-          pure (ESizeofType ty)
-        else do
-          value <- expr
-          needPunct ")"
-          pure (ESizeofExpr value)
+    then sizeofParen
     else ESizeofExpr <$> (postfix =<< unary)
+
+sizeofParen :: Parser Expr
+sizeofParen = Parser $ \env toks ->
+  case forceConsumed (runParser (typeName <* needPunct ")") env toks) of
+    Ok ty rest | not (postfixContinues rest) -> Consumed (Ok (ESizeofType ty) rest)
+    _ -> runParser sizeofParenExpr env toks
+
+sizeofParenExpr :: Parser Expr
+sizeofParenExpr = do
+  value <- expr
+  needPunct ")"
+  ESizeofExpr <$> postfix value
+
+postfixContinues :: [Token] -> Bool
+postfixContinues toks = case toks of
+  Token _ (TokPunct p):_ -> p `elem` ["(", "[", ".", "->", "++", "--"]
+  _ -> False
 
 assignNode :: String -> Expr -> Expr -> Expr
 assignNode op lhs rhs = case op of
@@ -764,7 +839,7 @@ tokenStartsType tok = case tokenKind tok of
   _ -> pure False
 
 isKnownTypeNameP :: String -> Parser Bool
-isKnownTypeNameP name = Parser $ \env toks -> Right (name `elem` env, toks)
+isKnownTypeNameP name = Parser $ \env toks -> Empty (Ok (Set.member name env) toks)
 
 manyP :: Parser a -> Parser [a]
 manyP p = do
@@ -811,8 +886,15 @@ skipBalanced open close = go (1 :: Int) where
 
 optionalP :: Parser a -> Parser (Maybe a)
 optionalP p = Parser $ \env toks -> case runParser p env toks of
-  Left _ -> Right (Nothing, toks)
-  Right (x, rest) -> Right (Just x, rest)
+  Empty (Error _) -> Empty (Ok Nothing toks)
+  Empty (Ok x rest) -> Empty (Ok (Just x) rest)
+  Consumed (Ok x rest) -> Consumed (Ok (Just x) rest)
+  Consumed (Error err) -> Consumed (Error err)
+
+tryP :: Parser a -> Parser a
+tryP p = Parser $ \env toks -> case runParser p env toks of
+  Consumed (Error err) -> Empty (Error err)
+  other -> other
 
 ifM :: Parser Bool -> Parser a -> Parser a -> Parser a
 ifM test yes no = do
@@ -821,8 +903,8 @@ ifM test yes no = do
 
 eatPunct :: String -> Parser Bool
 eatPunct s = Parser $ \_env toks -> case toks of
-  Token _ (TokPunct p):rest | p == s -> Right (True, rest)
-  _ -> Right (False, toks)
+  Token _ (TokPunct p):rest | p == s -> Consumed (Ok True rest)
+  _ -> Empty (Ok False toks)
 
 needPunct :: String -> Parser ()
 needPunct s = do
@@ -831,8 +913,8 @@ needPunct s = do
 
 eatIdent :: String -> Parser Bool
 eatIdent s = Parser $ \_env toks -> case toks of
-  Token _ (TokIdent p):rest | p == s -> Right (True, rest)
-  _ -> Right (False, toks)
+  Token _ (TokIdent p):rest | p == s -> Consumed (Ok True rest)
+  _ -> Empty (Ok False toks)
 
 needIdent :: Parser String
 needIdent = do
@@ -857,16 +939,16 @@ needIdentValue expected = do
 
 peek :: Parser Token
 peek = Parser $ \_env toks -> case toks of
-  [] -> Left (ParseError (SrcPos 1 1) "unexpected end of input")
-  tok:_ -> Right (tok, toks)
+  [] -> Empty (Error (ParseError (SrcPos 1 1) "unexpected end of input"))
+  tok:_ -> Empty (Ok tok toks)
 
 peekMaybe :: Parser (Maybe Token)
-peekMaybe = Parser $ \_env toks -> Right (case toks of [] -> Nothing; tok:_ -> Just tok, toks)
+peekMaybe = Parser $ \_env toks -> Empty (Ok (case toks of [] -> Nothing; tok:_ -> Just tok) toks)
 
 peekSecondPunct :: String -> Parser Bool
 peekSecondPunct punct = Parser $ \_env toks -> case toks of
-  _:Token _ (TokPunct p):_ | p == punct -> Right (True, toks)
-  _ -> Right (False, toks)
+  _:Token _ (TokPunct p):_ | p == punct -> Empty (Ok True toks)
+  _ -> Empty (Ok False toks)
 
 nextStartsType :: Parser Bool
 nextStartsType = do
@@ -877,11 +959,11 @@ nextStartsType = do
 
 advanceToken :: Parser ()
 advanceToken = Parser $ \_env toks -> case toks of
-  [] -> Left (ParseError (SrcPos 1 1) "unexpected end of input")
-  _:rest -> Right ((), rest)
+  [] -> Empty (Error (ParseError (SrcPos 1 1) "unexpected end of input"))
+  _:rest -> Consumed (Ok () rest)
 
 failAt :: Token -> String -> Parser a
-failAt tok msg = Parser $ \_env _ -> Left (parseErrorAt tok msg)
+failAt tok msg = Parser $ \_env _ -> Empty (Error (parseErrorAt tok msg))
 
 parseErrorAt :: Token -> String -> ParseError
 parseErrorAt (Token (Span pos _) kind) msg = ParseError pos (msg ++ " near " ++ show (tokenText kind))
@@ -988,9 +1070,24 @@ typedefNames :: [Token] -> [String]
 typedefNames toks = mapMaybe typedefName (splitTopLevelCommas (dropBraceBodies toks))
 
 typedefName :: [Token] -> Maybe String
-typedefName toks = case pointerDeclaratorName toks of
+typedefName toks = case functionDeclaratorName toks of
   Just name -> Just name
-  Nothing -> lastIdentifier toks
+  Nothing -> case pointerDeclaratorName toks of
+    Just name -> Just name
+    Nothing -> lastIdentifier toks
+
+functionDeclaratorName :: [Token] -> Maybe String
+functionDeclaratorName = go 0 0 where
+  go :: Int -> Int -> [Token] -> Maybe String
+  go parens brackets toks = case toks of
+    Token _ (TokIdent name):Token _ (TokPunct "("):_
+      | parens == 0 && brackets == 0 && not (isCKeyword name) -> Just name
+    Token _ (TokPunct "("):rest -> go (parens + 1) brackets rest
+    Token _ (TokPunct ")"):rest -> go (max 0 (parens - 1)) brackets rest
+    Token _ (TokPunct "["):rest -> go parens (brackets + 1) rest
+    Token _ (TokPunct "]"):rest -> go parens (max 0 (brackets - 1)) rest
+    _:rest -> go parens brackets rest
+    [] -> Nothing
 
 pointerDeclaratorName :: [Token] -> Maybe String
 pointerDeclaratorName toks = case toks of
@@ -1000,10 +1097,11 @@ pointerDeclaratorName toks = case toks of
   [] -> Nothing
 
 lastIdentifier :: [Token] -> Maybe String
-lastIdentifier toks = case reverse toks of
-  [] -> Nothing
-  Token _ (TokIdent name):_ | not (isCKeyword name) -> Just name
-  _:rest -> lastIdentifier (reverse rest)
+lastIdentifier = go Nothing where
+  go found toks = case toks of
+    [] -> found
+    Token _ (TokIdent name):rest | not (isCKeyword name) -> go (Just name) rest
+    _:rest -> go found rest
 
 dropBraceBodies :: [Token] -> [Token]
 dropBraceBodies toks = case toks of
@@ -1036,9 +1134,13 @@ splitTopLevelCommas = go 0 0 [] [] where
       _ -> go parens brackets (tok:current) acc rest
 
 unique :: [String] -> [String]
-unique names = case names of
-  [] -> []
-  x:xs -> x : unique (filter (/= x) xs)
+unique = go Set.empty where
+  go seen names = case names of
+    [] -> []
+    x:xs ->
+      if Set.member x seen
+      then go seen xs
+      else x : go (Set.insert x seen) xs
 
 mapMaybe :: (a -> Maybe b) -> [a] -> [b]
 mapMaybe f xs = case xs of

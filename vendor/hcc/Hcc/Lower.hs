@@ -574,6 +574,8 @@ lowerExpr expr = case expr of
     neg <- freshTemp
     out <- freshTemp
     pure (a ++ [IConst zero 0, IBin neg ISub (OTemp zero) op, IBin out ISub (OTemp neg) (OImm 1)], OTemp out)
+  EUnary "*" (EUnary "&" value) ->
+    lowerExpr value
   EUnary "&" target ->
     lowerLValueAddress target
   EUnary "*" _ ->
