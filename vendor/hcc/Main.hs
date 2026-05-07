@@ -1,9 +1,11 @@
 module Main where
 
 import Base
+import Ast (renderProgram)
 import CompileM
 import CodegenM1 hiding (line, mapCompileError)
 import HccSystem
+import Ir (renderModuleIr)
 import Lexer hiding (charCode, isAsciiAlpha, isAsciiAlphaNum, isDigit, isHexDigit, isIdentChar, isIdentStart, lexerIsSpace, prefixOf)
 import Lower
 import Parser hiding (stringLiteral)
@@ -132,7 +134,7 @@ parseDumpFile path = do
   source <- hccReadFileOrStdin path
   case preprocessSource source >>= mapParseError . parseProgram of
     Left msg -> die (path ++ ":" ++ msg)
-    Right ast -> hccPutStrLn (show ast)
+    Right ast -> hccPutStrLn (renderProgram ast)
 
 irDump :: [String] -> IO ()
 irDump files = case files of
@@ -144,7 +146,7 @@ irDumpFile path = do
   source <- hccReadFileOrStdin path
   case preprocessSource source >>= mapParseError . parseProgram >>= mapCompileError . lowerProgram of
     Left msg -> die (path ++ ":" ++ msg)
-    Right ir -> hccPutStrLn (show ir)
+    Right ir -> hccPutStrLn (renderModuleIr ir)
 
 mapParseError :: Either ParseError a -> Either String a
 mapParseError result = case result of
