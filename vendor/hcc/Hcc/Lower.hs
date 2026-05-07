@@ -69,6 +69,13 @@ lowerStatements stmts = case stmts of
 
 lowerSideEffect :: Expr -> CompileM [Instr]
 lowerSideEffect expr = case expr of
+  ECall (EVar "asm") _ ->
+    pure []
+  ECall (EVar name) args -> do
+    lowered <- lowerExprs args
+    let instrs = concatMap fst lowered
+    let ops = map snd lowered
+    pure (instrs ++ [ICall Nothing name ops])
   EAssign (EVar name) rhs -> do
     (instrs, op) <- lowerExpr rhs
     temp <- materialize op
@@ -93,6 +100,11 @@ lowerExpr expr = case expr of
     zero <- freshTemp
     out <- freshTemp
     pure (a ++ [IConst zero 0, IBin out ISub (OTemp zero) op], OTemp out)
+  EUnary "!" x -> do
+    (a, op) <- lowerExpr x
+    zero <- freshTemp
+    out <- freshTemp
+    pure (a ++ [IConst zero 0, IBin out IEq op (OTemp zero)], OTemp out)
   EBinary op a b | Just iop <- lowerBinOp op -> do
     (ai, ao) <- lowerExpr a
     (bi, bo) <- lowerExpr b

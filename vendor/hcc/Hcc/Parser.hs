@@ -263,9 +263,9 @@ unary = do
   tok <- peek
   case tokenKind tok of
     TokPunct op | op `elem` ["+", "-", "!", "~", "*", "&"] ->
-      advanceToken >> EUnary op <$> unary
+      advanceToken >> EUnary op <$> (postfix =<< unary)
     TokIdent "sizeof" ->
-      advanceToken >> EUnary "sizeof" <$> unary
+      advanceToken >> EUnary "sizeof" <$> (postfix =<< unary)
     TokInt s -> advanceToken >> pure (EInt s)
     TokChar s -> advanceToken >> pure (EChar s)
     TokString s -> advanceToken >> pure (EString s)

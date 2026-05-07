@@ -101,20 +101,80 @@ popIf sp frames = case frames of
   _:rest -> Right rest
 
 evalIf :: [Macro] -> [String] -> Either PreprocessError Bool
-evalIf macros wordsAfterIf = case wordsAfterIf of
-  ["0"] -> Right False
-  ["1"] -> Right True
-  ["defined", name] -> Right (isDefined name macros)
-  [word] | "defined(" `startsWith` word && last word == ')' ->
-    Right (isDefined (take (length word - 9) (drop 8 word)) macros)
-  [name] -> case lookupObject name macros of
-    Just [Token _ (TokInt "0")] -> Right False
-    Just _ -> Right True
-    Nothing -> Right False
-  _ -> Left (PreprocessError (SrcPos 1 1) ("unsupported #if expression: " ++ unwords wordsAfterIf))
+evalIf macros wordsAfterIf = do
+  toks <- case lexC (stripLineComment (unwords wordsAfterIf)) of
+    Left (LexError pos msg) -> Left (PreprocessError pos msg)
+    Right result -> Right result
+  case parseIfOr macros toks of
+    Right (value, []) -> Right value
+    Right (_, tok:_) -> Left (PreprocessError (tokenStart tok) "trailing tokens in #if expression")
+    Left msg -> Left (PreprocessError (SrcPos 1 1) msg)
 
-startsWith :: String -> String -> Bool
-startsWith prefix text = take (length prefix) text == prefix
+parseIfOr :: [Macro] -> [Token] -> Either String (Bool, [Token])
+parseIfOr macros toks = do
+  (lhs, rest) <- parseIfAnd macros toks
+  parseTail lhs rest
+  where
+    parseTail lhs rest = case rest of
+      Token _ (TokPunct "||"):xs -> do
+        (rhs, xs') <- parseIfAnd macros xs
+        parseTail (lhs || rhs) xs'
+      _ -> Right (lhs, rest)
+
+parseIfAnd :: [Macro] -> [Token] -> Either String (Bool, [Token])
+parseIfAnd macros toks = do
+  (lhs, rest) <- parseIfUnary macros toks
+  parseTail lhs rest
+  where
+    parseTail lhs rest = case rest of
+      Token _ (TokPunct "&&"):xs -> do
+        (rhs, xs') <- parseIfUnary macros xs
+        parseTail (lhs && rhs) xs'
+      _ -> Right (lhs, rest)
+
+parseIfUnary :: [Macro] -> [Token] -> Either String (Bool, [Token])
+parseIfUnary macros toks = case toks of
+  Token _ (TokPunct "!"):rest -> do
+    (value, rest') <- parseIfUnary macros rest
+    Right (not value, rest')
+  _ -> parseIfPrimary macros toks
+
+parseIfPrimary :: [Macro] -> [Token] -> Either String (Bool, [Token])
+parseIfPrimary macros toks = case toks of
+  Token _ (TokPunct "("):rest -> do
+    (value, rest') <- parseIfOr macros rest
+    case rest' of
+      Token _ (TokPunct ")"):xs -> Right (value, xs)
+      _ -> Left "expected ')' in #if expression"
+  Token _ (TokIdent "defined"):Token _ (TokPunct "("):Token _ (TokIdent name):Token _ (TokPunct ")"):rest ->
+    Right (isDefined name macros, rest)
+  Token _ (TokIdent "defined"):Token _ (TokIdent name):rest ->
+    Right (isDefined name macros, rest)
+  Token _ (TokIdent name):rest ->
+    Right (macroTruth name macros, rest)
+  Token _ (TokInt value):rest ->
+    Right (intTruth value, rest)
+  [] -> Left "empty #if expression"
+  _ -> Left "unsupported token in #if expression"
+
+macroTruth :: String -> [Macro] -> Bool
+macroTruth name macros = case lookupObject name macros of
+  Just [Token _ (TokInt value)] -> intTruth value
+  Just _ -> True
+  Nothing -> False
+
+intTruth :: String -> Bool
+intTruth value = stripIntSuffix value /= "0"
+
+stripIntSuffix :: String -> String
+stripIntSuffix text = reverse (dropWhile isSuffix (reverse text)) where
+  isSuffix c = c `elem` "uUlL"
+
+stripLineComment :: String -> String
+stripLineComment text = case text of
+  [] -> []
+  '/':'/':_ -> []
+  c:rest -> c : stripLineComment rest
 
 defineObject :: [Macro] -> Span -> String -> String -> Either PreprocessError [Macro]
 defineObject macros sp name body =
@@ -153,3 +213,6 @@ relocate sp toks = map replaceSpan toks where
 
 spanStart :: Span -> SrcPos
 spanStart (Span start _) = start
+
+tokenStart :: Token -> SrcPos
+tokenStart (Token sp _) = spanStart sp
