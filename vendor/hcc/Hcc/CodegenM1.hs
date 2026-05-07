@@ -256,7 +256,7 @@ blockRef (BlockId n) = "HCC_BLOCK_" ++ show n
 
 codegenDataItem :: DataItem -> [String]
 codegenDataItem (DataItem label bytes) =
-  [":HCC_DATA_" ++ label, "\t" ++ joinWords (map byteHex bytes), ""]
+  [":" ++ label, "\t" ++ joinWords (map byteHex bytes), ""]
 
 byteHex :: Int -> String
 byteHex value =

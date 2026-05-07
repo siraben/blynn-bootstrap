@@ -391,8 +391,9 @@ lowerExpr expr = case expr of
     pure ([IConst temp (charValue text)], OTemp temp)
   EString text -> do
     label <- freshLabel
-    addDataItem (DataItem label (stringBytes text))
-    pure ([], OGlobal ("HCC_DATA_" ++ label))
+    let dataLabel = "HCC_DATA_" ++ label
+    addDataItem (DataItem dataLabel (stringBytes text))
+    pure ([], OGlobal dataLabel)
   EVar name -> do
     local <- lookupVarMaybe name
     case local of

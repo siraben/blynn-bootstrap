@@ -114,8 +114,13 @@ freshLabel = CompileM $ \st ->
     in Right ("L" ++ show n, st { csNextLabel = n + 1 })
 
 addDataItem :: DataItem -> CompileM ()
-addDataItem item = CompileM $ \st ->
-  Right ((), st { csDataItems = item : csDataItems st })
+addDataItem item@(DataItem label _) = CompileM $ \st ->
+  Right ((), st { csDataItems = item : removeLabel label (csDataItems st) })
+  where
+    removeLabel key items = case items of
+      [] -> []
+      DataItem label' _:rest | label' == key -> removeLabel key rest
+      x:rest -> x : removeLabel key rest
 
 getDataItems :: CompileM [DataItem]
 getDataItems = CompileM $ \st -> Right (reverse (csDataItems st), st)
