@@ -1,10 +1,10 @@
 module Hcc.Ir where
 
 newtype Temp = Temp Int
-  deriving (Eq, Show)
+  deriving (Eq, Ord, Show)
 
 newtype BlockId = BlockId Int
-  deriving (Eq, Show)
+  deriving (Eq, Ord, Show)
 
 data Operand
   = OTemp Temp

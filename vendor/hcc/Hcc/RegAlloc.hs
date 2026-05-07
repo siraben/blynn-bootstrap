@@ -7,6 +7,8 @@ module Hcc.RegAlloc
   , stackSlotCount
   ) where
 
+import qualified Data.Map.Strict as Map
+
 import Hcc.Ir
 
 data PhysReg
@@ -23,29 +25,24 @@ data Location
   | StackObject Int Int
   deriving (Eq, Show)
 
-newtype Allocation = Allocation [(Temp, Location)]
+data Allocation = Allocation Int (Map.Map Temp Location)
   deriving (Eq, Show)
 
 allocateFunction :: FunctionIr -> Either String Allocation
 allocateFunction (FunctionIr _ _ blocks) =
-  Allocation <$> allocateInstrs 0 [] (concatMap blockInstrs blocks)
+  uncurry Allocation <$> allocateInstrs 0 Map.empty (concatMap blockInstrs blocks)
 
 lookupLocation :: Temp -> Allocation -> Either String Location
-lookupLocation temp (Allocation pairs) = case lookup temp pairs of
+lookupLocation temp (Allocation _ locations) = case Map.lookup temp locations of
   Just loc -> Right loc
   Nothing -> Left ("missing allocation for " ++ show temp)
 
 stackSlotCount :: Allocation -> Int
-stackSlotCount (Allocation pairs) = count 0 pairs where
-  count maxSlot locs = case locs of
-    [] -> maxSlot
-    (_, OnStack slot):rest -> count (max maxSlot (slot + 1)) rest
-    (_, StackObject slot slots):rest -> count (max maxSlot (slot + slots)) rest
-    _:rest -> count maxSlot rest
+stackSlotCount (Allocation slots _) = slots
 
-allocateInstrs :: Int -> [(Temp, Location)] -> [Instr] -> Either String [(Temp, Location)]
+allocateInstrs :: Int -> Map.Map Temp Location -> [Instr] -> Either String (Int, Map.Map Temp Location)
 allocateInstrs nextSlot acc instrs = case instrs of
-  [] -> Right (reverse acc)
+  [] -> Right (nextSlot, acc)
   instr:rest -> case instr of
     IParam temp _ ->
       allocateDef nextSlot acc temp rest
@@ -92,19 +89,19 @@ allocateInstrs nextSlot acc instrs = case instrs of
     ICallIndirect (Just temp) _ _ ->
       allocateDef nextSlot acc temp rest
 
-allocateStackObject :: Int -> [(Temp, Location)] -> Temp -> Int -> [Instr] -> Either String [(Temp, Location)]
+allocateStackObject :: Int -> Map.Map Temp Location -> Temp -> Int -> [Instr] -> Either String (Int, Map.Map Temp Location)
 allocateStackObject nextSlot acc temp size rest =
-  if temp `elem` map fst acc
+  if Map.member temp acc
   then allocateInstrs nextSlot acc rest
   else
     let slots = (max 1 size + 7) `div` 8
-    in allocateInstrs (nextSlot + slots) ((temp, StackObject nextSlot slots):acc) rest
+    in allocateInstrs (nextSlot + slots) (Map.insert temp (StackObject nextSlot slots) acc) rest
 
-allocateDef :: Int -> [(Temp, Location)] -> Temp -> [Instr] -> Either String [(Temp, Location)]
+allocateDef :: Int -> Map.Map Temp Location -> Temp -> [Instr] -> Either String (Int, Map.Map Temp Location)
 allocateDef nextSlot acc temp rest =
-  if temp `elem` map fst acc
+  if Map.member temp acc
   then allocateInstrs nextSlot acc rest
-  else allocateInstrs (nextSlot + 1) ((temp, OnStack nextSlot):acc) rest
+  else allocateInstrs (nextSlot + 1) (Map.insert temp (OnStack nextSlot) acc) rest
 
 blockInstrs :: BasicBlock -> [Instr]
 blockInstrs (BasicBlock _ instrs _) = instrs
