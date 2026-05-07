@@ -60,8 +60,10 @@ stdenv.mkDerivation {
       -D CONFIG_TCC_STATIC=1 \
       -D CONFIG_USE_LIBGCC=1 \
       -D TCC_MES_LIBC=1 \
+      -D TCC_MUSL=1 \
       -D TCC_VERSION=\"0.9.28-${version}\" \
       -D ONE_SOURCE=1 \
+      -D CONFIG_TCC_SEMLOCK=0 \
       tcc.c
     runHook postBuild
   '';
