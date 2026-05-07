@@ -22,6 +22,8 @@ data BinOp
   | ILe
   | IGt
   | IGe
+  | IAnd
+  | IOr
   deriving (Eq, Show)
 
 data Instr

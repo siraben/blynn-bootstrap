@@ -125,6 +125,8 @@ binOpCode op = case op of
   ILe -> Right ["\tCMP", "\tSETLE", "\tMOVEZX"]
   IGt -> Right ["\tCMP", "\tSETG", "\tMOVEZX"]
   IGe -> Right ["\tCMP", "\tSETGE", "\tMOVEZX"]
+  IAnd -> Right ["\tAND_rax_rbx"]
+  IOr -> Right ["\tOR_rax_rbx"]
 
 loadOperand :: Allocation -> Operand -> Either CodegenError [String]
 loadOperand alloc op = case op of

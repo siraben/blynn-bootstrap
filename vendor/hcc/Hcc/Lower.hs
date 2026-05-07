@@ -170,6 +170,8 @@ lowerBinOp op = case op of
   "<=" -> Just ILe
   ">" -> Just IGt
   ">=" -> Just IGe
+  "&&" -> Just IAnd
+  "||" -> Just IOr
   _ -> Nothing
 
 parseInt :: String -> Int
@@ -201,6 +203,8 @@ charValue :: String -> Int
 charValue text = case text of
   '\'':'\\':'n':'\'':[] -> 10
   '\'':'\\':'t':'\'':[] -> 9
+  '\'':'\\':'a':'\'':[] -> 7
+  '\'':'\\':'b':'\'':[] -> 8
   '\'':'\\':'0':'\'':[] -> 0
   '\'':c:'\'':[] -> fromEnum c
   _ -> 0
