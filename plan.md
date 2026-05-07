@@ -34,10 +34,13 @@ substrate.
   `include/stdarg.h` first in the include path, and `lib/va_list.c`
   linked, the resulting compiler compiles TinyCC again; the third
   generation also links and compiles a smoke object.
-- The current `nix/tinycc-boot-hcc.nix` still uses hcc's temporary
-  `-o` path, which delegates final binary production to a backend C
-  compiler. It records the discovered bootstrap flags, but it is not yet
-  the final M1/hex2-only TinyCC derivation.
+- `tinycc-boot-hcc` now builds TinyCC through `hcc --expand-dump`,
+  `hcc -S`, `M1`, and `hex2`; it no longer invokes MesCC or hcc's
+  backend C compiler path. The resulting binary runs `-version` and
+  compiles a no-include C smoke file. The next blocker for making it a
+  drop-in downstream `tcc` is quoted include handling in the hcc-built
+  TinyCC: it currently opens the containing directory for a simple
+  `#include "header.h"` smoke instead of opening the header file itself.
 
 The immediate remaining work is to replace the `/tmp` TinyCC self-host
 probe with a reproducible derivation: generate or vendor the guarded
