@@ -3,7 +3,6 @@ module Main where
 import GHC.IO.Encoding (setLocaleEncoding, utf8)
 import Control.Monad (filterM)
 import Data.Char (isAlphaNum)
-import qualified Data.Set as Set
 import System.Directory (findExecutable)
 import System.Directory (canonicalizePath)
 import System.Directory (doesFileExist)
@@ -20,6 +19,7 @@ import Hcc.Lexer
 import Hcc.Lower
 import Hcc.Parser
 import Hcc.Preprocessor
+import qualified Hcc.SymbolTable as Symbols
 import Hcc.Token
 
 main :: IO ()
@@ -264,10 +264,10 @@ renderDefinesBuilder defs = case defs of
 
 readSourceWithIncludes :: [FilePath] -> [(String, String)] -> FilePath -> IO String
 readSourceWithIncludes includeDirs defines path = do
-  (builder, _, _) <- expandFile [] Set.empty initialMacros path
+  (builder, _, _) <- expandFile [] Symbols.emptySet initialMacros path
   pure (builder "")
   where
-  initialMacros = Set.fromList (map fst defines)
+  initialMacros = Symbols.setFromList (map fst defines)
 
   expandFile stack guards macros file = do
     key <- canonicalizePath file
@@ -276,15 +276,15 @@ readSourceWithIncludes includeDirs defines path = do
       else do
         source <- readFile key
         case includeGuard key source of
-          Just (PragmaOnce guard) | guard `Set.member` guards ->
+          Just (PragmaOnce guard) | Symbols.setMember guard guards ->
             pure (id, guards, macros)
-          Just (IfndefGuard guard start end) | guard `Set.member` guards ->
+          Just (IfndefGuard guard start end) | Symbols.setMember guard guards ->
             expandLines (takeDirectory key) (key:stack) guards macros [] (skipLineRange start end (lines source))
           guardInfo -> do
             let guards' = case guardInfo of
                   Nothing -> guards
-                  Just (PragmaOnce guard) -> Set.insert guard guards
-                  Just (IfndefGuard guard _ _) -> Set.insert guard guards
+                  Just (PragmaOnce guard) -> Symbols.setInsert guard guards
+                  Just (IfndefGuard guard _ _) -> Symbols.setInsert guard guards
             expandLines (takeDirectory key) (key:stack) guards' macros [] (lines source)
 
   expandLines currentDir stack guards macros frames ls = case ls of
@@ -299,9 +299,9 @@ readSourceWithIncludes includeDirs defines path = do
         keep = showString line . showChar '\n'
     in case directiveNameFromLine line of
       Just "ifdef" ->
-        pure (keep, guards, macros, pushIncludeFrame frames (maybe False (`Set.member` macros) (directiveArgument "ifdef" line)))
+        pure (keep, guards, macros, pushIncludeFrame frames (maybe False (`Symbols.setMember` macros) (directiveArgument "ifdef" line)))
       Just "ifndef" ->
-        pure (keep, guards, macros, pushIncludeFrame frames (maybe False (not . (`Set.member` macros)) (directiveArgument "ifndef" line)))
+        pure (keep, guards, macros, pushIncludeFrame frames (maybe False (not . (`Symbols.setMember` macros)) (directiveArgument "ifndef" line)))
       Just "if" ->
         pure (keep, guards, macros, pushIncludeFrame frames (evalIncludeIf macros (directiveRest "if" line)))
       Just "elif" ->
@@ -311,9 +311,9 @@ readSourceWithIncludes includeDirs defines path = do
       Just "endif" ->
         pure (keep, guards, macros, case frames of { [] -> []; _:xs -> xs })
       Just "define" | active ->
-        pure (keep, guards, maybe macros (`Set.insert` macros) (directiveArgument "define" line), frames)
+        pure (keep, guards, maybe macros (`Symbols.setInsert` macros) (directiveArgument "define" line), frames)
       Just "undef" | active ->
-        pure (keep, guards, maybe macros (`Set.delete` macros) (directiveArgument "undef" line), frames)
+        pure (keep, guards, maybe macros (`Symbols.setDelete` macros) (directiveArgument "undef" line), frames)
       _ -> case includeName line of
         Just name | active -> do
           found <- findInclude currentDir name
@@ -390,7 +390,7 @@ afterDirective directive text =
      then dropWhile isSpaceChar (drop (length directive) trimmed)
      else ""
 
-evalIncludeIf :: Set.Set String -> String -> Bool
+evalIncludeIf :: Symbols.SymbolSet -> String -> Bool
 evalIncludeIf macros text =
   evalOr (filter (not . null) (splitTopLevel "||" text))
   where
@@ -411,14 +411,14 @@ evalIncludeIf macros text =
         'd':'e':'f':'i':'n':'e':'d':rest -> evalDefined rest
         '(' : rest | lastMaybe rest == Just ')' -> evalIncludeIf macros (init rest)
         _ | all isDigitChar atom -> readDecimal atom /= 0
-          | all isMacroNameChar atom -> atom `Set.member` macros
+          | all isMacroNameChar atom -> Symbols.setMember atom macros
           | otherwise -> False
 
     evalDefined raw =
       let rest = trim raw
       in case rest of
-        '(' : xs -> takeWhile isMacroNameChar xs `Set.member` macros
-        _ -> takeWhile isMacroNameChar rest `Set.member` macros
+        '(' : xs -> Symbols.setMember (takeWhile isMacroNameChar xs) macros
+        _ -> Symbols.setMember (takeWhile isMacroNameChar rest) macros
 
 splitTopLevel :: String -> String -> [String]
 splitTopLevel sep text = go 0 text "" where

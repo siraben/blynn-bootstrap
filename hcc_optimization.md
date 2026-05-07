@@ -142,3 +142,53 @@ nix shell nixpkgs#time -c time -v nix build --rebuild --no-link .#tinycc-boot-hc
 wall: 7.84s
 client max RSS: 43,576 KiB
 ```
+
+## Pass 3: Handrolled symbol table
+
+Goal: remove the remaining library containers from HCC so later lowering does not need to account for `Data.Map` or `Data.Set` internals. This intentionally favors explicit local data constructors over the smallest possible GHC-native implementation.
+
+Changes:
+
+- Added `Hcc.SymbolTable`, a handrolled string-keyed binary tree.
+- Replaced `Data.Set` in include expansion and parser typedef tracking with `SymbolSet`.
+- Replaced `Data.Map` in the preprocessor macro table with `SymbolMap`.
+- Audited `vendor/hcc` for remaining container imports. No `Data.Map`, `Data.Set`, `IntMap`, `Sequence`, `Vector`, `Hash`, or `Array` imports remain.
+
+Direct HCC compile of the same patched TinyCC source:
+
+```text
+hcc --expand-dump ... tcc.c > tcc-symbols-expanded.c
+wall: 0.32s
+max RSS: 75,424 KiB
+tcc-symbols-expanded.c: 1,241,347 bytes
+output identical to baseline expansion
+
+hcc -S -o tcc-symbols-same.M1 tcc-expanded.c
+wall: 2.68s
+max RSS: 209,692 KiB
+tcc-symbols-same.M1: 508,341 lines, 14,903,462 bytes
+output identical to baseline M1
+```
+
+Current metrics:
+
+```text
+Haskell LOC total: 5,896
+hcc-ghc/bin/hcc: 4,472,616 bytes
+tinycc-boot-hcc/bin/tcc-hcc-stage1: 2,767,218 bytes
+tinycc-boot-hcc/bin/tcc: 338,120 bytes
+```
+
+Validation:
+
+```text
+nix build .#hcc-ghc --no-link --print-out-paths
+pass
+
+nix build .#tinycc-boot-hcc .#hcc-m1-smoke .#hcc-mescc-tests
+pass
+
+nix shell nixpkgs#time -c time -v nix build --rebuild --no-link .#tinycc-boot-hcc
+wall: 7.90s
+client max RSS: 44,688 KiB
+```
