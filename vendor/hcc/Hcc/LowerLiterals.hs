@@ -1,5 +1,6 @@
 module LowerLiterals where
 
+import Base
 import Ir
 import LowerCommon
 

@@ -1,5 +1,7 @@
 module Ir where
 
+import Base
+
 data Temp = Temp Int
   deriving (Eq, Ord, Show)
 

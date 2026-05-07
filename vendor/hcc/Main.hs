@@ -1,5 +1,6 @@
 module Main where
 
+import Base
 import CompileM
 import CodegenM1 hiding (line, mapCompileError)
 import HccSystem

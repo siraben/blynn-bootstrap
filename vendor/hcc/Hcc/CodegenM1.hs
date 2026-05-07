@@ -1,5 +1,6 @@
 module CodegenM1 where
 
+import Base
 import Ast
 import CompileM
 import Ir

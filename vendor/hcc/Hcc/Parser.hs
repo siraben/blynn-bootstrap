@@ -1,5 +1,6 @@
 module Parser where
 
+import Base
 import Ast
 import ConstExpr
 import SymbolTable

@@ -1,5 +1,6 @@
 module LowerDataValues where
 
+import Base
 import Ir
 
 padData :: Int -> [DataValue] -> [DataValue]

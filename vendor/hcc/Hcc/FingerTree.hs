@@ -1,5 +1,7 @@
 module FingerTree where
 
+import Base
+
 data FingerRange = FingerRange Int Int
   deriving (Eq, Show)
 

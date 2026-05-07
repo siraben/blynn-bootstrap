@@ -1,5 +1,6 @@
 module ConstExpr where
 
+import Base
 import Token
 
 parseConstExpr :: [(String, Integer)] -> [Token] -> Either String (Integer, [Token])

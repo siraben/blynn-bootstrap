@@ -1,5 +1,7 @@
 module Token where
 
+import Base
+
 data SrcPos = SrcPos Int Int
   deriving (Eq, Show)
 

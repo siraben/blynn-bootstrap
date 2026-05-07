@@ -1,5 +1,6 @@
 module LowerBootstrap where
 
+import Base
 import Ast
 import CompileM
 

@@ -1,5 +1,7 @@
 module SymbolTable where
 
+import Base
+
 data Tree a
   = Empty
   | Branch String a (Tree a) (Tree a)

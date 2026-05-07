@@ -1,5 +1,6 @@
 module LowerBuiltins where
 
+import Base
 import LowerCommon
 
 builtinConstant :: String -> Maybe Int

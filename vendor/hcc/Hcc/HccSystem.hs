@@ -1,5 +1,6 @@
 module HccSystem where
 
+import Base
 import GHC.IO.Encoding (setLocaleEncoding, utf8)
 import System.Directory (canonicalizePath, doesFileExist, findExecutable)
 import System.Environment (getArgs, lookupEnv)

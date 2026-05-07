@@ -1,5 +1,6 @@
 module Lower where
 
+import Base
 import Ast
 import CompileM
 import Ir

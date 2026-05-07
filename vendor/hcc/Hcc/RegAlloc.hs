@@ -1,5 +1,6 @@
 module RegAlloc where
 
+import Base
 import FingerTree
 import Ir
 

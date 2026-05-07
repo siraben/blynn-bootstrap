@@ -1,5 +1,6 @@
 module CompileM where
 
+import Base
 import Ast
 import Ir
 

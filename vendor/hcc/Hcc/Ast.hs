@@ -1,5 +1,7 @@
 module Ast where
 
+import Base
+
 data Program = Program [TopDecl]
   deriving (Eq, Show)
 

@@ -1,5 +1,6 @@
 module Preprocessor where
 
+import Base
 import ConstExpr hiding (charCode)
 import Lexer hiding (charCode, isAsciiAlpha, isAsciiAlphaNum, isIdentChar, isIdentStart, lexerIsSpace, prefixOf)
 import SymbolTable

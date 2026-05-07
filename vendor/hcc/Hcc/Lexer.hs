@@ -1,5 +1,6 @@
 module Lexer where
 
+import Base
 import Token
 
 data LexError = LexError SrcPos String

@@ -1,5 +1,6 @@
 module LowerTypes where
 
+import Base
 import Ast
 import Ir
 

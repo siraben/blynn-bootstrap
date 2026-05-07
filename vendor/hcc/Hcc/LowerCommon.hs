@@ -1,5 +1,7 @@
 module LowerCommon where
 
+import Base
+
 pairFirst :: (a, b) -> a
 pairFirst pair = case pair of
   (a, _) -> a
