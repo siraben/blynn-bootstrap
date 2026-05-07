@@ -80,6 +80,9 @@ registerTopDecls decls = case decls of
     values <- globalData ty initExpr
     addDataItem (DataItem name values)
     registerTopDecls rest
+  ExternGlobals globals:rest -> do
+    registerExternGlobals globals
+    registerTopDecls rest
   Globals globals:rest -> do
     registerGlobals globals
     registerTopDecls rest
@@ -97,6 +100,7 @@ lowerTopDecls decls = case decls of
     pure (fn:fns)
   Prototype{}:rest -> lowerTopDecls rest
   Global{}:rest -> lowerTopDecls rest
+  ExternGlobals{}:rest -> lowerTopDecls rest
   Globals{}:rest -> lowerTopDecls rest
   StructDecl{}:rest -> lowerTopDecls rest
   EnumConstants{}:rest -> lowerTopDecls rest
@@ -562,6 +566,14 @@ registerGlobals globals = case globals of
     values <- globalData ty initExpr
     addDataItem (DataItem name values)
     registerGlobals rest
+
+registerExternGlobals :: [(CType, String)] -> CompileM ()
+registerExternGlobals globals = case globals of
+  [] -> pure ()
+  (ty, name):rest -> do
+    registerTypeAggregates ty
+    bindGlobal name ty
+    registerExternGlobals rest
 
 registerConstants :: [(String, Int)] -> CompileM ()
 registerConstants constants = case constants of

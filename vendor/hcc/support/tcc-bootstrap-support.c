@@ -600,7 +600,13 @@ static int hcc_vformat(char* out, unsigned size, char* fmt, long a, long b, long
 }
 
 int printf(char* fmt) { return 0; }
-int fprintf(void* stream, char* fmt) { return 0; }
+int fprintf(void* stream, char* fmt, long a, long b, long c)
+{
+    char buffer[1024];
+    int n = hcc_vformat(buffer, 1024, fmt, a, b, c);
+    fputs(buffer, stream);
+    return n;
+}
 int sprintf(char* out, char* fmt, long a, long b, long c) { return hcc_vformat(out, 0xffffffff, fmt, a, b, c); }
 int snprintf(char* out, unsigned size, char* fmt, long a, long b, long c) { return hcc_vformat(out, size, fmt, a, b, c); }
 int sscanf(char* input, char* fmt) { return 0; }

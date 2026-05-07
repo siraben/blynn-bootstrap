@@ -78,6 +78,13 @@ topDecls = do
 
 topDecl :: Parser TopDecl
 topDecl = do
+  emptyDecl <- eatPunct ";"
+  if emptyDecl
+    then pure TypeDecl
+    else topDeclNonEmpty
+
+topDeclNonEmpty :: Parser TopDecl
+topDeclNonEmpty = do
   typedef <- eatIdent "typedef"
   if typedef
     then do
@@ -96,6 +103,7 @@ topDeclNoTypedef = do
 
 topDeclNoStruct :: Parser TopDecl
 topDeclNoStruct = do
+  isExtern <- leadingExternQualifier
   ty0 <- ctype
   standalone <- eatPunct ";"
   if standalone
@@ -115,12 +123,27 @@ topDeclNoStruct = do
         (do
           initExpr <- optionalP (eatPunct "=" >> initializerExpr)
           rest <- declarationItemsTail ty0
-          pure (globalDecl ((ty, name, initExpr):rest)))
+          pure (globalDecl isExtern ((ty, name, initExpr):rest)))
 
-globalDecl :: [(CType, String, Maybe Expr)] -> TopDecl
-globalDecl decls = case decls of
-  [(ty, name, initExpr)] -> Global ty name initExpr
-  _ -> Globals decls
+globalDecl :: Bool -> [(CType, String, Maybe Expr)] -> TopDecl
+globalDecl isExtern decls =
+  if isExtern && all uninitialized decls
+    then ExternGlobals (map externPair decls)
+    else case decls of
+      [(ty, name, initExpr)] -> Global ty name initExpr
+      _ -> Globals decls
+  where
+    uninitialized (_, _, initExpr) = case initExpr of
+      Nothing -> True
+      Just{} -> False
+    externPair (ty, name, _) = (ty, name)
+
+leadingExternQualifier :: Parser Bool
+leadingExternQualifier = Parser $ \_env toks -> Empty (Ok (go toks) toks) where
+  go ts = case ts of
+    Token _ (TokIdent "extern"):_ -> True
+    Token _ (TokIdent name):rest | name `elem` ["const", "volatile", "static", "register", "inline"] -> go rest
+    _ -> False
 
 typedefAggregateDecl :: Parser TopDecl
 typedefAggregateDecl = do
@@ -277,12 +300,14 @@ stmt = do
     TokIdent "continue" -> advanceToken >> needPunct ";" >> pure SContinue
     TokIdent "goto" -> advanceToken >> parseGoto
     TokPunct ";" -> advanceToken >> pure (SExpr (EInt "0"))
-    _ | tokIsType -> parseDeclStmt
     TokIdent name -> do
       isLabel <- peekSecondPunct ":"
       if isLabel
         then advanceToken >> needPunct ":" >> pure (SLabel name)
-        else parseExprStmt
+        else do
+          startsDecl <- identifierStartsDeclaration
+          if startsDecl then parseDeclStmt else parseExprStmt
+    _ | tokIsType -> parseDeclStmt
     TokPunct "{" -> SBlock <$> compound
     _ -> parseExprStmt
 
@@ -931,6 +956,28 @@ tokenStartsTypeInEnv :: Set.Set String -> Token -> Bool
 tokenStartsTypeInEnv env tok = case tokenKind tok of
   TokIdent name -> startsType tok || Set.member name env
   _ -> False
+
+identifierStartsDeclaration :: Parser Bool
+identifierStartsDeclaration = Parser $ \env toks -> Empty (Ok (go env toks) toks) where
+  go env toks = case toks of
+    Token _ (TokIdent name):rest
+      | startsTypeName name -> True
+      | Set.member name env -> typedefDeclaratorFollows rest
+      | otherwise -> False
+    _ -> False
+
+  startsTypeName name =
+    name `elem` (builtinTypeNames ++ ["const", "volatile", "static", "extern", "register", "inline", "typedef"])
+
+  typedefDeclaratorFollows toks = case dropLeadingQualifiers toks of
+    Token _ (TokPunct "*"):_ -> True
+    Token _ (TokIdent _):_ -> True
+    _ -> False
+
+  dropLeadingQualifiers toks = case toks of
+    Token _ (TokIdent name):rest | name `elem` ["const", "volatile", "static", "extern", "register", "inline"] ->
+      dropLeadingQualifiers rest
+    _ -> toks
 
 isKnownTypeNameP :: String -> Parser Bool
 isKnownTypeNameP name = Parser $ \env toks -> Empty (Ok (Set.member name env) toks)

@@ -8,6 +8,7 @@ data TopDecl
   | Prototype CType String [Param]
   | Global CType String (Maybe Expr)
   | Globals [(CType, String, Maybe Expr)]
+  | ExternGlobals [(CType, String)]
   | StructDecl Bool String [Field]
   | EnumConstants [(String, Int)]
   | TypeDecl
