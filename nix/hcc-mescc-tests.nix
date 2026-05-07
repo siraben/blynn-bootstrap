@@ -77,6 +77,7 @@ stdenvNoCC.mkDerivation {
     assemble_and_run 17-compare-or 0
     assemble_and_run 17-compare-assign 0
     assemble_and_run 17-compare-call 0
+    assemble_and_run 20-while 0
 
     runHook postBuild
   '';

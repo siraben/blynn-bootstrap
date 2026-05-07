@@ -305,6 +305,12 @@ postfix base = do
       ix <- expr
       needPunct "]"
       postfix (EIndex base ix)
+    Just (TokPunct "++") -> do
+      advanceToken
+      postfix (EPostfix "++" base)
+    Just (TokPunct "--") -> do
+      advanceToken
+      postfix (EPostfix "--" base)
     _ -> pure base
 
 arguments :: Parser [Expr]

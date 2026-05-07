@@ -29,6 +29,7 @@ data BinOp
 data Instr
   = IParam Temp Int
   | IConst Temp Int
+  | ICopy Temp Operand
   | IBin Temp BinOp Operand Operand
   | ICall (Maybe Temp) String [Operand]
   deriving (Eq, Show)

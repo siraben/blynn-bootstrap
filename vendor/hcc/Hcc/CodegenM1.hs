@@ -75,6 +75,9 @@ codegenInstr alloc instr = case instr of
   IParam{} -> pure []
   IConst temp value ->
     storeTemp alloc temp ["\tLOAD_IMMEDIATE_rax %" ++ show value]
+  ICopy temp op -> do
+    code <- loadOperand alloc op
+    storeTemp alloc temp code
   IBin temp op a b -> do
     acode <- loadOperand alloc a
     bcode <- loadOperand alloc b

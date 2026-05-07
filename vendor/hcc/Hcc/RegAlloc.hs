@@ -49,13 +49,21 @@ allocateInstrs nextSlot acc instrs = case instrs of
       loc <- paramLocation index
       allocateInstrs nextSlot ((temp, loc):acc) rest
     IConst temp _ ->
-      allocateInstrs (nextSlot + 1) ((temp, OnStack nextSlot):acc) rest
+      allocateDef nextSlot acc temp rest
+    ICopy{} ->
+      allocateInstrs nextSlot acc rest
     IBin temp _ _ _ ->
-      allocateInstrs (nextSlot + 1) ((temp, OnStack nextSlot):acc) rest
+      allocateDef nextSlot acc temp rest
     ICall Nothing _ _ ->
       allocateInstrs nextSlot acc rest
     ICall (Just temp) _ _ ->
-      allocateInstrs (nextSlot + 1) ((temp, OnStack nextSlot):acc) rest
+      allocateDef nextSlot acc temp rest
+
+allocateDef :: Int -> [(Temp, Location)] -> Temp -> [Instr] -> Either String [(Temp, Location)]
+allocateDef nextSlot acc temp rest =
+  if temp `elem` map fst acc
+  then allocateInstrs nextSlot acc rest
+  else allocateInstrs (nextSlot + 1) ((temp, OnStack nextSlot):acc) rest
 
 paramLocation :: Int -> Either String Location
 paramLocation index = case index of

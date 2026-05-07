@@ -61,6 +61,16 @@ lowerStatementsFrom bid instrs stmts defaultTerm = case stmts of
   SExpr expr:rest -> do
     exprInstrs <- lowerSideEffect expr
     lowerStatementsFrom bid (instrs ++ exprInstrs) rest defaultTerm
+  SWhile cond body:rest -> do
+    condId <- freshBlock
+    bodyId <- freshBlock
+    restId <- freshBlock
+    (condInstrs, condOp) <- lowerExpr cond
+    bodyBlocks <- lowerStatementsFrom bodyId [] body (TJump condId)
+    restBlocks <- lowerStatementsFrom restId [] rest defaultTerm
+    pure ( BasicBlock bid instrs (TJump condId)
+         : BasicBlock condId condInstrs (TBranch condOp bodyId restId)
+         : bodyBlocks ++ restBlocks)
   SGoto name:rest -> do
     target <- labelBlock name
     tailBlocks <- lowerUnreachableLabels rest defaultTerm
@@ -103,9 +113,16 @@ lowerSideEffect expr = case expr of
     pure (instrs ++ [ICall Nothing name ops])
   EAssign (EVar name) rhs -> do
     (instrs, op) <- lowerExpr rhs
-    temp <- materialize op
-    bindVar name temp
-    pure instrs
+    temp <- lookupVar name
+    pure (instrs ++ [ICopy temp op])
+  EPostfix "--" (EVar name) -> do
+    temp <- lookupVar name
+    one <- freshTemp
+    pure [IConst one 1, IBin temp ISub (OTemp temp) (OTemp one)]
+  EPostfix "++" (EVar name) -> do
+    temp <- lookupVar name
+    one <- freshTemp
+    pure [IConst one 1, IBin temp IAdd (OTemp temp) (OTemp one)]
   _ -> do
     (instrs, _) <- lowerExpr expr
     pure instrs
@@ -141,6 +158,20 @@ lowerExpr expr = case expr of
     let instrs = concatMap fst lowered
     let ops = map snd lowered
     pure (instrs ++ [ICall (Just out) name ops], OTemp out)
+  EAssign (EVar name) rhs -> do
+    (instrs, op) <- lowerExpr rhs
+    temp <- lookupVar name
+    pure (instrs ++ [ICopy temp op], OTemp temp)
+  EPostfix "--" (EVar name) -> do
+    temp <- lookupVar name
+    old <- freshTemp
+    one <- freshTemp
+    pure ([IBin old IAdd (OTemp temp) (OImm 0), IConst one 1, IBin temp ISub (OTemp temp) (OTemp one)], OTemp old)
+  EPostfix "++" (EVar name) -> do
+    temp <- lookupVar name
+    old <- freshTemp
+    one <- freshTemp
+    pure ([IBin old IAdd (OTemp temp) (OImm 0), IConst one 1, IBin temp IAdd (OTemp temp) (OTemp one)], OTemp old)
   _ -> throwC ("unsupported expression in lowering: " ++ show expr)
 
 lowerExprs :: [Expr] -> CompileM [([Instr], Operand)]

@@ -42,6 +42,7 @@ data Expr
   | ECall Expr [Expr]
   | EIndex Expr Expr
   | EUnary String Expr
+  | EPostfix String Expr
   | EBinary String Expr Expr
   | EAssign Expr Expr
   deriving (Eq, Show)
