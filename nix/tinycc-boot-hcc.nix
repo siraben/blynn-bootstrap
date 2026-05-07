@@ -28,7 +28,6 @@ stdenv.mkDerivation {
 
     substituteInPlace x86_64-gen.c \
       --replace-fail 'char _onstack[nb_args], *onstack = _onstack;' 'char *onstack = tcc_malloc(nb_args);' \
-      --replace-fail 'abort();' '/* abort(); */' \
       --replace-fail 'g(vtop->c.i & (ll ? 63 : 31));' 'if (ll) g(vtop->c.i & 63); else g(vtop->c.i & 31);'
 
     substituteInPlace tccelf.c \
