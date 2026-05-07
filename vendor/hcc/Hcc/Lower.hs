@@ -1884,10 +1884,12 @@ isHexDigit c =
   (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
 
 stripQuotes :: String -> String
-stripQuotes text = case text of
-  '"':rest -> reverse (dropQuote (reverse rest))
-  _ -> text
-  where
-    dropQuote xs = case xs of
-      '"':ys -> ys
-      _ -> xs
+stripQuotes text = stripTrailingQuote (stripLeadingQuote text)
+
+stripLeadingQuote :: String -> String
+stripLeadingQuote text = case text of
+  c:rest -> if fromEnum c == 34 then rest else text
+  [] -> []
+
+stripTrailingQuote :: String -> String
+stripTrailingQuote text = reverse (stripLeadingQuote (reverse text))
