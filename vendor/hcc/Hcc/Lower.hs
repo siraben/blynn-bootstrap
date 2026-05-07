@@ -732,11 +732,10 @@ lowerExpr expr = case expr of
     lowerIncDec True IAdd target
   EUnary "--" target ->
     lowerIncDec True ISub target
-  ECast CUnsignedChar x -> do
+  ECast ty x -> do
     (a, op) <- lowerExpr x
-    (coerceInstrs, coerceOp) <- coerceScalar CUnsignedChar op
+    (coerceInstrs, coerceOp) <- coerceScalar ty op
     pure (a ++ coerceInstrs, coerceOp)
-  ECast _ x -> lowerExpr x
   ESizeofType ty -> do
     size <- typeSize ty
     temp <- freshTemp
