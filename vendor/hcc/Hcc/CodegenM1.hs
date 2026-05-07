@@ -122,6 +122,8 @@ binOpCode op = case op of
   IAdd -> Right ["\tADD_rbx_to_rax"]
   ISub -> Right ["\tSUBTRACT_rax_from_rbx_into_rbx", "\tMOVE_rbx_to_rax"]
   IMul -> Right ["\tMULTIPLY_rax_by_rbx_into_rax"]
+  IDiv -> Right ["\tXCHG_rax_rbx", "\tCQTO", "\tDIVIDES_rax_by_rbx_into_rax"]
+  IMod -> Right ["\tXCHG_rax_rbx", "\tCQTO", "\tMODULUSS_rax_from_rbx_into_rbx", "\tMOVE_rdx_to_rax"]
   IEq -> Right ["\tCMP", "\tSETE", "\tMOVEZX"]
   INe -> Right ["\tCMP", "\tSETNE", "\tMOVEZX"]
   ILt -> Right ["\tCMP", "\tSETL", "\tMOVEZX"]

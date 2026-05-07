@@ -16,6 +16,7 @@ lowerTopDecls decls = case decls of
     fn <- lowerFunction name params body
     fns <- lowerTopDecls rest
     pure (fn:fns)
+  Prototype{}:rest -> lowerTopDecls rest
   Global{}:rest -> lowerTopDecls rest
 
 lowerFunction :: String -> [Param] -> [Stmt] -> CompileM FunctionIr
@@ -195,6 +196,8 @@ lowerBinOp op = case op of
   "+" -> Just IAdd
   "-" -> Just ISub
   "*" -> Just IMul
+  "/" -> Just IDiv
+  "%" -> Just IMod
   "==" -> Just IEq
   "!=" -> Just INe
   "<" -> Just ILt

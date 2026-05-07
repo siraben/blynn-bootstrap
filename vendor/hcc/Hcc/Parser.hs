@@ -56,8 +56,12 @@ topDecl = do
   ifM (eatPunct "(")
     (do
       params <- parameters
-      body <- compound
-      pure (Function ty name params body))
+      isPrototype <- eatPunct ";"
+      if isPrototype
+        then pure (Prototype ty name params)
+        else do
+          body <- compound
+          pure (Function ty name params body))
     (do
       initExpr <- optionalP (eatPunct "=" >> expr)
       needPunct ";"
@@ -69,15 +73,28 @@ parameters = do
   if done
     then pure []
     else do
-      first <- parameter
-      rest <- manyP (needPunct "," >> parameter)
-      needPunct ")"
-      pure (first:rest)
+      voidOnly <- parameterVoidOnly
+      if voidOnly
+        then pure []
+        else parseNonEmptyParams
+
+parameterVoidOnly :: Parser Bool
+parameterVoidOnly = Parser $ \toks -> case toks of
+  Token _ (TokIdent "void"):Token _ (TokPunct ")"):rest -> Right (True, rest)
+  _ -> Right (False, toks)
+
+parseNonEmptyParams :: Parser [Param]
+parseNonEmptyParams = do
+  first <- parameter
+  rest <- manyP (needPunct "," >> parameter)
+  needPunct ")"
+  pure (first:rest)
 
 parameter :: Parser Param
 parameter = do
   ty0 <- ctype
-  (ty, name) <- declarator ty0
+  ty <- pointerStars ty0
+  name <- optionalIdent
   pure (Param ty name)
 
 compound :: Parser [Stmt]
@@ -380,6 +397,13 @@ needIdent = do
   case tokenKind tok of
     TokIdent s -> advanceToken >> pure s
     _ -> failAt tok "expected identifier"
+
+optionalIdent :: Parser String
+optionalIdent = do
+  mtok <- peekMaybe
+  case fmap tokenKind mtok of
+    Just (TokIdent s) -> advanceToken >> pure s
+    _ -> pure ""
 
 needIdentValue :: String -> Parser ()
 needIdentValue expected = do

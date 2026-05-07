@@ -5,6 +5,7 @@ data Program = Program [TopDecl]
 
 data TopDecl
   = Function CType String [Param] [Stmt]
+  | Prototype CType String [Param]
   | Global CType String (Maybe Expr)
   deriving (Eq, Show)
 

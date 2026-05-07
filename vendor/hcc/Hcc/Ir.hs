@@ -16,6 +16,8 @@ data BinOp
   = IAdd
   | ISub
   | IMul
+  | IDiv
+  | IMod
   | IEq
   | INe
   | ILt
