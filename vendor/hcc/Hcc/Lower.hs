@@ -1360,6 +1360,12 @@ constExprValue :: Expr -> CompileM Int
 constExprValue expr = case expr of
   EInt text -> pure (parseInt text)
   EChar text -> pure (charValue text)
+  ECast _ (EUnary "&" (EPtrMember (ECast (CPtr ty) (EInt "0")) field)) -> do
+    (_, offset) <- memberInfo (Just (CPtr ty)) field
+    pure offset
+  EUnary "&" (EPtrMember (ECast (CPtr ty) (EInt "0")) field) -> do
+    (_, offset) <- memberInfo (Just (CPtr ty)) field
+    pure offset
   EVar name -> do
     constant <- lookupConstant name
     pure (maybe (maybe 0 id (builtinConstant name)) id constant)

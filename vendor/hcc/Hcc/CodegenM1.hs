@@ -111,7 +111,7 @@ codegenInstr fnName alloc totalSlots instr = case instr of
   IAlloca _ _ ->
     pure []
   IConst temp value ->
-    storeTemp alloc temp ["\tLOAD_IMMEDIATE_rax %" ++ show value]
+    storeTemp alloc temp (loadImmediate value)
   ICopy temp op -> do
     code <- loadOperand alloc op
     storeTemp alloc temp code
@@ -284,12 +284,26 @@ binOpCode op = case op of
 
 loadOperand :: Allocation -> Operand -> Either CodegenError [String]
 loadOperand alloc op = case op of
-  OImm value -> Right ["\tLOAD_IMMEDIATE_rax %" ++ show value]
+  OImm value -> Right (loadImmediate value)
   OGlobal name -> Right ["\tLOAD_IMMEDIATE_rax &" ++ name]
   OFunction name -> Right ["\tLOAD_IMMEDIATE_rax &FUNCTION_" ++ name]
   OTemp temp -> do
     loc <- mapAllocError (lookupLocation temp alloc)
     loadLocation loc
+
+loadImmediate :: Int -> [String]
+loadImmediate value =
+  if value >= (-2147483648) && value <= 2147483647
+    then ["\tLOAD_IMMEDIATE_rax %" ++ show value]
+    else
+      [ "\tLOAD_IMMEDIATE_rax %" ++ show value
+      , "\tPUSH_RAX"
+      , "\tLOAD_IMMEDIATE_rax %32"
+      , "\tHCC_COPY_rax_to_rcx"
+      , "\tPOP_RAX"
+      , "\tHCC_SHL_rax_cl"
+      , "\tHCC_SHR_rax_cl"
+      ]
 
 loadLocation :: Location -> Either CodegenError [String]
 loadLocation loc = case loc of
