@@ -61,6 +61,12 @@ stdenvNoCC.mkDerivation {
     assemble_and_run 06-return-void 0
     assemble_and_run 08-assign-negative 0
     assemble_and_run 08-assign 0
+    assemble_and_run 10-if-0 0
+    assemble_and_run 11-if-1 0
+    assemble_and_run 12-if-eq 0
+    assemble_and_run 13-if-neq 0
+    assemble_and_run 15-if-not-f 0
+    assemble_and_run 16-if-t 0
 
     runHook postBuild
   '';

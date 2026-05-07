@@ -22,8 +22,8 @@ lowerFunction :: String -> [Param] -> [Stmt] -> CompileM FunctionIr
 lowerFunction name params body = withFunctionScope $ do
   bid <- freshBlock
   (paramNames, paramInstrs) <- lowerParams 0 params
-  (bodyInstrs, term) <- lowerStatements body
-  pure (FunctionIr name paramNames [BasicBlock bid (paramInstrs ++ bodyInstrs) term])
+  blocks <- lowerStatementsFrom bid paramInstrs body (TRet (Just (OImm 0)))
+  pure (FunctionIr name paramNames blocks)
 
 lowerParams :: Int -> [Param] -> CompileM ([String], [Instr])
 lowerParams index params = case params of
@@ -34,37 +34,42 @@ lowerParams index params = case params of
     (names, instrs) <- lowerParams (index + 1) rest
     pure (name:names, IParam temp index:instrs)
 
-lowerStatements :: [Stmt] -> CompileM ([Instr], Terminator)
-lowerStatements stmts = case stmts of
-  [] -> pure ([], TRet (Just (OImm 0)))
+lowerStatementsFrom :: BlockId -> [Instr] -> [Stmt] -> Terminator -> CompileM [BasicBlock]
+lowerStatementsFrom bid instrs stmts defaultTerm = case stmts of
+  [] -> pure [BasicBlock bid instrs defaultTerm]
   SReturn value:_ -> case value of
-    Nothing -> pure ([], TRet Nothing)
+    Nothing -> pure [BasicBlock bid instrs (TRet Nothing)]
     Just expr -> do
-      (instrs, op) <- lowerExpr expr
-      pure (instrs, TRet (Just op))
-  SBlock body:rest -> do
-    (a, term) <- lowerStatements body
-    case term of
-      TRet{} -> pure (a, term)
-      _ -> do
-        (b, term') <- lowerStatements rest
-        pure (a ++ b, term')
+      (retInstrs, op) <- lowerExpr expr
+      pure [BasicBlock bid (instrs ++ retInstrs) (TRet (Just op))]
+  SBlock body:rest ->
+    lowerStatementsFrom bid instrs (body ++ rest) defaultTerm
   SDecl _ name initExpr:rest -> do
-    (a, temp) <- case initExpr of
+    (declInstrs, temp) <- case initExpr of
       Nothing -> do
         t <- freshTemp
         pure ([IConst t 0], t)
       Just expr -> do
-        (instrs, op) <- lowerExpr expr
+        (exprInstrs, op) <- lowerExpr expr
         t <- materialize op
-        pure (instrs, t)
+        pure (exprInstrs, t)
     bindVar name temp
-    (b, term) <- lowerStatements rest
-    pure (a ++ b, term)
+    lowerStatementsFrom bid (instrs ++ declInstrs) rest defaultTerm
   SExpr expr:rest -> do
-    a <- lowerSideEffect expr
-    (b, term) <- lowerStatements rest
-    pure (a ++ b, term)
+    exprInstrs <- lowerSideEffect expr
+    lowerStatementsFrom bid (instrs ++ exprInstrs) rest defaultTerm
+  SIf cond yes no:rest -> do
+    (condInstrs, condOp) <- lowerExpr cond
+    yesId <- freshBlock
+    noId <- freshBlock
+    restId <- freshBlock
+    let noTarget = if null no then restId else noId
+    yesBlocks <- lowerStatementsFrom yesId [] yes (TJump restId)
+    noBlocks <- if null no
+      then pure []
+      else lowerStatementsFrom noId [] no (TJump restId)
+    restBlocks <- lowerStatementsFrom restId [] rest defaultTerm
+    pure (BasicBlock bid (instrs ++ condInstrs) (TBranch condOp yesId noTarget) : yesBlocks ++ noBlocks ++ restBlocks)
   stmt:_ -> throwC ("unsupported statement in lowering: " ++ show stmt)
 
 lowerSideEffect :: Expr -> CompileM [Instr]
