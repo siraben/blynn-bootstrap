@@ -39,6 +39,12 @@ DEFINE HCC_SYS_COPY_rdi_to_rax 4889F8
 	SYSCALL
 	RETURN
 
+:FUNCTION___builtin_va_start
+	RETURN
+
+:FUNCTION___builtin_va_end
+	RETURN
+
 :FUNCTION_getcwd
 	HCC_SYS_COPY_rdi_to_rax
 	PUSH_RAX
