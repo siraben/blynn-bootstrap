@@ -155,6 +155,11 @@ lowerExpr expr = case expr of
     zero <- freshTemp
     out <- freshTemp
     pure (a ++ [IConst zero 0, IBin out IEq op (OTemp zero)], OTemp out)
+  ECast CUnsignedChar x -> do
+    (a, op) <- lowerExpr x
+    out <- freshTemp
+    pure (a ++ [IBin out IAnd op (OImm 255)], OTemp out)
+  ECast _ x -> lowerExpr x
   EBinary op a b | Just iop <- lowerBinOp op -> do
     (ai, ao) <- lowerExpr a
     (bi, bo) <- lowerExpr b

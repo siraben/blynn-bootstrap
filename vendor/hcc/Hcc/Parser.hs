@@ -211,10 +211,27 @@ ctype = skipQualifiers >> baseType where
       TokIdent "void" -> advanceToken >> pure CVoid
       TokIdent "int" -> advanceToken >> pure CInt
       TokIdent "char" -> advanceToken >> pure CChar
-      TokIdent "unsigned" -> advanceToken >> pure CUnsigned
+      TokIdent "signed" -> advanceToken >> signedBaseType
+      TokIdent "unsigned" -> advanceToken >> unsignedBaseType
       TokIdent "long" -> advanceToken >> pure CLong
       TokIdent name | isKnownTypeName name -> advanceToken >> pure (CNamed name)
       _ -> failAt tok "expected type"
+
+signedBaseType :: Parser CType
+signedBaseType = do
+  mtok <- peekMaybe
+  case fmap tokenKind mtok of
+    Just (TokIdent "char") -> advanceToken >> pure CChar
+    Just (TokIdent "int") -> advanceToken >> pure CInt
+    _ -> pure CInt
+
+unsignedBaseType :: Parser CType
+unsignedBaseType = do
+  mtok <- peekMaybe
+  case fmap tokenKind mtok of
+    Just (TokIdent "char") -> advanceToken >> pure CUnsignedChar
+    Just (TokIdent "int") -> advanceToken >> pure CUnsigned
+    _ -> pure CUnsigned
 
 skipQualifiers :: Parser ()
 skipQualifiers = do
@@ -304,9 +321,16 @@ unary = do
     TokIdent s -> advanceToken >> pure (EVar s)
     TokPunct "(" -> do
       advanceToken
-      e <- expr
-      needPunct ")"
-      pure e
+      isCast <- nextStartsType
+      if isCast
+        then do
+          ty <- ctype
+          needPunct ")"
+          ECast ty <$> (postfix =<< unary)
+        else do
+          e <- expr
+          needPunct ")"
+          pure e
     _ -> failAt tok "expected expression"
 
 postfix :: Expr -> Parser Expr
@@ -343,7 +367,7 @@ arguments = do
 
 startsType :: Token -> Bool
 startsType tok = case tokenKind tok of
-  TokIdent name -> name `elem` ["void", "int", "char", "unsigned", "long", "const", "volatile", "static", "extern", "register"] || isKnownTypeName name
+  TokIdent name -> name `elem` ["void", "int", "char", "signed", "unsigned", "long", "const", "volatile", "static", "extern", "register"] || isKnownTypeName name
   _ -> False
 
 isKnownTypeName :: String -> Bool
@@ -424,6 +448,13 @@ peekSecondPunct :: String -> Parser Bool
 peekSecondPunct punct = Parser $ \toks -> case toks of
   _:Token _ (TokPunct p):_ | p == punct -> Right (True, toks)
   _ -> Right (False, toks)
+
+nextStartsType :: Parser Bool
+nextStartsType = do
+  mtok <- peekMaybe
+  pure (case mtok of
+    Just tok -> startsType tok
+    Nothing -> False)
 
 advanceToken :: Parser ()
 advanceToken = Parser $ \toks -> case toks of

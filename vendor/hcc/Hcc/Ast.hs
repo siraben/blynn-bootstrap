@@ -17,6 +17,7 @@ data CType
   | CInt
   | CChar
   | CUnsigned
+  | CUnsignedChar
   | CLong
   | CNamed String
   | CPtr CType
@@ -43,6 +44,7 @@ data Expr
   | ECall Expr [Expr]
   | EIndex Expr Expr
   | EUnary String Expr
+  | ECast CType Expr
   | EPostfix String Expr
   | EBinary String Expr Expr
   | EAssign Expr Expr
