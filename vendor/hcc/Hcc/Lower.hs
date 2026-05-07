@@ -526,7 +526,10 @@ lowerDecl ty name initExpr = do
       template <- localAggregateTemplateData ty initExpr
       initInstrs <- case template of
         Just label ->
-          copyObject (OTemp temp) (OGlobal label) ty
+          do
+            copyInstrs <- copyObject (OTemp temp) (OGlobal label) ty
+            runtimeInstrs <- lowerAggregateInitWrites (OTemp temp) ty initExpr
+            pure (copyInstrs ++ runtimeInstrs)
         Nothing -> case initExpr of
           Just expr -> do
             (exprInstrs, op) <- lowerExpr expr
@@ -557,6 +560,61 @@ localDataItem ty initExpr = do
   values <- globalData ty initExpr
   addDataItem (DataItem dataLabel values)
   pure (Just dataLabel)
+
+lowerAggregateInitWrites :: Operand -> CType -> Maybe Expr -> CompileM [Instr]
+lowerAggregateInitWrites dst ty initExpr = case initExpr of
+  Just (EInitList exprs) -> lowerAggregateInitList dst ty exprs
+  _ -> pure []
+
+lowerAggregateInitList :: Operand -> CType -> [Expr] -> CompileM [Instr]
+lowerAggregateInitList dst ty exprs = case ty of
+  CArray inner _ -> lowerArrayInitWrites dst inner 0 exprs
+  _ -> do
+    aggregate <- aggregateFields ty
+    case aggregate of
+      Just (False, fields) -> lowerStructInitWrites dst 0 fields exprs
+      Just (True, Field fieldTy _:_) -> case exprs of
+        expr:_ -> lowerAggregateElementWrite dst 0 fieldTy expr
+        [] -> pure []
+      _ -> pure []
+
+lowerArrayInitWrites :: Operand -> CType -> Int -> [Expr] -> CompileM [Instr]
+lowerArrayInitWrites dst inner index exprs = case exprs of
+  [] -> pure []
+  expr:rest -> do
+    elemSize <- typeSize inner
+    current <- lowerAggregateElementWrite dst (index * elemSize) inner expr
+    tailInstrs <- lowerArrayInitWrites dst inner (index + 1) rest
+    pure (current ++ tailInstrs)
+
+lowerStructInitWrites :: Operand -> Int -> [Field] -> [Expr] -> CompileM [Instr]
+lowerStructInitWrites _ _ [] _ = pure []
+lowerStructInitWrites _ _ _ [] = pure []
+lowerStructInitWrites dst offset (Field fieldTy _:fields) (expr:exprs) = do
+  align <- typeAlign fieldTy
+  fieldSize <- typeSize fieldTy
+  let aligned = alignUp offset align
+  current <- lowerAggregateElementWrite dst aligned fieldTy expr
+  tailInstrs <- lowerStructInitWrites dst (aligned + fieldSize) fields exprs
+  pure (current ++ tailInstrs)
+
+lowerAggregateElementWrite :: Operand -> Int -> CType -> Expr -> CompileM [Instr]
+lowerAggregateElementWrite dst offset fieldTy expr = do
+  (addrInstrs, addr) <- offsetAddress dst offset
+  aggregateStorage <- isAggregateTypeM fieldTy
+  valueInstrs <- if aggregateStorage
+    then case expr of
+      EInitList exprs -> lowerAggregateInitList addr fieldTy exprs
+      _ -> do
+        (exprInstrs, op) <- lowerExpr expr
+        copyInstrs <- copyObject addr op fieldTy
+        pure (exprInstrs ++ copyInstrs)
+    else do
+      (exprInstrs, op) <- lowerExpr expr
+      (coerceInstrs, coerceOp) <- coerceScalar fieldTy op
+      store <- storeInstr fieldTy addr coerceOp
+      pure (exprInstrs ++ coerceInstrs ++ [store])
+  pure (addrInstrs ++ valueInstrs)
 
 registerGlobals :: [(CType, String, Maybe Expr)] -> CompileM ()
 registerGlobals globals = case globals of
