@@ -134,15 +134,32 @@ parseIfAnd macros toks = do
 
 parseIfEq :: [Macro] -> [Token] -> Either String (Bool, [Token])
 parseIfEq macros toks = do
-  (lhs, rest) <- parseIfUnary macros toks
+  (lhs, rest) <- parseIfRel macros toks
   case rest of
     Token _ (TokPunct "=="):xs -> do
-      (rhs, xs') <- parseIfUnary macros xs
+      (rhs, xs') <- parseIfRel macros xs
       Right (lhs == rhs, xs')
     Token _ (TokPunct "!="):xs -> do
-      (rhs, xs') <- parseIfUnary macros xs
+      (rhs, xs') <- parseIfRel macros xs
       Right (lhs /= rhs, xs')
     _ -> Right (lhs, rest)
+
+parseIfRel :: [Macro] -> [Token] -> Either String (Bool, [Token])
+parseIfRel macros toks = do
+  (lhs, rest) <- parseIfUnary macros toks
+  case rest of
+    Token _ (TokPunct "<"):xs -> rel (<) lhs xs
+    Token _ (TokPunct "<="):xs -> rel (<=) lhs xs
+    Token _ (TokPunct ">"):xs -> rel (>) lhs xs
+    Token _ (TokPunct ">="):xs -> rel (>=) lhs xs
+    _ -> Right (lhs, rest)
+  where
+    rel op lhs xs = do
+      (rhs, xs') <- parseIfUnary macros xs
+      Right (boolInt lhs `op` boolInt rhs, xs')
+
+boolInt :: Bool -> Int
+boolInt value = if value then 1 else 0
 
 parseIfUnary :: [Macro] -> [Token] -> Either String (Bool, [Token])
 parseIfUnary macros toks = case toks of

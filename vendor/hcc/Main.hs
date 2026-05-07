@@ -28,6 +28,7 @@ main = do
     ["--help"] -> usage >> exitSuccess
     "--lex-dump":files -> lexDump files
     "--pp-dump":files -> ppDump files
+    "--expand-dump":dumpArgs -> expandDump dumpArgs
     "--parse-dump":files -> parseDump files
     "--ir-dump":files -> irDump files
     "--check":files -> checkFiles files
@@ -35,7 +36,7 @@ main = do
     _ -> compileWithCc args
 
 usage :: IO ()
-usage = putStrLn "usage: hcc [CC-ARGS...]\n       hcc -S [-o FILE] INPUT.c\n       hcc --check FILE...\n       hcc --lex-dump FILE...\n       hcc --pp-dump FILE...\n       hcc --parse-dump FILE...\n       hcc --ir-dump FILE..."
+usage = putStrLn "usage: hcc [CC-ARGS...]\n       hcc -S [-o FILE] INPUT.c\n       hcc --check FILE...\n       hcc --lex-dump FILE...\n       hcc --pp-dump FILE...\n       hcc --expand-dump FILE...\n       hcc --parse-dump FILE...\n       hcc --ir-dump FILE..."
 
 die :: String -> IO ()
 die msg = hPutStrLn stderr msg >> exitFailure
@@ -64,8 +65,15 @@ ppDumpFile path = do
     Left msg -> die (path ++ ":" ++ msg)
     Right toks -> mapM_ (putStrLn . renderToken) toks
 
+expandDump :: [String] -> IO ()
+expandDump args = case assemblyArgs ("-S":args) of
+  Left msg -> die msg
+  Right opts -> do
+    source <- readSourceWithIncludes (asmIncludeDirs opts) (asmInput opts)
+    putStr (renderDefines (asmDefines opts) ++ source)
+
 preprocessSource :: String -> Either String [Token]
-preprocessSource source = case lexC (spliceContinuations source) of
+preprocessSource source = case lexC (stripComments (spliceContinuations source)) of
   Left (LexError pos msg) -> Left (showPos pos ++ ": " ++ msg)
   Right toks -> mapPreprocessError (preprocess toks)
 
@@ -75,6 +83,39 @@ spliceContinuations source = case source of
   '\\':'\r':'\n':rest -> spliceContinuations rest
   '\\':'\n':rest -> spliceContinuations rest
   c:rest -> c : spliceContinuations rest
+
+stripComments :: String -> String
+stripComments source = normal source where
+  normal text = case text of
+    [] -> []
+    '/':'/':rest -> lineComment rest
+    '/':'*':rest -> blockComment rest
+    '"':rest -> '"' : stringLiteral rest
+    '\'':rest -> '\'' : charLiteral rest
+    c:rest -> c : normal rest
+
+  lineComment text = case text of
+    [] -> []
+    '\n':rest -> '\n' : normal rest
+    _:rest -> lineComment rest
+
+  blockComment text = case text of
+    [] -> []
+    '*':'/':rest -> ' ' : normal rest
+    '\n':rest -> '\n' : blockComment rest
+    _:rest -> blockComment rest
+
+  stringLiteral text = case text of
+    [] -> []
+    '\\':c:rest -> '\\' : c : stringLiteral rest
+    '"':rest -> '"' : normal rest
+    c:rest -> c : stringLiteral rest
+
+  charLiteral text = case text of
+    [] -> []
+    '\\':c:rest -> '\\' : c : charLiteral rest
+    '\'':rest -> '\'' : normal rest
+    c:rest -> c : charLiteral rest
 
 mapPreprocessError :: Either PreprocessError a -> Either String a
 mapPreprocessError result = case result of
