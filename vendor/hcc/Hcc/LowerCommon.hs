@@ -1,4 +1,4 @@
-module Lower.Common where
+module LowerCommon where
 
 pairFirst :: (a, b) -> a
 pairFirst pair = case pair of

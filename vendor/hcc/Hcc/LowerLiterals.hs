@@ -1,7 +1,7 @@
-module Lower.Literals where
+module LowerLiterals where
 
 import Ir
-import Lower.Common
+import LowerCommon
 
 constBinOp :: String -> Int -> Int -> Int
 constBinOp op a b = case op of

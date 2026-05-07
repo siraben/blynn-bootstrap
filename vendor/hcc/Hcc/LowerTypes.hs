@@ -1,4 +1,4 @@
-module Lower.Types where
+module LowerTypes where
 
 import Ast
 import Ir

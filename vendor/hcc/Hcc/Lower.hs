@@ -3,9 +3,16 @@ module Lower where
 import Ast
 import CompileM
 import Ir
-import Lower.Common
-import Lower.Literals
-import Lower.Types
+import LowerBootstrap
+import LowerBuiltins
+import LowerCommon
+import LowerDataValues
+import LowerImplicit
+import LowerLiterals
+import LowerParams
+import LowerSwitchHelpers
+import LowerTypes
+import LowerTypeInfo
 
 lowerProgram :: Program -> Either CompileError ModuleIr
 lowerProgram = lowerProgramWithDataPrefix "HCC_DATA"
@@ -18,44 +25,6 @@ lowerProgramWithDataPrefix prefix (Program decls) = runCompileMWithDataPrefix pr
   dataItems <- getDataItems
   pure (ModuleIr dataItems fns)
   )
-
-registerBuiltinStructs :: CompileM ()
-registerBuiltinStructs = do
-  bindStruct "tm" False tmFields
-  bindStruct "timeval" False timevalFields
-  bindStruct "__IO_FILE" False fileStructFields
-  bindStruct "FILE" False fileStructFields
-
-tmFields :: [Field]
-tmFields =
-  Field CInt "tm_sec" :
-  Field CInt "tm_min" :
-  Field CInt "tm_hour" :
-  Field CInt "tm_mday" :
-  Field CInt "tm_mon" :
-  Field CInt "tm_year" :
-  Field CInt "tm_wday" :
-  Field CInt "tm_yday" :
-  Field CInt "tm_isdst" :
-  []
-
-timevalFields :: [Field]
-timevalFields =
-  Field CLong "tv_sec" :
-  Field CLong "tv_usec" :
-  []
-
-fileStructFields :: [Field]
-fileStructFields =
-  Field CInt "fd" :
-  Field CInt "bufmode" :
-  Field CInt "bufpos" :
-  Field CInt "file_pos" :
-  Field CInt "buflen" :
-  Field (CPtr CChar) "buffer" :
-  Field (CPtr (CStruct "__IO_FILE")) "next" :
-  Field (CPtr (CStruct "__IO_FILE")) "prev" :
-  []
 
 registerTopDecls :: [TopDecl] -> CompileM ()
 registerTopDecls decls = case decls of
@@ -119,122 +88,6 @@ lowerFunctionBody name params body = do
     (names, paramInstrs) -> do
       blocks <- lowerStatementsFrom bid paramInstrs body (TRet (Just (OImm 0)))
       pure (FunctionIr name names blocks)
-
-lowerParams :: Int -> [Param] -> CompileM ([String], [Instr])
-lowerParams index params = case params of
-  [] -> pure ([], [])
-  Param ty name:rest -> do
-    temp <- freshTemp
-    bindVar name temp ty
-    result <- lowerParams (index + 1) rest
-    case result of
-      (names, instrs) -> pure (name:names, IParam temp index:instrs)
-
-paramNames :: [Param] -> [String]
-paramNames params = case params of
-  [] -> []
-  Param _ name:rest -> name : paramNames rest
-
-registerImplicitCalls :: [String] -> [Stmt] -> CompileM ()
-registerImplicitCalls locals stmts = case stmts of
-  [] -> pure ()
-  stmt:rest -> do
-    locals' <- registerImplicitCallsStmt locals stmt
-    registerImplicitCalls locals' rest
-
-registerImplicitCallsStmt :: [String] -> Stmt -> CompileM [String]
-registerImplicitCallsStmt locals stmt = case stmt of
-  SDecl _ name initExpr -> do
-    maybeRegisterImplicitCallsExpr locals initExpr
-    pure (name:locals)
-  SDecls decls ->
-    registerImplicitCallsDecls locals decls
-  SReturn expr -> maybeRegisterImplicitCallsExpr locals expr >> pure locals
-  SExpr expr -> registerImplicitCallsExpr locals expr >> pure locals
-  SIf cond yes no -> do
-    registerImplicitCallsExpr locals cond
-    registerImplicitCalls locals yes
-    registerImplicitCalls locals no
-    pure locals
-  SWhile cond body -> do
-    registerImplicitCallsExpr locals cond
-    registerImplicitCalls locals body
-    pure locals
-  SDoWhile body cond -> do
-    registerImplicitCalls locals body
-    registerImplicitCallsExpr locals cond
-    pure locals
-  SFor initExpr condExpr stepExpr body -> do
-    maybeRegisterImplicitCallsExpr locals initExpr
-    maybeRegisterImplicitCallsExpr locals condExpr
-    maybeRegisterImplicitCallsExpr locals stepExpr
-    registerImplicitCalls locals body
-    pure locals
-  SSwitch value body -> do
-    registerImplicitCallsExpr locals value
-    registerImplicitCalls locals (switchBodyStatements body)
-    pure locals
-  SCase expr -> registerImplicitCallsExpr locals expr >> pure locals
-  SBlock body -> registerImplicitCalls locals body >> pure locals
-  _ -> pure locals
-
-registerImplicitCallsDecls :: [String] -> [(CType, String, Maybe Expr)] -> CompileM [String]
-registerImplicitCallsDecls locals decls = case decls of
-  [] -> pure locals
-  decl:rest -> case decl of
-    (_, name, initExpr) -> do
-      maybeRegisterImplicitCallsExpr locals initExpr
-      registerImplicitCallsDecls (name:locals) rest
-
-maybeRegisterImplicitCallsExpr :: [String] -> Maybe Expr -> CompileM ()
-maybeRegisterImplicitCallsExpr locals expr = case expr of
-  Nothing -> pure ()
-  Just value -> registerImplicitCallsExpr locals value
-
-registerImplicitCallsExpr :: [String] -> Expr -> CompileM ()
-registerImplicitCallsExpr locals expr = case expr of
-  ECall (EVar name) args -> do
-    if stringMember name locals || isIgnoredSideEffectCall name
-      then pure ()
-      else do
-        global <- lookupGlobalType name
-        case global of
-          Just _ -> pure ()
-          Nothing -> bindFunction name
-    registerImplicitCallsExprs locals args
-  ECall callee args -> do
-    registerImplicitCallsExpr locals callee
-    registerImplicitCallsExprs locals args
-  EIndex base ix -> do
-    registerImplicitCallsExpr locals base
-    registerImplicitCallsExpr locals ix
-  EMember base _ -> registerImplicitCallsExpr locals base
-  EPtrMember base _ -> registerImplicitCallsExpr locals base
-  EUnary _ value -> registerImplicitCallsExpr locals value
-  ESizeofExpr value -> registerImplicitCallsExpr locals value
-  ECast _ value -> registerImplicitCallsExpr locals value
-  EPostfix _ value -> registerImplicitCallsExpr locals value
-  EBinary _ left right -> do
-    registerImplicitCallsExpr locals left
-    registerImplicitCallsExpr locals right
-  ECond cond yes no -> do
-    registerImplicitCallsExpr locals cond
-    registerImplicitCallsExpr locals yes
-    registerImplicitCallsExpr locals no
-  EAssign left right -> do
-    registerImplicitCallsExpr locals left
-    registerImplicitCallsExpr locals right
-  _ -> pure ()
-
-isIgnoredSideEffectCall :: String -> Bool
-isIgnoredSideEffectCall name = stringMember name ignoredSideEffectCalls
-
-registerImplicitCallsExprs :: [String] -> [Expr] -> CompileM ()
-registerImplicitCallsExprs locals exprs = case exprs of
-  [] -> pure ()
-  expr:rest -> do
-    registerImplicitCallsExpr locals expr
-    registerImplicitCallsExprs locals rest
 
 lowerStatementsFrom :: BlockId -> [Instr] -> [Stmt] -> Terminator -> CompileM [BasicBlock]
 lowerStatementsFrom bid instrs stmts defaultTerm = case stmts of
@@ -424,66 +277,6 @@ lowerSwitch dispatchId restId valueOp body = do
   bodyBlocks <- withBreakTarget restId (lowerSwitchClauses restId clausePairs)
   pure (dispatchBlocks ++ bodyBlocks)
 
-switchBodyStatements :: [Stmt] -> [Stmt]
-switchBodyStatements body = case body of
-  [SBlock stmts] -> stmts
-  _ -> body
-
-zipSwitchClauses :: [SwitchClause] -> [BlockId] -> [(SwitchClause, BlockId)]
-zipSwitchClauses clauses ids = case clauses of
-  [] -> []
-  clause:restClauses -> case ids of
-    [] -> []
-    bid:restIds -> (clause, bid) : zipSwitchClauses restClauses restIds
-
-collectSwitchClauses :: [Stmt] -> [SwitchClause]
-collectSwitchClauses stmts =
-  reverse (collectSwitchClausesFinish Nothing [] [] stmts)
-
-collectSwitchClausesFinish :: Maybe (Maybe Expr) -> [Stmt] -> [SwitchClause] -> [Stmt] -> [SwitchClause]
-collectSwitchClausesFinish currentLabel currentBody clauses stmts = case stmts of
-  [] -> collectSwitchClauseFinishOne currentLabel currentBody clauses
-  stmt:rest -> case stmt of
-    SCase expr ->
-      collectSwitchClausesFinish (Just (Just expr)) [] (collectSwitchClauseFinishOne currentLabel currentBody clauses) rest
-    SDefault ->
-      collectSwitchClausesFinish (Just Nothing) [] (collectSwitchClauseFinishOne currentLabel currentBody clauses) rest
-    _ -> case currentLabel of
-      Nothing ->
-        collectSwitchClausesFinish currentLabel currentBody clauses rest
-      Just _ ->
-        collectSwitchClausesFinish currentLabel (currentBody ++ [stmt]) clauses rest
-
-collectSwitchClauseFinishOne :: Maybe (Maybe Expr) -> [Stmt] -> [SwitchClause] -> [SwitchClause]
-collectSwitchClauseFinishOne currentLabel currentBody clauses = case currentLabel of
-  Nothing -> clauses
-  Just label -> SwitchClause label currentBody : clauses
-
-freshBlocks :: Int -> CompileM [BlockId]
-freshBlocks count =
-  if count <= 0
-    then pure []
-    else do
-      first <- freshBlock
-      rest <- freshBlocks (count - 1)
-      pure (first:rest)
-
-switchDefaultTarget :: BlockId -> [(SwitchClause, BlockId)] -> BlockId
-switchDefaultTarget restId clauses = case clauses of
-  [] -> restId
-  pair:rest -> case pair of
-    (SwitchClause label _, bid) -> case label of
-      Nothing -> bid
-      Just _ -> switchDefaultTarget restId rest
-
-switchCases :: [(SwitchClause, BlockId)] -> [(Expr, BlockId)]
-switchCases clauses = case clauses of
-  [] -> []
-  pair:rest -> case pair of
-    (SwitchClause label _, bid) -> case label of
-      Just value -> (value, bid) : switchCases rest
-      Nothing -> switchCases rest
-
 lowerSwitchDispatch :: BlockId -> Operand -> BlockId -> [(Expr, BlockId)] -> CompileM [BasicBlock]
 lowerSwitchDispatch firstId valueOp defaultTarget switchCasePairs =
   lowerSwitchDispatchFrom firstId valueOp defaultTarget switchCasePairs
@@ -502,11 +295,6 @@ lowerSwitchDispatchFrom bid valueOp defaultTarget switchCasePairs = case switchC
           let block = BasicBlock bid (caseInstrs ++ [compareInstr]) (TBranch (OTemp eq) target nextId)
           switchDispatchTail block nextId valueOp defaultTarget tailCases
 
-switchNextDispatchTarget :: BlockId -> [(Expr, BlockId)] -> CompileM BlockId
-switchNextDispatchTarget defaultTarget tailCases = case tailCases of
-  [] -> pure defaultTarget
-  _ -> freshBlock
-
 switchDispatchTail :: BasicBlock -> BlockId -> Operand -> BlockId -> [(Expr, BlockId)] -> CompileM [BasicBlock]
 switchDispatchTail block nextId valueOp defaultTarget tailCases = case tailCases of
   [] -> pure [block]
@@ -523,12 +311,6 @@ lowerSwitchClauses restId clauses = case clauses of
       bodyBlocks <- lowerStatementsFrom bid [] body (TJump fallthrough)
       restBlocks <- lowerSwitchClauses restId rest
       pure (bodyBlocks ++ restBlocks)
-
-switchFallthroughTarget :: BlockId -> [(SwitchClause, BlockId)] -> BlockId
-switchFallthroughTarget restId clauses = case clauses of
-  [] -> restId
-  pair:_ -> case pair of
-    (_, nextId) -> nextId
 
 lowerSideEffect :: Expr -> CompileM [Instr]
 lowerSideEffect expr = case expr of
@@ -572,9 +354,6 @@ lowerDirectSideEffect name args = do
   let ops = lowerExprResultsOps lowered
   pure (instrs ++ [ICall Nothing name ops])
 
-ignoredSideEffectCalls :: [String]
-ignoredSideEffectCalls = ["asm", "oputs", "eputs"]
-
 lowerIndirectSideEffect :: Expr -> [Expr] -> CompileM [Instr]
 lowerIndirectSideEffect callee args = do
   calleeResult <- lowerExpr callee
@@ -596,26 +375,6 @@ lowerExprResultsOps lowered = case lowered of
   [] -> []
   pair:rest -> case pair of
     (_, op) -> op : lowerExprResultsOps rest
-
-builtinConstant :: String -> Maybe Int
-builtinConstant name = case name of
-  "NULL" -> Just 0
-  "__null" -> Just 0
-  "__LINE__" -> Just 0
-  "CH_EOB" -> Just 92
-  "EINTR" -> Just 4
-  "char" -> Just 1
-  "short" -> Just 2
-  "int" -> Just 4
-  "long" -> Just 8
-  "TOKSYM_TAL_LIMIT" -> Just 256
-  "TOKSTR_TAL_LIMIT" -> Just 1024
-  "TOKSYM_TAL_SIZE" -> Just (768 * 1024)
-  "TOKSTR_TAL_SIZE" -> Just (768 * 1024)
-  "TOK_ALLOC_INCR" -> Just 512
-  "TOK_IDENT" -> Just 256
-  "SYM_FIRST_ANOM" -> Just 268435456
-  _ -> Nothing
 
 lowerDecls :: [(CType, String, Maybe Expr)] -> CompileM [Instr]
 lowerDecls decls = case decls of
@@ -1618,21 +1377,6 @@ nestedFieldOffset baseOffset isUnion field offset fields = case fields of
             Just info -> pure (Just info)
             Nothing -> nestedFieldOffset baseOffset isUnion field (aligned + size) rest
 
-aggregateFields :: CType -> CompileM (Maybe (Bool, [Field]))
-aggregateFields ty = case ty of
-  CStructDef fields -> pure (Just (False, fields))
-  CUnionDef fields -> pure (Just (True, fields))
-  CStructNamed name fields -> do
-    bindStruct name False fields
-    pure (Just (False, fields))
-  CUnionNamed name fields -> do
-    bindStruct name True fields
-    pure (Just (True, fields))
-  CStruct name -> lookupStruct name
-  CUnion name -> lookupStruct name
-  CNamed name -> lookupStruct name
-  _ -> pure Nothing
-
 loadInstr :: Temp -> CType -> Operand -> CompileM Instr
 loadInstr out ty addr = do
   size <- typeSize ty
@@ -1653,9 +1397,6 @@ isSignedIntegerType ty = case ty of
   CEnum _ -> True
   CNamed name -> isSignedNamedInteger name
   _ -> False
-
-isSignedNamedInteger :: String -> Bool
-isSignedNamedInteger name = stringMember name signedNamedIntegerTypes
 
 isIntegerTypeM :: CType -> CompileM Bool
 isIntegerTypeM ty = case ty of
@@ -1741,46 +1482,6 @@ namedTypeSize name = case namedIntegerSize name of
       case fields of
         Just _ -> structSize name
         Nothing -> pure 8
-
-namedIntegerSize :: String -> Maybe Int
-namedIntegerSize name =
-  if stringMember name namedIntegerSize1
-    then Just 1
-    else if stringMember name namedIntegerSize2
-      then Just 2
-      else if stringMember name namedIntegerSize4
-        then Just 4
-        else if stringMember name namedIntegerSize8
-          then Just 8
-          else Nothing
-
-namedIntegerSize1 :: [String]
-namedIntegerSize1 = "int8_t" : "uint8_t" : []
-
-namedIntegerSize2 :: [String]
-namedIntegerSize2 =
-  "signed_short" : "unsigned_short" : "int16_t" : "uint16_t" :
-  "Elf32_Half" : "Elf64_Half" : "Elf32_Section" : "Elf64_Section" :
-  "Elf32_Versym" : "Elf64_Versym" : []
-
-namedIntegerSize4 :: [String]
-namedIntegerSize4 =
-  "int32_t" : "uint32_t" : "Elf32_Word" : "Elf64_Word" :
-  "Elf32_Sword" : "Elf64_Sword" : "Elf32_Addr" : "Elf32_Off" : []
-
-namedIntegerSize8 :: [String]
-namedIntegerSize8 =
-  "unsigned_long" : "int64_t" : "uint64_t" : "size_t" :
-  "ssize_t" : "time_t" : "ptrdiff_t" : "intptr_t" :
-  "uintptr_t" : "addr_t" : "Elf32_Xword" : "Elf32_Sxword" :
-  "Elf64_Xword" : "Elf64_Sxword" : "Elf64_Addr" : "Elf64_Off" : []
-
-signedNamedIntegerTypes :: [String]
-signedNamedIntegerTypes =
-  "signed_short" : "int8_t" : "int16_t" : "int32_t" : "int64_t" :
-  "ssize_t" : "time_t" : "ptrdiff_t" : "intptr_t" :
-  "Elf32_Sword" : "Elf64_Sword" : "Elf32_Sxword" : "Elf64_Sxword" :
-  []
 
 typeAlign :: CType -> CompileM Int
 typeAlign ty = case ty of
@@ -2022,18 +1723,6 @@ unionSizeFromFields fields = case fields of
     tailSize <- unionSizeFromFields rest
     pure (max size tailSize)
 
-isAggregateType :: CType -> Bool
-isAggregateType ty = case ty of
-  CArray _ _ -> True
-  CStruct _ -> True
-  CUnion _ -> True
-  CStructNamed _ _ -> True
-  CUnionNamed _ _ -> True
-  CStructDef _ -> True
-  CUnionDef _ -> True
-  CNamed _ -> True
-  _ -> False
-
 isAggregateTypeM :: CType -> CompileM Bool
 isAggregateTypeM ty = case ty of
   CArray _ _ -> pure True
@@ -2041,12 +1730,6 @@ isAggregateTypeM ty = case ty of
     aggregate <- aggregateFields ty
     pure (maybe False (const True) aggregate)
   _ -> pure (isAggregateType ty)
-
-isPointerType :: CType -> Bool
-isPointerType ty = case ty of
-  CPtr _ -> True
-  CNamed name -> stringMember name ("intptr_t" : "uintptr_t" : [])
-  _ -> False
 
 scalarData :: CType -> Int -> CompileM [DataValue]
 scalarData ty value = do
@@ -2099,33 +1782,6 @@ arrayBoundSize :: Maybe Expr -> CompileM Int
 arrayBoundSize bound = case bound of
   Nothing -> pure 1
   Just expr -> constExprValue expr
-
-padData :: Int -> [DataValue] -> [DataValue]
-padData size values =
-  let used = dataSize values
-  in if used >= size then takeData size values else values ++ zeroData (size - used)
-
-takeData :: Int -> [DataValue] -> [DataValue]
-takeData size values =
-  if size <= 0 then [] else case values of
-    [] -> []
-    DByte byte:rest -> DByte byte : takeData (size - 1) rest
-    DAddress label:rest ->
-      if size >= 8 then DAddress label : takeData (size - 8) rest else zeroData size
-
-dataSize :: [DataValue] -> Int
-dataSize values = case values of
-  [] -> 0
-  DByte _:rest -> 1 + dataSize rest
-  DAddress _:rest -> 8 + dataSize rest
-
-zeroData :: Int -> [DataValue]
-zeroData n = if n <= 0 then [] else DByte 0 : zeroData (n - 1)
-
-bytesData :: [Int] -> [DataValue]
-bytesData bytes = case bytes of
-  [] -> []
-  byte:rest -> DByte byte : bytesData rest
 
 shiftRightOp :: Expr -> CompileM BinOp
 shiftRightOp expr = do
