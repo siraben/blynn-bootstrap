@@ -1,5 +1,6 @@
 module Main where
 
+import GHC.IO.Encoding (setLocaleEncoding, utf8)
 import System.Directory (findExecutable)
 import System.Environment (getArgs)
 import System.Environment (lookupEnv)
@@ -7,14 +8,17 @@ import System.Exit (exitFailure, exitSuccess)
 import System.IO (hPutStrLn, stderr)
 import System.Process (callProcess)
 
+import qualified Hcc.CompileM as CompileM
 import Hcc.CodegenM1
 import Hcc.Lexer
+import Hcc.Lower
 import Hcc.Parser
 import Hcc.Preprocessor
 import Hcc.Token
 
 main :: IO ()
 main = do
+  setLocaleEncoding utf8
   args <- getArgs
   case args of
     [] -> die "hcc: no input files"
@@ -22,12 +26,13 @@ main = do
     "--lex-dump":files -> lexDump files
     "--pp-dump":files -> ppDump files
     "--parse-dump":files -> parseDump files
+    "--ir-dump":files -> irDump files
     "--check":files -> checkFiles files
     _ | "-S" `elem` args -> compileAssembly args
     _ -> compileWithCc args
 
 usage :: IO ()
-usage = putStrLn "usage: hcc [CC-ARGS...]\n       hcc -S [-o FILE] INPUT.c\n       hcc --check FILE...\n       hcc --lex-dump FILE...\n       hcc --pp-dump FILE...\n       hcc --parse-dump FILE..."
+usage = putStrLn "usage: hcc [CC-ARGS...]\n       hcc -S [-o FILE] INPUT.c\n       hcc --check FILE...\n       hcc --lex-dump FILE...\n       hcc --pp-dump FILE...\n       hcc --parse-dump FILE...\n       hcc --ir-dump FILE..."
 
 die :: String -> IO ()
 die msg = hPutStrLn stderr msg >> exitFailure
@@ -77,6 +82,18 @@ parseDumpFile path = do
   case preprocessSource source >>= mapParseError . parseProgram of
     Left msg -> die (path ++ ":" ++ msg)
     Right ast -> print ast
+
+irDump :: [String] -> IO ()
+irDump files = case files of
+  [] -> die "hcc: no input files"
+  _ -> mapM_ irDumpFile files
+
+irDumpFile :: String -> IO ()
+irDumpFile path = do
+  source <- if path == "-" then getContents else readFile path
+  case preprocessSource source >>= mapParseError . parseProgram >>= mapCompileError . lowerProgram of
+    Left msg -> die (path ++ ":" ++ msg)
+    Right ir -> print ir
 
 mapParseError :: Either ParseError a -> Either String a
 mapParseError result = case result of
@@ -131,6 +148,11 @@ replaceExt path ext = reverse (dropExt (reverse path)) ++ ext where
 mapCodegenError :: Either CodegenError a -> Either String a
 mapCodegenError result = case result of
   Left (CodegenError msg) -> Left msg
+  Right x -> Right x
+
+mapCompileError :: Either CompileM.CompileError a -> Either String a
+mapCompileError result = case result of
+  Left (CompileM.CompileError msg) -> Left msg
   Right x -> Right x
 
 resolveCc :: IO FilePath

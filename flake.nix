@@ -37,9 +37,16 @@
           inherit minimalBootstrap;
           m2libc = ./vendor/blynn-compiler/M2libc;
         };
+
+        hcc-mescc-tests = pkgs.callPackage ./nix/hcc-mescc-tests.nix {
+          hcc = hcc-ghc;
+          inherit minimalBootstrap;
+          m2libc = ./vendor/blynn-compiler/M2libc;
+          mesTests = ./vendor/mes-tests;
+        };
       in {
         packages = {
-          inherit blynn-compiler blynn-precisely hcc-ghc hcc-m1-smoke tinycc-boot-hcc;
+          inherit blynn-compiler blynn-precisely hcc-ghc hcc-m1-smoke hcc-mescc-tests tinycc-boot-hcc;
           default = blynn-precisely;
         };
 
