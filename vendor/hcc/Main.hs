@@ -92,7 +92,7 @@ stripComments source = normal source where
   normal text = case text of
     [] -> []
     '/':'/':rest -> lineComment rest
-    '/':'*':rest -> blockComment rest
+    '/':'*':rest -> blockComment 1 rest
     '"':rest -> '"' : stringLiteral rest
     '\'':rest -> '\'' : charLiteral rest
     c:rest -> c : normal rest
@@ -102,11 +102,16 @@ stripComments source = normal source where
     '\n':rest -> '\n' : normal rest
     _:rest -> lineComment rest
 
-  blockComment text = case text of
+  blockComment :: Int -> String -> String
+  blockComment depth text = case text of
     [] -> []
-    '*':'/':rest -> ' ' : normal rest
-    '\n':rest -> '\n' : blockComment rest
-    _:rest -> blockComment rest
+    '/':'*':rest -> blockComment (depth + 1) rest
+    '*':'/':rest ->
+      if depth == 1
+        then ' ' : normal rest
+        else blockComment (depth - 1) rest
+    '\n':rest -> '\n' : blockComment depth rest
+    _:rest -> blockComment depth rest
 
   stringLiteral text = case text of
     [] -> []

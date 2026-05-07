@@ -9,8 +9,9 @@ int main(int argc, char **argv) {
   int sum = 0;
 #endif
   /* block comment */
+  int nested = 1 /* outer /* inner */ still outer */ + 2;
   if (argc >= 2 && argv[1] != 0) {
-    return VALUE + msg[0] + sum;
+    return VALUE + msg[0] + sum + nested;
   }
   return 'x';
 }
