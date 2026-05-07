@@ -39,6 +39,18 @@ registerBuiltinStructs = do
     [ Field CLong "tv_sec"
     , Field CLong "tv_usec"
     ]
+  let fileFields =
+        [ Field CInt "fd"
+        , Field CInt "bufmode"
+        , Field CInt "bufpos"
+        , Field CInt "file_pos"
+        , Field CInt "buflen"
+        , Field (CPtr CChar) "buffer"
+        , Field (CPtr (CStruct "__IO_FILE")) "next"
+        , Field (CPtr (CStruct "__IO_FILE")) "prev"
+        ]
+  bindStruct "__IO_FILE" False fileFields
+  bindStruct "FILE" False fileFields
 
 registerTopDecls :: [TopDecl] -> CompileM ()
 registerTopDecls decls = case decls of
@@ -46,10 +58,12 @@ registerTopDecls decls = case decls of
   Function ty name _ _:rest -> do
     registerTypeAggregates ty
     bindGlobal name ty
+    bindFunction name
     registerTopDecls rest
   Prototype ty name _:rest -> do
     registerTypeAggregates ty
     bindGlobal name ty
+    bindFunction name
     registerTopDecls rest
   StructDecl isUnion name fields:rest -> do
     registerFieldAggregates fields
@@ -62,6 +76,9 @@ registerTopDecls decls = case decls of
     registerTopDecls rest
   Globals globals:rest -> do
     registerGlobals globals
+    registerTopDecls rest
+  EnumConstants constants:rest -> do
+    registerConstants constants
     registerTopDecls rest
   _:rest -> registerTopDecls rest
 
@@ -76,6 +93,7 @@ lowerTopDecls decls = case decls of
   Global{}:rest -> lowerTopDecls rest
   Globals{}:rest -> lowerTopDecls rest
   StructDecl{}:rest -> lowerTopDecls rest
+  EnumConstants{}:rest -> lowerTopDecls rest
   TypeDecl:rest -> lowerTopDecls rest
 
 lowerFunction :: String -> [Param] -> [Stmt] -> CompileM FunctionIr
@@ -106,10 +124,13 @@ lowerStatementsFrom bid instrs stmts defaultTerm = case stmts of
       tailBlocks <- lowerUnreachableLabels rest defaultTerm
       pure (BasicBlock bid (instrs ++ retInstrs) (TRet (Just op)) : tailBlocks)
   SBlock body:rest -> do
-    restId <- freshBlock
-    bodyBlocks <- withVarScope (lowerStatementsFrom bid instrs body (TJump restId))
-    restBlocks <- lowerStatementsFrom restId [] rest defaultTerm
-    pure (bodyBlocks ++ restBlocks)
+    if null rest
+      then withVarScope (lowerStatementsFrom bid instrs body defaultTerm)
+      else do
+        restId <- freshBlock
+        bodyBlocks <- withVarScope (lowerStatementsFrom bid instrs body (TJump restId))
+        restBlocks <- lowerStatementsFrom restId [] rest defaultTerm
+        pure (bodyBlocks ++ restBlocks)
   SDecl ty name initExpr:rest -> do
     declInstrs <- lowerDecl ty name initExpr
     lowerStatementsFrom bid (instrs ++ declInstrs) rest defaultTerm
@@ -174,13 +195,22 @@ lowerStatementsFrom bid instrs stmts defaultTerm = case stmts of
     (condInstrs, condOp) <- lowerExpr cond
     yesId <- freshBlock
     noId <- freshBlock
-    restId <- freshBlock
+    (restId, restBlocks) <- if null rest
+      then case defaultTerm of
+        TJump target -> pure (target, [])
+        _ -> do
+          joinId <- freshBlock
+          blocks <- lowerStatementsFrom joinId [] rest defaultTerm
+          pure (joinId, blocks)
+      else do
+        joinId <- freshBlock
+        blocks <- lowerStatementsFrom joinId [] rest defaultTerm
+        pure (joinId, blocks)
     let noTarget = if null no then restId else noId
     yesBlocks <- lowerStatementsFrom yesId [] yes (TJump restId)
     noBlocks <- if null no
       then pure []
       else lowerStatementsFrom noId [] no (TJump restId)
-    restBlocks <- lowerStatementsFrom restId [] rest defaultTerm
     pure (BasicBlock bid (instrs ++ condInstrs) (TBranch condOp yesId noTarget) : yesBlocks ++ noBlocks ++ restBlocks)
   SBreak:rest -> do
     target <- requireBreakTarget
@@ -229,13 +259,18 @@ requireContinueTarget = do
 
 lowerSwitch :: BlockId -> BlockId -> Operand -> [Stmt] -> CompileM [BasicBlock]
 lowerSwitch dispatchId restId valueOp body = do
-  let clauses = collectSwitchClauses body
+  let clauses = collectSwitchClauses (switchBodyStatements body)
   clauseIds <- freshBlocks (length clauses)
   let clausePairs = zip clauses clauseIds
   let defaultTarget = switchDefaultTarget restId clausePairs
   dispatchBlocks <- lowerSwitchDispatch dispatchId valueOp defaultTarget (switchCases clausePairs)
   bodyBlocks <- withBreakTarget restId (lowerSwitchClauses restId clausePairs)
   pure (dispatchBlocks ++ bodyBlocks)
+
+switchBodyStatements :: [Stmt] -> [Stmt]
+switchBodyStatements body = case body of
+  [SBlock stmts] -> stmts
+  _ -> body
 
 collectSwitchClauses :: [Stmt] -> [SwitchClause]
 collectSwitchClauses stmts = finish (go Nothing [] stmts) where
@@ -328,6 +363,12 @@ lowerSideEffect expr = case expr of
 ignoredSideEffectCalls :: [String]
 ignoredSideEffectCalls = ["asm", "oputs", "eputs"]
 
+builtinConstant :: String -> Maybe Int
+builtinConstant name = case name of
+  "NULL" -> Just 0
+  "__null" -> Just 0
+  _ -> Nothing
+
 lowerDecls :: [(CType, String, Maybe Expr)] -> CompileM [Instr]
 lowerDecls decls = case decls of
   [] -> pure []
@@ -357,6 +398,13 @@ registerGlobals globals = case globals of
     bindGlobal name ty
     addDataItem (DataItem name (globalBytes initExpr))
     registerGlobals rest
+
+registerConstants :: [(String, Int)] -> CompileM ()
+registerConstants constants = case constants of
+  [] -> pure ()
+  (name, value):rest -> do
+    bindConstant name value
+    registerConstants rest
 
 registerFieldAggregates :: [Field] -> CompileM ()
 registerFieldAggregates fields = case fields of
@@ -394,13 +442,23 @@ lowerExpr expr = case expr of
     let dataLabel = "HCC_DATA_" ++ label
     addDataItem (DataItem dataLabel (stringBytes text))
     pure ([], OGlobal dataLabel)
+  EVar name | Just value <- builtinConstant name ->
+    pure ([], OImm value)
   EVar name -> do
-    local <- lookupVarMaybe name
-    case local of
-      Just temp -> pure ([], OTemp temp)
+    constant <- lookupConstant name
+    case constant of
+      Just value -> pure ([], OImm value)
       Nothing -> do
-        out <- freshTemp
-        pure ([ILoad64 out (OGlobal name)], OTemp out)
+        function <- lookupFunction name
+        if function
+          then pure ([], OFunction name)
+          else do
+            local <- lookupVarMaybe name
+            case local of
+              Just temp -> pure ([], OTemp temp)
+              Nothing -> do
+                out <- freshTemp
+                pure ([ILoad64 out (OGlobal name)], OTemp out)
   EUnary "+" x -> lowerExpr x
   EUnary "-" x -> do
     (a, op) <- lowerExpr x
@@ -544,6 +602,17 @@ writeLValue lvalue value = case lvalue of
     pure [store]
 
 lowerLValueAddress :: Expr -> CompileM ([Instr], Operand)
+lowerLValueAddress (EVar name) = do
+  function <- lookupFunction name
+  if function
+    then pure ([], OFunction name)
+    else do
+      (instrs, lvalue) <- lowerLValue (EVar name)
+      case lvalue of
+        LAddress addr _ -> pure (instrs, addr)
+        LLocal temp _ -> do
+          out <- freshTemp
+          pure (instrs ++ [IAddrOf out temp], OTemp out)
 lowerLValueAddress target = do
   (instrs, lvalue) <- lowerLValue target
   case lvalue of
@@ -819,6 +888,9 @@ materialize op = case op of
     temp <- freshTemp
     pure ([IConst temp value], temp)
   OGlobal _ -> do
+    temp <- freshTemp
+    pure ([ICopy temp op], temp)
+  OFunction _ -> do
     temp <- freshTemp
     pure ([ICopy temp op], temp)
 

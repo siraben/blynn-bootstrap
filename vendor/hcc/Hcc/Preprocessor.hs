@@ -3,10 +3,9 @@ module Hcc.Preprocessor
   , preprocess
   ) where
 
-import Data.Bits ((.&.), (.|.), complement, shiftL, shiftR, xor)
-import Data.Char (isAlpha, isAlphaNum, isDigit, isOctDigit, isSpace, ord, toLower)
-import Numeric (readDec, readHex, readOct)
+import Data.Char (isAlpha, isAlphaNum, isDigit, isSpace)
 
+import Hcc.ConstExpr
 import Hcc.Lexer
 import Hcc.Token
 
@@ -368,7 +367,7 @@ evalIf macros text = do
     Right result -> Right result
   replaced <- replaceDefinedOperators macros toks
   expanded <- expandTokens macros False [] replaced
-  case parseIfExpr expanded of
+  case parseConstExpr [] expanded of
     Right (value, []) -> Right (value /= 0)
     Right (_, tok:_) -> Left (PreprocessError (tokenStart tok) ("trailing tokens in #if expression near " ++ show (tokenText (tokenKind tok))))
     Left msg -> Left (PreprocessError (SrcPos 1 1) msg)
@@ -387,218 +386,6 @@ replaceDefinedOperators macros toks = go toks [] where
       go xs (tok:acc)
 
   definedToken sp name = Token sp (TokInt (if isDefined name macros then "1" else "0"))
-
-parseIfExpr :: [Token] -> Either String (Integer, [Token])
-parseIfExpr = parseIfCond
-
-parseIfCond :: [Token] -> Either String (Integer, [Token])
-parseIfCond toks = do
-  (cond, rest) <- parseIfOr toks
-  case rest of
-    Token _ (TokPunct "?"):xs -> do
-      (yes, xs') <- parseIfExpr xs
-      case xs' of
-        Token _ (TokPunct ":"):ys -> do
-          (no, ys') <- parseIfCond ys
-          Right (if cond /= 0 then yes else no, ys')
-        _ -> Left "expected ':' in #if expression"
-    _ -> Right (cond, rest)
-
-parseIfOr :: [Token] -> Either String (Integer, [Token])
-parseIfOr toks = do
-  (lhs, rest) <- parseIfLogicalAnd toks
-  parseTail lhs rest
-  where
-    parseTail lhs rest = case rest of
-      Token _ (TokPunct "||"):xs -> do
-        (rhs, xs') <- parseIfLogicalAnd xs
-        parseTail (truth (lhs /= 0 || rhs /= 0)) xs'
-      _ -> Right (lhs, rest)
-
-parseIfLogicalAnd :: [Token] -> Either String (Integer, [Token])
-parseIfLogicalAnd toks = do
-  (lhs, rest) <- parseIfBitOr toks
-  parseTail lhs rest
-  where
-    parseTail lhs rest = case rest of
-      Token _ (TokPunct "&&"):xs -> do
-        (rhs, xs') <- parseIfBitOr xs
-        parseTail (truth (lhs /= 0 && rhs /= 0)) xs'
-      _ -> Right (lhs, rest)
-
-parseIfBitOr :: [Token] -> Either String (Integer, [Token])
-parseIfBitOr toks = do
-  (lhs, rest) <- parseIfBitXor toks
-  parseTail lhs rest
-  where
-    parseTail lhs rest = case rest of
-      Token _ (TokPunct "|"):xs -> do
-        (rhs, xs') <- parseIfBitXor xs
-        parseTail (lhs .|. rhs) xs'
-      _ -> Right (lhs, rest)
-
-parseIfBitXor :: [Token] -> Either String (Integer, [Token])
-parseIfBitXor toks = do
-  (lhs, rest) <- parseIfBitAnd toks
-  parseTail lhs rest
-  where
-    parseTail lhs rest = case rest of
-      Token _ (TokPunct "^"):xs -> do
-        (rhs, xs') <- parseIfBitAnd xs
-        parseTail (lhs `xor` rhs) xs'
-      _ -> Right (lhs, rest)
-
-parseIfBitAnd :: [Token] -> Either String (Integer, [Token])
-parseIfBitAnd toks = do
-  (lhs, rest) <- parseIfEq toks
-  parseTail lhs rest
-  where
-    parseTail lhs rest = case rest of
-      Token _ (TokPunct "&"):xs -> do
-        (rhs, xs') <- parseIfEq xs
-        parseTail (lhs .&. rhs) xs'
-      _ -> Right (lhs, rest)
-
-parseIfEq :: [Token] -> Either String (Integer, [Token])
-parseIfEq toks = do
-  (lhs, rest) <- parseIfRel toks
-  case rest of
-    Token _ (TokPunct "=="):xs -> compareTail (==) lhs xs
-    Token _ (TokPunct "!="):xs -> compareTail (/=) lhs xs
-    _ -> Right (lhs, rest)
-
-parseIfRel :: [Token] -> Either String (Integer, [Token])
-parseIfRel toks = do
-  (lhs, rest) <- parseIfShift toks
-  case rest of
-    Token _ (TokPunct "<"):xs -> compareTail (<) lhs xs
-    Token _ (TokPunct "<="):xs -> compareTail (<=) lhs xs
-    Token _ (TokPunct ">"):xs -> compareTail (>) lhs xs
-    Token _ (TokPunct ">="):xs -> compareTail (>=) lhs xs
-    _ -> Right (lhs, rest)
-
-compareTail :: (Integer -> Integer -> Bool) -> Integer -> [Token] -> Either String (Integer, [Token])
-compareTail op lhs toks = do
-  (rhs, rest) <- parseIfShift toks
-  Right (truth (lhs `op` rhs), rest)
-
-parseIfShift :: [Token] -> Either String (Integer, [Token])
-parseIfShift toks = do
-  (lhs, rest) <- parseIfAdd toks
-  parseTail lhs rest
-  where
-    parseTail lhs rest = case rest of
-      Token _ (TokPunct "<<"):xs -> do
-        (rhs, xs') <- parseIfAdd xs
-        parseTail (lhs `shiftL` fromInteger (max 0 rhs)) xs'
-      Token _ (TokPunct ">>"):xs -> do
-        (rhs, xs') <- parseIfAdd xs
-        parseTail (lhs `shiftR` fromInteger (max 0 rhs)) xs'
-      _ -> Right (lhs, rest)
-
-parseIfAdd :: [Token] -> Either String (Integer, [Token])
-parseIfAdd toks = do
-  (lhs, rest) <- parseIfMul toks
-  parseTail lhs rest
-  where
-    parseTail lhs rest = case rest of
-      Token _ (TokPunct "+"):xs -> do
-        (rhs, xs') <- parseIfMul xs
-        parseTail (lhs + rhs) xs'
-      Token _ (TokPunct "-"):xs -> do
-        (rhs, xs') <- parseIfMul xs
-        parseTail (lhs - rhs) xs'
-      _ -> Right (lhs, rest)
-
-parseIfMul :: [Token] -> Either String (Integer, [Token])
-parseIfMul toks = do
-  (lhs, rest) <- parseIfUnary toks
-  parseTail lhs rest
-  where
-    parseTail lhs rest = case rest of
-      Token _ (TokPunct "*"):xs -> do
-        (rhs, xs') <- parseIfUnary xs
-        parseTail (lhs * rhs) xs'
-      Token _ (TokPunct "/"):xs -> do
-        (rhs, xs') <- parseIfUnary xs
-        if rhs == 0 then Left "division by zero in #if expression" else parseTail (lhs `div` rhs) xs'
-      Token _ (TokPunct "%"):xs -> do
-        (rhs, xs') <- parseIfUnary xs
-        if rhs == 0 then Left "modulo by zero in #if expression" else parseTail (lhs `mod` rhs) xs'
-      _ -> Right (lhs, rest)
-
-parseIfUnary :: [Token] -> Either String (Integer, [Token])
-parseIfUnary toks = case toks of
-  Token _ (TokPunct "!"):rest -> do
-    (value, rest') <- parseIfUnary rest
-    Right (truth (value == 0), rest')
-  Token _ (TokPunct "+"):rest -> parseIfUnary rest
-  Token _ (TokPunct "-"):rest -> do
-    (value, rest') <- parseIfUnary rest
-    Right (-value, rest')
-  Token _ (TokPunct "~"):rest -> do
-    (value, rest') <- parseIfUnary rest
-    Right (complement value, rest')
-  _ -> parseIfPrimary toks
-
-parseIfPrimary :: [Token] -> Either String (Integer, [Token])
-parseIfPrimary toks = case toks of
-  Token _ (TokPunct "("):rest -> do
-    (value, rest') <- parseIfExpr rest
-    case rest' of
-      Token _ (TokPunct ")"):xs -> Right (value, xs)
-      _ -> Left "expected ')' in #if expression"
-  Token _ (TokIdent "defined"):Token _ (TokPunct "("):Token _ (TokIdent name):Token _ (TokPunct ")"):rest ->
-    Right (truth (name /= ""), rest)
-  Token _ (TokIdent "defined"):Token _ (TokIdent name):rest ->
-    Right (truth (name /= ""), rest)
-  Token _ (TokIdent _):rest ->
-    Right (0, rest)
-  Token _ (TokInt value):rest ->
-    Right (parseInt value, rest)
-  Token _ (TokChar value):rest ->
-    Right (charInt value, rest)
-  [] -> Left "empty #if expression"
-  _ -> Left "unsupported token in #if expression"
-
-truth :: Bool -> Integer
-truth value = if value then 1 else 0
-
-parseInt :: String -> Integer
-parseInt value = case readNumber (map toLower (stripIntSuffix value)) of
-  Just n -> n
-  Nothing -> 0
-
-stripIntSuffix :: String -> String
-stripIntSuffix text = reverse (dropWhile (`elem` "uUlL") (reverse text))
-
-readNumber :: String -> Maybe Integer
-readNumber text = case text of
-  '0':'x':digits -> readWhole readHex digits
-  '0':digits | any isOctDigit digits -> readWhole readOct digits
-  _ -> readWhole readDec text
-
-readWhole :: (String -> [(Integer, String)]) -> String -> Maybe Integer
-readWhole reader text = case reader text of
-  [(value, "")] -> Just value
-  _ -> Nothing
-
-charInt :: String -> Integer
-charInt text = case text of
-  '\'':'\\':c:_ -> escapeChar c
-  '\'':c:_ -> fromIntegral (ord c)
-  _ -> 0
-
-escapeChar :: Char -> Integer
-escapeChar c = case c of
-  'n' -> 10
-  'r' -> 13
-  't' -> 9
-  '0' -> 0
-  '\\' -> 92
-  '\'' -> 39
-  '"' -> 34
-  _ -> fromIntegral (ord c)
 
 stripLineComment :: String -> String
 stripLineComment text = case text of

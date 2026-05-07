@@ -4,6 +4,7 @@ module Hcc.Parser
   ) where
 
 import Hcc.Ast
+import Hcc.ConstExpr
 import Hcc.Token
 
 data ParseError = ParseError SrcPos String
@@ -33,7 +34,7 @@ instance Monad Parser where
 parseProgram :: [Token] -> Either ParseError Program
 parseProgram toks = case runParser program (builtinTypeNames ++ collectTypedefNames toks) toks of
   Left err -> Left err
-  Right (ast, []) -> Right ast
+  Right (Program decls, []) -> Right (Program (EnumConstants (collectEnumConstants toks) : decls))
   Right (_, tok:_) -> Left (parseErrorAt tok "trailing tokens")
 
 program :: Parser Program
@@ -884,6 +885,77 @@ parseErrorAt (Token (Span pos _) kind) msg = ParseError pos (msg ++ " near " ++ 
 
 tokenKind :: Token -> TokenKind
 tokenKind (Token _ kind) = kind
+
+collectEnumConstants :: [Token] -> [(String, Int)]
+collectEnumConstants toks = map toInt (reverse (go [] toks)) where
+  toInt (name, value) = (name, fromInteger value)
+
+  go env rest = case rest of
+    [] -> env
+    Token _ (TokIdent "enum"):xs ->
+      let afterTag = skipOptionalEnumTag xs
+      in case afterTag of
+        Token _ (TokPunct "{"):body ->
+          let (env', tailToks) = parseEnumBody env 0 body
+          in go env' tailToks
+        _ -> go env xs
+    _:xs -> go env xs
+
+skipOptionalEnumTag :: [Token] -> [Token]
+skipOptionalEnumTag toks = case toks of
+  Token _ (TokIdent _):rest -> rest
+  _ -> toks
+
+parseEnumBody :: [(String, Integer)] -> Integer -> [Token] -> ([(String, Integer)], [Token])
+parseEnumBody env nextValue toks = case toks of
+  [] -> (env, [])
+  Token _ (TokPunct "}"):rest -> (env, rest)
+  Token _ (TokPunct ","):rest -> parseEnumBody env nextValue rest
+  Token _ (TokIdent name):rest ->
+    let (value, afterValue) = enumValue env nextValue rest
+        env' = (name, value) : removeEnumConstant name env
+    in parseEnumBody env' (value + 1) afterValue
+  Token _ (TokPunct "{"):rest ->
+    parseEnumBody env nextValue (dropBalancedBrace 1 rest)
+  _:rest ->
+    parseEnumBody env nextValue rest
+
+enumValue :: [(String, Integer)] -> Integer -> [Token] -> (Integer, [Token])
+enumValue env nextValue toks = case toks of
+  Token _ (TokPunct "="):rest ->
+    let (exprToks, tailToks) = takeEnumValueExpr rest
+    in case parseConstExpr env exprToks of
+      Right (value, []) -> (value, tailToks)
+      Right (value, trailing) | all ignorableEnumExprTail trailing -> (value, tailToks)
+      _ -> (nextValue, tailToks)
+  _ -> (nextValue, toks)
+
+ignorableEnumExprTail :: Token -> Bool
+ignorableEnumExprTail tok = case tokenKind tok of
+  TokPunct ")" -> True
+  _ -> False
+
+takeEnumValueExpr :: [Token] -> ([Token], [Token])
+takeEnumValueExpr = go 0 0 0 [] where
+  go :: Int -> Int -> Int -> [Token] -> [Token] -> ([Token], [Token])
+  go braces parens brackets acc toks = case toks of
+    [] -> (reverse acc, [])
+    tok:rest -> case tokenKind tok of
+      TokPunct "," | braces == 0 && parens == 0 && brackets == 0 -> (reverse acc, toks)
+      TokPunct "}" | braces == 0 && parens == 0 && brackets == 0 -> (reverse acc, toks)
+      TokPunct "{" -> go (braces + 1) parens brackets (tok:acc) rest
+      TokPunct "}" -> go (max 0 (braces - 1)) parens brackets (tok:acc) rest
+      TokPunct "(" -> go braces (parens + 1) brackets (tok:acc) rest
+      TokPunct ")" -> go braces (max 0 (parens - 1)) brackets (tok:acc) rest
+      TokPunct "[" -> go braces parens (brackets + 1) (tok:acc) rest
+      TokPunct "]" -> go braces parens (max 0 (brackets - 1)) (tok:acc) rest
+      _ -> go braces parens brackets (tok:acc) rest
+
+removeEnumConstant :: String -> [(String, Integer)] -> [(String, Integer)]
+removeEnumConstant name constants = case constants of
+  [] -> []
+  (k, v):rest | k == name -> removeEnumConstant name rest
+              | otherwise -> (k, v) : removeEnumConstant name rest
 
 collectTypedefNames :: [Token] -> [String]
 collectTypedefNames toks = unique (go toks) where

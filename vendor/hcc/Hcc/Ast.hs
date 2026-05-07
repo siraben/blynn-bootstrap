@@ -9,6 +9,7 @@ data TopDecl
   | Global CType String (Maybe Expr)
   | Globals [(CType, String, Maybe Expr)]
   | StructDecl Bool String [Field]
+  | EnumConstants [(String, Int)]
   | TypeDecl
   deriving (Eq, Show)
 

@@ -222,6 +222,7 @@ loadOperand :: Allocation -> Operand -> Either CodegenError [String]
 loadOperand alloc op = case op of
   OImm value -> Right ["\tLOAD_IMMEDIATE_rax %" ++ show value]
   OGlobal name -> Right ["\tLOAD_IMMEDIATE_rax &" ++ name]
+  OFunction name -> Right ["\tLOAD_IMMEDIATE_rax &FUNCTION_" ++ name]
   OTemp temp -> do
     loc <- mapAllocError (lookupLocation temp alloc)
     loadLocation loc

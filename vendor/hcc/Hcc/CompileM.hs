@@ -5,6 +5,8 @@ module Hcc.CompileM
   , bindVar
   , bindStruct
   , bindGlobal
+  , bindConstant
+  , bindFunction
   , freshBlock
   , freshLabel
   , freshTemp
@@ -18,6 +20,8 @@ module Hcc.CompileM
   , lookupVarMaybe
   , lookupVarType
   , lookupGlobalType
+  , lookupConstant
+  , lookupFunction
   , lookupStruct
   , runCompileM
   , throwC
@@ -41,6 +45,8 @@ data CompileState = CompileState
   , csVars :: [(String, (Temp, CType))]
   , csStructs :: [(String, (Bool, [Field]))]
   , csGlobals :: [(String, CType)]
+  , csConstants :: [(String, Int)]
+  , csFunctions :: [String]
   , csLabels :: [(String, BlockId)]
   , csDataItems :: [DataItem]
   , csBreakTargets :: [BlockId]
@@ -78,6 +84,8 @@ initialCompileState = CompileState
   , csVars = []
   , csStructs = []
   , csGlobals = []
+  , csConstants = []
+  , csFunctions = []
   , csLabels = []
   , csDataItems = []
   , csBreakTargets = []
@@ -152,6 +160,19 @@ bindGlobal name ty = CompileM $ \st ->
       (k, v):rest | k == key -> remove key rest
                   | otherwise -> (k, v) : remove key rest
 
+bindConstant :: String -> Int -> CompileM ()
+bindConstant name value = CompileM $ \st ->
+  Right ((), st { csConstants = (name, value) : remove name (csConstants st) })
+  where
+    remove key constants = case constants of
+      [] -> []
+      (k, v):rest | k == key -> remove key rest
+                  | otherwise -> (k, v) : remove key rest
+
+bindFunction :: String -> CompileM ()
+bindFunction name = CompileM $ \st ->
+  Right ((), st { csFunctions = name : filter (/= name) (csFunctions st) })
+
 lookupVar :: String -> CompileM Temp
 lookupVar name = CompileM $ \st -> case lookup name (csVars st) of
   Just (temp, _) -> Right (temp, st)
@@ -165,6 +186,12 @@ lookupVarType name = CompileM $ \st -> Right (fmap snd (lookup name (csVars st))
 
 lookupGlobalType :: String -> CompileM (Maybe CType)
 lookupGlobalType name = CompileM $ \st -> Right (lookup name (csGlobals st), st)
+
+lookupConstant :: String -> CompileM (Maybe Int)
+lookupConstant name = CompileM $ \st -> Right (lookup name (csConstants st), st)
+
+lookupFunction :: String -> CompileM Bool
+lookupFunction name = CompileM $ \st -> Right (name `elem` csFunctions st, st)
 
 lookupStruct :: String -> CompileM (Maybe (Bool, [Field]))
 lookupStruct name = CompileM $ \st -> Right (lookup name (csStructs st), st)

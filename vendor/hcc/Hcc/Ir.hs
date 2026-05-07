@@ -10,6 +10,7 @@ data Operand
   = OTemp Temp
   | OImm Int
   | OGlobal String
+  | OFunction String
   deriving (Eq, Show)
 
 data BinOp
