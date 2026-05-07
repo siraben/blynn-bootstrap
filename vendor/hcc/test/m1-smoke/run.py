@@ -14,6 +14,7 @@ CASES = [
     ("signed-char-cast", 0),
     ("sizeof-member-array-bound", 0),
     ("address-written-scalar", 0),
+    ("escaped-string-magic", 0),
 ]
 
 

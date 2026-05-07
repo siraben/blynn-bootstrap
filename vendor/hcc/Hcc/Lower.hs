@@ -1819,17 +1819,8 @@ hexDigit c
 
 charValue :: String -> Int
 charValue text = case text of
-  '\'':'\\':'n':'\'':[] -> 10
-  '\'':'\\':'t':'\'':[] -> 9
-  '\'':'\\':'r':'\'':[] -> 13
-  '\'':'\\':'f':'\'':[] -> 12
-  '\'':'\\':'v':'\'':[] -> 11
-  '\'':'\\':'a':'\'':[] -> 7
-  '\'':'\\':'b':'\'':[] -> 8
-  '\'':'\\':'\\':'\'':[] -> 92
-  '\'':'\\':'\'':'\'':[] -> 39
-  '\'':'\\':'"':'\'':[] -> 34
-  '\'':'\\':'0':'\'':[] -> 0
+  '\'':'\\':rest ->
+    fst (decodeEscape (dropClosingQuote rest))
   '\'':c:'\'':[] -> fromEnum c
   _ -> 0
 
@@ -1837,16 +1828,59 @@ stringBytes :: String -> [Int]
 stringBytes text = go (stripQuotes text) where
   go chars = case chars of
     [] -> [0]
-    '\\':'n':rest -> 10 : go rest
-    '\\':'t':rest -> 9 : go rest
-    '\\':'r':rest -> 13 : go rest
-    '\\':'f':rest -> 12 : go rest
-    '\\':'v':rest -> 11 : go rest
-    '\\':'a':rest -> 7 : go rest
-    '\\':'b':rest -> 8 : go rest
-    '\\':'0':rest -> 0 : go rest
-    '\\':c:rest -> fromEnum c : go rest
+    '\\':rest ->
+      let (value, tailChars) = decodeEscape rest
+      in value : go tailChars
     c:rest -> fromEnum c : go rest
+
+dropClosingQuote :: String -> String
+dropClosingQuote text = case reverse text of
+  '\'':rest -> reverse rest
+  _ -> text
+
+decodeEscape :: String -> (Int, String)
+decodeEscape text = case text of
+  'n':rest -> (10, rest)
+  't':rest -> (9, rest)
+  'r':rest -> (13, rest)
+  'f':rest -> (12, rest)
+  'v':rest -> (11, rest)
+  'a':rest -> (7, rest)
+  'b':rest -> (8, rest)
+  '\\':rest -> (92, rest)
+  '\'':rest -> (39, rest)
+  '"':rest -> (34, rest)
+  'x':rest -> readHexEscape rest
+  c:rest | isOctalDigit c -> readOctalEscape 0 0 (c:rest)
+  c:rest -> (fromEnum c, rest)
+  [] -> (0, [])
+
+readOctalEscape :: Int -> Int -> String -> (Int, String)
+readOctalEscape count value text =
+  if count >= 3
+    then (value, text)
+    else case text of
+      c:rest | isOctalDigit c ->
+        readOctalEscape (count + 1) (value * 8 + fromEnum c - fromEnum '0') rest
+      _ -> (value, text)
+
+readHexEscape :: String -> (Int, String)
+readHexEscape text =
+  let (value, rest, consumed) = go 0 text
+  in if consumed then (value, rest) else (fromEnum 'x', text)
+  where
+    go value chars = case chars of
+      c:rest | isHexDigit c ->
+        let (v, r, _) = go (value * 16 + hexDigit c) rest
+        in (v, r, True)
+      _ -> (value, chars, False)
+
+isOctalDigit :: Char -> Bool
+isOctalDigit c = c >= '0' && c <= '7'
+
+isHexDigit :: Char -> Bool
+isHexDigit c =
+  (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
 
 stripQuotes :: String -> String
 stripQuotes text = case text of

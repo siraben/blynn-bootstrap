@@ -610,7 +610,26 @@ int fprintf(void* stream, char* fmt, long a, long b, long c)
 int sprintf(char* out, char* fmt, long a, long b, long c) { return hcc_vformat(out, 0xffffffff, fmt, a, b, c); }
 int snprintf(char* out, unsigned size, char* fmt, long a, long b, long c) { return hcc_vformat(out, size, fmt, a, b, c); }
 int sscanf(char* input, char* fmt) { return 0; }
-int vsnprintf(char* out, unsigned size, char* fmt, void* ap) { if (out && size) out[0] = 0; return 0; }
+int vsnprintf(char* out, unsigned size, char* fmt, void* ap)
+{
+    int total = 0;
+    char* p = out;
+    char* end = out;
+    if (size) end = out + size - 1;
+    while (*fmt) {
+        if (*fmt == '%' && fmt[1] && fmt[1] != '%') {
+            fmt = fmt + 1;
+            while (*fmt >= '0' && *fmt <= '9') fmt = fmt + 1;
+            if (*fmt == 'l') fmt = fmt + 1;
+        } else {
+            if (*fmt == '%' && fmt[1] == '%') fmt = fmt + 1;
+            p = hcc_append_char(p, end, &total, *fmt);
+        }
+        if (*fmt) fmt = fmt + 1;
+    }
+    if (out && size) *p = 0;
+    return total;
+}
 int vfprintf(void* stream, char* fmt, void* ap) { return fputs(fmt, stream); }
 void va_start(void* ap, void* last) {}
 void va_end(void* ap) {}
