@@ -213,26 +213,25 @@ codegenTerminator fnName alloc totalSlots term = case term of
 
 loadArguments :: Allocation -> Int -> [Operand] -> Either CodegenError [String]
 loadArguments alloc _ args = do
-  regCode <- loadRegisterArguments alloc 0 (take 6 args)
-  stackCode <- loadStackArguments alloc (reverse (drop 6 args))
-  pure (regCode ++ stackCode)
+  pushCode <- pushArguments alloc 0 (reverse args)
+  popCode <- popRegisterArguments 0 (take 6 args)
+  pure (pushCode ++ popCode)
 
-loadRegisterArguments :: Allocation -> Int -> [Operand] -> Either CodegenError [String]
-loadRegisterArguments alloc index args = case args of
+pushArguments :: Allocation -> Int -> [Operand] -> Either CodegenError [String]
+pushArguments alloc pushed args = case args of
   [] -> pure []
   op:rest -> do
-    one <- loadOperand alloc op
-    move <- argumentMove index
-    tailCode <- loadRegisterArguments alloc (index + 1) rest
-    pure (one ++ move ++ tailCode)
-
-loadStackArguments :: Allocation -> [Operand] -> Either CodegenError [String]
-loadStackArguments alloc args = case args of
-  [] -> pure []
-  op:rest -> do
-    one <- loadOperand alloc op
-    tailCode <- loadStackArguments alloc rest
+    one <- loadOperandWithRspBias alloc (pushed * 8) op
+    tailCode <- pushArguments alloc (pushed + 1) rest
     pure (one ++ ["\tPUSH_RAX"] ++ tailCode)
+
+popRegisterArguments :: Int -> [Operand] -> Either CodegenError [String]
+popRegisterArguments index args = case args of
+  [] -> pure []
+  _:rest -> do
+    move <- argumentMove index
+    tailCode <- popRegisterArguments (index + 1) rest
+    pure (["\tPOP_RAX"] ++ move ++ tailCode)
 
 cleanupCallStack :: [Operand] -> [String]
 cleanupCallStack args =
@@ -284,13 +283,16 @@ binOpCode op = case op of
   IXor -> Right ["\tHCC_XOR_rbx_rax_into_rax"]
 
 loadOperand :: Allocation -> Operand -> Either CodegenError [String]
-loadOperand alloc op = case op of
+loadOperand alloc = loadOperandWithRspBias alloc 0
+
+loadOperandWithRspBias :: Allocation -> Int -> Operand -> Either CodegenError [String]
+loadOperandWithRspBias alloc rspBias op = case op of
   OImm value -> Right (loadImmediate value)
   OGlobal name -> Right ["\tLOAD_IMMEDIATE_rax &" ++ name]
   OFunction name -> Right ["\tLOAD_IMMEDIATE_rax &FUNCTION_" ++ name]
   OTemp temp -> do
     loc <- mapAllocError (lookupLocation temp alloc)
-    loadLocation loc
+    loadLocationWithRspBias rspBias loc
 
 loadImmediate :: Int -> [String]
 loadImmediate value =
@@ -302,15 +304,15 @@ word64Bytes :: Int -> [Int]
 word64Bytes value = map byte ([0..7] :: [Int]) where
   byte shift = (value `div` (256 ^ shift)) `mod` 256
 
-loadLocation :: Location -> Either CodegenError [String]
-loadLocation loc = case loc of
+loadLocationWithRspBias :: Int -> Location -> Either CodegenError [String]
+loadLocationWithRspBias rspBias loc = case loc of
   InReg Rax -> Right []
   InReg Rbx -> Right ["\tMOVE_rbx_to_rax"]
   InReg Rdi -> Right ["\tPUSH_RDI", "\tPOP_RAX"]
   InReg Rsi -> Right ["\tHCC_COPY_rsi_to_rax"]
   InReg Rdx -> Right ["\tHCC_COPY_rdx_to_rax"]
-  OnStack slot -> Right ["\tLOAD_RSP_IMMEDIATE_into_rax %" ++ show (8 * slot)]
-  StackObject slot _ -> Right ["\tHCC_LOAD_EFFECTIVE_ADDRESS_rax %" ++ show (8 * slot)]
+  OnStack slot -> Right ["\tLOAD_RSP_IMMEDIATE_into_rax %" ++ show (8 * slot + rspBias)]
+  StackObject slot _ -> Right ["\tHCC_LOAD_EFFECTIVE_ADDRESS_rax %" ++ show (8 * slot + rspBias)]
 
 addressOfLocation :: Location -> Either CodegenError [String]
 addressOfLocation loc = case loc of
