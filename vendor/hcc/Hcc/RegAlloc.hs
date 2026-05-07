@@ -20,6 +20,7 @@ data PhysReg
 data Location
   = InReg PhysReg
   | OnStack Int
+  | StackObject Int Int
   deriving (Eq, Show)
 
 newtype Allocation = Allocation [(Temp, Location)]
@@ -35,11 +36,12 @@ lookupLocation temp (Allocation pairs) = case lookup temp pairs of
   Nothing -> Left ("missing allocation for " ++ show temp)
 
 stackSlotCount :: Allocation -> Int
-stackSlotCount (Allocation pairs) = count pairs where
-  count xs = case xs of
-    [] -> 0
-    (_, OnStack _):rest -> 1 + count rest
-    _:rest -> count rest
+stackSlotCount (Allocation pairs) = count 0 pairs where
+  count maxSlot locs = case locs of
+    [] -> maxSlot
+    (_, OnStack slot):rest -> count (max maxSlot (slot + 1)) rest
+    (_, StackObject slot slots):rest -> count (max maxSlot (slot + slots)) rest
+    _:rest -> count maxSlot rest
 
 allocateInstrs :: Int -> [(Temp, Location)] -> [Instr] -> Either String [(Temp, Location)]
 allocateInstrs nextSlot acc instrs = case instrs of
@@ -47,6 +49,8 @@ allocateInstrs nextSlot acc instrs = case instrs of
   instr:rest -> case instr of
     IParam temp _ ->
       allocateDef nextSlot acc temp rest
+    IAlloca temp size ->
+      allocateStackObject nextSlot acc temp size rest
     IConst temp _ ->
       allocateDef nextSlot acc temp rest
     ICopy temp _ ->
@@ -57,11 +61,15 @@ allocateInstrs nextSlot acc instrs = case instrs of
       allocateDef nextSlot acc temp rest
     ILoad32 temp _ ->
       allocateDef nextSlot acc temp rest
+    ILoad16 temp _ ->
+      allocateDef nextSlot acc temp rest
     ILoad8 temp _ ->
       allocateDef nextSlot acc temp rest
     IStore64 _ _ ->
       allocateInstrs nextSlot acc rest
     IStore32 _ _ ->
+      allocateInstrs nextSlot acc rest
+    IStore16 _ _ ->
       allocateInstrs nextSlot acc rest
     IStore8 _ _ ->
       allocateInstrs nextSlot acc rest
@@ -75,6 +83,14 @@ allocateInstrs nextSlot acc instrs = case instrs of
       allocateInstrs nextSlot acc rest
     ICallIndirect (Just temp) _ _ ->
       allocateDef nextSlot acc temp rest
+
+allocateStackObject :: Int -> [(Temp, Location)] -> Temp -> Int -> [Instr] -> Either String [(Temp, Location)]
+allocateStackObject nextSlot acc temp size rest =
+  if temp `elem` map fst acc
+  then allocateInstrs nextSlot acc rest
+  else
+    let slots = (max 1 size + 7) `div` 8
+    in allocateInstrs (nextSlot + slots) ((temp, StackObject nextSlot slots):acc) rest
 
 allocateDef :: Int -> [(Temp, Location)] -> Temp -> [Instr] -> Either String [(Temp, Location)]
 allocateDef nextSlot acc temp rest =

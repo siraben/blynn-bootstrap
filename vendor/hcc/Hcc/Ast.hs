@@ -77,4 +77,5 @@ data Expr
   | EBinary String Expr Expr
   | ECond Expr Expr Expr
   | EAssign Expr Expr
+  | EInitList [Expr]
   deriving (Eq, Show)

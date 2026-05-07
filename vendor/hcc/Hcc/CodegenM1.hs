@@ -45,12 +45,15 @@ header =
   , "DEFINE HCC_COPY_r9_to_rax 4C89C8"
   , "DEFINE HCC_PUSH_RSI 56"
   , "DEFINE HCC_PUSH_RDX 52"
-  , "DEFINE HCC_SHL_eax_cl D3E0"
-  , "DEFINE HCC_SHR_eax_cl D3E8"
+  , "DEFINE HCC_SHL_rax_cl 48D3E0"
+  , "DEFINE HCC_SHR_rax_cl 48D3E8"
+  , "DEFINE HCC_SAR_rax_cl 48D3F8"
   , "DEFINE HCC_LOAD_INTEGER 488B00"
   , "DEFINE HCC_STORE_INTEGER 488903"
   , "DEFINE HCC_LOAD_WORD 8B00"
+  , "DEFINE HCC_LOAD_HALF 0FB700"
   , "DEFINE HCC_STORE_WORD 8903"
+  , "DEFINE HCC_STORE_HALF 668903"
   , "DEFINE HCC_STORE_CHAR 8803"
   , "DEFINE HCC_XOR_rbx_rax_into_rax 4831D8"
   , "DEFINE HCC_CALL_rax FFD0"
@@ -60,8 +63,13 @@ header =
 codegenFunction :: FunctionIr -> Either CodegenError Lines
 codegenFunction fn@(FunctionIr name _ blocks) = do
   alloc <- mapAllocError (allocateFunction fn)
-  body <- codegenBlocks name alloc (stackSlotCount alloc) blocks
+  body <- withCodegenContext ("function " ++ name) (codegenBlocks name alloc (stackSlotCount alloc) blocks)
   pure (line (":FUNCTION_" ++ name) . linesFromList (prologue (stackSlotCount alloc)) . body . line "")
+
+withCodegenContext :: String -> Either CodegenError a -> Either CodegenError a
+withCodegenContext context result = case result of
+  Left (CodegenError msg) -> Left (CodegenError (context ++ ": " ++ msg))
+  Right value -> Right value
 
 prologue :: Int -> [String]
 prologue slots =
@@ -93,6 +101,8 @@ codegenInstr alloc totalSlots instr = case instr of
   IParam temp index -> do
     code <- loadParam totalSlots index
     storeTemp alloc temp code
+  IAlloca _ _ ->
+    pure []
   IConst temp value ->
     storeTemp alloc temp ["\tLOAD_IMMEDIATE_rax %" ++ show value]
   ICopy temp op -> do
@@ -108,6 +118,9 @@ codegenInstr alloc totalSlots instr = case instr of
   ILoad32 temp op -> do
     code <- loadOperand alloc op
     storeTemp alloc temp (code ++ ["\tHCC_LOAD_WORD"])
+  ILoad16 temp op -> do
+    code <- loadOperand alloc op
+    storeTemp alloc temp (code ++ ["\tHCC_LOAD_HALF"])
   ILoad8 temp op -> do
     code <- loadOperand alloc op
     storeTemp alloc temp (code ++ ["\tLOAD_BYTE", "\tMOVEZX"])
@@ -119,6 +132,10 @@ codegenInstr alloc totalSlots instr = case instr of
     addrCode <- loadOperand alloc addr
     valueCode <- loadOperand alloc value
     pure (addrCode ++ ["\tPUSH_RAX", "\tPOP_RBX"] ++ valueCode ++ ["\tHCC_STORE_WORD"])
+  IStore16 addr value -> do
+    addrCode <- loadOperand alloc addr
+    valueCode <- loadOperand alloc value
+    pure (addrCode ++ ["\tPUSH_RAX", "\tPOP_RBX"] ++ valueCode ++ ["\tHCC_STORE_HALF"])
   IStore8 addr value -> do
     addrCode <- loadOperand alloc addr
     valueCode <- loadOperand alloc value
@@ -208,8 +225,9 @@ binOpCode op = case op of
   IMul -> Right ["\tMULTIPLY_rax_by_rbx_into_rax"]
   IDiv -> Right ["\tXCHG_rax_rbx", "\tCQTO", "\tDIVIDES_rax_by_rbx_into_rax"]
   IMod -> Right ["\tXCHG_rax_rbx", "\tCQTO", "\tMODULUSS_rax_from_rbx_into_rbx", "\tMOVE_rdx_to_rax"]
-  IShl -> Right ["\tCOPY_rax_to_rcx", "\tMOVE_rbx_to_rax", "\tHCC_SHL_eax_cl"]
-  IShr -> Right ["\tCOPY_rax_to_rcx", "\tMOVE_rbx_to_rax", "\tHCC_SHR_eax_cl"]
+  IShl -> Right ["\tCOPY_rax_to_rcx", "\tMOVE_rbx_to_rax", "\tHCC_SHL_rax_cl"]
+  IShr -> Right ["\tCOPY_rax_to_rcx", "\tMOVE_rbx_to_rax", "\tHCC_SHR_rax_cl"]
+  ISar -> Right ["\tCOPY_rax_to_rcx", "\tMOVE_rbx_to_rax", "\tHCC_SAR_rax_cl"]
   IEq -> Right ["\tCMP", "\tSETE", "\tMOVEZX"]
   INe -> Right ["\tCMP", "\tSETNE", "\tMOVEZX"]
   ILt -> Right ["\tCMP", "\tSETL", "\tMOVEZX"]
@@ -237,17 +255,20 @@ loadLocation loc = case loc of
   InReg Rsi -> Right ["\tHCC_COPY_rsi_to_rax"]
   InReg Rdx -> Right ["\tHCC_COPY_rdx_to_rax"]
   OnStack slot -> Right ["\tLOAD_RSP_IMMEDIATE_into_rax %" ++ show (8 * slot)]
+  StackObject slot _ -> Right ["\tHCC_LOAD_EFFECTIVE_ADDRESS_rax %" ++ show (8 * slot)]
 
 addressOfLocation :: Location -> Either CodegenError [String]
 addressOfLocation loc = case loc of
-  OnStack slot -> Right ["\tHCC_LOAD_EFFECTIVE_ADDRESS_rax %" ++ show (8 * slot)]
-  InReg _ -> Left (CodegenError "cannot take address of register-allocated value")
+    OnStack slot -> Right ["\tHCC_LOAD_EFFECTIVE_ADDRESS_rax %" ++ show (8 * slot)]
+    StackObject slot _ -> Right ["\tHCC_LOAD_EFFECTIVE_ADDRESS_rax %" ++ show (8 * slot)]
+    InReg _ -> Left (CodegenError "cannot take address of register-allocated value")
 
 storeTemp :: Allocation -> Temp -> [String] -> Either CodegenError [String]
 storeTemp alloc temp code = do
   loc <- mapAllocError (lookupLocation temp alloc)
   case loc of
     OnStack slot -> Right (code ++ ["\tHCC_STORE_RSP_IMMEDIATE_from_rax %" ++ show (8 * slot)])
+    StackObject{} -> Left (CodegenError ("cannot assign to stack object address: " ++ show temp))
     InReg _ -> Right code
 
 cleanupStack :: Int -> [String]
@@ -258,8 +279,13 @@ blockRef :: String -> BlockId -> String
 blockRef fnName (BlockId n) = "HCC_BLOCK_" ++ fnName ++ "_" ++ show n
 
 codegenDataItem :: DataItem -> [String]
-codegenDataItem (DataItem label bytes) =
-  [":" ++ label, "\t" ++ joinWords (map byteHex bytes), ""]
+codegenDataItem (DataItem label values) =
+  [":" ++ label, "\t" ++ joinWords (map dataValueM1 values), ""]
+
+dataValueM1 :: DataValue -> String
+dataValueM1 value = case value of
+  DByte byte -> byteHex byte
+  DAddress label -> "&" ++ label ++ " '00' '00' '00' '00'"
 
 byteHex :: Int -> String
 byteHex value =

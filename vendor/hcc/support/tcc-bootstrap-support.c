@@ -3,15 +3,23 @@ typedef unsigned long uint64_t;
 typedef unsigned int uint32_t;
 typedef unsigned char uint8_t;
 typedef long time_t;
+typedef long ssize_t;
 
 void* malloc(unsigned size);
 void free(void* ptr);
 void _exit(int value);
-int strcmp(char* left, char* right);
-int strlen(char* text);
-void* memcpy(void* dest, void* src, size_t n);
+int open(char* path, int flags, int mode);
+int read(int fd, void* data, size_t size);
+int write(int fd, void* data, size_t size);
+long lseek(int fd, long offset, int whence);
+int close(int fd);
+int access(char* path, int mode);
 
 int errno;
+char** environ;
+void* stdin = (void*)0;
+void* stdout = (void*)1;
+void* stderr = (void*)2;
 
 struct timeval {
     long tv_sec;
@@ -126,6 +134,164 @@ long ldexp(long value, int exp)
     return value;
 }
 
+int memcmp(void* s1, void* s2, size_t size)
+{
+    unsigned char* a = s1;
+    unsigned char* b = s2;
+    if (size == 0) return 0;
+    while (*a == *b && size > 1) {
+        a = a + 1;
+        b = b + 1;
+        size = size - 1;
+    }
+    return *a - *b;
+}
+
+void* memcpy(void* dest, void* src, size_t n)
+{
+    char* d = dest;
+    char* s = src;
+    void* out = dest;
+    while (n) {
+        *d = *s;
+        d = d + 1;
+        s = s + 1;
+        n = n - 1;
+    }
+    return out;
+}
+
+void* memmove(void* dest, void* src, size_t n)
+{
+    char* d = dest;
+    char* s = src;
+    if (d < s) return memcpy(dest, src, n);
+    d = d + n;
+    s = s + n;
+    while (n) {
+        d = d - 1;
+        s = s - 1;
+        *d = *s;
+        n = n - 1;
+    }
+    return dest;
+}
+
+void* memset(void* s, int c, size_t n)
+{
+    unsigned char* p = s;
+    void* out = s;
+    while (n) {
+        *p = c;
+        p = p + 1;
+        n = n - 1;
+    }
+    return out;
+}
+
+int strlen(char* text)
+{
+    int n = 0;
+    while (text[n]) n = n + 1;
+    return n;
+}
+
+int strcmp(char* left, char* right)
+{
+    while (*left && *right && *left == *right) {
+        left = left + 1;
+        right = right + 1;
+    }
+    return *left - *right;
+}
+
+int strncmp(char* left, char* right, size_t n)
+{
+    if (n == 0) return 0;
+    while (*left && *right && *left == *right && n > 1) {
+        left = left + 1;
+        right = right + 1;
+        n = n - 1;
+    }
+    return *left - *right;
+}
+
+char* strcpy(char* dest, char* src)
+{
+    char* out = dest;
+    while (*src) {
+        *dest = *src;
+        dest = dest + 1;
+        src = src + 1;
+    }
+    *dest = 0;
+    return out;
+}
+
+char* strncpy(char* dest, char* src, size_t n)
+{
+    char* out = dest;
+    while (*src && n) {
+        *dest = *src;
+        dest = dest + 1;
+        src = src + 1;
+        n = n - 1;
+    }
+    while (n) {
+        *dest = 0;
+        dest = dest + 1;
+        n = n - 1;
+    }
+    return out;
+}
+
+char* strchr(char* text, int c)
+{
+    while (*text || c == 0) {
+        if (*text == c) return text;
+        text = text + 1;
+    }
+    return 0;
+}
+
+char* strrchr(char* text, int c)
+{
+    char* last = 0;
+    while (*text) {
+        if (*text == c) last = text;
+        text = text + 1;
+    }
+    if (c == 0) return text;
+    return last;
+}
+
+char* strcat(char* dest, char* src)
+{
+    char* out = dest;
+    dest = strchr(dest, 0);
+    while (*src) {
+        *dest = *src;
+        dest = dest + 1;
+        src = src + 1;
+    }
+    *dest = 0;
+    return out;
+}
+
+char* strpbrk(char* text, char* stop)
+{
+    while (*text) {
+        if (strchr(stop, *text)) return text;
+        text = text + 1;
+    }
+    return 0;
+}
+
+char* strerror(int value)
+{
+    return "mes-libc error";
+}
+
 void abort()
 {
     _exit(1);
@@ -191,12 +357,113 @@ void qsort(void* base, unsigned count, unsigned size, int (*compar)(void*, void*
     }
 }
 
+void* fopen(char* path, char* mode)
+{
+    int flags = 0;
+    int fd;
+    if (mode[0] == 'w') {
+        flags = 577;
+    } else if (mode[0] == 'a') {
+        flags = 1089;
+    } else {
+        flags = 0;
+    }
+    fd = open(path, flags, 0600);
+    if (fd < 0) return 0;
+    return (void*)(long)fd;
+}
+
+int fclose(void* stream)
+{
+    int fd = (int)(long)stream;
+    if (fd < 3) return 0;
+    return close(fd);
+}
+
+int fflush(void* stream)
+{
+    return 0;
+}
+
+int fgetc(void* stream)
+{
+    unsigned char c;
+    int fd = (int)(long)stream;
+    if (read(fd, &c, 1) == 1) return c;
+    return -1;
+}
+
+int fputc(int c, void* stream)
+{
+    unsigned char ch = c;
+    int fd = (int)(long)stream;
+    if (write(fd, &ch, 1) == 1) return ch;
+    return -1;
+}
+
+int fputs(char* text, void* stream)
+{
+    int fd = (int)(long)stream;
+    int n = strlen(text);
+    if (write(fd, text, n) < 0) return -1;
+    return 0;
+}
+
+size_t fread(void* data, size_t size, size_t count, void* stream)
+{
+    int fd = (int)(long)stream;
+    int bytes;
+    if (!size || !count) return 0;
+    bytes = read(fd, data, size * count);
+    if (bytes <= 0) return 0;
+    return bytes / size;
+}
+
+size_t fwrite(void* data, size_t size, size_t count, void* stream)
+{
+    int fd = (int)(long)stream;
+    int bytes;
+    if (!size || !count) return 0;
+    bytes = write(fd, data, size * count);
+    if (bytes <= 0) return 0;
+    return bytes / size;
+}
+
+int fseek(void* stream, long offset, int whence)
+{
+    int fd = (int)(long)stream;
+    if (lseek(fd, offset, whence) < 0) return -1;
+    return 0;
+}
+
+long ftell(void* stream)
+{
+    int fd = (int)(long)stream;
+    return lseek(fd, 0, 1);
+}
+
 int gettimeofday(struct timeval* tv, void* tz)
 {
     if (tv) {
         tv->tv_sec = 0;
         tv->tv_usec = 0;
     }
+    return 0;
+}
+
+int sem_init(void* sem, int shared, unsigned value)
+{
+    if (sem) *(int*)sem = value;
+    return 0;
+}
+
+int sem_wait(void* sem)
+{
+    return 0;
+}
+
+int sem_post(void* sem)
+{
     return 0;
 }
 
@@ -216,6 +483,18 @@ struct tm* localtime(time_t* value)
 int execvp(char* file, char** argv) { return -1; }
 void* fdopen(int fd, char* mode) { return 0; }
 char* getenv(char* name) { return 0; }
+char* realpath(char* path, char* out)
+{
+    int n;
+    if (!path) return 0;
+    if (!out) {
+        n = strlen(path) + 1;
+        out = malloc(n);
+        if (!out) return 0;
+    }
+    strcpy(out, path);
+    return out;
+}
 int remove(char* path) { return -1; }
 int unlink(char* path) { return -1; }
 int setjmp(void* env) { return 0; }
@@ -227,8 +506,11 @@ int sprintf(char* out, char* fmt) { if (out) out[0] = 0; return 0; }
 int snprintf(char* out, unsigned size, char* fmt) { if (out && size) out[0] = 0; return 0; }
 int sscanf(char* input, char* fmt) { return 0; }
 int vsnprintf(char* out, unsigned size, char* fmt, void* ap) { if (out && size) out[0] = 0; return 0; }
+int vfprintf(void* stream, char* fmt, void* ap) { return fputs(fmt, stream); }
 void va_start(void* ap, void* last) {}
 void va_end(void* ap) {}
+void va_copy(void* dest, void* src) {}
+long va_arg(void* ap, long type_hint) { return 0; }
 
 int ELF64_ST_BIND(int value) { return (value >> 4) & 15; }
 int ELF64_ST_TYPE(int value) { return value & 15; }

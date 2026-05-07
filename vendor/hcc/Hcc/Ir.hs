@@ -21,6 +21,7 @@ data BinOp
   | IMod
   | IShl
   | IShr
+  | ISar
   | IEq
   | INe
   | ILt
@@ -34,14 +35,17 @@ data BinOp
 
 data Instr
   = IParam Temp Int
+  | IAlloca Temp Int
   | IConst Temp Int
   | ICopy Temp Operand
   | IAddrOf Temp Temp
   | ILoad64 Temp Operand
   | ILoad32 Temp Operand
+  | ILoad16 Temp Operand
   | ILoad8 Temp Operand
   | IStore64 Operand Operand
   | IStore32 Operand Operand
+  | IStore16 Operand Operand
   | IStore8 Operand Operand
   | IBin Temp BinOp Operand Operand
   | ICall (Maybe Temp) String [Operand]
@@ -57,7 +61,12 @@ data Terminator
 data BasicBlock = BasicBlock BlockId [Instr] Terminator
   deriving (Eq, Show)
 
-data DataItem = DataItem String [Int]
+data DataValue
+  = DByte Int
+  | DAddress String
+  deriving (Eq, Show)
+
+data DataItem = DataItem String [DataValue]
   deriving (Eq, Show)
 
 data FunctionIr = FunctionIr String [String] [BasicBlock]
