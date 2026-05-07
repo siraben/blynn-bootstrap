@@ -28,26 +28,20 @@ substrate.
   `stage0-posix.mescc-tools` (`M1` + `hex2`) for the smoke corpus.
 - A GHC-built hcc can compile a pre-expanded TinyCC one-source input to
   M1. Assembled through `M1`/`hex2`, that produces a TinyCC binary that
-  compiles TinyCC's one-source `tcc.c` to an ELF object.
-- That hcc-built TinyCC object links with the temporary freestanding
-  development harness and runs. With `TCC_MUSL=1`, TinyCC's own
-  `include/stdarg.h` first in the include path, and `lib/va_list.c`
-  linked, the resulting compiler compiles TinyCC again; the third
-  generation also links and compiles a smoke object.
+  compiles TinyCC's one-source `tcc.c` to an ELF object without patching
+  TinyCC's sources beyond the normal bootstrap patch set.
 - `tinycc-boot-hcc` now builds TinyCC through `hcc --expand-dump`,
   `hcc -S`, `M1`, and `hex2`; it no longer invokes MesCC or hcc's
-  backend C compiler path. The resulting binary runs `-version` and
-  compiles a no-include C smoke file. The next blocker for making it a
-  drop-in downstream `tcc` is quoted include handling in the hcc-built
-  TinyCC: it currently opens the containing directory for a simple
-  `#include "header.h"` smoke instead of opening the header file itself.
+  backend C compiler path. The resulting binary runs `-version`, handles
+  quoted includes, expands function-like macros, compiles smoke objects,
+  compiles its own `tcc.c` to `tcc-selfhost.o`, and builds `libtcc1.a`
+  during `checkPhase`.
 
-The immediate remaining work is to replace the `/tmp` TinyCC self-host
-probe with a reproducible derivation: generate or vendor the guarded
-one-source TinyCC input, run `hcc -S`, assemble with `M1`, link with
-`hex2`, include the minimal runtime objects (`tcc-bootstrap-support`,
-TinyCC `lib/va_list.c`, start/syscall/memory support), then run the
-TinyCC-to-TinyCC self-host check in Nix.
+The immediate remaining work is runtime/link packaging for the hcc-built
+TinyCC: provide the minimal `crt1.o`/`crti.o`/`crtn.o`, `libc.a`, and
+`libtcc1.a` expected by TinyCC's linker in the derivation, then run a
+linked executable smoke and the TinyCC-to-TinyCC executable self-host
+check in Nix.
 
 The remaining gap: **MesCC compiles tinycc.c**. To remove Mes, we need
 something else that compiles tinycc.c. That something must itself be
