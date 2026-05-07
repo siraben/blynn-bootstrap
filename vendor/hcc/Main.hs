@@ -72,7 +72,7 @@ expandDump :: [String] -> IO ()
 expandDump args = case assemblyArgs ("-S":args) of
   Left msg -> die msg
   Right opts -> do
-    source <- readSourceWithIncludes (asmIncludeDirs opts) (asmInput opts)
+    source <- readSourceWithIncludes (asmIncludeDirs opts) (asmDefines opts) (asmInput opts)
     putStr (renderDefines (asmDefines opts) ++ source)
 
 preprocessSource :: String -> Either String [Token]
@@ -181,7 +181,7 @@ compileAssembly args = do
   case assemblyArgs args of
     Left msg -> die msg
     Right opts -> do
-      source <- readSourceWithIncludes (asmIncludeDirs opts) (asmInput opts)
+      source <- readSourceWithIncludes (asmIncludeDirs opts) (asmDefines opts) (asmInput opts)
       let sourceWithDefines = renderDefines (asmDefines opts) ++ source
       case preprocessSource sourceWithDefines >>= mapParseError . parseProgram >>= mapCodegenError . codegenM1WithDataPrefix (dataLabelPrefix (asmInput opts)) of
         Left msg -> die (asmInput opts ++ ":" ++ msg)
@@ -262,47 +262,70 @@ renderDefinesBuilder defs = case defs of
     . showChar '\n'
     . renderDefinesBuilder rest
 
-readSourceWithIncludes :: [FilePath] -> FilePath -> IO String
-readSourceWithIncludes includeDirs path = do
-  (builder, _) <- expandFile [] Set.empty path
+readSourceWithIncludes :: [FilePath] -> [(String, String)] -> FilePath -> IO String
+readSourceWithIncludes includeDirs defines path = do
+  (builder, _, _) <- expandFile [] Set.empty initialMacros path
   pure (builder "")
   where
+  initialMacros = Set.fromList (map fst defines)
 
-  expandFile stack guards file = do
+  expandFile stack guards macros file = do
     key <- canonicalizePath file
     if key `elem` stack
-      then pure (id, guards)
+      then pure (id, guards, macros)
       else do
         source <- readFile key
         case includeGuard key source of
           Just (PragmaOnce guard) | guard `Set.member` guards ->
-            pure (id, guards)
+            pure (id, guards, macros)
           Just (IfndefGuard guard start end) | guard `Set.member` guards ->
-            expandLines (takeDirectory key) (key:stack) guards (skipLineRange start end (lines source))
+            expandLines (takeDirectory key) (key:stack) guards macros [] (skipLineRange start end (lines source))
           guardInfo -> do
             let guards' = case guardInfo of
                   Nothing -> guards
                   Just (PragmaOnce guard) -> Set.insert guard guards
                   Just (IfndefGuard guard _ _) -> Set.insert guard guards
-            expandLines (takeDirectory key) (key:stack) guards' (lines source)
+            expandLines (takeDirectory key) (key:stack) guards' macros [] (lines source)
 
-  expandLines currentDir stack guards ls = case ls of
-    [] -> pure (id, guards)
+  expandLines currentDir stack guards macros frames ls = case ls of
+    [] -> pure (id, guards, macros)
     line:rest -> do
-      (expanded, guards') <- expandIncludeLine currentDir stack guards line
-      (tailText, guards'') <- expandLines currentDir stack guards' rest
-      pure (expanded . tailText, guards'')
+      (expanded, guards', macros', frames') <- expandLine currentDir stack guards macros frames line
+      (tailText, guards'', macros'') <- expandLines currentDir stack guards' macros' frames' rest
+      pure (expanded . tailText, guards'', macros'')
 
-  expandIncludeLine currentDir stack guards line = case includeName line of
-    Nothing -> pure (showString line . showChar '\n', guards)
-    Just name -> do
-      found <- findInclude currentDir name
-      case found of
-        Nothing -> pure (showString line . showChar '\n', guards)
-        Just file ->
-          if file `elem` stack
-          then pure (id, guards)
-          else expandFile stack guards file
+  expandLine currentDir stack guards macros frames line =
+    let active = includeActive frames
+        keep = showString line . showChar '\n'
+    in case directiveNameFromLine line of
+      Just "ifdef" ->
+        pure (keep, guards, macros, pushIncludeFrame frames (maybe False (`Set.member` macros) (directiveArgument "ifdef" line)))
+      Just "ifndef" ->
+        pure (keep, guards, macros, pushIncludeFrame frames (maybe False (not . (`Set.member` macros)) (directiveArgument "ifndef" line)))
+      Just "if" ->
+        pure (keep, guards, macros, pushIncludeFrame frames (evalIncludeIf macros (directiveRest "if" line)))
+      Just "elif" ->
+        pure (keep, guards, macros, replaceIncludeElif frames (evalIncludeIf macros (directiveRest "elif" line)))
+      Just "else" ->
+        pure (keep, guards, macros, replaceIncludeElse frames)
+      Just "endif" ->
+        pure (keep, guards, macros, case frames of { [] -> []; _:xs -> xs })
+      Just "define" | active ->
+        pure (keep, guards, maybe macros (`Set.insert` macros) (directiveArgument "define" line), frames)
+      Just "undef" | active ->
+        pure (keep, guards, maybe macros (`Set.delete` macros) (directiveArgument "undef" line), frames)
+      _ -> case includeName line of
+        Just name | active -> do
+          found <- findInclude currentDir name
+          case found of
+            Nothing -> pure (keep, guards, macros, frames)
+            Just file ->
+              if file `elem` stack
+              then pure (id, guards, macros, frames)
+              else do
+                (expanded, guards', macros') <- expandFile stack guards macros file
+                pure (expanded, guards', macros', frames)
+        _ -> pure (keep, guards, macros, frames)
 
   findInclude currentDir name = do
     let candidates = (currentDir </> name) : map (</> name) includeDirs
@@ -322,6 +345,113 @@ stripIncludeDelims raw = case raw of
   '"':rest -> Just (takeWhile (/= '"') rest)
   '<':rest -> Just (takeWhile (/= '>') rest)
   _ -> Nothing
+
+data IncludeFrame = IncludeFrame
+  { includeParentActive :: Bool
+  , includeBranchTaken :: Bool
+  , includeFrameActive :: Bool
+  } deriving (Eq, Show)
+
+includeActive :: [IncludeFrame] -> Bool
+includeActive frames = case frames of
+  [] -> True
+  frame:_ -> includeFrameActive frame
+
+pushIncludeFrame :: [IncludeFrame] -> Bool -> [IncludeFrame]
+pushIncludeFrame frames cond =
+  let parent = includeActive frames
+      active = parent && cond
+  in IncludeFrame parent active active : frames
+
+replaceIncludeElif :: [IncludeFrame] -> Bool -> [IncludeFrame]
+replaceIncludeElif frames cond = case frames of
+  [] -> []
+  frame:rest ->
+    let active = includeParentActive frame && not (includeBranchTaken frame) && cond
+        taken = includeBranchTaken frame || active
+    in frame { includeBranchTaken = taken, includeFrameActive = active } : rest
+
+replaceIncludeElse :: [IncludeFrame] -> [IncludeFrame]
+replaceIncludeElse frames = case frames of
+  [] -> []
+  frame:rest ->
+    let active = includeParentActive frame && not (includeBranchTaken frame)
+    in frame { includeBranchTaken = True, includeFrameActive = active } : rest
+
+directiveRest :: String -> String -> String
+directiveRest directive line = case dropWhile isSpaceChar line of
+  '#':rest -> afterDirective directive rest
+  _ -> ""
+
+afterDirective :: String -> String -> String
+afterDirective directive text =
+  let trimmed = dropWhile isSpaceChar text
+  in if directive `prefixOf` trimmed
+     then dropWhile isSpaceChar (drop (length directive) trimmed)
+     else ""
+
+evalIncludeIf :: Set.Set String -> String -> Bool
+evalIncludeIf macros text =
+  evalOr (filter (not . null) (splitTopLevel "||" text))
+  where
+    evalOr parts = case parts of
+      [] -> evalAnd (filter (not . null) (splitTopLevel "&&" text))
+      [part] -> evalAnd (filter (not . null) (splitTopLevel "&&" part))
+      part:rest -> evalIncludeIf macros part || evalOr rest
+
+    evalAnd parts = case parts of
+      [] -> evalAtom text
+      [part] -> evalAtom part
+      part:rest -> evalAtom part && evalAnd rest
+
+    evalAtom raw =
+      let atom = trim raw
+      in case atom of
+        '!':rest -> not (evalAtom rest)
+        'd':'e':'f':'i':'n':'e':'d':rest -> evalDefined rest
+        '(' : rest | lastMaybe rest == Just ')' -> evalIncludeIf macros (init rest)
+        _ | all isDigitChar atom -> readDecimal atom /= 0
+          | all isMacroNameChar atom -> atom `Set.member` macros
+          | otherwise -> False
+
+    evalDefined raw =
+      let rest = trim raw
+      in case rest of
+        '(' : xs -> takeWhile isMacroNameChar xs `Set.member` macros
+        _ -> takeWhile isMacroNameChar rest `Set.member` macros
+
+splitTopLevel :: String -> String -> [String]
+splitTopLevel sep text = go 0 text "" where
+  go :: Int -> String -> String -> [String]
+  go depth rest current = case rest of
+    [] -> [reverse current]
+    c:cs
+      | c == '(' -> go (depth + 1) cs (c:current)
+      | c == ')' -> go (depth - 1) cs (c:current)
+      | depth == 0 && sep `prefixOf` rest -> reverse current : go depth (drop (length sep) rest) ""
+      | otherwise -> go depth cs (c:current)
+
+trim :: String -> String
+trim = reverse . dropWhile isSpaceChar . reverse . dropWhile isSpaceChar
+
+lastMaybe :: [a] -> Maybe a
+lastMaybe xs = case xs of
+  [] -> Nothing
+  [x] -> Just x
+  _:rest -> lastMaybe rest
+
+isDigitChar :: Char -> Bool
+isDigitChar c = c >= '0' && c <= '9'
+
+isMacroNameChar :: Char -> Bool
+isMacroNameChar c =
+  (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_'
+
+readDecimal :: String -> Int
+readDecimal text = go 0 text where
+  go acc rest = case rest of
+    [] -> acc
+    c:cs -> go (acc * 10 + fromEnum c - fromEnum '0') cs
 
 data IncludeGuard
   = PragmaOnce String

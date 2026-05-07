@@ -414,9 +414,22 @@ parseDeclStmt = do
   if standalone
     then pure (SExpr (EInt "0"))
     else do
-      first <- declarationItem ty0
-      rest <- declarationItemsTail ty0
-      pure (declStmt (first:rest))
+      prototype <- optionalP (tryP (localPrototype ty0))
+      case prototype of
+        Just _ -> pure (SExpr (EInt "0"))
+        Nothing -> do
+          first <- declarationItem ty0
+          rest <- declarationItemsTail ty0
+          pure (declStmt (first:rest))
+
+localPrototype :: CType -> Parser ()
+localPrototype ty0 = do
+  _ty <- pointerStars ty0
+  _name <- needIdent
+  needPunct "("
+  skipBalanced "(" ")"
+  skipAttributes
+  needPunct ";"
 
 declStmt :: [(CType, String, Maybe Expr)] -> Stmt
 declStmt decls = case decls of

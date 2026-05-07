@@ -1,6 +1,8 @@
 ## Final syscall definitions. Keep this after generated TinyCC/Mes-libc M1 so
 ## these labels override bootstrap libc stubs with the same names.
 
+DEFINE HCC_SYS_COPY_rdi_to_rax 4889F8
+
 :FUNCTION_read
 	LOAD_IMMEDIATE_rax %0
 	SYSCALL
@@ -29,4 +31,18 @@
 :FUNCTION_access
 	LOAD_IMMEDIATE_rax %21
 	SYSCALL
+	RETURN
+
+:FUNCTION___assert_fail
+	LOAD_IMMEDIATE_rdi %1
+	LOAD_IMMEDIATE_rax %60
+	SYSCALL
+	RETURN
+
+:FUNCTION_getcwd
+	HCC_SYS_COPY_rdi_to_rax
+	PUSH_RAX
+	LOAD_IMMEDIATE_rax %79
+	SYSCALL
+	POP_RAX
 	RETURN
