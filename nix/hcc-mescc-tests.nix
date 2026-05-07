@@ -65,6 +65,7 @@ stdenvNoCC.mkDerivation {
     assemble_and_run 11-if-1 0
     assemble_and_run 12-if-eq 0
     assemble_and_run 13-if-neq 0
+    assemble_and_run 14-if-goto 0
     assemble_and_run 15-if-not-f 0
     assemble_and_run 16-if-t 0
 

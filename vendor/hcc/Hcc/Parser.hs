@@ -92,12 +92,27 @@ stmt = do
     TokIdent "while" -> advanceToken >> parseWhile
     TokIdent "do" -> advanceToken >> parseDoWhile
     TokIdent "for" -> advanceToken >> parseFor
-    TokPunct "{" -> SBlock <$> compound
+    TokIdent "goto" -> advanceToken >> parseGoto
     _ | startsType tok -> parseDeclStmt
-    _ -> do
-      e <- expr
-      needPunct ";"
-      pure (SExpr e)
+    TokIdent name -> do
+      isLabel <- peekSecondPunct ":"
+      if isLabel
+        then advanceToken >> needPunct ":" >> pure (SLabel name)
+        else parseExprStmt
+    TokPunct "{" -> SBlock <$> compound
+    _ -> parseExprStmt
+
+parseExprStmt :: Parser Stmt
+parseExprStmt = do
+  e <- expr
+  needPunct ";"
+  pure (SExpr e)
+
+parseGoto :: Parser Stmt
+parseGoto = do
+  name <- needIdent
+  needPunct ";"
+  pure (SGoto name)
 
 parseReturn :: Parser Stmt
 parseReturn = do
@@ -374,6 +389,11 @@ peek = Parser $ \toks -> case toks of
 
 peekMaybe :: Parser (Maybe Token)
 peekMaybe = Parser $ \toks -> Right (case toks of [] -> Nothing; tok:_ -> Just tok, toks)
+
+peekSecondPunct :: String -> Parser Bool
+peekSecondPunct punct = Parser $ \toks -> case toks of
+  _:Token _ (TokPunct p):_ | p == punct -> Right (True, toks)
+  _ -> Right (False, toks)
 
 advanceToken :: Parser ()
 advanceToken = Parser $ \toks -> case toks of

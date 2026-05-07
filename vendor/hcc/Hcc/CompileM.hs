@@ -6,6 +6,7 @@ module Hcc.CompileM
   , freshBlock
   , freshLabel
   , freshTemp
+  , labelBlock
   , initialCompileState
   , lookupVar
   , runCompileM
@@ -23,6 +24,7 @@ data CompileState = CompileState
   , csNextBlock :: Int
   , csNextLabel :: Int
   , csVars :: [(String, Temp)]
+  , csLabels :: [(String, BlockId)]
   } deriving (Eq, Show)
 
 newtype CompileM a = CompileM
@@ -54,6 +56,7 @@ initialCompileState = CompileState
   , csNextBlock = 0
   , csNextLabel = 0
   , csVars = []
+  , csLabels = []
   }
 
 runCompileM :: CompileM a -> Either CompileError a
@@ -95,6 +98,14 @@ lookupVar name = CompileM $ \st -> case lookup name (csVars st) of
 
 withFunctionScope :: CompileM a -> CompileM a
 withFunctionScope action = CompileM $ \st ->
-  case unCompileM action st { csVars = [] } of
+  case unCompileM action st { csVars = [], csLabels = [] } of
     Left err -> Left err
-    Right (x, st') -> Right (x, st' { csVars = csVars st })
+    Right (x, st') -> Right (x, st' { csVars = csVars st, csLabels = csLabels st })
+
+labelBlock :: String -> CompileM BlockId
+labelBlock name = CompileM $ \st -> case lookup name (csLabels st) of
+  Just bid -> Right (bid, st)
+  Nothing ->
+    let n = csNextBlock st
+        bid = BlockId n
+    in Right (bid, st { csNextBlock = n + 1, csLabels = (name, bid) : csLabels st })

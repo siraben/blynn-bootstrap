@@ -29,6 +29,8 @@ data Stmt
   | SWhile Expr [Stmt]
   | SDoWhile [Stmt] Expr
   | SFor (Maybe Expr) (Maybe Expr) (Maybe Expr) [Stmt]
+  | SGoto String
+  | SLabel String
   | SBlock [Stmt]
   deriving (Eq, Show)
 

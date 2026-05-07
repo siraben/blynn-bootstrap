@@ -37,11 +37,14 @@ lowerParams index params = case params of
 lowerStatementsFrom :: BlockId -> [Instr] -> [Stmt] -> Terminator -> CompileM [BasicBlock]
 lowerStatementsFrom bid instrs stmts defaultTerm = case stmts of
   [] -> pure [BasicBlock bid instrs defaultTerm]
-  SReturn value:_ -> case value of
-    Nothing -> pure [BasicBlock bid instrs (TRet Nothing)]
+  SReturn value:rest -> case value of
+    Nothing -> do
+      tailBlocks <- lowerUnreachableLabels rest defaultTerm
+      pure (BasicBlock bid instrs (TRet Nothing) : tailBlocks)
     Just expr -> do
       (retInstrs, op) <- lowerExpr expr
-      pure [BasicBlock bid (instrs ++ retInstrs) (TRet (Just op))]
+      tailBlocks <- lowerUnreachableLabels rest defaultTerm
+      pure (BasicBlock bid (instrs ++ retInstrs) (TRet (Just op)) : tailBlocks)
   SBlock body:rest ->
     lowerStatementsFrom bid instrs (body ++ rest) defaultTerm
   SDecl _ name initExpr:rest -> do
@@ -58,6 +61,14 @@ lowerStatementsFrom bid instrs stmts defaultTerm = case stmts of
   SExpr expr:rest -> do
     exprInstrs <- lowerSideEffect expr
     lowerStatementsFrom bid (instrs ++ exprInstrs) rest defaultTerm
+  SGoto name:rest -> do
+    target <- labelBlock name
+    tailBlocks <- lowerUnreachableLabels rest defaultTerm
+    pure (BasicBlock bid instrs (TJump target) : tailBlocks)
+  SLabel name:rest -> do
+    target <- labelBlock name
+    blocks <- lowerStatementsFrom target [] rest defaultTerm
+    pure (BasicBlock bid instrs (TJump target) : blocks)
   SIf cond yes no:rest -> do
     (condInstrs, condOp) <- lowerExpr cond
     yesId <- freshBlock
@@ -71,6 +82,15 @@ lowerStatementsFrom bid instrs stmts defaultTerm = case stmts of
     restBlocks <- lowerStatementsFrom restId [] rest defaultTerm
     pure (BasicBlock bid (instrs ++ condInstrs) (TBranch condOp yesId noTarget) : yesBlocks ++ noBlocks ++ restBlocks)
   stmt:_ -> throwC ("unsupported statement in lowering: " ++ show stmt)
+
+lowerUnreachableLabels :: [Stmt] -> Terminator -> CompileM [BasicBlock]
+lowerUnreachableLabels stmts defaultTerm = case stmts of
+  [] -> pure []
+  SLabel name:rest -> do
+    target <- labelBlock name
+    lowerStatementsFrom target [] rest defaultTerm
+  _:rest ->
+    lowerUnreachableLabels rest defaultTerm
 
 lowerSideEffect :: Expr -> CompileM [Instr]
 lowerSideEffect expr = case expr of
