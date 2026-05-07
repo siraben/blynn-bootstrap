@@ -1,10 +1,13 @@
 module Main where
 
 import GHC.IO.Encoding (setLocaleEncoding, utf8)
+import Control.Monad (filterM)
 import System.Directory (findExecutable)
+import System.Directory (doesFileExist)
 import System.Environment (getArgs)
 import System.Environment (lookupEnv)
 import System.Exit (exitFailure, exitSuccess)
+import System.FilePath ((</>), takeDirectory)
 import System.IO (hPutStrLn, stderr)
 import System.Process (callProcess)
 
@@ -121,22 +124,97 @@ compileAssembly :: [String] -> IO ()
 compileAssembly args = do
   case assemblyArgs args of
     Left msg -> die msg
-    Right (input, output) -> do
-      source <- readFile input
-      case preprocessSource source >>= mapParseError . parseProgram >>= mapCodegenError . codegenM1 of
-        Left msg -> die (input ++ ":" ++ msg)
-        Right asm -> writeFile output asm
+    Right opts -> do
+      source <- readSourceWithIncludes (asmIncludeDirs opts) (asmInput opts)
+      let sourceWithDefines = renderDefines (asmDefines opts) ++ source
+      case preprocessSource sourceWithDefines >>= mapParseError . parseProgram >>= mapCodegenError . codegenM1 of
+        Left msg -> die (asmInput opts ++ ":" ++ msg)
+        Right asm -> writeFile (asmOutput opts) asm
 
-assemblyArgs :: [String] -> Either String (FilePath, FilePath)
-assemblyArgs args = go args Nothing Nothing where
-  go rest out input = case rest of
-    [] -> case input of
+data AsmOptions = AsmOptions
+  { asmInput :: FilePath
+  , asmOutput :: FilePath
+  , asmIncludeDirs :: [FilePath]
+  , asmDefines :: [(String, String)]
+  } deriving (Eq, Show)
+
+assemblyArgs :: [String] -> Either String AsmOptions
+assemblyArgs args = finish (go args Nothing Nothing [] []) where
+  finish parsed = case parsed of
+    Left msg -> Left msg
+    Right (out, input, includes, defines) -> case input of
       Nothing -> Left "hcc: no input files"
-      Just path -> Right (path, maybe (replaceExt path ".M1") id out)
-    "-S":xs -> go xs out input
-    "-o":path:xs -> go xs (Just path) input
+      Just path -> Right (AsmOptions path (maybe (replaceExt path ".M1") id out) (reverse includes) (reverse defines))
+
+  go rest out input includes defines = case rest of
+    [] -> Right (out, input, includes, defines)
+    "-S":xs -> go xs out input includes defines
+    "-o":path:xs -> go xs (Just path) input includes defines
+    "-I":path:xs -> go xs out input (path:includes) defines
+    "-D":def:xs -> go xs out input includes (parseDefine def:defines)
+    flag:xs | "-I" `prefixOf` flag && length flag > 2 ->
+      go xs out input (drop 2 flag:includes) defines
+    flag:xs | "-D" `prefixOf` flag && length flag > 2 ->
+      go xs out input includes (parseDefine (drop 2 flag):defines)
+    flag:xs | ignoredAssemblyFlag flag ->
+      go xs out input includes defines
     flag:_ | take 1 flag == "-" -> Left ("hcc: unsupported -S option: " ++ flag)
-    path:xs -> go xs out (Just path)
+    path:xs -> go xs out (Just path) includes defines
+
+ignoredAssemblyFlag :: String -> Bool
+ignoredAssemblyFlag flag =
+  flag `elem` ["-c", "-pipe", "-nostdinc", "-nostdlib", "-static"]
+
+parseDefine :: String -> (String, String)
+parseDefine def = case break (== '=') def of
+  (name, "") -> (name, "1")
+  (name, _:value) -> (name, value)
+
+renderDefines :: [(String, String)] -> String
+renderDefines defs = concatMap render defs where
+  render (name, value) = "#define " ++ name ++ " " ++ value ++ "\n"
+
+readSourceWithIncludes :: [FilePath] -> FilePath -> IO String
+readSourceWithIncludes includeDirs path = expandFile [] path where
+  expandFile stack file = do
+    source <- readFile file
+    expandLines (takeDirectory file) (file:stack) (lines source)
+
+  expandLines currentDir stack ls = case ls of
+    [] -> pure ""
+    line:rest -> do
+      expanded <- expandIncludeLine currentDir stack line
+      tailText <- expandLines currentDir stack rest
+      pure (expanded ++ tailText)
+
+  expandIncludeLine currentDir stack line = case includeName line of
+    Nothing -> pure (line ++ "\n")
+    Just name -> do
+      found <- findInclude currentDir name
+      case found of
+        Nothing -> pure (line ++ "\n")
+        Just file ->
+          if file `elem` stack
+          then pure ""
+          else expandFile stack file
+
+  findInclude currentDir name = do
+    let candidates = (currentDir </> name) : map (</> name) includeDirs
+    existing <- filterM doesFileExist candidates
+    pure (case existing of
+      [] -> Nothing
+      file:_ -> Just file)
+
+includeName :: String -> Maybe String
+includeName line = case words line of
+  "#include":raw:_ -> stripIncludeDelims raw
+  _ -> Nothing
+
+stripIncludeDelims :: String -> Maybe String
+stripIncludeDelims raw = case raw of
+  '"':rest -> Just (takeWhile (/= '"') rest)
+  '<':rest -> Just (takeWhile (/= '>') rest)
+  _ -> Nothing
 
 replaceExt :: FilePath -> String -> FilePath
 replaceExt path ext = reverse (dropExt (reverse path)) ++ ext where
@@ -144,6 +222,9 @@ replaceExt path ext = reverse (dropExt (reverse path)) ++ ext where
     [] -> []
     '.':_ -> []
     c:rest -> c : dropExt rest
+
+prefixOf :: String -> String -> Bool
+prefixOf prefix text = take (length prefix) text == prefix
 
 mapCodegenError :: Either CodegenError a -> Either String a
 mapCodegenError result = case result of
