@@ -3,20 +3,32 @@ module Hcc.CompileM
   , CompileM
   , CompileState(..)
   , bindVar
+  , bindStruct
+  , bindGlobal
   , freshBlock
   , freshLabel
   , freshTemp
+  , currentBreakTarget
+  , currentContinueTarget
   , labelBlock
   , initialCompileState
   , addDataItem
   , getDataItems
   , lookupVar
+  , lookupVarMaybe
+  , lookupVarType
+  , lookupGlobalType
+  , lookupStruct
   , runCompileM
   , throwC
+  , withErrorContext
+  , withBreakTarget
   , withFunctionScope
+  , withLoopTargets
   , withVarScope
   ) where
 
+import Hcc.Ast
 import Hcc.Ir
 
 data CompileError = CompileError String
@@ -26,9 +38,13 @@ data CompileState = CompileState
   { csNextTemp :: Int
   , csNextBlock :: Int
   , csNextLabel :: Int
-  , csVars :: [(String, Temp)]
+  , csVars :: [(String, (Temp, CType))]
+  , csStructs :: [(String, (Bool, [Field]))]
+  , csGlobals :: [(String, CType)]
   , csLabels :: [(String, BlockId)]
   , csDataItems :: [DataItem]
+  , csBreakTargets :: [BlockId]
+  , csContinueTargets :: [BlockId]
   } deriving (Eq, Show)
 
 newtype CompileM a = CompileM
@@ -60,8 +76,12 @@ initialCompileState = CompileState
   , csNextBlock = 0
   , csNextLabel = 0
   , csVars = []
+  , csStructs = []
+  , csGlobals = []
   , csLabels = []
   , csDataItems = []
+  , csBreakTargets = []
+  , csContinueTargets = []
   }
 
 runCompileM :: CompileM a -> Either CompileError a
@@ -71,6 +91,12 @@ runCompileM action = case unCompileM action initialCompileState of
 
 throwC :: String -> CompileM a
 throwC msg = CompileM $ \_ -> Left (CompileError msg)
+
+withErrorContext :: String -> CompileM a -> CompileM a
+withErrorContext context action = CompileM $ \st ->
+  case unCompileM action st of
+    Left (CompileError msg) -> Left (CompileError (context ++ ": " ++ msg))
+    Right result -> Right result
 
 freshTemp :: CompileM Temp
 freshTemp = CompileM $ \st ->
@@ -94,31 +120,90 @@ addDataItem item = CompileM $ \st ->
 getDataItems :: CompileM [DataItem]
 getDataItems = CompileM $ \st -> Right (reverse (csDataItems st), st)
 
-bindVar :: String -> Temp -> CompileM ()
-bindVar name temp = CompileM $ \st ->
-  Right ((), st { csVars = (name, temp) : remove name (csVars st) })
+bindVar :: String -> Temp -> CType -> CompileM ()
+bindVar name temp ty = CompileM $ \st ->
+  Right ((), st { csVars = (name, (temp, ty)) : remove name (csVars st) })
   where
     remove key vars = case vars of
       [] -> []
       (k, v):rest | k == key -> remove key rest
                   | otherwise -> (k, v) : remove key rest
 
+bindStruct :: String -> Bool -> [Field] -> CompileM ()
+bindStruct name isUnion fields = CompileM $ \st ->
+  Right ((), st { csStructs = (name, (isUnion, fields)) : remove name (csStructs st) })
+  where
+    remove key structs = case structs of
+      [] -> []
+      (k, v):rest | k == key -> remove key rest
+                  | otherwise -> (k, v) : remove key rest
+
+bindGlobal :: String -> CType -> CompileM ()
+bindGlobal name ty = CompileM $ \st ->
+  Right ((), st { csGlobals = (name, ty) : remove name (csGlobals st) })
+  where
+    remove key globals = case globals of
+      [] -> []
+      (k, v):rest | k == key -> remove key rest
+                  | otherwise -> (k, v) : remove key rest
+
 lookupVar :: String -> CompileM Temp
 lookupVar name = CompileM $ \st -> case lookup name (csVars st) of
-  Just temp -> Right (temp, st)
+  Just (temp, _) -> Right (temp, st)
   Nothing -> Left (CompileError ("unbound variable: " ++ name))
+
+lookupVarMaybe :: String -> CompileM (Maybe Temp)
+lookupVarMaybe name = CompileM $ \st -> Right (fmap fst (lookup name (csVars st)), st)
+
+lookupVarType :: String -> CompileM (Maybe CType)
+lookupVarType name = CompileM $ \st -> Right (fmap snd (lookup name (csVars st)), st)
+
+lookupGlobalType :: String -> CompileM (Maybe CType)
+lookupGlobalType name = CompileM $ \st -> Right (lookup name (csGlobals st), st)
+
+lookupStruct :: String -> CompileM (Maybe (Bool, [Field]))
+lookupStruct name = CompileM $ \st -> Right (lookup name (csStructs st), st)
 
 withFunctionScope :: CompileM a -> CompileM a
 withFunctionScope action = CompileM $ \st ->
-  case unCompileM action st { csVars = [], csLabels = [] } of
+  case unCompileM action st { csVars = [], csLabels = [], csBreakTargets = [], csContinueTargets = [] } of
     Left err -> Left err
-    Right (x, st') -> Right (x, st' { csVars = csVars st, csLabels = csLabels st })
+    Right (x, st') -> Right (x, st'
+      { csVars = csVars st
+      , csLabels = csLabels st
+      , csBreakTargets = csBreakTargets st
+      , csContinueTargets = csContinueTargets st
+      })
 
 withVarScope :: CompileM a -> CompileM a
 withVarScope action = CompileM $ \st ->
   case unCompileM action st of
     Left err -> Left err
     Right (x, st') -> Right (x, st' { csVars = csVars st })
+
+withLoopTargets :: BlockId -> BlockId -> CompileM a -> CompileM a
+withLoopTargets breakTarget continueTarget action = CompileM $ \st ->
+  case unCompileM action st
+    { csBreakTargets = breakTarget : csBreakTargets st
+    , csContinueTargets = continueTarget : csContinueTargets st
+    } of
+    Left err -> Left err
+    Right (x, st') -> Right (x, st'
+      { csBreakTargets = csBreakTargets st
+      , csContinueTargets = csContinueTargets st
+      })
+
+withBreakTarget :: BlockId -> CompileM a -> CompileM a
+withBreakTarget breakTarget action = CompileM $ \st ->
+  case unCompileM action st { csBreakTargets = breakTarget : csBreakTargets st } of
+    Left err -> Left err
+    Right (x, st') -> Right (x, st' { csBreakTargets = csBreakTargets st })
+
+currentBreakTarget :: CompileM (Maybe BlockId)
+currentBreakTarget = CompileM $ \st -> Right (case csBreakTargets st of [] -> Nothing; x:_ -> Just x, st)
+
+currentContinueTarget :: CompileM (Maybe BlockId)
+currentContinueTarget = CompileM $ \st -> Right (case csContinueTargets st of [] -> Nothing; x:_ -> Just x, st)
 
 labelBlock :: String -> CompileM BlockId
 labelBlock name = CompileM $ \st -> case lookup name (csLabels st) of

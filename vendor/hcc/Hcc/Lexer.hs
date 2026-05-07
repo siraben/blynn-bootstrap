@@ -97,11 +97,39 @@ takeRadixNumber isDigitInRadix prefix rest st =
 takeDecimalNumber :: LexState -> (String, LexState)
 takeDecimalNumber st =
   let (digits, st1) = takeWhileState isDigit st
-      (suffix, st2) = takeWhileState isIntSuffix st1
-  in (digits ++ suffix, st2)
+      (fraction, st2) = takeFraction st1
+      (exponentText, st3) = takeExponent st2
+      (suffix, st4) = takeWhileState isNumberSuffix st3
+  in (digits ++ fraction ++ exponentText ++ suffix, st4)
 
 isIntSuffix :: Char -> Bool
 isIntSuffix c = elem c "uUlL"
+
+isNumberSuffix :: Char -> Bool
+isNumberSuffix c = elem c "uUlLfF"
+
+takeFraction :: LexState -> (String, LexState)
+takeFraction st = case lsInput st of
+  '.':'.':_ -> ("", st)
+  '.':rest ->
+    let st0 = advance '.' st { lsInput = rest }
+        (digits, st1) = takeWhileState isDigit st0
+    in ('.':digits, st1)
+  _ -> ("", st)
+
+takeExponent :: LexState -> (String, LexState)
+takeExponent st = case lsInput st of
+  c:rest | c == 'e' || c == 'E' ->
+    let st0 = advance c st { lsInput = rest }
+        (signText, st1) = takeExponentSign st0
+        (digits, st2) = takeWhileState isDigit st1
+    in if null digits then ("", st) else (c:signText ++ digits, st2)
+  _ -> ("", st)
+
+takeExponentSign :: LexState -> (String, LexState)
+takeExponentSign st = case lsInput st of
+  c:rest | c == '+' || c == '-' -> ([c], advance c st { lsInput = rest })
+  _ -> ("", st)
 
 lexQuoted :: Char -> (String -> TokenKind) -> LexState -> Either LexError (Token, LexState)
 lexQuoted quote mkKind st = go (advance quote st { lsInput = drop 1 (lsInput st) }) [quote] where

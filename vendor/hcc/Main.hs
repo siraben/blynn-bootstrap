@@ -262,6 +262,7 @@ readSourceWithIncludes includeDirs path = expandFile [] path where
 includeName :: String -> Maybe String
 includeName line = case words line of
   "#include":raw:_ -> stripIncludeDelims raw
+  "#":"include":raw:_ -> stripIncludeDelims raw
   _ -> Nothing
 
 stripIncludeDelims :: String -> Maybe String

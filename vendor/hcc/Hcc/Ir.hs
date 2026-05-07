@@ -28,15 +28,23 @@ data BinOp
   | IGe
   | IAnd
   | IOr
+  | IXor
   deriving (Eq, Show)
 
 data Instr
   = IParam Temp Int
   | IConst Temp Int
   | ICopy Temp Operand
+  | IAddrOf Temp Temp
+  | ILoad64 Temp Operand
+  | ILoad32 Temp Operand
   | ILoad8 Temp Operand
+  | IStore64 Operand Operand
+  | IStore32 Operand Operand
+  | IStore8 Operand Operand
   | IBin Temp BinOp Operand Operand
   | ICall (Maybe Temp) String [Operand]
+  | ICallIndirect (Maybe Temp) Operand [Operand]
   deriving (Eq, Show)
 
 data Terminator

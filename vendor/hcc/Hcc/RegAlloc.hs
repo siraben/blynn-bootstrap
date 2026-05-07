@@ -51,13 +51,29 @@ allocateInstrs nextSlot acc instrs = case instrs of
       allocateDef nextSlot acc temp rest
     ICopy temp _ ->
       allocateDef nextSlot acc temp rest
+    IAddrOf temp _ ->
+      allocateDef nextSlot acc temp rest
+    ILoad64 temp _ ->
+      allocateDef nextSlot acc temp rest
+    ILoad32 temp _ ->
+      allocateDef nextSlot acc temp rest
     ILoad8 temp _ ->
       allocateDef nextSlot acc temp rest
+    IStore64 _ _ ->
+      allocateInstrs nextSlot acc rest
+    IStore32 _ _ ->
+      allocateInstrs nextSlot acc rest
+    IStore8 _ _ ->
+      allocateInstrs nextSlot acc rest
     IBin temp _ _ _ ->
       allocateDef nextSlot acc temp rest
     ICall Nothing _ _ ->
       allocateInstrs nextSlot acc rest
     ICall (Just temp) _ _ ->
+      allocateDef nextSlot acc temp rest
+    ICallIndirect Nothing _ _ ->
+      allocateInstrs nextSlot acc rest
+    ICallIndirect (Just temp) _ _ ->
       allocateDef nextSlot acc temp rest
 
 allocateDef :: Int -> [(Temp, Location)] -> Temp -> [Instr] -> Either String [(Temp, Location)]
