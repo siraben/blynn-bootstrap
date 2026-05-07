@@ -170,9 +170,10 @@ registerImplicitCallsStmt locals stmt = case stmt of
 registerImplicitCallsDecls :: [String] -> [(CType, String, Maybe Expr)] -> CompileM [String]
 registerImplicitCallsDecls locals decls = case decls of
   [] -> pure locals
-  (_, name, initExpr):rest -> do
-    maybeRegisterImplicitCallsExpr locals initExpr
-    registerImplicitCallsDecls (name:locals) rest
+  decl:rest -> case decl of
+    (_, name, initExpr) -> do
+      maybeRegisterImplicitCallsExpr locals initExpr
+      registerImplicitCallsDecls (name:locals) rest
 
 maybeRegisterImplicitCallsExpr :: [String] -> Maybe Expr -> CompileM ()
 maybeRegisterImplicitCallsExpr locals expr = case expr of
@@ -372,11 +373,13 @@ requireContinueTarget = do
 
 lowerSwitch :: BlockId -> BlockId -> Operand -> [Stmt] -> CompileM [BasicBlock]
 lowerSwitch dispatchId restId valueOp body = do
-  let clauses = collectSwitchClauses (switchBodyStatements body)
+  let bodyStmts = switchBodyStatements body
+  let clauses = collectSwitchClauses bodyStmts
   clauseIds <- freshBlocks (length clauses)
   let clausePairs = zip clauses clauseIds
   let defaultTarget = switchDefaultTarget restId clausePairs
-  dispatchBlocks <- lowerSwitchDispatch dispatchId valueOp defaultTarget (switchCases clausePairs)
+  let switchCasePairs = switchCases clausePairs
+  dispatchBlocks <- lowerSwitchDispatch dispatchId valueOp defaultTarget switchCasePairs
   bodyBlocks <- withBreakTarget restId (lowerSwitchClauses restId clausePairs)
   pure (dispatchBlocks ++ bodyBlocks)
 
@@ -386,20 +389,27 @@ switchBodyStatements body = case body of
   _ -> body
 
 collectSwitchClauses :: [Stmt] -> [SwitchClause]
-collectSwitchClauses stmts = finish (go Nothing [] stmts) where
-  go current acc rest = case rest of
-    [] -> (current, acc)
-    SCase expr:xs -> go (Just (Just expr, [])) (finishOne current acc) xs
-    SDefault:xs -> go (Just (Nothing, [])) (finishOne current acc) xs
-    stmt:xs -> case current of
-      Nothing -> go current acc xs
-      Just (label, body) -> go (Just (label, body ++ [stmt])) acc xs
+collectSwitchClauses stmts =
+  reverse (collectSwitchClausesFinish Nothing [] [] stmts)
 
-  finish (current, acc) = reverse (finishOne current acc)
+collectSwitchClausesFinish :: Maybe (Maybe Expr) -> [Stmt] -> [SwitchClause] -> [Stmt] -> [SwitchClause]
+collectSwitchClausesFinish currentLabel currentBody clauses stmts = case stmts of
+  [] -> collectSwitchClauseFinishOne currentLabel currentBody clauses
+  stmt:rest -> case stmt of
+    SCase expr ->
+      collectSwitchClausesFinish (Just (Just expr)) [] (collectSwitchClauseFinishOne currentLabel currentBody clauses) rest
+    SDefault ->
+      collectSwitchClausesFinish (Just Nothing) [] (collectSwitchClauseFinishOne currentLabel currentBody clauses) rest
+    _ -> case currentLabel of
+      Nothing ->
+        collectSwitchClausesFinish currentLabel currentBody clauses rest
+      Just _ ->
+        collectSwitchClausesFinish currentLabel (currentBody ++ [stmt]) clauses rest
 
-  finishOne current acc = case current of
-    Nothing -> acc
-    Just (label, clauseBody) -> SwitchClause label clauseBody : acc
+collectSwitchClauseFinishOne :: Maybe (Maybe Expr) -> [Stmt] -> [SwitchClause] -> [SwitchClause]
+collectSwitchClauseFinishOne currentLabel currentBody clauses = case currentLabel of
+  Nothing -> clauses
+  Just label -> SwitchClause label currentBody : clauses
 
 freshBlocks :: Int -> CompileM [BlockId]
 freshBlocks count =
@@ -413,54 +423,73 @@ freshBlocks count =
 switchDefaultTarget :: BlockId -> [(SwitchClause, BlockId)] -> BlockId
 switchDefaultTarget restId clauses = case clauses of
   [] -> restId
-  (SwitchClause Nothing _, bid):_ -> bid
-  _:rest -> switchDefaultTarget restId rest
+  pair:rest -> case pair of
+    (SwitchClause label _, bid) -> case label of
+      Nothing -> bid
+      Just _ -> switchDefaultTarget restId rest
 
 switchCases :: [(SwitchClause, BlockId)] -> [(Expr, BlockId)]
 switchCases clauses = case clauses of
   [] -> []
-  (SwitchClause (Just value) _, bid):rest -> (value, bid) : switchCases rest
-  _:rest -> switchCases rest
+  pair:rest -> case pair of
+    (SwitchClause label _, bid) -> case label of
+      Just value -> (value, bid) : switchCases rest
+      Nothing -> switchCases rest
 
 lowerSwitchDispatch :: BlockId -> Operand -> BlockId -> [(Expr, BlockId)] -> CompileM [BasicBlock]
-lowerSwitchDispatch firstId valueOp defaultTarget switchCasePairs = go firstId switchCasePairs where
-  go bid rest = case rest of
-    [] -> pure [BasicBlock bid [] (TJump defaultTarget)]
-    (caseExpr, target):tailCases -> do
-      nextId <- if null tailCases then pure defaultTarget else freshBlock
+lowerSwitchDispatch firstId valueOp defaultTarget switchCasePairs =
+  lowerSwitchDispatchFrom firstId valueOp defaultTarget switchCasePairs
+
+lowerSwitchDispatchFrom :: BlockId -> Operand -> BlockId -> [(Expr, BlockId)] -> CompileM [BasicBlock]
+lowerSwitchDispatchFrom bid valueOp defaultTarget switchCasePairs = case switchCasePairs of
+  [] -> pure [BasicBlock bid [] (TJump defaultTarget)]
+  pair:tailCases -> case pair of
+    (caseExpr, target) -> do
+      nextId <- switchNextDispatchTarget defaultTarget tailCases
       (caseInstrs, caseOp) <- lowerExpr caseExpr
       eq <- freshTemp
-      let block = BasicBlock bid (caseInstrs ++ [IBin eq IEq valueOp caseOp]) (TBranch (OTemp eq) target nextId)
-      if null tailCases
-        then pure [block]
-        else do
-          restBlocks <- go nextId tailCases
-          pure (block:restBlocks)
+      let compareInstr = IBin eq IEq valueOp caseOp
+      let block = BasicBlock bid (caseInstrs ++ [compareInstr]) (TBranch (OTemp eq) target nextId)
+      switchDispatchTail block nextId valueOp defaultTarget tailCases
+
+switchNextDispatchTarget :: BlockId -> [(Expr, BlockId)] -> CompileM BlockId
+switchNextDispatchTarget defaultTarget tailCases = case tailCases of
+  [] -> pure defaultTarget
+  _ -> freshBlock
+
+switchDispatchTail :: BasicBlock -> BlockId -> Operand -> BlockId -> [(Expr, BlockId)] -> CompileM [BasicBlock]
+switchDispatchTail block nextId valueOp defaultTarget tailCases = case tailCases of
+  [] -> pure [block]
+  _ -> do
+    restBlocks <- lowerSwitchDispatchFrom nextId valueOp defaultTarget tailCases
+    pure (block:restBlocks)
 
 lowerSwitchClauses :: BlockId -> [(SwitchClause, BlockId)] -> CompileM [BasicBlock]
 lowerSwitchClauses restId clauses = case clauses of
   [] -> pure []
-  (SwitchClause _ body, bid):rest -> do
-    let fallthrough = case rest of
-          [] -> restId
-          (_, nextId):_ -> nextId
-    bodyBlocks <- lowerStatementsFrom bid [] body (TJump fallthrough)
-    restBlocks <- lowerSwitchClauses restId rest
-    pure (bodyBlocks ++ restBlocks)
+  pair:rest -> case pair of
+    (SwitchClause _ body, bid) -> do
+      let fallthrough = switchFallthroughTarget restId rest
+      bodyBlocks <- lowerStatementsFrom bid [] body (TJump fallthrough)
+      restBlocks <- lowerSwitchClauses restId rest
+      pure (bodyBlocks ++ restBlocks)
+
+switchFallthroughTarget :: BlockId -> [(SwitchClause, BlockId)] -> BlockId
+switchFallthroughTarget restId clauses = case clauses of
+  [] -> restId
+  pair:_ -> case pair of
+    (_, nextId) -> nextId
 
 lowerSideEffect :: Expr -> CompileM [Instr]
 lowerSideEffect expr = case expr of
-  ECall (EVar name) _ | name `elem` ignoredSideEffectCalls ->
-    pure []
-  ECall (EVar name) args -> do
-    direct <- lookupFunction name
-    if direct
-      then do
-        lowered <- lowerExprs args
-        let instrs = concatMap fst lowered
-        let ops = map snd lowered
-        pure (instrs ++ [ICall Nothing name ops])
-      else lowerIndirectSideEffect (EVar name) args
+  ECall (EVar name) args ->
+    if name `elem` ignoredSideEffectCalls
+      then pure []
+      else do
+        direct <- lookupFunction name
+        if direct
+          then lowerDirectSideEffect name args
+          else lowerIndirectSideEffect (EVar name) args
   ECall callee args -> do
     lowerIndirectSideEffect callee args
   EAssign lhs rhs ->
@@ -473,6 +502,13 @@ lowerSideEffect expr = case expr of
     (instrs, _) <- lowerExpr expr
     pure instrs
 
+lowerDirectSideEffect :: String -> [Expr] -> CompileM [Instr]
+lowerDirectSideEffect name args = do
+  lowered <- lowerExprs args
+  let instrs = lowerExprResultsInstrs lowered
+  let ops = lowerExprResultsOps lowered
+  pure (instrs ++ [ICall Nothing name ops])
+
 ignoredSideEffectCalls :: [String]
 ignoredSideEffectCalls = ["asm", "oputs", "eputs"]
 
@@ -480,9 +516,21 @@ lowerIndirectSideEffect :: Expr -> [Expr] -> CompileM [Instr]
 lowerIndirectSideEffect callee args = do
   (calleeInstrs, calleeOp) <- lowerExpr callee
   lowered <- lowerExprs args
-  let instrs = concatMap fst lowered
-  let ops = map snd lowered
+  let instrs = lowerExprResultsInstrs lowered
+  let ops = lowerExprResultsOps lowered
   pure (calleeInstrs ++ instrs ++ [ICallIndirect Nothing calleeOp ops])
+
+lowerExprResultsInstrs :: [([Instr], Operand)] -> [Instr]
+lowerExprResultsInstrs lowered = case lowered of
+  [] -> []
+  pair:rest -> case pair of
+    (instrs, _) -> instrs ++ lowerExprResultsInstrs rest
+
+lowerExprResultsOps :: [([Instr], Operand)] -> [Operand]
+lowerExprResultsOps lowered = case lowered of
+  [] -> []
+  pair:rest -> case pair of
+    (_, op) -> op : lowerExprResultsOps rest
 
 builtinConstant :: String -> Maybe Int
 builtinConstant name = case name of
@@ -507,10 +555,11 @@ builtinConstant name = case name of
 lowerDecls :: [(CType, String, Maybe Expr)] -> CompileM [Instr]
 lowerDecls decls = case decls of
   [] -> pure []
-  (ty, name, initExpr):rest -> do
-    instrs <- lowerDecl ty name initExpr
-    tailInstrs <- lowerDecls rest
-    pure (instrs ++ tailInstrs)
+  decl:rest -> case decl of
+    (ty, name, initExpr) -> do
+      instrs <- lowerDecl ty name initExpr
+      tailInstrs <- lowerDecls rest
+      pure (instrs ++ tailInstrs)
 
 lowerDecl :: CType -> String -> Maybe Expr -> CompileM [Instr]
 lowerDecl ty name initExpr = do
@@ -518,38 +567,67 @@ lowerDecl ty name initExpr = do
   temp <- freshTemp
   bindVar name temp ty
   if aggregateStorage
-    then do
-      size <- typeSize ty
-      template <- localAggregateTemplateData ty initExpr
-      initInstrs <- case template of
-        Just label ->
-          do
-            copyInstrs <- copyObject (OTemp temp) (OGlobal label) ty
-            runtimeInstrs <- lowerAggregateInitWrites (OTemp temp) ty initExpr
-            pure (copyInstrs ++ runtimeInstrs)
-        Nothing -> case initExpr of
-          Just expr -> do
-            (exprInstrs, op) <- lowerExpr expr
-            copyInstrs <- copyObject (OTemp temp) op ty
-            pure (exprInstrs ++ copyInstrs)
-          Nothing -> pure []
-      pure (IAlloca temp size : initInstrs)
-    else case initExpr of
-      Nothing -> do
-        pure [IConst temp 0]
-      Just expr -> do
-        (exprInstrs, op) <- lowerExpr expr
-        (coerceInstrs, coerceOp) <- coerceScalar ty op
-        pure (exprInstrs ++ coerceInstrs ++ [ICopy temp coerceOp])
+    then lowerAggregateDecl ty temp initExpr
+    else lowerScalarDecl ty temp initExpr
+
+lowerAggregateDecl :: CType -> Temp -> Maybe Expr -> CompileM [Instr]
+lowerAggregateDecl ty temp initExpr = do
+  size <- typeSize ty
+  initInstrs <- lowerAggregateDeclInit ty temp initExpr
+  pure (IAlloca temp size : initInstrs)
+
+lowerAggregateDeclInit :: CType -> Temp -> Maybe Expr -> CompileM [Instr]
+lowerAggregateDeclInit ty temp initExpr = do
+  template <- localAggregateTemplateData ty initExpr
+  case template of
+    Just label ->
+      lowerAggregateDeclTemplate ty temp initExpr label
+    Nothing ->
+      lowerAggregateDeclRuntime ty temp initExpr
+
+lowerAggregateDeclTemplate :: CType -> Temp -> Maybe Expr -> String -> CompileM [Instr]
+lowerAggregateDeclTemplate ty temp initExpr label = do
+  copyInstrs <- copyObject (OTemp temp) (OGlobal label) ty
+  runtimeInstrs <- lowerAggregateInitWrites (OTemp temp) ty initExpr
+  pure (copyInstrs ++ runtimeInstrs)
+
+lowerAggregateDeclRuntime :: CType -> Temp -> Maybe Expr -> CompileM [Instr]
+lowerAggregateDeclRuntime ty temp initExpr = case initExpr of
+  Just expr -> do
+    (exprInstrs, op) <- lowerExpr expr
+    copyInstrs <- copyObject (OTemp temp) op ty
+    pure (exprInstrs ++ copyInstrs)
+  Nothing -> pure []
+
+lowerScalarDecl :: CType -> Temp -> Maybe Expr -> CompileM [Instr]
+lowerScalarDecl ty temp initExpr = case initExpr of
+  Nothing -> pure [IConst temp 0]
+  Just expr -> do
+    (exprInstrs, op) <- lowerExpr expr
+    (coerceInstrs, coerceOp) <- coerceScalar ty op
+    pure (exprInstrs ++ coerceInstrs ++ [ICopy temp coerceOp])
 
 localAggregateTemplateData :: CType -> Maybe Expr -> CompileM (Maybe String)
-localAggregateTemplateData ty initExpr = case (ty, initExpr) of
-  (CArray _ _, Just (EInitList _)) -> localDataItem ty initExpr
-  (CArray _ _, Just (EString _)) -> localDataItem ty initExpr
-  (_, Just (EInitList _)) -> do
-    aggregateStorage <- isAggregateTypeM ty
-    if aggregateStorage then localDataItem ty initExpr else pure Nothing
-  _ -> pure Nothing
+localAggregateTemplateData ty initExpr = case ty of
+  CArray _ _ -> localArrayTemplateData ty initExpr
+  _ -> localNonArrayTemplateData ty initExpr
+
+localArrayTemplateData :: CType -> Maybe Expr -> CompileM (Maybe String)
+localArrayTemplateData ty initExpr = case initExpr of
+  Just expr -> case expr of
+    EInitList _ -> localDataItem ty initExpr
+    EString _ -> localDataItem ty initExpr
+    _ -> pure Nothing
+  Nothing -> pure Nothing
+
+localNonArrayTemplateData :: CType -> Maybe Expr -> CompileM (Maybe String)
+localNonArrayTemplateData ty initExpr = case initExpr of
+  Just expr -> case expr of
+    EInitList _ -> do
+      aggregateStorage <- isAggregateTypeM ty
+      if aggregateStorage then localDataItem ty initExpr else pure Nothing
+    _ -> pure Nothing
+  Nothing -> pure Nothing
 
 localDataItem :: CType -> Maybe Expr -> CompileM (Maybe String)
 localDataItem ty initExpr = do
