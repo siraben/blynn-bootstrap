@@ -18,6 +18,8 @@ data BinOp
   | IMul
   | IDiv
   | IMod
+  | IShl
+  | IShr
   | IEq
   | INe
   | ILt

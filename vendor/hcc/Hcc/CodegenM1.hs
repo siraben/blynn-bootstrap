@@ -36,6 +36,8 @@ header =
   , "DEFINE HCC_COPY_rdx_to_rax 4889D0"
   , "DEFINE HCC_PUSH_RSI 56"
   , "DEFINE HCC_PUSH_RDX 52"
+  , "DEFINE HCC_SHL_eax_cl D3E0"
+  , "DEFINE HCC_SHR_eax_cl D3E8"
   , ""
   ]
 
@@ -127,6 +129,8 @@ binOpCode op = case op of
   IMul -> Right ["\tMULTIPLY_rax_by_rbx_into_rax"]
   IDiv -> Right ["\tXCHG_rax_rbx", "\tCQTO", "\tDIVIDES_rax_by_rbx_into_rax"]
   IMod -> Right ["\tXCHG_rax_rbx", "\tCQTO", "\tMODULUSS_rax_from_rbx_into_rbx", "\tMOVE_rdx_to_rax"]
+  IShl -> Right ["\tCOPY_rax_to_rcx", "\tMOVE_rbx_to_rax", "\tHCC_SHL_eax_cl"]
+  IShr -> Right ["\tCOPY_rax_to_rcx", "\tMOVE_rbx_to_rax", "\tHCC_SHR_eax_cl"]
   IEq -> Right ["\tCMP", "\tSETE", "\tMOVEZX"]
   INe -> Right ["\tCMP", "\tSETNE", "\tMOVEZX"]
   ILt -> Right ["\tCMP", "\tSETL", "\tMOVEZX"]

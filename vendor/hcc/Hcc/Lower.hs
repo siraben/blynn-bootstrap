@@ -218,6 +218,8 @@ lowerBinOp op = case op of
   "*" -> Just IMul
   "/" -> Just IDiv
   "%" -> Just IMod
+  "<<" -> Just IShl
+  ">>" -> Just IShr
   "==" -> Just IEq
   "!=" -> Just INe
   "<" -> Just ILt

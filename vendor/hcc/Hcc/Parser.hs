@@ -230,6 +230,7 @@ unsignedBaseType = do
   mtok <- peekMaybe
   case fmap tokenKind mtok of
     Just (TokIdent "char") -> advanceToken >> pure CUnsignedChar
+    Just (TokIdent "short") -> advanceToken >> pure CUnsigned
     Just (TokIdent "int") -> advanceToken >> pure CUnsigned
     _ -> pure CUnsigned
 
