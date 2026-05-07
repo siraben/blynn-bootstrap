@@ -1,11 +1,11 @@
-module Hcc.Lower
+module Lower
   ( lowerProgram
   , lowerProgramWithDataPrefix
   ) where
 
-import Hcc.Ast
-import Hcc.CompileM
-import Hcc.Ir
+import Ast
+import CompileM
+import Ir
 
 data LValue
   = LLocal Temp CType

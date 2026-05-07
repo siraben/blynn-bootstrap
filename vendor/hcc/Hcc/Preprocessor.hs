@@ -1,14 +1,12 @@
-module Hcc.Preprocessor
+module Preprocessor
   ( PreprocessError(..)
   , preprocess
   ) where
 
-import Data.Char (isAlpha, isAlphaNum, isDigit, isSpace)
-
-import Hcc.ConstExpr
-import Hcc.Lexer
-import Hcc.SymbolTable
-import Hcc.Token
+import ConstExpr
+import Lexer
+import SymbolTable
+import Token
 
 data PreprocessError = PreprocessError SrcPos String
   deriving (Eq, Show)
@@ -90,7 +88,7 @@ preprocess toks = go symbolMapEmpty [] (sourceFromTokens toks) id where
       popIf sp frames >>= \frames' -> go macros frames' xs acc
     Directive "" _ -> go macros frames xs acc
     Directive name _ | ("#" ++ name) `elem` ignoredDirectives -> go macros frames xs acc
-    Directive name _ | all isDigit name -> go macros frames xs acc
+    Directive name _ | all isDigitChar name -> go macros frames xs acc
     Directive name _ ->
       if currentActive frames
       then Left (PreprocessError (spanStart sp) ("unsupported directive: #" ++ name))
@@ -114,7 +112,7 @@ parseDirective text = case dropSpaces text of
   _ -> Directive "" ""
 
 isDirectiveChar :: Char -> Bool
-isDirectiveChar c = isAlphaNum c || c == '_'
+isDirectiveChar c = isAsciiAlphaNum c || c == '_'
 
 directiveName :: String -> Maybe String
 directiveName text = case dropSpaces text of
@@ -483,7 +481,19 @@ prefixOf :: String -> String -> Bool
 prefixOf prefix text = take (length prefix) text == prefix
 
 isIdentStart :: Char -> Bool
-isIdentStart c = isAlpha c || c == '_'
+isIdentStart c = isAsciiAlpha c || c == '_'
 
 isIdentChar :: Char -> Bool
-isIdentChar c = isAlphaNum c || c == '_'
+isIdentChar c = isAsciiAlphaNum c || c == '_'
+
+isSpace :: Char -> Bool
+isSpace c = c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\v' || c == '\f'
+
+isDigitChar :: Char -> Bool
+isDigitChar c = c >= '0' && c <= '9'
+
+isAsciiAlpha :: Char -> Bool
+isAsciiAlpha c = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+
+isAsciiAlphaNum :: Char -> Bool
+isAsciiAlphaNum c = isAsciiAlpha c || isDigitChar c

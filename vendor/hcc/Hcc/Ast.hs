@@ -1,4 +1,4 @@
-module Hcc.Ast where
+module Ast where
 
 data Program = Program [TopDecl]
   deriving (Eq, Show)

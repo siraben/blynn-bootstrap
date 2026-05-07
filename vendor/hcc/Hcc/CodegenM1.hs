@@ -1,14 +1,14 @@
-module Hcc.CodegenM1
+module CodegenM1
   ( CodegenError(..)
   , codegenM1
   , codegenM1WithDataPrefix
   ) where
 
-import Hcc.Ast
-import Hcc.CompileM
-import Hcc.Ir
-import Hcc.Lower
-import Hcc.RegAlloc
+import Ast
+import CompileM
+import Ir
+import Lower
+import RegAlloc
 
 data CodegenError = CodegenError String
   deriving (Eq, Show)

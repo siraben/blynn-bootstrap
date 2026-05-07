@@ -1,4 +1,4 @@
-module Hcc.Token
+module Token
   ( SrcPos(..)
   , Span(..)
   , Token(..)

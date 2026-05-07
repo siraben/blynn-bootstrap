@@ -1,4 +1,4 @@
-module Hcc.CompileM
+module CompileM
   ( CompileError(..)
   , CompileM
   , CompileState(..)
@@ -34,8 +34,8 @@ module Hcc.CompileM
   , withVarScope
   ) where
 
-import Hcc.Ast
-import Hcc.Ir
+import Ast
+import Ir
 
 data CompileError = CompileError String
   deriving (Eq, Show)
@@ -56,7 +56,7 @@ data CompileState = CompileState
   , csContinueTargets :: [BlockId]
   } deriving (Eq, Show)
 
-newtype CompileM a = CompileM
+data CompileM a = CompileM
   { unCompileM :: CompileState -> Either CompileError (a, CompileState)
   }
 

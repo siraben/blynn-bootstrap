@@ -1,12 +1,12 @@
-module Hcc.Parser
+module Parser
   ( ParseError(..)
   , parseProgram
   ) where
 
-import Hcc.Ast
-import Hcc.ConstExpr
-import Hcc.SymbolTable
-import Hcc.Token
+import Ast
+import ConstExpr
+import SymbolTable
+import Token
 
 data ParseError = ParseError SrcPos String
   deriving (Eq, Show)
@@ -19,7 +19,7 @@ data Reply a
   | Error ParseError
   deriving (Eq, Show)
 
-newtype Parser a = Parser { runParser :: SymbolSet -> [Token] -> Consumed (Reply a) }
+data Parser a = Parser { runParser :: SymbolSet -> [Token] -> Consumed (Reply a) }
 
 instance Functor Parser where
   fmap f p = Parser $ \env toks -> mapConsumed (mapReply f) (runParser p env toks)

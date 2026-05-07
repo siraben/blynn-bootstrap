@@ -1,4 +1,4 @@
-module Hcc.SymbolTable
+module SymbolTable
   ( SymbolMap
   , SymbolSet
   , symbolMapDelete

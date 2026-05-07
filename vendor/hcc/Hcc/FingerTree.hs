@@ -1,4 +1,4 @@
-module Hcc.FingerTree
+module FingerTree
   ( FingerTree
   , FingerRange(..)
   , fingerEmpty

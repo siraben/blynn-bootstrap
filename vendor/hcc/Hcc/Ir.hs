@@ -1,9 +1,9 @@
-module Hcc.Ir where
+module Ir where
 
-newtype Temp = Temp Int
+data Temp = Temp Int
   deriving (Eq, Ord, Show)
 
-newtype BlockId = BlockId Int
+data BlockId = BlockId Int
   deriving (Eq, Ord, Show)
 
 data Operand

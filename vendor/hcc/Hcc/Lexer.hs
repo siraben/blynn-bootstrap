@@ -1,12 +1,9 @@
-module Hcc.Lexer
+module Lexer
   ( LexError(..)
   , lexC
   ) where
 
-import Data.Char (isAlpha, isAlphaNum, isDigit, isHexDigit, isSpace)
-import Data.List (isPrefixOf)
-
-import Hcc.Token
+import Token
 
 data LexError = LexError SrcPos String
   deriving (Eq, Show)
@@ -53,10 +50,10 @@ takeUntilNewline st = go st [] where
     c:cs -> go (advance c cur { lsInput = cs }) (c:acc)
 
 startsLineComment :: String -> Bool
-startsLineComment s = "//" `isPrefixOf` s
+startsLineComment s = "//" `prefixOf` s
 
 startsBlockComment :: String -> Bool
-startsBlockComment s = "/*" `isPrefixOf` s
+startsBlockComment s = "/*" `prefixOf` s
 
 skipLineComment :: LexState -> LexState
 skipLineComment st = snd (takeUntilNewline st)
@@ -155,7 +152,7 @@ lexPunct st = firstMatch punctuators where
   firstMatch ps = case ps of
     [] -> Nothing
     p:rest ->
-      if p `isPrefixOf` lsInput st
+      if p `prefixOf` lsInput st
       then let st' = advanceMany p st { lsInput = drop (length p) (lsInput st) }
            in Just (Token (Span (lsPos st) (lsPos st')) (TokPunct p), st')
       else firstMatch rest
@@ -175,10 +172,10 @@ takeWhileState predicate st = go st [] where
     _ -> (reverse acc, cur)
 
 isIdentStart :: Char -> Bool
-isIdentStart c = isAlpha c || c == '_'
+isIdentStart c = isAsciiAlpha c || c == '_'
 
 isIdentChar :: Char -> Bool
-isIdentChar c = isAlphaNum c || c == '_'
+isIdentChar c = isAsciiAlphaNum c || c == '_'
 
 advanceMany :: String -> LexState -> LexState
 advanceMany s st = foldl (flip advance) st s
@@ -193,3 +190,24 @@ nextPos c (SrcPos line col) =
 nextBol :: Char -> Bool -> Bool
 nextBol c bol =
   if c == '\n' then True else if isSpace c then bol else False
+
+isSpace :: Char -> Bool
+isSpace c = c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\v' || c == '\f'
+
+isDigit :: Char -> Bool
+isDigit c = c >= '0' && c <= '9'
+
+isHexDigit :: Char -> Bool
+isHexDigit c = isDigit c || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
+
+isAsciiAlpha :: Char -> Bool
+isAsciiAlpha c = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+
+isAsciiAlphaNum :: Char -> Bool
+isAsciiAlphaNum c = isAsciiAlpha c || isDigit c
+
+prefixOf :: String -> String -> Bool
+prefixOf prefix text = case (prefix, text) of
+  ([], _) -> True
+  (_, []) -> False
+  (p:ps, t:ts) -> p == t && prefixOf ps ts

@@ -1,4 +1,4 @@
-module Hcc.RegAlloc
+module RegAlloc
   ( Allocation
   , Location(..)
   , PhysReg(..)
@@ -7,8 +7,8 @@ module Hcc.RegAlloc
   , stackSlotCount
   ) where
 
-import Hcc.FingerTree
-import Hcc.Ir
+import FingerTree
+import Ir
 
 data PhysReg
   = Rax

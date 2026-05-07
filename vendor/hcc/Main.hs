@@ -2,7 +2,6 @@ module Main where
 
 import GHC.IO.Encoding (setLocaleEncoding, utf8)
 import Control.Monad (filterM)
-import Data.Char (isAlphaNum)
 import System.Directory (findExecutable)
 import System.Directory (canonicalizePath)
 import System.Directory (doesFileExist)
@@ -13,14 +12,14 @@ import System.FilePath ((</>), takeDirectory, takeFileName)
 import System.IO (hPutStrLn, stderr)
 import System.Process (callProcess)
 
-import qualified Hcc.CompileM as CompileM
-import Hcc.CodegenM1
-import Hcc.Lexer
-import Hcc.Lower
-import Hcc.Parser
-import Hcc.Preprocessor
-import Hcc.SymbolTable
-import Hcc.Token
+import CompileM
+import CodegenM1
+import Lexer
+import Lower
+import Parser
+import Preprocessor
+import SymbolTable
+import Token
 
 main :: IO ()
 main = do
@@ -201,7 +200,11 @@ sanitizeLabel text = case text of
   c:rest -> sanitizeChar c ++ sanitizeLabel rest
   where
     sanitizeChar c =
-      if isAlphaNum c then [c] else "_"
+      if isAsciiAlphaNum c then [c] else "_"
+
+isAsciiAlphaNum :: Char -> Bool
+isAsciiAlphaNum c =
+  (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
 
 data AsmOptions = AsmOptions
   { asmInput :: FilePath
@@ -617,9 +620,9 @@ mapCodegenError result = case result of
   Left (CodegenError msg) -> Left msg
   Right x -> Right x
 
-mapCompileError :: Either CompileM.CompileError a -> Either String a
+mapCompileError :: Either CompileError a -> Either String a
 mapCompileError result = case result of
-  Left (CompileM.CompileError msg) -> Left msg
+  Left (CompileError msg) -> Left msg
   Right x -> Right x
 
 resolveCc :: IO FilePath

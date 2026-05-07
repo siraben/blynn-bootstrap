@@ -1,13 +1,11 @@
-module Hcc.ConstExpr
+module ConstExpr
   ( parseConstExpr
   , parseIntLiteral
   ) where
 
 import Data.Bits ((.&.), (.|.), complement, shiftL, shiftR, xor)
-import Data.Char (isOctDigit, ord, toLower)
-import Numeric (readDec, readHex, readOct)
 
-import Hcc.Token
+import Token
 
 parseConstExpr :: [(String, Integer)] -> [Token] -> Either String (Integer, [Token])
 parseConstExpr env = parseCond
@@ -172,7 +170,7 @@ truth :: Bool -> Integer
 truth value = if value then 1 else 0
 
 parseIntLiteral :: String -> Integer
-parseIntLiteral value = case readNumber (map toLower (stripIntSuffix value)) of
+parseIntLiteral value = case readNumber (map toLowerAscii (stripIntSuffix value)) of
   Just n -> n
   Nothing -> 0
 
@@ -181,19 +179,22 @@ stripIntSuffix text = reverse (dropWhile (`elem` "uUlL") (reverse text))
 
 readNumber :: String -> Maybe Integer
 readNumber text = case text of
-  '0':'x':digits -> readWhole readHex digits
-  '0':digits | any isOctDigit digits -> readWhole readOct digits
-  _ -> readWhole readDec text
+  '0':'x':digits -> readRadix 16 hexDigitValue digits
+  '0':digits | any isOctDigit digits -> readRadix 8 octDigitValue digits
+  _ -> readRadix 10 decDigitValue text
 
-readWhole :: (String -> [(Integer, String)]) -> String -> Maybe Integer
-readWhole reader text = case reader text of
-  [(value, "")] -> Just value
-  _ -> Nothing
+readRadix :: Integer -> (Char -> Maybe Integer) -> String -> Maybe Integer
+readRadix radix valueOf text = go 0 text where
+  go acc rest = case rest of
+    [] -> Just acc
+    c:cs -> case valueOf c of
+      Just value -> go (acc * radix + value) cs
+      Nothing -> Nothing
 
 charInt :: String -> Integer
 charInt text = case text of
   '\'':'\\':c:_ -> escapeChar c
-  '\'':c:_ -> fromIntegral (ord c)
+  '\'':c:_ -> fromIntegral (charCode c)
   _ -> 0
 
 escapeChar :: Char -> Integer
@@ -205,4 +206,34 @@ escapeChar c = case c of
   '\\' -> 92
   '\'' -> 39
   '"' -> 34
-  _ -> fromIntegral (ord c)
+  _ -> fromIntegral (charCode c)
+
+toLowerAscii :: Char -> Char
+toLowerAscii c =
+  if c >= 'A' && c <= 'Z'
+  then toEnum (fromEnum c + 32)
+  else c
+
+isOctDigit :: Char -> Bool
+isOctDigit c = c >= '0' && c <= '7'
+
+decDigitValue :: Char -> Maybe Integer
+decDigitValue c =
+  if c >= '0' && c <= '9'
+  then Just (fromIntegral (charCode c - charCode '0'))
+  else Nothing
+
+octDigitValue :: Char -> Maybe Integer
+octDigitValue c =
+  if c >= '0' && c <= '7'
+  then Just (fromIntegral (charCode c - charCode '0'))
+  else Nothing
+
+hexDigitValue :: Char -> Maybe Integer
+hexDigitValue c
+  | c >= '0' && c <= '9' = Just (fromIntegral (charCode c - charCode '0'))
+  | c >= 'a' && c <= 'f' = Just (fromIntegral (10 + charCode c - charCode 'a'))
+  | otherwise = Nothing
+
+charCode :: Char -> Int
+charCode = fromEnum

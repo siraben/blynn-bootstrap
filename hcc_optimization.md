@@ -250,3 +250,50 @@ pass
 nix build .#tinycc-boot-hcc .#hcc-m1-smoke .#hcc-mescc-tests
 pass
 ```
+
+## Pass 5: Flatten HCC module dialect and remove simple helper imports
+
+Goal: remove the next concrete Blynn dialect blockers without changing compiler behavior.
+
+Changes:
+
+- Renamed HCC module declarations from hierarchical `Hcc.X` names to plain module names (`Ast`, `Parser`, `RegAlloc`, etc.).
+- Updated imports to use those plain module names, and changed the GHC build to search `-iHcc`.
+- Removed the remaining HCC-local qualified import and qualified constructor references for `CompileM`.
+- Replaced remaining HCC-local `newtype` declarations with `data` declarations: `Temp`, `BlockId`, `Parser`, and `CompileM`.
+- Removed `Data.Char`, `Data.List`, and `Numeric` imports from the core lexer/preprocessor/constant-expression path by adding local ASCII predicates and integer literal parsing.
+
+Current remaining dialect blockers:
+
+- `Main` still depends on GHC/System modules for command-line arguments, file IO, process execution, and path handling.
+- `ConstExpr` still imports `Data.Bits`; upstream `BasePrecisely` has the needed `Bits` class, but this needs an explicit bridge instead of a GHC `Data.Bits` import.
+- `Main` still uses `Control.Monad.filterM`; this should become a local helper or be removed as part of host IO lowering.
+
+Direct HCC compile of the same patched TinyCC source:
+
+```text
+hcc -S -o tcc-dialect-flat.M1 tcc-expanded.c
+wall: 6.76s
+max RSS: 204,584 KiB
+tcc-dialect-flat.M1: 508,341 lines, 14,903,462 bytes
+output identical to baseline M1
+```
+
+Current metrics:
+
+```text
+Haskell LOC total: 5,956
+hcc-ghc/bin/hcc: 4,481,384 bytes
+tinycc-boot-hcc/bin/tcc-hcc-stage1: 2,767,218 bytes
+tinycc-boot-hcc/bin/tcc: 338,120 bytes
+```
+
+Validation:
+
+```text
+nix build .#hcc-ghc --no-link --print-out-paths
+pass
+
+nix build .#tinycc-boot-hcc .#hcc-m1-smoke .#hcc-mescc-tests
+pass
+```
