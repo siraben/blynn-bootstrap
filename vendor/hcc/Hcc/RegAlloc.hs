@@ -7,8 +7,7 @@ module Hcc.RegAlloc
   , stackSlotCount
   ) where
 
-import qualified Data.Map.Strict as Map
-
+import qualified Hcc.FingerTree as FingerTree
 import Hcc.Ir
 
 data PhysReg
@@ -25,22 +24,25 @@ data Location
   | StackObject Int Int
   deriving (Eq, Show)
 
-data Allocation = Allocation Int (Map.Map Temp Location)
+data Allocation = Allocation Int (FingerTree.FingerTree AllocationEntry)
+  deriving (Eq, Show)
+
+data AllocationEntry = AllocationEntry Temp Location
   deriving (Eq, Show)
 
 allocateFunction :: FunctionIr -> Either String Allocation
 allocateFunction (FunctionIr _ _ blocks) =
-  uncurry Allocation <$> allocateInstrs 0 Map.empty (concatMap blockInstrs blocks)
+  uncurry Allocation <$> allocateInstrs 0 FingerTree.empty (concatMap blockInstrs blocks)
 
 lookupLocation :: Temp -> Allocation -> Either String Location
-lookupLocation temp (Allocation _ locations) = case Map.lookup temp locations of
+lookupLocation temp (Allocation _ locations) = case lookupEntry temp locations of
   Just loc -> Right loc
   Nothing -> Left ("missing allocation for " ++ show temp)
 
 stackSlotCount :: Allocation -> Int
 stackSlotCount (Allocation slots _) = slots
 
-allocateInstrs :: Int -> Map.Map Temp Location -> [Instr] -> Either String (Int, Map.Map Temp Location)
+allocateInstrs :: Int -> FingerTree.FingerTree AllocationEntry -> [Instr] -> Either String (Int, FingerTree.FingerTree AllocationEntry)
 allocateInstrs nextSlot acc instrs = case instrs of
   [] -> Right (nextSlot, acc)
   instr:rest -> case instr of
@@ -89,19 +91,43 @@ allocateInstrs nextSlot acc instrs = case instrs of
     ICallIndirect (Just temp) _ _ ->
       allocateDef nextSlot acc temp rest
 
-allocateStackObject :: Int -> Map.Map Temp Location -> Temp -> Int -> [Instr] -> Either String (Int, Map.Map Temp Location)
+allocateStackObject :: Int -> FingerTree.FingerTree AllocationEntry -> Temp -> Int -> [Instr] -> Either String (Int, FingerTree.FingerTree AllocationEntry)
 allocateStackObject nextSlot acc temp size rest =
-  if Map.member temp acc
+  if allocationMember temp acc
   then allocateInstrs nextSlot acc rest
   else
     let slots = (max 1 size + 7) `div` 8
-    in allocateInstrs (nextSlot + slots) (Map.insert temp (StackObject nextSlot slots) acc) rest
+    in allocateInstrs (nextSlot + slots) (insertEntry temp (StackObject nextSlot slots) acc) rest
 
-allocateDef :: Int -> Map.Map Temp Location -> Temp -> [Instr] -> Either String (Int, Map.Map Temp Location)
+allocateDef :: Int -> FingerTree.FingerTree AllocationEntry -> Temp -> [Instr] -> Either String (Int, FingerTree.FingerTree AllocationEntry)
 allocateDef nextSlot acc temp rest =
-  if Map.member temp acc
+  if allocationMember temp acc
   then allocateInstrs nextSlot acc rest
-  else allocateInstrs (nextSlot + 1) (Map.insert temp (OnStack nextSlot) acc) rest
+  else allocateInstrs (nextSlot + 1) (insertEntry temp (OnStack nextSlot) acc) rest
+
+allocationMember :: Temp -> FingerTree.FingerTree AllocationEntry -> Bool
+allocationMember temp entries = case lookupEntry temp entries of
+  Just _ -> True
+  Nothing -> False
+
+insertEntry :: Temp -> Location -> FingerTree.FingerTree AllocationEntry -> FingerTree.FingerTree AllocationEntry
+insertEntry temp loc entries =
+  FingerTree.snoc entryRange entries (AllocationEntry temp loc)
+
+lookupEntry :: Temp -> FingerTree.FingerTree AllocationEntry -> Maybe Location
+lookupEntry temp@(Temp key) entries =
+  FingerTree.lookupWith entryRange (matchEntry temp) key entries
+
+matchEntry :: Temp -> AllocationEntry -> Maybe Location
+matchEntry temp entry = case entry of
+  AllocationEntry entryTemp loc ->
+    if entryTemp == temp
+    then Just loc
+    else Nothing
+
+entryRange :: AllocationEntry -> FingerTree.Range
+entryRange entry = case entry of
+  AllocationEntry (Temp key) _ -> FingerTree.Range key key
 
 blockInstrs :: BasicBlock -> [Instr]
 blockInstrs (BasicBlock _ instrs _) = instrs

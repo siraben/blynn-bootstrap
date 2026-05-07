@@ -91,3 +91,54 @@ hcc -S max RSS: 260,368 KiB -> 210,688 KiB, 19.1% lower
 hcc binary size: 4,378,184 -> 4,443,688 bytes, 1.5% larger
 generated M1 size: unchanged
 ```
+
+Validation:
+
+```text
+nix build .#tinycc-boot-hcc .#hcc-m1-smoke .#hcc-mescc-tests
+pass
+
+nix shell nixpkgs#time -c time -v nix build --rebuild --no-link .#tinycc-boot-hcc
+wall: 9.26s
+client max RSS: 43,216 KiB
+```
+
+## Pass 2: Handrolled allocation finger tree
+
+Goal: replace the library `Map` introduced in pass 1 with a local tree representation that is easier to lower toward Blynn's bootstrap dialect later. Some LOC and binary-size increase is intentional in this pass.
+
+Changes:
+
+- Added `Hcc.FingerTree`, a handrolled range-measured finger tree with `snoc` insertion and range-pruned lookup.
+- Replaced `Hcc.RegAlloc`'s strict `Map` with `FingerTree AllocationEntry`.
+- Kept the allocation API stable for codegen.
+
+Direct HCC compile of the same patched TinyCC source:
+
+```text
+hcc -S -o tcc-fingertree.M1 tcc-expanded.c
+wall: 2.33s
+max RSS: 210,640 KiB
+tcc-fingertree.M1: 508,341 lines, 14,903,462 bytes
+output identical to baseline M1
+```
+
+Current metrics:
+
+```text
+Haskell LOC total: 5,778
+hcc-ghc/bin/hcc: 4,490,240 bytes
+tinycc-boot-hcc/bin/tcc-hcc-stage1: 2,767,218 bytes
+tinycc-boot-hcc/bin/tcc: 338,120 bytes
+```
+
+Validation:
+
+```text
+nix build .#tinycc-boot-hcc .#hcc-m1-smoke .#hcc-mescc-tests
+pass
+
+nix shell nixpkgs#time -c time -v nix build --rebuild --no-link .#tinycc-boot-hcc
+wall: 7.84s
+client max RSS: 43,576 KiB
+```
