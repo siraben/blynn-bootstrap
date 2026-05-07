@@ -65,9 +65,16 @@ ppDumpFile path = do
     Right toks -> mapM_ (putStrLn . renderToken) toks
 
 preprocessSource :: String -> Either String [Token]
-preprocessSource source = case lexC source of
+preprocessSource source = case lexC (spliceContinuations source) of
   Left (LexError pos msg) -> Left (showPos pos ++ ": " ++ msg)
   Right toks -> mapPreprocessError (preprocess toks)
+
+spliceContinuations :: String -> String
+spliceContinuations source = case source of
+  [] -> []
+  '\\':'\r':'\n':rest -> spliceContinuations rest
+  '\\':'\n':rest -> spliceContinuations rest
+  c:rest -> c : spliceContinuations rest
 
 mapPreprocessError :: Either PreprocessError a -> Either String a
 mapPreprocessError result = case result of
@@ -168,7 +175,13 @@ ignoredAssemblyFlag flag =
 parseDefine :: String -> (String, String)
 parseDefine def = case break (== '=') def of
   (name, "") -> (name, "1")
-  (name, _:value) -> (name, value)
+  (name, _:value) -> (name, unescapeDefineValue value)
+
+unescapeDefineValue :: String -> String
+unescapeDefineValue value = case value of
+  [] -> []
+  '\\':'"':rest -> '"' : unescapeDefineValue rest
+  c:rest -> c : unescapeDefineValue rest
 
 renderDefines :: [(String, String)] -> String
 renderDefines defs = concatMap render defs where

@@ -123,14 +123,26 @@ parseIfOr macros toks = do
 
 parseIfAnd :: [Macro] -> [Token] -> Either String (Bool, [Token])
 parseIfAnd macros toks = do
-  (lhs, rest) <- parseIfUnary macros toks
+  (lhs, rest) <- parseIfEq macros toks
   parseTail lhs rest
   where
     parseTail lhs rest = case rest of
       Token _ (TokPunct "&&"):xs -> do
-        (rhs, xs') <- parseIfUnary macros xs
+        (rhs, xs') <- parseIfEq macros xs
         parseTail (lhs && rhs) xs'
       _ -> Right (lhs, rest)
+
+parseIfEq :: [Macro] -> [Token] -> Either String (Bool, [Token])
+parseIfEq macros toks = do
+  (lhs, rest) <- parseIfUnary macros toks
+  case rest of
+    Token _ (TokPunct "=="):xs -> do
+      (rhs, xs') <- parseIfUnary macros xs
+      Right (lhs == rhs, xs')
+    Token _ (TokPunct "!="):xs -> do
+      (rhs, xs') <- parseIfUnary macros xs
+      Right (lhs /= rhs, xs')
+    _ -> Right (lhs, rest)
 
 parseIfUnary :: [Macro] -> [Token] -> Either String (Bool, [Token])
 parseIfUnary macros toks = case toks of
