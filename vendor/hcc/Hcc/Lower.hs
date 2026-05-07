@@ -1678,9 +1678,7 @@ isSignedIntegerType ty = case ty of
   _ -> False
 
 isSignedNamedInteger :: String -> Bool
-isSignedNamedInteger name
-  | name `elem` signedNamedIntegerTypes = True
-  | otherwise = False
+isSignedNamedInteger name = stringMember name signedNamedIntegerTypes
 
 isIntegerTypeM :: CType -> CompileM Bool
 isIntegerTypeM ty = case ty of
@@ -1718,7 +1716,8 @@ usualArithmeticType left right = do
 
 promotedExprType :: Expr -> CompileM CType
 promotedExprType expr = case expr of
-  EInt text | intLiteralIsUnsigned text -> pure CUnsigned
+  EInt text ->
+    if intLiteralIsUnsigned text then pure CUnsigned else pure CInt
   _ -> do
     mty <- exprType expr
     promoteIntegerType (maybe CLong id mty)
@@ -1767,19 +1766,44 @@ namedTypeSize name = case namedIntegerSize name of
         Nothing -> pure 8
 
 namedIntegerSize :: String -> Maybe Int
-namedIntegerSize name
-  | name `elem` ["int8_t", "uint8_t"] = Just 1
-  | name `elem` ["signed_short", "unsigned_short", "int16_t", "uint16_t", "Elf32_Half", "Elf64_Half", "Elf32_Section", "Elf64_Section", "Elf32_Versym", "Elf64_Versym"] = Just 2
-  | name `elem` ["int32_t", "uint32_t", "Elf32_Word", "Elf64_Word", "Elf32_Sword", "Elf64_Sword", "Elf32_Addr", "Elf32_Off"] = Just 4
-  | name `elem` ["unsigned_long", "int64_t", "uint64_t", "size_t", "ssize_t", "time_t", "ptrdiff_t", "intptr_t", "uintptr_t", "addr_t", "Elf32_Xword", "Elf32_Sxword", "Elf64_Xword", "Elf64_Sxword", "Elf64_Addr", "Elf64_Off"] = Just 8
-  | otherwise = Nothing
+namedIntegerSize name =
+  if stringMember name namedIntegerSize1
+    then Just 1
+    else if stringMember name namedIntegerSize2
+      then Just 2
+      else if stringMember name namedIntegerSize4
+        then Just 4
+        else if stringMember name namedIntegerSize8
+          then Just 8
+          else Nothing
+
+namedIntegerSize1 :: [String]
+namedIntegerSize1 = "int8_t" : "uint8_t" : []
+
+namedIntegerSize2 :: [String]
+namedIntegerSize2 =
+  "signed_short" : "unsigned_short" : "int16_t" : "uint16_t" :
+  "Elf32_Half" : "Elf64_Half" : "Elf32_Section" : "Elf64_Section" :
+  "Elf32_Versym" : "Elf64_Versym" : []
+
+namedIntegerSize4 :: [String]
+namedIntegerSize4 =
+  "int32_t" : "uint32_t" : "Elf32_Word" : "Elf64_Word" :
+  "Elf32_Sword" : "Elf64_Sword" : "Elf32_Addr" : "Elf32_Off" : []
+
+namedIntegerSize8 :: [String]
+namedIntegerSize8 =
+  "unsigned_long" : "int64_t" : "uint64_t" : "size_t" :
+  "ssize_t" : "time_t" : "ptrdiff_t" : "intptr_t" :
+  "uintptr_t" : "addr_t" : "Elf32_Xword" : "Elf32_Sxword" :
+  "Elf64_Xword" : "Elf64_Sxword" : "Elf64_Addr" : "Elf64_Off" : []
 
 signedNamedIntegerTypes :: [String]
 signedNamedIntegerTypes =
-  [ "signed_short", "int8_t", "int16_t", "int32_t", "int64_t"
-  , "ssize_t", "time_t", "ptrdiff_t", "intptr_t"
-  , "Elf32_Sword", "Elf64_Sword", "Elf32_Sxword", "Elf64_Sxword"
-  ]
+  "signed_short" : "int8_t" : "int16_t" : "int32_t" : "int64_t" :
+  "ssize_t" : "time_t" : "ptrdiff_t" : "intptr_t" :
+  "Elf32_Sword" : "Elf64_Sword" : "Elf32_Sxword" : "Elf64_Sxword" :
+  []
 
 typeAlign :: CType -> CompileM Int
 typeAlign ty = case ty of
@@ -1793,35 +1817,47 @@ structSize name = do
   aggregate <- lookupStruct name
   case aggregate of
     Nothing -> pure 8
-    Just (isUnion, fields) -> aggregateSize isUnion fields
+    Just aggregateInfo -> case aggregateInfo of
+      (isUnion, fields) -> aggregateSize isUnion fields
 
 aggregateSize :: Bool -> [Field] -> CompileM Int
 aggregateSize isUnion fields =
   if isUnion
-    then unionSize fields
-    else do
-      (size, maxAlign) <- foldFields 0 1 fields
-      pure (alignUp size maxAlign)
-  where
-    foldFields offset maxAlign members = case members of
-      [] -> pure (offset, maxAlign)
-      Field ty _:rest -> do
-        align <- typeAlign ty
-        size <- typeSize ty
-        let aligned = alignUp offset align
-        foldFields (aligned + size) (max maxAlign align) rest
+    then aggregateUnionSize fields
+    else aggregateStructSize fields
 
-    unionSize members = do
-      (size, align) <- unionFields members
-      pure (alignUp size align)
+aggregateStructSize :: [Field] -> CompileM Int
+aggregateStructSize fields = do
+  folded <- foldAggregateFields 0 1 fields
+  case folded of
+    (size, maxAlign) -> pure (alignUp size maxAlign)
 
-    unionFields members = case members of
-      [] -> pure (0, 1)
-      Field ty _:rest -> do
-        size <- typeSize ty
-        align <- typeAlign ty
-        (restSize, restAlign) <- unionFields rest
-        pure (max size restSize, max align restAlign)
+foldAggregateFields :: Int -> Int -> [Field] -> CompileM (Int, Int)
+foldAggregateFields offset maxAlign members = case members of
+  [] -> pure (offset, maxAlign)
+  item:rest -> case item of
+    Field ty _ -> do
+      align <- typeAlign ty
+      size <- typeSize ty
+      let aligned = alignUp offset align
+      foldAggregateFields (aligned + size) (max maxAlign align) rest
+
+aggregateUnionSize :: [Field] -> CompileM Int
+aggregateUnionSize members = do
+  folded <- unionFields members
+  case folded of
+    (size, align) -> pure (alignUp size align)
+
+unionFields :: [Field] -> CompileM (Int, Int)
+unionFields members = case members of
+  [] -> pure (0, 1)
+  item:rest -> case item of
+    Field ty _ -> do
+      size <- typeSize ty
+      align <- typeAlign ty
+      folded <- unionFields rest
+      case folded of
+        (restSize, restAlign) -> pure (max size restSize, max align restAlign)
 
 alignUp :: Int -> Int -> Int
 alignUp offset align =
@@ -1835,54 +1871,113 @@ globalData ty initExpr = do
   pure (padData size values)
 
 initializedSize :: CType -> [DataValue] -> Maybe Expr -> CompileM Int
-initializedSize ty values initExpr = case (ty, initExpr) of
-  (CArray _ Nothing, Just (EInitList _)) -> pure (dataSize values)
-  (CArray CChar Nothing, Just (EString _)) -> pure (dataSize values)
+initializedSize ty values initExpr = case ty of
+  CArray inner count -> case count of
+    Nothing -> initializedUnboundedArraySize inner values initExpr
+    Just _ -> typeSize ty
   _ -> typeSize ty
 
+initializedUnboundedArraySize :: CType -> [DataValue] -> Maybe Expr -> CompileM Int
+initializedUnboundedArraySize inner values initExpr = case initExpr of
+  Just expr -> case expr of
+    EInitList _ -> pure (dataSize values)
+    EString _ -> case inner of
+      CChar -> pure (dataSize values)
+      _ -> typeSize (CArray inner Nothing)
+    _ -> typeSize (CArray inner Nothing)
+  Nothing -> typeSize (CArray inner Nothing)
+
 globalDataValue :: CType -> Maybe Expr -> CompileM [DataValue]
-globalDataValue ty initExpr = case (ty, initExpr) of
-  (_, Just (EInitList [expr])) | not (isAggregateType ty) ->
-    globalDataValue ty (Just expr)
-  (CArray CChar count, Just (EString text)) ->
-    do
-      size <- case count of
-        Nothing -> pure (length (stringBytes text))
-        Just bound -> constExprValue bound
-      pure (padData size (bytesData (stringBytes text)))
-  (CArray inner count, Just (EInitList exprs)) -> do
-    items <- globalArrayData inner exprs
-    case count of
-      Nothing -> pure items
-      Just bound -> do
-        n <- constExprValue bound
-        elemSize <- typeSize inner
-        pure (padData (n * elemSize) items)
-  (_, Just (EInitList exprs)) -> do
-    aggregate <- aggregateFields ty
-    case aggregate of
-      Just (False, fields) -> globalStructData fields exprs
-      Just (True, fields) -> globalUnionData fields exprs
-      Nothing -> zeroData <$> typeSize ty
-  (_, Just (EString text)) | isPointerType ty -> do
-    dataLabel <- freshDataLabel
-    addDataItem (DataItem dataLabel (bytesData (stringBytes text)))
-    pure [DAddress dataLabel]
-  (_, Just (EInt text)) -> scalarData ty (parseInt text)
-  (_, Just (EChar text)) -> scalarData ty (charValue text)
-  (_, Just (ECast _ expr)) -> globalDataValue ty (Just expr)
-  (_, Just (EUnary "&" (EVar name))) -> globalAddressData name
-  (_, Just (EVar name)) -> do
-    constant <- lookupConstant name
-    case constant of
-      Just value -> scalarData ty value
-      Nothing -> case builtinConstant name of
-        Just value -> scalarData ty value
-        Nothing -> globalAddressData name
-  (_, Just expr) -> do
+globalDataValue ty initExpr = case initExpr of
+  Nothing -> zeroDataForType ty
+  Just expr -> globalDataExpr ty expr
+
+zeroDataForType :: CType -> CompileM [DataValue]
+zeroDataForType ty = do
+  size <- typeSize ty
+  pure (zeroData size)
+
+globalDataExpr :: CType -> Expr -> CompileM [DataValue]
+globalDataExpr ty expr = case expr of
+  EInitList exprs -> globalInitListData ty exprs
+  EString text -> globalStringData ty text
+  EInt text -> scalarData ty (parseInt text)
+  EChar text -> scalarData ty (charValue text)
+  ECast _ value -> globalDataValue ty (Just value)
+  EUnary "&" value -> globalAddressExprData ty value
+  EVar name -> globalVarData ty name
+  _ -> do
     value <- constExprValue expr
     scalarData ty value
-  _ -> zeroData <$> typeSize ty
+
+globalInitListData :: CType -> [Expr] -> CompileM [DataValue]
+globalInitListData ty exprs =
+  if not (isAggregateType ty) && singleExprList exprs
+    then case exprs of
+      expr:_ -> globalDataValue ty (Just expr)
+      [] -> zeroDataForType ty
+    else case ty of
+      CArray inner count -> globalArrayInitData inner count exprs
+      _ -> globalAggregateInitData ty exprs
+
+singleExprList :: [Expr] -> Bool
+singleExprList exprs = case exprs of
+  [_] -> True
+  _ -> False
+
+globalArrayInitData :: CType -> Maybe Expr -> [Expr] -> CompileM [DataValue]
+globalArrayInitData inner count exprs = do
+  items <- globalArrayData inner exprs
+  case count of
+    Nothing -> pure items
+    Just bound -> do
+      n <- constExprValue bound
+      elemSize <- typeSize inner
+      pure (padData (n * elemSize) items)
+
+globalAggregateInitData :: CType -> [Expr] -> CompileM [DataValue]
+globalAggregateInitData ty exprs = do
+  aggregate <- aggregateFields ty
+  case aggregate of
+    Just aggregateInfo -> case aggregateInfo of
+      (False, fields) -> globalStructData fields exprs
+      (True, fields) -> globalUnionData fields exprs
+    Nothing -> zeroDataForType ty
+
+globalStringData :: CType -> String -> CompileM [DataValue]
+globalStringData ty text = case ty of
+  CArray CChar count -> do
+    size <- stringDataSize count text
+    pure (padData size (bytesData (stringBytes text)))
+  _ -> if isPointerType ty
+    then do
+      dataLabel <- freshDataLabel
+      addDataItem (DataItem dataLabel (bytesData (stringBytes text)))
+      pure [DAddress dataLabel]
+    else do
+      value <- constExprValue (EString text)
+      scalarData ty value
+
+stringDataSize :: Maybe Expr -> String -> CompileM Int
+stringDataSize count text = case count of
+  Nothing -> pure (length (stringBytes text))
+  Just bound -> constExprValue bound
+
+globalAddressExprData :: CType -> Expr -> CompileM [DataValue]
+globalAddressExprData ty value = case value of
+  EVar name -> globalAddressData name
+  _ -> do
+    n <- constExprValue (EUnary "&" value)
+    scalarData ty n
+
+globalVarData :: CType -> String -> CompileM [DataValue]
+globalVarData ty name = do
+  constant <- lookupConstant name
+  case constant of
+    Just value -> scalarData ty value
+    Nothing -> case builtinConstant name of
+      Just value -> scalarData ty value
+      Nothing -> globalAddressData name
 
 globalArrayData :: CType -> [Expr] -> CompileM [DataValue]
 globalArrayData inner exprs = case exprs of
@@ -1895,29 +1990,52 @@ globalArrayData inner exprs = case exprs of
 
 globalStructData :: [Field] -> [Expr] -> CompileM [DataValue]
 globalStructData fields exprs = do
-  (values, used) <- structFields 0 fields exprs
+  result <- structFields 0 fields exprs
+  let values = pairFirst result
+  let used = pairSecond result
   pure (padData used values)
-  where
-    structFields offset remaining values = case remaining of
-      [] -> pure ([], offset)
-      Field fieldTy _:rest -> do
-        align <- typeAlign fieldTy
-        let aligned = alignUp offset align
-        fieldSize <- typeSize fieldTy
-        let (mexpr, tailExprs) = case values of
-              [] -> (Nothing, [])
-              expr:xs -> (Just expr, xs)
-        fieldData <- globalDataValue fieldTy mexpr
-        (restData, end) <- structFields (aligned + fieldSize) rest tailExprs
-        pure (zeroData (aligned - offset) ++ padData fieldSize fieldData ++ restData, end)
+
+structFields :: Int -> [Field] -> [Expr] -> CompileM ([DataValue], Int)
+structFields offset remaining values = case remaining of
+  [] -> pure ([], offset)
+  field:rest -> case field of
+    Field fieldTy _ -> do
+      align <- typeAlign fieldTy
+      let aligned = alignUp offset align
+      fieldSize <- typeSize fieldTy
+      let valueHead = maybeExprHead values
+      let valueTail = exprTail values
+      fieldData <- globalDataValue fieldTy valueHead
+      result <- structFields (aligned + fieldSize) rest valueTail
+      let restData = pairFirst result
+      let end = pairSecond result
+      pure (zeroData (aligned - offset) ++ padData fieldSize fieldData ++ restData, end)
+
+maybeExprHead :: [Expr] -> Maybe Expr
+maybeExprHead values = case values of
+  [] -> Nothing
+  expr:_ -> Just expr
+
+exprTail :: [Expr] -> [Expr]
+exprTail values = case values of
+  [] -> []
+  _:rest -> rest
 
 globalUnionData :: [Field] -> [Expr] -> CompileM [DataValue]
-globalUnionData fields exprs = case (fields, exprs) of
-  (Field fieldTy _:_, expr:_) -> do
-    item <- globalDataValue fieldTy (Just expr)
-    size <- unionSizeFromFields fields
-    pure (padData size item)
-  _ -> zeroData <$> unionSizeFromFields fields
+globalUnionData fields exprs = case fields of
+  [] -> zeroUnionData fields
+  field:_ -> case exprs of
+    [] -> zeroUnionData fields
+    expr:_ -> case field of
+      Field fieldTy _ -> do
+        item <- globalDataValue fieldTy (Just expr)
+        size <- unionSizeFromFields fields
+        pure (padData size item)
+
+zeroUnionData :: [Field] -> CompileM [DataValue]
+zeroUnionData fields = do
+  size <- unionSizeFromFields fields
+  pure (zeroData size)
 
 unionSizeFromFields :: [Field] -> CompileM Int
 unionSizeFromFields fields = case fields of
@@ -1950,7 +2068,7 @@ isAggregateTypeM ty = case ty of
 isPointerType :: CType -> Bool
 isPointerType ty = case ty of
   CPtr _ -> True
-  CNamed name -> name `elem` ["intptr_t", "uintptr_t"]
+  CNamed name -> stringMember name ("intptr_t" : "uintptr_t" : [])
   _ -> False
 
 scalarData :: CType -> Int -> CompileM [DataValue]
@@ -1972,16 +2090,18 @@ constExprValue expr = case expr of
     mty <- exprType value
     maybe (pure 8) typeSize mty
   ECast _ (EUnary "&" (EPtrMember (ECast (CPtr ty) (EInt "0")) field)) -> do
-    (_, offset) <- memberInfo (Just (CPtr ty)) field
-    pure offset
+    info <- memberInfo (Just (CPtr ty)) field
+    pure (pairSecond info)
   EUnary "&" (EPtrMember (ECast (CPtr ty) (EInt "0")) field) -> do
-    (_, offset) <- memberInfo (Just (CPtr ty)) field
-    pure offset
+    info <- memberInfo (Just (CPtr ty)) field
+    pure (pairSecond info)
   EVar name -> do
     constant <- lookupConstant name
     pure (maybe (maybe 0 id (builtinConstant name)) id constant)
   ECast _ value -> constExprValue value
-  EUnary "-" value -> negate <$> constExprValue value
+  EUnary "-" value -> do
+    n <- constExprValue value
+    pure (0 - n)
   EUnary "+" value -> constExprValue value
   EUnary "~" value -> do
     n <- constExprValue value
@@ -2032,23 +2152,52 @@ pow2 :: Int -> Int
 pow2 n = if n <= 0 then 1 else 2 * pow2 (n - 1)
 
 bitAnd :: Int -> Int -> Int
-bitAnd a b = bitFold 1 a b 0 (\x y -> x /= 0 && y /= 0)
+bitAnd a b = bitFoldAnd 1 a b 0
 
 bitOr :: Int -> Int -> Int
-bitOr a b = bitFold 1 a b 0 (\x y -> x /= 0 || y /= 0)
+bitOr a b = bitFoldOr 1 a b 0
 
 bitXor :: Int -> Int -> Int
-bitXor a b = bitFold 1 a b 0 (\x y -> (x /= 0) /= (y /= 0))
+bitXor a b = bitFoldXor 1 a b 0
 
-bitFold :: Int -> Int -> Int -> Int -> (Int -> Int -> Bool) -> Int
-bitFold bit a b out f =
+bitFoldAnd :: Int -> Int -> Int -> Int -> Int
+bitFoldAnd bit a b out =
   if bit > 1073741824
     then out
     else
       let abit = a `mod` (bit * 2) `div` bit
           bbit = b `mod` (bit * 2) `div` bit
-          out' = if f abit bbit then out + bit else out
-      in bitFold (bit * 2) a b out' f
+          out' = if bitAndBits abit bbit then out + bit else out
+      in bitFoldAnd (bit * 2) a b out'
+
+bitFoldOr :: Int -> Int -> Int -> Int -> Int
+bitFoldOr bit a b out =
+  if bit > 1073741824
+    then out
+    else
+      let abit = a `mod` (bit * 2) `div` bit
+          bbit = b `mod` (bit * 2) `div` bit
+          out' = if bitOrBits abit bbit then out + bit else out
+      in bitFoldOr (bit * 2) a b out'
+
+bitFoldXor :: Int -> Int -> Int -> Int -> Int
+bitFoldXor bit a b out =
+  if bit > 1073741824
+    then out
+    else
+      let abit = a `mod` (bit * 2) `div` bit
+          bbit = b `mod` (bit * 2) `div` bit
+          out' = if bitXorBits abit bbit then out + bit else out
+      in bitFoldXor (bit * 2) a b out'
+
+bitAndBits :: Int -> Int -> Bool
+bitAndBits x y = x /= 0 && y /= 0
+
+bitOrBits :: Int -> Int -> Bool
+bitOrBits x y = x /= 0 || y /= 0
+
+bitXorBits :: Int -> Int -> Bool
+bitXorBits x y = (x /= 0) /= (y /= 0)
 
 padData :: Int -> [DataValue] -> [DataValue]
 padData size values =
@@ -2078,8 +2227,18 @@ bytesData bytes = case bytes of
   byte:rest -> DByte byte : bytesData rest
 
 intBytes :: Int -> Int -> [Int]
-intBytes size value = take size (go value) where
-  go n = (n `mod` 256) : go (n `div` 256)
+intBytes size value = takeInts size (intBytesFrom value)
+
+intBytesFrom :: Int -> [Int]
+intBytesFrom n = (n `mod` 256) : intBytesFrom (n `div` 256)
+
+takeInts :: Int -> [Int] -> [Int]
+takeInts count values =
+  if count <= 0
+    then []
+    else case values of
+      [] -> []
+      value:rest -> value : takeInts (count - 1) rest
 
 lowerBinOp :: String -> Maybe BinOp
 lowerBinOp op = case op of
@@ -2126,14 +2285,14 @@ isUnsignedType ty = case ty of
   CPtr _ -> True
   CArray _ _ -> True
   CNamed name -> case namedIntegerSize name of
-    Just _ -> not (name `elem` signedNamedIntegerTypes)
+    Just _ -> not (stringMember name signedNamedIntegerTypes)
     Nothing -> False
   _ -> False
 
 intLiteralIsUnsigned :: String -> Bool
 intLiteralIsUnsigned text = case text of
   [] -> False
-  c:rest -> c == 'u' || c == 'U' || intLiteralIsUnsigned rest
+  c:rest -> if c == 'u' || c == 'U' then True else intLiteralIsUnsigned rest
 
 parseInt :: String -> Int
 parseInt text =
@@ -2145,10 +2304,15 @@ parseInt text =
     _ -> readDecimalPrefix clean
 
 readDecimalPrefix :: String -> Int
-readDecimalPrefix text = go 0 text where
-  go acc xs = case xs of
-    c:rest | isDecimalDigit c -> go (acc * 10 + decimalDigit c) rest
-    _ -> acc
+readDecimalPrefix text = readDecimalPrefixFrom 0 text
+
+readDecimalPrefixFrom :: Int -> String -> Int
+readDecimalPrefixFrom acc xs = case xs of
+  c:rest ->
+    if isDecimalDigit c
+      then readDecimalPrefixFrom (acc * 10 + decimalDigit c) rest
+      else acc
+  [] -> acc
 
 isDecimalDigit :: Char -> Bool
 isDecimalDigit c = c >= '0' && c <= '9'
@@ -2157,44 +2321,65 @@ decimalDigit :: Char -> Int
 decimalDigit c = fromEnum c - fromEnum '0'
 
 readOctal :: String -> Int
-readOctal = go 0 where
-  go n xs = case xs of
-    [] -> n
-    c:rest | c >= '0' && c <= '7' -> go (n * 8 + fromEnum c - fromEnum '0') rest
-    _ -> n
+readOctal text = readOctalFrom 0 text
+
+readOctalFrom :: Int -> String -> Int
+readOctalFrom n xs = case xs of
+  [] -> n
+  c:rest ->
+    if isOctalDigit c
+      then readOctalFrom (n * 8 + fromEnum c - fromEnum '0') rest
+      else n
 
 stripIntSuffix :: String -> String
-stripIntSuffix text = reverse (dropWhile isSuffix (reverse text)) where
-  isSuffix c = c `elem` "uUlL"
+stripIntSuffix text = reverse (dropIntSuffix (reverse text))
+
+dropIntSuffix :: String -> String
+dropIntSuffix text = case text of
+  [] -> []
+  c:rest -> if isIntSuffix c then dropIntSuffix rest else text
+
+isIntSuffix :: Char -> Bool
+isIntSuffix c =
+  c == 'u' || c == 'U' || c == 'l' || c == 'L'
 
 readHex :: String -> Int
-readHex = go 0 where
-  go n xs = case xs of
-    [] -> n
-    c:rest -> go (n * 16 + hexDigit c) rest
+readHex text = readHexFrom 0 text
+
+readHexFrom :: Int -> String -> Int
+readHexFrom n xs = case xs of
+  [] -> n
+  c:rest -> readHexFrom (n * 16 + hexDigit c) rest
 
 hexDigit :: Char -> Int
-hexDigit c
-  | c >= '0' && c <= '9' = fromEnum c - fromEnum '0'
-  | c >= 'a' && c <= 'f' = 10 + fromEnum c - fromEnum 'a'
-  | c >= 'A' && c <= 'F' = 10 + fromEnum c - fromEnum 'A'
-  | otherwise = 0
+hexDigit c =
+  if c >= '0' && c <= '9'
+    then fromEnum c - fromEnum '0'
+    else if c >= 'a' && c <= 'f'
+      then 10 + fromEnum c - fromEnum 'a'
+      else if c >= 'A' && c <= 'F'
+        then 10 + fromEnum c - fromEnum 'A'
+        else 0
 
 charValue :: String -> Int
 charValue text = case text of
   '\'':'\\':rest ->
-    fst (decodeEscape (dropClosingQuote rest))
+    pairFirst (decodeEscape (dropClosingQuote rest))
   '\'':c:'\'':[] -> fromEnum c
   _ -> 0
 
 stringBytes :: String -> [Int]
-stringBytes text = go (stripQuotes text) where
-  go chars = case chars of
-    [] -> [0]
-    '\\':rest ->
-      let (value, tailChars) = decodeEscape rest
-      in value : go tailChars
-    c:rest -> fromEnum c : go rest
+stringBytes text = stringBytesFrom (stripQuotes text)
+
+stringBytesFrom :: String -> [Int]
+stringBytesFrom chars = case chars of
+  [] -> [0]
+  '\\':rest ->
+    let decoded = decodeEscape rest
+        value = pairFirst decoded
+        tailChars = pairSecond decoded
+    in value : stringBytesFrom tailChars
+  c:rest -> fromEnum c : stringBytesFrom rest
 
 dropClosingQuote :: String -> String
 dropClosingQuote text = case reverse text of
@@ -2214,8 +2399,10 @@ decodeEscape text = case text of
   '\'':rest -> (39, rest)
   '"':rest -> (34, rest)
   'x':rest -> readHexEscape rest
-  c:rest | isOctalDigit c -> readOctalEscape 0 0 (c:rest)
-  c:rest -> (fromEnum c, rest)
+  c:rest ->
+    if isOctalDigit c
+      then readOctalEscape 0 0 (c:rest)
+      else (fromEnum c, rest)
   [] -> (0, [])
 
 readOctalEscape :: Int -> Int -> String -> (Int, String)
@@ -2223,27 +2410,56 @@ readOctalEscape count value text =
   if count >= 3
     then (value, text)
     else case text of
-      c:rest | isOctalDigit c ->
-        readOctalEscape (count + 1) (value * 8 + fromEnum c - fromEnum '0') rest
-      _ -> (value, text)
+      c:rest ->
+        if isOctalDigit c
+          then readOctalEscape (count + 1) (value * 8 + fromEnum c - fromEnum '0') rest
+          else (value, text)
+      [] -> (value, text)
 
 readHexEscape :: String -> (Int, String)
 readHexEscape text =
-  let (value, rest, consumed) = go 0 text
+  let result = readHexEscapeFrom 0 text
+      value = tripleFirst result
+      rest = tripleSecond result
+      consumed = tripleThird result
   in if consumed then (value, rest) else (fromEnum 'x', text)
-  where
-    go value chars = case chars of
-      c:rest | isHexDigit c ->
-        let (v, r, _) = go (value * 16 + hexDigit c) rest
+
+readHexEscapeFrom :: Int -> String -> (Int, String, Bool)
+readHexEscapeFrom value chars = case chars of
+  c:rest ->
+    if isHexDigit c
+      then
+        let result = readHexEscapeFrom (value * 16 + hexDigit c) rest
+            v = tripleFirst result
+            r = tripleSecond result
         in (v, r, True)
-      _ -> (value, chars, False)
+      else (value, chars, False)
+  [] -> (value, chars, False)
+
+tripleFirst :: (a, b, c) -> a
+tripleFirst triple = case triple of
+  (a, _, _) -> a
+
+tripleSecond :: (a, b, c) -> b
+tripleSecond triple = case triple of
+  (_, b, _) -> b
+
+tripleThird :: (a, b, c) -> c
+tripleThird triple = case triple of
+  (_, _, c) -> c
 
 isOctalDigit :: Char -> Bool
 isOctalDigit c = c >= '0' && c <= '7'
 
 isHexDigit :: Char -> Bool
 isHexDigit c =
-  (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
+  isDecimalDigit c || isLowerHexDigit c || isUpperHexDigit c
+
+isLowerHexDigit :: Char -> Bool
+isLowerHexDigit c = c >= 'a' && c <= 'f'
+
+isUpperHexDigit :: Char -> Bool
+isUpperHexDigit c = c >= 'A' && c <= 'F'
 
 stripQuotes :: String -> String
 stripQuotes text = stripTrailingQuote (stripLeadingQuote text)
