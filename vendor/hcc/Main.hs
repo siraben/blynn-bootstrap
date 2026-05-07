@@ -2,6 +2,7 @@ module Main where
 
 import GHC.IO.Encoding (setLocaleEncoding, utf8)
 import Control.Monad (filterM)
+import Data.Char (isAlphaNum)
 import qualified Data.Set as Set
 import System.Directory (findExecutable)
 import System.Directory (canonicalizePath)
@@ -177,9 +178,25 @@ compileAssembly args = do
     Right opts -> do
       source <- readSourceWithIncludes (asmIncludeDirs opts) (asmInput opts)
       let sourceWithDefines = renderDefines (asmDefines opts) ++ source
-      case preprocessSource sourceWithDefines >>= mapParseError . parseProgram >>= mapCodegenError . codegenM1 of
+      case preprocessSource sourceWithDefines >>= mapParseError . parseProgram >>= mapCodegenError . codegenM1WithDataPrefix (dataLabelPrefix (asmInput opts)) of
         Left msg -> die (asmInput opts ++ ":" ++ msg)
         Right asm -> writeFile (asmOutput opts) asm
+
+dataLabelPrefix :: FilePath -> String
+dataLabelPrefix path =
+  "HCC_DATA_" ++ sanitized
+  where
+    sanitized = case sanitizeLabel (takeFileName path) of
+      [] -> "unit"
+      text -> text
+
+sanitizeLabel :: String -> String
+sanitizeLabel text = case text of
+  [] -> []
+  c:rest -> sanitizeChar c ++ sanitizeLabel rest
+  where
+    sanitizeChar c =
+      if isAlphaNum c then [c] else "_"
 
 data AsmOptions = AsmOptions
   { asmInput :: FilePath

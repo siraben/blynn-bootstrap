@@ -8,6 +8,7 @@ module Hcc.CompileM
   , bindConstant
   , bindFunction
   , freshBlock
+  , freshDataLabel
   , freshLabel
   , freshTemp
   , currentBreakTarget
@@ -24,6 +25,7 @@ module Hcc.CompileM
   , lookupFunction
   , lookupStruct
   , runCompileM
+  , runCompileMWithDataPrefix
   , throwC
   , withErrorContext
   , withBreakTarget
@@ -42,6 +44,7 @@ data CompileState = CompileState
   { csNextTemp :: Int
   , csNextBlock :: Int
   , csNextLabel :: Int
+  , csDataPrefix :: String
   , csVars :: [(String, (Temp, CType))]
   , csStructs :: [(String, (Bool, [Field]))]
   , csGlobals :: [(String, CType)]
@@ -81,6 +84,7 @@ initialCompileState = CompileState
   { csNextTemp = 0
   , csNextBlock = 0
   , csNextLabel = 0
+  , csDataPrefix = "HCC_DATA"
   , csVars = []
   , csStructs = []
   , csGlobals = []
@@ -93,7 +97,10 @@ initialCompileState = CompileState
   }
 
 runCompileM :: CompileM a -> Either CompileError a
-runCompileM action = case unCompileM action initialCompileState of
+runCompileM = runCompileMWithDataPrefix "HCC_DATA"
+
+runCompileMWithDataPrefix :: String -> CompileM a -> Either CompileError a
+runCompileMWithDataPrefix prefix action = case unCompileM action initialCompileState { csDataPrefix = prefix } of
   Left err -> Left err
   Right (x, _) -> Right x
 
@@ -120,6 +127,11 @@ freshLabel :: CompileM String
 freshLabel = CompileM $ \st ->
   let n = csNextLabel st
     in Right ("L" ++ show n, st { csNextLabel = n + 1 })
+
+freshDataLabel :: CompileM String
+freshDataLabel = do
+  label <- freshLabel
+  CompileM $ \st -> Right (csDataPrefix st ++ "_" ++ label, st)
 
 addDataItem :: DataItem -> CompileM ()
 addDataItem item@(DataItem label _) = CompileM $ \st ->

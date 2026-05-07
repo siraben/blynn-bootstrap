@@ -61,9 +61,15 @@ allocateInstrs nextSlot acc instrs = case instrs of
       allocateDef nextSlot acc temp rest
     ILoad32 temp _ ->
       allocateDef nextSlot acc temp rest
+    ILoadS32 temp _ ->
+      allocateDef nextSlot acc temp rest
     ILoad16 temp _ ->
       allocateDef nextSlot acc temp rest
+    ILoadS16 temp _ ->
+      allocateDef nextSlot acc temp rest
     ILoad8 temp _ ->
+      allocateDef nextSlot acc temp rest
+    ILoadS8 temp _ ->
       allocateDef nextSlot acc temp rest
     IStore64 _ _ ->
       allocateInstrs nextSlot acc rest

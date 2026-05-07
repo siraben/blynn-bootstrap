@@ -1,5 +1,6 @@
 module Hcc.Lower
   ( lowerProgram
+  , lowerProgramWithDataPrefix
   ) where
 
 import Hcc.Ast
@@ -15,7 +16,10 @@ data SwitchClause = SwitchClause (Maybe Expr) [Stmt]
   deriving (Eq, Show)
 
 lowerProgram :: Program -> Either CompileError ModuleIr
-lowerProgram (Program decls) = runCompileM $ do
+lowerProgram = lowerProgramWithDataPrefix "HCC_DATA"
+
+lowerProgramWithDataPrefix :: String -> Program -> Either CompileError ModuleIr
+lowerProgramWithDataPrefix prefix (Program decls) = runCompileMWithDataPrefix prefix $ do
   registerBuiltinStructs
   registerTopDecls decls
   fns <- lowerTopDecls decls
@@ -511,24 +515,26 @@ lowerDecl :: CType -> String -> Maybe Expr -> CompileM [Instr]
 lowerDecl ty name initExpr = do
   staticData <- localStaticData ty initExpr
   aggregateStorage <- isAggregateTypeM ty
-  (declInstrs, temp) <- case staticData of
+  temp <- freshTemp
+  bindVar name temp ty
+  case staticData of
     Just label -> do
-      t <- freshTemp
-      pure ([ICopy t (OGlobal label)], t)
+      pure [ICopy temp (OGlobal label)]
     Nothing | aggregateStorage -> do
-      t <- freshTemp
       size <- typeSize ty
-      pure ([IAlloca t size], t)
+      initInstrs <- case initExpr of
+        Just expr -> do
+          (exprInstrs, op) <- lowerExpr expr
+          copyInstrs <- copyObject (OTemp temp) op ty
+          pure (exprInstrs ++ copyInstrs)
+        Nothing -> pure []
+      pure (IAlloca temp size : initInstrs)
     Nothing -> case initExpr of
       Nothing -> do
-        t <- freshTemp
-        pure ([IConst t 0], t)
+        pure [IConst temp 0]
       Just expr -> do
         (exprInstrs, op) <- lowerExpr expr
-        (copyInstrs, t) <- materializeNew op
-        pure (exprInstrs ++ copyInstrs, t)
-  bindVar name temp ty
-  pure declInstrs
+        pure (exprInstrs ++ [ICopy temp op])
 
 localStaticData :: CType -> Maybe Expr -> CompileM (Maybe String)
 localStaticData ty initExpr = case (ty, initExpr) of
@@ -541,8 +547,7 @@ localStaticData ty initExpr = case (ty, initExpr) of
 
 localDataItem :: CType -> Maybe Expr -> CompileM (Maybe String)
 localDataItem ty initExpr = do
-  label <- freshLabel
-  let dataLabel = "HCC_DATA_" ++ label
+  dataLabel <- freshDataLabel
   values <- globalData ty initExpr
   addDataItem (DataItem dataLabel values)
   pure (Just dataLabel)
@@ -596,8 +601,7 @@ lowerExpr expr = case expr of
     temp <- freshTemp
     pure ([IConst temp (charValue text)], OTemp temp)
   EString text -> do
-    label <- freshLabel
-    let dataLabel = "HCC_DATA_" ++ label
+    dataLabel <- freshDataLabel
     addDataItem (DataItem dataLabel (bytesData (stringBytes text)))
     pure ([], OGlobal dataLabel)
   EVar name | Just value <- builtinConstant name ->
@@ -676,12 +680,22 @@ lowerExpr expr = case expr of
     ai <- lowerSideEffect a
     (bi, bo) <- lowerExpr b
     pure (ai ++ bi, bo)
+  EBinary "+" a b ->
+    lowerAddExpr a b
+  EBinary "-" a b ->
+    lowerSubExpr a b
   EBinary ">>" a b -> do
     (ai, ao) <- lowerExpr a
     (bi, bo) <- lowerExpr b
     out <- freshTemp
     op <- shiftRightOp a
     pure (ai ++ bi ++ [IBin out op ao bo], OTemp out)
+  EBinary op a b | op `elem` ["<", "<=", ">", ">="] -> do
+    (ai, ao) <- lowerExpr a
+    (bi, bo) <- lowerExpr b
+    out <- freshTemp
+    iop <- comparisonOp op a b
+    pure (ai ++ bi ++ [IBin out iop ao bo], OTemp out)
   EBinary op a b | Just iop <- lowerBinOp op -> do
     (ai, ao) <- lowerExpr a
     (bi, bo) <- lowerExpr b
@@ -730,6 +744,52 @@ lowerIndirectCall callee args = do
   let ops = map snd lowered
   pure (calleeInstrs ++ instrs ++ [ICallIndirect (Just out) calleeOp ops], OTemp out)
 
+lowerAddExpr :: Expr -> Expr -> CompileM ([Instr], Operand)
+lowerAddExpr a b = do
+  aty <- exprType a
+  bty <- exprType b
+  case (pointerElementType aty, pointerElementType bty) of
+    (Just elemTy, _) -> lowerPointerOffset IAdd a b elemTy
+    (_, Just elemTy) -> lowerPointerOffset IAdd b a elemTy
+    _ -> lowerPlainBin IAdd a b
+
+lowerSubExpr :: Expr -> Expr -> CompileM ([Instr], Operand)
+lowerSubExpr a b = do
+  aty <- exprType a
+  bty <- exprType b
+  case (pointerElementType aty, pointerElementType bty) of
+    (Just elemTy, Just _) -> do
+      (ai, ao) <- lowerExpr a
+      (bi, bo) <- lowerExpr b
+      diff <- freshTemp
+      out <- freshTemp
+      size <- typeSize elemTy
+      pure (ai ++ bi ++ [IBin diff ISub ao bo, IBin out IDiv (OTemp diff) (OImm size)], OTemp out)
+    (Just elemTy, Nothing) -> lowerPointerOffset ISub a b elemTy
+    _ -> lowerPlainBin ISub a b
+
+lowerPointerOffset :: BinOp -> Expr -> Expr -> CType -> CompileM ([Instr], Operand)
+lowerPointerOffset op ptr offset elemTy = do
+  (ptrInstrs, po) <- lowerExpr ptr
+  (oi, oo) <- lowerExpr offset
+  size <- typeSize elemTy
+  scaled <- freshTemp
+  out <- freshTemp
+  pure (ptrInstrs ++ oi ++ [IBin scaled IMul oo (OImm size), IBin out op po (OTemp scaled)], OTemp out)
+
+lowerPlainBin :: BinOp -> Expr -> Expr -> CompileM ([Instr], Operand)
+lowerPlainBin op a b = do
+  (ai, ao) <- lowerExpr a
+  (bi, bo) <- lowerExpr b
+  out <- freshTemp
+  pure (ai ++ bi ++ [IBin out op ao bo], OTemp out)
+
+pointerElementType :: Maybe CType -> Maybe CType
+pointerElementType mty = case mty of
+  Just (CPtr ty) -> Just ty
+  Just (CArray ty _) -> Just ty
+  _ -> Nothing
+
 lowerAssignment :: Expr -> Expr -> CompileM ([Instr], Operand)
 lowerAssignment lhs rhs = do
   (lhsInstrs, lvalue) <- lowerLValue lhs
@@ -768,9 +828,13 @@ readLValue lvalue = case lvalue of
   LAddress addr ty -> case ty of
     CArray{} -> pure ([], addr)
     _ -> do
-      out <- freshTemp
-      load <- loadInstr out ty addr
-      pure ([load], OTemp out)
+      aggregateStorage <- isAggregateTypeM ty
+      if aggregateStorage
+        then pure ([], addr)
+        else do
+          out <- freshTemp
+          load <- loadInstr out ty addr
+          pure ([load], OTemp out)
 
 writeLValue :: LValue -> Operand -> CompileM [Instr]
 writeLValue lvalue value = case lvalue of
@@ -1014,7 +1078,28 @@ aggregateFields ty = case ty of
 loadInstr :: Temp -> CType -> Operand -> CompileM Instr
 loadInstr out ty addr = do
   size <- typeSize ty
-  pure (if size <= 1 then ILoad8 out addr else if size <= 2 then ILoad16 out addr else if size <= 4 then ILoad32 out addr else ILoad64 out addr)
+  let signed = isSignedIntegerType ty
+  pure (if size <= 1
+        then (if signed then ILoadS8 else ILoad8) out addr
+        else if size <= 2
+        then (if signed then ILoadS16 else ILoad16) out addr
+        else if size <= 4
+        then (if signed then ILoadS32 else ILoad32) out addr
+        else ILoad64 out addr)
+
+isSignedIntegerType :: CType -> Bool
+isSignedIntegerType ty = case ty of
+  CChar -> True
+  CInt -> True
+  CEnum{} -> True
+  CNamed name -> isSignedNamedInteger name
+  _ -> False
+
+isSignedNamedInteger :: String -> Bool
+isSignedNamedInteger name
+  | name `elem` ["int8_t", "int16_t", "int32_t"] = True
+  | name `elem` ["ssize_t", "time_t", "ptrdiff_t", "intptr_t"] = True
+  | otherwise = False
 
 storeInstr :: CType -> Operand -> Operand -> CompileM Instr
 storeInstr ty addr value = do
@@ -1107,11 +1192,6 @@ alignUp offset align =
   let remnant = offset `mod` align
   in if remnant == 0 then offset else offset + align - remnant
 
-materializeNew :: Operand -> CompileM ([Instr], Temp)
-materializeNew op = do
-  temp <- freshTemp
-  pure ([ICopy temp op], temp)
-
 globalData :: CType -> Maybe Expr -> CompileM [DataValue]
 globalData ty initExpr = do
   values <- globalDataValue ty initExpr
@@ -1144,8 +1224,7 @@ globalDataValue ty initExpr = case (ty, initExpr) of
       Just (True, fields) -> globalUnionData fields exprs
       Nothing -> zeroData <$> typeSize ty
   (_, Just (EString text)) | isPointerType ty -> do
-    label <- freshLabel
-    let dataLabel = "HCC_DATA_" ++ label
+    dataLabel <- freshDataLabel
     addDataItem (DataItem dataLabel (bytesData (stringBytes text)))
     pure [DAddress dataLabel]
   (_, Just (EInt text)) -> scalarData ty (parseInt text)
@@ -1357,10 +1436,6 @@ lowerBinOp op = case op of
   ">>" -> Just IShr
   "==" -> Just IEq
   "!=" -> Just INe
-  "<" -> Just ILt
-  "<=" -> Just ILe
-  ">" -> Just IGt
-  ">=" -> Just IGe
   "&" -> Just IAnd
   "|" -> Just IOr
   "^" -> Just IXor
@@ -1375,17 +1450,45 @@ shiftRightOp expr = do
     Just ty | isUnsignedType ty -> IShr
     _ -> ISar)
 
+comparisonOp :: String -> Expr -> Expr -> CompileM BinOp
+comparisonOp op a b = do
+  au <- exprIsUnsigned a
+  bu <- exprIsUnsigned b
+  pure (case (au || bu, op) of
+    (False, "<") -> ILt
+    (False, "<=") -> ILe
+    (False, ">") -> IGt
+    (False, ">=") -> IGe
+    (True, "<") -> IULt
+    (True, "<=") -> IULe
+    (True, ">") -> IUGt
+    (True, ">=") -> IUGe
+    _ -> IEq)
+
+exprIsUnsigned :: Expr -> CompileM Bool
+exprIsUnsigned expr = case expr of
+  EInt text -> pure (intLiteralIsUnsigned text)
+  _ -> do
+    mty <- exprType expr
+    pure (maybe False isUnsignedType mty)
+
 isUnsignedType :: CType -> Bool
 isUnsignedType ty = case ty of
   CUnsigned -> True
   CUnsignedChar -> True
   CPtr{} -> True
+  CArray{} -> True
   CNamed name -> name `elem`
     [ "uint8_t", "uint16_t", "uint32_t", "uint64_t"
-    , "uintptr_t", "size_t", "Elf32_Word", "Elf64_Word"
+    , "uintptr_t", "size_t", "addr_t", "Elf32_Word", "Elf64_Word"
     , "Elf32_Addr", "Elf64_Addr", "Elf32_Off", "Elf64_Off"
     ]
   _ -> False
+
+intLiteralIsUnsigned :: String -> Bool
+intLiteralIsUnsigned text = case text of
+  [] -> False
+  c:rest -> c == 'u' || c == 'U' || intLiteralIsUnsigned rest
 
 parseInt :: String -> Int
 parseInt text =

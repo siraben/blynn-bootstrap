@@ -28,6 +28,10 @@ data BinOp
   | ILe
   | IGt
   | IGe
+  | IULt
+  | IULe
+  | IUGt
+  | IUGe
   | IAnd
   | IOr
   | IXor
@@ -41,8 +45,11 @@ data Instr
   | IAddrOf Temp Temp
   | ILoad64 Temp Operand
   | ILoad32 Temp Operand
+  | ILoadS32 Temp Operand
   | ILoad16 Temp Operand
+  | ILoadS16 Temp Operand
   | ILoad8 Temp Operand
+  | ILoadS8 Temp Operand
   | IStore64 Operand Operand
   | IStore32 Operand Operand
   | IStore16 Operand Operand

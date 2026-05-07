@@ -1,6 +1,7 @@
 module Hcc.CodegenM1
   ( CodegenError(..)
   , codegenM1
+  , codegenM1WithDataPrefix
   ) where
 
 import Hcc.Ast
@@ -15,8 +16,11 @@ data CodegenError = CodegenError String
 type Lines = [String] -> [String]
 
 codegenM1 :: Program -> Either CodegenError String
-codegenM1 ast = do
-  ir <- mapCompileError (lowerProgram ast)
+codegenM1 = codegenM1WithDataPrefix "HCC_DATA"
+
+codegenM1WithDataPrefix :: String -> Program -> Either CodegenError String
+codegenM1WithDataPrefix prefix ast = do
+  ir <- mapCompileError (lowerProgramWithDataPrefix prefix ast)
   codegenModule ir
 
 codegenModule :: ModuleIr -> Either CodegenError String
@@ -51,10 +55,13 @@ header =
   , "DEFINE HCC_LOAD_INTEGER 488B00"
   , "DEFINE HCC_STORE_INTEGER 488903"
   , "DEFINE HCC_LOAD_WORD 8B00"
+  , "DEFINE HCC_LOAD_SIGNED_WORD 486300"
   , "DEFINE HCC_LOAD_HALF 0FB700"
+  , "DEFINE HCC_LOAD_SIGNED_HALF 480FBF00"
   , "DEFINE HCC_STORE_WORD 8903"
   , "DEFINE HCC_STORE_HALF 668903"
   , "DEFINE HCC_STORE_CHAR 8803"
+  , "DEFINE HCC_LOAD_SIGNED_CHAR 480FBE00"
   , "DEFINE HCC_XOR_rbx_rax_into_rax 4831D8"
   , "DEFINE HCC_CALL_rax FFD0"
   , ""
@@ -118,12 +125,21 @@ codegenInstr fnName alloc totalSlots instr = case instr of
   ILoad32 temp op -> do
     code <- loadOperand alloc op
     storeTemp alloc temp (code ++ ["\tHCC_LOAD_WORD"])
+  ILoadS32 temp op -> do
+    code <- loadOperand alloc op
+    storeTemp alloc temp (code ++ ["\tHCC_LOAD_SIGNED_WORD"])
   ILoad16 temp op -> do
     code <- loadOperand alloc op
     storeTemp alloc temp (code ++ ["\tHCC_LOAD_HALF"])
+  ILoadS16 temp op -> do
+    code <- loadOperand alloc op
+    storeTemp alloc temp (code ++ ["\tHCC_LOAD_SIGNED_HALF"])
   ILoad8 temp op -> do
     code <- loadOperand alloc op
     storeTemp alloc temp (code ++ ["\tLOAD_BYTE", "\tMOVEZX"])
+  ILoadS8 temp op -> do
+    code <- loadOperand alloc op
+    storeTemp alloc temp (code ++ ["\tHCC_LOAD_SIGNED_CHAR"])
   IStore64 addr value -> do
     addrCode <- loadOperand alloc addr
     valueCode <- loadOperand alloc value
@@ -258,6 +274,10 @@ binOpCode op = case op of
   ILe -> Right ["\tCMP", "\tSETLE", "\tMOVEZX"]
   IGt -> Right ["\tCMP", "\tSETG", "\tMOVEZX"]
   IGe -> Right ["\tCMP", "\tSETGE", "\tMOVEZX"]
+  IULt -> Right ["\tCMP", "\tSETB", "\tMOVEZX"]
+  IULe -> Right ["\tCMP", "\tSETBE", "\tMOVEZX"]
+  IUGt -> Right ["\tCMP", "\tSETA", "\tMOVEZX"]
+  IUGe -> Right ["\tCMP", "\tSETAE", "\tMOVEZX"]
   IAnd -> Right ["\tAND_rax_rbx"]
   IOr -> Right ["\tOR_rax_rbx"]
   IXor -> Right ["\tHCC_XOR_rbx_rax_into_rax"]
