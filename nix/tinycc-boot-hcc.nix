@@ -13,11 +13,6 @@ let
   rev = "ea3900f6d5e71776c5cfabcabee317652e3a19ee";
   support = ../vendor/hcc/support;
 
-  tccIncludeSrc = fetchurl {
-    url = "https://repo.or.cz/tinycc.git/snapshot/cb41cbfe717e4c00d7bb70035cda5ee5f0ff9341.tar.gz";
-    hash = "sha256-MRuqq3TKcfIahtUWdhAcYhqDiGPkAjS8UTMsDE+/jGU=";
-  };
-
 in
 stdenv.mkDerivation {
   pname = "tinycc-boot-hcc";
@@ -45,13 +40,15 @@ stdenv.mkDerivation {
 
     substituteInPlace tccelf.c \
       --replace-fail 'fill_got(s1);' '{ fill_got(s1); relocate_plt(s1); }'
+
+    substituteInPlace libtcc.c \
+      --replace-fail '#if defined(TCC_MUSL)' '#if defined(TCC_MUSL) || defined(TCC_MES_LIBC)'
   '';
 
   buildPhase = ''
     runHook preBuild
 
-    tar xzf ${tccIncludeSrc}
-    tcc_include_src="$PWD/tinycc-cb41cbf/include"
+    tcc_include_src="$PWD/include"
     mes_include_src="${mesLibc}/include"
 
     cat > config.h <<'EOF'
@@ -75,7 +72,6 @@ stdenv.mkDerivation {
     #define CONFIG_TCC_STATIC 1
     #define CONFIG_USE_LIBGCC 1
     #define TCC_MES_LIBC 1
-    #define TCC_MUSL 1
     #define TCC_VERSION "0.9.28-${version}"
     #define ONE_SOURCE 1
     #define CONFIG_TCC_SEMLOCK 0
@@ -107,7 +103,6 @@ stdenv.mkDerivation {
       -D CONFIG_TCC_STATIC=1 \
       -D CONFIG_USE_LIBGCC=1 \
       -D TCC_MES_LIBC=1 \
-      -D TCC_MUSL=1 \
       -D TCC_VERSION=\"0.9.28-${version}\" \
       -D ONE_SOURCE=1 \
       -D CONFIG_TCC_SEMLOCK=0 \
@@ -151,13 +146,13 @@ stdenv.mkDerivation {
     }
 
     mkdir -p bootstrap-libs
-    ./tcc -c -std=c11 -I "$mes_include_src" -I "$tcc_include_src" -o bootstrap-libs/crt1.o ${mesLibc}/lib/crt1.c
-    ./tcc -c -std=c11 -I "$mes_include_src" -I "$tcc_include_src" -o bootstrap-libs/crti.o ${mesLibc}/lib/crti.c
-    ./tcc -c -std=c11 -I "$mes_include_src" -I "$tcc_include_src" -o bootstrap-libs/crtn.o ${mesLibc}/lib/crtn.c
-    ./tcc -c -std=c11 -I "$mes_include_src" -I "$tcc_include_src" -o bootstrap-libs/libc.o ${mesLibc}/lib/libc.c
-    ./tcc -c -std=c11 -I "$mes_include_src" -I "$tcc_include_src" -o bootstrap-libs/libgetopt.o ${mesLibc}/lib/libgetopt.c
-    ./tcc -c -I "$mes_include_src" -I "$tcc_include_src" -D TCC_TARGET_X86_64=1 -o bootstrap-libs/libtcc1.o lib/libtcc1.c
-    ./tcc -c -I "$mes_include_src" -I "$tcc_include_src" -D TCC_TARGET_X86_64=1 -o bootstrap-libs/va_list.o lib/va_list.c
+    ./tcc -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o bootstrap-libs/crt1.o ${mesLibc}/lib/crt1.c
+    ./tcc -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o bootstrap-libs/crti.o ${mesLibc}/lib/crti.c
+    ./tcc -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o bootstrap-libs/crtn.o ${mesLibc}/lib/crtn.c
+    ./tcc -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o bootstrap-libs/libc.o ${mesLibc}/lib/libc.c
+    ./tcc -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o bootstrap-libs/libgetopt.o ${mesLibc}/lib/libgetopt.c
+    ./tcc -c -I "$tcc_include_src" -I "$mes_include_src" -D TCC_TARGET_X86_64=1 -o bootstrap-libs/libtcc1.o lib/libtcc1.c
+    ./tcc -c -I "$tcc_include_src" -I "$mes_include_src" -D TCC_TARGET_X86_64=1 -o bootstrap-libs/va_list.o lib/va_list.c
     make_ar_noindex bootstrap-libs/libc.a bootstrap-libs/libc.o
     make_ar_noindex bootstrap-libs/libgetopt.a bootstrap-libs/libgetopt.o
     make_ar_noindex bootstrap-libs/libtcc1.a bootstrap-libs/libtcc1.o bootstrap-libs/va_list.o
@@ -208,9 +203,17 @@ stdenv.mkDerivation {
     ./tcc -c smoke.c -o smoke.o
     test -s smoke.o
 
+    printf '%s\n' 'int f(void){return 17;} int main(void){return f();}' > internal-call-smoke.c
+    ./tcc -B bootstrap-libs internal-call-smoke.c -o internal-call-smoke
+    set +e
+    ./internal-call-smoke
+    internal_call_status="$?"
+    set -e
+    test "$internal_call_status" -eq 17
+
     ./tcc -c \
       -I . \
-      -I tinycc-cb41cbf/include \
+      -I include \
       -I ${mesLibc}/include \
       -D __linux__=1 \
       -D BOOTSTRAP=1 \
@@ -225,14 +228,13 @@ stdenv.mkDerivation {
       -D CONFIG_TCC_CRTPREFIX=\"{B}\" \
       -D CONFIG_TCC_ELFINTERP=\"/mes/loader\" \
       -D CONFIG_TCC_LIBPATHS=\"{B}\" \
-      -D CONFIG_TCC_SYSINCLUDEPATHS=\"$PWD/tinycc-cb41cbf/include:${mesLibc}/include\" \
+      -D CONFIG_TCC_SYSINCLUDEPATHS=\"$PWD/include:${mesLibc}/include\" \
       -D TCC_LIBGCC=\"libc.a\" \
       -D TCC_LIBTCC1=\"libtcc1.a\" \
       -D CONFIG_TCC_LIBTCC1_MES=0 \
       -D CONFIG_TCC_STATIC=1 \
       -D CONFIG_USE_LIBGCC=1 \
       -D TCC_MES_LIBC=1 \
-      -D TCC_MUSL=1 \
       -D TCC_VERSION=\"0.9.28-${version}\" \
       -D ONE_SOURCE=1 \
       -D CONFIG_TCC_SEMLOCK=0 \
@@ -241,8 +243,8 @@ stdenv.mkDerivation {
 
     ./tcc -c \
       -I . \
+      -I include \
       -I ${mesLibc}/include \
-      -I tinycc-cb41cbf/include \
       -D __linux__=1 \
       -D BOOTSTRAP=1 \
       -D HAVE_LONG_LONG=1 \
@@ -251,7 +253,6 @@ stdenv.mkDerivation {
       -D HAVE_FLOAT=1 \
       -D TCC_TARGET_X86_64=1 \
       -D TCC_MES_LIBC=1 \
-      -D TCC_MUSL=1 \
       lib/libtcc1.c -o libtcc1.o
     ./tcc -ar rcs libtcc1.a libtcc1.o
     test -s libtcc1.a
@@ -262,6 +263,42 @@ stdenv.mkDerivation {
     smoke_status="$?"
     set -e
     test "$smoke_status" -eq 13
+
+    ./tcc -B bootstrap-libs \
+      -I . \
+      -I include \
+      -I ${mesLibc}/include \
+      -D __linux__=1 \
+      -D BOOTSTRAP=1 \
+      -D HAVE_LONG_LONG=1 \
+      -D HAVE_SETJMP=1 \
+      -D HAVE_BITFIELD=1 \
+      -D HAVE_FLOAT=1 \
+      -D TCC_TARGET_X86_64=1 \
+      -D inline= \
+      -D CONFIG_TCCDIR=\"\" \
+      -D CONFIG_SYSROOT=\"\" \
+      -D CONFIG_TCC_CRTPREFIX=\"{B}\" \
+      -D CONFIG_TCC_ELFINTERP=\"/mes/loader\" \
+      -D CONFIG_TCC_LIBPATHS=\"{B}\" \
+      -D CONFIG_TCC_SYSINCLUDEPATHS=\"$PWD/include:${mesLibc}/include\" \
+      -D TCC_LIBGCC=\"libc.a\" \
+      -D TCC_LIBTCC1=\"libtcc1.a\" \
+      -D CONFIG_TCC_LIBTCC1_MES=0 \
+      -D CONFIG_TCC_STATIC=1 \
+      -D CONFIG_USE_LIBGCC=1 \
+      -D TCC_MES_LIBC=1 \
+      -D TCC_VERSION=\"0.9.28-${version}\" \
+      -D ONE_SOURCE=1 \
+      -D CONFIG_TCC_SEMLOCK=0 \
+      tcc.c -o tcc-stage2
+    ./tcc-stage2 -version
+    ./tcc-stage2 -B bootstrap-libs internal-call-smoke.c -o internal-call-stage2
+    set +e
+    ./internal-call-stage2
+    stage2_status="$?"
+    set -e
+    test "$stage2_status" -eq 17
 
     runHook postCheck
   '';
