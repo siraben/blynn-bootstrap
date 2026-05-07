@@ -9,6 +9,8 @@ CASES = [
     ("short-circuit", 42),
     ("local-aggregate", 3),
     ("call-arg-immediate", 42),
+    ("dynamic-aggregate", 0),
+    ("conditional-aggregate-copy", 0),
 ]
 
 
