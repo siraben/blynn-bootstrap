@@ -500,10 +500,105 @@ int unlink(char* path) { return -1; }
 int setjmp(void* env) { return 0; }
 void longjmp(void* env, int value) { _exit(value); }
 
+static char* hcc_append_char(char* out, char* end, int* total, int c)
+{
+    if (out < end) {
+        *out = c;
+        out = out + 1;
+    }
+    *total = *total + 1;
+    return out;
+}
+
+static char* hcc_append_string(char* out, char* end, int* total, char* text)
+{
+    if (!text) text = "(null)";
+    while (*text) {
+        out = hcc_append_char(out, end, total, *text);
+        text = text + 1;
+    }
+    return out;
+}
+
+static char* hcc_append_unsigned(char* out, char* end, int* total, unsigned long value, int base)
+{
+    char digits[32];
+    int n = 0;
+    int digit;
+    if (value == 0) return hcc_append_char(out, end, total, '0');
+    while (value) {
+        digit = value % base;
+        if (digit < 10) digits[n] = '0' + digit;
+        else digits[n] = 'a' + digit - 10;
+        n = n + 1;
+        value = value / base;
+    }
+    while (n) {
+        n = n - 1;
+        out = hcc_append_char(out, end, total, digits[n]);
+    }
+    return out;
+}
+
+static char* hcc_append_signed(char* out, char* end, int* total, long value)
+{
+    if (value < 0) {
+        out = hcc_append_char(out, end, total, '-');
+        value = -value;
+    }
+    return hcc_append_unsigned(out, end, total, value, 10);
+}
+
+static long hcc_format_arg(int index, long a, long b, long c)
+{
+    if (index == 0) return a;
+    if (index == 1) return b;
+    return c;
+}
+
+static int hcc_vformat(char* out, unsigned size, char* fmt, long a, long b, long c)
+{
+    char* p = out;
+    char* end = out;
+    int total = 0;
+    int arg = 0;
+    long value;
+    if (size) end = out + size - 1;
+    while (*fmt) {
+        if (*fmt != '%') {
+            p = hcc_append_char(p, end, &total, *fmt);
+            fmt = fmt + 1;
+            continue;
+        }
+        fmt = fmt + 1;
+        while (*fmt >= '0' && *fmt <= '9') fmt = fmt + 1;
+        if (*fmt == 'l') fmt = fmt + 1;
+        value = hcc_format_arg(arg, a, b, c);
+        arg = arg + 1;
+        if (*fmt == 's') p = hcc_append_string(p, end, &total, (char*)value);
+        else if (*fmt == 'd') p = hcc_append_signed(p, end, &total, value);
+        else if (*fmt == 'i') p = hcc_append_signed(p, end, &total, value);
+        else if (*fmt == 'u') p = hcc_append_unsigned(p, end, &total, value, 10);
+        else if (*fmt == 'x') p = hcc_append_unsigned(p, end, &total, value, 16);
+        else if (*fmt == 'X') p = hcc_append_unsigned(p, end, &total, value, 16);
+        else if (*fmt == 'c') p = hcc_append_char(p, end, &total, value);
+        else if (*fmt == '%') {
+            p = hcc_append_char(p, end, &total, '%');
+            arg = arg - 1;
+        } else {
+            p = hcc_append_char(p, end, &total, '%');
+            p = hcc_append_char(p, end, &total, *fmt);
+        }
+        if (*fmt) fmt = fmt + 1;
+    }
+    if (size) *p = 0;
+    return total;
+}
+
 int printf(char* fmt) { return 0; }
 int fprintf(void* stream, char* fmt) { return 0; }
-int sprintf(char* out, char* fmt) { if (out) out[0] = 0; return 0; }
-int snprintf(char* out, unsigned size, char* fmt) { if (out && size) out[0] = 0; return 0; }
+int sprintf(char* out, char* fmt, long a, long b, long c) { return hcc_vformat(out, 0xffffffff, fmt, a, b, c); }
+int snprintf(char* out, unsigned size, char* fmt, long a, long b, long c) { return hcc_vformat(out, size, fmt, a, b, c); }
 int sscanf(char* input, char* fmt) { return 0; }
 int vsnprintf(char* out, unsigned size, char* fmt, void* ap) { if (out && size) out[0] = 0; return 0; }
 int vfprintf(void* stream, char* fmt, void* ap) { return fputs(fmt, stream); }

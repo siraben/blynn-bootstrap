@@ -239,36 +239,33 @@ lowerStatementsFrom bid instrs stmts defaultTerm = case stmts of
     condId <- freshBlock
     bodyId <- freshBlock
     restId <- freshBlock
-    (condInstrs, condOp) <- lowerExpr cond
+    condBlocks <- lowerConditionBlock condId [] cond bodyId restId
     bodyBlocks <- withLoopTargets restId condId (lowerStatementsFrom bodyId [] body (TJump condId))
     restBlocks <- lowerStatementsFrom restId [] rest defaultTerm
     pure ( BasicBlock bid instrs (TJump condId)
-         : BasicBlock condId condInstrs (TBranch condOp bodyId restId)
-         : bodyBlocks ++ restBlocks)
+         : condBlocks ++ bodyBlocks ++ restBlocks)
   SDoWhile body cond:rest -> do
     bodyId <- freshBlock
     condId <- freshBlock
     restId <- freshBlock
-    (condInstrs, condOp) <- lowerExpr cond
+    condBlocks <- lowerConditionBlock condId [] cond bodyId restId
     bodyBlocks <- withLoopTargets restId condId (lowerStatementsFrom bodyId [] body (TJump condId))
     restBlocks <- lowerStatementsFrom restId [] rest defaultTerm
     pure ( BasicBlock bid instrs (TJump bodyId)
          : bodyBlocks ++
-           [BasicBlock condId condInstrs (TBranch condOp bodyId restId)] ++
-           restBlocks)
+           condBlocks ++ restBlocks)
   SFor initExpr condExpr stepExpr body:rest -> do
     initInstrs <- maybeLowerSideEffect initExpr
     condId <- freshBlock
     bodyId <- freshBlock
     stepId <- freshBlock
     restId <- freshBlock
-    (condInstrs, condTerm) <- lowerLoopCondition condExpr bodyId restId
+    condBlocks <- lowerLoopConditionBlocks condExpr condId bodyId restId
     stepInstrs <- maybeLowerSideEffect stepExpr
     bodyBlocks <- withLoopTargets restId stepId (lowerStatementsFrom bodyId [] body (TJump stepId))
     restBlocks <- lowerStatementsFrom restId [] rest defaultTerm
     pure ( BasicBlock bid (instrs ++ initInstrs) (TJump condId)
-         : BasicBlock condId condInstrs condTerm
-         : bodyBlocks ++
+         : condBlocks ++ bodyBlocks ++
            [BasicBlock stepId stepInstrs (TJump condId)] ++
            restBlocks)
   SSwitch value body:rest -> do
@@ -287,7 +284,6 @@ lowerStatementsFrom bid instrs stmts defaultTerm = case stmts of
     blocks <- lowerStatementsFrom target [] rest defaultTerm
     pure (BasicBlock bid instrs (TJump target) : blocks)
   SIf cond yes no:rest -> do
-    (condInstrs, condOp) <- lowerExpr cond
     yesId <- freshBlock
     noId <- freshBlock
     (restId, restBlocks) <- if null rest
@@ -306,7 +302,8 @@ lowerStatementsFrom bid instrs stmts defaultTerm = case stmts of
     noBlocks <- if null no
       then pure []
       else lowerStatementsFrom noId [] no (TJump restId)
-    pure (BasicBlock bid (instrs ++ condInstrs) (TBranch condOp yesId noTarget) : yesBlocks ++ noBlocks ++ restBlocks)
+    condBlocks <- lowerConditionBlock bid instrs cond yesId noTarget
+    pure (condBlocks ++ yesBlocks ++ noBlocks ++ restBlocks)
   SBreak:rest -> do
     target <- requireBreakTarget
     tailBlocks <- lowerUnreachableLabels rest defaultTerm
@@ -331,12 +328,28 @@ maybeLowerSideEffect value = case value of
   Nothing -> pure []
   Just expr -> lowerSideEffect expr
 
-lowerLoopCondition :: Maybe Expr -> BlockId -> BlockId -> CompileM ([Instr], Terminator)
-lowerLoopCondition condExpr bodyId restId = case condExpr of
-  Nothing -> pure ([], TJump bodyId)
-  Just cond -> do
+lowerLoopConditionBlocks :: Maybe Expr -> BlockId -> BlockId -> BlockId -> CompileM [BasicBlock]
+lowerLoopConditionBlocks condExpr condId bodyId restId = case condExpr of
+  Nothing -> pure [BasicBlock condId [] (TJump bodyId)]
+  Just cond -> lowerConditionBlock condId [] cond bodyId restId
+
+lowerConditionBlock :: BlockId -> [Instr] -> Expr -> BlockId -> BlockId -> CompileM [BasicBlock]
+lowerConditionBlock bid instrs cond trueId falseId = case cond of
+  EBinary "&&" left right -> do
+    rightId <- freshBlock
+    leftBlocks <- lowerConditionBlock bid instrs left rightId falseId
+    rightBlocks <- lowerConditionBlock rightId [] right trueId falseId
+    pure (leftBlocks ++ rightBlocks)
+  EBinary "||" left right -> do
+    rightId <- freshBlock
+    leftBlocks <- lowerConditionBlock bid instrs left trueId rightId
+    rightBlocks <- lowerConditionBlock rightId [] right trueId falseId
+    pure (leftBlocks ++ rightBlocks)
+  EUnary "!" value ->
+    lowerConditionBlock bid instrs value falseId trueId
+  _ -> do
     (condInstrs, condOp) <- lowerExpr cond
-    pure (condInstrs, TBranch condOp bodyId restId)
+    pure [BasicBlock bid (instrs ++ condInstrs) (TBranch condOp trueId falseId)]
 
 requireBreakTarget :: CompileM BlockId
 requireBreakTarget = do
@@ -471,6 +484,7 @@ builtinConstant name = case name of
   "NULL" -> Just 0
   "__null" -> Just 0
   "__LINE__" -> Just 0
+  "CH_EOB" -> Just 92
   "EINTR" -> Just 4
   "char" -> Just 1
   "short" -> Just 2
@@ -480,6 +494,9 @@ builtinConstant name = case name of
   "TOKSTR_TAL_LIMIT" -> Just 1024
   "TOKSYM_TAL_SIZE" -> Just (768 * 1024)
   "TOKSTR_TAL_SIZE" -> Just (768 * 1024)
+  "TOK_ALLOC_INCR" -> Just 512
+  "TOK_IDENT" -> Just 256
+  "SYM_FIRST_ANOM" -> Just 268435456
   _ -> Nothing
 
 lowerDecls :: [(CType, String, Maybe Expr)] -> CompileM [Instr]
@@ -601,7 +618,11 @@ lowerExpr expr = case expr of
                 globalTy <- lookupGlobalType name
                 case globalTy of
                   Just CArray{} -> pure ([], OGlobal name)
-                  _ -> do
+                  Just ty -> do
+                    out <- freshTemp
+                    load <- loadInstr out ty (OGlobal name)
+                    pure ([load], OTemp out)
+                  Nothing -> do
                     out <- freshTemp
                     pure ([ILoad64 out (OGlobal name)], OTemp out)
   EUnary "+" x -> lowerExpr x
@@ -1411,8 +1432,14 @@ charValue :: String -> Int
 charValue text = case text of
   '\'':'\\':'n':'\'':[] -> 10
   '\'':'\\':'t':'\'':[] -> 9
+  '\'':'\\':'r':'\'':[] -> 13
+  '\'':'\\':'f':'\'':[] -> 12
+  '\'':'\\':'v':'\'':[] -> 11
   '\'':'\\':'a':'\'':[] -> 7
   '\'':'\\':'b':'\'':[] -> 8
+  '\'':'\\':'\\':'\'':[] -> 92
+  '\'':'\\':'\'':'\'':[] -> 39
+  '\'':'\\':'"':'\'':[] -> 34
   '\'':'\\':'0':'\'':[] -> 0
   '\'':c:'\'':[] -> fromEnum c
   _ -> 0
@@ -1423,6 +1450,9 @@ stringBytes text = go (stripQuotes text) where
     [] -> [0]
     '\\':'n':rest -> 10 : go rest
     '\\':'t':rest -> 9 : go rest
+    '\\':'r':rest -> 13 : go rest
+    '\\':'f':rest -> 12 : go rest
+    '\\':'v':rest -> 11 : go rest
     '\\':'a':rest -> 7 : go rest
     '\\':'b':rest -> 8 : go rest
     '\\':'0':rest -> 0 : go rest

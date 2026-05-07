@@ -1,0 +1,32 @@
+## Final syscall definitions. Keep this after generated TinyCC/Mes-libc M1 so
+## these labels override bootstrap libc stubs with the same names.
+
+:FUNCTION_read
+	LOAD_IMMEDIATE_rax %0
+	SYSCALL
+	RETURN
+
+:FUNCTION_write
+	LOAD_IMMEDIATE_rax %1
+	SYSCALL
+	RETURN
+
+:FUNCTION_open
+	LOAD_IMMEDIATE_rax %2
+	SYSCALL
+	RETURN
+
+:FUNCTION_close
+	LOAD_IMMEDIATE_rax %3
+	SYSCALL
+	RETURN
+
+:FUNCTION_lseek
+	LOAD_IMMEDIATE_rax %8
+	SYSCALL
+	RETURN
+
+:FUNCTION_access
+	LOAD_IMMEDIATE_rax %21
+	SYSCALL
+	RETURN
