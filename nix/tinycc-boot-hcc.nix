@@ -64,7 +64,7 @@ stdenv.mkDerivation {
     #define CONFIG_TCC_CRTPREFIX "{B}"
     #define CONFIG_TCC_ELFINTERP "/mes/loader"
     #define CONFIG_TCC_LIBPATHS "{B}"
-    #define CONFIG_TCC_SYSINCLUDEPATHS "/include"
+    #define CONFIG_TCC_SYSINCLUDEPATHS "@out@/include"
     #define TCC_LIBGCC "libc.a"
     #define TCC_LIBTCC1 "libtcc1.a"
     #define CONFIG_TCC_LIBTCC1_MES 0
@@ -76,6 +76,7 @@ stdenv.mkDerivation {
     #define ONE_SOURCE 1
     #define CONFIG_TCC_SEMLOCK 0
     EOF
+    substituteInPlace config.h --replace-fail '@out@' "$out"
 
     hcc \
       --expand-dump \
@@ -157,15 +158,87 @@ stdenv.mkDerivation {
     make_ar_noindex bootstrap-libs/libgetopt.a bootstrap-libs/libgetopt.o
     make_ar_noindex bootstrap-libs/libtcc1.a bootstrap-libs/libtcc1.o bootstrap-libs/va_list.o
 
+    ./tcc -B bootstrap-libs \
+      -I . \
+      -I "$tcc_include_src" \
+      -I "$mes_include_src" \
+      -D __linux__=1 \
+      -D BOOTSTRAP=1 \
+      -D HAVE_LONG_LONG=1 \
+      -D HAVE_SETJMP=1 \
+      -D HAVE_BITFIELD=1 \
+      -D HAVE_FLOAT=1 \
+      -D TCC_TARGET_X86_64=1 \
+      -D inline= \
+      -D CONFIG_TCCDIR=\"\" \
+      -D CONFIG_SYSROOT=\"\" \
+      -D CONFIG_TCC_CRTPREFIX=\"{B}\" \
+      -D CONFIG_TCC_ELFINTERP=\"/mes/loader\" \
+      -D CONFIG_TCC_LIBPATHS=\"{B}\" \
+      -D CONFIG_TCC_SYSINCLUDEPATHS=\"$out/include\" \
+      -D TCC_LIBGCC=\"libc.a\" \
+      -D TCC_LIBTCC1=\"libtcc1.a\" \
+      -D CONFIG_TCC_LIBTCC1_MES=0 \
+      -D CONFIG_TCC_STATIC=1 \
+      -D CONFIG_USE_LIBGCC=1 \
+      -D TCC_MES_LIBC=1 \
+      -D TCC_VERSION=\"0.9.28-${version}\" \
+      -D ONE_SOURCE=1 \
+      -D CONFIG_TCC_SEMLOCK=0 \
+      tcc.c -o tcc-stage2
+
+    ./tcc-stage2 -B bootstrap-libs \
+      -I . \
+      -I "$tcc_include_src" \
+      -I "$mes_include_src" \
+      -D __linux__=1 \
+      -D BOOTSTRAP=1 \
+      -D HAVE_LONG_LONG=1 \
+      -D HAVE_SETJMP=1 \
+      -D HAVE_BITFIELD=1 \
+      -D HAVE_FLOAT=1 \
+      -D TCC_TARGET_X86_64=1 \
+      -D inline= \
+      -D CONFIG_TCCDIR=\"\" \
+      -D CONFIG_SYSROOT=\"\" \
+      -D CONFIG_TCC_CRTPREFIX=\"{B}\" \
+      -D CONFIG_TCC_ELFINTERP=\"/mes/loader\" \
+      -D CONFIG_TCC_LIBPATHS=\"{B}\" \
+      -D CONFIG_TCC_SYSINCLUDEPATHS=\"$out/include\" \
+      -D TCC_LIBGCC=\"libc.a\" \
+      -D TCC_LIBTCC1=\"libtcc1.a\" \
+      -D CONFIG_TCC_LIBTCC1_MES=0 \
+      -D CONFIG_TCC_STATIC=1 \
+      -D CONFIG_USE_LIBGCC=1 \
+      -D TCC_MES_LIBC=1 \
+      -D TCC_VERSION=\"0.9.28-${version}\" \
+      -D ONE_SOURCE=1 \
+      -D CONFIG_TCC_SEMLOCK=0 \
+      tcc.c -o tcc-stage3
+
+    mkdir -p final-libs
+    ./tcc-stage3 -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o final-libs/crt1.o ${mesLibc}/lib/crt1.c
+    ./tcc-stage3 -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o final-libs/crti.o ${mesLibc}/lib/crti.c
+    ./tcc-stage3 -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o final-libs/crtn.o ${mesLibc}/lib/crtn.c
+    ./tcc-stage3 -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o final-libs/libc.o ${mesLibc}/lib/libc.c
+    ./tcc-stage3 -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o final-libs/libgetopt.o ${mesLibc}/lib/libgetopt.c
+    ./tcc-stage3 -c -I "$tcc_include_src" -I "$mes_include_src" -D TCC_TARGET_X86_64=1 -o final-libs/libtcc1.o lib/libtcc1.c
+    ./tcc-stage3 -c -I "$tcc_include_src" -I "$mes_include_src" -D TCC_TARGET_X86_64=1 -o final-libs/va_list.o lib/va_list.c
+    make_ar_noindex final-libs/libc.a final-libs/libc.o
+    make_ar_noindex final-libs/libgetopt.a final-libs/libgetopt.o
+    make_ar_noindex final-libs/libtcc1.a final-libs/libtcc1.o final-libs/va_list.o
+
     runHook postBuild
   '';
 
   installPhase = ''
     runHook preInstall
-    install -Dm555 tcc $out/bin/tcc
+    install -Dm555 tcc-stage3 $out/bin/tcc
+    install -Dm555 tcc $out/bin/tcc-hcc-stage1
+    install -Dm555 tcc-stage2 $out/bin/tcc-stage2
     mkdir -p $out/lib
-    cp bootstrap-libs/crt1.o bootstrap-libs/crti.o bootstrap-libs/crtn.o $out/lib/
-    cp bootstrap-libs/libc.a bootstrap-libs/libgetopt.a bootstrap-libs/libtcc1.a $out/lib/
+    cp final-libs/crt1.o final-libs/crti.o final-libs/crtn.o $out/lib/
+    cp final-libs/libc.a final-libs/libgetopt.a final-libs/libtcc1.a $out/lib/
     mkdir -p $out/include
     cp -r ${mesLibc}/include/. $out/include/
     chmod -R u+w $out/include
@@ -177,6 +250,8 @@ stdenv.mkDerivation {
   checkPhase = ''
     runHook preCheck
     ./tcc -version
+    ./tcc-stage2 -version
+    ./tcc-stage3 -version
 
     cat > include-smoke-header.h <<'EOF'
     #define HCC_INCLUDE_SMOKE 7
@@ -211,7 +286,7 @@ stdenv.mkDerivation {
     set -e
     test "$internal_call_status" -eq 17
 
-    ./tcc -c \
+    ./tcc-stage3 -c \
       -I . \
       -I include \
       -I ${mesLibc}/include \
@@ -238,10 +313,10 @@ stdenv.mkDerivation {
       -D TCC_VERSION=\"0.9.28-${version}\" \
       -D ONE_SOURCE=1 \
       -D CONFIG_TCC_SEMLOCK=0 \
-      tcc.c -o tcc-selfhost.o
-    test -s tcc-selfhost.o
+      tcc.c -o tcc-stage3-selfhost.o
+    test -s tcc-stage3-selfhost.o
 
-    ./tcc -c \
+    ./tcc-stage3 -c \
       -I . \
       -I include \
       -I ${mesLibc}/include \
@@ -254,45 +329,16 @@ stdenv.mkDerivation {
       -D TCC_TARGET_X86_64=1 \
       -D TCC_MES_LIBC=1 \
       lib/libtcc1.c -o libtcc1.o
-    ./tcc -ar rcs libtcc1.a libtcc1.o
+    ./tcc-stage3 -ar rcs libtcc1.a libtcc1.o
     test -s libtcc1.a
 
-    ./tcc -B bootstrap-libs smoke.c -o smoke-linked
+    ./tcc-stage3 -B final-libs smoke.c -o smoke-linked
     set +e
     ./smoke-linked
     smoke_status="$?"
     set -e
     test "$smoke_status" -eq 13
 
-    ./tcc -B bootstrap-libs \
-      -I . \
-      -I include \
-      -I ${mesLibc}/include \
-      -D __linux__=1 \
-      -D BOOTSTRAP=1 \
-      -D HAVE_LONG_LONG=1 \
-      -D HAVE_SETJMP=1 \
-      -D HAVE_BITFIELD=1 \
-      -D HAVE_FLOAT=1 \
-      -D TCC_TARGET_X86_64=1 \
-      -D inline= \
-      -D CONFIG_TCCDIR=\"\" \
-      -D CONFIG_SYSROOT=\"\" \
-      -D CONFIG_TCC_CRTPREFIX=\"{B}\" \
-      -D CONFIG_TCC_ELFINTERP=\"/mes/loader\" \
-      -D CONFIG_TCC_LIBPATHS=\"{B}\" \
-      -D CONFIG_TCC_SYSINCLUDEPATHS=\"$PWD/include:${mesLibc}/include\" \
-      -D TCC_LIBGCC=\"libc.a\" \
-      -D TCC_LIBTCC1=\"libtcc1.a\" \
-      -D CONFIG_TCC_LIBTCC1_MES=0 \
-      -D CONFIG_TCC_STATIC=1 \
-      -D CONFIG_USE_LIBGCC=1 \
-      -D TCC_MES_LIBC=1 \
-      -D TCC_VERSION=\"0.9.28-${version}\" \
-      -D ONE_SOURCE=1 \
-      -D CONFIG_TCC_SEMLOCK=0 \
-      tcc.c -o tcc-stage2
-    ./tcc-stage2 -version
     ./tcc-stage2 -B bootstrap-libs internal-call-smoke.c -o internal-call-stage2
     set +e
     ./internal-call-stage2
@@ -300,7 +346,15 @@ stdenv.mkDerivation {
     set -e
     test "$stage2_status" -eq 17
 
-    ./tcc-stage2 -B bootstrap-libs \
+    printf '%s\n' 'int f(void){return 31;} int main(void){return f();}' > internal-call-stage3.c
+    ./tcc-stage3 -B final-libs internal-call-stage3.c -o internal-call-stage3
+    set +e
+    ./internal-call-stage3
+    stage3_status="$?"
+    set -e
+    test "$stage3_status" -eq 31
+
+    ./tcc-stage3 -B final-libs \
       -I . \
       -I include \
       -I ${mesLibc}/include \
@@ -317,7 +371,7 @@ stdenv.mkDerivation {
       -D CONFIG_TCC_CRTPREFIX=\"{B}\" \
       -D CONFIG_TCC_ELFINTERP=\"/mes/loader\" \
       -D CONFIG_TCC_LIBPATHS=\"{B}\" \
-      -D CONFIG_TCC_SYSINCLUDEPATHS=\"$PWD/include:${mesLibc}/include\" \
+      -D CONFIG_TCC_SYSINCLUDEPATHS=\"$out/include\" \
       -D TCC_LIBGCC=\"libc.a\" \
       -D TCC_LIBTCC1=\"libtcc1.a\" \
       -D CONFIG_TCC_LIBTCC1_MES=0 \
@@ -327,15 +381,15 @@ stdenv.mkDerivation {
       -D TCC_VERSION=\"0.9.28-${version}\" \
       -D ONE_SOURCE=1 \
       -D CONFIG_TCC_SEMLOCK=0 \
-      tcc.c -o tcc-stage3
-    ./tcc-stage3 -version
-    printf '%s\n' 'int f(void){return 31;} int main(void){return f();}' > internal-call-stage3.c
-    ./tcc-stage3 -B bootstrap-libs internal-call-stage3.c -o internal-call-stage3
+      tcc.c -o tcc-stage4
+    ./tcc-stage4 -version
+    printf '%s\n' 'int f(void){return 37;} int main(void){return f();}' > internal-call-stage4.c
+    ./tcc-stage4 -B final-libs internal-call-stage4.c -o internal-call-stage4
     set +e
-    ./internal-call-stage3
-    stage3_status="$?"
+    ./internal-call-stage4
+    stage4_status="$?"
     set -e
-    test "$stage3_status" -eq 31
+    test "$stage4_status" -eq 37
 
     runHook postCheck
   '';
