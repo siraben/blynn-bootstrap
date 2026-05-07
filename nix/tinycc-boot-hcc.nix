@@ -300,6 +300,43 @@ stdenv.mkDerivation {
     set -e
     test "$stage2_status" -eq 17
 
+    ./tcc-stage2 -B bootstrap-libs \
+      -I . \
+      -I include \
+      -I ${mesLibc}/include \
+      -D __linux__=1 \
+      -D BOOTSTRAP=1 \
+      -D HAVE_LONG_LONG=1 \
+      -D HAVE_SETJMP=1 \
+      -D HAVE_BITFIELD=1 \
+      -D HAVE_FLOAT=1 \
+      -D TCC_TARGET_X86_64=1 \
+      -D inline= \
+      -D CONFIG_TCCDIR=\"\" \
+      -D CONFIG_SYSROOT=\"\" \
+      -D CONFIG_TCC_CRTPREFIX=\"{B}\" \
+      -D CONFIG_TCC_ELFINTERP=\"/mes/loader\" \
+      -D CONFIG_TCC_LIBPATHS=\"{B}\" \
+      -D CONFIG_TCC_SYSINCLUDEPATHS=\"$PWD/include:${mesLibc}/include\" \
+      -D TCC_LIBGCC=\"libc.a\" \
+      -D TCC_LIBTCC1=\"libtcc1.a\" \
+      -D CONFIG_TCC_LIBTCC1_MES=0 \
+      -D CONFIG_TCC_STATIC=1 \
+      -D CONFIG_USE_LIBGCC=1 \
+      -D TCC_MES_LIBC=1 \
+      -D TCC_VERSION=\"0.9.28-${version}\" \
+      -D ONE_SOURCE=1 \
+      -D CONFIG_TCC_SEMLOCK=0 \
+      tcc.c -o tcc-stage3
+    ./tcc-stage3 -version
+    printf '%s\n' 'int f(void){return 31;} int main(void){return f();}' > internal-call-stage3.c
+    ./tcc-stage3 -B bootstrap-libs internal-call-stage3.c -o internal-call-stage3
+    set +e
+    ./internal-call-stage3
+    stage3_status="$?"
+    set -e
+    test "$stage3_status" -eq 31
+
     runHook postCheck
   '';
 
