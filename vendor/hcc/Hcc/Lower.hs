@@ -517,23 +517,24 @@ lowerDecls decls = case decls of
 
 lowerDecl :: CType -> String -> Maybe Expr -> CompileM [Instr]
 lowerDecl ty name initExpr = do
-  staticData <- localStaticData ty initExpr
   aggregateStorage <- isAggregateTypeM ty
   temp <- freshTemp
   bindVar name temp ty
-  case staticData of
-    Just label -> do
-      pure [ICopy temp (OGlobal label)]
-    Nothing | aggregateStorage -> do
+  if aggregateStorage
+    then do
       size <- typeSize ty
-      initInstrs <- case initExpr of
-        Just expr -> do
-          (exprInstrs, op) <- lowerExpr expr
-          copyInstrs <- copyObject (OTemp temp) op ty
-          pure (exprInstrs ++ copyInstrs)
-        Nothing -> pure []
+      template <- localAggregateTemplateData ty initExpr
+      initInstrs <- case template of
+        Just label ->
+          copyObject (OTemp temp) (OGlobal label) ty
+        Nothing -> case initExpr of
+          Just expr -> do
+            (exprInstrs, op) <- lowerExpr expr
+            copyInstrs <- copyObject (OTemp temp) op ty
+            pure (exprInstrs ++ copyInstrs)
+          Nothing -> pure []
       pure (IAlloca temp size : initInstrs)
-    Nothing -> case initExpr of
+    else case initExpr of
       Nothing -> do
         pure [IConst temp 0]
       Just expr -> do
@@ -541,8 +542,8 @@ lowerDecl ty name initExpr = do
         (coerceInstrs, coerceOp) <- coerceScalar ty op
         pure (exprInstrs ++ coerceInstrs ++ [ICopy temp coerceOp])
 
-localStaticData :: CType -> Maybe Expr -> CompileM (Maybe String)
-localStaticData ty initExpr = case (ty, initExpr) of
+localAggregateTemplateData :: CType -> Maybe Expr -> CompileM (Maybe String)
+localAggregateTemplateData ty initExpr = case (ty, initExpr) of
   (CArray{}, Just EInitList{}) -> localDataItem ty initExpr
   (CArray{}, Just EString{}) -> localDataItem ty initExpr
   (_, Just EInitList{}) -> do
