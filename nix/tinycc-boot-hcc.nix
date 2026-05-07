@@ -154,9 +154,80 @@ stdenv.mkDerivation {
   checkPhase = ''
     runHook preCheck
     ./tcc -version
+
+    cat > include-smoke-header.h <<'EOF'
+    #define HCC_INCLUDE_SMOKE 7
+    EOF
+    cat > include-smoke.c <<'EOF'
+    #include "include-smoke-header.h"
+    int main(){return HCC_INCLUDE_SMOKE;}
+    EOF
+    ./tcc -E include-smoke.c > include-smoke.i
+    grep -q 'return 7' include-smoke.i
+    ./tcc -c include-smoke.c -o include-smoke.o
+    test -s include-smoke.o
+
+    cat > macro-smoke.c <<'EOF'
+    #define HCC_MACRO(NAME, CODE, STRING) NAME=CODE,
+    enum { HCC_MACRO(HCC_VALUE, 0x20, "value") HCC_LAST };
+    EOF
+    ./tcc -E macro-smoke.c > macro-smoke.i
+    grep -q 'HCC_VALUE=0x20' macro-smoke.i
+    ./tcc -c macro-smoke.c -o macro-smoke.o
+    test -s macro-smoke.o
+
     printf '%s\n' 'int main(){return 13;}' > smoke.c
     ./tcc -c smoke.c -o smoke.o
     test -s smoke.o
+
+    ./tcc -c \
+      -I . \
+      -I tinycc-cb41cbf/include \
+      -I mes-0.27.1/include \
+      -D __linux__=1 \
+      -D BOOTSTRAP=1 \
+      -D HAVE_LONG_LONG=1 \
+      -D HAVE_SETJMP=1 \
+      -D HAVE_BITFIELD=1 \
+      -D HAVE_FLOAT=1 \
+      -D TCC_TARGET_X86_64=1 \
+      -D inline= \
+      -D CONFIG_TCCDIR=\"\" \
+      -D CONFIG_SYSROOT=\"\" \
+      -D CONFIG_TCC_CRTPREFIX=\"{B}\" \
+      -D CONFIG_TCC_ELFINTERP=\"/mes/loader\" \
+      -D CONFIG_TCC_LIBPATHS=\"{B}\" \
+      -D CONFIG_TCC_SYSINCLUDEPATHS=\"$PWD/tinycc-cb41cbf/include:$PWD/mes-0.27.1/include\" \
+      -D TCC_LIBGCC=\"libc.a\" \
+      -D TCC_LIBTCC1=\"libtcc1.a\" \
+      -D CONFIG_TCC_LIBTCC1_MES=0 \
+      -D CONFIG_TCC_STATIC=1 \
+      -D CONFIG_USE_LIBGCC=1 \
+      -D TCC_MES_LIBC=1 \
+      -D TCC_MUSL=1 \
+      -D TCC_VERSION=\"0.9.28-${version}\" \
+      -D ONE_SOURCE=1 \
+      -D CONFIG_TCC_SEMLOCK=0 \
+      tcc.c -o tcc-selfhost.o
+    test -s tcc-selfhost.o
+
+    ./tcc -c \
+      -I . \
+      -I tinycc-cb41cbf/include \
+      -I mes-0.27.1/include \
+      -D __linux__=1 \
+      -D BOOTSTRAP=1 \
+      -D HAVE_LONG_LONG=1 \
+      -D HAVE_SETJMP=1 \
+      -D HAVE_BITFIELD=1 \
+      -D HAVE_FLOAT=1 \
+      -D TCC_TARGET_X86_64=1 \
+      -D TCC_MES_LIBC=1 \
+      -D TCC_MUSL=1 \
+      lib/libtcc1.c -o libtcc1.o
+    ./tcc -ar rcs libtcc1.a libtcc1.o
+    test -s libtcc1.a
+
     runHook postCheck
   '';
 
