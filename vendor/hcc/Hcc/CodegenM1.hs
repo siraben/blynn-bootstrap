@@ -58,25 +58,25 @@ header =
 codegenFunction :: FunctionIr -> Either CodegenError [String]
 codegenFunction fn@(FunctionIr name _ blocks) = do
   alloc <- mapAllocError (allocateFunction fn)
-  body <- codegenBlocks alloc (stackSlotCount alloc) blocks
+  body <- codegenBlocks name alloc (stackSlotCount alloc) blocks
   pure ((":FUNCTION_" ++ name) : prologue (stackSlotCount alloc) ++ body ++ [""])
 
 prologue :: Int -> [String]
 prologue slots =
   if slots == 0 then [] else ["\tHCC_SUB_IMMEDIATE_from_rsp %" ++ show (slots * 8)]
 
-codegenBlocks :: Allocation -> Int -> [BasicBlock] -> Either CodegenError [String]
-codegenBlocks alloc totalSlots blocks = case blocks of
+codegenBlocks :: String -> Allocation -> Int -> [BasicBlock] -> Either CodegenError [String]
+codegenBlocks fnName alloc totalSlots blocks = case blocks of
   [] -> pure []
   BasicBlock bid instrs term:rest -> do
     body <- codegenInstrs alloc totalSlots instrs
-    termCode <- codegenTerminator alloc totalSlots term
-    tailCode <- codegenBlocks alloc totalSlots rest
-    pure (blockLabel bid ++ body ++ termCode ++ tailCode)
+    termCode <- codegenTerminator fnName alloc totalSlots term
+    tailCode <- codegenBlocks fnName alloc totalSlots rest
+    pure (blockLabel fnName bid ++ body ++ termCode ++ tailCode)
 
-blockLabel :: BlockId -> [String]
-blockLabel (BlockId 0) = []
-blockLabel (BlockId n) = [":HCC_BLOCK_" ++ show n]
+blockLabel :: String -> BlockId -> [String]
+blockLabel _ (BlockId 0) = []
+blockLabel fnName (BlockId n) = [":" ++ blockRef fnName (BlockId n)]
 
 codegenInstrs :: Allocation -> Int -> [Instr] -> Either CodegenError [String]
 codegenInstrs alloc totalSlots instrs = case instrs of
@@ -140,16 +140,16 @@ codegenInstr alloc totalSlots instr = case instr of
       Nothing -> pure callCode
       Just temp -> storeTemp alloc temp callCode
 
-codegenTerminator :: Allocation -> Int -> Terminator -> Either CodegenError [String]
-codegenTerminator alloc totalSlots term = case term of
+codegenTerminator :: String -> Allocation -> Int -> Terminator -> Either CodegenError [String]
+codegenTerminator fnName alloc totalSlots term = case term of
   TRet Nothing -> pure (["\tLOAD_IMMEDIATE_rax %0"] ++ cleanupStack totalSlots ++ ["\tRETURN"])
   TRet (Just op) -> do
     code <- loadOperand alloc op
     pure (code ++ cleanupStack totalSlots ++ ["\tRETURN"])
-  TJump bid -> pure ["\tJUMP %" ++ blockRef bid]
+  TJump bid -> pure ["\tJUMP %" ++ blockRef fnName bid]
   TBranch op yes no -> do
     code <- loadOperand alloc op
-    pure (code ++ ["\tTEST", "\tJUMP_NE %" ++ blockRef yes, "\tJUMP %" ++ blockRef no])
+    pure (code ++ ["\tTEST", "\tJUMP_NE %" ++ blockRef fnName yes, "\tJUMP %" ++ blockRef fnName no])
 
 loadArguments :: Allocation -> Int -> [Operand] -> Either CodegenError [String]
 loadArguments alloc _ args = do
@@ -252,8 +252,8 @@ cleanupStack :: Int -> [String]
 cleanupStack slots =
   if slots == 0 then [] else ["\tHCC_ADD_IMMEDIATE_to_rsp %" ++ show (slots * 8)]
 
-blockRef :: BlockId -> String
-blockRef (BlockId n) = "HCC_BLOCK_" ++ show n
+blockRef :: String -> BlockId -> String
+blockRef fnName (BlockId n) = "HCC_BLOCK_" ++ fnName ++ "_" ++ show n
 
 codegenDataItem :: DataItem -> [String]
 codegenDataItem (DataItem label bytes) =

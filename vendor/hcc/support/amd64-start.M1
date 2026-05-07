@@ -1,0 +1,20 @@
+## hcc SysV-register ABI entry point for M2libc/mescc-tools amd64 output.
+
+DEFINE HCC_START_COPY_rax_to_rsi 4889C6
+
+:_start
+	COPY_rsp_to_rbp
+	COPY_rbp_to_rax
+	LOAD_INTEGER
+	COPY_rax_to_rdi
+	LOAD_BASE_ADDRESS_rax %8
+	HCC_START_COPY_rax_to_rsi
+	CALL_IMMEDIATE %FUNCTION_main
+	COPY_rax_to_rdi
+	LOAD_IMMEDIATE_rax %0x3C
+	SYSCALL
+
+:FUNCTION_exit
+:FUNCTION__exit
+	LOAD_IMMEDIATE_rax %0x3C
+	SYSCALL

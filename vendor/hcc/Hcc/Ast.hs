@@ -70,6 +70,8 @@ data Expr
   | EMember Expr String
   | EPtrMember Expr String
   | EUnary String Expr
+  | ESizeofType CType
+  | ESizeofExpr Expr
   | ECast CType Expr
   | EPostfix String Expr
   | EBinary String Expr Expr

@@ -55,10 +55,11 @@ registerBuiltinStructs = do
 registerTopDecls :: [TopDecl] -> CompileM ()
 registerTopDecls decls = case decls of
   [] -> pure ()
-  Function ty name _ _:rest -> do
+  Function ty name params body:rest -> do
     registerTypeAggregates ty
     bindGlobal name ty
     bindFunction name
+    registerImplicitCalls (paramNames params) body
     registerTopDecls rest
   Prototype ty name _:rest -> do
     registerTypeAggregates ty
@@ -99,9 +100,9 @@ lowerTopDecls decls = case decls of
 lowerFunction :: String -> [Param] -> [Stmt] -> CompileM FunctionIr
 lowerFunction name params body = withErrorContext ("function " ++ name) $ withFunctionScope $ do
   bid <- freshBlock
-  (paramNames, paramInstrs) <- lowerParams 0 params
+  (names, paramInstrs) <- lowerParams 0 params
   blocks <- lowerStatementsFrom bid paramInstrs body (TRet (Just (OImm 0)))
-  pure (FunctionIr name paramNames blocks)
+  pure (FunctionIr name names blocks)
 
 lowerParams :: Int -> [Param] -> CompileM ([String], [Instr])
 lowerParams index params = case params of
@@ -111,6 +112,95 @@ lowerParams index params = case params of
     bindVar name temp ty
     (names, instrs) <- lowerParams (index + 1) rest
     pure (name:names, IParam temp index:instrs)
+
+paramNames :: [Param] -> [String]
+paramNames params = case params of
+  [] -> []
+  Param _ name:rest -> name : paramNames rest
+
+registerImplicitCalls :: [String] -> [Stmt] -> CompileM ()
+registerImplicitCalls locals stmts = case stmts of
+  [] -> pure ()
+  stmt:rest -> do
+    locals' <- registerImplicitCallsStmt locals stmt
+    registerImplicitCalls locals' rest
+
+registerImplicitCallsStmt :: [String] -> Stmt -> CompileM [String]
+registerImplicitCallsStmt locals stmt = case stmt of
+  SDecl _ name initExpr -> do
+    maybeRegisterImplicitCallsExpr locals initExpr
+    pure (name:locals)
+  SDecls decls ->
+    registerImplicitCallsDecls locals decls
+  SReturn expr -> maybeRegisterImplicitCallsExpr locals expr >> pure locals
+  SExpr expr -> registerImplicitCallsExpr locals expr >> pure locals
+  SIf cond yes no -> do
+    registerImplicitCallsExpr locals cond
+    registerImplicitCalls locals yes
+    registerImplicitCalls locals no
+    pure locals
+  SWhile cond body -> do
+    registerImplicitCallsExpr locals cond
+    registerImplicitCalls locals body
+    pure locals
+  SDoWhile body cond -> do
+    registerImplicitCalls locals body
+    registerImplicitCallsExpr locals cond
+    pure locals
+  SFor initExpr condExpr stepExpr body -> do
+    maybeRegisterImplicitCallsExpr locals initExpr
+    maybeRegisterImplicitCallsExpr locals condExpr
+    maybeRegisterImplicitCallsExpr locals stepExpr
+    registerImplicitCalls locals body
+    pure locals
+  SSwitch value body -> do
+    registerImplicitCallsExpr locals value
+    registerImplicitCalls locals (switchBodyStatements body)
+    pure locals
+  SCase expr -> registerImplicitCallsExpr locals expr >> pure locals
+  SBlock body -> registerImplicitCalls locals body >> pure locals
+  _ -> pure locals
+
+registerImplicitCallsDecls :: [String] -> [(CType, String, Maybe Expr)] -> CompileM [String]
+registerImplicitCallsDecls locals decls = case decls of
+  [] -> pure locals
+  (_, name, initExpr):rest -> do
+    maybeRegisterImplicitCallsExpr locals initExpr
+    registerImplicitCallsDecls (name:locals) rest
+
+maybeRegisterImplicitCallsExpr :: [String] -> Maybe Expr -> CompileM ()
+maybeRegisterImplicitCallsExpr locals expr = case expr of
+  Nothing -> pure ()
+  Just value -> registerImplicitCallsExpr locals value
+
+registerImplicitCallsExpr :: [String] -> Expr -> CompileM ()
+registerImplicitCallsExpr locals expr = case expr of
+  ECall (EVar name) args -> do
+    if name `elem` locals || name `elem` ignoredSideEffectCalls
+      then pure ()
+      else bindFunction name
+    registerImplicitCallsExprs locals args
+  ECall callee args -> do
+    registerImplicitCallsExpr locals callee
+    registerImplicitCallsExprs locals args
+  EIndex base ix -> registerImplicitCallsExprs locals [base, ix]
+  EMember base _ -> registerImplicitCallsExpr locals base
+  EPtrMember base _ -> registerImplicitCallsExpr locals base
+  EUnary _ value -> registerImplicitCallsExpr locals value
+  ESizeofExpr value -> registerImplicitCallsExpr locals value
+  ECast _ value -> registerImplicitCallsExpr locals value
+  EPostfix _ value -> registerImplicitCallsExpr locals value
+  EBinary _ left right -> registerImplicitCallsExprs locals [left, right]
+  ECond cond yes no -> registerImplicitCallsExprs locals [cond, yes, no]
+  EAssign left right -> registerImplicitCallsExprs locals [left, right]
+  _ -> pure ()
+
+registerImplicitCallsExprs :: [String] -> [Expr] -> CompileM ()
+registerImplicitCallsExprs locals exprs = case exprs of
+  [] -> pure ()
+  expr:rest -> do
+    registerImplicitCallsExpr locals expr
+    registerImplicitCallsExprs locals rest
 
 lowerStatementsFrom :: BlockId -> [Instr] -> [Stmt] -> Terminator -> CompileM [BasicBlock]
 lowerStatementsFrom bid instrs stmts defaultTerm = case stmts of
@@ -340,16 +430,16 @@ lowerSideEffect expr = case expr of
   ECall (EVar name) _ | name `elem` ignoredSideEffectCalls ->
     pure []
   ECall (EVar name) args -> do
-    lowered <- lowerExprs args
-    let instrs = concatMap fst lowered
-    let ops = map snd lowered
-    pure (instrs ++ [ICall Nothing name ops])
+    direct <- lookupFunction name
+    if direct
+      then do
+        lowered <- lowerExprs args
+        let instrs = concatMap fst lowered
+        let ops = map snd lowered
+        pure (instrs ++ [ICall Nothing name ops])
+      else lowerIndirectSideEffect (EVar name) args
   ECall callee args -> do
-    (calleeInstrs, calleeOp) <- lowerExpr callee
-    lowered <- lowerExprs args
-    let instrs = concatMap fst lowered
-    let ops = map snd lowered
-    pure (calleeInstrs ++ instrs ++ [ICallIndirect Nothing calleeOp ops])
+    lowerIndirectSideEffect callee args
   EAssign lhs rhs ->
     fst <$> lowerAssignment lhs rhs
   EPostfix "--" target ->
@@ -362,6 +452,14 @@ lowerSideEffect expr = case expr of
 
 ignoredSideEffectCalls :: [String]
 ignoredSideEffectCalls = ["asm", "oputs", "eputs"]
+
+lowerIndirectSideEffect :: Expr -> [Expr] -> CompileM [Instr]
+lowerIndirectSideEffect callee args = do
+  (calleeInstrs, calleeOp) <- lowerExpr callee
+  lowered <- lowerExprs args
+  let instrs = concatMap fst lowered
+  let ops = map snd lowered
+  pure (calleeInstrs ++ instrs ++ [ICallIndirect Nothing calleeOp ops])
 
 builtinConstant :: String -> Maybe Int
 builtinConstant name = case name of
@@ -489,12 +587,15 @@ lowerExpr expr = case expr of
     out <- freshTemp
     pure (a ++ [IBin out IAnd op (OImm 255)], OTemp out)
   ECast _ x -> lowerExpr x
-  EUnary "sizeof_type" _ -> do
+  ESizeofType ty -> do
+    size <- typeSize ty
     temp <- freshTemp
-    pure ([IConst temp 8], OTemp temp)
-  EUnary "sizeof" _ -> do
+    pure ([IConst temp size], OTemp temp)
+  ESizeofExpr value -> do
+    mty <- exprType value
+    size <- maybe (pure 8) typeSize mty
     temp <- freshTemp
-    pure ([IConst temp 8], OTemp temp)
+    pure ([IConst temp size], OTemp temp)
   ECond cond yes no -> do
     (ci, co) <- lowerExpr cond
     (yi, yo) <- lowerExpr yes
@@ -530,18 +631,17 @@ lowerExpr expr = case expr of
   EMember{} ->
     readLValueExpr expr
   ECall (EVar name) args -> do
-    lowered <- lowerExprs args
-    out <- freshTemp
-    let instrs = concatMap fst lowered
-    let ops = map snd lowered
-    pure (instrs ++ [ICall (Just out) name ops], OTemp out)
+    direct <- lookupFunction name
+    if direct
+      then do
+        lowered <- lowerExprs args
+        out <- freshTemp
+        let instrs = concatMap fst lowered
+        let ops = map snd lowered
+        pure (instrs ++ [ICall (Just out) name ops], OTemp out)
+      else lowerIndirectCall (EVar name) args
   ECall callee args -> do
-    (calleeInstrs, calleeOp) <- lowerExpr callee
-    lowered <- lowerExprs args
-    out <- freshTemp
-    let instrs = concatMap fst lowered
-    let ops = map snd lowered
-    pure (calleeInstrs ++ instrs ++ [ICallIndirect (Just out) calleeOp ops], OTemp out)
+    lowerIndirectCall callee args
   EAssign lhs rhs ->
     lowerAssignment lhs rhs
   EPostfix "--" target ->
@@ -557,6 +657,15 @@ lowerExprs args = case args of
     first <- lowerExpr x
     rest <- lowerExprs xs
     pure (first:rest)
+
+lowerIndirectCall :: Expr -> [Expr] -> CompileM ([Instr], Operand)
+lowerIndirectCall callee args = do
+  (calleeInstrs, calleeOp) <- lowerExpr callee
+  lowered <- lowerExprs args
+  out <- freshTemp
+  let instrs = concatMap fst lowered
+  let ops = map snd lowered
+  pure (calleeInstrs ++ instrs ++ [ICallIndirect (Just out) calleeOp ops], OTemp out)
 
 lowerAssignment :: Expr -> Expr -> CompileM ([Instr], Operand)
 lowerAssignment lhs rhs = do
@@ -679,6 +788,8 @@ exprType expr = case expr of
   EInt{} -> pure (Just CInt)
   EChar{} -> pure (Just CChar)
   EString{} -> pure (Just (CPtr CChar))
+  ESizeofType{} -> pure (Just CInt)
+  ESizeofExpr{} -> pure (Just CInt)
   EVar name -> do
     local <- lookupVarType name
     case local of

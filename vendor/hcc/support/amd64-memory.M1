@@ -1,0 +1,67 @@
+## hcc SysV-register ABI bump allocator for amd64 bootstrap links.
+
+DEFINE HCC_MEM_COPY_rdi_to_rax 4889F8
+DEFINE HCC_MEM_COPY_rax_to_rdx 4889C2
+DEFINE HCC_MEM_COPY_rbx_to_rdi 4889DF
+DEFINE HCC_MEM_ADD_rdx_to_rax 4801D0
+DEFINE HCC_MEM_PUSH_RSI 56
+DEFINE HCC_MEM_POP_RDX 5A
+
+:FUNCTION_malloc
+	HCC_MEM_COPY_rdi_to_rax
+	HCC_MEM_COPY_rax_to_rdx
+	LOAD_IMMEDIATE_rax &hcc_support_brk
+	LOAD_INTEGER
+	TEST
+	JUMP_NE %HCC_MEM_MALLOC_READY
+	LOAD_IMMEDIATE_rdi %0
+	LOAD_IMMEDIATE_rax %12
+	SYSCALL
+	PUSH_RAX
+	LOAD_IMMEDIATE_rax &hcc_support_brk
+	PUSH_RAX
+	POP_RBX
+	POP_RAX
+	STORE_INTEGER
+:HCC_MEM_MALLOC_READY
+	LOAD_IMMEDIATE_rax &hcc_support_brk
+	LOAD_INTEGER
+	PUSH_RAX
+	HCC_MEM_ADD_rdx_to_rax
+	COPY_rax_to_rdi
+	LOAD_IMMEDIATE_rax %12
+	SYSCALL
+	PUSH_RAX
+	LOAD_IMMEDIATE_rax &hcc_support_brk
+	PUSH_RAX
+	POP_RBX
+	POP_RAX
+	STORE_INTEGER
+	POP_RAX
+	RETURN
+
+:FUNCTION_calloc
+	HCC_MEM_COPY_rdi_to_rax
+	PUSH_RAX
+	POP_RBX
+	HCC_MEM_PUSH_RSI
+	POP_RAX
+	MULTIPLY_rax_by_rbx_into_rax
+	PUSH_RAX
+	COPY_rax_to_rdi
+	CALL_IMMEDIATE %FUNCTION_malloc
+	PUSH_RAX
+	POP_RBX
+	HCC_MEM_POP_RDX
+	PUSH_RBX
+	HCC_MEM_COPY_rbx_to_rdi
+	LOAD_IMMEDIATE_rsi %0
+	CALL_IMMEDIATE %FUNCTION_memset
+	POP_RAX
+	RETURN
+
+:FUNCTION_free
+	RETURN
+
+:hcc_support_brk
+	'00' '00' '00' '00' '00' '00' '00' '00'

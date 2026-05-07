@@ -652,12 +652,15 @@ parseSizeof = do
     then do
       isTy <- nextStartsType
       if isTy
-        then typeName >> needPunct ")" >> pure (EUnary "sizeof_type" (EInt "0"))
+        then do
+          ty <- typeName
+          needPunct ")"
+          pure (ESizeofType ty)
         else do
           value <- expr
           needPunct ")"
-          pure (EUnary "sizeof" value)
-    else EUnary "sizeof" <$> (postfix =<< unary)
+          pure (ESizeofExpr value)
+    else ESizeofExpr <$> (postfix =<< unary)
 
 assignNode :: String -> Expr -> Expr -> Expr
 assignNode op lhs rhs = case op of
