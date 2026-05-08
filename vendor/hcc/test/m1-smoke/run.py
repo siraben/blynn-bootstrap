@@ -25,7 +25,8 @@ def run(argv):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--hcc", default="hcc")
+    parser.add_argument("--hcpp", default="hcpp")
+    parser.add_argument("--hcc1", default="hcc1")
     parser.add_argument("--m2libc", required=True)
     parser.add_argument("--source-dir", default=str(pathlib.Path(__file__).parent))
     parser.add_argument("--work-dir", default=".")
@@ -39,12 +40,15 @@ def main():
     work_dir.mkdir(parents=True, exist_ok=True)
     for name, expected in CASES:
         src = examples_dir / f"{name}.c"
+        preprocessed = work_dir / f"{name}.i"
         m1 = work_dir / f"{name}.M1"
         hex2 = work_dir / f"{name}.hex2"
         end = work_dir / f"{name}-end.hex2"
         exe = work_dir / name
 
-        run([args.hcc, "-S", "-o", str(m1), str(src)])
+        with preprocessed.open("w") as handle:
+            subprocess.run([args.hcpp, str(src)], check=True, stdout=handle)
+        run([args.hcc1, "-S", "-o", str(m1), str(preprocessed)])
         run([
             "M1",
             "--architecture", "amd64",

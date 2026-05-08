@@ -81,8 +81,7 @@ stdenv.mkDerivation {
     EOF
     substituteInPlace config.h --replace-fail '@out@' "$out"
 
-    hcc \
-      --expand-dump \
+    hcpp \
       -I . \
       -I "$tcc_include_src" \
       -I "$mes_include_src" \
@@ -112,9 +111,11 @@ stdenv.mkDerivation {
       -D CONFIG_TCC_SEMLOCK=0 \
       tcc.c > tcc-expanded.c
 
-    hcc -S -o tcc-bootstrap-support.M1 ${support}/tcc-bootstrap-support.c
-    hcc -S -o tcc-final-overrides.M1 ${support}/tcc-final-overrides.c
-    hcc -S -o tcc.M1 tcc-expanded.c
+    hcpp ${support}/tcc-bootstrap-support.c > tcc-bootstrap-support.i
+    hcc1 -S -o tcc-bootstrap-support.M1 tcc-bootstrap-support.i
+    hcpp ${support}/tcc-final-overrides.c > tcc-final-overrides.i
+    hcc1 -S -o tcc-final-overrides.M1 tcc-final-overrides.i
+    hcc1 -S -o tcc.M1 tcc-expanded.c
 
     M1 --architecture amd64 --little-endian \
       -f ${m2libc}/amd64/amd64_defs.M1 \

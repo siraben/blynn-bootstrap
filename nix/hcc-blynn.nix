@@ -28,6 +28,21 @@ mkDerivation ({
     cat \
       ${blynnSrc}/inn/BasePrecisely.hs \
       ${blynnSrc}/inn/System.hs \
+      Hcc/Token.hs \
+      Hcc/SymbolTable.hs \
+      Hcc/ParseLite.hs \
+      Hcc/ConstExpr.hs \
+      Hcc/Lexer.hs \
+      Hcc/Preprocessor.hs \
+      Hcc/HccSystem.hs \
+      Hcc/DriverCommon.hs \
+      Hcc/IncludeExpand.hs \
+      MainCpp.hs \
+      > hcpp-full.hs
+
+    cat \
+      ${blynnSrc}/inn/BasePrecisely.hs \
+      ${blynnSrc}/inn/System.hs \
       Hcc/Ast.hs \
       Hcc/Token.hs \
       Hcc/SymbolTable.hs \
@@ -36,7 +51,6 @@ mkDerivation ({
       Hcc/ConstExpr.hs \
       Hcc/Lexer.hs \
       Hcc/Parser.hs \
-      Hcc/Preprocessor.hs \
       Hcc/Ir.hs \
       Hcc/CompileM.hs \
       Hcc/LowerCommon.hs \
@@ -53,27 +67,35 @@ mkDerivation ({
       Hcc/RegAlloc.hs \
       Hcc/CodegenM1.hs \
       Hcc/HccSystem.hs \
-      Main.hs \
-      > hcc-full.hs
+      Hcc/DriverCommon.hs \
+      MainCc1.hs \
+      > hcc1-full.hs
 
-    ${precisely}/bin/precisely_up < hcc-full.hs > hcc-blynn.c
-    sed -i -E 's/enum\{TOP=[0-9]+\};/enum{TOP=${toString top}};/' hcc-blynn.c
-    grep -q 'enum{TOP=${toString top}};' hcc-blynn.c
+    ${precisely}/bin/precisely_up < hcpp-full.hs > hcpp-blynn.c
+    ${precisely}/bin/precisely_up < hcc1-full.hs > hcc1-blynn.c
+    sed -i -E 's/enum\{TOP=[0-9]+\};/enum{TOP=${toString top}};/' hcpp-blynn.c hcc1-blynn.c
+    grep -q 'enum{TOP=${toString top}};' hcpp-blynn.c
+    grep -q 'enum{TOP=${toString top}};' hcc1-blynn.c
 
     ${compileCommand}
 
-    ./hcc --check test/parse-smoke.c
-    ./hcc --expand-dump test/pp-smoke.c >/dev/null
-    ./hcc -S -o smoke.M1 test/parse-smoke.c
+    ./hcpp test/pp-smoke.c > pp-smoke.i
+    ./hcc1 --check pp-smoke.i
+    ./hcpp test/parse-smoke.c > parse-smoke.i
+    ./hcc1 --check parse-smoke.i
+    ./hcc1 -S -o smoke.M1 parse-smoke.i
 
     runHook postBuild
   '';
 
   installPhase = ''
     runHook preInstall
-    install -Dm555 hcc $out/bin/hcc
-    install -Dm644 hcc-blynn.c $out/share/${shareName}/hcc-blynn.c
-    install -Dm644 hcc-full.hs $out/share/${shareName}/hcc-full.hs
+    install -Dm555 hcpp $out/bin/hcpp
+    install -Dm555 hcc1 $out/bin/hcc1
+    install -Dm644 hcpp-blynn.c $out/share/${shareName}/hcpp-blynn.c
+    install -Dm644 hcc1-blynn.c $out/share/${shareName}/hcc1-blynn.c
+    install -Dm644 hcpp-full.hs $out/share/${shareName}/hcpp-full.hs
+    install -Dm644 hcc1-full.hs $out/share/${shareName}/hcc1-full.hs
     install -Dm644 ${runtimeFile} $out/share/${shareName}/hcc-runtime.c
     runHook postInstall
   '';

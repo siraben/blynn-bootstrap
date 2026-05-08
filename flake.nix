@@ -99,7 +99,10 @@
           stdenv = {
             mkDerivation = pkgs.stdenv.mkDerivation;
             runtimeFile = "cbits/hcc_runtime.c";
-            compileCommand = "$CC -O2 hcc-blynn.c cbits/hcc_runtime.c -o hcc";
+            compileCommand = ''
+              $CC -O2 hcpp-blynn.c cbits/hcc_runtime.c -o hcpp
+              $CC -O2 hcc1-blynn.c cbits/hcc_runtime.c -o hcc1
+            '';
             top = 536870912;
             description = "HCC compiled from Blynn output by the normal stdenv C toolchain";
           };
@@ -112,10 +115,15 @@
             runtimeFile = "cbits/hcc_runtime_m2.c";
             compileCommand = ''
               M2-Mesoplanet --operating-system "$M2_OS" --architecture "$M2_ARCH" \
-                -f hcc-blynn.c \
+                -f hcpp-blynn.c \
                 -f cbits/hcc_runtime_m2.c \
-                -o hcc
-              chmod 555 hcc
+                -o hcpp
+              chmod 555 hcpp
+              M2-Mesoplanet --operating-system "$M2_OS" --architecture "$M2_ARCH" \
+                -f hcc1-blynn.c \
+                -f cbits/hcc_runtime_m2.c \
+                -o hcc1
+              chmod 555 hcc1
             '';
             top = 134217728;
             m2Arch = minimalBootstrap.stage0-posix.m2libcArch;
@@ -192,6 +200,12 @@
           src = hccSrc;
           blynnSrc = blynnUpstreamSrc;
         };
+
+        precisely-dialect-tests = pkgs.callPackage ./nix/precisely-dialect-tests.nix {
+          precisely = preciselyGhcDebug;
+          src = hccSrc;
+          blynnSrc = blynnUpstreamSrc;
+        };
       in {
         packages = {
           blynn-compiler = blynnCompiler;
@@ -199,7 +213,7 @@
           precisely-stdenv-host = preciselyStdenvHost;
           precisely-ghc-debug = preciselyGhcDebug;
           hcc-profile-host-ghc-native = hccProfileHostGhcNative;
-          inherit hcc-m1-smoke hcc-mescc-tests mutable-io-proof;
+          inherit hcc-m1-smoke hcc-mescc-tests mutable-io-proof precisely-dialect-tests;
           default = preciselyM2Stage0;
         } // lib.mapAttrs' (name: value: {
           name = "hcc-${name}";

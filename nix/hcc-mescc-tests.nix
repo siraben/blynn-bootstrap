@@ -26,7 +26,8 @@ stdenvNoCC.mkDerivation {
       expected="$2"
       src="${mesTests}/scaffold/$name.c"
 
-      hcc -S -o "$name.M1" "$src"
+      hcpp "$src" > "$name.i"
+      hcc1 -S -o "$name.M1" "$name.i"
       M1 --architecture amd64 --little-endian \
         -f ${m2libc}/amd64/amd64_defs.M1 \
         -f ${m2libc}/amd64/libc-core.M1 \

@@ -238,6 +238,65 @@ tinycc-boot-hcc/bin/tcc-hcc-stage1: 2,767,218 bytes
 tinycc-boot-hcc/bin/tcc: 338,120 bytes
 ```
 
+## Split hcc1 profile: 2026-05-07
+
+State: split driver into `hcpp` and `hcc1`, with `hcc1` profiled from the O0 GHC profiling build.
+
+Input:
+
+```text
+hcpp tcc-expanded.c > tcc.i
+tcc.i: 537,750 bytes, 1 token-rendered line
+
+hcc1 -S -o tcc.M1 tcc.i +RTS -p -s -RTS
+tcc.M1: 519,904 lines, 15,484,417 bytes
+```
+
+RTS profile:
+
+```text
+wall: 9.78s profiled elapsed
+total alloc: 8,636,979,408 bytes in cost-centre profile
+RTS allocated: 18,686,569,424 bytes including profiling overhead
+max residency: 116,111,080 bytes
+total memory in use: 343 MiB
+productivity: 74.5%
+```
+
+Top individual cost centres:
+
+```text
+withBuffer              HccSystem    23.0% time 25.3% alloc
+readResultAt.\          HccSystem    15.9% time  0.9% alloc
+rangeContains           FingerTree    7.5% time  9.3% alloc
+lookupConstant.\        CompileM      7.1% time  0.0% alloc
+lookupValue             FingerTree    3.3% time  0.0% alloc
+lookupGlobalType.\      CompileM      2.3% time  0.0% alloc
+firstJust               FingerTree    1.7% time  0.3% alloc
+byteHex                 CodegenM1     1.4% time  3.8% alloc
+lookupFunction.\        CompileM      1.4% time  0.0% alloc
+bindConstant.remove     CompileM      1.4% time  0.7% alloc
+Parser >>=.\            Parser        1.3% time  0.8% alloc
+removeEnumConstant      Parser        1.3% time  0.6% alloc
+lookupNodeWith          FingerTree    1.3% time  8.2% alloc
+prefixOf                Lexer         1.2% time  2.2% alloc
+hccWriteHandleLines     HccSystem     1.2% time  1.2% alloc
+lexerIsSpace            Lexer         1.1% time  1.3% alloc
+storeTemp.\             CodegenM1     1.0% time  4.6% alloc
+loadLocationWithRspBias CodegenM1     0.8% time  4.1% alloc
+fingerLookupWith        FingerTree    0.7% time  3.0% alloc
+joinWords               CodegenM1     0.7% time  2.4% alloc
+loadImmediateBytes      CodegenM1     0.6% time  2.4% alloc
+```
+
+Audit notes:
+
+- `HccSystem.withBuffer` and `readResultAt` are still the largest single cost. `hcc1` reads the full input through the C result buffer and writes each output line through the same buffer path. This is bootstrap-friendly, but it allocates and copies heavily under GHC. The direct fix is to add chunked handle read/write primitives in the runtime API so `hcc1` does not round-trip every input/output string through per-character Haskell lists.
+- `FingerTree` is the largest compiler-internal allocation cluster. `rangeContains`, `lookupNodeWith`, and `fingerLookupWith` together account for about 20.5% allocation and 9.5% time. This is allocation lookup during codegen. Since temps are dense integers, a bootstrap-lowerable mutable or immutable dense table would fit better than a measured tree for `Allocation`.
+- `CompileM` lookups are time-heavy but allocation-light. `lookupConstant`, `lookupGlobalType`, and `lookupFunction` are linear association-list scans. They are worth replacing with the same handrolled symbol table used by preprocessing/parser state before tackling smaller parser costs.
+- M1 text rendering is a real allocator: `byteHex`, `storeTemp`, `loadLocationWithRspBias`, `joinWords`, and `loadImmediateBytes` are repeatedly constructing small strings. Difference-list rendering at the codegen line/chunk level should reduce allocation without changing output.
+- Parser costs are present but secondary in this profile. The enum/typedef pre-scans use repeated list removals and uniqueness passes; these should be cleaned up, but only after IO, allocation lookup, and text rendering.
+
 Validation:
 
 ```text
