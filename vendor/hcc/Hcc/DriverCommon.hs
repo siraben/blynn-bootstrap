@@ -118,7 +118,7 @@ assemblyArgs args = finish (go args Nothing Nothing [] []) where
 
 ignoredAssemblyFlag :: String -> Bool
 ignoredAssemblyFlag flag =
-  flag `elem` ["-c", "-pipe", "-nostdinc", "-nostdlib", "-static"]
+  flag `elem` ["-c", "-pipe", "-nostdinc", "-nostdlib", "-static", "--tokens", "--ast-summary", "--ir-summary", "--trace"]
 
 parseDefine :: String -> (String, String)
 parseDefine def = case break (== '=') def of

@@ -214,6 +214,12 @@ runFun opts ffis = ("enum{_UNDEFINED=0,"++)
   . ("};\n"++)
   . ([r|#define EXPORT(f, sym) void f() asm(sym) __attribute__((export_name(sym)));
 void *malloc(unsigned long);
+#ifdef HCC_RTS_USE_EXTERNAL_ALLOC
+void *hcc_rts_alloc(unsigned long);
+static void *rts_alloc(unsigned long n) { return hcc_rts_alloc(n); }
+#else
+static void *rts_alloc(unsigned long n) { return malloc(n); }
+#endif
 enum { FORWARD = 127, REDUCING = 126 };
 static u *mem, *altmem, *sp, *spTop, hp;
 #ifdef HCC_RTS_GENERATIONAL
@@ -686,29 +692,29 @@ rtsInit opts
   static u done; if (done) return; done = 1;
   root = root8;
   rootend = (u*)((char*)root8 + ROOTSZ * sizeof(u));
-  mem = malloc(TOP * sizeof(u));
+  mem = rts_alloc(TOP * sizeof(u));
   if (mem == 0) {
     fputs("precisely RTS: malloc mem failed\n", stderr);
     exit(1);
   }
-  altmem = malloc(TOP * sizeof(u));
+  altmem = rts_alloc(TOP * sizeof(u));
   if (altmem == 0) {
     fputs("precisely RTS: malloc altmem failed\n", stderr);
     exit(1);
   }
-  scratchpad = malloc(1048576 * sizeof(u));
+  scratchpad = rts_alloc(1048576 * sizeof(u));
   if (scratchpad == 0) {
     fputs("precisely RTS: malloc scratchpad failed\n", stderr);
     exit(1);
   }
 #ifdef HCC_RTS_GENERATIONAL
   remembered_cap = (TOP >> HCC_RTS_CARD_SHIFT) + 2;
-  remembered = malloc(remembered_cap * sizeof(u));
+  remembered = rts_alloc(remembered_cap * sizeof(u));
   if (remembered == 0) {
     fputs("precisely RTS: malloc remembered failed\n", stderr);
     exit(1);
   }
-  remembered_list = malloc(remembered_cap * sizeof(u));
+  remembered_list = rts_alloc(remembered_cap * sizeof(u));
   if (remembered_list == 0) {
     fputs("precisely RTS: malloc remembered list failed\n", stderr);
     exit(1);

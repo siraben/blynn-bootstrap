@@ -51,6 +51,37 @@ stdenv.mkDerivation {
 
     ulimit -s unlimited
 
+    log_step() {
+      printf 'tinycc-boot-hcc: [%s] %s\n' "$(date -u +%H:%M:%S)" "$1"
+    }
+
+    run_step() {
+      label="$1"
+      shift
+      log_step "START $label"
+      start="$(date +%s)"
+      "$@"
+      end="$(date +%s)"
+      log_step "DONE  $label ($((end - start))s)"
+    }
+
+    run_step_shell() {
+      label="$1"
+      command="$2"
+      log_step "START $label"
+      start="$(date +%s)"
+      eval "$command"
+      end="$(date +%s)"
+      log_step "DONE  $label ($((end - start))s)"
+    }
+
+    log_file() {
+      file="$1"
+      bytes="$(wc -c < "$file")"
+      lines="$(wc -l < "$file")"
+      log_step "FILE  $file: $lines lines, $bytes bytes"
+    }
+
     tcc_include_src="$PWD/include"
     mes_include_src="${mesLibc}/include"
 
@@ -81,10 +112,10 @@ stdenv.mkDerivation {
     EOF
     substituteInPlace config.h --replace-fail '@out@' "$out"
 
-    hcpp \
+    run_step_shell "hcpp tcc.c > tcc-expanded.c" "hcpp \
       -I . \
-      -I "$tcc_include_src" \
-      -I "$mes_include_src" \
+      -I \"$tcc_include_src\" \
+      -I \"$mes_include_src\" \
       -D __linux__=1 \
       -D BOOTSTRAP=1 \
       -D HAVE_LONG_LONG=1 \
@@ -93,29 +124,42 @@ stdenv.mkDerivation {
       -D HAVE_FLOAT=1 \
       -D TCC_TARGET_X86_64=1 \
       -D inline= \
-      -D CONFIG_TCCDIR=\"\" \
-      -D CONFIG_SYSROOT=\"\" \
-      -D CONFIG_TCC_CRTPREFIX=\"{B}\" \
-      -D CONFIG_TCC_ELFINTERP=\"/mes/loader\" \
-      -D CONFIG_TCC_LIBPATHS=\"{B}\" \
-      -D CONFIG_TCC_SYSINCLUDEPATHS=\"$out/include\" \
-      -D TCC_LIBGCC=\"libc.a\" \
-      -D TCC_LIBTCC1=\"libtcc1.a\" \
+      -D CONFIG_TCCDIR=\\\"\\\" \
+      -D CONFIG_SYSROOT=\\\"\\\" \
+      -D CONFIG_TCC_CRTPREFIX=\\\"{B}\\\" \
+      -D CONFIG_TCC_ELFINTERP=\\\"/mes/loader\\\" \
+      -D CONFIG_TCC_LIBPATHS=\\\"{B}\\\" \
+      -D CONFIG_TCC_SYSINCLUDEPATHS=\\\"$out/include\\\" \
+      -D TCC_LIBGCC=\\\"libc.a\\\" \
+      -D TCC_LIBTCC1=\\\"libtcc1.a\\\" \
       -D CONFIG_TCC_LIBTCC1_MES=0 \
       -D CONFIG_TCCBOOT=1 \
       -D CONFIG_TCC_STATIC=1 \
       -D CONFIG_USE_LIBGCC=1 \
       -D TCC_MES_LIBC=1 \
-      -D TCC_VERSION=\"0.9.28-${version}\" \
+      -D TCC_VERSION=\\\"0.9.28-${version}\\\" \
       -D ONE_SOURCE=1 \
       -D CONFIG_TCC_SEMLOCK=0 \
-      tcc.c > tcc-expanded.c
+      tcc.c > tcc-expanded.c"
+    log_file tcc-expanded.c
 
-    hcpp ${support}/tcc-bootstrap-support.c > tcc-bootstrap-support.i
-    hcc1 -S -o tcc-bootstrap-support.M1 tcc-bootstrap-support.i
-    hcpp ${support}/tcc-final-overrides.c > tcc-final-overrides.i
-    hcc1 -S -o tcc-final-overrides.M1 tcc-final-overrides.i
-    hcc1 -S -o tcc.M1 tcc-expanded.c
+    run_step "hcc1 --tokens tcc-expanded.c" hcc1 --tokens -o tcc.tokens tcc-expanded.c
+    log_file tcc.tokens
+    run_step "hcc1 --ast-summary tcc-expanded.c" hcc1 --ast-summary -o tcc.ast-summary tcc-expanded.c
+    log_file tcc.ast-summary
+    run_step "hcc1 --ir-summary tcc-expanded.c" hcc1 --ir-summary -o tcc.ir-summary tcc-expanded.c
+    log_file tcc.ir-summary
+
+    run_step_shell "hcpp tcc-bootstrap-support.c > tcc-bootstrap-support.i" "hcpp ${support}/tcc-bootstrap-support.c > tcc-bootstrap-support.i"
+    log_file tcc-bootstrap-support.i
+    run_step "hcc1 -S tcc-bootstrap-support.i" hcc1 --trace -S -o tcc-bootstrap-support.M1 tcc-bootstrap-support.i
+    log_file tcc-bootstrap-support.M1
+    run_step_shell "hcpp tcc-final-overrides.c > tcc-final-overrides.i" "hcpp ${support}/tcc-final-overrides.c > tcc-final-overrides.i"
+    log_file tcc-final-overrides.i
+    run_step "hcc1 -S tcc-final-overrides.i" hcc1 --trace -S -o tcc-final-overrides.M1 tcc-final-overrides.i
+    log_file tcc-final-overrides.M1
+    run_step "hcc1 -S tcc-expanded.c" hcc1 --trace -S -o tcc.M1 tcc-expanded.c
+    log_file tcc.M1
 
     M1 --architecture amd64 --little-endian \
       -f ${m2libc}/amd64/amd64_defs.M1 \

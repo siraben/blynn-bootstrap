@@ -23,6 +23,19 @@ static unsigned obuf_len[HCC_MAX_OBUFS];
 static unsigned obuf_cap[HCC_MAX_OBUFS];
 static int obuf_used[HCC_MAX_OBUFS];
 
+void *hcc_rts_alloc(unsigned long size)
+{
+  asm("mov_rax, %0"
+      "push_rax"
+      "pop_rdi"
+      "lea_rsi,[rsp+DWORD] %8"
+      "mov_rsi,[rsi]"
+      "mov_rdx, %3"
+      "mov_r10, %34"
+      "mov_rax, %9"
+      "syscall");
+}
+
 static void *hcc_alloc(unsigned size)
 {
   void *out = malloc(size);

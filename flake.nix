@@ -442,6 +442,7 @@
             ];
             runtimeFile = "cbits/hcc_runtime_m2.c";
             compileCommand = ''
+              sed -i '1i#define HCC_RTS_USE_EXTERNAL_ALLOC 1' hcpp-blynn.c hcc1-blynn.c
               echo "hcc-blynn: M2-Mesoplanet hcpp-blynn.c -> hcpp"
               M2-Mesoplanet --operating-system "$M2_OS" --architecture "$M2_ARCH" \
                 -f hcpp-blynn.c \
@@ -457,7 +458,7 @@
             '';
             top = 134217728;
             hcppTop = 134217728;
-            hcc1Top = 536870912;
+            hcc1Top = 268435456;
             m2Arch = minimalBootstrap.stage0-posix.m2libcArch;
             m2Os = minimalBootstrap.stage0-posix.m2libcOS;
             description = "HCC compiled from Blynn output by stage0 M2-Mesoplanet";
@@ -473,6 +474,7 @@
             runtimeFile = "cbits/hcc_runtime_m2.c";
             compileCommand = ''
               gcc_m2_env="env -i PATH=${minimalBootstrap.stage0-posix.mescc-tools}/bin M2LIBC_PATH=${minimalBootstrap.stage0-posix.src}/M2libc TMPDIR=''${TMPDIR:-/tmp}"
+              sed -i '1i#define HCC_RTS_USE_EXTERNAL_ALLOC 1' hcpp-blynn.c hcc1-blynn.c
               echo "hcc-blynn: GCC-built M2-Mesoplanet hcpp-blynn.c -> hcpp"
               $gcc_m2_env ${m2MesoplanetGcc}/bin/M2-Mesoplanet --operating-system "$M2_OS" --architecture "$M2_ARCH" \
                 -f hcpp-blynn.c \
@@ -488,7 +490,7 @@
             '';
             top = 134217728;
             hcppTop = 134217728;
-            hcc1Top = 536870912;
+            hcc1Top = 268435456;
             m2Arch = minimalBootstrap.stage0-posix.m2libcArch;
             m2Os = minimalBootstrap.stage0-posix.m2libcOS;
             description = "HCC compiled from Blynn output by a GCC-built M2-Mesoplanet";
