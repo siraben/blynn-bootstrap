@@ -1,0 +1,219 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#define HCC_MAX_HANDLES 256
+
+static char *buffer;
+static unsigned buffer_len;
+static unsigned buffer_cap;
+
+static char *result;
+static unsigned result_len;
+static unsigned result_pos;
+
+static FILE *handles[HCC_MAX_HANDLES];
+
+static void *hcc_alloc(unsigned size)
+{
+  void *out = malloc(size);
+  if (!out) {
+    fputs("hcc runtime: out of memory\n", stderr);
+    exit(1);
+  }
+  return out;
+}
+
+static void *hcc_realloc(void *ptr, unsigned old_size, unsigned new_size)
+{
+  char *out = hcc_alloc(new_size);
+  char *in = ptr;
+  unsigned i = 0;
+  while (i < old_size && i < new_size) {
+    out[i] = in[i];
+    i = i + 1;
+  }
+  if (ptr) free(ptr);
+  return out;
+}
+
+static void ensure_chars(char **ptr, unsigned *cap, unsigned needed)
+{
+  unsigned next;
+  if (*cap >= needed) return;
+  next = *cap;
+  if (!next) next = 64;
+  while (next < needed) next = next * 2;
+  *ptr = hcc_realloc(*ptr, *cap, next);
+  *cap = next;
+}
+
+void hcc_buffer_clear(void)
+{
+  buffer_len = 0;
+  ensure_chars(&buffer, &buffer_cap, 1);
+  buffer[0] = 0;
+}
+
+void hcc_buffer_put(int c)
+{
+  ensure_chars(&buffer, &buffer_cap, buffer_len + 2);
+  buffer[buffer_len] = c;
+  buffer_len = buffer_len + 1;
+  buffer[buffer_len] = 0;
+}
+
+static char *current_buffer(void)
+{
+  if (!buffer) hcc_buffer_clear();
+  return buffer;
+}
+
+static void set_result(char *text)
+{
+  unsigned len = strlen(text);
+  ensure_chars(&result, &result_len, len + 1);
+  memcpy(result, text, len + 1);
+  result_len = len;
+  result_pos = 0;
+}
+
+int hcc_result_eof(void)
+{
+  return result_pos >= result_len;
+}
+
+int hcc_result_char(void)
+{
+  if (result_pos >= result_len) return 0;
+  result_pos = result_pos + 1;
+  return result[result_pos - 1];
+}
+
+void hcc_stderr_char(int c)
+{
+  fputc(c, stderr);
+  fflush(stderr);
+}
+
+void hcc_exit_success(void)
+{
+  exit(0);
+}
+
+void hcc_exit_failure(void)
+{
+  exit(1);
+}
+
+static int alloc_handle(FILE *file)
+{
+  int i = 0;
+  if (!file) return 0;
+  while (i < HCC_MAX_HANDLES) {
+    if (!handles[i]) {
+      handles[i] = file;
+      return i + 1;
+    }
+    i = i + 1;
+  }
+  fclose(file);
+  return 0;
+}
+
+static FILE *get_handle(int handle)
+{
+  if (handle <= 0) return 0;
+  if (handle > HCC_MAX_HANDLES) return 0;
+  return handles[handle - 1];
+}
+
+int hcc_open_read(void)
+{
+  return alloc_handle(fopen(current_buffer(), "r"));
+}
+
+int hcc_open_write(void)
+{
+  return alloc_handle(fopen(current_buffer(), "w"));
+}
+
+int hcc_handle_eof(int handle)
+{
+  FILE *file = get_handle(handle);
+  int c;
+  if (!file) return 1;
+  c = fgetc(file);
+  if (c == EOF) return 1;
+  ungetc(c, file);
+  return 0;
+}
+
+int hcc_handle_read_char(int handle)
+{
+  FILE *file = get_handle(handle);
+  int c;
+  if (!file) return 0;
+  c = fgetc(file);
+  if (c == EOF) return 0;
+  return c;
+}
+
+void hcc_handle_write_char(int handle, int c)
+{
+  FILE *file = get_handle(handle);
+  if (file) fputc(c, file);
+}
+
+void hcc_handle_flush(int handle)
+{
+  FILE *file = get_handle(handle);
+  if (file) fflush(file);
+}
+
+void hcc_close(int handle)
+{
+  FILE *file;
+  if (handle <= 0) return;
+  if (handle > HCC_MAX_HANDLES) return;
+  file = handles[handle - 1];
+  if (!file) return;
+  fclose(file);
+  handles[handle - 1] = 0;
+}
+
+int hcc_lookup_env(void)
+{
+  return 0;
+}
+
+int hcc_find_executable(void)
+{
+  return 0;
+}
+
+void hcc_canonicalize(void)
+{
+  set_result(current_buffer());
+}
+
+int hcc_does_file_exist(void)
+{
+  FILE *file = fopen(current_buffer(), "r");
+  if (!file) return 0;
+  fclose(file);
+  return 1;
+}
+
+void hcc_process_clear(void)
+{
+}
+
+void hcc_process_push(void)
+{
+}
+
+int hcc_process_run(void)
+{
+  return 1;
+}

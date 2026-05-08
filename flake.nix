@@ -76,28 +76,34 @@
           blynnSrc = ./vendor/blynn-compiler/upstream;
         };
 
+        hcc-blynn-stage0 = pkgs.callPackage ./nix/hcc-blynn-stage0.nix {
+          inherit blynn-precisely minimalBootstrap;
+          src = ./vendor/hcc;
+          blynnSrc = ./vendor/blynn-compiler/upstream;
+        };
+
         tinycc-boot-hcc = pkgs.callPackage ./nix/tinycc-boot-hcc.nix {
-          hcc = hcc-blynn-debug;
+          hcc = hcc-blynn-stage0;
           inherit minimalBootstrap;
           mesLibc = minimalBootstrap.mes-libc;
           m2libc = ./vendor/blynn-compiler/M2libc;
         };
 
         hcc-m1-smoke = pkgs.callPackage ./nix/hcc-m1-smoke.nix {
-          hcc = hcc-blynn-debug;
+          hcc = hcc-blynn-stage0;
           inherit minimalBootstrap;
           m2libc = ./vendor/blynn-compiler/M2libc;
         };
 
         hcc-mescc-tests = pkgs.callPackage ./nix/hcc-mescc-tests.nix {
-          hcc = hcc-blynn-debug;
+          hcc = hcc-blynn-stage0;
           inherit minimalBootstrap;
           m2libc = ./vendor/blynn-compiler/M2libc;
           mesTests = ./vendor/mes-tests;
         };
       in {
         packages = {
-          inherit blynn-compiler blynn-precisely blynn-precisely-stdenv blynn-precisely-debug-ghc hcc-ghc hcc-blynn-debug hcc-m1-smoke hcc-mescc-tests tinycc-boot-hcc;
+          inherit blynn-compiler blynn-precisely blynn-precisely-stdenv blynn-precisely-debug-ghc hcc-ghc hcc-blynn-debug hcc-blynn-stage0 hcc-m1-smoke hcc-mescc-tests tinycc-boot-hcc;
           default = blynn-precisely;
         };
 
@@ -117,6 +123,7 @@
             pkgs.coreutils
             hcc-ghc
             hcc-blynn-debug
+            hcc-blynn-stage0
             (pkgs.haskellPackages.ghcWithPackages (hpkgs: [
               hpkgs.raw-strings-qq
             ]))
