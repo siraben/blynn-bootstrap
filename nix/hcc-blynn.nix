@@ -25,6 +25,7 @@ mkDerivation ({
 
     ulimit -s unlimited
 
+    echo "hcc-blynn: concatenate hcpp Haskell sources"
     cat \
       ${blynnSrc}/inn/BasePrecisely.hs \
       ${blynnSrc}/inn/System.hs \
@@ -40,6 +41,7 @@ mkDerivation ({
       MainCpp.hs \
       > hcpp-full.hs
 
+    echo "hcc-blynn: concatenate hcc1 Haskell sources"
     cat \
       ${blynnSrc}/inn/BasePrecisely.hs \
       ${blynnSrc}/inn/System.hs \
@@ -71,18 +73,27 @@ mkDerivation ({
       MainCc1.hs \
       > hcc1-full.hs
 
+    echo "hcc-blynn: precisely_up hcpp-full.hs -> hcpp-blynn.c"
     ${precisely}/bin/precisely_up < hcpp-full.hs > hcpp-blynn.c
+    echo "hcc-blynn: precisely_up hcc1-full.hs -> hcc1-blynn.c"
     ${precisely}/bin/precisely_up < hcc1-full.hs > hcc1-blynn.c
+    echo "hcc-blynn: patch generated RTS TOP=${toString top}"
     sed -i -E 's/enum\{TOP=[0-9]+\};/enum{TOP=${toString top}};/' hcpp-blynn.c hcc1-blynn.c
     grep -q 'enum{TOP=${toString top}};' hcpp-blynn.c
     grep -q 'enum{TOP=${toString top}};' hcc1-blynn.c
 
+    echo "hcc-blynn: compile generated C backend"
     ${compileCommand}
 
+    echo "hcc-blynn: run hcpp smoke"
     ./hcpp test/pp-smoke.c > pp-smoke.i
+    echo "hcc-blynn: run hcc1 preprocessor smoke check"
     ./hcc1 --check pp-smoke.i
+    echo "hcc-blynn: run hcpp parse smoke"
     ./hcpp test/parse-smoke.c > parse-smoke.i
+    echo "hcc-blynn: run hcc1 parse smoke check"
     ./hcc1 --check parse-smoke.i
+    echo "hcc-blynn: run hcc1 M1 smoke codegen"
     ./hcc1 -S -o smoke.M1 parse-smoke.i
 
     runHook postBuild

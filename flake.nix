@@ -100,7 +100,9 @@
             mkDerivation = pkgs.stdenv.mkDerivation;
             runtimeFile = "cbits/hcc_runtime.c";
             compileCommand = ''
+              echo "hcc-blynn: stdenv cc hcpp-blynn.c -> hcpp"
               $CC -O2 hcpp-blynn.c cbits/hcc_runtime.c -o hcpp
+              echo "hcc-blynn: stdenv cc hcc1-blynn.c -> hcc1"
               $CC -O2 hcc1-blynn.c cbits/hcc_runtime.c -o hcc1
             '';
             top = 536870912;
@@ -114,11 +116,13 @@
             ];
             runtimeFile = "cbits/hcc_runtime_m2.c";
             compileCommand = ''
+              echo "hcc-blynn: M2-Mesoplanet hcpp-blynn.c -> hcpp"
               M2-Mesoplanet --operating-system "$M2_OS" --architecture "$M2_ARCH" \
                 -f hcpp-blynn.c \
                 -f cbits/hcc_runtime_m2.c \
                 -o hcpp
               chmod 555 hcpp
+              echo "hcc-blynn: M2-Mesoplanet hcc1-blynn.c -> hcc1"
               M2-Mesoplanet --operating-system "$M2_OS" --architecture "$M2_ARCH" \
                 -f hcc1-blynn.c \
                 -f cbits/hcc_runtime_m2.c \
