@@ -220,14 +220,16 @@ static u *mem, *altmem, *sp, *spTop, hp;
 #ifndef HCC_RTS_NURSERY_WORDS
 #define HCC_RTS_NURSERY_WORDS 16777216
 #endif
-#ifndef HCC_RTS_REMEMBERED_WORDS
-#define HCC_RTS_REMEMBERED_WORDS 1048576
+#ifndef HCC_RTS_CARD_SHIFT
+#define HCC_RTS_CARD_SHIFT 10
 #endif
+#define HCC_RTS_CARD_WORDS ((u) 1 << HCC_RTS_CARD_SHIFT)
 static u old_hp, young_base;
-static u *remembered;
-static u remembered_count, remembered_overflow;
+static u *remembered, *remembered_list;
+static u remembered_count, remembered_cap;
 static inline u isYoung(u n) { return n >= young_base; }
 static inline u isOld(u n) { return n >= 128 && n < young_base; }
+static inline u cardOf(u n) { return n >> HCC_RTS_CARD_SHIFT; }
 #endif
 #ifdef HCC_RTS_STATS
 static u rts_gc_count, rts_minor_gc_count, rts_major_gc_count;
@@ -256,7 +258,7 @@ static void rts_report_stats() {
   fprintf(stderr, "precisely RTS stats: gc=%u minor_gc=%u major_gc=%u peak_hp=%u peak_live=%u peak_old=%u peak_stack=%u peak_scratch=%u peak_remembered=%u top=%u nursery=%u remembered_cap=%u progsz=%u rootsz=%u\n",
     rts_gc_count, rts_minor_gc_count, rts_major_gc_count, rts_peak_hp, rts_peak_live, rts_peak_old,
 #ifdef HCC_RTS_GENERATIONAL
-    rts_peak_stack, rts_peak_scratch, rts_peak_remembered, TOP, HCC_RTS_NURSERY_WORDS, HCC_RTS_REMEMBERED_WORDS, PROGSZ, ROOTSZ);
+    rts_peak_stack, rts_peak_scratch, rts_peak_remembered, TOP, HCC_RTS_NURSERY_WORDS, remembered_cap, PROGSZ, ROOTSZ);
 #else
     rts_peak_stack, rts_peak_scratch, rts_peak_remembered, TOP, 0, 0, PROGSZ, ROOTSZ);
 #endif
@@ -384,7 +386,6 @@ static u gc() {
   old_hp = hp;
   young_base = old_hp;
   remembered_count = 0;
-  remembered_overflow = 0;
   rts_note_old();
 #endif
   u usage = 0;
@@ -402,13 +403,13 @@ static u gc() {
 static u minor_gc_failed;
 static inline void remember_field(u slot, u value) {
   if (!isYoung(value)) return;
-  if (remembered_count >= HCC_RTS_REMEMBERED_WORDS) {
-    remembered_overflow = 1;
-    return;
+  u card = cardOf(slot);
+  if (remembered[card] == 0) {
+    remembered[card] = 1;
+    remembered_list[remembered_count] = card;
+    remembered_count = remembered_count + 1;
+    rts_note_remembered();
   }
-  remembered[remembered_count] = slot;
-  remembered_count = remembered_count + 1;
-  rts_note_remembered();
 }
 
 static u minor_evac(u n) {
@@ -441,8 +442,8 @@ static u minor_evac(u n) {
   return z;
 }
 
-static u minor_scan_promoted(u di) {
-  while (di < old_hp) {
+static u minor_scan_range(u di, u lim) {
+  while (di < lim) {
     u *p = (u*)((char*)mem + di * sizeof(u));
     u x = minor_evac(*p);
     if (minor_gc_failed) return 1;
@@ -460,8 +461,23 @@ static u minor_scan_promoted(u di) {
   return 0;
 }
 
+static u minor_scan_cards() {
+  u i = 0;
+  while (i < remembered_count) {
+    u card = remembered_list[i];
+    remembered[card] = 0;
+    u start = card << HCC_RTS_CARD_SHIFT;
+    u lim = (card + 1) << HCC_RTS_CARD_SHIFT;
+    if (start < 128) start = 128;
+    if (lim > old_hp) lim = old_hp;
+    if (minor_scan_range(start, lim)) return 1;
+    i = i + 1;
+  }
+  remembered_count = 0;
+  return 0;
+}
+
 static u minor_gc() {
-  if (remembered_overflow) return 1;
   minor_gc_failed = 0;
   u promoted_start = old_hp;
 #ifdef HCC_RTS_STATS
@@ -476,16 +492,8 @@ static u minor_gc() {
   u x = minor_evac(*spTop);
   if (minor_gc_failed) return 1;
   *spTop = x;
-  u i = 0;
-  while (i < remembered_count) {
-    u slot = remembered[i];
-    u *p = (u*)((char*)mem + slot * sizeof(u));
-    x = minor_evac(*p);
-    if (minor_gc_failed) return 1;
-    *p = x;
-    i = i + 1;
-  }
-  if (minor_scan_promoted(promoted_start)) return 1;
+  if (minor_scan_cards()) return 1;
+  if (minor_scan_range(promoted_start, old_hp)) return 1;
   sp = (u*)((char*)mem + (TOP - 1) * sizeof(u));
   *sp = *spTop;
   u usage = 0;
@@ -502,9 +510,8 @@ static u minor_gc() {
       young_base = old_hp;
       hp = young_base;
       remembered_count = 0;
-      remembered_overflow = 0;
       rts_note_hp();
-      return remembered_overflow || usage + old_hp + HCC_RTS_NURSERY_WORDS + 8 >= TOP;
+      return usage + old_hp + HCC_RTS_NURSERY_WORDS + 8 >= TOP;
     }
     usage = usage + 1;
   }
@@ -695,10 +702,23 @@ rtsInit opts
     exit(1);
   }
 #ifdef HCC_RTS_GENERATIONAL
-  remembered = malloc(HCC_RTS_REMEMBERED_WORDS * sizeof(u));
+  remembered_cap = (TOP >> HCC_RTS_CARD_SHIFT) + 2;
+  remembered = malloc(remembered_cap * sizeof(u));
   if (remembered == 0) {
     fputs("precisely RTS: malloc remembered failed\n", stderr);
     exit(1);
+  }
+  remembered_list = malloc(remembered_cap * sizeof(u));
+  if (remembered_list == 0) {
+    fputs("precisely RTS: malloc remembered list failed\n", stderr);
+    exit(1);
+  }
+  {
+    u i = 0;
+    while (i < remembered_cap) {
+      remembered[i] = 0;
+      i = i + 1;
+    }
   }
 #endif
   scratchpadend = scratchpad;
@@ -726,7 +746,6 @@ rtsInit opts
   old_hp = hp;
   young_base = old_hp;
   remembered_count = 0;
-  remembered_overflow = 0;
   rts_note_old();
 #endif
 }

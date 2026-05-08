@@ -581,7 +581,7 @@
 
         hccGccPreciselyGccStatsGenerational = hccGccPreciselyGccStatsWith {
           pname = "hcc-gcc-precisely-gcc-stats-generational";
-          extraCFlags = "-DHCC_RTS_GENERATIONAL -DHCC_RTS_NURSERY_WORDS=16777216";
+          extraCFlags = "-DHCC_RTS_GENERATIONAL -DHCC_RTS_NURSERY_WORDS=67108864";
           description = "Stats-enabled generational HCC compiled by the GCC-built Blynn precisely compiler and GCC";
         };
 

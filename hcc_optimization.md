@@ -940,6 +940,43 @@ nix build .#tinycc-boot-hcc .#hcc-m1-smoke .#hcc-mescc-tests
 pass
 ```
 
+## Pass 7: Precisely RTS generational GC experiment
+
+Goal: reduce peak runtime memory for Blynn-compiled HCC while preserving the TinyCC self-host path.
+
+Changes:
+
+- Replaced the slot-log remembered set with a card table plus compact card worklist.
+- Added per-card old-to-young write tracking for the experimental generational RTS.
+- Tuned the stats-only generational build from a 16M-word nursery to a 64M-word nursery for large HCC inputs.
+
+Current result:
+
+```text
+copying stats TinyCC self-host:
+  nix build .#tinycc-boot-hcc-gcc-precisely-gcc-stats-copying --no-link --print-out-paths -L
+  pass, build phase 3m52s
+  first heavy hcpp: gc=30 major_gc=30 peak_hp=134217710 peak_live=126936632
+  final heavy hcc1: gc=12 major_gc=12 peak_hp=268435438 peak_live=25536132
+
+generational stats, 16M nursery:
+  first heavy hcpp still running after ~5m at ~68 MiB RSS; stopped
+
+generational stats, card worklist + 64M nursery:
+  first heavy hcpp completed, but only via major collections:
+    gc=40 minor_gc=0 major_gc=40 peak_hp=134217708 peak_live=127456650 peak_old=127456650 peak_remembered=79275
+  final hcc1 still running after ~10m at ~266 MiB RSS; stopped
+```
+
+Conclusion:
+
+The card-table generational RTS reduces resident memory on the first heavy `hcpp`
+pass, but the TinyCC workload has a live set close enough to the heap ceiling that
+the current collector either performs too many minor collections or falls back to
+major collections. Keep this as an experimental stats target for now; use the
+copying RTS for the boss build until the generational design has a real nursery
+promotion policy win.
+
 ## Pass 6: Local constant-expression bit operations
 
 Goal: remove `ConstExpr`'s dependency on GHC `Data.Bits`.
