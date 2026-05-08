@@ -236,19 +236,19 @@ codegenBlocks fnName alloc totalSlots blocks = case blocks of
     body <- codegenInstrs fnName alloc totalSlots instrs
     termCode <- codegenTerminator fnName alloc totalSlots term
     tailCode <- codegenBlocks fnName alloc totalSlots rest
-    pure (linesFromList (blockLabel fnName bid) . linesFromList body . linesFromList termCode . tailCode)
+    pure (linesFromList (blockLabel fnName bid) . body . linesFromList termCode . tailCode)
 
 blockLabel :: String -> BlockId -> [String]
 blockLabel _ (BlockId 0) = []
 blockLabel fnName (BlockId n) = [":" ++ blockRef fnName (BlockId n)]
 
-codegenInstrs :: String -> Allocation -> Int -> [Instr] -> Either CodegenError [String]
+codegenInstrs :: String -> Allocation -> Int -> [Instr] -> Either CodegenError Lines
 codegenInstrs fnName alloc totalSlots instrs = case instrs of
-  [] -> pure []
+  [] -> pure id
   instr:rest -> do
     code <- codegenInstr fnName alloc totalSlots instr
     tailCode <- codegenInstrs fnName alloc totalSlots rest
-    pure (code ++ tailCode)
+    pure (linesFromList code . tailCode)
 
 codegenInstr :: String -> Allocation -> Int -> Instr -> Either CodegenError [String]
 codegenInstr fnName alloc totalSlots instr = case instr of
@@ -322,17 +322,17 @@ codegenInstr fnName alloc totalSlots instr = case instr of
     let doneLabel = "HCC_COND_DONE_" ++ fnName ++ "_" ++ show n
     trueStore <- storeTemp alloc temp trueLoad
     falseStore <- storeTemp alloc temp falseLoad
-    pure ( condCode ++ condLoad ++
+    pure ( condCode [] ++ condLoad ++
            [ "  TEST"
            , "  JUMP_NE %" ++ doneLabel ++ "_TRUE"
            , "  JUMP %" ++ elseLabel
            , ":" ++ doneLabel ++ "_TRUE"
            ] ++
-           trueCode ++ trueStore ++
+           trueCode [] ++ trueStore ++
            [ "  JUMP %" ++ doneLabel
            , ":" ++ elseLabel
            ] ++
-           falseCode ++ falseStore ++
+           falseCode [] ++ falseStore ++
            [":" ++ doneLabel])
   ICall result name args -> do
     argCode <- loadArguments alloc 0 args
@@ -546,10 +546,7 @@ byteHex value = textRender (byteHexText value)
 
 byteHexText :: Int -> TextBuilder
 byteHexText value =
-  textChar '\'' `textAppend`
-  textChar high `textAppend`
-  textChar low `textAppend`
-  textChar '\''
+  TextBuilder 4 (\rest -> '\'' : high : low : '\'' : rest)
   where
     digits = "0123456789ABCDEF"
     b = value `mod` 256

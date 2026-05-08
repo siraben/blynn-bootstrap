@@ -434,6 +434,129 @@ nix build .#tinycc-boot-hcc .#hcc-m1-smoke .#hcc-mescc-tests
 pass
 ```
 
+## Pass 9: TCC backend validation and GHC O0 profiling
+
+Goal: keep the fast TinyCC path green while using GHC O0 profiling to find allocation churn that should also matter to Blynn-built HCC.
+
+Naming and bootstrap matrix changes:
+
+- Standardized the non-stage0 C backend name as `gcc` instead of `stdenv`.
+- Added `hcc-gcc-precisely-tcc` and `tinycc-boot-hcc-gcc-precisely-tcc`.
+- Split generated Blynn RTS heap sizing by binary:
+  `hcppTop = 134217728`, `hcc1Top = 536870912` for the GCC and TCC C backends.
+- Kept the M2 backend default at one shared `top` for now while the long boss build runs.
+- Added `devShells.bench` for lightweight `nix develop .#bench -c ...` profiling and status commands.
+
+Runtime portability fix:
+
+- Removed `strtok_r` from the host C runtime PATH scanner.
+- Added fallback `WIFEXITED` and `WEXITSTATUS` macros for the TCC C backend.
+
+Heap observations:
+
+```text
+hcppTop = 67108864:
+small smoke passed
+real TinyCC preprocessing corrupted later codegen with "Target label FUNCTION_main is not valid"
+
+hcppTop = 134217728:
+real TinyCC bootstrap validated
+TCC-built hcpp RSS on tcc.c dropped to about 1.06 GiB
+TCC-built hcc1 still uses the 512 MiB Blynn TOP and about 4.2 GiB RSS
+```
+
+GHC O0 profiling, preprocessing TinyCC:
+
+```text
+hcpp elapsed: 2.79s
+hcpp max RSS: 453,696 KiB
+hcpp heap allocated: 3,583,902,440 bytes
+hcpp max residency: 172,945,888 bytes
+
+top time/alloc sites:
+readResultChars: 44.7% time, 9.1% alloc
+lexerIsSpace: 6.7% time, 8.1% alloc
+compareString: 3.9% time
+isAsciiAlpha: 3.7% time, 5.2% alloc
+include expansion/source builder sites: about 3.6% to 2.6% each
+```
+
+GHC O0 profiling, compiling preprocessed TinyCC to M1:
+
+```text
+hcc1 elapsed: 5.65s
+hcc1 max RSS: 383,680 KiB
+hcc1 heap allocated (+RTS -s): 11,261,882,952 bytes
+hcc1 profiled allocation total: 5,604,210,808 bytes
+hcc1 max residency: 128,864,336 bytes
+
+top time/alloc sites:
+hccWriteHandleLines.writeTextBuffered: 33.9% time, 28.1% alloc
+hccWriteHandleLines.writeLinesBuffered.\: 3.9% time, 1.6% alloc
+Parser bind: 2.9% time
+lexerIsSpace: 2.5% time
+removeEnumConstant: 2.3% time
+CompileM bind: 2.1% time
+storeTemp.\: 2.0% time, 7.1% alloc
+loadLocationWithRspBias: 1.8% time, 6.3% alloc
+textAppend: 1.5% time, 3.2% alloc
+byteHexText: 1.0% time, 2.8% alloc
+```
+
+Implemented HCC changes:
+
+- Changed M1 instruction emission to compose `Lines` difference lists instead of repeatedly appending instruction lists.
+- Changed `byteHexText` to construct its four-character builder directly instead of chaining `textAppend`.
+
+Measured effect on `hcc1`:
+
+```text
+before Lines/byteHexText changes:
+elapsed: about 6.20s
+heap allocated (+RTS -s): about 11.998 GiB
+profiled allocation total: about 6.053 GiB
+
+after Lines and direct byteHexText:
+elapsed: 5.65s
+heap allocated (+RTS -s): 11.262 GiB
+profiled allocation total: 5.604 GiB
+output byte-identical to the baseline tcc.M1
+```
+
+Reverted experiments:
+
+- `hcc_result_at` to read C results forwards was byte-identical but slower:
+  hcpp regressed from about 3.10s to 5.12s.
+- Direct per-line C write primitive was byte-identical but slower:
+  hcc1 regressed to about 7.33s.
+
+Current validation:
+
+```text
+nix develop .#bench -c bash -lc 'nix build .#hcc-host-ghc-native --no-link --print-out-paths -L'
+pass
+
+nix develop .#bench -c bash -lc 'nix build .#tinycc-boot-hcc-host-ghc-native .#tinycc-boot-hcc-gcc-precisely-gcc .#tinycc-boot-hcc-gcc-precisely-tcc --no-link --print-out-paths -L'
+pass
+
+tinycc-boot-hcc-host-ghc-native:
+/nix/store/1cj5vrfjbh12myw5pw5954lwa8cn6wwh-tinycc-boot-hcc-host-ghc-native-unstable-2024-07-07
+
+tinycc-boot-hcc-gcc-precisely-gcc:
+/nix/store/s88c3v7rdrc8wdgybv361s8dqqw6l1pf-tinycc-boot-hcc-gcc-precisely-gcc-unstable-2024-07-07
+
+tinycc-boot-hcc-gcc-precisely-tcc:
+/nix/store/z7i5y7719rv0r314m6xw3l985f0qvbqa-tinycc-boot-hcc-gcc-precisely-tcc-unstable-2024-07-07
+```
+
+Remaining optimization targets:
+
+- `hcc1` output still spends about a third of time and allocation in per-character output buffering.
+- `hcpp` still spends most of its time turning runtime output back into Haskell `String`.
+- Token and identifier representation still creates many short `String` values.
+- Parser and compiler monad binds are visible in O0 profiles and should be kept simple for Blynn lowering.
+- Temp location loads still allocate through repeated small builder fragments.
+
 ## Pass 7: Bootstrap-size trimming
 
 Goal: reduce the HCC program that Blynn must compile for the stage0 self-hosting path.
