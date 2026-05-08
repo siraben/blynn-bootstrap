@@ -8,6 +8,7 @@ import Lower
 import LowerBootstrap
 import LowerImplicit
 import RegAlloc
+import TextBuilder
 
 data CodegenError = CodegenError String
 
@@ -446,11 +447,11 @@ loadImmediate :: Int -> [String]
 loadImmediate value =
   if value >= (-2147483648) && value <= 2147483647
     then ["  LOAD_IMMEDIATE_rax %" ++ show value]
-    else ["  HCC_LOAD_IMMEDIATE64_rax " ++ joinWords (map byteHex (word64Bytes value))]
+    else [textRender (textString "  HCC_LOAD_IMMEDIATE64_rax " `textAppend` byteHexWords (word64Bytes value))]
 
 loadImmediateBytes :: [Int] -> [String]
 loadImmediateBytes bytes =
-  ["  HCC_LOAD_IMMEDIATE64_rax " ++ joinWords (map byteHex (takeInts 8 (bytes ++ zeroBytes)))]
+  [textRender (textString "  HCC_LOAD_IMMEDIATE64_rax " `textAppend` byteHexWords (takeInts 8 (bytes ++ zeroBytes)))]
 
 zeroBytes :: [Int]
 zeroBytes = 0 : zeroBytes
@@ -505,34 +506,58 @@ codegenDataItem (DataItem label values) =
 codegenDataItemWrite :: ([String] -> IO ()) -> DataItem -> IO ()
 codegenDataItemWrite write (DataItem label values) = do
   write [":" ++ label]
-  codegenDataValuesWrite write 0 [] values
+  codegenDataValuesWrite write 0 textEmpty values
   write [""]
 
-codegenDataValuesWrite :: ([String] -> IO ()) -> Int -> [String] -> [DataValue] -> IO ()
+codegenDataValuesWrite :: ([String] -> IO ()) -> Int -> TextBuilder -> [DataValue] -> IO ()
 codegenDataValuesWrite write count chunk values = case values of
   [] -> codegenDataChunkWrite write chunk
   value:rest ->
     if count >= 16
       then do
         codegenDataChunkWrite write chunk
-        codegenDataValuesWrite write 0 [] values
-      else codegenDataValuesWrite write (count + 1) (dataValueM1 value:chunk) rest
+        codegenDataValuesWrite write 0 textEmpty values
+      else codegenDataValuesWrite write (count + 1) (appendDataValue count chunk value) rest
 
-codegenDataChunkWrite :: ([String] -> IO ()) -> [String] -> IO ()
+appendDataValue :: Int -> TextBuilder -> DataValue -> TextBuilder
+appendDataValue count chunk value =
+  let sep = if count == 0 then textEmpty else textChar ' '
+  in chunk `textAppend` sep `textAppend` dataValueM1Text value
+
+codegenDataChunkWrite :: ([String] -> IO ()) -> TextBuilder -> IO ()
 codegenDataChunkWrite write chunk = case chunk of
-  [] -> pure ()
-  _ -> write ["  " ++ joinWords (reverse chunk)]
+  TextBuilder len _ ->
+    if len == 0
+    then pure ()
+    else write [textRender (textString "  " `textAppend` chunk)]
 
 dataValueM1 :: DataValue -> String
 dataValueM1 value = case value of
-  DByte byte -> byteHex byte
+  DByte byte -> textRender (byteHexText byte)
   DAddress label -> "&" ++ label ++ " '00' '00' '00' '00'"
 
+dataValueM1Text :: DataValue -> TextBuilder
+dataValueM1Text value = case value of
+  DByte byte -> byteHexText byte
+  DAddress label -> textString ("&" ++ label ++ " '00' '00' '00' '00'")
+
 byteHex :: Int -> String
-byteHex value =
-  let digits = "0123456789ABCDEF"
-      b = value `mod` 256
-  in "'" ++ [digits !! (b `div` 16), digits !! (b `mod` 16)] ++ "'"
+byteHex value = textRender (byteHexText value)
+
+byteHexText :: Int -> TextBuilder
+byteHexText value =
+  textChar '\'' `textAppend`
+  textChar high `textAppend`
+  textChar low `textAppend`
+  textChar '\''
+  where
+    digits = "0123456789ABCDEF"
+    b = value `mod` 256
+    high = digits !! (b `div` 16)
+    low = digits !! (b `mod` 16)
+
+byteHexWords :: [Int] -> TextBuilder
+byteHexWords values = textIntercalate (textChar ' ') (map byteHexText values)
 
 joinWords :: [String] -> String
 joinWords xs = case xs of

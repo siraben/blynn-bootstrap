@@ -47,10 +47,14 @@ takeUntilNewline st = go st [] where
     c:cs -> go (advance c cur { lsInput = cs }) (c:acc)
 
 startsLineComment :: String -> Bool
-startsLineComment s = "//" `prefixOf` s
+startsLineComment s = case s of
+  '/':'/':_ -> True
+  _ -> False
 
 startsBlockComment :: String -> Bool
-startsBlockComment s = "/*" `prefixOf` s
+startsBlockComment s = case s of
+  '/':'*':_ -> True
+  _ -> False
 
 skipLineComment :: LexState -> LexState
 skipLineComment st = snd (takeUntilNewline st)
@@ -145,22 +149,60 @@ quotedName :: Char -> String
 quotedName quote = if quote == '"' then "string literal" else "character literal"
 
 lexPunct :: LexState -> Maybe (Token, LexState)
-lexPunct st = firstMatch punctuators where
-  firstMatch ps = case ps of
-    [] -> Nothing
-    p:rest ->
-      if p `prefixOf` lsInput st
-      then let st' = advanceMany p st { lsInput = drop (length p) (lsInput st) }
-           in Just (Token (Span (lsPos st) (lsPos st')) (TokPunct p), st')
-      else firstMatch rest
-
-punctuators :: [String]
-punctuators =
-  [ "<<=", ">>=", "...", "++", "--", "->", "+=", "-=", "*=", "/=", "%="
-  , "&=", "|=", "^=", "==", "!=", "<=", ">=", "&&", "||", "<<", ">>"
-  , "##", "{", "}", "[", "]", "(", ")", ".", "&", "*", "+", "-", "~"
-  , "!", "/", "%", "<", ">", "^", "|", "?", ":", ";", "=", ",", "#"
-  ]
+lexPunct st = case lsInput st of
+  '<':'<':'=':rest -> punct "<<=" rest
+  '>':'>':'=':rest -> punct ">>=" rest
+  '.':'.':'.':rest -> punct "..." rest
+  '+':'+':rest -> punct "++" rest
+  '-':'-':rest -> punct "--" rest
+  '-':'>':rest -> punct "->" rest
+  '+':'=':rest -> punct "+=" rest
+  '-':'=':rest -> punct "-=" rest
+  '*':'=':rest -> punct "*=" rest
+  '/':'=':rest -> punct "/=" rest
+  '%':'=':rest -> punct "%=" rest
+  '&':'=':rest -> punct "&=" rest
+  '|':'=':rest -> punct "|=" rest
+  '^':'=':rest -> punct "^=" rest
+  '=':'=':rest -> punct "==" rest
+  '!':'=':rest -> punct "!=" rest
+  '<':'=':rest -> punct "<=" rest
+  '>':'=':rest -> punct ">=" rest
+  '&':'&':rest -> punct "&&" rest
+  '|':'|':rest -> punct "||" rest
+  '<':'<':rest -> punct "<<" rest
+  '>':'>':rest -> punct ">>" rest
+  '#':'#':rest -> punct "##" rest
+  '{':rest -> punct "{" rest
+  '}':rest -> punct "}" rest
+  '[':rest -> punct "[" rest
+  ']':rest -> punct "]" rest
+  '(':rest -> punct "(" rest
+  ')':rest -> punct ")" rest
+  '.':rest -> punct "." rest
+  '&':rest -> punct "&" rest
+  '*':rest -> punct "*" rest
+  '+':rest -> punct "+" rest
+  '-':rest -> punct "-" rest
+  '~':rest -> punct "~" rest
+  '!':rest -> punct "!" rest
+  '/':rest -> punct "/" rest
+  '%':rest -> punct "%" rest
+  '<':rest -> punct "<" rest
+  '>':rest -> punct ">" rest
+  '^':rest -> punct "^" rest
+  '|':rest -> punct "|" rest
+  '?':rest -> punct "?" rest
+  ':':rest -> punct ":" rest
+  ';':rest -> punct ";" rest
+  '=':rest -> punct "=" rest
+  ',':rest -> punct "," rest
+  '#':rest -> punct "#" rest
+  _ -> Nothing
+  where
+    punct text rest =
+      let st' = advanceMany text st { lsInput = rest }
+      in Just (Token (Span (lsPos st) (lsPos st')) (TokPunct text), st')
 
 takeWhileState :: (Char -> Bool) -> LexState -> (String, LexState)
 takeWhileState predicate st = go st [] where
@@ -206,9 +248,3 @@ isAsciiAlpha c = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
 
 isAsciiAlphaNum :: Char -> Bool
 isAsciiAlphaNum c = isAsciiAlpha c || isDigit c
-
-prefixOf :: String -> String -> Bool
-prefixOf prefix text = case (prefix, text) of
-  ([], _) -> True
-  (_, []) -> False
-  (p:ps, t:ts) -> p == t && prefixOf ps ts

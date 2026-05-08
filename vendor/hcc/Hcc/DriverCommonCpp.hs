@@ -61,31 +61,6 @@ stripComments source = normal source where
     '\'':rest -> '\'' : normal rest
     c:rest -> c : charLiteral rest
 
-hccWriteAndFlushLines :: Int -> [String] -> IO ()
-hccWriteAndFlushLines handle lines' = do
-  hccWriteHandleLines handle lines'
-  hccHandleFlush handle
-
-dataLabelPrefix :: String -> String
-dataLabelPrefix path =
-  "HCC_DATA_" ++ sanitized
-  where
-    sanitized = case sanitizeLabel (hccTakeFileName path) of
-      [] -> "unit"
-      text -> text
-
-sanitizeLabel :: String -> String
-sanitizeLabel text = case text of
-  [] -> []
-  c:rest -> sanitizeChar c ++ sanitizeLabel rest
-  where
-    sanitizeChar c =
-      if isAsciiAlphaNum c then [c] else "_"
-
-isAsciiAlphaNum :: Char -> Bool
-isAsciiAlphaNum c =
-  (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
-
 data AsmOptions = AsmOptions
   { asmInput :: String
   , asmOutput :: String
