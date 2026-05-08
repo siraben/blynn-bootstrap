@@ -70,6 +70,11 @@
           src = ./vendor/hcc;
         };
 
+        hcc-ghc-profile = pkgs.callPackage ./nix/hcc-ghc-profile.nix {
+          ghc = pkgs.haskellPackages.ghcWithPackages (_: []);
+          src = ./vendor/hcc;
+        };
+
         hcc-blynn-debug = pkgs.callPackage ./nix/hcc-blynn-debug.nix {
           inherit blynn-precisely-debug-ghc;
           src = ./vendor/hcc;
@@ -103,7 +108,7 @@
         };
       in {
         packages = {
-          inherit blynn-compiler blynn-precisely blynn-precisely-stdenv blynn-precisely-debug-ghc hcc-ghc hcc-blynn-debug hcc-blynn-stage0 hcc-m1-smoke hcc-mescc-tests tinycc-boot-hcc;
+          inherit blynn-compiler blynn-precisely blynn-precisely-stdenv blynn-precisely-debug-ghc hcc-ghc hcc-ghc-profile hcc-blynn-debug hcc-blynn-stage0 hcc-m1-smoke hcc-mescc-tests tinycc-boot-hcc;
           default = blynn-precisely;
         };
 
@@ -122,6 +127,7 @@
             minimalBootstrap.stage0-posix.mescc-tools
             pkgs.coreutils
             hcc-ghc
+            hcc-ghc-profile
             hcc-blynn-debug
             hcc-blynn-stage0
             (pkgs.haskellPackages.ghcWithPackages (hpkgs: [

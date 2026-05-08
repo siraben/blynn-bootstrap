@@ -165,6 +165,12 @@ void hcc_handle_write_char(int handle, int c)
   if (file) fputc(c, file);
 }
 
+void hcc_handle_write_buffer(int handle)
+{
+  FILE *file = get_handle(handle);
+  if (file) fputs(current_buffer(), file);
+}
+
 void hcc_handle_flush(int handle)
 {
   FILE *file = get_handle(handle);

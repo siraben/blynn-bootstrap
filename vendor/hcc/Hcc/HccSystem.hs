@@ -13,6 +13,7 @@ foreign import ccall "hcc_open_write" hccOpenWrite :: IO Int
 foreign import ccall "hcc_handle_eof" hccHandleEof :: Int -> IO Int
 foreign import ccall "hcc_handle_read_char" hccHandleReadChar :: Int -> IO Char
 foreign import ccall "hcc_handle_write_char" hccHandleWriteChar :: Int -> Char -> IO ()
+foreign import ccall "hcc_handle_write_buffer" hccHandleWriteBuffer :: Int -> IO ()
 foreign import ccall "hcc_handle_flush" hccHandleFlush :: Int -> IO ()
 foreign import ccall "hcc_close" hccClose :: Int -> IO ()
 foreign import ccall "hcc_canonicalize" hccCanonicalizeRaw :: IO ()
@@ -120,9 +121,7 @@ readResult = do
       pure (c:rest)
 
 hccWriteHandleText :: Int -> String -> IO ()
-hccWriteHandleText handle text = case text of
-  [] -> pure ()
-  c:rest -> hccHandleWriteChar handle c >> hccWriteHandleText handle rest
+hccWriteHandleText handle text = withBuffer text (hccHandleWriteBuffer handle)
 
 hccWriteHandleLines :: Int -> [String] -> IO ()
 hccWriteHandleLines handle lines' = case lines' of

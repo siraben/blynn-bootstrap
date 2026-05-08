@@ -300,6 +300,71 @@ nix build .#hcc-blynn-debug --no-link --print-out-paths
 pass
 ```
 
+## Pass 9: O0 GHC parity build and output profiling
+
+Goal: keep the GHC development build closer to Blynn-generated HCC and use GHC profiling to choose runtime optimizations.
+
+Changes:
+
+- Changed `hcc-ghc` from `-O2` to `-O0`.
+- Added `hcc-ghc-profile`, built with `-O0 -prof -fprof-auto -rtsopts`.
+- Added `hcc_handle_write_buffer` to both C runtimes and changed HCC line output to fill the existing runtime buffer and write each line in one C call.
+
+Profile workload:
+
+```text
+generated C file:
+800 functions
+800 calls from main
+function bodies use object/function-like macro expansion, arithmetic, shifts, and if/else
+```
+
+Before buffered writes:
+
+```text
+profiled elapsed: 15.70s
+profiled total time: 14.73s
+total alloc: 6,802,293,408 bytes
+top cost centre: hccWriteHandleText, 82.0% time, 25.4% alloc
+```
+
+After buffered writes:
+
+```text
+profiled elapsed: 5.70s
+profiled total time: 4.64s
+total alloc: 7,680,003,240 bytes
+top cost centre: withBuffer, 44.4% time, 33.8% alloc
+```
+
+Generated Blynn C metrics:
+
+```text
+PROGSZ: 69280 unchanged
+hcc-blynn.c: 635,882 -> 635,963 bytes
+hcc-blynn-debug/bin/hcc: 697,776 -> 697,816 bytes
+hcc-ghc/bin/hcc with -O0: 3,764,728 bytes
+```
+
+Equivalence:
+
+```text
+O0 GHC hcc output matches precisely-compiled hcc output byte-for-byte for:
+--expand-dump vendor/hcc/test/pp-smoke.c
+-S vendor/hcc/test/parse-smoke.c
+-S all vendor/hcc/test/m1-smoke/examples/*.c
+```
+
+Validation:
+
+```text
+nix build .#hcc-ghc .#hcc-ghc-profile .#hcc-blynn-debug --no-link --print-out-paths
+pass
+
+nix flake check --no-build
+pass
+```
+
 Stage0 attempt:
 
 ```text

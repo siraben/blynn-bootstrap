@@ -6,7 +6,7 @@
 }:
 
 stdenv.mkDerivation {
-  pname = "hcc-ghc";
+  pname = "hcc-ghc-profile";
   version = "0-unstable-2026-05-06";
 
   inherit src;
@@ -16,7 +16,8 @@ stdenv.mkDerivation {
   buildPhase = ''
     runHook preBuild
     mkdir -p build
-    ghc -O0 -Wall -Werror -XNoImplicitPrelude -XForeignFunctionInterface \
+    ghc -O0 -prof -fprof-auto -rtsopts -Wall -Werror \
+      -XNoImplicitPrelude -XForeignFunctionInterface \
       -i. -iHcc Main.hs cbits/hcc_runtime.c -outputdir build -o hcc
     ./hcc --check test/parse-smoke.c
     ./hcc --expand-dump test/pp-smoke.c >/dev/null
@@ -31,7 +32,7 @@ stdenv.mkDerivation {
   '';
 
   meta = with lib; {
-    description = "GHC-backed development build of the hcc bootstrap C compiler";
+    description = "Profiling build of the GHC-backed hcc bootstrap C compiler";
     license = licenses.gpl3Only;
     platforms = platforms.linux;
   };
