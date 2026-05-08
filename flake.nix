@@ -72,6 +72,10 @@
           src = blynnUpstreamSrc;
         };
 
+        m2MesoplanetGcc = pkgs.callPackage ./nix/gcc-m2-mesoplanet.nix {
+          inherit minimalBootstrap;
+        };
+
         hccHostGhcNative = pkgs.callPackage ./nix/hcc-ghc.nix {
           pname = "hcc-host-ghc-native";
           ghc = pkgs.haskellPackages.ghcWithPackages (_: []);
@@ -154,6 +158,35 @@
             description = "HCC compiled from Blynn output by stage0 M2-Mesoplanet";
             metaPlatforms = [ "x86_64-linux" ];
           };
+
+          gccm2 = {
+            mkDerivation = pkgs.stdenvNoCC.mkDerivation;
+            nativeBuildInputs = [
+              m2MesoplanetGcc
+              minimalBootstrap.stage0-posix.mescc-tools
+            ];
+            runtimeFile = "cbits/hcc_runtime_m2.c";
+            compileCommand = ''
+              gcc_m2_env="env -i PATH=${minimalBootstrap.stage0-posix.mescc-tools}/bin M2LIBC_PATH=${minimalBootstrap.stage0-posix.src}/M2libc TMPDIR=''${TMPDIR:-/tmp}"
+              echo "hcc-blynn: GCC-built M2-Mesoplanet hcpp-blynn.c -> hcpp"
+              $gcc_m2_env ${m2MesoplanetGcc}/bin/M2-Mesoplanet --operating-system "$M2_OS" --architecture "$M2_ARCH" \
+                -f hcpp-blynn.c \
+                -f cbits/hcc_runtime_m2.c \
+                -o hcpp
+              chmod 555 hcpp
+              echo "hcc-blynn: GCC-built M2-Mesoplanet hcc1-blynn.c -> hcc1"
+              $gcc_m2_env ${m2MesoplanetGcc}/bin/M2-Mesoplanet --operating-system "$M2_OS" --architecture "$M2_ARCH" \
+                -f hcc1-blynn.c \
+                -f cbits/hcc_runtime_m2.c \
+                -o hcc1
+              chmod 555 hcc1
+            '';
+            top = 134217728;
+            m2Arch = minimalBootstrap.stage0-posix.m2libcArch;
+            m2Os = minimalBootstrap.stage0-posix.m2libcOS;
+            description = "HCC compiled from Blynn output by a GCC-built M2-Mesoplanet";
+            metaPlatforms = [ "x86_64-linux" ];
+          };
         };
 
         # Bootstrap triple: <precisely-cc>-<hcc-hs>-<hcc-cc>.
@@ -205,6 +238,14 @@
               description = "HCC compiled by the stage0-built Blynn precisely and GCC";
             };
           };
+
+          m2-precisely-gccm2 = hccFromPrecisely {
+            pname = "hcc-m2-precisely-gccm2";
+            precisely = preciselyM2Stage0;
+            cBackend = hccCBackends.gccm2 // {
+              description = "HCC compiled by the stage0-built Blynn precisely and a GCC-built M2-Mesoplanet";
+            };
+          };
         };
 
         tinyccFromHcc = pname: hcc: pkgs.callPackage ./nix/tinycc-boot-hcc.nix {
@@ -220,6 +261,7 @@
           gcc-precisely-tcc = tinyccFromHcc "tinycc-boot-hcc-gcc-precisely-tcc" hccByTriple.gcc-precisely-tcc;
           m2-precisely-m2 = tinyccFromHcc "tinycc-boot-hcc-m2-precisely-m2" hccByTriple.m2-precisely-m2;
           m2-precisely-gcc = tinyccFromHcc "tinycc-boot-hcc-m2-precisely-gcc" hccByTriple.m2-precisely-gcc;
+          m2-precisely-gccm2 = tinyccFromHcc "tinycc-boot-hcc-m2-precisely-gccm2" hccByTriple.m2-precisely-gccm2;
         };
 
         hcc-m1-smoke = pkgs.callPackage ./nix/hcc-m1-smoke.nix {
@@ -253,6 +295,7 @@
           precisely-m2-stage0 = preciselyM2Stage0;
           precisely-gcc-host = preciselyGccHost;
           precisely-ghc-debug = preciselyGhcDebug;
+          m2-mesoplanet-gcc = m2MesoplanetGcc;
           hcc-profile-host-ghc-native = hccProfileHostGhcNative;
           inherit hcc-m1-smoke hcc-mescc-tests mutable-io-proof precisely-dialect-tests;
           default = preciselyM2Stage0;
