@@ -1,169 +1,277 @@
 module ConstExpr where
 
 import Base
+import ParseLite
 import Token
 
+type ConstParser a = P [(String, Integer)] Token String a
+
 parseConstExpr :: [(String, Integer)] -> [Token] -> Either String (Integer, [Token])
-parseConstExpr env = parseCond
-  where
-    parseCond toks = do
-      (cond, rest) <- parseOr toks
-      case rest of
-        Token _ (TokPunct "?"):xs -> do
-          (yes, xs') <- parseConstExpr env xs
-          case xs' of
-            Token _ (TokPunct ":"):ys -> do
-              (no, ys') <- parseCond ys
-              Right (if cond /= 0 then yes else no, ys')
-            _ -> Left "expected ':' in constant expression"
-        _ -> Right (cond, rest)
+parseConstExpr env toks = parseRest parseCond env toks
 
-    parseOr toks = do
-      (lhs, rest) <- parseLogicalAnd toks
-      parseTail lhs rest
-      where
-        parseTail lhs rest = case rest of
-          Token _ (TokPunct "||"):xs -> do
-            (rhs, xs') <- parseLogicalAnd xs
-            parseTail (truth (lhs /= 0 || rhs /= 0)) xs'
-          _ -> Right (lhs, rest)
+parseCond :: ConstParser Integer
+parseCond = do
+  cond <- parseOr
+  question <- constEatPunct "?"
+  if question
+    then do
+      yes <- parseCond
+      constNeedPunct ":" "expected ':' in constant expression"
+      no <- parseCond
+      pure (if cond /= 0 then yes else no)
+    else pure cond
 
-    parseLogicalAnd toks = do
-      (lhs, rest) <- parseBitOr toks
-      parseTail lhs rest
-      where
-        parseTail lhs rest = case rest of
-          Token _ (TokPunct "&&"):xs -> do
-            (rhs, xs') <- parseBitOr xs
-            parseTail (truth (lhs /= 0 && rhs /= 0)) xs'
-          _ -> Right (lhs, rest)
+parseOr :: ConstParser Integer
+parseOr = do
+  lhs <- parseLogicalAnd
+  parseOrTail lhs
 
-    parseBitOr toks = do
-      (lhs, rest) <- parseBitXor toks
-      parseTail lhs rest
-      where
-        parseTail lhs rest = case rest of
-          Token _ (TokPunct "|"):xs -> do
-            (rhs, xs') <- parseBitXor xs
-            parseTail (bitOrInteger lhs rhs) xs'
-          _ -> Right (lhs, rest)
+parseOrTail :: Integer -> ConstParser Integer
+parseOrTail lhs = do
+  found <- constEatPunct "||"
+  if found
+    then do
+      rhs <- parseLogicalAnd
+      parseOrTail (truth (lhs /= 0 || rhs /= 0))
+    else pure lhs
 
-    parseBitXor toks = do
-      (lhs, rest) <- parseBitAnd toks
-      parseTail lhs rest
-      where
-        parseTail lhs rest = case rest of
-          Token _ (TokPunct "^"):xs -> do
-            (rhs, xs') <- parseBitAnd xs
-            parseTail (bitXorInteger lhs rhs) xs'
-          _ -> Right (lhs, rest)
+parseLogicalAnd :: ConstParser Integer
+parseLogicalAnd = do
+  lhs <- parseBitOr
+  parseLogicalAndTail lhs
 
-    parseBitAnd toks = do
-      (lhs, rest) <- parseEq toks
-      parseTail lhs rest
-      where
-        parseTail lhs rest = case rest of
-          Token _ (TokPunct "&"):xs -> do
-            (rhs, xs') <- parseEq xs
-            parseTail (bitAndInteger lhs rhs) xs'
-          _ -> Right (lhs, rest)
+parseLogicalAndTail :: Integer -> ConstParser Integer
+parseLogicalAndTail lhs = do
+  found <- constEatPunct "&&"
+  if found
+    then do
+      rhs <- parseBitOr
+      parseLogicalAndTail (truth (lhs /= 0 && rhs /= 0))
+    else pure lhs
 
-    parseEq toks = do
-      (lhs, rest) <- parseRel toks
-      case rest of
-        Token _ (TokPunct "=="):xs -> compareTail (==) lhs xs
-        Token _ (TokPunct "!="):xs -> compareTail (/=) lhs xs
-        _ -> Right (lhs, rest)
+parseBitOr :: ConstParser Integer
+parseBitOr = do
+  lhs <- parseBitXor
+  parseBitOrTail lhs
 
-    parseRel toks = do
-      (lhs, rest) <- parseShift toks
-      case rest of
-        Token _ (TokPunct "<"):xs -> compareTail (<) lhs xs
-        Token _ (TokPunct "<="):xs -> compareTail (<=) lhs xs
-        Token _ (TokPunct ">"):xs -> compareTail (>) lhs xs
-        Token _ (TokPunct ">="):xs -> compareTail (>=) lhs xs
-        _ -> Right (lhs, rest)
+parseBitOrTail :: Integer -> ConstParser Integer
+parseBitOrTail lhs = do
+  found <- constEatPunct "|"
+  if found
+    then do
+      rhs <- parseBitXor
+      parseBitOrTail (bitOrInteger lhs rhs)
+    else pure lhs
 
-    compareTail op lhs toks = do
-      (rhs, rest) <- parseShift toks
-      Right (truth (lhs `op` rhs), rest)
+parseBitXor :: ConstParser Integer
+parseBitXor = do
+  lhs <- parseBitAnd
+  parseBitXorTail lhs
 
-    parseShift toks = do
-      (lhs, rest) <- parseAdd toks
-      parseTail lhs rest
-      where
-        parseTail lhs rest = case rest of
-          Token _ (TokPunct "<<"):xs -> do
-            (rhs, xs') <- parseAdd xs
-            parseTail (shiftLeftInteger lhs (max 0 rhs)) xs'
-          Token _ (TokPunct ">>"):xs -> do
-            (rhs, xs') <- parseAdd xs
-            parseTail (shiftRightInteger lhs (max 0 rhs)) xs'
-          _ -> Right (lhs, rest)
+parseBitXorTail :: Integer -> ConstParser Integer
+parseBitXorTail lhs = do
+  found <- constEatPunct "^"
+  if found
+    then do
+      rhs <- parseBitAnd
+      parseBitXorTail (bitXorInteger lhs rhs)
+    else pure lhs
 
-    parseAdd toks = do
-      (lhs, rest) <- parseMul toks
-      parseTail lhs rest
-      where
-        parseTail lhs rest = case rest of
-          Token _ (TokPunct "+"):xs -> do
-            (rhs, xs') <- parseMul xs
-            parseTail (lhs + rhs) xs'
-          Token _ (TokPunct "-"):xs -> do
-            (rhs, xs') <- parseMul xs
-            parseTail (lhs - rhs) xs'
-          _ -> Right (lhs, rest)
+parseBitAnd :: ConstParser Integer
+parseBitAnd = do
+  lhs <- parseEq
+  parseBitAndTail lhs
 
-    parseMul toks = do
-      (lhs, rest) <- parseUnary toks
-      parseTail lhs rest
-      where
-        parseTail lhs rest = case rest of
-          Token _ (TokPunct "*"):xs -> do
-            (rhs, xs') <- parseUnary xs
-            parseTail (lhs * rhs) xs'
-          Token _ (TokPunct "/"):xs -> do
-            (rhs, xs') <- parseUnary xs
-            if rhs == 0 then Left "division by zero in constant expression" else parseTail (lhs `div` rhs) xs'
-          Token _ (TokPunct "%"):xs -> do
-            (rhs, xs') <- parseUnary xs
-            if rhs == 0 then Left "modulo by zero in constant expression" else parseTail (lhs `mod` rhs) xs'
-          _ -> Right (lhs, rest)
+parseBitAndTail :: Integer -> ConstParser Integer
+parseBitAndTail lhs = do
+  found <- constEatPunct "&"
+  if found
+    then do
+      rhs <- parseEq
+      parseBitAndTail (bitAndInteger lhs rhs)
+    else pure lhs
 
-    parseUnary toks = case toks of
-      Token _ (TokPunct "!"):rest -> do
-        (value, rest') <- parseUnary rest
-        Right (truth (value == 0), rest')
-      Token _ (TokPunct "+"):rest -> parseUnary rest
-      Token _ (TokPunct "-"):rest -> do
-        (value, rest') <- parseUnary rest
-        Right (-value, rest')
-      Token _ (TokPunct "~"):rest -> do
-        (value, rest') <- parseUnary rest
-        Right (bitNotInteger value, rest')
-      _ -> parsePrimary toks
+parseEq :: ConstParser Integer
+parseEq = do
+  lhs <- parseRel
+  eq <- constEatPunct "=="
+  if eq
+    then compareTail (==) lhs
+    else do
+      ne <- constEatPunct "!="
+      if ne then compareTail (/=) lhs else pure lhs
 
-    parsePrimary toks = case toks of
-      Token _ (TokPunct "("):rest -> do
-        (value, rest') <- parseConstExpr env rest
-        case rest' of
-          Token _ (TokPunct ")"):xs -> Right (value, xs)
-          _ -> Left "expected ')' in constant expression"
-      Token _ (TokIdent "defined"):Token _ (TokPunct "("):Token _ (TokIdent name):Token _ (TokPunct ")"):rest ->
-        Right (truth (name /= ""), rest)
-      Token _ (TokIdent "defined"):Token _ (TokIdent name):rest ->
-        Right (truth (name /= ""), rest)
-      Token _ (TokIdent name):rest ->
-        Right (maybe 0 id (lookup name env), rest)
-      Token _ (TokInt value):rest ->
-        Right (parseIntLiteral value, rest)
-      Token _ (TokChar value):rest ->
-        Right (charInt value, rest)
-      [] -> Left "empty constant expression"
-      _ -> Left "unsupported token in constant expression"
+parseRel :: ConstParser Integer
+parseRel = do
+  lhs <- parseShift
+  lt <- constEatPunct "<"
+  if lt
+    then compareTail (<) lhs
+    else do
+      le <- constEatPunct "<="
+      if le
+        then compareTail (<=) lhs
+        else do
+          gt <- constEatPunct ">"
+          if gt
+            then compareTail (>) lhs
+            else do
+              ge <- constEatPunct ">="
+              if ge then compareTail (>=) lhs else pure lhs
+
+compareTail :: (Integer -> Integer -> Bool) -> Integer -> ConstParser Integer
+compareTail op lhs = do
+  rhs <- parseShift
+  pure (truth (lhs `op` rhs))
+
+parseShift :: ConstParser Integer
+parseShift = do
+  lhs <- parseAdd
+  parseShiftTail lhs
+
+parseShiftTail :: Integer -> ConstParser Integer
+parseShiftTail lhs = do
+  left <- constEatPunct "<<"
+  if left
+    then do
+      rhs <- parseAdd
+      parseShiftTail (shiftLeftInteger lhs (max 0 rhs))
+    else do
+      right <- constEatPunct ">>"
+      if right
+        then do
+          rhs <- parseAdd
+          parseShiftTail (shiftRightInteger lhs (max 0 rhs))
+        else pure lhs
+
+parseAdd :: ConstParser Integer
+parseAdd = do
+  lhs <- parseMul
+  parseAddTail lhs
+
+parseAddTail :: Integer -> ConstParser Integer
+parseAddTail lhs = do
+  plus <- constEatPunct "+"
+  if plus
+    then do
+      rhs <- parseMul
+      parseAddTail (lhs + rhs)
+    else do
+      minus <- constEatPunct "-"
+      if minus
+        then do
+          rhs <- parseMul
+          parseAddTail (lhs - rhs)
+        else pure lhs
+
+parseMul :: ConstParser Integer
+parseMul = do
+  lhs <- parseUnary
+  parseMulTail lhs
+
+parseMulTail :: Integer -> ConstParser Integer
+parseMulTail lhs = do
+  star <- constEatPunct "*"
+  if star
+    then do
+      rhs <- parseUnary
+      parseMulTail (lhs * rhs)
+    else do
+      slash <- constEatPunct "/"
+      if slash
+        then do
+          rhs <- parseUnary
+          if rhs == 0
+            then pFail "division by zero in constant expression"
+            else parseMulTail (lhs `div` rhs)
+        else do
+          percent <- constEatPunct "%"
+          if percent
+            then do
+              rhs <- parseUnary
+              if rhs == 0
+                then pFail "modulo by zero in constant expression"
+                else parseMulTail (lhs `mod` rhs)
+            else pure lhs
+
+parseUnary :: ConstParser Integer
+parseUnary = do
+  bang <- constEatPunct "!"
+  if bang
+    then do
+      value <- parseUnary
+      pure (truth (value == 0))
+    else do
+      plus <- constEatPunct "+"
+      if plus
+        then parseUnary
+        else do
+          minus <- constEatPunct "-"
+          if minus
+            then do
+              value <- parseUnary
+              pure (-value)
+            else do
+              tilde <- constEatPunct "~"
+              if tilde
+                then do
+                  value <- parseUnary
+                  pure (bitNotInteger value)
+                else parsePrimary
+
+parsePrimary :: ConstParser Integer
+parsePrimary = do
+  paren <- constEatPunct "("
+  if paren
+    then do
+      value <- parseCond
+      constNeedPunct ")" "expected ')' in constant expression"
+      pure value
+    else do
+      tok <- pTake "empty constant expression"
+      case constTokenKind tok of
+        TokIdent "defined" -> parseDefinedOperator
+        TokIdent name -> do
+          env <- pEnv
+          pure (maybe 0 id (lookup name env))
+        TokInt value -> pure (parseIntLiteral value)
+        TokChar value -> pure (charInt value)
+        _ -> pFail "unsupported token in constant expression"
+
+parseDefinedOperator :: ConstParser Integer
+parseDefinedOperator = do
+  paren <- constEatPunct "("
+  if paren
+    then do
+      name <- constNeedIdent "bad defined operator in #if expression"
+      constNeedPunct ")" "bad defined operator in #if expression"
+      pure (truth (name /= ""))
+    else do
+      name <- constNeedIdent "bad defined operator in #if expression"
+      pure (truth (name /= ""))
+
+constEatPunct :: String -> ConstParser Bool
+constEatPunct expected = pRaw $ \_env toks -> case toks of
+  Token _ (TokPunct punct):rest | punct == expected -> Consumed (Ok True rest)
+  _ -> Unconsumed (Ok False toks)
+
+constNeedPunct :: String -> String -> ConstParser ()
+constNeedPunct expected err = do
+  found <- constEatPunct expected
+  if found then pure () else pFail err
+
+constNeedIdent :: String -> ConstParser String
+constNeedIdent err = do
+  tok <- pTake err
+  case constTokenKind tok of
+    TokIdent name -> pure name
+    _ -> pFail err
 
 truth :: Bool -> Integer
 truth value = if value then 1 else 0
+
+constTokenKind :: Token -> TokenKind
+constTokenKind (Token _ kind) = kind
 
 parseIntLiteral :: String -> Integer
 parseIntLiteral value = case readNumber (map toLowerAscii (stripIntSuffix value)) of

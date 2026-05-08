@@ -22,6 +22,7 @@ stdenv.mkDerivation {
       Hcc/Token.hs \
       Hcc/SymbolTable.hs \
       Hcc/FingerTree.hs \
+      Hcc/ParseLite.hs \
       Hcc/ConstExpr.hs \
       Hcc/Lexer.hs \
       Hcc/Parser.hs \

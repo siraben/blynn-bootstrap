@@ -372,6 +372,118 @@ nix shell nixpkgs#time -c time -v nix build .#hcc-blynn-stage0 --no-link --print
 stopped after 3m45s in precisely_up; did not reach M2-Mesoplanet
 ```
 
+## Pass 10: GHC CPU and Heap Profiling on TinyCC
+
+Goal: profile the GHC-built HCC on the real TinyCC workload before changing data structures or splitting phases further.
+
+Build/profile target:
+
+```text
+hcc-ghc-profile built with -O0 -prof -fprof-auto -rtsopts
+runtime flags: +RTS -p -s -hc -i0.05 -RTS
+workdir: build/hcc-ghc-profile-tcc
+```
+
+Artifacts:
+
+```text
+build/hcc-ghc-profile-tcc/expand.prof
+build/hcc-ghc-profile-tcc/expand.rts
+build/hcc-ghc-profile-tcc/expand.hp
+build/hcc-ghc-profile-tcc/expand.ps
+build/hcc-ghc-profile-tcc/compile.prof
+build/hcc-ghc-profile-tcc/compile.rts
+build/hcc-ghc-profile-tcc/compile.hp
+build/hcc-ghc-profile-tcc/compile.ps
+```
+
+Outputs:
+
+```text
+tcc-expanded.c: 1,241,487 bytes
+tcc.M1:        15,497,719 bytes, 519,904 lines
+```
+
+Preprocess/include expansion profile:
+
+```text
+wall: 12.93s
+user: 8.33s
+sys:  0.18s
+total CPU profile time: 5.83s
+total alloc: 786,320,096 bytes
+RTS allocated: 1,648,476,512 bytes
+max residency: 52,480,552 bytes
+total memory in use: 111 MiB
+```
+
+Top CPU cost centres:
+
+```text
+readHandle..                         94.6% time, 19.3% alloc
+readSourceWithIncludes.expandLine.keep 1.3% time, 9.4% alloc
+readSourceWithIncludes.expandFile..   1.0% time, 22.1% alloc
+```
+
+Top heap-profile maxima by cost centre:
+
+```text
+readSourceWithIncludes... 28,207,648 bytes
+readHandle...              6,069,888 bytes
+SYSTEM                     5,338,720 bytes
+readHandle...              3,405,344 bytes
+readSourceWithIncludes...  1,200,000 bytes
+```
+
+Compile-to-M1 profile:
+
+```text
+wall: 44.66s
+user: 43.97s
+sys:  0.53s
+total CPU profile time: 13.54s
+total alloc: 9,792,403,736 bytes
+RTS allocated: 21,095,203,632 bytes
+max residency: 186,132,136 bytes
+total memory in use: 379 MiB
+```
+
+Top CPU cost centres:
+
+```text
+readHandle..              39.3% time, 1.4% alloc
+withBuffer                15.1% time, 22.3% alloc
+lookupConstant.            4.8% time, 0.0% alloc
+rangeContains              4.5% time, 8.2% alloc
+lookupValue                2.3% time, 0.0% alloc
+lookupGlobalType.          1.4% time, 0.0% alloc
+byteHex                    1.0% time, 3.3% alloc
+lookupFunction.            1.0% time, 0.0% alloc
+lexerIsSpace               0.9% time, 1.5% alloc
+prefixOf                   0.8% time, 2.4% alloc
+```
+
+Top heap-profile maxima by cost centre:
+
+```text
+SYSTEM                    30,885,280 bytes
+readSourceWithIncludes... 27,468,096 bytes
+stripComments.normal...   22,638,864 bytes
+readHandle...             21,497,208 bytes
+readHandle...             19,805,136 bytes
+advance/takeWhileState... 14,943,936 bytes
+takeWhileState.go...      12,721,632 bytes
+advance/lexC.go...        11,799,296 bytes
+lexIdent...               11,000,096 bytes
+lexPunct.firstMatch...    10,490,144 bytes
+```
+
+Initial read:
+
+- `ParseLite` and `ConstExpr` do not appear in the top CPU table for the full TinyCC compile; the new parser core is not the current bottleneck.
+- The largest CPU costs are still host/runtime IO (`readHandle`, `withBuffer`) and allocation lookup (`FingerTree` range checks plus `CompileM` lookup wrappers).
+- Heap pressure during compile is dominated by whole-source input/lexing/comment stripping and tokenization, before lowering-specific structures become visible.
+
 ## Pass 8: Remove derived equality
 
 Goal: avoid generating equality dictionaries for internal compiler datatypes that are normally only pattern-matched.
