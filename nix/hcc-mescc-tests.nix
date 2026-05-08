@@ -21,19 +21,28 @@ stdenvNoCC.mkDerivation {
   buildPhase = ''
     runHook preBuild
 
+    log_step() {
+      printf 'hcc-mescc-tests: [%s] %s\n' "$(date -u +%H:%M:%S)" "$1"
+    }
+
     assemble_and_run() {
       name="$1"
       expected="$2"
       src="${mesTests}/scaffold/$name.c"
 
+      log_step "START $name expected=$expected"
+      log_step "$name: hcpp $src -> $name.i"
       hcpp "$src" > "$name.i"
+      log_step "$name: hcc1 -S $name.i -> $name.M1"
       hcc1 -S -o "$name.M1" "$name.i"
+      log_step "$name: M1 $name.M1 -> $name.hex2"
       M1 --architecture amd64 --little-endian \
         -f ${m2libc}/amd64/amd64_defs.M1 \
         -f ${m2libc}/amd64/libc-core.M1 \
         -f "$name.M1" \
         --output "$name.hex2"
       printf ':ELF_end\n' > "$name-end.hex2"
+      log_step "$name: hex2 $name.hex2 -> $name"
       hex2 --architecture amd64 --little-endian --base-address 0x00600000 \
         --file ${m2libc}/amd64/ELF-amd64.hex2 \
         --file "$name.hex2" \
@@ -41,6 +50,7 @@ stdenvNoCC.mkDerivation {
         --output "$name"
       chmod +x "$name"
 
+      log_step "$name: execute, expect exit $expected"
       set +e
       "./$name"
       code="$?"
@@ -49,8 +59,12 @@ stdenvNoCC.mkDerivation {
         echo "$name: expected exit $expected, got $code" >&2
         exit 1
       fi
+      log_step "DONE  $name"
     }
 
+    log_step "using hcc=${hcc}"
+    log_step "using mesTests=${mesTests}"
+    log_step "using m2libc=${m2libc}"
     assemble_and_run 01-return-0 0
     assemble_and_run 02-return-1 1
     assemble_and_run 03-call 0

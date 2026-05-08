@@ -23,6 +23,10 @@ def run(argv):
     subprocess.run(argv, check=True)
 
 
+def log(message):
+    print(f"hcc-m1-smoke: {message}", flush=True)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--hcpp", default="hcpp")
@@ -38,7 +42,9 @@ def main():
     m2libc = pathlib.Path(args.m2libc)
 
     work_dir.mkdir(parents=True, exist_ok=True)
+    log(f"running {len(CASES)} cases")
     for name, expected in CASES:
+        log(f"START {name}")
         src = examples_dir / f"{name}.c"
         preprocessed = work_dir / f"{name}.i"
         m1 = work_dir / f"{name}.M1"
@@ -47,8 +53,11 @@ def main():
         exe = work_dir / name
 
         with preprocessed.open("w") as handle:
+            log(f"{name}: hcpp {src.name} -> {preprocessed.name}")
             subprocess.run([args.hcpp, str(src)], check=True, stdout=handle)
+        log(f"{name}: hcc1 -S -> {m1.name}")
         run([args.hcc1, "-S", "-o", str(m1), str(preprocessed)])
+        log(f"{name}: M1 -> {hex2.name}")
         run([
             "M1",
             "--architecture", "amd64",
@@ -59,6 +68,7 @@ def main():
             "--output", str(hex2),
         ])
         end.write_text(":ELF_end\n")
+        log(f"{name}: hex2 -> {exe.name}")
         run([
             "hex2",
             "--architecture", "amd64",
@@ -70,9 +80,12 @@ def main():
             "--output", str(exe),
         ])
         exe.chmod(0o755)
+        log(f"{name}: execute, expect exit {expected}")
         result = subprocess.run([str(exe.resolve())])
         if result.returncode != expected:
             raise SystemExit(f"{name}: got exit {result.returncode}, expected {expected}")
+        log(f"DONE  {name}")
+    log("all cases passed")
 
 
 if __name__ == "__main__":
