@@ -48,7 +48,7 @@ mkDerivation ({
       Hcc/Ast.hs \
       Hcc/Token.hs \
       Hcc/SymbolTable.hs \
-      Hcc/FingerTree.hs \
+      Hcc/IntTable.hs \
       Hcc/ParseLite.hs \
       Hcc/ConstExpr.hs \
       Hcc/Lexer.hs \

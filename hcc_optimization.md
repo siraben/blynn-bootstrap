@@ -382,6 +382,45 @@ nix build .#tinycc-boot-hcc-host-ghc-native --no-link --print-out-paths
 nix build .#hcc-profile-host-ghc-native --no-link --print-out-paths
 ```
 
+## Pass 10: Int-key allocation table
+
+Goal: replace `RegAlloc`'s measured finger tree with a structure that matches the actual key shape. Allocation lookups are exact lookups by dense `Temp` integer id, not range queries or sequence splits.
+
+Changes:
+
+- Added `Hcc.IntTable`, a handrolled red-black `IntMap`.
+- Changed `RegAlloc.Allocation` to store `IntMap Location` keyed by `Temp`.
+- Removed the unused `FingerTree` module from the HCC source set.
+
+Profile on the same `tcc.i`:
+
+```text
+hcc1 -S -o tcc.M1 tcc.i +RTS -p -s -RTS
+tcc.M1 byte-identical to previous output
+
+profiled elapsed: 9.67s -> 6.73s
+RTS allocated: 15,852,732,416 -> 12,151,114,520 bytes
+bytes copied during GC: 2,176,160,048 -> 2,108,657,384
+max residency: ~116 MB unchanged
+```
+
+Top result:
+
+```text
+FingerTree cost centres are gone.
+IntTable.intTreeLookup is 1.6% time / 0.0% allocation.
+The dominant remaining costs are HccSystem write/read bridging and CodegenM1 string rendering.
+```
+
+Validation:
+
+```text
+nix build .#hcc-host-ghc-native --no-link --print-out-paths
+nix build .#hcc-ghc-precisely-stdenv --no-link --print-out-paths
+nix build .#tinycc-boot-hcc-host-ghc-native --no-link --print-out-paths
+nix build .#hcc-profile-host-ghc-native --no-link --print-out-paths
+```
+
 Validation:
 
 ```text
