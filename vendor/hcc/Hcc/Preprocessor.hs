@@ -19,6 +19,8 @@ data MacroArg = MacroArg
 
 type Macros = SymbolMap Macro
 
+type MacroArgs = SymbolMap MacroArg
+
 data Chunk = Chunk [String] [Token]
 
 data IfFrame = IfFrame
@@ -290,9 +292,10 @@ collectInvocationArgs sp toks = go 1 [] [] toks where
 
 expandFunctionMacro :: Macros -> Bool -> [String] -> Span -> String -> [String] -> Maybe String -> [Token] -> [[Token]] -> Either PreprocessError [Token]
 expandFunctionMacro macros protectDefined disabled sp name params variadic body args = do
-  argMap <- bindMacroArgs macros protectDefined disabled sp params variadic args
+  bound <- bindMacroArgs macros protectDefined disabled sp params variadic args
+  let argMap = boundArgMap bound
   replaced <- substituteMacroBody sp argMap body
-  let argHidden = concatMap (argumentMacroNames macros . argRaw . snd) argMap
+  let argHidden = macroArgHiddenNames macros (boundArgList bound)
   expandTokens macros protectDefined (name:argHidden ++ disabled) replaced
 
 argumentMacroNames :: Macros -> [Token] -> [String]
@@ -304,32 +307,51 @@ argumentMacroNames macros toks = case toks of
     else argumentMacroNames macros rest
   _:rest -> argumentMacroNames macros rest
 
-bindMacroArgs :: Macros -> Bool -> [String] -> Span -> [String] -> Maybe String -> [[Token]] -> Either PreprocessError [(String, MacroArg)]
+data BoundMacroArgs = BoundMacroArgs MacroArgs [MacroArg]
+
+boundArgMap :: BoundMacroArgs -> MacroArgs
+boundArgMap bound = case bound of
+  BoundMacroArgs argMap _ -> argMap
+
+boundArgList :: BoundMacroArgs -> [MacroArg]
+boundArgList bound = case bound of
+  BoundMacroArgs _ argList -> argList
+
+bindMacroArgs :: Macros -> Bool -> [String] -> Span -> [String] -> Maybe String -> [[Token]] -> Either PreprocessError BoundMacroArgs
 bindMacroArgs macros protectDefined disabled sp params variadic args = do
   let fixedCount = length params
   if length args < fixedCount || (variadic == Nothing && length args /= fixedCount)
     then Left (PreprocessError (spanStart sp) "wrong number of macro arguments")
     else do
-      fixed <- bindFixed params (take fixedCount args)
+      fixed <- bindFixed symbolMapEmpty [] params (take fixedCount args)
       variadicBinding <- case variadic of
-        Nothing -> Right []
+        Nothing -> Right fixed
         Just name -> do
           let restArgs = drop fixedCount args
           arg <- makeArg (joinVariadicArgs sp restArgs)
-          Right [(name, arg)]
-      Right (fixed ++ variadicBinding)
+          Right (insertBoundArg name arg fixed)
+      Right variadicBinding
   where
-    bindFixed ps as = case (ps, as) of
-      ([], []) -> Right []
+    bindFixed argMap argList ps as = case (ps, as) of
+      ([], []) -> Right (BoundMacroArgs argMap (reverse argList))
       (p:ps', a:as') -> do
         arg <- makeArg a
-        rest <- bindFixed ps' as'
-        Right ((p, arg):rest)
+        let bound = insertBoundArg p arg (BoundMacroArgs argMap argList)
+        bindFixed (boundArgMap bound) (boundArgList bound) ps' as'
       _ -> Left (PreprocessError (spanStart sp) "wrong number of macro arguments")
 
     makeArg raw = do
       expanded <- expandTokens macros protectDefined disabled raw
       Right (MacroArg raw expanded)
+
+insertBoundArg :: String -> MacroArg -> BoundMacroArgs -> BoundMacroArgs
+insertBoundArg name arg bound = case bound of
+  BoundMacroArgs argMap argList -> BoundMacroArgs (symbolMapInsert name arg argMap) (arg:argList)
+
+macroArgHiddenNames :: Macros -> [MacroArg] -> [String]
+macroArgHiddenNames macros args = case args of
+  [] -> []
+  arg:rest -> argumentMacroNames macros (argRaw arg) ++ macroArgHiddenNames macros rest
 
 joinVariadicArgs :: Span -> [[Token]] -> [Token]
 joinVariadicArgs sp args = case args of
@@ -339,19 +361,19 @@ joinVariadicArgs sp args = case args of
 commaToken :: Span -> Token
 commaToken sp = Token sp (TokPunct ",")
 
-substituteMacroBody :: Span -> [(String, MacroArg)] -> [Token] -> Either PreprocessError [Token]
+substituteMacroBody :: Span -> MacroArgs -> [Token] -> Either PreprocessError [Token]
 substituteMacroBody sp args body = go body [] where
   go rest acc = case rest of
     [] -> Right (reverse acc)
     Token _ (TokPunct "#"):Token argSp (TokIdent name):xs
-      | Just arg <- lookup name args ->
+      | Just arg <- lookupArg name args ->
           go xs (Token argSp (TokString (stringifyTokens (argRaw arg))) : acc)
     Token pasteSp (TokPunct "##"):xs ->
       case acc of
         [] -> pasteWithPrevious pasteSp [] xs acc
         previous:before -> pasteWithPrevious pasteSp [previous] xs before
     Token _ (TokIdent name):xs
-      | Just arg <- lookup name args ->
+      | Just arg <- lookupArg name args ->
           go xs (reverse (argExpanded arg) ++ acc)
     tok:xs ->
       go xs (tok:acc)
@@ -375,9 +397,12 @@ substituteMacroBody sp args body = go body [] where
 
   nextPasteOperand xs = case xs of
     Token _ (TokIdent name):rest
-      | Just arg <- lookup name args -> Right (argRaw arg, rest)
+      | Just arg <- lookupArg name args -> Right (argRaw arg, rest)
     tok:rest -> Right ([tok], rest)
     [] -> Right ([], [])
+
+lookupArg :: String -> MacroArgs -> Maybe MacroArg
+lookupArg = symbolMapLookup
 
 pasteTokens :: Span -> Token -> Token -> Either PreprocessError Token
 pasteTokens sp left right =

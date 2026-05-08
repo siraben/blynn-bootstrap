@@ -16,11 +16,15 @@ data Location
   | OnStack Int
   | StackObject Int Int
 
-data Allocation = Allocation Int (IntMap Location)
+data LocationChunk = LocationChunk [Maybe Location]
+
+data LocationTable = LocationTable (IntMap LocationChunk)
+
+data Allocation = Allocation Int LocationTable
 
 allocateFunction :: FunctionIr -> Either String Allocation
 allocateFunction (FunctionIr _ _ blocks) =
-  uncurry Allocation <$> allocateInstrs 0 intMapEmpty (concatMap blockInstrs blocks)
+  uncurry Allocation <$> allocateInstrs 0 locationTableEmpty (concatMap blockInstrs blocks)
 
 lookupLocation :: Temp -> Allocation -> Either String Location
 lookupLocation temp (Allocation _ locations) = case lookupEntry temp locations of
@@ -30,7 +34,7 @@ lookupLocation temp (Allocation _ locations) = case lookupEntry temp locations o
 stackSlotCount :: Allocation -> Int
 stackSlotCount (Allocation slots _) = slots
 
-allocateInstrs :: Int -> IntMap Location -> [Instr] -> Either String (Int, IntMap Location)
+allocateInstrs :: Int -> LocationTable -> [Instr] -> Either String (Int, LocationTable)
 allocateInstrs nextSlot acc instrs = case instrs of
   [] -> Right (nextSlot, acc)
   instr:rest -> case instr of
@@ -81,7 +85,7 @@ allocateInstrs nextSlot acc instrs = case instrs of
     ICallIndirect (Just temp) _ _ ->
       allocateDef nextSlot acc temp rest
 
-allocateStackObject :: Int -> IntMap Location -> Temp -> Int -> [Instr] -> Either String (Int, IntMap Location)
+allocateStackObject :: Int -> LocationTable -> Temp -> Int -> [Instr] -> Either String (Int, LocationTable)
 allocateStackObject nextSlot acc temp size rest =
   if allocationMember temp acc
   then allocateInstrs nextSlot acc rest
@@ -89,24 +93,92 @@ allocateStackObject nextSlot acc temp size rest =
     let slots = (max 1 size + 7) `div` 8
     in allocateInstrs (nextSlot + slots) (insertEntry temp (StackObject nextSlot slots) acc) rest
 
-allocateDef :: Int -> IntMap Location -> Temp -> [Instr] -> Either String (Int, IntMap Location)
+allocateDef :: Int -> LocationTable -> Temp -> [Instr] -> Either String (Int, LocationTable)
 allocateDef nextSlot acc temp rest =
   if allocationMember temp acc
   then allocateInstrs nextSlot acc rest
   else allocateInstrs (nextSlot + 1) (insertEntry temp (OnStack nextSlot) acc) rest
 
-allocationMember :: Temp -> IntMap Location -> Bool
+allocationMember :: Temp -> LocationTable -> Bool
 allocationMember temp entries = case lookupEntry temp entries of
   Just _ -> True
   Nothing -> False
 
-insertEntry :: Temp -> Location -> IntMap Location -> IntMap Location
+insertEntry :: Temp -> Location -> LocationTable -> LocationTable
 insertEntry (Temp key) loc entries =
-  intMapInsert key loc entries
+  locationTableInsert key loc entries
 
-lookupEntry :: Temp -> IntMap Location -> Maybe Location
+lookupEntry :: Temp -> LocationTable -> Maybe Location
 lookupEntry (Temp key) entries =
-  intMapLookup key entries
+  locationTableLookup key entries
+
+locationTableEmpty :: LocationTable
+locationTableEmpty = LocationTable intMapEmpty
+
+locationTableLookup :: Int -> LocationTable -> Maybe Location
+locationTableLookup key table = case table of
+  LocationTable chunks -> case intMapLookup (locationChunkIndex key) chunks of
+    Nothing -> Nothing
+    Just chunk -> locationChunkLookup (locationChunkOffset key) chunk
+
+locationTableInsert :: Int -> Location -> LocationTable -> LocationTable
+locationTableInsert key value table = case table of
+  LocationTable chunks ->
+    let chunkIndex = locationChunkIndex key
+        offset = locationChunkOffset key
+        oldChunk = case intMapLookup chunkIndex chunks of
+          Just chunk -> chunk
+          Nothing -> emptyLocationChunk
+        newChunk = locationChunkInsert offset value oldChunk
+    in LocationTable (intMapInsert chunkIndex newChunk chunks)
+
+locationChunkSize :: Int
+locationChunkSize = 32
+
+locationChunkIndex :: Int -> Int
+locationChunkIndex key = key `div` locationChunkSize
+
+locationChunkOffset :: Int -> Int
+locationChunkOffset key = key `mod` locationChunkSize
+
+emptyLocationChunk :: LocationChunk
+emptyLocationChunk = LocationChunk (emptyLocationEntries locationChunkSize)
+
+emptyLocationEntries :: Int -> [Maybe Location]
+emptyLocationEntries count =
+  if count <= 0
+  then []
+  else Nothing : emptyLocationEntries (count - 1)
+
+locationChunkLookup :: Int -> LocationChunk -> Maybe Location
+locationChunkLookup offset chunk = case chunk of
+  LocationChunk entries -> lookupAt offset entries
+
+locationChunkInsert :: Int -> Location -> LocationChunk -> LocationChunk
+locationChunkInsert offset value chunk = case chunk of
+  LocationChunk entries -> LocationChunk (replaceAt offset (Just value) entries)
+
+lookupAt :: Int -> [Maybe Location] -> Maybe Location
+lookupAt index entries =
+  if index < 0
+  then Nothing
+  else case entries of
+    [] -> Nothing
+    value:rest ->
+      if index == 0
+      then value
+      else lookupAt (index - 1) rest
+
+replaceAt :: Int -> Maybe Location -> [Maybe Location] -> [Maybe Location]
+replaceAt index value entries =
+  if index < 0
+  then entries
+  else case entries of
+    [] -> []
+    old:rest ->
+      if index == 0
+      then value:rest
+      else old : replaceAt (index - 1) value rest
 
 blockInstrs :: BasicBlock -> [Instr]
 blockInstrs (BasicBlock _ instrs _) = instrs

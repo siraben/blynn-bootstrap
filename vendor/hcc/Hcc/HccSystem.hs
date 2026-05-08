@@ -115,14 +115,16 @@ withBuffer :: String -> IO a -> IO a
 withBuffer text action = hccBufferClear >> mapM_ hccBufferPut text >> action
 
 readHandle :: Int -> IO String
-readHandle handle = do
+readHandle handle = readHandleChars handle []
+
+readHandleChars :: Int -> String -> IO String
+readHandleChars handle acc = do
   done <- hccHandleEof handle
   case done /= 0 of
-    True -> pure []
+    True -> pure (reverse acc)
     False -> do
       c <- hccHandleReadChar handle
-      rest <- readHandle handle
-      pure (c:rest)
+      readHandleChars handle (c:acc)
 
 readResult :: IO String
 readResult = do

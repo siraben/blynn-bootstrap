@@ -3,6 +3,7 @@ module CompileM where
 import Base
 import Ast
 import Ir
+import ScopeMap
 import SymbolTable
 
 data CompileError = CompileError String
@@ -12,8 +13,10 @@ data CompileState = CompileState
   , csNextBlock :: Int
   , csNextLabel :: Int
   , csDataPrefix :: String
-  , csVars :: SymbolMap (Temp, CType)
+  , csVars :: ScopeMap (Temp, CType)
   , csStructs :: SymbolMap (Bool, [Field])
+  , csStructSizes :: SymbolMap Int
+  , csStructMembers :: SymbolMap (SymbolMap (CType, Int))
   , csGlobals :: SymbolMap CType
   , csConstants :: SymbolMap Int
   , csFunctions :: SymbolSet
@@ -52,8 +55,10 @@ initialCompileState = CompileState
   , csNextBlock = 0
   , csNextLabel = 0
   , csDataPrefix = "HCC_DATA"
-  , csVars = symbolMapEmpty
+  , csVars = scopeMapEmpty
   , csStructs = symbolMapEmpty
+  , csStructSizes = symbolMapEmpty
+  , csStructMembers = symbolMapEmpty
   , csGlobals = symbolMapEmpty
   , csConstants = symbolMapEmpty
   , csFunctions = symbolSetEmpty
@@ -114,11 +119,15 @@ getDataItems = CompileM $ \st -> Right (reverse (csDataItems st), st)
 
 bindVar :: String -> Temp -> CType -> CompileM ()
 bindVar name temp ty = CompileM $ \st ->
-  Right ((), st { csVars = symbolMapInsert name (temp, ty) (csVars st) })
+  Right ((), st { csVars = scopeMapInsert name (temp, ty) (csVars st) })
 
 bindStruct :: String -> Bool -> [Field] -> CompileM ()
 bindStruct name isUnion fields = CompileM $ \st ->
-  Right ((), st { csStructs = symbolMapInsert name (isUnion, fields) (csStructs st) })
+  Right ((), st
+    { csStructs = symbolMapInsert name (isUnion, fields) (csStructs st)
+    , csStructSizes = symbolMapDelete name (csStructSizes st)
+    , csStructMembers = symbolMapDelete name (csStructMembers st)
+    })
 
 bindGlobal :: String -> CType -> CompileM ()
 bindGlobal name ty = CompileM $ \st ->
@@ -133,15 +142,15 @@ bindFunction name = CompileM $ \st ->
   Right ((), st { csFunctions = symbolSetInsert name (csFunctions st) })
 
 lookupVar :: String -> CompileM Temp
-lookupVar name = CompileM $ \st -> case symbolMapLookup name (csVars st) of
+lookupVar name = CompileM $ \st -> case scopeMapLookup name (csVars st) of
   Just (temp, _) -> Right (temp, st)
   Nothing -> Left (CompileError ("unbound variable: " ++ name))
 
 lookupVarMaybe :: String -> CompileM (Maybe Temp)
-lookupVarMaybe name = CompileM $ \st -> Right (fmap fst (symbolMapLookup name (csVars st)), st)
+lookupVarMaybe name = CompileM $ \st -> Right (fmap fst (scopeMapLookup name (csVars st)), st)
 
 lookupVarType :: String -> CompileM (Maybe CType)
-lookupVarType name = CompileM $ \st -> Right (fmap snd (symbolMapLookup name (csVars st)), st)
+lookupVarType name = CompileM $ \st -> Right (fmap snd (scopeMapLookup name (csVars st)), st)
 
 lookupGlobalType :: String -> CompileM (Maybe CType)
 lookupGlobalType name = CompileM $ \st -> Right (symbolMapLookup name (csGlobals st), st)
@@ -155,9 +164,30 @@ lookupFunction name = CompileM $ \st -> Right (symbolSetMember name (csFunctions
 lookupStruct :: String -> CompileM (Maybe (Bool, [Field]))
 lookupStruct name = CompileM $ \st -> Right (symbolMapLookup name (csStructs st), st)
 
+lookupStructSizeCache :: String -> CompileM (Maybe Int)
+lookupStructSizeCache name = CompileM $ \st -> Right (symbolMapLookup name (csStructSizes st), st)
+
+cacheStructSize :: String -> Int -> CompileM ()
+cacheStructSize name size = CompileM $ \st ->
+  Right ((), st { csStructSizes = symbolMapInsert name size (csStructSizes st) })
+
+lookupStructMemberCache :: String -> String -> CompileM (Maybe (CType, Int))
+lookupStructMemberCache structName fieldName = CompileM $ \st ->
+  case symbolMapLookup structName (csStructMembers st) of
+    Nothing -> Right (Nothing, st)
+    Just members -> Right (symbolMapLookup fieldName members, st)
+
+cacheStructMember :: String -> String -> (CType, Int) -> CompileM ()
+cacheStructMember structName fieldName info = CompileM $ \st ->
+  let members = case symbolMapLookup structName (csStructMembers st) of
+        Just existing -> existing
+        Nothing -> symbolMapEmpty
+      members' = symbolMapInsert fieldName info members
+  in Right ((), st { csStructMembers = symbolMapInsert structName members' (csStructMembers st) })
+
 withFunctionScope :: CompileM a -> CompileM a
 withFunctionScope action = CompileM $ \st ->
-  case unCompileM action st { csVars = symbolMapEmpty, csLabels = symbolMapEmpty, csBreakTargets = [], csContinueTargets = [] } of
+  case unCompileM action st { csVars = scopeMapEmpty, csLabels = symbolMapEmpty, csBreakTargets = [], csContinueTargets = [] } of
     Left err -> Left err
     Right (x, st') -> Right (x, st'
       { csVars = csVars st
@@ -168,9 +198,9 @@ withFunctionScope action = CompileM $ \st ->
 
 withVarScope :: CompileM a -> CompileM a
 withVarScope action = CompileM $ \st ->
-  case unCompileM action st of
+  case unCompileM action st { csVars = scopeMapEnter (csVars st) } of
     Left err -> Left err
-    Right (x, st') -> Right (x, st' { csVars = csVars st })
+    Right (x, st') -> Right (x, st' { csVars = scopeMapLeave (csVars st') })
 
 withLoopTargets :: BlockId -> BlockId -> CompileM a -> CompileM a
 withLoopTargets breakTarget continueTarget action = CompileM $ \st ->

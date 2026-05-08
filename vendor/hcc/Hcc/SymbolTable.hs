@@ -6,7 +6,7 @@ data Color = Red | Black
 
 data Tree a
   = Empty
-  | Branch Color String (Maybe a) (Tree a) (Tree a)
+  | Branch Color String Int (Maybe a) (Tree a) (Tree a)
 
 data SymbolMap a = SymbolMap (Tree a)
 
@@ -49,12 +49,15 @@ symbolSetDelete :: String -> SymbolSet -> SymbolSet
 symbolSetDelete key (SymbolSet tree) = SymbolSet (treeDelete key tree)
 
 treeLookup :: String -> Tree a -> Maybe a
-treeLookup key tree = case tree of
+treeLookup key tree = treeLookupHashed key (stringHash key) tree
+
+treeLookupHashed :: String -> Int -> Tree a -> Maybe a
+treeLookupHashed key keyHash tree = case tree of
   Empty -> Nothing
-  Branch _ name value left right -> case compareString key name of
-    IsLess -> treeLookup key left
+  Branch _ name nameHash value left right -> case compareHashedString key keyHash name nameHash of
+    IsLess -> treeLookupHashed key keyHash left
     IsEqual -> value
-    IsGreater -> treeLookup key right
+    IsGreater -> treeLookupHashed key keyHash right
 
 treeInsert :: String -> a -> Tree a -> Tree a
 treeInsert key value tree = treeInsertValue key (Just value) tree
@@ -63,53 +66,67 @@ treeDelete :: String -> Tree a -> Tree a
 treeDelete key tree = treeInsertValue key Nothing tree
 
 treeInsertValue :: String -> Maybe a -> Tree a -> Tree a
-treeInsertValue key value tree = blacken (insert tree) where
-  insert current = case current of
-    Empty -> Branch Red key value Empty Empty
-    Branch color name old left right -> case compareString key name of
-      IsLess -> balance color name old (insert left) right
-      IsEqual -> Branch color key value left right
-      IsGreater -> balance color name old left (insert right)
+treeInsertValue key value tree = blacken (insert (stringHash key) tree) where
+  insert keyHash current = case current of
+    Empty -> Branch Red key keyHash value Empty Empty
+    Branch color name nameHash old left right -> case compareHashedString key keyHash name nameHash of
+      IsLess -> balance color name nameHash old (insert keyHash left) right
+      IsEqual -> Branch color key keyHash value left right
+      IsGreater -> balance color name nameHash old left (insert keyHash right)
 
 blacken :: Tree a -> Tree a
 blacken tree = case tree of
   Empty -> Empty
-  Branch _ name value left right -> Branch Black name value left right
+  Branch _ name nameHash value left right -> Branch Black name nameHash value left right
 
-balance :: Color -> String -> Maybe a -> Tree a -> Tree a -> Tree a
-balance color name value left right = case color of
-  Red -> Branch Red name value left right
-  Black -> balanceBlack name value left right
+balance :: Color -> String -> Int -> Maybe a -> Tree a -> Tree a -> Tree a
+balance color name nameHash value left right = case color of
+  Red -> Branch Red name nameHash value left right
+  Black -> balanceBlack name nameHash value left right
 
-balanceBlack :: String -> Maybe a -> Tree a -> Tree a -> Tree a
-balanceBlack name value left right = case left of
-  Branch Red lname lvalue lleft lright -> case lleft of
-    Branch Red llname llvalue llleft llright ->
-      Branch Red lname lvalue
-        (Branch Black llname llvalue llleft llright)
-        (Branch Black name value lright right)
+balanceBlack :: String -> Int -> Maybe a -> Tree a -> Tree a -> Tree a
+balanceBlack name nameHash value left right = case left of
+  Branch Red lname lnameHash lvalue lleft lright -> case lleft of
+    Branch Red llname llnameHash llvalue llleft llright ->
+      Branch Red lname lnameHash lvalue
+        (Branch Black llname llnameHash llvalue llleft llright)
+        (Branch Black name nameHash value lright right)
     _ -> case lright of
-      Branch Red lrname lrvalue lrleft lrright ->
-        Branch Red lrname lrvalue
-          (Branch Black lname lvalue lleft lrleft)
-          (Branch Black name value lrright right)
-      _ -> balanceBlackRight name value left right
-  _ -> balanceBlackRight name value left right
+      Branch Red lrname lrnameHash lrvalue lrleft lrright ->
+        Branch Red lrname lrnameHash lrvalue
+          (Branch Black lname lnameHash lvalue lleft lrleft)
+          (Branch Black name nameHash value lrright right)
+      _ -> balanceBlackRight name nameHash value left right
+  _ -> balanceBlackRight name nameHash value left right
 
-balanceBlackRight :: String -> Maybe a -> Tree a -> Tree a -> Tree a
-balanceBlackRight name value left right = case right of
-  Branch Red rname rvalue rleft rright -> case rleft of
-    Branch Red rlname rlvalue rlleft rlright ->
-      Branch Red rlname rlvalue
-        (Branch Black name value left rlleft)
-        (Branch Black rname rvalue rlright rright)
+balanceBlackRight :: String -> Int -> Maybe a -> Tree a -> Tree a -> Tree a
+balanceBlackRight name nameHash value left right = case right of
+  Branch Red rname rnameHash rvalue rleft rright -> case rleft of
+    Branch Red rlname rlnameHash rlvalue rlleft rlright ->
+      Branch Red rlname rlnameHash rlvalue
+        (Branch Black name nameHash value left rlleft)
+        (Branch Black rname rnameHash rvalue rlright rright)
     _ -> case rright of
-      Branch Red rrname rrvalue rrleft rrright ->
-        Branch Red rname rvalue
-          (Branch Black name value left rleft)
-          (Branch Black rrname rrvalue rrleft rrright)
-      _ -> Branch Black name value left right
-  _ -> Branch Black name value left right
+      Branch Red rrname rrnameHash rrvalue rrleft rrright ->
+        Branch Red rname rnameHash rvalue
+          (Branch Black name nameHash value left rleft)
+          (Branch Black rrname rrnameHash rrvalue rrleft rrright)
+      _ -> Branch Black name nameHash value left right
+  _ -> Branch Black name nameHash value left right
+
+stringHash :: String -> Int
+stringHash text = go 5381 text where
+  go hash chars = case chars of
+    [] -> hash
+    c:rest -> go (((hash * 33) + fromEnum c) `mod` 2147483647) rest
+
+compareHashedString :: String -> Int -> String -> Int -> Comparison
+compareHashedString left leftHash right rightHash =
+  if leftHash < rightHash
+  then IsLess
+  else if leftHash > rightHash
+       then IsGreater
+       else compareString left right
 
 data Comparison
   = IsLess

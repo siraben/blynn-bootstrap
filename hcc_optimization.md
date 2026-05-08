@@ -557,6 +557,71 @@ Remaining optimization targets:
 - Parser and compiler monad binds are visible in O0 profiles and should be kept simple for Blynn lowering.
 - Temp location loads still allocate through repeated small builder fragments.
 
+## Pass 10: Bootstrappable data structure upgrades
+
+Goal: implement the first batch of efficient data structures without changing generated M1 output.
+
+Changes:
+
+- Added `ScopeMap`, a frame-based local environment for block/function scopes.
+- Changed `CompileM.csVars` from one persistent symbol tree to `ScopeMap`, so inner block bindings live in a current frame and lookups walk outward.
+- Added struct layout caches in `CompileM`:
+  `csStructSizes` for aggregate sizes and `csStructMembers` for member offset/type lookups.
+- Changed `RegAlloc` from one `IntMap Location` keyed by every temp to a chunked dense `LocationTable`.
+  Chunks hold 32 temp locations, so lookup still uses a tree but over chunk IDs instead of every individual temp.
+- Changed `SymbolTable` tree nodes to store a per-key hash. Lookups compute the query hash once and compare hashes before falling back to character-by-character `String` comparison.
+- Changed function-like macro argument substitution from association-list lookup to a `SymbolMap MacroArg`.
+- Made `readHandle` tail-recursive in `HccSystem`.
+
+GHC O0 direct TinyCC fixture timing:
+
+```text
+hcpp:
+output byte-identical to previous expanded TinyCC source
+elapsed: 2.60s
+max RSS: 246,208 KiB
+
+hcc1:
+output byte-identical to previous tcc.M1
+elapsed: 3.83s
+max RSS: 187,712 KiB
+```
+
+Blynn/GCC HCC generation:
+
+```text
+hcc-gcc-precisely-gcc:
+hcpp-full.hs: 2,823 lines, 93,574 bytes
+hcc1-full.hs: 7,322 lines, 238,664 bytes
+hcpp-blynn.c: 248,842 bytes
+hcc1-blynn.c: 564,014 bytes
+buildPhase completed in 36s
+internal HCC smoke tests pass
+```
+
+TinyCC self-host validation:
+
+```text
+nix develop .#bench -c bash -lc 'nix build .#tinycc-boot-hcc-host-ghc-native .#tinycc-boot-hcc-gcc-precisely-gcc .#tinycc-boot-hcc-gcc-precisely-tcc --no-link --print-out-paths -L'
+pass
+
+tinycc-boot-hcc-host-ghc-native:
+/nix/store/wrd6448ihv01x47ybj267ncyqlbk7k8x-tinycc-boot-hcc-host-ghc-native-unstable-2024-07-07
+
+tinycc-boot-hcc-gcc-precisely-gcc:
+/nix/store/dqv71d55v00vx8zbs665lpw0979c7b1l-tinycc-boot-hcc-gcc-precisely-gcc-unstable-2024-07-07
+
+tinycc-boot-hcc-gcc-precisely-tcc:
+/nix/store/mllnljnqybkzv5651034q74gi54y2j1w-tinycc-boot-hcc-gcc-precisely-tcc-unstable-2024-07-07
+```
+
+Remaining larger migrations:
+
+- Replace `String` tokens/AST names with explicit symbol objects rather than hash-accelerated string tree keys.
+- Replace list-backed token streams with cursor/index streams.
+- Replace whole-source `String` lexing with slice-oriented text buffers.
+- Replace `[String]` output lines with direct output builders that can flush chunks without materializing line lists.
+
 ## Pass 7: Bootstrap-size trimming
 
 Goal: reduce the HCC program that Blynn must compile for the stage0 self-hosting path.

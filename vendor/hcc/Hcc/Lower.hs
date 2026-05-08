@@ -1346,13 +1346,38 @@ memberInfo mty field = do
 
 memberInfoMaybe :: Maybe CType -> String -> CompileM (Maybe (CType, Int))
 memberInfoMaybe mty field = case mty of
-  Just (CPtr ty) -> do
-    aggregate <- aggregateFields ty
-    case aggregate of
-      Nothing -> pure Nothing
-      Just aggregateInfo -> case aggregateInfo of
-        (isUnion, fields) -> fieldOffset isUnion field 0 fields
+  Just (CPtr ty) -> memberInfoForAggregate ty field
   _ -> pure Nothing
+
+memberInfoForAggregate :: CType -> String -> CompileM (Maybe (CType, Int))
+memberInfoForAggregate ty field = case aggregateCacheName ty of
+  Just name -> do
+    cached <- lookupStructMemberCache name field
+    case cached of
+      Just info -> pure (Just info)
+      Nothing -> do
+        found <- memberInfoForAggregateUncached ty field
+        case found of
+          Just info -> cacheStructMember name field info >> pure (Just info)
+          Nothing -> pure Nothing
+  Nothing -> memberInfoForAggregateUncached ty field
+
+memberInfoForAggregateUncached :: CType -> String -> CompileM (Maybe (CType, Int))
+memberInfoForAggregateUncached ty field = do
+  aggregate <- aggregateFields ty
+  case aggregate of
+    Nothing -> pure Nothing
+    Just aggregateInfo -> case aggregateInfo of
+      (isUnion, fields) -> fieldOffset isUnion field 0 fields
+
+aggregateCacheName :: CType -> Maybe String
+aggregateCacheName ty = case ty of
+  CStruct name -> Just name
+  CUnion name -> Just name
+  CStructNamed name _ -> Just name
+  CUnionNamed name _ -> Just name
+  CNamed name -> Just name
+  _ -> Nothing
 
 fieldOffset :: Bool -> String -> Int -> [Field] -> CompileM (Maybe (CType, Int))
 fieldOffset isUnion field offset fields = case fields of
@@ -1520,11 +1545,18 @@ typeAlign ty = case ty of
 
 structSize :: String -> CompileM Int
 structSize name = do
-  aggregate <- lookupStruct name
-  case aggregate of
-    Nothing -> pure 8
-    Just aggregateInfo -> case aggregateInfo of
-      (isUnion, fields) -> aggregateSize isUnion fields
+  cached <- lookupStructSizeCache name
+  case cached of
+    Just size -> pure size
+    Nothing -> do
+      aggregate <- lookupStruct name
+      case aggregate of
+        Nothing -> pure 8
+        Just aggregateInfo -> case aggregateInfo of
+          (isUnion, fields) -> do
+            size <- aggregateSize isUnion fields
+            cacheStructSize name size
+            pure size
 
 aggregateSize :: Bool -> [Field] -> CompileM Int
 aggregateSize isUnion fields =
