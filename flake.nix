@@ -10,17 +10,23 @@
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs { inherit system; };
+        lib = pkgs.lib;
+        hccSrc = ./vendor/hcc;
+        blynnSrc = ./vendor/blynn-compiler;
+        blynnUpstreamSrc = ./vendor/blynn-compiler/upstream;
+        m2libcSrc = ./vendor/blynn-compiler/M2libc;
 
         minimalBootstrap = pkgs.minimal-bootstrap;
 
-        blynn-compiler = pkgs.callPackage ./nix/blynn-compiler.nix {
+        blynnCompiler = pkgs.callPackage ./nix/blynn-compiler.nix {
           inherit minimalBootstrap;
-          src = ./vendor/blynn-compiler;
+          src = blynnSrc;
         };
 
-        blynn-precisely = pkgs.callPackage ./nix/blynn-precisely.nix {
-          inherit blynn-compiler minimalBootstrap;
-          src = ./vendor/blynn-compiler/upstream;
+        preciselyM2Stage0 = pkgs.callPackage ./nix/blynn-precisely.nix {
+          blynn-compiler = blynnCompiler;
+          inherit minimalBootstrap;
+          src = blynnUpstreamSrc;
         };
 
         preciselyStdenv = pname: precisely: shareName: description:
@@ -52,42 +58,44 @@
           };
         };
 
-        blynn-precisely-stdenv = preciselyStdenv
-          "blynn-precisely-stdenv"
-          blynn-precisely
-          "blynn-precisely-stdenv"
+        preciselyStdenvHost = preciselyStdenv
+          "precisely-stdenv-host"
+          preciselyM2Stage0
+          "precisely-stdenv-host"
           "Upstream Blynn precisely binary compiled with the normal stdenv C toolchain";
 
-        blynn-precisely-debug-ghc = pkgs.callPackage ./nix/blynn-precisely-debug-ghc.nix {
+        preciselyGhcDebug = pkgs.callPackage ./nix/blynn-precisely-debug-ghc.nix {
           ghc = pkgs.haskellPackages.ghcWithPackages (hpkgs: [
             hpkgs.raw-strings-qq
           ]);
-          src = ./vendor/blynn-compiler/upstream;
+          src = blynnUpstreamSrc;
         };
 
-        hcc-ghc = pkgs.callPackage ./nix/hcc-ghc.nix {
+        hccHostGhcNative = pkgs.callPackage ./nix/hcc-ghc.nix {
+          pname = "hcc-host-ghc-native";
           ghc = pkgs.haskellPackages.ghcWithPackages (_: []);
-          src = ./vendor/hcc;
+          src = hccSrc;
         };
 
-        hcc-ghc-profile = pkgs.callPackage ./nix/hcc-ghc-profile.nix {
+        hccProfileHostGhcNative = pkgs.callPackage ./nix/hcc-ghc-profile.nix {
+          pname = "hcc-profile-host-ghc-native";
           ghc = pkgs.haskellPackages.ghcWithPackages (_: []);
-          src = ./vendor/hcc;
+          src = hccSrc;
         };
 
-        hccFromBlynn = {
+        hccFromPrecisely = {
           pname,
           precisely,
-          cCompiler,
+          cBackend,
         }:
           pkgs.callPackage ./nix/hcc-blynn.nix ({
             inherit pname precisely;
-            src = ./vendor/hcc;
-            blynnSrc = ./vendor/blynn-compiler/upstream;
+            src = hccSrc;
+            blynnSrc = blynnUpstreamSrc;
             shareName = pname;
-          } // cCompiler);
+          } // cBackend);
 
-        hccCCompilers = {
+        hccCBackends = {
           stdenv = {
             mkDerivation = pkgs.stdenv.mkDerivation;
             runtimeFile = "cbits/hcc_runtime.c";
@@ -117,94 +125,98 @@
           };
         };
 
-        hccMatrix = {
-          ghc-ghc = hcc-ghc;
+        # Bootstrap triple: <precisely-cc>-<hcc-hs>-<hcc-cc>.
+        # - precisely-cc: how the precisely binary was compiled.
+        # - hcc-hs: the Haskell compiler used to compile HCC's Haskell source.
+        # - hcc-cc: how HCC's generated/native code becomes an executable.
+        #
+        # `host-ghc-native` is the dev escape hatch: no precisely stage is used,
+        # and host GHC compiles HCC directly.
+        hccByTriple = {
+          host-ghc-native = hccHostGhcNative;
 
-          precisely-ghc-stdenv = hccFromBlynn {
-            pname = "hcc-blynn-debug";
-            precisely = blynn-precisely-debug-ghc;
-            cCompiler = hccCCompilers.stdenv // {
+          ghc-precisely-stdenv = hccFromPrecisely {
+            pname = "hcc-ghc-precisely-stdenv";
+            precisely = preciselyGhcDebug;
+            cBackend = hccCBackends.stdenv // {
               description = "HCC compiled by the GHC-built Blynn precisely debug compiler and stdenv C";
             };
           };
 
-          precisely-stage0-m2 = hccFromBlynn {
-            pname = "hcc-blynn-stage0";
-            precisely = blynn-precisely;
-            cCompiler = hccCCompilers.m2 // {
+          m2-precisely-m2 = hccFromPrecisely {
+            pname = "hcc-m2-precisely-m2";
+            precisely = preciselyM2Stage0;
+            cBackend = hccCBackends.m2 // {
               description = "HCC compiled by the stage0-built Blynn precisely and M2-Mesoplanet";
             };
           };
 
-          precisely-stage0-stdenv = hccFromBlynn {
-            pname = "hcc-blynn-stage0-stdenv";
-            precisely = blynn-precisely;
-            cCompiler = hccCCompilers.stdenv // {
+          m2-precisely-stdenv = hccFromPrecisely {
+            pname = "hcc-m2-precisely-stdenv";
+            precisely = preciselyM2Stage0;
+            cBackend = hccCBackends.stdenv // {
               description = "HCC compiled by the stage0-built Blynn precisely and stdenv C";
             };
           };
         };
 
-        hcc-blynn-debug = hccMatrix.precisely-ghc-stdenv;
-        hcc-blynn-stage0 = hccMatrix.precisely-stage0-m2;
-        hcc-blynn-stage0-stdenv = hccMatrix.precisely-stage0-stdenv;
-
-        tinyccWithHcc = pname: hcc: pkgs.callPackage ./nix/tinycc-boot-hcc.nix {
+        tinyccFromHcc = pname: hcc: pkgs.callPackage ./nix/tinycc-boot-hcc.nix {
           inherit pname hcc minimalBootstrap;
           mesLibc = minimalBootstrap.mes-libc;
-          m2libc = ./vendor/blynn-compiler/M2libc;
+          m2libc = m2libcSrc;
         };
 
-        tinyccMatrix = {
-          hcc-ghc = tinyccWithHcc "tinycc-boot-hcc-ghc" hccMatrix.ghc-ghc;
-          hcc-precisely-ghc-stdenv = tinyccWithHcc "tinycc-boot-hcc-blynn-debug" hccMatrix.precisely-ghc-stdenv;
-          hcc-precisely-stage0-m2 = tinyccWithHcc "tinycc-boot-hcc" hccMatrix.precisely-stage0-m2;
-          hcc-precisely-stage0-stdenv = tinyccWithHcc "tinycc-boot-hcc-stage0-stdenv" hccMatrix.precisely-stage0-stdenv;
+        tinyccByTriple = {
+          host-ghc-native = tinyccFromHcc "tinycc-boot-hcc-host-ghc-native" hccByTriple.host-ghc-native;
+          ghc-precisely-stdenv = tinyccFromHcc "tinycc-boot-hcc-ghc-precisely-stdenv" hccByTriple.ghc-precisely-stdenv;
+          m2-precisely-m2 = tinyccFromHcc "tinycc-boot-hcc-m2-precisely-m2" hccByTriple.m2-precisely-m2;
+          m2-precisely-stdenv = tinyccFromHcc "tinycc-boot-hcc-m2-precisely-stdenv" hccByTriple.m2-precisely-stdenv;
         };
-
-        tinycc-boot-hcc = tinyccMatrix.hcc-precisely-stage0-m2;
-        tinycc-boot-hcc-ghc = tinyccMatrix.hcc-ghc;
-        tinycc-boot-hcc-blynn-debug = tinyccMatrix.hcc-precisely-ghc-stdenv;
-        tinycc-boot-hcc-stage0-stdenv = tinyccMatrix.hcc-precisely-stage0-stdenv;
 
         hcc-m1-smoke = pkgs.callPackage ./nix/hcc-m1-smoke.nix {
-          hcc = hcc-blynn-stage0;
+          hcc = hccByTriple.m2-precisely-m2;
           inherit minimalBootstrap;
-          m2libc = ./vendor/blynn-compiler/M2libc;
+          m2libc = m2libcSrc;
         };
 
         hcc-mescc-tests = pkgs.callPackage ./nix/hcc-mescc-tests.nix {
-          hcc = hcc-blynn-stage0;
+          hcc = hccByTriple.m2-precisely-m2;
           inherit minimalBootstrap;
-          m2libc = ./vendor/blynn-compiler/M2libc;
+          m2libc = m2libcSrc;
           mesTests = ./vendor/mes-tests;
         };
 
         mutable-io-proof = pkgs.callPackage ./nix/mutable-io-proof.nix {
-          inherit blynn-precisely-debug-ghc minimalBootstrap;
-          src = ./vendor/hcc;
-          blynnSrc = ./vendor/blynn-compiler/upstream;
+          blynn-precisely-debug-ghc = preciselyGhcDebug;
+          inherit minimalBootstrap;
+          src = hccSrc;
+          blynnSrc = blynnUpstreamSrc;
         };
       in {
         packages = {
-          inherit blynn-compiler blynn-precisely blynn-precisely-stdenv blynn-precisely-debug-ghc hcc-ghc hcc-ghc-profile hcc-blynn-debug hcc-blynn-stage0 hcc-blynn-stage0-stdenv hcc-m1-smoke hcc-mescc-tests mutable-io-proof tinycc-boot-hcc tinycc-boot-hcc-ghc tinycc-boot-hcc-blynn-debug tinycc-boot-hcc-stage0-stdenv;
-          default = blynn-precisely;
-        } // pkgs.lib.mapAttrs' (name: value: {
-          name = "hcc-matrix-${name}";
+          blynn-compiler = blynnCompiler;
+          precisely-m2-stage0 = preciselyM2Stage0;
+          precisely-stdenv-host = preciselyStdenvHost;
+          precisely-ghc-debug = preciselyGhcDebug;
+          hcc-profile-host-ghc-native = hccProfileHostGhcNative;
+          inherit hcc-m1-smoke hcc-mescc-tests mutable-io-proof;
+          default = preciselyM2Stage0;
+        } // lib.mapAttrs' (name: value: {
+          name = "hcc-${name}";
           inherit value;
-        }) hccMatrix // pkgs.lib.mapAttrs' (name: value: {
-          name = "tinycc-matrix-${name}";
+        }) hccByTriple // lib.mapAttrs' (name: value: {
+          name = "tinycc-boot-hcc-${name}";
           inherit value;
-        }) tinyccMatrix;
+        }) tinyccByTriple;
 
         apps.blynn-precisely-stdenv = {
           type = "app";
-          program = "${blynn-precisely-stdenv}/bin/precisely_up";
+          program = "${preciselyStdenvHost}/bin/precisely_up";
         };
 
         apps.blynn-precisely-debug-ghc = {
           type = "app";
-          program = "${blynn-precisely-debug-ghc}/bin/precisely_up";
+          program = "${preciselyGhcDebug}/bin/precisely_up";
         };
 
         devShells.default = pkgs.mkShell {
@@ -212,10 +224,10 @@
             minimalBootstrap.stage0-posix.mescc-tools
             pkgs.coreutils
             pkgs.gcc
-            blynn-precisely-debug-ghc
-            hcc-ghc
-            hcc-ghc-profile
-            hcc-blynn-debug
+            preciselyGhcDebug
+            hccByTriple.host-ghc-native
+            hccProfileHostGhcNative
+            hccByTriple.ghc-precisely-stdenv
             (pkgs.haskellPackages.ghcWithPackages (hpkgs: [
               hpkgs.raw-strings-qq
             ]))

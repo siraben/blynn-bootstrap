@@ -3,10 +3,11 @@
   lib,
   ghc,
   src,
+  pname ? "hcc-host-ghc-native",
 }:
 
 stdenv.mkDerivation {
-  pname = "hcc-ghc";
+  inherit pname;
   version = "0-unstable-2026-05-06";
 
   inherit src;
