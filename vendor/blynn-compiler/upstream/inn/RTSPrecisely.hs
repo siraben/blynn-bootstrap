@@ -112,7 +112,7 @@ U_LE x y = "lazy2(2, _I, ite((u) num(1) <= (u) num(2)));"
 REF x y = "{u *p = (u*)((char*)sp + sizeof(u)); lazy2(2, arg(2), *p);}"
 NEWREF x y z = z ("_REF" x) y
 READREF x y z = z "num(1)" y
-WRITEREF x y z w = "{u *p = (u*)((char*)mem + (arg(2) + 1) * sizeof(u)); *p = arg(1); lazy3(4, arg(4), _K, arg(3));}"
+WRITEREF x y z w = "{u ref = arg(2); rts_store(ref, 1, arg(1)); lazy3(4, arg(4), _K, arg(3));}"
 END = "return 1;"
 ERR = "{u *p = (u*)((char*)sp + sizeof(u)); *p = app(app(arg(1),_ERREND),_ERR2); sp = (u*)((char*)sp + sizeof(u));}"
 ERR2 = "lazy3(2, arg(1), _ERROUT, arg(2));"
@@ -216,6 +216,60 @@ runFun opts ffis = ("enum{_UNDEFINED=0,"++)
 void *malloc(unsigned long);
 enum { FORWARD = 127, REDUCING = 126 };
 static u *mem, *altmem, *sp, *spTop, hp;
+#ifdef HCC_RTS_GENERATIONAL
+#ifndef HCC_RTS_NURSERY_WORDS
+#define HCC_RTS_NURSERY_WORDS 16777216
+#endif
+#ifndef HCC_RTS_REMEMBERED_WORDS
+#define HCC_RTS_REMEMBERED_WORDS 1048576
+#endif
+static u old_hp, young_base;
+static u *remembered;
+static u remembered_count, remembered_overflow;
+static inline u isYoung(u n) { return n >= young_base; }
+static inline u isOld(u n) { return n >= 128 && n < young_base; }
+#endif
+#ifdef HCC_RTS_STATS
+static u rts_gc_count, rts_minor_gc_count, rts_major_gc_count;
+static u rts_peak_hp, rts_peak_live, rts_peak_old, rts_peak_stack, rts_peak_scratch, rts_peak_remembered;
+static void rts_note_hp() { if (hp > rts_peak_hp) rts_peak_hp = hp; }
+static void rts_note_live() { if (hp > rts_peak_live) rts_peak_live = hp; }
+static void rts_note_old() {
+#ifdef HCC_RTS_GENERATIONAL
+  if (old_hp > rts_peak_old) rts_peak_old = old_hp;
+#endif
+}
+static void rts_note_remembered() {
+#ifdef HCC_RTS_GENERATIONAL
+  if (remembered_count > rts_peak_remembered) rts_peak_remembered = remembered_count;
+#endif
+}
+static void rts_note_stack(u used) { if (used > rts_peak_stack) rts_peak_stack = used; }
+static void rts_note_scratch() {
+  u used = (u)(((char*)scratchpadend - (char*)scratchpad) / sizeof(u));
+  if (used > rts_peak_scratch) rts_peak_scratch = used;
+}
+static void rts_report_stats() {
+  rts_note_hp();
+  rts_note_old();
+  rts_note_remembered();
+  fprintf(stderr, "precisely RTS stats: gc=%u minor_gc=%u major_gc=%u peak_hp=%u peak_live=%u peak_old=%u peak_stack=%u peak_scratch=%u peak_remembered=%u top=%u nursery=%u remembered_cap=%u progsz=%u rootsz=%u\n",
+    rts_gc_count, rts_minor_gc_count, rts_major_gc_count, rts_peak_hp, rts_peak_live, rts_peak_old,
+#ifdef HCC_RTS_GENERATIONAL
+    rts_peak_stack, rts_peak_scratch, rts_peak_remembered, TOP, HCC_RTS_NURSERY_WORDS, HCC_RTS_REMEMBERED_WORDS, PROGSZ, ROOTSZ);
+#else
+    rts_peak_stack, rts_peak_scratch, rts_peak_remembered, TOP, 0, 0, PROGSZ, ROOTSZ);
+#endif
+}
+#else
+static void rts_note_hp() {}
+static void rts_note_live() {}
+static void rts_note_old() {}
+static void rts_note_remembered() {}
+static void rts_note_stack(u used) {}
+static void rts_note_scratch() {}
+static void rts_report_stats() {}
+#endif
 static inline u isAddr(u n) { return n>=128; }
 static u evac(u n) {
   if (!isAddr(n)) return n;
@@ -301,6 +355,10 @@ static u evac(u n) {
 }
 
 static u gc() {
+#ifdef HCC_RTS_STATS
+  rts_gc_count = rts_gc_count + 1;
+  rts_major_gc_count = rts_major_gc_count + 1;
+#endif
   hp = 128;
   u di = hp;
   sp = (u*)((char*)altmem + (TOP - 1) * sizeof(u));
@@ -322,37 +380,165 @@ static u gc() {
   u *tmp = mem;
   mem = altmem;
   altmem = tmp;
+#ifdef HCC_RTS_GENERATIONAL
+  old_hp = hp;
+  young_base = old_hp;
+  remembered_count = 0;
+  remembered_overflow = 0;
+  rts_note_old();
+#endif
   u usage = 0;
   while(1) {
     u x = *sp;
-    if (isAddr(x)) { u *p = (u*)((char*)mem + x * sizeof(u)); sp = (u*)((char*)sp - sizeof(u)); *sp = *p; } else return usage + hp + 8 >= TOP;
+    if (isAddr(x)) { u *p = (u*)((char*)mem + x * sizeof(u)); sp = (u*)((char*)sp - sizeof(u)); *sp = *p; } else {
+      rts_note_live();
+      rts_note_stack(usage);
+      return usage + hp + 8 >= TOP;
+    }
     usage = usage + 1;
   }
+}
+#ifdef HCC_RTS_GENERATIONAL
+static u minor_gc_failed;
+static inline void remember_field(u slot, u value) {
+  if (!isYoung(value)) return;
+  if (remembered_count >= HCC_RTS_REMEMBERED_WORDS) {
+    remembered_overflow = 1;
+    return;
+  }
+  remembered[remembered_count] = slot;
+  remembered_count = remembered_count + 1;
+  rts_note_remembered();
+}
+
+static u minor_evac(u n) {
+  if (!isYoung(n)) return n;
+  u *p = (u*)((char*)mem + n * sizeof(u));
+  u x = *p;
+  if (x == FORWARD) {
+    p = (u*)((char*)mem + (n + 1) * sizeof(u));
+    return *p;
+  }
+  u size = 2;
+  if (x == _NUM64) size = 4;
+  if (old_hp + size + HCC_RTS_NURSERY_WORDS + 8 >= TOP) {
+    minor_gc_failed = 1;
+    return n;
+  }
+  u z = old_hp;
+  old_hp = old_hp + size;
+  u i = 0;
+  while (i < size) {
+    u *from = (u*)((char*)mem + (n + i) * sizeof(u));
+    u *to = (u*)((char*)mem + (z + i) * sizeof(u));
+    *to = *from;
+    i = i + 1;
+  }
+  p = (u*)((char*)mem + n * sizeof(u));
+  *p = FORWARD;
+  p = (u*)((char*)mem + (n + 1) * sizeof(u));
+  *p = z;
+  return z;
+}
+
+static u minor_scan_promoted(u di) {
+  while (di < old_hp) {
+    u *p = (u*)((char*)mem + di * sizeof(u));
+    u x = minor_evac(*p);
+    if (minor_gc_failed) return 1;
+    *p = x;
+    di = di + 1;
+    if (x == _NUM64) di = di + 3;
+    else if (x != _NUM) {
+      p = (u*)((char*)mem + di * sizeof(u));
+      x = minor_evac(*p);
+      if (minor_gc_failed) return 1;
+      *p = x;
+      di = di + 1;
+    } else di = di + 1;
+  }
+  return 0;
+}
+
+static u minor_gc() {
+  if (remembered_overflow) return 1;
+  minor_gc_failed = 0;
+  u promoted_start = old_hp;
+#ifdef HCC_RTS_STATS
+  rts_gc_count = rts_gc_count + 1;
+  rts_minor_gc_count = rts_minor_gc_count + 1;
+#endif
+  for(u *r = root; r != rootend; r = (u*)((char*)r + sizeof(u))) {
+    u x = minor_evac(*r);
+    if (minor_gc_failed) return 1;
+    *r = x;
+  }
+  u x = minor_evac(*spTop);
+  if (minor_gc_failed) return 1;
+  *spTop = x;
+  u i = 0;
+  while (i < remembered_count) {
+    u slot = remembered[i];
+    u *p = (u*)((char*)mem + slot * sizeof(u));
+    x = minor_evac(*p);
+    if (minor_gc_failed) return 1;
+    *p = x;
+    i = i + 1;
+  }
+  if (minor_scan_promoted(promoted_start)) return 1;
+  sp = (u*)((char*)mem + (TOP - 1) * sizeof(u));
+  *sp = *spTop;
+  u usage = 0;
+  while(1) {
+    x = *sp;
+    if (isAddr(x)) {
+      u *p = (u*)((char*)mem + x * sizeof(u));
+      sp = (u*)((char*)sp - sizeof(u));
+      *sp = *p;
+    } else {
+      spTop = sp;
+      rts_note_stack(usage);
+      rts_note_old();
+      young_base = old_hp;
+      hp = young_base;
+      remembered_count = 0;
+      remembered_overflow = 0;
+      rts_note_hp();
+      return remembered_overflow || usage + old_hp + HCC_RTS_NURSERY_WORDS + 8 >= TOP;
+    }
+    usage = usage + 1;
+  }
+}
+#endif
+static inline void rts_store(u obj, u off, u val) {
+  u *p = (u*)((char*)mem + (obj + off) * sizeof(u));
+  *p = val;
+#ifdef HCC_RTS_GENERATIONAL
+  if (isOld(obj)) remember_field(obj + off, val);
+#endif
 }
 static u*global;
 u get_global(){return*global;}
 void set_global(u x){*global=x;}
 static u suspend_status;
-static inline u app(u f, u x) { u z = hp; u *p = (u*)((char*)mem + hp * sizeof(u)); *p = f; p = (u*)((char*)mem + (hp + 1) * sizeof(u)); *p = x; hp += 2; return z; }
+static inline u app(u f, u x) { u z = hp; u *p = (u*)((char*)mem + hp * sizeof(u)); *p = f; p = (u*)((char*)mem + (hp + 1) * sizeof(u)); *p = x; hp += 2; rts_note_hp(); return z; }
 static inline u arg(u n) { u *p = (u*)((char*)sp + n * sizeof(u)); p = (u*)((char*)mem + (*p + 1) * sizeof(u)); return *p; }
 static inline int num(u n) { u a = arg(n); u *p = (u*)((char*)mem + (a + 1) * sizeof(u)); return *p; }
 static inline void lazy2(u height, u f, u x) {
   u *q = (u*)((char*)sp + height * sizeof(u));
-  u *p = (u*)((char*)mem + *q * sizeof(u));
-  *p = f;
-  p = (u*)((char*)p + sizeof(u));
-  *p = x;
+  u obj = *q;
+  rts_store(obj, 0, f);
+  rts_store(obj, 1, x);
   sp = (u*)((char*)sp + (height - 1) * sizeof(u));
   *sp = f;
 }
 static void lazy3(u height,u x1,u x2,u x3){
   u *q = (u*)((char*)sp + height * sizeof(u));
-  u *p = (u*)((char*)mem + *q * sizeof(u));
+  u obj = *q;
   q = (u*)((char*)sp + (height - 1) * sizeof(u));
   *q = app(x1, x2);
-  *p = *q;
-  p = (u*)((char*)p + sizeof(u));
-  *p = x3;
+  rts_store(obj, 0, *q);
+  rts_store(obj, 1, x3);
   sp = (u*)((char*)sp + (height - 2) * sizeof(u));
   *sp = x1;
 }
@@ -367,6 +553,7 @@ static inline u app64uu(uu n) {
   uu *q = (uu*) p;
   *q = n;
   hp += 4;
+  rts_note_hp();
   return z;
 }
 static inline u app64d(uu n) { return app64uu(n); }
@@ -415,6 +602,7 @@ void vmheap(u *start) {
     }
   }
   hp = out;
+  rts_note_hp();
 }
 void vmrun() {
   u x = tagcheck(num(1));
@@ -436,8 +624,8 @@ void vmgcroot() {
   vmheap(p);
   scratchpadend = scratchpad;
 }
-void vmscratch(u n) { *scratchpadend = n; scratchpadend = (u*)((char*)scratchpadend + sizeof(u)); }
-void vmscratchroot(u n) { *scratchpadend = 2*n + 128 + 1; scratchpadend = (u*)((char*)scratchpadend + sizeof(u)); }
+void vmscratch(u n) { *scratchpadend = n; scratchpadend = (u*)((char*)scratchpadend + sizeof(u)); rts_note_scratch(); }
+void vmscratchroot(u n) { *scratchpadend = 2*n + 128 + 1; scratchpadend = (u*)((char*)scratchpadend + sizeof(u)); rts_note_scratch(); }
 |]++)
     . foldr (.) id (ffiDeclare opts <$> ffis)
     . ("static void foreign(u n) {\n  switch(n) {\n" ++)
@@ -456,7 +644,15 @@ void run_gas(u gas) { while(!suspend_status && gas) { gas = gas - 1; suspend_sta
   . rtsReduce opts
 
 giantSwitch = ([r|
+#ifdef HCC_RTS_GENERATIONAL
+  if (hp - young_base >= HCC_RTS_NURSERY_WORDS) {
+    if (old_hp + (hp - young_base) + HCC_RTS_NURSERY_WORDS + 8 >= TOP || minor_gc()) {
+      if (gc()) return 3;
+    }
+  }
+#endif
   if ((u*)((char*)mem + hp * sizeof(u)) > (u*)((char*)sp - 8 * sizeof(u))) {
+    rts_note_hp();
     if (gc()) return 3;
   }
   u x = *sp;
@@ -483,8 +679,28 @@ rtsInit opts
   static u done; if (done) return; done = 1;
   root = root8;
   rootend = (u*)((char*)root8 + ROOTSZ * sizeof(u));
-  mem = malloc(TOP * sizeof(u)); altmem = malloc(TOP * sizeof(u));
+  mem = malloc(TOP * sizeof(u));
+  if (mem == 0) {
+    fputs("precisely RTS: malloc mem failed\n", stderr);
+    exit(1);
+  }
+  altmem = malloc(TOP * sizeof(u));
+  if (altmem == 0) {
+    fputs("precisely RTS: malloc altmem failed\n", stderr);
+    exit(1);
+  }
   scratchpad = malloc(1048576 * sizeof(u));
+  if (scratchpad == 0) {
+    fputs("precisely RTS: malloc scratchpad failed\n", stderr);
+    exit(1);
+  }
+#ifdef HCC_RTS_GENERATIONAL
+  remembered = malloc(HCC_RTS_REMEMBERED_WORDS * sizeof(u));
+  if (remembered == 0) {
+    fputs("precisely RTS: malloc remembered failed\n", stderr);
+    exit(1);
+  }
+#endif
   scratchpadend = scratchpad;
   hp = 128;
   u *p = rootend;
@@ -506,6 +722,13 @@ rtsInit opts
   *global = _K;
   rootend = (u*)((char*)rootend + sizeof(u));
   vmroot = rootend;
+#ifdef HCC_RTS_GENERATIONAL
+  old_hp = hp;
+  young_base = old_hp;
+  remembered_count = 0;
+  remembered_overflow = 0;
+  rts_note_old();
+#endif
 }
 |]++)
 
@@ -520,6 +743,7 @@ void rts_reduce(u n) {
   *sp = app(app(n, _UNDEFINED), _END);
 |]++)
   . (if "pre-post-run" `elem` opts then ("pre_run();run();post_run();"++) else ("run();"++))
+  . ("rts_report_stats();"++)
   . ("\n}\n"++)
 
 -- Hash consing.
