@@ -3,6 +3,7 @@
 #include <string.h>
 
 #define HCC_MAX_HANDLES 256
+#define HCC_MAX_IARRAYS 1024
 
 static char *buffer;
 static unsigned buffer_len;
@@ -13,6 +14,8 @@ static unsigned result_len;
 static unsigned result_pos;
 
 static FILE *handles[HCC_MAX_HANDLES];
+static int *iarrays[HCC_MAX_IARRAYS];
+static int iarray_lens[HCC_MAX_IARRAYS];
 
 static void *hcc_alloc(unsigned size)
 {
@@ -222,4 +225,54 @@ void hcc_process_push(void)
 int hcc_process_run(void)
 {
   return 1;
+}
+
+int hcc_iarray_new(int size, int initial)
+{
+  int i = 0;
+  int j;
+  int alloc_size;
+  int *values;
+  if (size < 0) return 0;
+  while (i < HCC_MAX_IARRAYS) {
+    if (!iarrays[i]) {
+      alloc_size = size;
+      if (!alloc_size) alloc_size = 1;
+      values = hcc_alloc(alloc_size * sizeof(int));
+      j = 0;
+      while (j < size) {
+        values[j] = initial;
+        j = j + 1;
+      }
+      iarrays[i] = values;
+      iarray_lens[i] = size;
+      return i + 1;
+    }
+    i = i + 1;
+  }
+  return 0;
+}
+
+int hcc_iarray_read(int ident, int index)
+{
+  int slot;
+  if (ident <= 0) return 0;
+  if (ident > HCC_MAX_IARRAYS) return 0;
+  slot = ident - 1;
+  if (!iarrays[slot]) return 0;
+  if (index < 0) return 0;
+  if (index >= iarray_lens[slot]) return 0;
+  return iarrays[slot][index];
+}
+
+void hcc_iarray_write(int ident, int index, int value)
+{
+  int slot;
+  if (ident <= 0) return;
+  if (ident > HCC_MAX_IARRAYS) return;
+  slot = ident - 1;
+  if (!iarrays[slot]) return;
+  if (index < 0) return;
+  if (index >= iarray_lens[slot]) return;
+  iarrays[slot][index] = value;
 }

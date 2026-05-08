@@ -13,6 +13,7 @@
 #endif
 
 #define HCC_MAX_HANDLES 256
+#define HCC_MAX_IARRAYS 1024
 
 static char *buffer;
 static size_t buffer_len;
@@ -23,6 +24,8 @@ static size_t result_len;
 static size_t result_pos;
 
 static FILE *handles[HCC_MAX_HANDLES];
+static int *iarrays[HCC_MAX_IARRAYS];
+static int iarray_lens[HCC_MAX_IARRAYS];
 
 static char **process_argv;
 static size_t process_argc;
@@ -255,4 +258,34 @@ int hcc_process_run(void) {
   }
   if (WIFEXITED(status)) return WEXITSTATUS(status);
   return 1;
+}
+
+int hcc_iarray_new(int size, int initial) {
+  if (size < 0) return 0;
+  for (int i = 0; i < HCC_MAX_IARRAYS; i++) {
+    if (!iarrays[i]) {
+      int *values = checked_realloc(NULL, (size_t)(size ? size : 1) * sizeof(int));
+      for (int j = 0; j < size; j++) values[j] = initial;
+      iarrays[i] = values;
+      iarray_lens[i] = size;
+      return i + 1;
+    }
+  }
+  return 0;
+}
+
+int hcc_iarray_read(int ident, int index) {
+  if (ident <= 0 || ident > HCC_MAX_IARRAYS) return 0;
+  int slot = ident - 1;
+  if (!iarrays[slot]) return 0;
+  if (index < 0 || index >= iarray_lens[slot]) return 0;
+  return iarrays[slot][index];
+}
+
+void hcc_iarray_write(int ident, int index, int value) {
+  if (ident <= 0 || ident > HCC_MAX_IARRAYS) return;
+  int slot = ident - 1;
+  if (!iarrays[slot]) return;
+  if (index < 0 || index >= iarray_lens[slot]) return;
+  iarrays[slot][index] = value;
 }

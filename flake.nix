@@ -106,9 +106,15 @@
           m2libc = ./vendor/blynn-compiler/M2libc;
           mesTests = ./vendor/mes-tests;
         };
+
+        mutable-io-proof = pkgs.callPackage ./nix/mutable-io-proof.nix {
+          inherit blynn-precisely-debug-ghc minimalBootstrap;
+          src = ./vendor/hcc;
+          blynnSrc = ./vendor/blynn-compiler/upstream;
+        };
       in {
         packages = {
-          inherit blynn-compiler blynn-precisely blynn-precisely-stdenv blynn-precisely-debug-ghc hcc-ghc hcc-ghc-profile hcc-blynn-debug hcc-blynn-stage0 hcc-m1-smoke hcc-mescc-tests tinycc-boot-hcc;
+          inherit blynn-compiler blynn-precisely blynn-precisely-stdenv blynn-precisely-debug-ghc hcc-ghc hcc-ghc-profile hcc-blynn-debug hcc-blynn-stage0 hcc-m1-smoke hcc-mescc-tests mutable-io-proof tinycc-boot-hcc;
           default = blynn-precisely;
         };
 
@@ -126,10 +132,11 @@
           packages = [
             minimalBootstrap.stage0-posix.mescc-tools
             pkgs.coreutils
+            pkgs.gcc
+            blynn-precisely-debug-ghc
             hcc-ghc
             hcc-ghc-profile
             hcc-blynn-debug
-            hcc-blynn-stage0
             (pkgs.haskellPackages.ghcWithPackages (hpkgs: [
               hpkgs.raw-strings-qq
             ]))
