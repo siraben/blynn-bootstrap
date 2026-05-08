@@ -12,6 +12,7 @@ set -euo pipefail
 : "${UPSTREAM_DIR:?set UPSTREAM_DIR=path/to/upstream}"
 : "${M2_ARCH:=amd64}"
 : "${M2_OS:=Linux}"
+: "${PRECISELY_TOP:=33554432}"
 
 INN="$UPSTREAM_DIR/inn"
 
@@ -50,6 +51,9 @@ party_step() {
     "./$prev" /dev/null /dev/null < "$input" > "$out.c"
   else
     "./$prev" < "$input" > "$out.c"
+  fi
+  if [ "$out" = precisely_up ]; then
+    sed -i -E "s/enum\\{TOP=[0-9]+\\};/enum{TOP=$PRECISELY_TOP};/" "$out.c"
   fi
   step "M2-Mesoplanet $out.c"
   compile_m2 "$out.c" "$out"

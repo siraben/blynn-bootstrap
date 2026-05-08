@@ -38,15 +38,16 @@
 
           buildPhase = ''
             runHook preBuild
-            $CC -O2 ${precisely}/share/blynn-precisely/precisely_up.c -o precisely_up
+            sed -E 's/enum\{TOP=[0-9]+\};/enum{TOP=33554432};/' \
+              ${precisely}/share/blynn-precisely/precisely_up.c > precisely_up.c
+            $CC -O2 precisely_up.c -o precisely_up
             runHook postBuild
           '';
 
           installPhase = ''
             runHook preInstall
             install -Dm755 precisely_up $out/bin/precisely_up
-            install -Dm644 ${precisely}/share/blynn-precisely/precisely_up.c \
-              $out/share/${shareName}/precisely_up.c
+            install -Dm644 precisely_up.c $out/share/${shareName}/precisely_up.c
             runHook postInstall
           '';
 
@@ -155,6 +156,14 @@
             };
           };
 
+          stdenv-precisely-stdenv = hccFromPrecisely {
+            pname = "hcc-stdenv-precisely-stdenv";
+            precisely = preciselyStdenvHost;
+            cBackend = hccCBackends.stdenv // {
+              description = "HCC compiled by the stdenv-built Blynn precisely compiler and stdenv C";
+            };
+          };
+
           m2-precisely-m2 = hccFromPrecisely {
             pname = "hcc-m2-precisely-m2";
             precisely = preciselyM2Stage0;
@@ -181,6 +190,7 @@
         tinyccByTriple = {
           host-ghc-native = tinyccFromHcc "tinycc-boot-hcc-host-ghc-native" hccByTriple.host-ghc-native;
           ghc-precisely-stdenv = tinyccFromHcc "tinycc-boot-hcc-ghc-precisely-stdenv" hccByTriple.ghc-precisely-stdenv;
+          stdenv-precisely-stdenv = tinyccFromHcc "tinycc-boot-hcc-stdenv-precisely-stdenv" hccByTriple.stdenv-precisely-stdenv;
           m2-precisely-m2 = tinyccFromHcc "tinycc-boot-hcc-m2-precisely-m2" hccByTriple.m2-precisely-m2;
           m2-precisely-stdenv = tinyccFromHcc "tinycc-boot-hcc-m2-precisely-stdenv" hccByTriple.m2-precisely-stdenv;
         };
@@ -246,6 +256,7 @@
             hccByTriple.host-ghc-native
             hccProfileHostGhcNative
             hccByTriple.ghc-precisely-stdenv
+            hccByTriple.stdenv-precisely-stdenv
             (pkgs.haskellPackages.ghcWithPackages (hpkgs: [
               hpkgs.raw-strings-qq
             ]))
