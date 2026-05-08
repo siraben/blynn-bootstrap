@@ -16,7 +16,7 @@ data Location
   | OnStack Int
   | StackObject Int Int
 
-data LocationChunk = LocationChunk [Maybe Location]
+data LocationChunk = LocationChunk (Maybe Location) (Maybe Location)
 
 data LocationTable = LocationTable (IntMap LocationChunk)
 
@@ -133,7 +133,7 @@ locationTableInsert key value table = case table of
     in LocationTable (intMapInsert chunkIndex newChunk chunks)
 
 locationChunkSize :: Int
-locationChunkSize = 32
+locationChunkSize = 2
 
 locationChunkIndex :: Int -> Int
 locationChunkIndex key = key `div` locationChunkSize
@@ -142,43 +142,21 @@ locationChunkOffset :: Int -> Int
 locationChunkOffset key = key `mod` locationChunkSize
 
 emptyLocationChunk :: LocationChunk
-emptyLocationChunk = LocationChunk (emptyLocationEntries locationChunkSize)
-
-emptyLocationEntries :: Int -> [Maybe Location]
-emptyLocationEntries count =
-  if count <= 0
-  then []
-  else Nothing : emptyLocationEntries (count - 1)
+emptyLocationChunk = LocationChunk Nothing Nothing
 
 locationChunkLookup :: Int -> LocationChunk -> Maybe Location
 locationChunkLookup offset chunk = case chunk of
-  LocationChunk entries -> lookupAt offset entries
+  LocationChunk a b ->
+    if offset == 0
+    then a
+    else b
 
 locationChunkInsert :: Int -> Location -> LocationChunk -> LocationChunk
 locationChunkInsert offset value chunk = case chunk of
-  LocationChunk entries -> LocationChunk (replaceAt offset (Just value) entries)
-
-lookupAt :: Int -> [Maybe Location] -> Maybe Location
-lookupAt index entries =
-  if index < 0
-  then Nothing
-  else case entries of
-    [] -> Nothing
-    value:rest ->
-      if index == 0
-      then value
-      else lookupAt (index - 1) rest
-
-replaceAt :: Int -> Maybe Location -> [Maybe Location] -> [Maybe Location]
-replaceAt index value entries =
-  if index < 0
-  then entries
-  else case entries of
-    [] -> []
-    old:rest ->
-      if index == 0
-      then value:rest
-      else old : replaceAt (index - 1) value rest
+  LocationChunk a b ->
+    if offset == 0
+    then LocationChunk (Just value) b
+    else LocationChunk a (Just value)
 
 blockInstrs :: BasicBlock -> [Instr]
 blockInstrs (BasicBlock _ instrs _) = instrs

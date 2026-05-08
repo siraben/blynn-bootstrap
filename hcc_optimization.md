@@ -219,6 +219,100 @@ Changes:
 - Renamed exported data-structure operations to globally distinct names (`symbolSetMember`, `fingerLookupWith`, etc.) so unqualified imports stay practical.
 - Removed the unnecessary `Prelude hiding` import from `Hcc.FingerTree`.
 
+## Pass 5: GHC O0 write/lower profile for TinyCC M1 emission
+
+Goal: use a GHC `-O0 -prof -fprof-auto` build to isolate the write/lower/codegen cost of compiling expanded TinyCC to M1.
+
+Profile input:
+
+```text
+build/hcc-ghc-prof-local/run/tcc-expanded.c
+bytes: 537,812
+```
+
+Baseline `--ir-summary`:
+
+```text
+wall: 2.38s
+allocated: 3,637,017,680 bytes
+max residency: 126,738,448 bytes
+max RSS: 354,708 KiB
+```
+
+Baseline full `-S`:
+
+```text
+wall: 5.97s
+allocated: 12,134,866,168 bytes
+max residency: 137,627,984 bytes
+max RSS: 402,320 KiB
+tcc.M1: 519,924 lines, 15,498,233 bytes
+```
+
+Initial full `-S` hot spots:
+
+```text
+hccWriteHandleLines.writeTextBuffered  34.0% time, 26.9% alloc
+RegAlloc.lookupAt                       5.9% time,  2.6% alloc
+hccWriteHandleLines flush check         4.0% time,  1.5% alloc
+RegAlloc.replaceAt                      2.5% time,  2.2% alloc
+CodegenM1.storeTemp                     2.0% time,  6.8% alloc
+CodegenM1.loadLocationWithRspBias       1.5% time,  6.1% alloc
+```
+
+Experiments:
+
+- Adding `hcc_obuf_put_buffer` moved the output hot spot into `withBuffer` and regressed wall time and allocation, so it was reverted.
+- Changing allocation chunk size from 32 to 8, 4, 2, and 1 showed the best throughput at chunk size 2.
+- Replacing the two-entry chunk list with a two-field constructor removed the recursive `lookupAt`/`replaceAt` list path.
+- Caching stack slot assembly strings inside `Location` reduced allocation slightly but more than doubled wall time because the strings were built eagerly for every allocated temp, so it was reverted.
+- Replacing hex digit string indexing with branches reduced allocation slightly but regressed profiled wall time, so it was reverted.
+
+Kept change:
+
+- `LocationChunk` is now `LocationChunk (Maybe Location) (Maybe Location)` with `locationChunkSize = 2`.
+
+Final kept `-S` profile:
+
+```text
+wall: 5.68s
+allocated: 11,176,069,040 bytes
+max residency: 137,627,984 bytes
+max RSS: 402,540 KiB
+tcc.M1 sha256: 0e777006c60fa1ea49b75d62dc916792748b58bcf3c13e4e911af87f6f190f9f
+```
+
+Delta from baseline full `-S`:
+
+```text
+wall: 5.97s -> 5.68s, 4.9% faster
+allocated: 12.13 GB -> 11.18 GB, 7.9% lower
+max residency: unchanged within measurement noise
+generated M1: byte-identical for this input
+```
+
+Remaining hot spots after the kept change:
+
+```text
+hccWriteHandleLines.writeTextBuffered  35.1% time, 28.2% alloc
+hccWriteHandleLines flush check         4.5% time,  1.6% alloc
+Parser bind                             2.6% time,  1.2% alloc
+removeEnumConstant                      2.3% time,  0.9% alloc
+IntTable lookup                         2.0% time,  0.1% alloc
+storeTemp                               2.0% time,  7.1% alloc
+textAppend                              1.9% time,  3.2% alloc
+loadLocationWithRspBias                 1.7% time,  6.4% alloc
+```
+
+Validation:
+
+```text
+GHC -O0 -prof rebuild of hcc1: pass
+pp-smoke through hcpp + hcc1 --check: pass
+parse-smoke through hcpp + hcc1 --check: pass
+parse-smoke hcc1 -S: pass
+```
+
 Direct HCC compile of the same patched TinyCC source:
 
 ```text
