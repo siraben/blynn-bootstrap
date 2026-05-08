@@ -456,7 +456,9 @@ void run_gas(u gas) { while(!suspend_status && gas) { gas = gas - 1; suspend_sta
   . rtsReduce opts
 
 giantSwitch = ([r|
-  if ((u*)((char*)mem + hp * sizeof(u)) > (u*)((char*)sp - 8 * sizeof(u)) && gc()) return 3;
+  if ((u*)((char*)mem + hp * sizeof(u)) > (u*)((char*)sp - 8 * sizeof(u))) {
+    if (gc()) return 3;
+  }
   u x = *sp;
   if (isAddr(x)) { u *p = (u*)((char*)mem + x * sizeof(u)); sp = (u*)((char*)sp - sizeof(u)); *sp = *p; } else switch(x) {
 |]++)
