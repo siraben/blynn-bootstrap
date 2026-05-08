@@ -7,7 +7,7 @@ import Ir
 data LValue
   = LLocal Temp CType
   | LAddress Operand CType
-  deriving (Eq, Show)
+  deriving (Eq)
 
 data SwitchClause = SwitchClause (Maybe Expr) [Stmt]
-  deriving (Eq, Show)
+  deriving (Eq)

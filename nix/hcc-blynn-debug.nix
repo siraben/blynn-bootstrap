@@ -50,10 +50,8 @@ stdenv.mkDerivation {
     grep -q 'enum{TOP=536870912};' hcc-blynn.c
     $CC -O2 hcc-blynn.c cbits/hcc_runtime.c -o hcc
 
-    ./hcc --lex-dump test/lexer-smoke.c >/dev/null
-    ./hcc --pp-dump test/pp-smoke.c >/dev/null
-    ./hcc --parse-dump test/parse-smoke.c >/dev/null
     ./hcc --check test/parse-smoke.c
+    ./hcc --expand-dump test/pp-smoke.c >/dev/null
     ./hcc -S -o smoke.M1 test/parse-smoke.c
 
     runHook postBuild

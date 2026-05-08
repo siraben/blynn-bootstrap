@@ -1,13 +1,9 @@
 module Main where
 
 import Base
-import Ast (renderProgram)
-import CompileM
 import CodegenM1 hiding (line, mapCompileError)
 import HccSystem
-import Ir (renderModuleIr)
 import Lexer hiding (charCode, isAsciiAlpha, isAsciiAlphaNum, isDigit, isHexDigit, isIdentChar, isIdentStart, lexerIsSpace, prefixOf)
-import Lower
 import Parser hiding (stringLiteral)
 import Preprocessor hiding (charCode, directiveName, dropSpaces, isAsciiAlpha, isAsciiAlphaNum, isDigitChar, isIdentChar, isIdentStart, ppIsSpace, prefixOf, spanStart, suffixOf, token, tokenKind, tokenStart, tokens, trim)
 import SymbolTable
@@ -20,46 +16,16 @@ main = do
   case args of
     [] -> die "hcc: no input files"
     ["--help"] -> usage >> hccExitSuccess
-    "--lex-dump":files -> lexDump files
-    "--pp-dump":files -> ppDump files
     "--expand-dump":dumpArgs -> expandDump dumpArgs
-    "--parse-dump":files -> parseDump files
-    "--ir-dump":files -> irDump files
-    "--lower-check":files -> lowerCheck files
-    "--codegen-check":files -> codegenCheck files
     "--check":files -> checkFiles files
     _ | "-S" `elem` args -> compileAssembly args
-    _ -> compileWithCc args
+    _ -> die "hcc: expected -S, --expand-dump, or --check"
 
 usage :: IO ()
-usage = hccPutStrLn "usage: hcc [CC-ARGS...]\n       hcc -S [-o FILE] INPUT.c\n       hcc --check FILE...\n       hcc --lex-dump FILE...\n       hcc --pp-dump FILE...\n       hcc --expand-dump FILE...\n       hcc --parse-dump FILE...\n       hcc --ir-dump FILE..."
+usage = hccPutStrLn "usage: hcc -S [-o FILE] INPUT.c\n       hcc --expand-dump [CC-ARGS...] INPUT.c\n       hcc --check FILE..."
 
 die :: String -> IO ()
 die msg = hccPutErrLine msg >> hccExitFailure
-
-lexDump :: [String] -> IO ()
-lexDump files = case files of
-  [] -> die "hcc: no input files"
-  _ -> mapM_ lexDumpFile files
-
-lexDumpFile :: String -> IO ()
-lexDumpFile path = do
-  source <- hccReadFileOrStdin path
-  case lexC source of
-    Left (LexError pos msg) -> die (path ++ ":" ++ showPos pos ++ ": " ++ msg)
-    Right toks -> mapM_ (hccPutStrLn . renderToken) toks
-
-ppDump :: [String] -> IO ()
-ppDump files = case files of
-  [] -> die "hcc: no input files"
-  _ -> mapM_ ppDumpFile files
-
-ppDumpFile :: String -> IO ()
-ppDumpFile path = do
-  source <- hccReadFileOrStdin path
-  case preprocessSource source of
-    Left msg -> die (path ++ ":" ++ msg)
-    Right toks -> mapM_ (hccPutStrLn . renderToken) toks
 
 expandDump :: [String] -> IO ()
 expandDump args = case assemblyArgs ("-S":args) of
@@ -126,54 +92,6 @@ mapPreprocessError result = case result of
   Left (PreprocessError pos msg) -> Left (showPos pos ++ ": " ++ msg)
   Right toks -> Right toks
 
-parseDump :: [String] -> IO ()
-parseDump files = case files of
-  [] -> die "hcc: no input files"
-  _ -> mapM_ parseDumpFile files
-
-parseDumpFile :: String -> IO ()
-parseDumpFile path = do
-  source <- hccReadFileOrStdin path
-  case preprocessSource source >>= mapParseError . parseProgram of
-    Left msg -> die (path ++ ":" ++ msg)
-    Right ast -> hccPutStrLn (renderProgram ast)
-
-irDump :: [String] -> IO ()
-irDump files = case files of
-  [] -> die "hcc: no input files"
-  _ -> mapM_ irDumpFile files
-
-irDumpFile :: String -> IO ()
-irDumpFile path = do
-  source <- hccReadFileOrStdin path
-  case preprocessSource source >>= mapParseError . parseProgram >>= mapCompileError . lowerProgram of
-    Left msg -> die (path ++ ":" ++ msg)
-    Right ir -> hccPutStrLn (renderModuleIr ir)
-
-lowerCheck :: [String] -> IO ()
-lowerCheck files = case files of
-  [] -> die "hcc: no input files"
-  _ -> mapM_ lowerCheckFile files
-
-lowerCheckFile :: String -> IO ()
-lowerCheckFile path = do
-  source <- hccReadFileOrStdin path
-  case preprocessSource source >>= mapParseError . parseProgram >>= mapCompileError . lowerProgram of
-    Left msg -> die (path ++ ":" ++ msg)
-    Right _ -> pure ()
-
-codegenCheck :: [String] -> IO ()
-codegenCheck files = case files of
-  [] -> die "hcc: no input files"
-  _ -> mapM_ codegenCheckFile files
-
-codegenCheckFile :: String -> IO ()
-codegenCheckFile path = do
-  source <- hccReadFileOrStdin path
-  case preprocessSource source >>= mapParseError . parseProgram >>= mapCodegenError . codegenM1WithDataPrefix (dataLabelPrefix path) of
-    Left msg -> die (path ++ ":" ++ msg)
-    Right _ -> pure ()
-
 mapParseError :: Either ParseError a -> Either String a
 mapParseError result = case result of
   Left (ParseError pos msg) -> Left (showPos pos ++ ": " ++ msg)
@@ -186,62 +104,38 @@ checkFiles files = case files of
 
 checkFile :: String -> IO ()
 checkFile path = do
-  source <- hccReadFileOrStdin path
+  source <- hccReadFile path
   case preprocessSource source >>= mapParseError . parseProgram of
     Left msg -> die (path ++ ":" ++ msg)
     Right _ -> pure ()
-
-compileWithCc :: [String] -> IO ()
-compileWithCc args = do
-  cc <- resolveCc
-  hccCallProcess cc args
 
 compileAssembly :: [String] -> IO ()
 compileAssembly args = do
   case assemblyArgs args of
     Left msg -> die msg
     Right opts -> do
-      trace <- hccTraceAsm
-      hccTrace trace "reading source"
       source <- readSourceWithIncludes (asmIncludeDirs opts) (asmDefines opts) (asmInput opts)
       let sourceWithDefines = renderDefines (asmDefines opts) ++ source
-      hccTrace trace "preprocessing"
       case preprocessSource sourceWithDefines of
         Left msg -> die (asmInput opts ++ ":" ++ msg)
         Right toks -> do
-          hccTrace trace "parsing"
           case mapParseError (parseProgram toks) of
             Left msg -> die (asmInput opts ++ ":" ++ msg)
             Right ast -> do
-              hccTrace trace "opening assembly"
               handle <- hccOpenWriteFile (asmOutput opts)
               case handle == 0 of
                 True -> die ("hcc: cannot write " ++ asmOutput opts)
                 False -> do
-                  hccTrace trace "writing assembly"
-                  result <- codegenM1WriteTraceWithDataPrefix (hccWriteAndFlushLines handle) (hccTrace trace) (dataLabelPrefix (asmInput opts)) ast
+                  result <- codegenM1WriteWithDataPrefix (hccWriteAndFlushLines handle) (dataLabelPrefix (asmInput opts)) ast
                   hccClose handle
                   case result of
                     Left (CodegenError msg) -> die (asmInput opts ++ ":" ++ msg)
-                    Right _ -> hccTrace trace "done"
+                    Right _ -> pure ()
 
 hccWriteAndFlushLines :: Int -> [String] -> IO ()
 hccWriteAndFlushLines handle lines' = do
   hccWriteHandleLines handle lines'
   hccHandleFlush handle
-
-hccTraceAsm :: IO Bool
-hccTraceAsm = do
-  value <- hccLookupEnv "HCC_TRACE_ASM"
-  case value of
-    Nothing -> pure False
-    Just _ -> pure True
-
-hccTrace :: Bool -> String -> IO ()
-hccTrace enabled msg =
-  if enabled
-    then hccPutErrLine ("hcc: " ++ msg)
-    else pure ()
 
 dataLabelPrefix :: String -> String
 dataLabelPrefix path =
@@ -268,7 +162,7 @@ data AsmOptions = AsmOptions
   , asmOutput :: String
   , asmIncludeDirs :: [String]
   , asmDefines :: [(String, String)]
-  } deriving (Eq, Show)
+  } deriving (Eq)
 
 assemblyArgs :: [String] -> Either String AsmOptions
 assemblyArgs args = finish (go args Nothing Nothing [] []) where
@@ -410,7 +304,7 @@ data IncludeFrame = IncludeFrame
   { includeParentActive :: Bool
   , includeBranchTaken :: Bool
   , includeFrameActive :: Bool
-  } deriving (Eq, Show)
+  } deriving (Eq)
 
 includeActive :: [IncludeFrame] -> Bool
 includeActive frames = case frames of
@@ -516,7 +410,7 @@ readDecimal text = go 0 text where
 data IncludeGuard
   = PragmaOnce String
   | IfndefGuard String Int Int
-  deriving (Eq, Show)
+  deriving (Eq)
 
 includeGuard :: String -> String -> Maybe IncludeGuard
 includeGuard path source =
@@ -675,27 +569,6 @@ replaceExt path ext = reverse (dropExt (reverse path)) ++ ext where
 
 prefixOf :: String -> String -> Bool
 prefixOf prefix text = take (length prefix) text == prefix
-
-mapCodegenError :: Either CodegenError a -> Either String a
-mapCodegenError result = case result of
-  Left (CodegenError msg) -> Left msg
-  Right x -> Right x
-
-mapCompileError :: Either CompileError a -> Either String a
-mapCompileError result = case result of
-  Left (CompileError msg) -> Left msg
-  Right x -> Right x
-
-resolveCc :: IO String
-resolveCc = do
-  override <- hccLookupEnv "HCC_BACKEND_CC"
-  case override of
-    Just cc -> pure cc
-    Nothing -> do
-      found <- hccFindExecutable "cc"
-      case found of
-        Just cc -> pure cc
-        Nothing -> die "hcc: temporary cc backend needs `cc` on PATH or HCC_BACKEND_CC" >> pure "cc"
 
 showPos :: SrcPos -> String
 showPos (SrcPos line col) = show line ++ ":" ++ show col

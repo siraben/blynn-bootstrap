@@ -18,10 +18,9 @@ stdenv.mkDerivation {
     mkdir -p build
     ghc -O2 -Wall -Werror -XNoImplicitPrelude -XForeignFunctionInterface \
       -i. -iHcc Main.hs cbits/hcc_runtime.c -outputdir build -o hcc
-    ./hcc --lex-dump test/lexer-smoke.c >/dev/null
-    ./hcc --pp-dump test/pp-smoke.c >/dev/null
-    ./hcc --parse-dump test/parse-smoke.c >/dev/null
     ./hcc --check test/parse-smoke.c
+    ./hcc --expand-dump test/pp-smoke.c >/dev/null
+    ./hcc -S -o smoke.M1 test/parse-smoke.c
     runHook postBuild
   '';
 

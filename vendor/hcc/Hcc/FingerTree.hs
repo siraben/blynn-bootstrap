@@ -3,23 +3,23 @@ module FingerTree where
 import Base
 
 data FingerRange = FingerRange Int Int
-  deriving (Eq, Show)
+  deriving (Eq)
 
 data FingerTree a
   = Empty
   | Single a
   | Deep FingerRange (Digit a) (FingerTree (Node a)) (Digit a)
-  deriving (Eq, Show)
+  deriving (Eq)
 
 data Digit a
   = One a
   | Two a a
   | Three a a a
   | Four a a a a
-  deriving (Eq, Show)
+  deriving (Eq)
 
 data Node a = Node3 FingerRange a a a
-  deriving (Eq, Show)
+  deriving (Eq)
 
 fingerEmpty :: FingerTree a
 fingerEmpty = Empty

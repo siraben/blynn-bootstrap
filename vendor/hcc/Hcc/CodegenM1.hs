@@ -10,7 +10,7 @@ import LowerImplicit
 import RegAlloc
 
 data CodegenError = CodegenError String
-  deriving (Eq, Show)
+  deriving (Eq)
 
 type Lines = [String] -> [String]
 
@@ -489,7 +489,7 @@ storeTemp alloc temp code = do
   loc <- mapAllocError (lookupLocation temp alloc)
   case loc of
     OnStack slot -> Right (code ++ ["  HCC_STORE_RSP_IMMEDIATE_from_rax %" ++ show (8 * slot)])
-    StackObject _ _ -> Left (CodegenError ("cannot assign to stack object address: " ++ show temp))
+    StackObject _ _ -> Left (CodegenError ("cannot assign to stack object address: " ++ renderTemp temp))
     InReg _ -> Right code
 
 cleanupStack :: Int -> [String]

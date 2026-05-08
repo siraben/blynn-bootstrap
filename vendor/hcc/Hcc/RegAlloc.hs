@@ -10,19 +10,19 @@ data PhysReg
   | Rdi
   | Rsi
   | Rdx
-  deriving (Eq, Show)
+  deriving (Eq)
 
 data Location
   = InReg PhysReg
   | OnStack Int
   | StackObject Int Int
-  deriving (Eq, Show)
+  deriving (Eq)
 
 data Allocation = Allocation Int (FingerTree AllocationEntry)
-  deriving (Eq, Show)
+  deriving (Eq)
 
 data AllocationEntry = AllocationEntry Temp Location
-  deriving (Eq, Show)
+  deriving (Eq)
 
 allocateFunction :: FunctionIr -> Either String Allocation
 allocateFunction (FunctionIr _ _ blocks) =
@@ -31,7 +31,7 @@ allocateFunction (FunctionIr _ _ blocks) =
 lookupLocation :: Temp -> Allocation -> Either String Location
 lookupLocation temp (Allocation _ locations) = case lookupEntry temp locations of
   Just loc -> Right loc
-  Nothing -> Left ("missing allocation for " ++ show temp)
+  Nothing -> Left ("missing allocation for " ++ renderTemp temp)
 
 stackSlotCount :: Allocation -> Int
 stackSlotCount (Allocation slots _) = slots

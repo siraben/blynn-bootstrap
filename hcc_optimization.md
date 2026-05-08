@@ -251,6 +251,55 @@ nix build .#tinycc-boot-hcc .#hcc-m1-smoke .#hcc-mescc-tests
 pass
 ```
 
+## Pass 7: Bootstrap-size trimming
+
+Goal: reduce the HCC program that Blynn must compile for the stage0 self-hosting path.
+
+Changes:
+
+- Removed derived `Show` instances from HCC datatypes and replaced the few internal diagnostics that depended on them with explicit tag/temp renderers.
+- Removed development dump modes from the shipped HCC CLI: `--lex-dump`, `--pp-dump`, `--parse-dump`, `--ir-dump`, `--lower-check`, and `--codegen-check`.
+- Removed temporary `cc` passthrough. The bootstrap-facing interface is now `-S`, `--expand-dump`, and `--check`.
+- Deleted unused AST/IR/token renderers and unused process/env/file-output helpers from the HCC runtime shim.
+
+Generated Blynn C metrics:
+
+```text
+before pass 7:
+PROGSZ: 89064
+hcc-blynn.c: 831,171 bytes
+hcc-full.hs: 274,082 bytes after Show removal only
+hcc-blynn-debug/bin/hcc: 910,304 bytes
+
+after Show removal:
+PROGSZ: 82048
+hcc-blynn.c: 764,129 bytes
+hcc-blynn-debug/bin/hcc: 837,520 bytes
+
+after dump/passthrough trimming:
+PROGSZ: 77444
+hcc-blynn.c: 718,933 bytes
+hcc-full.hs: 257,113 bytes
+hcc-blynn-debug/bin/hcc: 788,624 bytes
+```
+
+Current metrics:
+
+```text
+Haskell LOC total: 6,972
+hcc-ghc/bin/hcc: 4,133,416 bytes
+```
+
+Validation:
+
+```text
+nix build .#hcc-ghc --no-link --print-out-paths
+pass
+
+nix build .#hcc-blynn-debug --no-link --print-out-paths
+pass
+```
+
 ## Pass 5: Flatten HCC module dialect and remove simple helper imports
 
 Goal: remove the next concrete Blynn dialect blockers without changing compiler behavior.

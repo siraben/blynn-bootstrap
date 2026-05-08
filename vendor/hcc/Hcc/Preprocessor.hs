@@ -7,30 +7,30 @@ import SymbolTable
 import Token
 
 data PreprocessError = PreprocessError SrcPos String
-  deriving (Eq, Show)
+  deriving (Eq)
 
 data Macro
   = ObjectMacro String [Token]
   | FunctionMacro String [String] (Maybe String) [Token]
-  deriving (Eq, Show)
+  deriving (Eq)
 
 data MacroArg = MacroArg
   { argRaw :: [Token]
   , argExpanded :: [Token]
   }
-  deriving (Eq, Show)
+  deriving (Eq)
 
 type Macros = SymbolMap Macro
 
 data Chunk = Chunk [String] [Token]
-  deriving (Eq, Show)
+  deriving (Eq)
 
 data IfFrame = IfFrame
   { ifParentActive :: Bool
   , ifBranchTaken :: Bool
   , ifActive :: Bool
   }
-  deriving (Eq, Show)
+  deriving (Eq)
 
 preprocess :: [Token] -> Either PreprocessError [Token]
 preprocess toks = go symbolMapEmpty [] (sourceFromTokens toks) id where
@@ -96,7 +96,7 @@ dropInactiveToken toks = case toks of
   Chunk hidden (_:xs):rest -> prependChunk hidden xs rest
 
 data Directive = Directive String String
-  deriving (Eq, Show)
+  deriving (Eq)
 
 parseDirective :: String -> Directive
 parseDirective text = case dropSpaces text of

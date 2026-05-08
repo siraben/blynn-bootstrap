@@ -15,15 +15,10 @@ foreign import ccall "hcc_handle_read_char" hccHandleReadChar :: Int -> IO Char
 foreign import ccall "hcc_handle_write_char" hccHandleWriteChar :: Int -> Char -> IO ()
 foreign import ccall "hcc_handle_flush" hccHandleFlush :: Int -> IO ()
 foreign import ccall "hcc_close" hccClose :: Int -> IO ()
-foreign import ccall "hcc_lookup_env" hccLookupEnvRaw :: IO Int
-foreign import ccall "hcc_find_executable" hccFindExecutableRaw :: IO Int
 foreign import ccall "hcc_canonicalize" hccCanonicalizeRaw :: IO ()
 foreign import ccall "hcc_does_file_exist" hccDoesFileExistRaw :: IO Int
 foreign import ccall "hcc_result_eof" hccResultEof :: IO Int
 foreign import ccall "hcc_result_char" hccResultChar :: IO Char
-foreign import ccall "hcc_process_clear" hccProcessClear :: IO ()
-foreign import ccall "hcc_process_push" hccProcessPush :: IO ()
-foreign import ccall "hcc_process_run" hccProcessRun :: IO Int
 
 hccInit :: IO ()
 hccInit = pure ()
@@ -46,11 +41,6 @@ hccPutStrLn = putStrLn
 hccPutErrLine :: String -> IO ()
 hccPutErrLine msg = mapM_ hccStderrChar msg >> hccStderrChar '\n'
 
-hccReadFileOrStdin :: String -> IO String
-hccReadFileOrStdin path = case path == "-" of
-  True -> getContents
-  False -> hccReadFile path
-
 hccReadFile :: String -> IO String
 hccReadFile path = withBuffer path (hccReadFileBuffered path)
 
@@ -64,62 +54,8 @@ hccReadFileBuffered path = do
       hccClose handle
       pure text
 
-hccWriteFile :: String -> String -> IO ()
-hccWriteFile path text = withBuffer path (hccWriteFileBuffered path text)
-
-hccWriteFileBuffered :: String -> String -> IO ()
-hccWriteFileBuffered path text = do
-  handle <- hccOpenWrite
-  case handle == 0 of
-    True -> hccPutErrLine ("hcc: cannot write " ++ path) >> hccExitFailure
-    False -> do
-      hccWriteHandleText handle text
-      hccClose handle
-
-hccWriteLinesFile :: String -> [String] -> IO ()
-hccWriteLinesFile path lines' = withBuffer path (hccWriteLinesFileBuffered path lines')
-
-hccWriteLinesFileBuffered :: String -> [String] -> IO ()
-hccWriteLinesFileBuffered path lines' = do
-  handle <- hccOpenWrite
-  case handle == 0 of
-    True -> hccPutErrLine ("hcc: cannot write " ++ path) >> hccExitFailure
-    False -> do
-      hccWriteHandleLines handle lines'
-      hccClose handle
-
 hccOpenWriteFile :: String -> IO Int
 hccOpenWriteFile path = withBuffer path hccOpenWrite
-
-hccLookupEnv :: String -> IO (Maybe String)
-hccLookupEnv name = withBuffer name hccLookupEnvBuffered
-
-hccLookupEnvBuffered :: IO (Maybe String)
-hccLookupEnvBuffered = do
-  found <- hccLookupEnvRaw
-  case found == 0 of
-    True -> pure Nothing
-    False -> Just <$> readResult
-
-hccFindExecutable :: String -> IO (Maybe String)
-hccFindExecutable name = withBuffer name hccFindExecutableBuffered
-
-hccFindExecutableBuffered :: IO (Maybe String)
-hccFindExecutableBuffered = do
-  found <- hccFindExecutableRaw
-  case found == 0 of
-    True -> pure Nothing
-    False -> Just <$> readResult
-
-hccCallProcess :: String -> [String] -> IO ()
-hccCallProcess exe args = do
-  hccProcessClear
-  pushProcessArg exe
-  mapM_ pushProcessArg args
-  code <- hccProcessRun
-  case code == 0 of
-    True -> pure ()
-    False -> hccExitFailure
 
 hccCanonicalizePath :: String -> IO String
 hccCanonicalizePath path = withBuffer path $ hccCanonicalizeRaw >> readResult
@@ -195,6 +131,3 @@ hccWriteHandleLines handle lines' = case lines' of
     hccWriteHandleText handle line
     hccHandleWriteChar handle '\n'
     hccWriteHandleLines handle rest
-
-pushProcessArg :: String -> IO ()
-pushProcessArg arg = withBuffer arg hccProcessPush

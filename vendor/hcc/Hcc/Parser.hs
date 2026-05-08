@@ -7,15 +7,15 @@ import SymbolTable
 import Token
 
 data ParseError = ParseError SrcPos String
-  deriving (Eq, Show)
+  deriving (Eq)
 
 data Consumed a = Consumed a | Unconsumed a
-  deriving (Eq, Show)
+  deriving (Eq)
 
 data Reply a
   = Ok a [Token]
   | Error ParseError
-  deriving (Eq, Show)
+  deriving (Eq)
 
 data Parser a = Parser { runParser :: SymbolSet -> [Token] -> Consumed (Reply a) }
 
@@ -697,7 +697,7 @@ expression minPrec = do
         Nothing -> pure lhs
 
 data Assoc = LeftAssoc | RightAssoc
-  deriving (Eq, Show)
+  deriving (Eq)
 
 binop :: String -> Maybe (Int, Assoc)
 binop op = case op of

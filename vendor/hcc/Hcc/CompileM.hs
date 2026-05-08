@@ -5,7 +5,7 @@ import Ast
 import Ir
 
 data CompileError = CompileError String
-  deriving (Eq, Show)
+  deriving (Eq)
 
 data CompileState = CompileState
   { csNextTemp :: Int
@@ -21,7 +21,7 @@ data CompileState = CompileState
   , csDataItems :: [DataItem]
   , csBreakTargets :: [BlockId]
   , csContinueTargets :: [BlockId]
-  } deriving (Eq, Show)
+  } deriving (Eq)
 
 data CompileM a = CompileM
   { unCompileM :: CompileState -> Either CompileError (a, CompileState)

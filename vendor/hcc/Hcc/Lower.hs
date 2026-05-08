@@ -189,7 +189,7 @@ lowerStatementsFrom bid instrs stmts defaultTerm = case stmts of
     target <- requireContinueTarget
     tailBlocks <- lowerUnreachableLabels rest defaultTerm
     pure (BasicBlock bid instrs (TJump target) : tailBlocks)
-  stmt:_ -> throwC ("unsupported statement in lowering: " ++ show stmt)
+  stmt:_ -> throwC ("unsupported statement in lowering: " ++ renderStmtTag stmt)
 
 lowerIfRestTarget :: [Stmt] -> Terminator -> CompileM (BlockId, [BasicBlock])
 lowerIfRestTarget rest defaultTerm = case rest of
@@ -704,7 +704,7 @@ lowerExpr expr = case expr of
     lowerIncDec False ISub target
   EPostfix "++" target ->
     lowerIncDec False IAdd target
-  _ -> throwC ("unsupported expression in lowering: " ++ show expr)
+  _ -> throwC ("unsupported expression in lowering: " ++ renderExprTag expr)
 
 lowerVarExpr :: String -> CompileM ([Instr], Operand)
 lowerVarExpr name = case builtinConstant name of
@@ -1207,7 +1207,7 @@ lowerLValue target = case target of
     let offset = pairSecond fieldResult
     addr <- freshTemp
     pure (baseInstrs ++ [IBin addr IAdd baseAddr (OImm offset)], LAddress (OTemp addr) fieldTy)
-  _ -> throwC ("unsupported lvalue: " ++ show target)
+  _ -> throwC ("unsupported lvalue: " ++ renderExprTag target)
 
 indexedElementType :: Expr -> CompileM CType
 indexedElementType base = do
@@ -1342,7 +1342,7 @@ memberInfo mty field = do
   found <- memberInfoMaybe mty field
   case found of
     Just info -> pure info
-    Nothing -> throwC ("unknown struct member: " ++ field ++ " on " ++ show mty)
+    Nothing -> throwC ("unknown struct member: " ++ field ++ " on aggregate")
 
 memberInfoMaybe :: Maybe CType -> String -> CompileM (Maybe (CType, Int))
 memberInfoMaybe mty field = case mty of

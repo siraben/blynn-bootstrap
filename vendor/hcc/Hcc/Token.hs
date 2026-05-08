@@ -3,13 +3,13 @@ module Token where
 import Base
 
 data SrcPos = SrcPos Int Int
-  deriving (Eq, Show)
+  deriving (Eq)
 
 data Span = Span SrcPos SrcPos
-  deriving (Eq, Show)
+  deriving (Eq)
 
 data Token = Token Span TokenKind
-  deriving (Eq, Show)
+  deriving (Eq)
 
 data TokenKind
   = TokIdent String
@@ -18,7 +18,7 @@ data TokenKind
   | TokString String
   | TokPunct String
   | TokDirective String
-  deriving (Eq, Show)
+  deriving (Eq)
 
 tokenText :: TokenKind -> String
 tokenText kind = case kind of
@@ -28,16 +28,3 @@ tokenText kind = case kind of
   TokString s -> s
   TokPunct s -> s
   TokDirective s -> s
-
-renderToken :: Token -> String
-renderToken (Token (Span (SrcPos line col) _) kind) =
-  show line ++ ":" ++ show col ++ " " ++ renderKind kind ++ " " ++ show (tokenText kind)
-
-renderKind :: TokenKind -> String
-renderKind kind = case kind of
-  TokIdent _ -> "ident"
-  TokInt _ -> "int"
-  TokChar _ -> "char"
-  TokString _ -> "string"
-  TokPunct _ -> "punct"
-  TokDirective _ -> "directive"
