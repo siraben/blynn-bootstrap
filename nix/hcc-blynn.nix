@@ -8,6 +8,8 @@
   compileCommand,
   runtimeFile,
   top,
+  hcppTop ? top,
+  hcc1Top ? top,
   shareName ? pname,
   nativeBuildInputs ? [],
   m2Arch ? null,
@@ -116,11 +118,12 @@ mkDerivation ({
     run_step_shell "precisely_up hcc1-full.hs -> hcc1-blynn.c" "${precisely}/bin/precisely_up < hcc1-full.hs > hcc1-blynn.c"
     log_file hcc1-blynn.c
 
-    log_step "START patch generated RTS TOP=${toString top}"
-    sed -i -E 's/enum\{TOP=[0-9]+\};/enum{TOP=${toString top}};/' hcpp-blynn.c hcc1-blynn.c
-    grep -q 'enum{TOP=${toString top}};' hcpp-blynn.c
-    grep -q 'enum{TOP=${toString top}};' hcc1-blynn.c
-    log_step "DONE  patch generated RTS TOP=${toString top}"
+    log_step "START patch generated RTS hcpp TOP=${toString hcppTop}, hcc1 TOP=${toString hcc1Top}"
+    sed -i -E 's/enum\{TOP=[0-9]+\};/enum{TOP=${toString hcppTop}};/' hcpp-blynn.c
+    sed -i -E 's/enum\{TOP=[0-9]+\};/enum{TOP=${toString hcc1Top}};/' hcc1-blynn.c
+    grep -q 'enum{TOP=${toString hcppTop}};' hcpp-blynn.c
+    grep -q 'enum{TOP=${toString hcc1Top}};' hcc1-blynn.c
+    log_step "DONE  patch generated RTS hcpp TOP=${toString hcppTop}, hcc1 TOP=${toString hcc1Top}"
 
     log_step "START compile generated C backend"
     ${compileCommand}

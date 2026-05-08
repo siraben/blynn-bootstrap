@@ -12,6 +12,14 @@
 #define PATH_MAX 4096
 #endif
 
+#ifndef WIFEXITED
+#define WIFEXITED(status) (((status) & 0x7f) == 0)
+#endif
+
+#ifndef WEXITSTATUS
+#define WEXITSTATUS(status) (((status) >> 8) & 0xff)
+#endif
+
 #define HCC_MAX_HANDLES 256
 #define HCC_MAX_IARRAYS 1024
 #define HCC_MAX_OBUFS 256
@@ -298,21 +306,31 @@ int hcc_find_executable(void) {
 
   const char *path = getenv("PATH");
   if (!path) path = "/bin:/usr/bin";
-  char *copy = copy_string(path);
-  char *save = NULL;
-  for (char *dir = strtok_r(copy, ":", &save); dir; dir = strtok_r(NULL, ":", &save)) {
-    size_t len = strlen(dir) + 1 + strlen(name) + 1;
+  const char *start = path;
+  for (;;) {
+    const char *end = start;
+    while (*end && *end != ':') end++;
+    size_t dir_len = (size_t)(end - start);
+    size_t effective_dir_len = dir_len ? dir_len : 1;
+    size_t len = effective_dir_len + 1 + strlen(name) + 1;
     char *candidate = checked_realloc(NULL, len);
-    snprintf(candidate, len, "%s/%s", dir[0] ? dir : ".", name);
+    if (dir_len) {
+      memcpy(candidate, start, dir_len);
+      candidate[dir_len] = '/';
+    } else {
+      candidate[0] = '.';
+      candidate[1] = '/';
+    }
+    strcpy(candidate + effective_dir_len + 1, name);
     if (is_executable(candidate)) {
       set_result(candidate);
       free(candidate);
-      free(copy);
       return 1;
     }
     free(candidate);
+    if (!*end) break;
+    start = end + 1;
   }
-  free(copy);
   return 0;
 }
 
