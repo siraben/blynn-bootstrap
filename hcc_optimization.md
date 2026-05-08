@@ -300,6 +300,51 @@ nix build .#hcc-blynn-debug --no-link --print-out-paths
 pass
 ```
 
+Stage0 attempt:
+
+```text
+nix shell nixpkgs#time -c time -v nix build .#hcc-blynn-stage0 --no-link --print-out-paths
+stopped after 3m45s in precisely_up; did not reach M2-Mesoplanet
+```
+
+## Pass 8: Remove derived equality
+
+Goal: avoid generating equality dictionaries for internal compiler datatypes that are normally only pattern-matched.
+
+Changes:
+
+- Removed all remaining `deriving (Eq)` / `deriving (Eq, Ord)` clauses from HCC.
+- Replaced the three actual equality requirements with local comparisons:
+  temp-key comparison in `RegAlloc`, token-kind comparison in macro expansion, and an explicit associativity predicate in the parser.
+
+Generated Blynn C metrics:
+
+```text
+before pass 8:
+PROGSZ: 77444
+hcc-blynn.c: 718,933 bytes
+hcc-full.hs: 257,113 bytes
+hcc-blynn-debug/bin/hcc: 788,624 bytes
+hcc-ghc/bin/hcc: 4,133,416 bytes
+
+after pass 8:
+PROGSZ: 69280
+hcc-blynn.c: 635,882 bytes
+hcc-full.hs: 257,182 bytes
+hcc-blynn-debug/bin/hcc: 697,776 bytes
+hcc-ghc/bin/hcc: 4,025,520 bytes
+```
+
+Validation:
+
+```text
+nix build .#hcc-ghc --no-link --print-out-paths
+pass
+
+nix build .#hcc-blynn-debug --no-link --print-out-paths
+pass
+```
+
 ## Pass 5: Flatten HCC module dialect and remove simple helper imports
 
 Goal: remove the next concrete Blynn dialect blockers without changing compiler behavior.

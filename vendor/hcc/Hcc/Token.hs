@@ -3,13 +3,10 @@ module Token where
 import Base
 
 data SrcPos = SrcPos Int Int
-  deriving (Eq)
 
 data Span = Span SrcPos SrcPos
-  deriving (Eq)
 
 data Token = Token Span TokenKind
-  deriving (Eq)
 
 data TokenKind
   = TokIdent String
@@ -18,7 +15,6 @@ data TokenKind
   | TokString String
   | TokPunct String
   | TokDirective String
-  deriving (Eq)
 
 tokenText :: TokenKind -> String
 tokenText kind = case kind of

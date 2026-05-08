@@ -162,7 +162,7 @@ data AsmOptions = AsmOptions
   , asmOutput :: String
   , asmIncludeDirs :: [String]
   , asmDefines :: [(String, String)]
-  } deriving (Eq)
+  }
 
 assemblyArgs :: [String] -> Either String AsmOptions
 assemblyArgs args = finish (go args Nothing Nothing [] []) where
@@ -304,7 +304,7 @@ data IncludeFrame = IncludeFrame
   { includeParentActive :: Bool
   , includeBranchTaken :: Bool
   , includeFrameActive :: Bool
-  } deriving (Eq)
+  }
 
 includeActive :: [IncludeFrame] -> Bool
 includeActive frames = case frames of
@@ -410,7 +410,6 @@ readDecimal text = go 0 text where
 data IncludeGuard
   = PragmaOnce String
   | IfndefGuard String Int Int
-  deriving (Eq)
 
 includeGuard :: String -> String -> Maybe IncludeGuard
 includeGuard path source =

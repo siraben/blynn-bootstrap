@@ -10,19 +10,15 @@ data PhysReg
   | Rdi
   | Rsi
   | Rdx
-  deriving (Eq)
 
 data Location
   = InReg PhysReg
   | OnStack Int
   | StackObject Int Int
-  deriving (Eq)
 
 data Allocation = Allocation Int (FingerTree AllocationEntry)
-  deriving (Eq)
 
 data AllocationEntry = AllocationEntry Temp Location
-  deriving (Eq)
 
 allocateFunction :: FunctionIr -> Either String Allocation
 allocateFunction (FunctionIr _ _ blocks) =
@@ -115,9 +111,9 @@ lookupEntry temp@(Temp key) entries =
   fingerLookupWith entryRange (matchEntry temp) key entries
 
 matchEntry :: Temp -> AllocationEntry -> Maybe Location
-matchEntry temp entry = case entry of
-  AllocationEntry entryTemp loc ->
-    if entryTemp == temp
+matchEntry (Temp key) entry = case entry of
+  AllocationEntry (Temp entryKey) loc ->
+    if entryKey == key
     then Just loc
     else Nothing
 

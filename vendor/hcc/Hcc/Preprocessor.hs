@@ -7,30 +7,25 @@ import SymbolTable
 import Token
 
 data PreprocessError = PreprocessError SrcPos String
-  deriving (Eq)
 
 data Macro
   = ObjectMacro String [Token]
   | FunctionMacro String [String] (Maybe String) [Token]
-  deriving (Eq)
 
 data MacroArg = MacroArg
   { argRaw :: [Token]
   , argExpanded :: [Token]
   }
-  deriving (Eq)
 
 type Macros = SymbolMap Macro
 
 data Chunk = Chunk [String] [Token]
-  deriving (Eq)
 
 data IfFrame = IfFrame
   { ifParentActive :: Bool
   , ifBranchTaken :: Bool
   , ifActive :: Bool
   }
-  deriving (Eq)
 
 preprocess :: [Token] -> Either PreprocessError [Token]
 preprocess toks = go symbolMapEmpty [] (sourceFromTokens toks) id where
@@ -96,7 +91,6 @@ dropInactiveToken toks = case toks of
   Chunk hidden (_:xs):rest -> prependChunk hidden xs rest
 
 data Directive = Directive String String
-  deriving (Eq)
 
 parseDirective :: String -> Directive
 parseDirective text = case dropSpaces text of
@@ -236,7 +230,7 @@ expandMacro :: Macros -> Bool -> [String] -> Token -> Span -> String -> Macro ->
 expandMacro macros protectDefined disabled original sp name macro rest = case macro of
   ObjectMacro _ body -> do
     let replacement = relocate sp body
-    if replacement == [original]
+    if sameSingleToken replacement original
       then Right ([original], rest)
       else Right ([], prependChunk [name] replacement rest)
   FunctionMacro _ params variadic body -> case popSource rest of
@@ -245,6 +239,25 @@ expandMacro macros protectDefined disabled original sp name macro rest = case ma
       expanded <- expandFunctionMacro macros protectDefined disabled sp name params variadic body args
       Right (expanded, rest')
     _ -> Right ([original], rest)
+
+sameSingleToken :: [Token] -> Token -> Bool
+sameSingleToken toks original = case toks of
+  [tok] -> sameToken tok original
+  _ -> False
+
+sameToken :: Token -> Token -> Bool
+sameToken left right = case left of
+  Token _ leftKind -> case right of
+    Token _ rightKind -> sameTokenKind leftKind rightKind
+
+sameTokenKind :: TokenKind -> TokenKind -> Bool
+sameTokenKind left right = case left of
+  TokIdent a -> case right of { TokIdent b -> a == b; _ -> False }
+  TokInt a -> case right of { TokInt b -> a == b; _ -> False }
+  TokChar a -> case right of { TokChar b -> a == b; _ -> False }
+  TokString a -> case right of { TokString b -> a == b; _ -> False }
+  TokPunct a -> case right of { TokPunct b -> a == b; _ -> False }
+  TokDirective a -> case right of { TokDirective b -> a == b; _ -> False }
 
 takeDefinedOperandSource :: [Chunk] -> ([Token], [Chunk])
 takeDefinedOperandSource toks = case popSource toks of

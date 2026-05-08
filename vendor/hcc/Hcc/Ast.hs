@@ -3,7 +3,6 @@ module Ast where
 import Base
 
 data Program = Program [TopDecl]
-  deriving (Eq)
 
 data TopDecl
   = Function CType String [Param] [Stmt]
@@ -14,13 +13,10 @@ data TopDecl
   | StructDecl Bool String [Field]
   | EnumConstants [(String, Int)]
   | TypeDecl
-  deriving (Eq)
 
 data Param = Param CType String
-  deriving (Eq)
 
 data Field = Field CType String
-  deriving (Eq)
 
 data CType
   = CVoid
@@ -42,7 +38,6 @@ data CType
   | CNamed String
   | CArray CType (Maybe Expr)
   | CPtr CType
-  deriving (Eq)
 
 data Stmt
   = SDecl CType String (Maybe Expr)
@@ -61,7 +56,6 @@ data Stmt
   | SGoto String
   | SLabel String
   | SBlock [Stmt]
-  deriving (Eq)
 
 data Expr
   = EInt String
@@ -81,7 +75,6 @@ data Expr
   | ECond Expr Expr Expr
   | EAssign Expr Expr
   | EInitList [Expr]
-  deriving (Eq)
 
 renderStmtTag :: Stmt -> String
 renderStmtTag stmt = case stmt of

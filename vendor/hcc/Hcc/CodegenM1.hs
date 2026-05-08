@@ -10,7 +10,6 @@ import LowerImplicit
 import RegAlloc
 
 data CodegenError = CodegenError String
-  deriving (Eq)
 
 type Lines = [String] -> [String]
 

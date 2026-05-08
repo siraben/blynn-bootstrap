@@ -3,10 +3,8 @@ module Ir where
 import Base
 
 data Temp = Temp Int
-  deriving (Eq, Ord)
 
 data BlockId = BlockId Int
-  deriving (Eq, Ord)
 
 data Operand
   = OTemp Temp
@@ -14,7 +12,6 @@ data Operand
   | OImmBytes [Int]
   | OGlobal String
   | OFunction String
-  deriving (Eq)
 
 data BinOp
   = IAdd
@@ -38,7 +35,6 @@ data BinOp
   | IAnd
   | IOr
   | IXor
-  deriving (Eq)
 
 data Instr
   = IParam Temp Int
@@ -62,30 +58,23 @@ data Instr
   | ICond Temp [Instr] Operand [Instr] Operand [Instr] Operand
   | ICall (Maybe Temp) String [Operand]
   | ICallIndirect (Maybe Temp) Operand [Operand]
-  deriving (Eq)
 
 data Terminator
   = TRet (Maybe Operand)
   | TJump BlockId
   | TBranch Operand BlockId BlockId
-  deriving (Eq)
 
 data BasicBlock = BasicBlock BlockId [Instr] Terminator
-  deriving (Eq)
 
 data DataValue
   = DByte Int
   | DAddress String
-  deriving (Eq)
 
 data DataItem = DataItem String [DataValue]
-  deriving (Eq)
 
 data FunctionIr = FunctionIr String [String] [BasicBlock]
-  deriving (Eq)
 
 data ModuleIr = ModuleIr [DataItem] [FunctionIr]
-  deriving (Eq)
 
 renderTemp :: Temp -> String
 renderTemp (Temp n) = "Temp " ++ show n

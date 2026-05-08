@@ -5,13 +5,10 @@ import Base
 data Tree a
   = Empty
   | Branch String a (Tree a) (Tree a)
-  deriving (Eq)
 
 data SymbolMap a = SymbolMap (Tree a)
-  deriving (Eq)
 
 data SymbolSet = SymbolSet (Tree ())
-  deriving (Eq)
 
 symbolMapEmpty :: SymbolMap a
 symbolMapEmpty = SymbolMap Empty
@@ -93,7 +90,6 @@ data Comparison
   = IsLess
   | IsEqual
   | IsGreater
-  deriving (Eq)
 
 compareString :: String -> String -> Comparison
 compareString left right = case (left, right) of

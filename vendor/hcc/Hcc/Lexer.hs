@@ -4,7 +4,6 @@ import Base
 import Token
 
 data LexError = LexError SrcPos String
-  deriving (Eq)
 
 data LexState = LexState
   { lsInput :: String

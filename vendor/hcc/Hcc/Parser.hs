@@ -7,15 +7,12 @@ import SymbolTable
 import Token
 
 data ParseError = ParseError SrcPos String
-  deriving (Eq)
 
 data Consumed a = Consumed a | Unconsumed a
-  deriving (Eq)
 
 data Reply a
   = Ok a [Token]
   | Error ParseError
-  deriving (Eq)
 
 data Parser a = Parser { runParser :: SymbolSet -> [Token] -> Consumed (Reply a) }
 
@@ -690,14 +687,18 @@ expression minPrec = do
             climb (ECond lhs yes no)
           TokPunct op | Just (prec, assoc) <- binop op, prec >= minPrec -> do
             advanceToken
-            rhs <- expression (if assoc == RightAssoc then prec else prec + 1)
+            rhs <- expression (if rightAssoc assoc then prec else prec + 1)
             let node = assignNode op lhs rhs
             climb node
           _ -> pure lhs
         Nothing -> pure lhs
 
 data Assoc = LeftAssoc | RightAssoc
-  deriving (Eq)
+
+rightAssoc :: Assoc -> Bool
+rightAssoc assoc = case assoc of
+  RightAssoc -> True
+  LeftAssoc -> False
 
 binop :: String -> Maybe (Int, Assoc)
 binop op = case op of
