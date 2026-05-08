@@ -14,6 +14,7 @@
 
 #define HCC_MAX_HANDLES 256
 #define HCC_MAX_IARRAYS 1024
+#define HCC_MAX_OBUFS 256
 
 static char *buffer;
 static size_t buffer_len;
@@ -27,6 +28,14 @@ static size_t result_pos;
 static FILE *handles[HCC_MAX_HANDLES];
 static int *iarrays[HCC_MAX_IARRAYS];
 static int iarray_lens[HCC_MAX_IARRAYS];
+
+struct hcc_obuf {
+  char *data;
+  size_t len;
+  size_t cap;
+};
+
+static struct hcc_obuf *obufs[HCC_MAX_OBUFS];
 
 static char **process_argv;
 static size_t process_argc;
@@ -187,6 +196,67 @@ void hcc_handle_write_buffer(int handle) {
 void hcc_handle_flush(int handle) {
   FILE *file = get_handle(handle);
   if (file) fflush(file);
+}
+
+static unsigned long alloc_obuf(struct hcc_obuf *out) {
+  if (!out) return 0;
+  for (int i = 0; i < HCC_MAX_OBUFS; i++) {
+    if (!obufs[i]) {
+      obufs[i] = out;
+      return (unsigned long)(i + 1);
+    }
+  }
+  free(out->data);
+  free(out);
+  return 0;
+}
+
+unsigned long hcc_obuf_new(int initial_cap) {
+  struct hcc_obuf *out = checked_realloc(NULL, sizeof(struct hcc_obuf));
+  size_t cap = initial_cap > 0 ? (size_t)initial_cap : 64;
+  out->data = checked_realloc(NULL, cap);
+  out->len = 0;
+  out->cap = cap;
+  return alloc_obuf(out);
+}
+
+static struct hcc_obuf *get_obuf(unsigned long handle) {
+  if (handle == 0 || handle > HCC_MAX_OBUFS) return NULL;
+  return obufs[handle - 1];
+}
+
+void hcc_obuf_free(unsigned long handle) {
+  struct hcc_obuf *out = get_obuf(handle);
+  if (!out) return;
+  free(out->data);
+  free(out);
+  obufs[handle - 1] = NULL;
+}
+
+void hcc_obuf_clear(unsigned long handle) {
+  struct hcc_obuf *out = get_obuf(handle);
+  if (!out) return;
+  out->len = 0;
+}
+
+int hcc_obuf_len(unsigned long handle) {
+  struct hcc_obuf *out = get_obuf(handle);
+  if (!out) return 0;
+  return (int)out->len;
+}
+
+void hcc_obuf_put(unsigned long handle, int c) {
+  struct hcc_obuf *out = get_obuf(handle);
+  if (!out) return;
+  ensure_chars(&out->data, &out->cap, out->len + 1);
+  out->data[out->len++] = (char)c;
+}
+
+void hcc_obuf_write(int handle, unsigned long obuf_handle) {
+  FILE *file = get_handle(handle);
+  struct hcc_obuf *out = get_obuf(obuf_handle);
+  if (!file || !out || out->len == 0) return;
+  fwrite(out->data, 1, out->len, file);
 }
 
 void hcc_close(int handle) {

@@ -17,6 +17,12 @@ foreign import ccall "hcc_handle_read_char" hccHandleReadChar :: Int -> IO Char
 foreign import ccall "hcc_handle_write_char" hccHandleWriteChar :: Int -> Char -> IO ()
 foreign import ccall "hcc_handle_write_buffer" hccHandleWriteBuffer :: Int -> IO ()
 foreign import ccall "hcc_handle_flush" hccHandleFlush :: Int -> IO ()
+foreign import ccall "hcc_obuf_new" hccObufNew :: Int -> IO Word
+foreign import ccall "hcc_obuf_free" hccObufFree :: Word -> IO ()
+foreign import ccall "hcc_obuf_clear" hccObufClear :: Word -> IO ()
+foreign import ccall "hcc_obuf_len" hccObufLen :: Word -> IO Int
+foreign import ccall "hcc_obuf_put" hccObufPut :: Word -> Char -> IO ()
+foreign import ccall "hcc_obuf_write" hccObufWrite :: Int -> Word -> IO ()
 foreign import ccall "hcc_close" hccClose :: Int -> IO ()
 foreign import ccall "hcc_canonicalize" hccCanonicalizeRaw :: IO ()
 foreign import ccall "hcc_does_file_exist" hccDoesFileExistRaw :: IO Int
@@ -136,9 +142,26 @@ hccWriteHandleText :: Int -> String -> IO ()
 hccWriteHandleText handle text = withBuffer text (hccHandleWriteBuffer handle)
 
 hccWriteHandleLines :: Int -> [String] -> IO ()
-hccWriteHandleLines handle lines' = case lines' of
-  [] -> pure ()
-  line:rest -> do
-    hccWriteHandleText handle line
-    hccHandleWriteChar handle '\n'
-    hccWriteHandleLines handle rest
+hccWriteHandleLines handle lines' = do
+  out <- hccObufNew outputChunkSize
+  writeLinesBuffered out lines'
+  hccObufWrite handle out
+  hccObufFree out
+  where
+    writeLinesBuffered out rest = case rest of
+      [] -> pure ()
+      line:linesRest -> do
+        writeTextBuffered out line
+        hccObufPut out '\n'
+        len <- hccObufLen out
+        case len >= outputChunkSize of
+          True -> hccObufWrite handle out >> hccObufClear out
+          False -> pure ()
+        writeLinesBuffered out linesRest
+
+    writeTextBuffered out text = case text of
+      [] -> pure ()
+      c:rest -> hccObufPut out c >> writeTextBuffered out rest
+
+outputChunkSize :: Int
+outputChunkSize = 65536

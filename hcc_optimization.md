@@ -297,6 +297,52 @@ Audit notes:
 - M1 text rendering is a real allocator: `byteHex`, `storeTemp`, `loadLocationWithRspBias`, `joinWords`, and `loadImmediateBytes` are repeatedly constructing small strings. Difference-list rendering at the codegen line/chunk level should reduce allocation without changing output.
 - Parser costs are present but secondary in this profile. The enum/typedef pre-scans use repeated list removals and uniqueness passes; these should be cleaned up, but only after IO, allocation lookup, and text rendering.
 
+## Pass 8: Opaque Word output buffer
+
+Goal: remove the worst write-side `withBuffer` cost without introducing a C pointer type that Blynn cannot represent. `precisely_up` lowers `Word` to C `unsigned`, so `Word` cannot safely hold a raw pointer on x86_64. The runtime therefore exposes `Word` as a small table handle.
+
+Changes:
+
+- Added runtime-managed output buffers in both `hcc_runtime.c` and `hcc_runtime_m2.c`.
+- Added `hcc_obuf_new`, `hcc_obuf_put`, `hcc_obuf_write`, `hcc_obuf_clear`, `hcc_obuf_len`, and `hcc_obuf_free`.
+- Changed `hccWriteHandleLines` to fill a 64 KiB output buffer and flush it to the file handle.
+- Tested and discarded a GHC-only `CStringLen` writer. Per-line `CStringLen` lowered allocation but increased profiled elapsed time; chunked `CStringLen` was also slower. The portable opaque buffer remains the better result for now.
+
+Profile on the same `tcc.i`:
+
+```text
+hcc1 -S -o tcc.M1 tcc.i +RTS -p -s -RTS
+tcc.M1 byte-identical to previous output
+
+profiled elapsed: 9.78s -> 8.71s
+RTS allocated: 18,686,569,424 -> 17,994,320,120 bytes
+bytes copied during GC: 4,992,060,000 -> 2,424,797,616
+max residency: 116,111,080 -> 116,104,296 bytes
+productivity: 74.5% -> 83.4%
+```
+
+Top individual cost centres after this pass:
+
+```text
+hccWriteHandleLines.writeTextBuffered     HccSystem 19.0% time 19.2% alloc
+readResultAt.\                            HccSystem 16.1% time  0.9% alloc
+lookupConstant.\                          CompileM   7.1% time  0.0% alloc
+rangeContains                             FingerTree 6.9% time  9.8% alloc
+lookupValue                               FingerTree 4.0% time  0.0% alloc
+lookupNodeWith                            FingerTree 1.4% time  8.7% alloc
+storeTemp.\                               CodegenM1  1.3% time  4.8% alloc
+loadLocationWithRspBias                   CodegenM1  1.2% time  4.4% alloc
+```
+
+Validation:
+
+```text
+nix build .#hcc-host-ghc-native --no-link --print-out-paths
+nix build .#hcc-profile-host-ghc-native --no-link --print-out-paths
+nix build .#hcc-ghc-precisely-stdenv --no-link --print-out-paths
+nix build .#tinycc-boot-hcc-host-ghc-native --no-link --print-out-paths
+```
+
 Validation:
 
 ```text
