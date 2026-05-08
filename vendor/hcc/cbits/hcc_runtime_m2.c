@@ -11,6 +11,7 @@ static unsigned buffer_cap;
 
 static char *result;
 static unsigned result_len;
+static unsigned result_cap;
 static unsigned result_pos;
 
 static FILE *handles[HCC_MAX_HANDLES];
@@ -72,13 +73,38 @@ static char *current_buffer(void)
   return buffer;
 }
 
+void hcc_stdout_buffer(void)
+{
+  fputs(current_buffer(), stdout);
+}
+
 static void set_result(char *text)
 {
   unsigned len = strlen(text);
-  ensure_chars(&result, &result_len, len + 1);
+  ensure_chars(&result, &result_cap, len + 1);
   memcpy(result, text, len + 1);
   result_len = len;
   result_pos = 0;
+}
+
+int hcc_read_file(void)
+{
+  FILE *file = fopen(current_buffer(), "r");
+  int c;
+  if (!file) return 0;
+  result_len = 0;
+  result_pos = 0;
+  ensure_chars(&result, &result_cap, 1);
+  c = fgetc(file);
+  while (c != EOF) {
+    ensure_chars(&result, &result_cap, result_len + 2);
+    result[result_len] = c;
+    result_len = result_len + 1;
+    c = fgetc(file);
+  }
+  result[result_len] = 0;
+  fclose(file);
+  return 1;
 }
 
 int hcc_result_eof(void)
@@ -91,6 +117,18 @@ int hcc_result_char(void)
   if (result_pos >= result_len) return 0;
   result_pos = result_pos + 1;
   return result[result_pos - 1];
+}
+
+int hcc_result_len(void)
+{
+  return result_len;
+}
+
+int hcc_result_at(int index)
+{
+  if (index < 0) return 0;
+  if (index >= result_len) return 0;
+  return result[index];
 }
 
 void hcc_stderr_char(int c)

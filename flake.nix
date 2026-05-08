@@ -94,6 +94,14 @@
           m2libc = ./vendor/blynn-compiler/M2libc;
         };
 
+        tinycc-boot-hcc-ghc = pkgs.callPackage ./nix/tinycc-boot-hcc.nix {
+          pname = "tinycc-boot-hcc-ghc";
+          hcc = hcc-ghc;
+          inherit minimalBootstrap;
+          mesLibc = minimalBootstrap.mes-libc;
+          m2libc = ./vendor/blynn-compiler/M2libc;
+        };
+
         hcc-m1-smoke = pkgs.callPackage ./nix/hcc-m1-smoke.nix {
           hcc = hcc-blynn-stage0;
           inherit minimalBootstrap;
@@ -114,7 +122,7 @@
         };
       in {
         packages = {
-          inherit blynn-compiler blynn-precisely blynn-precisely-stdenv blynn-precisely-debug-ghc hcc-ghc hcc-ghc-profile hcc-blynn-debug hcc-blynn-stage0 hcc-m1-smoke hcc-mescc-tests mutable-io-proof tinycc-boot-hcc;
+          inherit blynn-compiler blynn-precisely blynn-precisely-stdenv blynn-precisely-debug-ghc hcc-ghc hcc-ghc-profile hcc-blynn-debug hcc-blynn-stage0 hcc-m1-smoke hcc-mescc-tests mutable-io-proof tinycc-boot-hcc tinycc-boot-hcc-ghc;
           default = blynn-precisely;
         };
 

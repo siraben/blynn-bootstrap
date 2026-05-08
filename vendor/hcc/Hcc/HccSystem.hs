@@ -5,11 +5,13 @@ import System
 
 foreign import ccall "hcc_buffer_clear" hccBufferClear :: IO ()
 foreign import ccall "hcc_buffer_put" hccBufferPut :: Char -> IO ()
+foreign import ccall "hcc_stdout_buffer" hccStdoutBuffer :: IO ()
 foreign import ccall "hcc_stderr_char" hccStderrChar :: Char -> IO ()
 foreign import ccall "hcc_exit_success" hccExitSuccessRaw :: IO ()
 foreign import ccall "hcc_exit_failure" hccExitFailureRaw :: IO ()
 foreign import ccall "hcc_open_read" hccOpenRead :: IO Int
 foreign import ccall "hcc_open_write" hccOpenWrite :: IO Int
+foreign import ccall "hcc_read_file" hccReadFileRaw :: IO Int
 foreign import ccall "hcc_handle_eof" hccHandleEof :: Int -> IO Int
 foreign import ccall "hcc_handle_read_char" hccHandleReadChar :: Int -> IO Char
 foreign import ccall "hcc_handle_write_char" hccHandleWriteChar :: Int -> Char -> IO ()
@@ -20,6 +22,8 @@ foreign import ccall "hcc_canonicalize" hccCanonicalizeRaw :: IO ()
 foreign import ccall "hcc_does_file_exist" hccDoesFileExistRaw :: IO Int
 foreign import ccall "hcc_result_eof" hccResultEof :: IO Int
 foreign import ccall "hcc_result_char" hccResultChar :: IO Char
+foreign import ccall "hcc_result_len" hccResultLen :: IO Int
+foreign import ccall "hcc_result_at" hccResultAt :: Int -> IO Char
 
 hccInit :: IO ()
 hccInit = pure ()
@@ -34,16 +38,20 @@ hccExitFailure :: IO a
 hccExitFailure = hccExitFailureRaw >> hccExitFailure
 
 hccPutStr :: String -> IO ()
-hccPutStr = putStr
+hccPutStr text = withBuffer text hccStdoutBuffer
 
 hccPutStrLn :: String -> IO ()
-hccPutStrLn = putStrLn
+hccPutStrLn text = hccPutStr text >> hccPutStr "\n"
 
 hccPutErrLine :: String -> IO ()
 hccPutErrLine msg = mapM_ hccStderrChar msg >> hccStderrChar '\n'
 
 hccReadFile :: String -> IO String
-hccReadFile path = withBuffer path (hccReadFileBuffered path)
+hccReadFile path = withBuffer path $ do
+  ok <- hccReadFileRaw
+  case ok == 0 of
+    True -> hccPutErrLine ("hcc: cannot read " ++ path) >> hccExitFailure
+    False -> readResult
 
 hccReadFileBuffered :: String -> IO String
 hccReadFileBuffered path = do
@@ -112,13 +120,17 @@ readHandle handle = do
 
 readResult :: IO String
 readResult = do
-  done <- hccResultEof
-  case done /= 0 of
-    True -> pure []
-    False -> do
-      c <- hccResultChar
-      rest <- readResult
-      pure (c:rest)
+  len <- hccResultLen
+  readResultAt 0 len
+
+readResultAt :: Int -> Int -> IO String
+readResultAt index len =
+  if index >= len
+  then pure []
+  else do
+    c <- hccResultAt index
+    rest <- readResultAt (index + 1) len
+    pure (c:rest)
 
 hccWriteHandleText :: Int -> String -> IO ()
 hccWriteHandleText handle text = withBuffer text (hccHandleWriteBuffer handle)

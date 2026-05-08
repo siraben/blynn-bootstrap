@@ -6,6 +6,7 @@
   minimalBootstrap,
   mesLibc,
   m2libc,
+  pname ? "tinycc-boot-hcc",
 }:
 
 let
@@ -15,7 +16,7 @@ let
 
 in
 stdenv.mkDerivation {
-  pname = "tinycc-boot-hcc";
+  inherit pname;
   inherit version;
 
   src = fetchurl {
