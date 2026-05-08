@@ -145,6 +145,11 @@ void hcc_handle_write_char(int handle, int c) {
   if (file) fputc(c, file);
 }
 
+void hcc_handle_flush(int handle) {
+  FILE *file = get_handle(handle);
+  if (file) fflush(file);
+}
+
 void hcc_close(int handle) {
   if (handle <= 0 || handle > HCC_MAX_HANDLES) return;
   FILE *file = handles[handle - 1];

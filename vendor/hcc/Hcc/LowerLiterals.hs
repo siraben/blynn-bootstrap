@@ -46,30 +46,30 @@ bitFoldAnd bit a b out =
   if bit > 1073741824
     then out
     else
-      let abit = a `mod` (bit * 2) `div` bit
-          bbit = b `mod` (bit * 2) `div` bit
+      let abit = (a `div` bit) `mod` 2
+          bbit = (b `div` bit) `mod` 2
           out' = if bitAndBits abit bbit then out + bit else out
-      in bitFoldAnd (bit * 2) a b out'
+      in if bit == 1073741824 then out' else bitFoldAnd (bit * 2) a b out'
 
 bitFoldOr :: Int -> Int -> Int -> Int -> Int
 bitFoldOr bit a b out =
   if bit > 1073741824
     then out
     else
-      let abit = a `mod` (bit * 2) `div` bit
-          bbit = b `mod` (bit * 2) `div` bit
+      let abit = (a `div` bit) `mod` 2
+          bbit = (b `div` bit) `mod` 2
           out' = if bitOrBits abit bbit then out + bit else out
-      in bitFoldOr (bit * 2) a b out'
+      in if bit == 1073741824 then out' else bitFoldOr (bit * 2) a b out'
 
 bitFoldXor :: Int -> Int -> Int -> Int -> Int
 bitFoldXor bit a b out =
   if bit > 1073741824
     then out
     else
-      let abit = a `mod` (bit * 2) `div` bit
-          bbit = b `mod` (bit * 2) `div` bit
+      let abit = (a `div` bit) `mod` 2
+          bbit = (b `div` bit) `mod` 2
           out' = if bitXorBits abit bbit then out + bit else out
-      in bitFoldXor (bit * 2) a b out'
+      in if bit == 1073741824 then out' else bitFoldXor (bit * 2) a b out'
 
 bitAndBits :: Int -> Int -> Bool
 bitAndBits x y = x /= 0 && y /= 0
@@ -93,6 +93,79 @@ takeInts count values =
     else case values of
       [] -> []
       value:rest -> value : takeInts (count - 1) rest
+
+intConstInstr :: Temp -> String -> Instr
+intConstInstr temp text = case parseIntBytes text of
+  Just bytes -> IConstBytes temp bytes
+  Nothing -> IConst temp (parseInt text)
+
+parseIntBytes :: String -> Maybe [Int]
+parseIntBytes text =
+  let bytes = naturalLiteralBytes (stripIntSuffix text)
+  in if exceedsSignedInt bytes then Just bytes else Nothing
+
+naturalLiteralBytes :: String -> [Int]
+naturalLiteralBytes text = case text of
+  '0':'x':xs -> readBaseBytes 16 xs
+  '0':'X':xs -> readBaseBytes 16 xs
+  '0':xs -> readBaseBytes 8 xs
+  _ -> readBaseBytes 10 text
+
+readBaseBytes :: Int -> String -> [Int]
+readBaseBytes base text = readBaseBytesFrom base zeroByteWord text
+
+readBaseBytesFrom :: Int -> [Int] -> String -> [Int]
+readBaseBytesFrom base bytes text = case text of
+  [] -> bytes
+  c:rest ->
+    if digitValidForBase base c
+    then readBaseBytesFrom base (byteWordMulAdd base (digitValue c) bytes) rest
+    else bytes
+
+digitValidForBase :: Int -> Char -> Bool
+digitValidForBase base c = digitValue c < base
+
+digitValue :: Char -> Int
+digitValue c =
+  if c >= '0' && c <= '9'
+    then fromEnum c - fromEnum '0'
+    else if c >= 'a' && c <= 'f'
+      then 10 + fromEnum c - fromEnum 'a'
+      else if c >= 'A' && c <= 'F'
+        then 10 + fromEnum c - fromEnum 'A'
+        else 99
+
+zeroByteWord :: [Int]
+zeroByteWord = [0,0,0,0,0,0,0,0]
+
+byteWordMulAdd :: Int -> Int -> [Int] -> [Int]
+byteWordMulAdd base digit bytes = takeInts 8 (byteWordAddSmall digit (byteWordMulSmall base bytes))
+
+byteWordMulSmall :: Int -> [Int] -> [Int]
+byteWordMulSmall factor bytes = byteWordMulSmallCarry factor 0 bytes
+
+byteWordMulSmallCarry :: Int -> Int -> [Int] -> [Int]
+byteWordMulSmallCarry factor carry bytes = case bytes of
+  [] -> []
+  byte:rest ->
+    let total = byte * factor + carry
+    in (total `mod` 256) : byteWordMulSmallCarry factor (total `div` 256) rest
+
+byteWordAddSmall :: Int -> [Int] -> [Int]
+byteWordAddSmall addend bytes = byteWordAddSmallCarry addend bytes
+
+byteWordAddSmallCarry :: Int -> [Int] -> [Int]
+byteWordAddSmallCarry carry bytes = case bytes of
+  [] -> []
+  byte:rest ->
+    let total = byte + carry
+    in (total `mod` 256) : byteWordAddSmallCarry (total `div` 256) rest
+
+exceedsSignedInt :: [Int] -> Bool
+exceedsSignedInt bytes = case bytes of
+  _:_:_:b3:b4:b5:b6:b7:_ ->
+    b4 /= 0 || b5 /= 0 || b6 /= 0 || b7 /= 0 || b3 >= 128
+  _ -> False
 
 lowerBinOp :: String -> Maybe BinOp
 lowerBinOp op = case op of

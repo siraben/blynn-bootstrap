@@ -5,6 +5,8 @@ import Ast
 import CompileM
 import Ir
 import Lower
+import LowerBootstrap
+import LowerImplicit
 import RegAlloc
 
 data CodegenError = CodegenError String
@@ -17,13 +19,160 @@ codegenM1 = codegenM1WithDataPrefix "HCC_DATA"
 
 codegenM1WithDataPrefix :: String -> Program -> Either CodegenError String
 codegenM1WithDataPrefix prefix ast = do
-  ir <- mapCompileError (lowerProgramWithDataPrefix prefix ast)
-  codegenModule ir
+  lines' <- codegenM1LinesWithDataPrefix prefix ast
+  pure (renderLineList lines')
 
-codegenModule :: ModuleIr -> Either CodegenError String
-codegenModule (ModuleIr dataItems functions) = do
+codegenM1LinesWithDataPrefix :: String -> Program -> Either CodegenError [String]
+codegenM1LinesWithDataPrefix prefix ast = do
+  ir <- mapCompileError (lowerProgramWithDataPrefix prefix ast)
+  codegenModuleLines ir
+
+codegenM1WriteWithDataPrefix :: ([String] -> IO ()) -> String -> Program -> IO (Either CodegenError ())
+codegenM1WriteWithDataPrefix write = codegenM1WriteTraceWithDataPrefix write (\_ -> pure ())
+
+codegenM1WriteTraceWithDataPrefix :: ([String] -> IO ()) -> (String -> IO ()) -> String -> Program -> IO (Either CodegenError ())
+codegenM1WriteTraceWithDataPrefix write trace prefix (Program decls) = do
+  trace "registering declarations"
+  case mapCompileRun (unCompileM registerBuiltinStructs initialCompileState { csDataPrefix = prefix }) of
+    Left err -> pure (Left err)
+    Right (_, st0) -> do
+      trace "header"
+      write header
+      registered <- registerTopDeclsShallowIO write trace st0 decls
+      case registered of
+        Left err -> pure (Left err)
+        Right st -> codegenTopDeclsWrite write trace st decls
+
+codegenModuleLines :: ModuleIr -> Either CodegenError [String]
+codegenModuleLines (ModuleIr dataItems functions) = do
   bodies <- mapM codegenFunction functions
-  pure (renderLines (linesFromList header . composeLines bodies . composeLines (map (linesFromList . codegenDataItem) dataItems)))
+  pure ((linesFromList header . composeLines bodies . composeLines (map (linesFromList . codegenDataItem) dataItems)) [])
+
+codegenModuleWrite :: ([String] -> IO ()) -> (String -> IO ()) -> ModuleIr -> IO (Either CodegenError ())
+codegenModuleWrite write trace (ModuleIr dataItems functions) = do
+  trace "header"
+  write header
+  codegenDataItemsWrite write trace dataItems
+  codegenFunctionsWrite write trace functions
+
+codegenDataItemsWrite :: ([String] -> IO ()) -> (String -> IO ()) -> [DataItem] -> IO ()
+codegenDataItemsWrite write trace items = case items of
+  [] -> pure ()
+  item:rest -> do
+    codegenDataItemWrite write item
+    codegenDataItemsWrite write trace rest
+
+codegenFunctionsWrite :: ([String] -> IO ()) -> (String -> IO ()) -> [FunctionIr] -> IO (Either CodegenError ())
+codegenFunctionsWrite write trace functions = case functions of
+  [] -> pure (Right ())
+  fn@(FunctionIr name _ _):rest -> do
+    trace ("function " ++ name)
+    case codegenFunction fn of
+      Left err -> pure (Left err)
+      Right builder -> do
+        write (builder [])
+        codegenFunctionsWrite write trace rest
+
+codegenTopDeclsWrite :: ([String] -> IO ()) -> (String -> IO ()) -> CompileState -> [TopDecl] -> IO (Either CodegenError ())
+codegenTopDeclsWrite write trace st decls = case decls of
+  [] -> pure (Right ())
+  Function _ name params body:rest -> do
+    trace ("lower function " ++ name)
+    case mapCompileRun (unCompileM (registerImplicitCalls (paramDeclNames params) body >> lowerFunction name params body) st) of
+      Left err -> pure (Left err)
+      Right (fn, st') -> case codegenFunction fn of
+        Left err -> pure (Left err)
+        Right builder -> do
+          trace ("write function " ++ name)
+          write (builder [])
+          st'' <- flushPendingDataItems write st'
+          codegenTopDeclsWrite write trace st'' rest
+  _:rest -> codegenTopDeclsWrite write trace st rest
+
+registerTopDeclsShallow :: [TopDecl] -> CompileM ()
+registerTopDeclsShallow decls = CompileM $ \st -> registerTopDeclsShallowState st decls
+
+registerTopDeclsShallowState :: CompileState -> [TopDecl] -> Either CompileError ((), CompileState)
+registerTopDeclsShallowState st decls = case decls of
+  [] -> Right ((), st)
+  decl:rest -> case registerTopDeclShallowState st decl of
+    Left err -> Left err
+    Right ((), st') -> registerTopDeclsShallowState st' rest
+
+registerTopDeclShallowState :: CompileState -> TopDecl -> Either CompileError ((), CompileState)
+registerTopDeclShallowState st decl = case decl of
+  Function ty name _ _ ->
+    unCompileM (registerTypeAggregates ty >> bindGlobal name ty >> bindFunction name) st
+  Prototype ty name _ ->
+    unCompileM (registerTypeAggregates ty >> bindGlobal name ty >> bindFunction name) st
+  StructDecl isUnion name fields ->
+    unCompileM (registerFieldAggregates fields >> bindStruct name isUnion fields) st
+  Global ty name initExpr ->
+    unCompileM (registerTypeAggregates ty >> bindGlobal name ty >> globalData ty initExpr >>= addDataItem . DataItem name) st
+  ExternGlobals globals ->
+    unCompileM (registerExternGlobals globals) st
+  Globals globals ->
+    unCompileM (registerGlobals globals) st
+  EnumConstants constants ->
+    unCompileM (registerConstants constants) st
+  _ -> Right ((), st)
+
+registerTopDeclsShallowIO :: ([String] -> IO ()) -> (String -> IO ()) -> CompileState -> [TopDecl] -> IO (Either CodegenError CompileState)
+registerTopDeclsShallowIO write trace st decls = case decls of
+  [] -> pure (Right st)
+  decl:rest -> do
+    trace (registerTopDeclTrace decl)
+    result <- registerTopDeclShallowWriteState write st decl
+    case mapCompileRun result of
+      Left err -> pure (Left err)
+      Right (_, st') -> registerTopDeclsShallowIO write trace st' rest
+
+registerTopDeclShallowWriteState :: ([String] -> IO ()) -> CompileState -> TopDecl -> IO (Either CompileError ((), CompileState))
+registerTopDeclShallowWriteState write st decl = case decl of
+  Global ty name initExpr ->
+    case unCompileM (registerTypeAggregates ty >> bindGlobal name ty >> globalData ty initExpr) st of
+      Left err -> pure (Left err)
+      Right (values, st') -> do
+        codegenDataItemWrite write (DataItem name values)
+        st'' <- flushPendingDataItems write st'
+        pure (Right ((), st''))
+  Globals globals ->
+    registerGlobalsShallowWriteState write st globals
+  _ -> pure (registerTopDeclShallowState st decl)
+
+registerGlobalsShallowWriteState :: ([String] -> IO ()) -> CompileState -> [(CType, String, Maybe Expr)] -> IO (Either CompileError ((), CompileState))
+registerGlobalsShallowWriteState write st globals = case globals of
+  [] -> pure (Right ((), st))
+  (ty, name, initExpr):rest ->
+    case unCompileM (registerTypeAggregates ty >> bindGlobal name ty >> globalData ty initExpr) st of
+      Left err -> pure (Left err)
+      Right (values, st') -> do
+        codegenDataItemWrite write (DataItem name values)
+        st'' <- flushPendingDataItems write st'
+        registerGlobalsShallowWriteState write st'' rest
+
+flushPendingDataItems :: ([String] -> IO ()) -> CompileState -> IO CompileState
+flushPendingDataItems write st = case csDataItems st of
+  [] -> pure st
+  items -> do
+    codegenDataItemsWrite write (\_ -> pure ()) (reverse items)
+    pure st { csDataItems = [] }
+
+registerTopDeclTrace :: TopDecl -> String
+registerTopDeclTrace decl = case decl of
+  Function _ name _ _ -> "register function " ++ name
+  Prototype _ name _ -> "register prototype " ++ name
+  StructDecl _ name _ -> "register struct " ++ name
+  Global _ name _ -> "register global " ++ name
+  ExternGlobals _ -> "register extern globals"
+  Globals _ -> "register globals"
+  EnumConstants _ -> "register enum constants"
+  TypeDecl -> "register typedef"
+
+paramDeclNames :: [Param] -> [String]
+paramDeclNames params = case params of
+  [] -> []
+  Param _ name:rest -> name : paramDeclNames rest
 
 header :: [String]
 header =
@@ -110,6 +259,8 @@ codegenInstr fnName alloc totalSlots instr = case instr of
     pure []
   IConst temp value ->
     storeTemp alloc temp (loadImmediate value)
+  IConstBytes temp bytes ->
+    storeTemp alloc temp (loadImmediateBytes bytes)
   ICopy temp op -> do
     code <- loadOperand alloc op
     storeTemp alloc temp code
@@ -285,6 +436,7 @@ loadOperand alloc = loadOperandWithRspBias alloc 0
 loadOperandWithRspBias :: Allocation -> Int -> Operand -> Either CodegenError [String]
 loadOperandWithRspBias alloc rspBias op = case op of
   OImm value -> Right (loadImmediate value)
+  OImmBytes bytes -> Right (loadImmediateBytes bytes)
   OGlobal name -> Right ["  LOAD_IMMEDIATE_rax &" ++ name]
   OFunction name -> Right ["  LOAD_IMMEDIATE_rax &FUNCTION_" ++ name]
   OTemp temp -> do
@@ -297,9 +449,24 @@ loadImmediate value =
     then ["  LOAD_IMMEDIATE_rax %" ++ show value]
     else ["  HCC_LOAD_IMMEDIATE64_rax " ++ joinWords (map byteHex (word64Bytes value))]
 
+loadImmediateBytes :: [Int] -> [String]
+loadImmediateBytes bytes =
+  ["  HCC_LOAD_IMMEDIATE64_rax " ++ joinWords (map byteHex (takeInts 8 (bytes ++ zeroBytes)))]
+
+zeroBytes :: [Int]
+zeroBytes = 0 : zeroBytes
+
 word64Bytes :: Int -> [Int]
 word64Bytes value = map byte ([0..7] :: [Int]) where
   byte shift = (value `div` (256 ^ shift)) `mod` 256
+
+takeInts :: Int -> [Int] -> [Int]
+takeInts count values =
+  if count <= 0
+    then []
+    else case values of
+      [] -> []
+      value:rest -> value : takeInts (count - 1) rest
 
 loadLocationWithRspBias :: Int -> Location -> Either CodegenError [String]
 loadLocationWithRspBias rspBias loc = case loc of
@@ -336,6 +503,27 @@ codegenDataItem :: DataItem -> [String]
 codegenDataItem (DataItem label values) =
   [":" ++ label, "  " ++ joinWords (map dataValueM1 values), ""]
 
+codegenDataItemWrite :: ([String] -> IO ()) -> DataItem -> IO ()
+codegenDataItemWrite write (DataItem label values) = do
+  write [":" ++ label]
+  codegenDataValuesWrite write 0 [] values
+  write [""]
+
+codegenDataValuesWrite :: ([String] -> IO ()) -> Int -> [String] -> [DataValue] -> IO ()
+codegenDataValuesWrite write count chunk values = case values of
+  [] -> codegenDataChunkWrite write chunk
+  value:rest ->
+    if count >= 16
+      then do
+        codegenDataChunkWrite write chunk
+        codegenDataValuesWrite write 0 [] values
+      else codegenDataValuesWrite write (count + 1) (dataValueM1 value:chunk) rest
+
+codegenDataChunkWrite :: ([String] -> IO ()) -> [String] -> IO ()
+codegenDataChunkWrite write chunk = case chunk of
+  [] -> pure ()
+  _ -> write ["  " ++ joinWords (reverse chunk)]
+
 dataValueM1 :: DataValue -> String
 dataValueM1 value = case value of
   DByte byte -> byteHex byte
@@ -365,9 +553,12 @@ composeLines builders = case builders of
   builder:rest -> builder . composeLines rest
 
 renderLines :: Lines -> String
-renderLines builder = go (builder []) "" where
+renderLines builder = renderLineList (builder [])
+
+renderLineList :: [String] -> String
+renderLineList lines' = go lines' "" where
   go :: [String] -> String -> String
-  go lines' = case lines' of
+  go ls = case ls of
     [] -> id
     text:rest -> (text++) . ('\n':) . go rest
 
@@ -375,6 +566,9 @@ mapCompileError :: Either CompileError a -> Either CodegenError a
 mapCompileError result = case result of
   Left (CompileError msg) -> Left (CodegenError msg)
   Right x -> Right x
+
+mapCompileRun :: Either CompileError a -> Either CodegenError a
+mapCompileRun = mapCompileError
 
 mapAllocError :: Either String a -> Either CodegenError a
 mapAllocError result = case result of

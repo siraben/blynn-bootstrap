@@ -11,6 +11,7 @@ data BlockId = BlockId Int
 data Operand
   = OTemp Temp
   | OImm Int
+  | OImmBytes [Int]
   | OGlobal String
   | OFunction String
   deriving (Eq, Show)
@@ -43,6 +44,7 @@ data Instr
   = IParam Temp Int
   | IAlloca Temp Int
   | IConst Temp Int
+  | IConstBytes Temp [Int]
   | ICopy Temp Operand
   | IAddrOf Temp Temp
   | ILoad64 Temp Operand
@@ -124,6 +126,7 @@ renderInstr instr = case instr of
   IParam temp n -> "IParam " ++ renderTemp temp ++ " " ++ show n
   IAlloca temp n -> "IAlloca " ++ renderTemp temp ++ " " ++ show n
   IConst temp n -> "IConst " ++ renderTemp temp ++ " " ++ show n
+  IConstBytes temp bytes -> "IConstBytes " ++ renderTemp temp ++ " " ++ show bytes
   ICopy temp operand -> "ICopy " ++ renderTemp temp ++ " " ++ renderOperand operand
   IAddrOf dst src -> "IAddrOf " ++ renderTemp dst ++ " " ++ renderTemp src
   ILoad64 temp operand -> "ILoad64 " ++ renderTemp temp ++ " " ++ renderOperand operand
@@ -166,6 +169,7 @@ renderOperand :: Operand -> String
 renderOperand operand = case operand of
   OTemp temp -> "OTemp " ++ renderTemp temp
   OImm n -> "OImm " ++ show n
+  OImmBytes bytes -> "OImmBytes " ++ show bytes
   OGlobal name -> "OGlobal " ++ show name
   OFunction name -> "OFunction " ++ show name
 

@@ -77,20 +77,20 @@
         };
 
         tinycc-boot-hcc = pkgs.callPackage ./nix/tinycc-boot-hcc.nix {
-          hcc = hcc-ghc;
+          hcc = hcc-blynn-debug;
           inherit minimalBootstrap;
           mesLibc = minimalBootstrap.mes-libc;
           m2libc = ./vendor/blynn-compiler/M2libc;
         };
 
         hcc-m1-smoke = pkgs.callPackage ./nix/hcc-m1-smoke.nix {
-          hcc = hcc-ghc;
+          hcc = hcc-blynn-debug;
           inherit minimalBootstrap;
           m2libc = ./vendor/blynn-compiler/M2libc;
         };
 
         hcc-mescc-tests = pkgs.callPackage ./nix/hcc-mescc-tests.nix {
-          hcc = hcc-ghc;
+          hcc = hcc-blynn-debug;
           inherit minimalBootstrap;
           m2libc = ./vendor/blynn-compiler/M2libc;
           mesTests = ./vendor/mes-tests;

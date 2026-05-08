@@ -46,6 +46,8 @@ allocateInstrs nextSlot acc instrs = case instrs of
       allocateStackObject nextSlot acc temp size rest
     IConst temp _ ->
       allocateDef nextSlot acc temp rest
+    IConstBytes temp _ ->
+      allocateDef nextSlot acc temp rest
     ICopy temp _ ->
       allocateDef nextSlot acc temp rest
     IAddrOf temp _ ->

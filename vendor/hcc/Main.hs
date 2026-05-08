@@ -25,6 +25,8 @@ main = do
     "--expand-dump":dumpArgs -> expandDump dumpArgs
     "--parse-dump":files -> parseDump files
     "--ir-dump":files -> irDump files
+    "--lower-check":files -> lowerCheck files
+    "--codegen-check":files -> codegenCheck files
     "--check":files -> checkFiles files
     _ | "-S" `elem` args -> compileAssembly args
     _ -> compileWithCc args
@@ -148,6 +150,30 @@ irDumpFile path = do
     Left msg -> die (path ++ ":" ++ msg)
     Right ir -> hccPutStrLn (renderModuleIr ir)
 
+lowerCheck :: [String] -> IO ()
+lowerCheck files = case files of
+  [] -> die "hcc: no input files"
+  _ -> mapM_ lowerCheckFile files
+
+lowerCheckFile :: String -> IO ()
+lowerCheckFile path = do
+  source <- hccReadFileOrStdin path
+  case preprocessSource source >>= mapParseError . parseProgram >>= mapCompileError . lowerProgram of
+    Left msg -> die (path ++ ":" ++ msg)
+    Right _ -> pure ()
+
+codegenCheck :: [String] -> IO ()
+codegenCheck files = case files of
+  [] -> die "hcc: no input files"
+  _ -> mapM_ codegenCheckFile files
+
+codegenCheckFile :: String -> IO ()
+codegenCheckFile path = do
+  source <- hccReadFileOrStdin path
+  case preprocessSource source >>= mapParseError . parseProgram >>= mapCodegenError . codegenM1WithDataPrefix (dataLabelPrefix path) of
+    Left msg -> die (path ++ ":" ++ msg)
+    Right _ -> pure ()
+
 mapParseError :: Either ParseError a -> Either String a
 mapParseError result = case result of
   Left (ParseError pos msg) -> Left (showPos pos ++ ": " ++ msg)
@@ -175,11 +201,47 @@ compileAssembly args = do
   case assemblyArgs args of
     Left msg -> die msg
     Right opts -> do
+      trace <- hccTraceAsm
+      hccTrace trace "reading source"
       source <- readSourceWithIncludes (asmIncludeDirs opts) (asmDefines opts) (asmInput opts)
       let sourceWithDefines = renderDefines (asmDefines opts) ++ source
-      case preprocessSource sourceWithDefines >>= mapParseError . parseProgram >>= mapCodegenError . codegenM1WithDataPrefix (dataLabelPrefix (asmInput opts)) of
+      hccTrace trace "preprocessing"
+      case preprocessSource sourceWithDefines of
         Left msg -> die (asmInput opts ++ ":" ++ msg)
-        Right asm -> hccWriteFile (asmOutput opts) asm
+        Right toks -> do
+          hccTrace trace "parsing"
+          case mapParseError (parseProgram toks) of
+            Left msg -> die (asmInput opts ++ ":" ++ msg)
+            Right ast -> do
+              hccTrace trace "opening assembly"
+              handle <- hccOpenWriteFile (asmOutput opts)
+              case handle == 0 of
+                True -> die ("hcc: cannot write " ++ asmOutput opts)
+                False -> do
+                  hccTrace trace "writing assembly"
+                  result <- codegenM1WriteTraceWithDataPrefix (hccWriteAndFlushLines handle) (hccTrace trace) (dataLabelPrefix (asmInput opts)) ast
+                  hccClose handle
+                  case result of
+                    Left (CodegenError msg) -> die (asmInput opts ++ ":" ++ msg)
+                    Right _ -> hccTrace trace "done"
+
+hccWriteAndFlushLines :: Int -> [String] -> IO ()
+hccWriteAndFlushLines handle lines' = do
+  hccWriteHandleLines handle lines'
+  hccHandleFlush handle
+
+hccTraceAsm :: IO Bool
+hccTraceAsm = do
+  value <- hccLookupEnv "HCC_TRACE_ASM"
+  case value of
+    Nothing -> pure False
+    Just _ -> pure True
+
+hccTrace :: Bool -> String -> IO ()
+hccTrace enabled msg =
+  if enabled
+    then hccPutErrLine ("hcc: " ++ msg)
+    else pure ()
 
 dataLabelPrefix :: String -> String
 dataLabelPrefix path =

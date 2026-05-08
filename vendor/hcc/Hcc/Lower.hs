@@ -599,7 +599,7 @@ lowerExpr :: Expr -> CompileM ([Instr], Operand)
 lowerExpr expr = case expr of
   EInt text -> do
     temp <- freshTemp
-    pure ([IConst temp (parseInt text)], OTemp temp)
+    pure ([intConstInstr temp text], OTemp temp)
   EChar text -> do
     temp <- freshTemp
     pure ([IConst temp (charValue text)], OTemp temp)
@@ -1049,22 +1049,49 @@ coerceScalar ty op = do
 maskScalar :: Int -> Operand -> CompileM ([Instr], Operand)
 maskScalar size op = do
   out <- freshTemp
-  pure ([IBin out IAnd op (OImm (byteMask size))], OTemp out)
+  pure ([IBin out IAnd op (byteMaskOperand size)], OTemp out)
 
 signExtendScalar :: Int -> Operand -> CompileM ([Instr], Operand)
 signExtendScalar size op = do
   masked <- freshTemp
   flipped <- freshTemp
   out <- freshTemp
-  let signBit = pow2 (size * 8 - 1)
-  pure ( [ IBin masked IAnd op (OImm (byteMask size))
-         , IBin flipped IXor (OTemp masked) (OImm signBit)
-         , IBin out ISub (OTemp flipped) (OImm signBit)
+  let signBit = signBitOperand size
+  pure ( [ IBin masked IAnd op (byteMaskOperand size)
+         , IBin flipped IXor (OTemp masked) signBit
+         , IBin out ISub (OTemp flipped) signBit
          ]
        , OTemp out)
 
 byteMask :: Int -> Int
 byteMask size = pow2 (size * 8) - 1
+
+byteMaskOperand :: Int -> Operand
+byteMaskOperand size =
+  if size >= 4
+  then OImmBytes (byteMaskBytes size)
+  else OImm (byteMask size)
+
+signBitOperand :: Int -> Operand
+signBitOperand size =
+  if size >= 4
+  then OImmBytes (signBitBytes size)
+  else OImm (pow2 (size * 8 - 1))
+
+byteMaskBytes :: Int -> [Int]
+byteMaskBytes size = takeInts 8 (byteOnes size ++ byteZeros)
+
+signBitBytes :: Int -> [Int]
+signBitBytes size = takeInts 8 (byteZerosN (size - 1) ++ [128] ++ byteZeros)
+
+byteOnes :: Int -> [Int]
+byteOnes count = if count <= 0 then [] else 255 : byteOnes (count - 1)
+
+byteZerosN :: Int -> [Int]
+byteZerosN count = if count <= 0 then [] else 0 : byteZerosN (count - 1)
+
+byteZeros :: [Int]
+byteZeros = 0 : byteZeros
 
 copyObject :: Operand -> Operand -> CType -> CompileM [Instr]
 copyObject dst src ty = do

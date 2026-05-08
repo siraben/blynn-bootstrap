@@ -48,6 +48,8 @@ stdenv.mkDerivation {
   buildPhase = ''
     runHook preBuild
 
+    ulimit -s unlimited
+
     tcc_include_src="$PWD/include"
     mes_include_src="${mesLibc}/include"
 

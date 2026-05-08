@@ -13,6 +13,7 @@ foreign import ccall "hcc_open_write" hccOpenWrite :: IO Int
 foreign import ccall "hcc_handle_eof" hccHandleEof :: Int -> IO Int
 foreign import ccall "hcc_handle_read_char" hccHandleReadChar :: Int -> IO Char
 foreign import ccall "hcc_handle_write_char" hccHandleWriteChar :: Int -> Char -> IO ()
+foreign import ccall "hcc_handle_flush" hccHandleFlush :: Int -> IO ()
 foreign import ccall "hcc_close" hccClose :: Int -> IO ()
 foreign import ccall "hcc_lookup_env" hccLookupEnvRaw :: IO Int
 foreign import ccall "hcc_find_executable" hccFindExecutableRaw :: IO Int
@@ -72,8 +73,23 @@ hccWriteFileBuffered path text = do
   case handle == 0 of
     True -> hccPutErrLine ("hcc: cannot write " ++ path) >> hccExitFailure
     False -> do
-      mapM_ (hccHandleWriteChar handle) text
+      hccWriteHandleText handle text
       hccClose handle
+
+hccWriteLinesFile :: String -> [String] -> IO ()
+hccWriteLinesFile path lines' = withBuffer path (hccWriteLinesFileBuffered path lines')
+
+hccWriteLinesFileBuffered :: String -> [String] -> IO ()
+hccWriteLinesFileBuffered path lines' = do
+  handle <- hccOpenWrite
+  case handle == 0 of
+    True -> hccPutErrLine ("hcc: cannot write " ++ path) >> hccExitFailure
+    False -> do
+      hccWriteHandleLines handle lines'
+      hccClose handle
+
+hccOpenWriteFile :: String -> IO Int
+hccOpenWriteFile path = withBuffer path hccOpenWrite
 
 hccLookupEnv :: String -> IO (Maybe String)
 hccLookupEnv name = withBuffer name hccLookupEnvBuffered
@@ -166,6 +182,19 @@ readResult = do
       c <- hccResultChar
       rest <- readResult
       pure (c:rest)
+
+hccWriteHandleText :: Int -> String -> IO ()
+hccWriteHandleText handle text = case text of
+  [] -> pure ()
+  c:rest -> hccHandleWriteChar handle c >> hccWriteHandleText handle rest
+
+hccWriteHandleLines :: Int -> [String] -> IO ()
+hccWriteHandleLines handle lines' = case lines' of
+  [] -> pure ()
+  line:rest -> do
+    hccWriteHandleText handle line
+    hccHandleWriteChar handle '\n'
+    hccWriteHandleLines handle rest
 
 pushProcessArg :: String -> IO ()
 pushProcessArg arg = withBuffer arg hccProcessPush

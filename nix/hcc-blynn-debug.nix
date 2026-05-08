@@ -46,6 +46,8 @@ stdenv.mkDerivation {
       > hcc-full.hs
 
     ${blynn-precisely-debug-ghc}/bin/precisely_up < hcc-full.hs > hcc-blynn.c
+    sed -i -E 's/enum\{TOP=[0-9]+\};/enum{TOP=536870912};/' hcc-blynn.c
+    grep -q 'enum{TOP=536870912};' hcc-blynn.c
     $CC -O2 hcc-blynn.c cbits/hcc_runtime.c -o hcc
 
     ./hcc --lex-dump test/lexer-smoke.c >/dev/null
