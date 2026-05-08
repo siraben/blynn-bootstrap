@@ -2,9 +2,11 @@ module SymbolTable where
 
 import Base
 
+data Color = Red | Black
+
 data Tree a
   = Empty
-  | Branch String a (Tree a) (Tree a)
+  | Branch Color String (Maybe a) (Tree a) (Tree a)
 
 data SymbolMap a = SymbolMap (Tree a)
 
@@ -49,42 +51,65 @@ symbolSetDelete key (SymbolSet tree) = SymbolSet (treeDelete key tree)
 treeLookup :: String -> Tree a -> Maybe a
 treeLookup key tree = case tree of
   Empty -> Nothing
-  Branch name value left right -> case compareString key name of
+  Branch _ name value left right -> case compareString key name of
     IsLess -> treeLookup key left
-    IsEqual -> Just value
+    IsEqual -> value
     IsGreater -> treeLookup key right
 
 treeInsert :: String -> a -> Tree a -> Tree a
-treeInsert key value tree = case tree of
-  Empty -> Branch key value Empty Empty
-  Branch name old left right -> case compareString key name of
-    IsLess -> Branch name old (treeInsert key value left) right
-    IsEqual -> Branch key value left right
-    IsGreater -> Branch name old left (treeInsert key value right)
+treeInsert key value tree = treeInsertValue key (Just value) tree
 
 treeDelete :: String -> Tree a -> Tree a
-treeDelete key tree = case tree of
+treeDelete key tree = treeInsertValue key Nothing tree
+
+treeInsertValue :: String -> Maybe a -> Tree a -> Tree a
+treeInsertValue key value tree = blacken (insert tree) where
+  insert current = case current of
+    Empty -> Branch Red key value Empty Empty
+    Branch color name old left right -> case compareString key name of
+      IsLess -> balance color name old (insert left) right
+      IsEqual -> Branch color key value left right
+      IsGreater -> balance color name old left (insert right)
+
+blacken :: Tree a -> Tree a
+blacken tree = case tree of
   Empty -> Empty
-  Branch name value left right -> case compareString key name of
-    IsLess -> Branch name value (treeDelete key left) right
-    IsEqual -> mergeTrees left right
-    IsGreater -> Branch name value left (treeDelete key right)
+  Branch _ name value left right -> Branch Black name value left right
 
-mergeTrees :: Tree a -> Tree a -> Tree a
-mergeTrees left right = case (left, right) of
-  (Empty, _) -> right
-  (_, Empty) -> left
-  _ ->
-    let (name, value, right') = removeMin right
-    in Branch name value left right'
+balance :: Color -> String -> Maybe a -> Tree a -> Tree a -> Tree a
+balance color name value left right = case color of
+  Red -> Branch Red name value left right
+  Black -> balanceBlack name value left right
 
-removeMin :: Tree a -> (String, a, Tree a)
-removeMin tree = case tree of
-  Empty -> error "removeMin on empty tree"
-  Branch name value Empty right -> (name, value, right)
-  Branch name value left right ->
-    let (minName, minValue, left') = removeMin left
-    in (minName, minValue, Branch name value left' right)
+balanceBlack :: String -> Maybe a -> Tree a -> Tree a -> Tree a
+balanceBlack name value left right = case left of
+  Branch Red lname lvalue lleft lright -> case lleft of
+    Branch Red llname llvalue llleft llright ->
+      Branch Red lname lvalue
+        (Branch Black llname llvalue llleft llright)
+        (Branch Black name value lright right)
+    _ -> case lright of
+      Branch Red lrname lrvalue lrleft lrright ->
+        Branch Red lrname lrvalue
+          (Branch Black lname lvalue lleft lrleft)
+          (Branch Black name value lrright right)
+      _ -> balanceBlackRight name value left right
+  _ -> balanceBlackRight name value left right
+
+balanceBlackRight :: String -> Maybe a -> Tree a -> Tree a -> Tree a
+balanceBlackRight name value left right = case right of
+  Branch Red rname rvalue rleft rright -> case rleft of
+    Branch Red rlname rlvalue rlleft rlright ->
+      Branch Red rlname rlvalue
+        (Branch Black name value left rlleft)
+        (Branch Black rname rvalue rlright rright)
+    _ -> case rright of
+      Branch Red rrname rrvalue rrleft rrright ->
+        Branch Red rname rvalue
+          (Branch Black name value left rleft)
+          (Branch Black rrname rrvalue rrleft rrright)
+      _ -> Branch Black name value left right
+  _ -> Branch Black name value left right
 
 data Comparison
   = IsLess

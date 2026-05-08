@@ -343,6 +343,45 @@ nix build .#hcc-ghc-precisely-stdenv --no-link --print-out-paths
 nix build .#tinycc-boot-hcc-host-ghc-native --no-link --print-out-paths
 ```
 
+## Pass 9: Red-black symbol table and CompileM maps
+
+Goal: make the handrolled map structure appropriate for exact string-key lookup. Finger trees are not appropriate for these maps; the hot operations are lookup/insert/delete by symbol, not sequence append/split or measured range queries.
+
+Changes:
+
+- Replaced the plain `SymbolTable` binary search tree with an Okasaki-style red-black tree.
+- Kept delete bootstrappable by inserting tombstones rather than implementing full red-black deletion.
+- Changed `CompileM` state from association lists to `SymbolMap`/`SymbolSet` for vars, structs, globals, constants, functions, and labels.
+
+Profile on the same `tcc.i`:
+
+```text
+hcc1 -S -o tcc.M1 tcc.i +RTS -p -s -RTS
+tcc.M1 byte-identical to previous output
+
+profiled elapsed: 8.71s -> 9.67s
+RTS allocated: 17,994,320,120 -> 15,852,732,416 bytes
+bytes copied during GC: 2,424,797,616 -> 2,176,160,048
+max residency: ~116 MB unchanged
+```
+
+Top lookup result:
+
+```text
+lookupConstant, lookupGlobalType, and lookupFunction are no longer top cost centres.
+SymbolTable.compareString is the only symbol-table cost in the top set at 1.2% time and 0.0% allocation.
+FingerTree remains hot: rangeContains 7.9% time / 9.9% alloc, lookupNodeWith 1.6% time / 8.8% alloc.
+```
+
+Validation:
+
+```text
+nix build .#hcc-host-ghc-native --no-link --print-out-paths
+nix build .#hcc-ghc-precisely-stdenv --no-link --print-out-paths
+nix build .#tinycc-boot-hcc-host-ghc-native --no-link --print-out-paths
+nix build .#hcc-profile-host-ghc-native --no-link --print-out-paths
+```
+
 Validation:
 
 ```text

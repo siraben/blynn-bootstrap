@@ -3,6 +3,7 @@ module CompileM where
 import Base
 import Ast
 import Ir
+import SymbolTable
 
 data CompileError = CompileError String
 
@@ -11,12 +12,12 @@ data CompileState = CompileState
   , csNextBlock :: Int
   , csNextLabel :: Int
   , csDataPrefix :: String
-  , csVars :: [(String, (Temp, CType))]
-  , csStructs :: [(String, (Bool, [Field]))]
-  , csGlobals :: [(String, CType)]
-  , csConstants :: [(String, Int)]
-  , csFunctions :: [String]
-  , csLabels :: [(String, BlockId)]
+  , csVars :: SymbolMap (Temp, CType)
+  , csStructs :: SymbolMap (Bool, [Field])
+  , csGlobals :: SymbolMap CType
+  , csConstants :: SymbolMap Int
+  , csFunctions :: SymbolSet
+  , csLabels :: SymbolMap BlockId
   , csDataItems :: [DataItem]
   , csBreakTargets :: [BlockId]
   , csContinueTargets :: [BlockId]
@@ -51,12 +52,12 @@ initialCompileState = CompileState
   , csNextBlock = 0
   , csNextLabel = 0
   , csDataPrefix = "HCC_DATA"
-  , csVars = []
-  , csStructs = []
-  , csGlobals = []
-  , csConstants = []
-  , csFunctions = []
-  , csLabels = []
+  , csVars = symbolMapEmpty
+  , csStructs = symbolMapEmpty
+  , csGlobals = symbolMapEmpty
+  , csConstants = symbolMapEmpty
+  , csFunctions = symbolSetEmpty
+  , csLabels = symbolMapEmpty
   , csDataItems = []
   , csBreakTargets = []
   , csContinueTargets = []
@@ -113,70 +114,50 @@ getDataItems = CompileM $ \st -> Right (reverse (csDataItems st), st)
 
 bindVar :: String -> Temp -> CType -> CompileM ()
 bindVar name temp ty = CompileM $ \st ->
-  Right ((), st { csVars = (name, (temp, ty)) : remove name (csVars st) })
-  where
-    remove key vars = case vars of
-      [] -> []
-      (k, v):rest | k == key -> remove key rest
-                  | otherwise -> (k, v) : remove key rest
+  Right ((), st { csVars = symbolMapInsert name (temp, ty) (csVars st) })
 
 bindStruct :: String -> Bool -> [Field] -> CompileM ()
 bindStruct name isUnion fields = CompileM $ \st ->
-  Right ((), st { csStructs = (name, (isUnion, fields)) : remove name (csStructs st) })
-  where
-    remove key structs = case structs of
-      [] -> []
-      (k, v):rest | k == key -> remove key rest
-                  | otherwise -> (k, v) : remove key rest
+  Right ((), st { csStructs = symbolMapInsert name (isUnion, fields) (csStructs st) })
 
 bindGlobal :: String -> CType -> CompileM ()
 bindGlobal name ty = CompileM $ \st ->
-  Right ((), st { csGlobals = (name, ty) : remove name (csGlobals st) })
-  where
-    remove key globals = case globals of
-      [] -> []
-      (k, v):rest | k == key -> remove key rest
-                  | otherwise -> (k, v) : remove key rest
+  Right ((), st { csGlobals = symbolMapInsert name ty (csGlobals st) })
 
 bindConstant :: String -> Int -> CompileM ()
 bindConstant name value = CompileM $ \st ->
-  Right ((), st { csConstants = (name, value) : remove name (csConstants st) })
-  where
-    remove key constants = case constants of
-      [] -> []
-      (k, v):rest | k == key -> remove key rest
-                  | otherwise -> (k, v) : remove key rest
+  Right ((), st { csConstants = symbolMapInsert name value (csConstants st) })
 
 bindFunction :: String -> CompileM ()
 bindFunction name = CompileM $ \st ->
-  Right ((), st { csFunctions = name : filter (/= name) (csFunctions st) })
+  Right ((), st { csFunctions = symbolSetInsert name (csFunctions st) })
 
 lookupVar :: String -> CompileM Temp
-lookupVar name = CompileM $ \st -> case lookup name (csVars st) of
+lookupVar name = CompileM $ \st -> case symbolMapLookup name (csVars st) of
   Just (temp, _) -> Right (temp, st)
   Nothing -> Left (CompileError ("unbound variable: " ++ name))
 
 lookupVarMaybe :: String -> CompileM (Maybe Temp)
-lookupVarMaybe name = CompileM $ \st -> Right (fmap fst (lookup name (csVars st)), st)
+lookupVarMaybe name = CompileM $ \st -> Right (fmap fst (symbolMapLookup name (csVars st)), st)
 
 lookupVarType :: String -> CompileM (Maybe CType)
-lookupVarType name = CompileM $ \st -> Right (fmap snd (lookup name (csVars st)), st)
+lookupVarType name = CompileM $ \st -> Right (fmap snd (symbolMapLookup name (csVars st)), st)
 
 lookupGlobalType :: String -> CompileM (Maybe CType)
-lookupGlobalType name = CompileM $ \st -> Right (lookup name (csGlobals st), st)
+lookupGlobalType name = CompileM $ \st -> Right (symbolMapLookup name (csGlobals st), st)
 
 lookupConstant :: String -> CompileM (Maybe Int)
-lookupConstant name = CompileM $ \st -> Right (lookup name (csConstants st), st)
+lookupConstant name = CompileM $ \st -> Right (symbolMapLookup name (csConstants st), st)
 
 lookupFunction :: String -> CompileM Bool
-lookupFunction name = CompileM $ \st -> Right (name `elem` csFunctions st, st)
+lookupFunction name = CompileM $ \st -> Right (symbolSetMember name (csFunctions st), st)
 
 lookupStruct :: String -> CompileM (Maybe (Bool, [Field]))
-lookupStruct name = CompileM $ \st -> Right (lookup name (csStructs st), st)
+lookupStruct name = CompileM $ \st -> Right (symbolMapLookup name (csStructs st), st)
 
 withFunctionScope :: CompileM a -> CompileM a
 withFunctionScope action = CompileM $ \st ->
-  case unCompileM action st { csVars = [], csLabels = [], csBreakTargets = [], csContinueTargets = [] } of
+  case unCompileM action st { csVars = symbolMapEmpty, csLabels = symbolMapEmpty, csBreakTargets = [], csContinueTargets = [] } of
     Left err -> Left err
     Right (x, st') -> Right (x, st'
       { csVars = csVars st
@@ -216,9 +197,9 @@ currentContinueTarget :: CompileM (Maybe BlockId)
 currentContinueTarget = CompileM $ \st -> Right (case csContinueTargets st of [] -> Nothing; x:_ -> Just x, st)
 
 labelBlock :: String -> CompileM BlockId
-labelBlock name = CompileM $ \st -> case lookup name (csLabels st) of
+labelBlock name = CompileM $ \st -> case symbolMapLookup name (csLabels st) of
   Just bid -> Right (bid, st)
   Nothing ->
     let n = csNextBlock st
         bid = BlockId n
-    in Right (bid, st { csNextBlock = n + 1, csLabels = (name, bid) : csLabels st })
+    in Right (bid, st { csNextBlock = n + 1, csLabels = symbolMapInsert name bid (csLabels st) })
