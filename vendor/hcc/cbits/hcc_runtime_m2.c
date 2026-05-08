@@ -15,17 +15,13 @@ static unsigned result_len;
 static unsigned result_cap;
 static unsigned result_pos;
 
-static FILE *handles[HCC_MAX_HANDLES];
-static int *iarrays[HCC_MAX_IARRAYS];
+static unsigned handles[HCC_MAX_HANDLES];
+static unsigned iarrays[HCC_MAX_IARRAYS];
 static int iarray_lens[HCC_MAX_IARRAYS];
-
-struct hcc_obuf {
-  char *data;
-  unsigned len;
-  unsigned cap;
-};
-
-static struct hcc_obuf *obufs[HCC_MAX_OBUFS];
+static unsigned obuf_data[HCC_MAX_OBUFS];
+static unsigned obuf_len[HCC_MAX_OBUFS];
+static unsigned obuf_cap[HCC_MAX_OBUFS];
+static int obuf_used[HCC_MAX_OBUFS];
 
 static void *hcc_alloc(unsigned size)
 {
@@ -42,7 +38,8 @@ static void *hcc_realloc(void *ptr, unsigned old_size, unsigned new_size)
   char *out = hcc_alloc(new_size);
   char *in = ptr;
   unsigned i = 0;
-  while (i < old_size && i < new_size) {
+  while (i < old_size) {
+    if (i >= new_size) return out;
     out[i] = in[i];
     i = i + 1;
   }
@@ -162,7 +159,7 @@ static int alloc_handle(FILE *file)
   if (!file) return 0;
   while (i < HCC_MAX_HANDLES) {
     if (!handles[i]) {
-      handles[i] = file;
+      handles[i] = (unsigned)file;
       return i + 1;
     }
     i = i + 1;
@@ -173,9 +170,11 @@ static int alloc_handle(FILE *file)
 
 static FILE *get_handle(int handle)
 {
+  unsigned file;
   if (handle <= 0) return 0;
   if (handle > HCC_MAX_HANDLES) return 0;
-  return handles[handle - 1];
+  file = handles[handle - 1];
+  return file;
 }
 
 int hcc_open_read(void)
@@ -227,80 +226,93 @@ void hcc_handle_flush(int handle)
   if (file) fflush(file);
 }
 
-static unsigned long alloc_obuf(struct hcc_obuf *out)
+static int obuf_index(unsigned long handle)
+{
+  if (!handle) return -1;
+  if (handle > HCC_MAX_OBUFS) return -1;
+  if (!obuf_used[handle - 1]) return -1;
+  return handle - 1;
+}
+
+static unsigned long alloc_obuf(void)
 {
   int i = 0;
-  if (!out) return 0;
   while (i < HCC_MAX_OBUFS) {
-    if (!obufs[i]) {
-      obufs[i] = out;
+    if (!obuf_used[i]) {
+      obuf_used[i] = 1;
+      obuf_data[i] = 0;
+      obuf_len[i] = 0;
+      obuf_cap[i] = 0;
       return i + 1;
     }
     i = i + 1;
   }
-  free(out->data);
-  free(out);
   return 0;
 }
 
 unsigned long hcc_obuf_new(int initial_cap)
 {
-  struct hcc_obuf *out = hcc_alloc(sizeof(struct hcc_obuf));
   unsigned cap = initial_cap;
+  unsigned long handle;
+  int ix;
   if (!cap) cap = 64;
-  out->data = hcc_alloc(cap);
-  out->len = 0;
-  out->cap = cap;
-  return alloc_obuf(out);
-}
-
-static struct hcc_obuf *get_obuf(unsigned long handle)
-{
+  handle = alloc_obuf();
   if (!handle) return 0;
-  if (handle > HCC_MAX_OBUFS) return 0;
-  return obufs[handle - 1];
+  ix = handle - 1;
+  obuf_data[ix] = (unsigned)hcc_alloc(cap);
+  obuf_cap[ix] = cap;
+  return handle;
 }
 
 void hcc_obuf_free(unsigned long handle)
 {
-  struct hcc_obuf *out = get_obuf(handle);
-  if (!out) return;
-  free(out->data);
-  free(out);
-  obufs[handle - 1] = 0;
+  int ix = obuf_index(handle);
+  char *data;
+  if (ix < 0) return;
+  data = obuf_data[ix];
+  free(data);
+  obuf_data[ix] = 0;
+  obuf_len[ix] = 0;
+  obuf_cap[ix] = 0;
+  obuf_used[ix] = 0;
 }
 
 void hcc_obuf_clear(unsigned long handle)
 {
-  struct hcc_obuf *out = get_obuf(handle);
-  if (!out) return;
-  out->len = 0;
+  int ix = obuf_index(handle);
+  if (ix < 0) return;
+  obuf_len[ix] = 0;
 }
 
 int hcc_obuf_len(unsigned long handle)
 {
-  struct hcc_obuf *out = get_obuf(handle);
-  if (!out) return 0;
-  return out->len;
+  int ix = obuf_index(handle);
+  if (ix < 0) return 0;
+  return obuf_len[ix];
 }
 
 void hcc_obuf_put(unsigned long handle, int c)
 {
-  struct hcc_obuf *out = get_obuf(handle);
-  if (!out) return;
-  ensure_chars(&out->data, &out->cap, out->len + 1);
-  out->data[out->len] = c;
-  out->len = out->len + 1;
+  int ix = obuf_index(handle);
+  char *data;
+  if (ix < 0) return;
+  data = obuf_data[ix];
+  ensure_chars(&data, &obuf_cap[ix], obuf_len[ix] + 1);
+  obuf_data[ix] = (unsigned)data;
+  data[obuf_len[ix]] = c;
+  obuf_len[ix] = obuf_len[ix] + 1;
 }
 
 void hcc_obuf_write(int handle, unsigned long obuf_handle)
 {
   FILE *file = get_handle(handle);
-  struct hcc_obuf *out = get_obuf(obuf_handle);
+  int ix = obuf_index(obuf_handle);
+  char *data;
   if (!file) return;
-  if (!out) return;
-  if (!out->len) return;
-  fwrite(out->data, 1, out->len, file);
+  if (ix < 0) return;
+  if (!obuf_len[ix]) return;
+  data = obuf_data[ix];
+  fwrite(data, 1, obuf_len[ix], file);
 }
 
 void hcc_close(int handle)
@@ -367,7 +379,7 @@ int hcc_iarray_new(int size, int initial)
         values[j] = initial;
         j = j + 1;
       }
-      iarrays[i] = values;
+      iarrays[i] = (unsigned)values;
       iarray_lens[i] = size;
       return i + 1;
     }
@@ -379,23 +391,27 @@ int hcc_iarray_new(int size, int initial)
 int hcc_iarray_read(int ident, int index)
 {
   int slot;
+  int *values;
   if (ident <= 0) return 0;
   if (ident > HCC_MAX_IARRAYS) return 0;
   slot = ident - 1;
   if (!iarrays[slot]) return 0;
   if (index < 0) return 0;
   if (index >= iarray_lens[slot]) return 0;
-  return iarrays[slot][index];
+  values = iarrays[slot];
+  return values[index];
 }
 
 void hcc_iarray_write(int ident, int index, int value)
 {
   int slot;
+  int *values;
   if (ident <= 0) return;
   if (ident > HCC_MAX_IARRAYS) return;
   slot = ident - 1;
   if (!iarrays[slot]) return;
   if (index < 0) return;
   if (index >= iarray_lens[slot]) return;
-  iarrays[slot][index] = value;
+  values = iarrays[slot];
+  values[index] = value;
 }
