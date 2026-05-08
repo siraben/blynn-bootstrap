@@ -75,32 +75,97 @@
           src = ./vendor/hcc;
         };
 
-        hcc-blynn-debug = pkgs.callPackage ./nix/hcc-blynn-debug.nix {
-          inherit blynn-precisely-debug-ghc;
-          src = ./vendor/hcc;
-          blynnSrc = ./vendor/blynn-compiler/upstream;
+        hccFromBlynn = {
+          pname,
+          precisely,
+          cCompiler,
+        }:
+          pkgs.callPackage ./nix/hcc-blynn.nix ({
+            inherit pname precisely;
+            src = ./vendor/hcc;
+            blynnSrc = ./vendor/blynn-compiler/upstream;
+            shareName = pname;
+          } // cCompiler);
+
+        hccCCompilers = {
+          stdenv = {
+            mkDerivation = pkgs.stdenv.mkDerivation;
+            runtimeFile = "cbits/hcc_runtime.c";
+            compileCommand = "$CC -O2 hcc-blynn.c cbits/hcc_runtime.c -o hcc";
+            top = 536870912;
+            description = "HCC compiled from Blynn output by the normal stdenv C toolchain";
+          };
+
+          m2 = {
+            mkDerivation = pkgs.stdenvNoCC.mkDerivation;
+            nativeBuildInputs = [
+              minimalBootstrap.stage0-posix.mescc-tools
+            ];
+            runtimeFile = "cbits/hcc_runtime_m2.c";
+            compileCommand = ''
+              M2-Mesoplanet --operating-system "$M2_OS" --architecture "$M2_ARCH" \
+                -f hcc-blynn.c \
+                -f cbits/hcc_runtime_m2.c \
+                -o hcc
+              chmod 555 hcc
+            '';
+            top = 134217728;
+            m2Arch = minimalBootstrap.stage0-posix.m2libcArch;
+            m2Os = minimalBootstrap.stage0-posix.m2libcOS;
+            description = "HCC compiled from Blynn output by stage0 M2-Mesoplanet";
+            metaPlatforms = [ "x86_64-linux" ];
+          };
         };
 
-        hcc-blynn-stage0 = pkgs.callPackage ./nix/hcc-blynn-stage0.nix {
-          inherit blynn-precisely minimalBootstrap;
-          src = ./vendor/hcc;
-          blynnSrc = ./vendor/blynn-compiler/upstream;
+        hccMatrix = {
+          ghc-ghc = hcc-ghc;
+
+          precisely-ghc-stdenv = hccFromBlynn {
+            pname = "hcc-blynn-debug";
+            precisely = blynn-precisely-debug-ghc;
+            cCompiler = hccCCompilers.stdenv // {
+              description = "HCC compiled by the GHC-built Blynn precisely debug compiler and stdenv C";
+            };
+          };
+
+          precisely-stage0-m2 = hccFromBlynn {
+            pname = "hcc-blynn-stage0";
+            precisely = blynn-precisely;
+            cCompiler = hccCCompilers.m2 // {
+              description = "HCC compiled by the stage0-built Blynn precisely and M2-Mesoplanet";
+            };
+          };
+
+          precisely-stage0-stdenv = hccFromBlynn {
+            pname = "hcc-blynn-stage0-stdenv";
+            precisely = blynn-precisely;
+            cCompiler = hccCCompilers.stdenv // {
+              description = "HCC compiled by the stage0-built Blynn precisely and stdenv C";
+            };
+          };
         };
 
-        tinycc-boot-hcc = pkgs.callPackage ./nix/tinycc-boot-hcc.nix {
-          hcc = hcc-blynn-stage0;
-          inherit minimalBootstrap;
+        hcc-blynn-debug = hccMatrix.precisely-ghc-stdenv;
+        hcc-blynn-stage0 = hccMatrix.precisely-stage0-m2;
+        hcc-blynn-stage0-stdenv = hccMatrix.precisely-stage0-stdenv;
+
+        tinyccWithHcc = pname: hcc: pkgs.callPackage ./nix/tinycc-boot-hcc.nix {
+          inherit pname hcc minimalBootstrap;
           mesLibc = minimalBootstrap.mes-libc;
           m2libc = ./vendor/blynn-compiler/M2libc;
         };
 
-        tinycc-boot-hcc-ghc = pkgs.callPackage ./nix/tinycc-boot-hcc.nix {
-          pname = "tinycc-boot-hcc-ghc";
-          hcc = hcc-ghc;
-          inherit minimalBootstrap;
-          mesLibc = minimalBootstrap.mes-libc;
-          m2libc = ./vendor/blynn-compiler/M2libc;
+        tinyccMatrix = {
+          hcc-ghc = tinyccWithHcc "tinycc-boot-hcc-ghc" hccMatrix.ghc-ghc;
+          hcc-precisely-ghc-stdenv = tinyccWithHcc "tinycc-boot-hcc-blynn-debug" hccMatrix.precisely-ghc-stdenv;
+          hcc-precisely-stage0-m2 = tinyccWithHcc "tinycc-boot-hcc" hccMatrix.precisely-stage0-m2;
+          hcc-precisely-stage0-stdenv = tinyccWithHcc "tinycc-boot-hcc-stage0-stdenv" hccMatrix.precisely-stage0-stdenv;
         };
+
+        tinycc-boot-hcc = tinyccMatrix.hcc-precisely-stage0-m2;
+        tinycc-boot-hcc-ghc = tinyccMatrix.hcc-ghc;
+        tinycc-boot-hcc-blynn-debug = tinyccMatrix.hcc-precisely-ghc-stdenv;
+        tinycc-boot-hcc-stage0-stdenv = tinyccMatrix.hcc-precisely-stage0-stdenv;
 
         hcc-m1-smoke = pkgs.callPackage ./nix/hcc-m1-smoke.nix {
           hcc = hcc-blynn-stage0;
@@ -122,9 +187,15 @@
         };
       in {
         packages = {
-          inherit blynn-compiler blynn-precisely blynn-precisely-stdenv blynn-precisely-debug-ghc hcc-ghc hcc-ghc-profile hcc-blynn-debug hcc-blynn-stage0 hcc-m1-smoke hcc-mescc-tests mutable-io-proof tinycc-boot-hcc tinycc-boot-hcc-ghc;
+          inherit blynn-compiler blynn-precisely blynn-precisely-stdenv blynn-precisely-debug-ghc hcc-ghc hcc-ghc-profile hcc-blynn-debug hcc-blynn-stage0 hcc-blynn-stage0-stdenv hcc-m1-smoke hcc-mescc-tests mutable-io-proof tinycc-boot-hcc tinycc-boot-hcc-ghc tinycc-boot-hcc-blynn-debug tinycc-boot-hcc-stage0-stdenv;
           default = blynn-precisely;
-        };
+        } // pkgs.lib.mapAttrs' (name: value: {
+          name = "hcc-matrix-${name}";
+          inherit value;
+        }) hccMatrix // pkgs.lib.mapAttrs' (name: value: {
+          name = "tinycc-matrix-${name}";
+          inherit value;
+        }) tinyccMatrix;
 
         apps.blynn-precisely-stdenv = {
           type = "app";

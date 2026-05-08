@@ -1,19 +1,29 @@
 {
-  stdenv,
   lib,
-  blynn-precisely-debug-ghc,
+  mkDerivation,
+  pname,
+  precisely,
   src,
   blynnSrc,
+  compileCommand,
+  runtimeFile,
+  top,
+  shareName ? pname,
+  nativeBuildInputs ? [],
+  m2Arch ? null,
+  m2Os ? null,
+  description,
+  metaPlatforms ? lib.platforms.linux,
 }:
 
-stdenv.mkDerivation {
-  pname = "hcc-blynn-debug";
+mkDerivation ({
+  inherit pname src nativeBuildInputs;
   version = "0-unstable-2026-05-06";
-
-  inherit src;
 
   buildPhase = ''
     runHook preBuild
+
+    ulimit -s unlimited
 
     cat \
       ${blynnSrc}/inn/BasePrecisely.hs \
@@ -46,10 +56,11 @@ stdenv.mkDerivation {
       Main.hs \
       > hcc-full.hs
 
-    ${blynn-precisely-debug-ghc}/bin/precisely_up < hcc-full.hs > hcc-blynn.c
-    sed -i -E 's/enum\{TOP=[0-9]+\};/enum{TOP=536870912};/' hcc-blynn.c
-    grep -q 'enum{TOP=536870912};' hcc-blynn.c
-    $CC -O2 hcc-blynn.c cbits/hcc_runtime.c -o hcc
+    ${precisely}/bin/precisely_up < hcc-full.hs > hcc-blynn.c
+    sed -i -E 's/enum\{TOP=[0-9]+\};/enum{TOP=${toString top}};/' hcc-blynn.c
+    grep -q 'enum{TOP=${toString top}};' hcc-blynn.c
+
+    ${compileCommand}
 
     ./hcc --check test/parse-smoke.c
     ./hcc --expand-dump test/pp-smoke.c >/dev/null
@@ -61,14 +72,18 @@ stdenv.mkDerivation {
   installPhase = ''
     runHook preInstall
     install -Dm555 hcc $out/bin/hcc
-    install -Dm644 hcc-blynn.c $out/share/hcc-blynn-debug/hcc-blynn.c
-    install -Dm644 hcc-full.hs $out/share/hcc-blynn-debug/hcc-full.hs
+    install -Dm644 hcc-blynn.c $out/share/${shareName}/hcc-blynn.c
+    install -Dm644 hcc-full.hs $out/share/${shareName}/hcc-full.hs
+    install -Dm644 ${runtimeFile} $out/share/${shareName}/hcc-runtime.c
     runHook postInstall
   '';
 
-  meta = with lib; {
-    description = "HCC compiled by the GHC-built Blynn precisely debug compiler";
-    license = licenses.gpl3Only;
-    platforms = platforms.linux;
+  meta = {
+    inherit description;
+    platforms = metaPlatforms;
+    license = lib.licenses.gpl3Only;
   };
-}
+} // lib.optionalAttrs (m2Arch != null) {
+  M2_ARCH = m2Arch;
+  M2_OS = m2Os;
+})
