@@ -514,9 +514,14 @@ codegenBlocks fnName alloc totalSlots blocks = case blocks of
   [] -> pure id
   BasicBlock bid instrs term:rest -> do
     body <- codegenInstrs fnName alloc totalSlots instrs
-    termCode <- codegenTerminator fnName alloc totalSlots term
+    termCode <- codegenTerminator fnName alloc totalSlots (nextBlockId rest) term
     tailCode <- codegenBlocks fnName alloc totalSlots rest
     pure (linesFromList (blockLabel fnName bid) . body . linesFromList termCode . tailCode)
+
+nextBlockId :: [BasicBlock] -> Maybe BlockId
+nextBlockId blocks = case blocks of
+  [] -> Nothing
+  BasicBlock bid _ _: _ -> Just bid
 
 blockLabel :: String -> BlockId -> [String]
 blockLabel _ (BlockId 0) = []
@@ -604,9 +609,7 @@ codegenInstr fnName alloc totalSlots instr = case instr of
     falseStore <- storeTemp alloc temp falseLoad
     pure ( condCode [] ++ condLoad ++
            [ "  TEST"
-           , "  JUMP_NE %" ++ doneLabel ++ "_TRUE"
-           , "  JUMP %" ++ elseLabel
-           , ":" ++ doneLabel ++ "_TRUE"
+           , "  JUMP_EQ %" ++ elseLabel
            ] ++
            trueCode [] ++ trueStore ++
            [ "  JUMP %" ++ doneLabel
@@ -628,16 +631,33 @@ codegenInstr fnName alloc totalSlots instr = case instr of
       Nothing -> pure callCode
       Just temp -> storeTemp alloc temp callCode
 
-codegenTerminator :: String -> Allocation -> Int -> Terminator -> Either CodegenError [String]
-codegenTerminator fnName alloc totalSlots term = case term of
+codegenTerminator :: String -> Allocation -> Int -> Maybe BlockId -> Terminator -> Either CodegenError [String]
+codegenTerminator fnName alloc totalSlots next term = case term of
   TRet Nothing -> pure (["  LOAD_IMMEDIATE_rax %0"] ++ cleanupStack totalSlots ++ ["  RETURN"])
   TRet (Just op) -> do
     code <- loadOperand alloc op
     pure (code ++ cleanupStack totalSlots ++ ["  RETURN"])
-  TJump bid -> pure ["  JUMP %" ++ blockRef fnName bid]
+  TJump bid ->
+    if sameMaybeBlock next bid
+    then pure []
+    else pure ["  JUMP %" ++ blockRef fnName bid]
   TBranch op yes no -> do
     code <- loadOperand alloc op
-    pure (code ++ ["  TEST", "  JUMP_NE %" ++ blockRef fnName yes, "  JUMP %" ++ blockRef fnName no])
+    if sameMaybeBlock next yes
+      then pure (code ++ ["  TEST", "  JUMP_EQ %" ++ blockRef fnName no])
+      else if sameMaybeBlock next no
+        then pure (code ++ ["  TEST", "  JUMP_NE %" ++ blockRef fnName yes])
+        else pure (code ++ ["  TEST", "  JUMP_NE %" ++ blockRef fnName yes, "  JUMP %" ++ blockRef fnName no])
+
+sameMaybeBlock :: Maybe BlockId -> BlockId -> Bool
+sameMaybeBlock maybeBid bid = case maybeBid of
+  Nothing -> False
+  Just nextBid -> sameBlock nextBid bid
+
+sameBlock :: BlockId -> BlockId -> Bool
+sameBlock a b = case a of
+  BlockId x -> case b of
+    BlockId y -> x == y
 
 loadArguments :: Allocation -> Int -> [Operand] -> Either CodegenError [String]
 loadArguments alloc _ args = do
