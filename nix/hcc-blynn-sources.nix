@@ -33,7 +33,7 @@ stdenvNoCC.mkDerivation {
     cat \
       ${blynnSrc}/inn/BasePrecisely.hs \
       ${blynnSrc}/inn/System.hs \
-      ${src}/src/Hcc/Token.hs \
+      ${src}/src/Hcc/TypesToken.hs \
       ${src}/src/Hcc/SymbolTable.hs \
       ${src}/src/Hcc/ParseLite.hs \
       ${src}/src/Hcc/ConstExpr.hs \
@@ -50,8 +50,8 @@ stdenvNoCC.mkDerivation {
     cat \
       ${blynnSrc}/inn/BasePrecisely.hs \
       ${blynnSrc}/inn/System.hs \
-      ${src}/src/Hcc/Ast.hs \
-      ${src}/src/Hcc/Token.hs \
+      ${src}/src/Hcc/TypesAst.hs \
+      ${src}/src/Hcc/TypesToken.hs \
       ${src}/src/Hcc/SymbolTable.hs \
       ${src}/src/Hcc/IntTable.hs \
       ${src}/src/Hcc/ScopeMap.hs \
@@ -59,10 +59,10 @@ stdenvNoCC.mkDerivation {
       ${src}/src/Hcc/ConstExpr.hs \
       ${src}/src/Hcc/Lexer.hs \
       ${src}/src/Hcc/Parser.hs \
-      ${src}/src/Hcc/Ir.hs \
+      ${src}/src/Hcc/TypesIr.hs \
       ${src}/src/Hcc/CompileM.hs \
       ${src}/src/Hcc/LowerCommon.hs \
-      ${src}/src/Hcc/LowerTypes.hs \
+      ${src}/src/Hcc/TypesLower.hs \
       ${src}/src/Hcc/LowerBuiltins.hs \
       ${src}/src/Hcc/LowerDataValues.hs \
       ${src}/src/Hcc/LowerImplicit.hs \

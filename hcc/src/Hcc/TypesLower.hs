@@ -1,8 +1,8 @@
-module LowerTypes where
+module TypesLower where
 
 import Base
-import Ast
-import Ir
+import TypesAst
+import TypesIr
 
 data LValue
   = LLocal Temp CType

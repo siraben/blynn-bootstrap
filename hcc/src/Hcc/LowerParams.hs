@@ -1,9 +1,9 @@
 module LowerParams where
 
 import Base
-import Ast
+import TypesAst
 import CompileM
-import Ir
+import TypesIr
 
 lowerParams :: Int -> [Param] -> CompileM ([String], [Instr])
 lowerParams index params = case params of

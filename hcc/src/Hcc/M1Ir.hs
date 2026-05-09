@@ -1,10 +1,10 @@
 module M1Ir where
 
 import Base
-import Ast
+import TypesAst
 import CompileM
 import IntTable
-import Ir
+import TypesIr
 import Lower
 import LowerBootstrap
 import LowerImplicit

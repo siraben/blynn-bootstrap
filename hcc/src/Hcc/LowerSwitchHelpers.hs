@@ -1,10 +1,10 @@
 module LowerSwitchHelpers where
 
 import Base
-import Ast
+import TypesAst
 import CompileM
-import Ir
-import LowerTypes
+import TypesIr
+import TypesLower
 
 zipSwitchClauses :: [SwitchClause] -> [BlockId] -> [(SwitchClause, BlockId)]
 zipSwitchClauses clauses ids = case clauses of

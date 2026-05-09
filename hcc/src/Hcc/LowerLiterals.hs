@@ -1,7 +1,7 @@
 module LowerLiterals where
 
 import Base
-import Ir
+import TypesIr
 import LowerCommon
 
 constBinOp :: String -> Int -> Int -> Int

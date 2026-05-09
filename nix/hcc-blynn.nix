@@ -70,7 +70,7 @@ mkDerivation ({
     cat \
       ${blynnSrc}/inn/BasePrecisely.hs \
       ${blynnSrc}/inn/System.hs \
-      src/Hcc/Token.hs \
+      src/Hcc/TypesToken.hs \
       src/Hcc/SymbolTable.hs \
       src/Hcc/ParseLite.hs \
       src/Hcc/ConstExpr.hs \
@@ -87,8 +87,8 @@ mkDerivation ({
     cat \
       ${blynnSrc}/inn/BasePrecisely.hs \
       ${blynnSrc}/inn/System.hs \
-      src/Hcc/Ast.hs \
-      src/Hcc/Token.hs \
+      src/Hcc/TypesAst.hs \
+      src/Hcc/TypesToken.hs \
       src/Hcc/SymbolTable.hs \
       src/Hcc/IntTable.hs \
       src/Hcc/ScopeMap.hs \
@@ -96,10 +96,10 @@ mkDerivation ({
       src/Hcc/ConstExpr.hs \
       src/Hcc/Lexer.hs \
       src/Hcc/Parser.hs \
-      src/Hcc/Ir.hs \
+      src/Hcc/TypesIr.hs \
       src/Hcc/CompileM.hs \
       src/Hcc/LowerCommon.hs \
-      src/Hcc/LowerTypes.hs \
+      src/Hcc/TypesLower.hs \
       src/Hcc/LowerBuiltins.hs \
       src/Hcc/LowerDataValues.hs \
       src/Hcc/LowerImplicit.hs \

@@ -4,7 +4,7 @@ import Base
 import ConstExpr hiding (charCode)
 import Lexer hiding (charCode, isAsciiAlpha, isAsciiAlphaNum, isIdentChar, isIdentStart, lexerIsSpace)
 import SymbolTable
-import Token
+import TypesToken
 
 data PreprocessError = PreprocessError SrcPos String
 

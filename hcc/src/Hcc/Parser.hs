@@ -1,10 +1,10 @@
 module Parser where
 
 import Base
-import Ast
+import TypesAst
 import ConstExpr
 import SymbolTable
-import Token
+import TypesToken
 
 data ParseError = ParseError SrcPos String
 

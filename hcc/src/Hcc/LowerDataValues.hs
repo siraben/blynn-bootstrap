@@ -1,7 +1,7 @@
 module LowerDataValues where
 
 import Base
-import Ir
+import TypesIr
 
 padData :: Int -> [DataValue] -> [DataValue]
 padData size values =

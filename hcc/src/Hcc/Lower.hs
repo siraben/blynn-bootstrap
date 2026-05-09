@@ -1,9 +1,9 @@
 module Lower where
 
 import Base
-import Ast
+import TypesAst
 import CompileM
-import Ir
+import TypesIr
 import LowerBootstrap
 import LowerBuiltins
 import LowerCommon
@@ -12,7 +12,7 @@ import LowerImplicit
 import LowerLiterals
 import LowerParams
 import LowerSwitchHelpers
-import LowerTypes
+import TypesLower
 import LowerTypeInfo
 
 lowerProgram :: Program -> Either CompileError ModuleIr

@@ -1,4 +1,4 @@
-module Ast where
+module TypesAst where
 
 import Base
 

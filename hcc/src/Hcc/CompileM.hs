@@ -1,8 +1,8 @@
 module CompileM where
 
 import Base
-import Ast
-import Ir
+import TypesAst
+import TypesIr
 import ScopeMap
 import SymbolTable
 

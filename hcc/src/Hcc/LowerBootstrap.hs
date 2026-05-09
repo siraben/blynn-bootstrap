@@ -1,7 +1,7 @@
 module LowerBootstrap where
 
 import Base
-import Ast
+import TypesAst
 import CompileM
 
 registerBuiltinStructs :: CompileM ()

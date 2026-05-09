@@ -2,7 +2,7 @@ module ConstExpr where
 
 import Base
 import ParseLite
-import Token
+import TypesToken
 
 type ConstParser a = P [(String, Int)] Token String a
 

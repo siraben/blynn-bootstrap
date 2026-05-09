@@ -1,7 +1,7 @@
 module LowerTypeInfo where
 
 import Base
-import Ast
+import TypesAst
 import CompileM
 import LowerCommon
 

@@ -1,4 +1,4 @@
-module Token where
+module TypesToken where
 
 import Base
 

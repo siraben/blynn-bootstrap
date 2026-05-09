@@ -1,4 +1,4 @@
-module Ir where
+module TypesIr where
 
 import Base
 

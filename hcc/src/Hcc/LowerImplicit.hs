@@ -1,7 +1,7 @@
 module LowerImplicit where
 
 import Base
-import Ast
+import TypesAst
 import CompileM
 import LowerBuiltins
 import LowerCommon

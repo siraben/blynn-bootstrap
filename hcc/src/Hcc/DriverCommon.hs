@@ -3,7 +3,7 @@ module DriverCommon where
 import Base
 import HccSystem
 import Lexer hiding (charCode, isAsciiAlpha, isAsciiAlphaNum, isDigit, isHexDigit, isIdentChar, isIdentStart, lexerIsSpace)
-import Token
+import TypesToken
 
 die :: String -> IO ()
 die msg = hccPutErrLine msg >> hccExitFailure
