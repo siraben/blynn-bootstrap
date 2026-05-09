@@ -33,9 +33,8 @@ symbolMapMember k m = case symbolMapLookup k m of
   Nothing -> False
 
 symbolSetFromList :: [String] -> SymbolSet
-symbolSetFromList xs = case xs of
-  [] -> symbolSetEmpty
-  x:xt -> symbolSetInsert x (symbolSetFromList xt)
+symbolSetFromList [] = symbolSetEmpty
+symbolSetFromList (x:xt) = symbolSetInsert x (symbolSetFromList xt)
 
 symbolSetMember :: String -> SymbolSet -> Bool
 symbolSetMember k (SymbolSet t) = case lookupT k t of
@@ -52,12 +51,11 @@ lookupT :: String -> Tree a -> Maybe a
 lookupT k t = lookupH k (hash k) t
 
 lookupH :: String -> Int -> Tree a -> Maybe a
-lookupH k kh t = case t of
-  E -> Nothing
-  N _ x xh v l r -> case cmpHash k kh x xh of
-    Lt -> lookupH k kh l
-    Eq -> v
-    Gt -> lookupH k kh r
+lookupH _ _ E = Nothing
+lookupH k kh (N _ x xh v l r) = case cmpHash k kh x xh of
+  Lt -> lookupH k kh l
+  Eq -> v
+  Gt -> lookupH k kh r
 
 insertT :: String -> a -> Tree a -> Tree a
 insertT k v t = alterT k (Just v) t
@@ -75,14 +73,12 @@ alterT k v t = blacken (go (hash k) t) where
       Gt -> bal c x xh old l (go kh r)
 
 blacken :: Tree a -> Tree a
-blacken t = case t of
-  E -> E
-  N _ x xh v l r -> N B x xh v l r
+blacken E = E
+blacken (N _ x xh v l r) = N B x xh v l r
 
 bal :: Color -> String -> Int -> Maybe a -> Tree a -> Tree a -> Tree a
-bal c x xh v l r = case c of
-  R -> N R x xh v l r
-  B -> balL x xh v l r
+bal R x xh v l r = N R x xh v l r
+bal B x xh v l r = balL x xh v l r
 
 balL :: String -> Int -> Maybe a -> Tree a -> Tree a -> Tree a
 balL x xh v l r = case l of
@@ -116,9 +112,8 @@ balR x xh v l r = case r of
 
 hash :: String -> Int
 hash s = go 5381 s where
-  go h xs = case xs of
-    [] -> h
-    c:cs -> go (((h * 33) + fromEnum c) `mod` 2147483647) cs
+  go h [] = h
+  go h (c:cs) = go (((h * 33) + fromEnum c) `mod` 2147483647) cs
 
 cmpHash :: String -> Int -> String -> Int -> Cmp
 cmpHash l lh r rh =
@@ -134,13 +129,12 @@ data Cmp
   | Gt
 
 cmpString :: String -> String -> Cmp
-cmpString l r = case (l, r) of
-  ([], []) -> Eq
-  ([], _) -> Lt
-  (_, []) -> Gt
-  (a:as, b:bs) ->
-    if a < b
-    then Lt
-    else if a > b
-    then Gt
-    else cmpString as bs
+cmpString [] [] = Eq
+cmpString [] _ = Lt
+cmpString _ [] = Gt
+cmpString (a:as) (b:bs) =
+  if a < b
+  then Lt
+  else if a > b
+  then Gt
+  else cmpString as bs

@@ -17,15 +17,13 @@ takeData size values =
       if size >= 8 then DAddress label : takeData (size - 8) rest else zeroData size
 
 dataSize :: [DataValue] -> Int
-dataSize values = case values of
-  [] -> 0
-  DByte _:rest -> 1 + dataSize rest
-  DAddress _:rest -> 8 + dataSize rest
+dataSize [] = 0
+dataSize (DByte _:rest) = 1 + dataSize rest
+dataSize (DAddress _:rest) = 8 + dataSize rest
 
 zeroData :: Int -> [DataValue]
 zeroData n = if n <= 0 then [] else DByte 0 : zeroData (n - 1)
 
 bytesData :: [Int] -> [DataValue]
-bytesData bytes = case bytes of
-  [] -> []
-  byte:rest -> DByte byte : bytesData rest
+bytesData [] = []
+bytesData (byte:rest) = DByte byte : bytesData rest
