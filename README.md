@@ -25,7 +25,7 @@ through the usual minimal-bootstrap GCC chain.
 ```text
 flake.nix                         # package graph and bootstrap target exports
 nix/                              # derivations and bootstrap patches
-vendor/blynn-compiler/            # Blynn compiler sources used for precisely
+upstream/                         # pinned upstream mirrors used to refresh patches
 vendor/hcc/                       # HCC sources and smoke fixtures
 vendor/nixpkgs-minimal-bootstrap/ # pinned minimal-bootstrap package set
 ```
@@ -46,7 +46,8 @@ nix build .#gccLatest.m2.precisely.gccm2
 ```
 
 `nix develop` provides the GHC-built HCC tools for local profiling and
-byte-for-byte output checks.
+byte-for-byte output checks. Upstream Blynn and Mes sources are fetched by
+fixed-output derivations and patched with `nix/patches/upstreams`.
 
 ## Credits
 

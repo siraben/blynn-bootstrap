@@ -17,10 +17,58 @@
           filter = path: type:
             type == "directory" || lib.hasSuffix ".hs" (baseNameOf path);
         };
-        blynnSrc = ./vendor/blynn-compiler;
-        blynnUpstreamSrc = ./vendor/blynn-compiler/upstream;
-        m2libcSrc = ./vendor/blynn-compiler/M2libc;
-        mesLibcSrc = ./vendor/mes-libc;
+        upstreamPatches = ./nix/patches/upstreams;
+        upstreamSources = {
+          oriansjBlynnCompiler = pkgs.fetchgit {
+            url = "https://github.com/OriansJ/blynn-compiler.git";
+            rev = "9e46a8da1df90032f1d270a49a6ef5d0cc909658";
+            fetchSubmodules = true;
+            hash = "sha256-HV0WRV3Q/ToxK4wdGjyfTC1yLFp+hqalZuKMZLdBh2E=";
+          };
+          blynnCompiler = pkgs.fetchgit {
+            url = "https://github.com/blynn/compiler.git";
+            rev = "a1f1c47c9bb3ff6a45a0735ced84984396560535";
+            hash = "sha256-xDYN3Ern83a5h8liJYpFBJ9BVzD5YyOJjiHGM5Za+X8=";
+          };
+          gnuMes = pkgs.fetchgit {
+            url = "https://git.savannah.gnu.org/git/mes.git";
+            rev = "c331d801da386ba752f3fe92d0538102a90e988d";
+            hash = "sha256-iw1/MP0dwXOs9gyB7WhnvpCz59zveeoYy85wt0j+fWA=";
+          };
+        };
+        patchedUpstreamSource = { name, src, patches ? [ ] }:
+          pkgs.runCommand name {
+            nativeBuildInputs = [ pkgs.coreutils pkgs.patch ];
+          } (''
+            cp -R --no-preserve=mode,ownership ${src} "$out"
+            chmod -R u+w "$out"
+            cd "$out"
+          '' + lib.concatMapStringsSep "\n" (patchFile: ''
+            patch -p1 < ${patchFile}
+          '') patches);
+        blynnSrc = patchedUpstreamSource {
+          name = "oriansj-blynn-compiler-hcc";
+          src = upstreamSources.oriansjBlynnCompiler;
+          patches = [
+            (upstreamPatches + "/oriansj-blynn-compiler-local.patch")
+          ];
+        };
+        blynnUpstreamSrc = patchedUpstreamSource {
+          name = "blynn-compiler-hcc";
+          src = upstreamSources.blynnCompiler;
+          patches = [
+            (upstreamPatches + "/blynn-compiler-local.patch")
+          ];
+        };
+        m2libcSrc = "${blynnSrc}/M2libc";
+        mesLibcSrc = patchedUpstreamSource {
+          name = "gnu-mes-libc-hcc";
+          src = upstreamSources.gnuMes;
+          patches = [
+            (upstreamPatches + "/gnu-mes-libc-reference.patch")
+            (upstreamPatches + "/gnu-mes-libc-bootstrap-layout.patch")
+          ];
+        };
 
         minimalBootstrap = pkgs.minimal-bootstrap;
         rawDerivation = import ./nix/raw-mk-derivation.nix {
@@ -49,15 +97,8 @@
           stdenvNoCC = rawStdenvNoCC;
         } // args);
 
-        pathName = rel: lib.replaceStrings [ "/" "." "_" ] [ "-" "-" "-" ] rel;
-        blynnFile = rel: builtins.path {
-          path = blynnSrc + "/${rel}";
-          name = "blynn-${pathName rel}";
-        };
-        upstreamFile = rel: builtins.path {
-          path = blynnUpstreamSrc + "/${rel}";
-          name = "blynn-upstream-${pathName rel}";
-        };
+        blynnFile = rel: "${blynnSrc}/${rel}";
+        upstreamFile = rel: "${blynnUpstreamSrc}/${rel}";
         blynnShare = drv: name: "${drv}/share/blynn/${name}";
 
         blynnRootStages = let
@@ -698,6 +739,16 @@
               tinycc = final.tinycc-musl;
               gnused = final.gnused-mes;
             };
+            gnutar = final.callPackage ./nix/minimal-bootstrap/gnutar.nix {
+              bash = final.bash_2_05;
+              gnumake = final.gnumake;
+              gnused = final.gnused-mes;
+              gnugrep = final.gnugrep;
+              tinycc = {
+                compiler = tinycc;
+                libs = tinycc;
+              };
+            };
             musl-tcc-intermediate = final.callPackage ./nix/minimal-bootstrap/musl-tcc.nix {
               bash = final.bash_2_05;
               tinycc = final.tinycc-mes;
@@ -916,7 +967,7 @@
             ]))
           ];
           shellHook = ''
-            echo "blynn-bootstrap dev shell — sources are in ./vendor/blynn-compiler"
+            echo "blynn-bootstrap dev shell - upstreams are fetched and patched by flake.nix"
           '';
         };
 
