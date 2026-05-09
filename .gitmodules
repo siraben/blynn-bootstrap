@@ -1,0 +1,12 @@
+[submodule "upstream/oriansj-blynn-compiler"]
+	path = upstream/oriansj-blynn-compiler
+	url = https://github.com/OriansJ/blynn-compiler.git
+[submodule "upstream/blynn-compiler"]
+	path = upstream/blynn-compiler
+	url = https://github.com/blynn/compiler.git
+[submodule "upstream/janneke-tinycc"]
+	path = upstream/janneke-tinycc
+	url = https://gitlab.com/janneke/tinycc.git
+[submodule "upstream/gnu-mes"]
+	path = upstream/gnu-mes
+	url = https://git.savannah.gnu.org/git/mes.git

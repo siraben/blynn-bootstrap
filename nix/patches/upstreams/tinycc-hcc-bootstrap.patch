@@ -1,0 +1,188 @@
+diff --git a/include/stddef.h b/include/stddef.h
+index 8f885fc..5326ef3 100644
+--- a/include/stddef.h
++++ b/include/stddef.h
+@@ -30,7 +30,7 @@ typedef unsigned long long int uint64_t;
+
+ #define offsetof(type, field) ((size_t)&((type *)0)->field)
+
+-void *alloca(size_t size);
++typedef union { long double ld; long long ll; } max_align_t; void *alloca(size_t size);
+
+ #endif
+
+diff --git a/i386-asm.c b/i386-asm.c
+index 33e45b2..6ae3a58 100644
+--- a/i386-asm.c
++++ b/i386-asm.c
+@@ -1201,10 +1201,12 @@ ST_FUNC int asm_parse_regvar (int t)
+     Operand op;
+     if (t < TOK_IDENT)
+         return -1;
+     s = table_ident[t - TOK_IDENT]->str;
+-    if (s[0] != '%')
+-        return -1;
+-    t = tok_alloc(s+1, strlen(s)-1)->tok;
++    if (s[0] == '%')
++        s++;
++    if (!s[0])
++        return -1;
++    t = tok_alloc(s, strlen(s))->tok;
+     unget_tok(t);
+     unget_tok('%');
+     parse_operand(tcc_state, &op);
+@@ -1561,7 +1563,15 @@ ST_FUNC void subst_asm_operand(CString *add_str,
+                 tcc_error("cannot use byte register");
+             size = -1;
+         } else if (modifier == 'w') {
+             size = 2;
++        }
++        if (reg >= 8) {
++            if (size == 8 || size == -1)
++                snprintf(buf, sizeof(buf), "%%r%d", reg);
++            else
++                snprintf(buf, sizeof(buf), "%%r%d%c", reg, (size == 1) ? 'b' : ((size == 2) ? 'w' : 'd'));
++            cstr_cat(add_str, buf, -1);
++            return;
+         } else if (modifier == 'k') {
+             size = 4;
+ #ifdef TCC_TARGET_X86_64
+diff --git a/i386-asm.h b/i386-asm.h
+index 2caf0a2..57a206f 100644
+--- a/i386-asm.h
++++ b/i386-asm.h
+@@ -342,6 +342,8 @@ ALT(DEF_ASM_OP1(fstsw, 0xdd, 7, OPC_MODRM | OPC_FWAIT, OPT_EA ))
+     DEF_ASM_OP1(ffreep, 0xdfc0, 4, OPC_REG, OPT_ST )
+     DEF_ASM_OP1(fxsave, 0x0fae, 0, OPC_MODRM, OPT_EA )
+     DEF_ASM_OP1(fxrstor, 0x0fae, 1, OPC_MODRM, OPT_EA )
++    DEF_ASM_OP1(ldmxcsr, 0x0fae, 2, OPC_MODRM, OPT_EA )
++    DEF_ASM_OP1(stmxcsr, 0x0fae, 3, OPC_MODRM, OPT_EA )
+
+     /* segments */
+     DEF_ASM_OP2(arpl, 0x63, 0, OPC_MODRM, OPT_REG16, OPT_REG16 | OPT_EA)
+diff --git a/x86_64-asm.h b/x86_64-asm.h
+index 1c8cd1b..68036ab 100644
+--- a/x86_64-asm.h
++++ b/x86_64-asm.h
+@@ -342,6 +342,8 @@ ALT(DEF_ASM_OP1(fstsw, 0xdd, 7, OPC_MODRM | OPC_FWAIT, OPT_EA ))
+     DEF_ASM_OP1(ffreep, 0xdfc0, 4, OPC_REG, OPT_ST )
+     DEF_ASM_OP1(fxsave, 0x0fae, 0, OPC_MODRM, OPT_EA )
+     DEF_ASM_OP1(fxrstor, 0x0fae, 1, OPC_MODRM, OPT_EA )
++    DEF_ASM_OP1(ldmxcsr, 0x0fae, 2, OPC_MODRM, OPT_EA )
++    DEF_ASM_OP1(stmxcsr, 0x0fae, 3, OPC_MODRM, OPT_EA )
+     /* The *q forms of fxrstor/fxsave use a REX prefix.
+        If the operand would use extended registers we would have to modify
+        it instead of generating a second one.  Currently that's no
+diff --git a/libtcc.c b/libtcc.c
+index a995031..cdaf8fc 100644
+--- a/libtcc.c
++++ b/libtcc.c
+@@ -881,7 +881,7 @@ LIBTCCAPI TCCState *tcc_new(void)
+     tcc_define_symbol(s, "__ILP32__", NULL);
+ #endif
+
+-#if defined(TCC_MUSL)
++#if defined(TCC_MUSL) || defined(TCC_MES_LIBC)
+     tcc_define_symbol(s, "__builtin_va_list", "void *");
+ #endif /* TCC_MUSL */
+
+diff --git a/tccelf.c b/tccelf.c
+index 2b19f77..b880d11 100644
+--- a/tccelf.c
++++ b/tccelf.c
+@@ -2238,7 +2238,7 @@ static int elf_output_file(TCCState *s1, const char *filename)
+
+     /* Perform relocation to GOT or PLT entries */
+     if (file_type == TCC_OUTPUT_EXE && s1->static_link)
+-        fill_got(s1);
++        { fill_got(s1); relocate_plt(s1); }
+     else if (s1->got)
+         fill_local_got_entries(s1);
+
+diff --git a/tcctools.c b/tcctools.c
+index ab93ac5..30375ea 100644
+--- a/tcctools.c
++++ b/tcctools.c
+@@ -125,8 +125,8 @@ ST_FUNC int tcc_tool_ar(TCCState *s1, int argc, char **argv)
+         }
+     }
+
+-    if (!i_obj)  // i_obj implies also i_lib. we require both.
+-        ret = 1;
++    if (!i_lib)
++        ret = 1;
+
+     if (ret == 1)
+         return ar_usage(ret);
+@@ -137,6 +137,12 @@ ST_FUNC int tcc_tool_ar(TCCState *s1, int argc, char **argv)
+         goto the_end;
+     }
+
++    if (!i_obj) {
++        fwrite("!<arch>\n", 8, 1, fh);
++        ret = 0;
++        goto the_end;
++    }
++
+     sprintf(tfile, "%s.tmp", argv[i_lib]);
+     if ((fo = fopen(tfile, "wb+")) == NULL)
+     {
+diff --git a/tccgen.c b/tccgen.c
+index 487dbf1..2b5eb78 100644
+--- a/tccgen.c
++++ b/tccgen.c
+@@ -4150,5 +4150,12 @@ static int post_type(CType *type, AttributeDef *ad, int storage, int td)
+         t1 = 0;
+         if (tok != ']') {
++            while (tok == TOK_STATIC
++                   || tok == TOK_CONST1 || tok == TOK_CONST2 || tok == TOK_CONST3
++                   || tok == TOK_VOLATILE1 || tok == TOK_VOLATILE2 || tok == TOK_VOLATILE3
++                   || tok == TOK_RESTRICT1 || tok == TOK_RESTRICT2 || tok == TOK_RESTRICT3)
++                next();
++        }
++        if (tok != ']') {
+             if (!local_stack || (storage & VT_STATIC))
+                 vpushi(expr_const());
+             else {
+@@ -4776,7 +4776,18 @@ ST_FUNC void unary(void)
+         next();
+         unary();
+         t = vtop->type.t & VT_BTYPE;
+-	if (is_float(t)) {
++	if (is_float(t)
++            && ((vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST)) {
++            unsigned char *hcc_bytes;
++            hcc_bytes = (unsigned char *)&vtop->c;
++            if (t == VT_FLOAT)
++                hcc_bytes[3] = hcc_bytes[3] ^ 128;
++            else if (t == VT_DOUBLE)
++                hcc_bytes[7] = hcc_bytes[7] ^ 128;
++            else
++                hcc_bytes[9] = hcc_bytes[9] ^ 128;
++            break;
++        } else if (is_float(t)) {
+             /* In IEEE negate(x) isn't subtract(0,x), but rather
+ 	       subtract(-0, x).  */
+ 	    vpush(&vtop->type);
+diff --git a/x86_64-gen.c b/x86_64-gen.c
+index b939c0d..f935acd 100644
+--- a/x86_64-gen.c
++++ b/x86_64-gen.c
+@@ -1200,7 +1200,7 @@ void gfunc_call(int nb_args)
+     int nb_reg_args = 0;
+     int nb_sse_args = 0;
+     int sse_reg, gen_reg;
+-    char _onstack[nb_args], *onstack = _onstack;
++    char *onstack = tcc_malloc(nb_args);
+
+     /* calculate the number of integer/float register arguments, remember
+        arguments to be passed via stack (in onstack[]), and also remember
+@@ -1779,7 +1779,7 @@ void gen_opi(int op)
+             vswap();
+             orex(ll, r, 0, 0xc1); /* shl/shr/sar $xxx, r */
+             o(opc | REG_VALUE(r));
+-            g(vtop->c.i & (ll ? 63 : 31));
++            if (ll) g(vtop->c.i & 63); else g(vtop->c.i & 31);
+         } else {
+             /* we generate the shift in ecx */
+             gv2(RC_INT, RC_RCX);

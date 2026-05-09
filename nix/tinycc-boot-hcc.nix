@@ -32,39 +32,14 @@ stdenvNoCC.mkDerivation {
 
   sourceRoot = "tinycc-${rev}";
 
+  patches = [
+    ./patches/upstreams/tinycc-hcc-bootstrap.patch
+  ];
+
   nativeBuildInputs = [
     hcc
     minimalBootstrap.stage0-posix.mescc-tools
   ];
-
-  postPatch = ''
-    substituteInPlace include/stddef.h \
-      --replace-fail 'void *alloca' 'typedef union { long double ld; long long ll; } max_align_t; void *alloca'
-
-    substituteInPlace x86_64-gen.c \
-      --replace-fail 'char _onstack[nb_args], *onstack = _onstack;' 'char *onstack = tcc_malloc(nb_args);' \
-      --replace-fail 'g(vtop->c.i & (ll ? 63 : 31));' 'if (ll) g(vtop->c.i & 63); else g(vtop->c.i & 31);'
-
-    substituteInPlace tccelf.c \
-      --replace-fail 'fill_got(s1);' '{ fill_got(s1); relocate_plt(s1); }'
-
-    substituteInPlace libtcc.c \
-      --replace-fail '#if defined(TCC_MUSL)' '#if defined(TCC_MUSL) || defined(TCC_MES_LIBC)'
-
-    substituteInPlace tccgen.c \
-      --replace-fail '	if (is_float(t)) {' '	if (is_float(t)
-            && ((vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST)) {
-            unsigned char *hcc_bytes;
-            hcc_bytes = (unsigned char *)&vtop->c;
-            if (t == VT_FLOAT)
-                hcc_bytes[3] = hcc_bytes[3] ^ 128;
-            else if (t == VT_DOUBLE)
-                hcc_bytes[7] = hcc_bytes[7] ^ 128;
-            else
-                hcc_bytes[9] = hcc_bytes[9] ^ 128;
-            break;
-        } else if (is_float(t)) {'
-  '';
 
   M2_ARCH = minimalBootstrap.stage0-posix.m2libcArch;
   M2_OS = minimalBootstrap.stage0-posix.m2libcOS;
@@ -117,7 +92,7 @@ stdenvNoCC.mkDerivation {
     tcc_include_src="$PWD/include"
     mes_include_src="${mesLibc}/include"
 
-    cat > config.h <<'EOF'
+    cat > config.h <<EOF
     #define BOOTSTRAP 1
     #define HAVE_LONG_LONG 1
     #define HAVE_SETJMP 1
@@ -130,7 +105,7 @@ stdenvNoCC.mkDerivation {
     #define CONFIG_TCC_CRTPREFIX "{B}"
     #define CONFIG_TCC_ELFINTERP "/mes/loader"
     #define CONFIG_TCC_LIBPATHS "{B}"
-    #define CONFIG_TCC_SYSINCLUDEPATHS "@out@/include"
+    #define CONFIG_TCC_SYSINCLUDEPATHS "$out/include"
     #define TCC_LIBGCC "libc.a"
     #define TCC_LIBTCC1 "libtcc1.a"
     #define CONFIG_TCC_LIBTCC1_MES 0
@@ -142,7 +117,6 @@ stdenvNoCC.mkDerivation {
     #define ONE_SOURCE 1
     #define CONFIG_TCC_SEMLOCK 0
     EOF
-    substituteInPlace config.h --replace-fail '@out@' "$out"
 
     run_step_shell "hcpp tcc.c > tcc-expanded.c" "hcpp \
       -I . \
@@ -306,8 +280,9 @@ stdenvNoCC.mkDerivation {
     cp final-libs/crt1.o final-libs/crti.o final-libs/crtn.o $out/lib/
     cp final-libs/libc.a final-libs/libgetopt.a final-libs/libtcc1.a $out/lib/
     mkdir -p $out/include
-    copyTree ${mesLibc}/include $out/include
-    copyTree include $out/include
+    cp -R ${mesLibc}/include/. $out/include/
+    chmod -R u+w $out/include
+    cp -R include/. $out/include/
     runHook postInstall
   '';
 
@@ -356,6 +331,13 @@ stdenvNoCC.mkDerivation {
     internal_call_status="$?"
     set -e
     test "$internal_call_status" -eq 17
+
+    printf '%s\n' 'void f(char a[static 10]){a[0]=1;} int main(void){char a[10]; f(a); return a[0];}' > static-array-param.c
+    ./tcc-stage3 -c static-array-param.c -o static-array-param.o
+    test -s static-array-param.o
+
+    ./tcc-stage3 -ar rc empty.a
+    test -s empty.a
 
     ./tcc-stage3 -c \
       -I . \

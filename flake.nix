@@ -658,7 +658,7 @@
         };
 
         tinyccFromHcc = pname: hcc: pkgs.callPackage ./nix/tinycc-boot-hcc.nix {
-          stdenvNoCC = rawStdenvNoCC;
+          stdenvNoCC = pkgs.stdenvNoCC;
           inherit pname hcc minimalBootstrap;
           mesLibc = mesLibcSrc;
           m2libc = m2libcSrc;
@@ -680,7 +680,7 @@
         };
 
         minimalBootstrapFromTinycc = tinycc:
-          minimalBootstrap.overrideScope (_final: _prev: {
+          minimalBootstrap.overrideScope (final: _prev: {
             tinycc-bootstrappable = lib.recurseIntoAttrs {
               compiler = tinycc;
               libs = tinycc;
@@ -689,9 +689,43 @@
               compiler = tinycc;
               libs = tinycc;
             };
+            musl = final.callPackage ./nix/minimal-bootstrap/musl-gcc.nix {
+              gcc = final.gcc46;
+              gnumake = final.gnumake-musl;
+            };
+            gnused = final.callPackage ./nix/minimal-bootstrap/gnused.nix {
+              bash = final.bash_2_05;
+              tinycc = final.tinycc-musl;
+              gnused = final.gnused-mes;
+            };
+            musl-tcc-intermediate = final.callPackage ./nix/minimal-bootstrap/musl-tcc.nix {
+              bash = final.bash_2_05;
+              tinycc = final.tinycc-mes;
+              gnused = final.gnused-mes;
+              hccTinyccVaList = true;
+            };
+            tinycc-musl-intermediate = lib.recurseIntoAttrs (final.callPackage ./nix/minimal-bootstrap/tinycc-musl.nix {
+              stdenvNoCC = pkgs.stdenvNoCC;
+              bash = final.bash_2_05;
+              tinycc = final.tinycc-mes;
+              musl = final.musl-tcc-intermediate;
+              hccTinyccVaList = true;
+            });
+            musl-tcc = final.callPackage ./nix/minimal-bootstrap/musl-tcc.nix {
+              bash = final.bash_2_05;
+              tinycc = final.tinycc-musl-intermediate;
+              gnused = final.gnused-mes;
+            };
+            tinycc-musl = lib.recurseIntoAttrs (final.callPackage ./nix/minimal-bootstrap/tinycc-musl.nix {
+              stdenvNoCC = pkgs.stdenvNoCC;
+              bash = final.bash_2_05;
+              tinycc = final.tinycc-musl-intermediate;
+              musl = final.musl-tcc;
+            });
           });
 
         minimalBootstrapBy = {
+          host.ghc.native = minimalBootstrapFromTinycc tinyccBy.host.ghc.native;
           m2.precisely.m2 = minimalBootstrapFromTinycc tinyccBy.m2.precisely.m2;
           m2.precisely.gccm2 = minimalBootstrapFromTinycc tinyccBy.m2.precisely.gccm2;
         };
@@ -727,11 +761,34 @@
         };
 
         tinyccMuslBy = {
+          host.ghc.native = minimalBootstrapBy.host.ghc.native.tinycc-musl;
           m2.precisely.m2 = minimalBootstrapBy.m2.precisely.m2.tinycc-musl;
           m2.precisely.gccm2 = minimalBootstrapBy.m2.precisely.gccm2.tinycc-musl;
         };
 
+        gnuHelloFromBootstrap = pname: bootstrap:
+          pkgs.callPackage ./nix/gnu-hello-minboot.nix {
+            stdenvNoCC = rawStdenvNoCC;
+            buildPlatform = pkgs.stdenv.buildPlatform;
+            hostPlatform = pkgs.stdenv.hostPlatform;
+            inherit pname bootstrap;
+          };
+
+        gnuHelloBy = {
+          host.ghc.native =
+            gnuHelloFromBootstrap "gnu-hello-host-ghc-native" minimalBootstrapBy.host.ghc.native;
+          m2.precisely.m2 =
+            gnuHelloFromBootstrap "gnu-hello-m2-precisely-m2" minimalBootstrapBy.m2.precisely.m2;
+          m2.precisely.gccm2 =
+            gnuHelloFromBootstrap "gnu-hello-m2-precisely-gccm2" minimalBootstrapBy.m2.precisely.gccm2;
+        };
+
         bootstrapBy = {
+          host.ghc.native = {
+            minimal = minimalBootstrapBy.host.ghc.native;
+            tinycc.mes = minimalBootstrapBy.host.ghc.native.tinycc-mes;
+            tinycc.musl = minimalBootstrapBy.host.ghc.native.tinycc-musl;
+          };
           m2.precisely.m2 = {
             minimal = minimalBootstrapBy.m2.precisely.m2;
             tinycc.mes = minimalBootstrapBy.m2.precisely.m2.tinycc-mes;
@@ -819,6 +876,7 @@
           gcc46Cxx = gcc46CxxBy;
           gcc10 = gcc10By;
           gccLatest = gccLatestBy;
+          gnuHello = gnuHelloBy;
           glibc = glibcBy;
           gccGlibc = gccGlibcBy;
 

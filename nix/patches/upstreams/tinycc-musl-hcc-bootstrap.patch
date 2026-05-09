@@ -1,0 +1,99 @@
+--- i386-asm.c
++++ i386-asm.c
+@@ -1560,6 +1560,11 @@ static void subst_asm_operand(CString *add_str, SValue *sv, int modifier)
+ #endif
+         }
+ 
++        if (reg >= 8) {
++            cstr_printf(add_str, "%%r%d%c", reg, (size == 1) ? 'b' : ((size == 2) ? 'w' : ((size == 4) ? 'd' : ' ')));
++            return;
++        }
++
+         switch(size) {
+         case -1:
+             reg = TOK_ASM_ah + reg;
+--- tccgen.c
++++ tccgen.c
+@@ -3097,6 +3097,8 @@ static void gen_opic(int op)
+ #endif
+             type1 = vtop[-1].type;
+             vpush_type_size(pointed_type(&vtop[-1].type), &align);
++            if (!(vtop[-1].type.t & VT_UNSIGNED))
++                gen_cast_s(VT_PTRDIFF_T);
+             gen_op('*');
+ #ifdef CONFIG_TCC_BCHECK
+             if (tcc_state->do_bounds_check && !CONST_WANTED) {
+--- tccelf.c
++++ tccelf.c
+@@ -2111,6 +2111,10 @@ static int set_sec_sizes(TCCState *s1)
+     int textrel = 0;
+     int file_type = s1->output_type;
+ 
++    s = have_section(s1, ".init");
++    if (s) s->sh_flags |= SHF_ALLOC | SHF_EXECINSTR;
++    s = have_section(s1, ".fini");
++    if (s) s->sh_flags |= SHF_ALLOC | SHF_EXECINSTR;
+     /* Allocate strings for section names */
+     for(i = 1; i < s1->nb_sections; i++) {
+         s = s1->sections[i];
+--- /dev/null
++++ lib/va_list.c
+@@ -0,0 +1,58 @@
++#ifdef TCC_TARGET_X86_64
++extern void *memset(void *s, int c, __SIZE_TYPE__ n);
++
++#define __va_gen_reg 0
++#define __va_float_reg 1
++#define __va_stack 2
++
++typedef struct {
++    unsigned int gp_offset;
++    unsigned int fp_offset;
++    union {
++        unsigned int overflow_offset;
++        char *overflow_arg_area;
++    };
++    char *reg_save_area;
++} __va_list_struct;
++
++void __va_start(__va_list_struct *ap, void *fp)
++{
++    memset(ap, 0, sizeof(__va_list_struct));
++    *ap = *(__va_list_struct *)((char *)fp - 16);
++    ap->overflow_arg_area = (char *)fp + ap->overflow_offset;
++    ap->reg_save_area = (char *)fp - 176 - 16;
++}
++
++void *__va_arg(__va_list_struct *ap,
++               int arg_type,
++               int size, int align)
++{
++    size = (size + 7) & ~7;
++    align = (align + 7) & ~7;
++    switch (arg_type) {
++    case __va_gen_reg:
++        if (ap->gp_offset + size <= 48) {
++            ap->gp_offset += size;
++            return ap->reg_save_area + ap->gp_offset - size;
++        }
++        goto use_overflow_area;
++
++    case __va_float_reg:
++        if (ap->fp_offset < 128 + 48) {
++            ap->fp_offset += 16;
++            return ap->reg_save_area + ap->fp_offset - 16;
++        }
++        size = 8;
++        goto use_overflow_area;
++
++    case __va_stack:
++    use_overflow_area:
++        ap->overflow_arg_area += size;
++        ap->overflow_arg_area = (char*)((long long)(ap->overflow_arg_area + align - 1) & -align);
++        return ap->overflow_arg_area - size;
++
++    default:
++        return 0;
++    }
++}
++#endif

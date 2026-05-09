@@ -195,7 +195,7 @@ let
           chmod "$mode" "$dst_file"
         }
 
-        copyTree() {
+        copyTree() (
           src_dir="$1"
           dst_dir="$2"
           mkdir -p "$dst_dir"
@@ -208,7 +208,7 @@ let
               cp "$entry" "$dst_dir/$base"
             fi
           done
-        }
+        )
 
         unpackPhase() {
           runHook preUnpack
