@@ -1121,12 +1121,9 @@ static void emit_data_item(FILE *out, DataItem *item)
 
 static void emit_load_immediate(FILE *out, long value)
 {
-  if (value == 2147483648L) {
-    fprintf(out, "  HCC_LI64_80000000\n");
-  } else if (value == 4294967295L) {
-    fprintf(out, "  HCC_LI64_FFFFFFFF\n");
-  } else if (value >= -2147483648L && value <= 2147483647L) {
-    fprintf(out, "  LOAD_IMMEDIATE_rax %%%ld\n", value);
+  int small = (int)value;
+  if ((long)small == value) {
+    fprintf(out, "  LOAD_IMMEDIATE_rax %%%d\n", small);
   } else {
     unsigned long u = (unsigned long)value;
     int i = 0;
@@ -1291,7 +1288,7 @@ static void emit_instr(FILE *out, const char *fn_name, LocArray *locs, int total
       else if (in->value == 3) fprintf(out, "  HCC_COPY_rcx_to_rax\n");
       else if (in->value == 4) fprintf(out, "  HCC_COPY_r8_to_rax\n");
       else if (in->value == 5) fprintf(out, "  HCC_COPY_r9_to_rax\n");
-      else fprintf(out, "  LOAD_RSP_IMMEDIATE_into_rax %%%ld\n", total_slots * 8L + 8 + (in->value - 6) * 8);
+      else fprintf(out, "  LOAD_RSP_IMMEDIATE_into_rax %%%d\n", (int)(total_slots * 8 + 8 + (in->value - 6) * 8));
       emit_store_temp(out, locs, in->temp);
       break;
     case IK_ALLOCA:

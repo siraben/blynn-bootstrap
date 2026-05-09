@@ -1051,9 +1051,7 @@ tokenKind :: Token -> TokenKind
 tokenKind (Token _ kind) = kind
 
 collectEnumConstants :: [Token] -> [(String, Int)]
-collectEnumConstants toks = map toInt (reverse (go [] toks)) where
-  toInt (name, value) = (name, fromInteger value)
-
+collectEnumConstants toks = reverse (go [] toks) where
   go env rest = case rest of
     [] -> env
     Token _ (TokIdent "enum"):xs ->
@@ -1070,7 +1068,7 @@ skipOptionalEnumTag toks = case toks of
   Token _ (TokIdent _):rest -> rest
   _ -> toks
 
-parseEnumBody :: [(String, Integer)] -> Integer -> [Token] -> ([(String, Integer)], [Token])
+parseEnumBody :: [(String, Int)] -> Int -> [Token] -> ([(String, Int)], [Token])
 parseEnumBody env nextValue toks = case toks of
   [] -> (env, [])
   Token _ (TokPunct "}"):rest -> (env, rest)
@@ -1084,7 +1082,7 @@ parseEnumBody env nextValue toks = case toks of
   _:rest ->
     parseEnumBody env nextValue rest
 
-enumValue :: [(String, Integer)] -> Integer -> [Token] -> (Integer, [Token])
+enumValue :: [(String, Int)] -> Int -> [Token] -> (Int, [Token])
 enumValue env nextValue toks = case toks of
   Token _ (TokPunct "="):rest ->
     let (exprToks, tailToks) = takeEnumValueExpr rest
@@ -1115,7 +1113,7 @@ takeEnumValueExpr = go 0 0 0 [] where
       TokPunct "]" -> go braces parens (max 0 (brackets - 1)) (tok:acc) rest
       _ -> go braces parens brackets (tok:acc) rest
 
-removeEnumConstant :: String -> [(String, Integer)] -> [(String, Integer)]
+removeEnumConstant :: String -> [(String, Int)] -> [(String, Int)]
 removeEnumConstant name constants = case constants of
   [] -> []
   (k, v):rest | k == name -> removeEnumConstant name rest

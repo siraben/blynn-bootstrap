@@ -33,52 +33,36 @@ pow2 :: Int -> Int
 pow2 n = if n <= 0 then 1 else 2 * pow2 (n - 1)
 
 bitAnd :: Int -> Int -> Int
-bitAnd a b = bitFoldAnd 1 a b 0
+bitAnd a b = bitFoldInt bitAndBool a b 1 0
 
 bitOr :: Int -> Int -> Int
-bitOr a b = bitFoldOr 1 a b 0
+bitOr a b = bitFoldInt bitOrBool a b 1 0
 
 bitXor :: Int -> Int -> Int
-bitXor a b = bitFoldXor 1 a b 0
+bitXor a b = bitFoldInt bitXorBool a b 1 0
 
-bitFoldAnd :: Int -> Int -> Int -> Int -> Int
-bitFoldAnd bit a b out =
+bitFoldInt :: (Bool -> Bool -> Bool) -> Int -> Int -> Int -> Int -> Int
+bitFoldInt op a b bit out =
   if bit > 1073741824
     then out
     else
-      let abit = (a `div` bit) `mod` 2
-          bbit = (b `div` bit) `mod` 2
-          out' = if bitAndBits abit bbit then out + bit else out
-      in if bit == 1073741824 then out' else bitFoldAnd (bit * 2) a b out'
+      let out' = if op (bitSet a bit) (bitSet b bit) then out + bit else out
+      in if bit == 1073741824 then out' else bitFoldInt op a b (bit * 2) out'
 
-bitFoldOr :: Int -> Int -> Int -> Int -> Int
-bitFoldOr bit a b out =
-  if bit > 1073741824
-    then out
-    else
-      let abit = (a `div` bit) `mod` 2
-          bbit = (b `div` bit) `mod` 2
-          out' = if bitOrBits abit bbit then out + bit else out
-      in if bit == 1073741824 then out' else bitFoldOr (bit * 2) a b out'
+bitSet :: Int -> Int -> Bool
+bitSet value bit =
+  if value >= 0
+    then ((value `div` bit) `mod` 2) == 1
+    else not (bitSet (0 - value - 1) bit)
 
-bitFoldXor :: Int -> Int -> Int -> Int -> Int
-bitFoldXor bit a b out =
-  if bit > 1073741824
-    then out
-    else
-      let abit = (a `div` bit) `mod` 2
-          bbit = (b `div` bit) `mod` 2
-          out' = if bitXorBits abit bbit then out + bit else out
-      in if bit == 1073741824 then out' else bitFoldXor (bit * 2) a b out'
+bitAndBool :: Bool -> Bool -> Bool
+bitAndBool x y = x && y
 
-bitAndBits :: Int -> Int -> Bool
-bitAndBits x y = x /= 0 && y /= 0
+bitOrBool :: Bool -> Bool -> Bool
+bitOrBool x y = x || y
 
-bitOrBits :: Int -> Int -> Bool
-bitOrBits x y = x /= 0 || y /= 0
-
-bitXorBits :: Int -> Int -> Bool
-bitXorBits x y = (x /= 0) /= (y /= 0)
+bitXorBool :: Bool -> Bool -> Bool
+bitXorBool x y = x /= y
 
 intBytes :: Int -> Int -> [Int]
 intBytes size value = takeInts size (intBytesFrom value)
