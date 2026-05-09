@@ -7,7 +7,6 @@
   mesLibc,
   m2libc,
   pname ? "tinycc-boot-hcc",
-  enableDiagnostics ? false,
   enableTrace ? false,
   useCBackend ? true,
 }:
@@ -167,15 +166,6 @@ stdenvNoCC.mkDerivation {
       -D CONFIG_TCC_SEMLOCK=0 \
       tcc.c > tcc-expanded.c"
     log_file tcc-expanded.c
-
-    ${lib.optionalString enableDiagnostics ''
-      run_step "hcc1 --tokens tcc-expanded.c" hcc1 --tokens -o tcc.tokens tcc-expanded.c
-      log_file tcc.tokens
-      run_step "hcc1 --ast-summary tcc-expanded.c" hcc1 --ast-summary -o tcc.ast-summary tcc-expanded.c
-      log_file tcc.ast-summary
-      run_step "hcc1 --ir-summary tcc-expanded.c" hcc1 --ir-summary -o tcc.ir-summary tcc-expanded.c
-      log_file tcc.ir-summary
-    ''}
 
     run_step_shell "hcpp tcc-bootstrap-support.c > tcc-bootstrap-support.i" "hcpp ${support}/tcc-bootstrap-support.c > tcc-bootstrap-support.i"
     log_file tcc-bootstrap-support.i
