@@ -635,6 +635,19 @@
             tinyccFromHcc "tinycc-boot-hcc-gcc-precisely-gcc-stats-generational" hccGccPreciselyGccStatsGenerational;
         };
 
+        gcc46FromTinycc = tinycc:
+          minimalBootstrap.gcc46.override {
+            tinycc = {
+              compiler = tinycc;
+              libs = tinycc;
+            };
+          };
+
+        gcc46By = {
+          m2.precisely.m2 = gcc46FromTinycc tinyccBy.m2.precisely.m2;
+          m2.precisely.gccm2 = gcc46FromTinycc tinyccBy.m2.precisely.gccm2;
+        };
+
         hcc-m1-smoke = pkgs.callPackage ./nix/hcc-m1-smoke.nix {
           hcc = hccBy.m2.precisely.m2;
           inherit minimalBootstrap;
@@ -683,6 +696,8 @@
           };
 
           tinycc = tinyccBy;
+
+          gcc46 = gcc46By;
 
           tests = {
             smoke.m1 = hcc-m1-smoke;
