@@ -42,17 +42,21 @@ stdenvNoCC.mkDerivation {
 
   buildPhase = ''
     runHook preBuild
-    export METHODICALLY=${blynn-compiler}/bin/methodically
-    export UPSTREAM_DIR=$PWD
-    bash ./build-party-chain.sh
+    METHODICALLY=${blynn-compiler}/bin/methodically BLYNN_DIR=$PWD OUT_DIR=$PWD/bootstrap-out \
+      sh ${../scripts/bootstrap-blynn-precisely.sh}
     runHook postBuild
   '';
 
   installPhase = ''
     runHook preInstall
     mkdir -p $out/bin $out/share/blynn-precisely
-    cp party multiparty party1 party2 crossly_up crossly1 precisely_up $out/bin/
-    cp party.c multiparty.c party1.c party2.c crossly_up.c crossly1.c precisely_up.c \
+    cp bootstrap-out/bin/party bootstrap-out/bin/multiparty bootstrap-out/bin/party1 \
+      bootstrap-out/bin/party2 bootstrap-out/bin/crossly_up bootstrap-out/bin/crossly1 \
+      bootstrap-out/bin/precisely_up $out/bin/
+    cp bootstrap-out/generated/party.c bootstrap-out/generated/multiparty.c \
+      bootstrap-out/generated/party1.c bootstrap-out/generated/party2.c \
+      bootstrap-out/generated/crossly_up.c bootstrap-out/generated/crossly1.c \
+      bootstrap-out/generated/precisely_up.c \
       $out/share/blynn-precisely/
     runHook postInstall
   '';

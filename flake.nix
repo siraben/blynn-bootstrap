@@ -534,26 +534,16 @@
             ];
             runtimeFile = "cbits/hcc_runtime_m2.c";
             compileCommand = ''
+              . ${./scripts/lib/bootstrap.sh}
               cat hcpp-blynn.c > hcpp-body.c
               cat hcc1-blynn.c > hcc1-body.c
               printf '%s\n' '#define HCC_RTS_USE_EXTERNAL_ALLOC 1' > hcpp-blynn.c
               cat hcpp-body.c >> hcpp-blynn.c
               printf '%s\n' '#define HCC_RTS_USE_EXTERNAL_ALLOC 1' > hcc1-blynn.c
               cat hcc1-body.c >> hcc1-blynn.c
-              echo "hcc-blynn: M2-Mesoplanet hcpp-blynn.c -> hcpp"
-              M2-Mesoplanet --operating-system "$M2_OS" --architecture "$M2_ARCH" \
-                -f hcpp-blynn.c \
-                -f cbits/hcc_runtime_m2.c \
-                -o hcpp
-              echo "hcc-blynn: M2-Mesoplanet hcc1-blynn.c -> hcc1"
-              M2-Mesoplanet --operating-system "$M2_OS" --architecture "$M2_ARCH" \
-                -f hcc1-blynn.c \
-                -f cbits/hcc_runtime_m2.c \
-                -o hcc1
-              echo "hcc-blynn: M2-Mesoplanet cbits/hcc_m1.c -> hcc-m1"
-              M2-Mesoplanet --operating-system "$M2_OS" --architecture "$M2_ARCH" \
-                -f cbits/hcc_m1.c \
-                -o hcc-m1
+              compile_m2 hcpp-blynn.c hcpp -f cbits/hcc_runtime_m2.c
+              compile_m2 hcc1-blynn.c hcc1 -f cbits/hcc_runtime_m2.c
+              compile_m2 cbits/hcc_m1.c hcc-m1
             '';
             top = 134217728;
             hcppTop = 134217728;

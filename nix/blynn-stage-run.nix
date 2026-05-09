@@ -37,14 +37,7 @@ stdenvNoCC.mkDerivation {
     mkdir -p tmp
     export TMPDIR="$PWD/tmp"
 
-    compile_m2() {
-      src=$1
-      output_file=$2
-      shift 2
-      echo "blynn-stage: M2-Mesoplanet $src -> $output_file"
-      M2-Mesoplanet --operating-system "$M2_OS" --architecture "$M2_ARCH" \
-        -f "$src" "$@" -o "$output_file"
-    }
+    . ${../scripts/lib/bootstrap.sh}
 
     ${buildScript}
 

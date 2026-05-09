@@ -22,23 +22,20 @@ stdenvNoCC.mkDerivation {
   M2_ARCH = minimalBootstrap.stage0-posix.m2libcArch;
   M2_OS = minimalBootstrap.stage0-posix.m2libcOS;
 
-  postPatch = ''
-    patchShebangs go.sh
-  '';
-
   buildPhase = ''
     runHook preBuild
-    ./go.sh
+    ORIANSJ_BLYNN_DIR=$PWD OUT_DIR=$PWD/bootstrap-out \
+      sh ${../scripts/bootstrap-blynn-root.sh}
     runHook postBuild
   '';
 
   installPhase = ''
     runHook preInstall
     mkdir -p $out/bin $out/share/blynn-compiler
-    cp bin/vm bin/pack_blobs bin/precisely $out/bin/
-    cp bin/marginally bin/methodically bin/crossly $out/bin/
-    cp bin/raw $out/share/blynn-compiler/
-    cp -r generated $out/share/blynn-compiler/generated
+    cp bootstrap-out/bin/vm bootstrap-out/bin/pack_blobs bootstrap-out/bin/precisely $out/bin/
+    cp bootstrap-out/bin/marginally bootstrap-out/bin/methodically bootstrap-out/bin/crossly $out/bin/
+    cp bootstrap-out/share/blynn/raw $out/share/blynn-compiler/
+    cp -r bootstrap-out/generated $out/share/blynn-compiler/generated
     runHook postInstall
   '';
 

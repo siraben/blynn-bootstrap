@@ -25,9 +25,11 @@ through the usual minimal-bootstrap GCC chain.
 ```text
 flake.nix                         # package graph and bootstrap target exports
 nix/                              # derivations and bootstrap patches
+scripts/                          # portable bootstrap drivers, independent of Nix
+hcc/                              # HCC sources and smoke fixtures
+tests/                            # HCC and MesCC reference tests
 upstream/                         # pinned upstream mirrors used to refresh patches
-vendor/hcc/                       # HCC sources and smoke fixtures
-vendor/nixpkgs-minimal-bootstrap/ # pinned minimal-bootstrap package set
+nix/imports/nixpkgs/              # copied minimal-bootstrap package set
 ```
 
 ## Building
@@ -49,7 +51,47 @@ nix build .#gccLatest.m2.precisely.gccm2
 byte-for-byte output checks. Upstream Blynn and Mes sources are fetched by
 fixed-output derivations and patched with `nix/patches/upstreams`.
 
+## Portable Bootstrap
+
+The repo-owned scripts under `scripts/` mirror the Nix bootstrap stages without
+using upstream `go.sh` helpers. They are intended for non-Nix auditing and for
+systems where the stage0 tools are already available on `PATH`. The Nix split
+stages source the same shell library for common M2 compilation behavior, while
+remaining separate derivations so intermediate bootstrap products stay cached.
+
+Minimum requirements:
+
+- POSIX `sh`, `patch`, `sed`, `cp`, `mkdir`, `chmod`, `ln`, and `cat`
+- `M2-Mesoplanet` on `PATH`
+- initialized upstream checkouts:
+
+```sh
+git submodule update --init --recursive
+scripts/prepare-upstreams.sh
+scripts/bootstrap-blynn-root.sh
+METHODICALLY=$PWD/build/blynn-root/bin/methodically scripts/bootstrap-blynn-precisely.sh
+```
+
+The default outputs are:
+
+- `build/upstreams`: patched upstream source trees
+- `build/blynn-root`: OriansJ/Blynn root chain through `methodically`,
+  `crossly`, and `precisely`
+- `build/blynn-precisely`: current `blynn/compiler` party chain through
+  `precisely_up`
+
+Use `M2_ARCH` and `M2_OS` to select the M2libc target, matching the stage0
+tooling convention used by nixpkgs' minimal-bootstrap. For example:
+
+```sh
+M2_ARCH=amd64 M2_OS=Linux scripts/bootstrap-blynn.sh
+```
+
 ## Credits
 
 - Ben Lynn for [blynn/compiler](https://github.com/blynn/compiler).
 - The bootstrappable.org community for stage0 and minimal-bootstrap tooling.
+
+## License
+
+GPL-3.0-only. See `LICENSE`.
