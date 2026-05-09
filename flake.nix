@@ -11,7 +11,7 @@
       let
         pkgs = import nixpkgs { inherit system; };
         lib = pkgs.lib;
-        hccSrc = ./vendor/hcc;
+        hccSrc = ./hcc;
         hccHsSrc = lib.cleanSourceWith {
           src = hccSrc;
           filter = path: type:
@@ -880,7 +880,7 @@
           hcc = hccBy.m2.precisely.m2;
           inherit minimalBootstrap;
           m2libc = m2libcSrc;
-          mesTests = ./vendor/mes-tests;
+          mesTests = ./tests/mescc;
         };
 
         mutable-io-proof = pkgs.callPackage ./nix/mutable-io-proof.nix {

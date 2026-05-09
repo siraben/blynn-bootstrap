@@ -25,7 +25,7 @@ stdenv.mkDerivation {
       cat \
         ${blynnSrc}/inn/BasePrecisely.hs \
         ${blynnSrc}/inn/System.hs \
-        "test/precisely-dialect/$main" \
+        "${../tests/hcc/precisely-dialect}/$main" \
         > "$name.hs"
 
       precisely_up < "$name.hs" > "$name.c"

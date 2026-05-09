@@ -27,7 +27,7 @@ stdenvNoCC.mkDerivation {
     runHook preBuild
 
     log_step() {
-      printf 'hcc-mescc-tests: [%s] %s\n' "$(date -u +%H:%M:%S)" "$1"
+      printf 'hcc-mescc-tests: %s\n' "$1"
     }
 
     assemble_and_run() {
@@ -43,9 +43,9 @@ stdenvNoCC.mkDerivation {
       log_step "$name: M1 $name.M1 -> $name.hex2"
       M1 --architecture amd64 --little-endian \
         -f ${m2libc}/amd64/amd64_defs.M1 \
-        -f ${../vendor/hcc/support}/amd64-start.M1 \
+        -f ${../hcc/support}/amd64-start.M1 \
         -f "$name.M1" \
-        -f ${../vendor/hcc/support}/amd64-syscalls.M1 \
+        -f ${../hcc/support}/amd64-syscalls.M1 \
         --output "$name.hex2"
       printf ':ELF_end\n' > "$name-end.hex2"
       log_step "$name: hex2 $name.hex2 -> $name"
@@ -54,7 +54,7 @@ stdenvNoCC.mkDerivation {
         --file "$name.hex2" \
         --file "$name-end.hex2" \
         --output "$name"
-      chmod +x "$name"
+      chmod 555 "$name"
 
       log_step "$name: execute, expect exit $expected"
       set +e

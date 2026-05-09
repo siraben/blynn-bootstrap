@@ -27,8 +27,8 @@ stdenv.mkDerivation {
     cat \
       ${blynnSrc}/inn/BasePrecisely.hs \
       ${blynnSrc}/inn/System.hs \
-      Hcc/MutableIO.hs \
-      test/mutable-io/Main.hs \
+      src/Hcc/MutableIO.hs \
+      ${../tests/hcc/mutable-io}/Main.hs \
       > mutable-demo.hs
 
     precisely_up < mutable-demo.hs > mutable-demo.c

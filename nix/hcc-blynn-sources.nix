@@ -33,16 +33,16 @@ stdenvNoCC.mkDerivation {
     cat \
       ${blynnSrc}/inn/BasePrecisely.hs \
       ${blynnSrc}/inn/System.hs \
-      ${src}/Hcc/Token.hs \
-      ${src}/Hcc/SymbolTable.hs \
-      ${src}/Hcc/ParseLite.hs \
-      ${src}/Hcc/ConstExpr.hs \
-      ${src}/Hcc/Lexer.hs \
-      ${src}/Hcc/Preprocessor.hs \
-      ${src}/Hcc/HccSystemCpp.hs \
-      ${src}/Hcc/DriverCommonCpp.hs \
-      ${src}/Hcc/IncludeExpand.hs \
-      ${src}/MainCpp.hs \
+      ${src}/src/Hcc/Token.hs \
+      ${src}/src/Hcc/SymbolTable.hs \
+      ${src}/src/Hcc/ParseLite.hs \
+      ${src}/src/Hcc/ConstExpr.hs \
+      ${src}/src/Hcc/Lexer.hs \
+      ${src}/src/Hcc/Preprocessor.hs \
+      ${src}/src/Hcc/HccSystemCpp.hs \
+      ${src}/src/Hcc/DriverCommonCpp.hs \
+      ${src}/src/Hcc/IncludeExpand.hs \
+      ${src}/src/MainCpp.hs \
       > hcpp-full.hs
     log_file hcpp-full.hs
 
@@ -50,35 +50,35 @@ stdenvNoCC.mkDerivation {
     cat \
       ${blynnSrc}/inn/BasePrecisely.hs \
       ${blynnSrc}/inn/System.hs \
-      ${src}/Hcc/Ast.hs \
-      ${src}/Hcc/Token.hs \
-      ${src}/Hcc/SymbolTable.hs \
-      ${src}/Hcc/ScopeMap.hs \
-      ${src}/Hcc/IntTable.hs \
-      ${src}/Hcc/ParseLite.hs \
-      ${src}/Hcc/ConstExpr.hs \
-      ${src}/Hcc/Lexer.hs \
-      ${src}/Hcc/Parser.hs \
-      ${src}/Hcc/Ir.hs \
-      ${src}/Hcc/CompileM.hs \
-      ${src}/Hcc/LowerCommon.hs \
-      ${src}/Hcc/LowerTypes.hs \
-      ${src}/Hcc/LowerBuiltins.hs \
-      ${src}/Hcc/LowerDataValues.hs \
-      ${src}/Hcc/LowerImplicit.hs \
-      ${src}/Hcc/LowerLiterals.hs \
-      ${src}/Hcc/LowerParams.hs \
-      ${src}/Hcc/LowerBootstrap.hs \
-      ${src}/Hcc/LowerSwitchHelpers.hs \
-      ${src}/Hcc/LowerTypeInfo.hs \
-      ${src}/Hcc/Lower.hs \
-      ${src}/Hcc/TextBuilder.hs \
-      ${src}/Hcc/RegAlloc.hs \
-      ${src}/Hcc/CodegenM1.hs \
-      ${src}/Hcc/M1Ir.hs \
-      ${src}/Hcc/HccSystem.hs \
-      ${src}/Hcc/DriverCommon.hs \
-      ${src}/MainCc1.hs \
+      ${src}/src/Hcc/Ast.hs \
+      ${src}/src/Hcc/Token.hs \
+      ${src}/src/Hcc/SymbolTable.hs \
+      ${src}/src/Hcc/ScopeMap.hs \
+      ${src}/src/Hcc/IntTable.hs \
+      ${src}/src/Hcc/ParseLite.hs \
+      ${src}/src/Hcc/ConstExpr.hs \
+      ${src}/src/Hcc/Lexer.hs \
+      ${src}/src/Hcc/Parser.hs \
+      ${src}/src/Hcc/Ir.hs \
+      ${src}/src/Hcc/CompileM.hs \
+      ${src}/src/Hcc/LowerCommon.hs \
+      ${src}/src/Hcc/LowerTypes.hs \
+      ${src}/src/Hcc/LowerBuiltins.hs \
+      ${src}/src/Hcc/LowerDataValues.hs \
+      ${src}/src/Hcc/LowerImplicit.hs \
+      ${src}/src/Hcc/LowerLiterals.hs \
+      ${src}/src/Hcc/LowerParams.hs \
+      ${src}/src/Hcc/LowerBootstrap.hs \
+      ${src}/src/Hcc/LowerSwitchHelpers.hs \
+      ${src}/src/Hcc/LowerTypeInfo.hs \
+      ${src}/src/Hcc/Lower.hs \
+      ${src}/src/Hcc/TextBuilder.hs \
+      ${src}/src/Hcc/RegAlloc.hs \
+      ${src}/src/Hcc/CodegenM1.hs \
+      ${src}/src/Hcc/M1Ir.hs \
+      ${src}/src/Hcc/HccSystem.hs \
+      ${src}/src/Hcc/DriverCommon.hs \
+      ${src}/src/MainCc1.hs \
       > hcc1-full.hs
     log_file hcc1-full.hs
 

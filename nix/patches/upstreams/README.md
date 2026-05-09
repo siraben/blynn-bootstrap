@@ -6,16 +6,16 @@ by the bootstrap.
 - `oriansj-blynn-compiler-local.patch`
   - upstream: `https://github.com/OriansJ/blynn-compiler.git`
     at `9e46a8da1df90032f1d270a49a6ef5d0cc909658`, including submodules
-  - local delta formerly carried by `vendor/blynn-compiler`, excluding its
+  - local delta formerly carried by the in-tree `blynn-compiler` copy, excluding its
     nested `upstream/` copy
 - `blynn-compiler-local.patch`
   - upstream: `https://github.com/blynn/compiler.git`
     at `a1f1c47c9bb3ff6a45a0735ced84984396560535`
-  - local delta formerly carried by `vendor/blynn-compiler/upstream`
+  - local delta formerly carried by the nested `blynn-compiler/upstream` copy
 - `gnu-mes-compiler-reference.patch`
   - upstream: GNU Mes `v0.27.1`, subset rooted at `module/mescc`,
     `module/mescc.scm`, and `scripts/mescc.scm.in`
-  - reference delta formerly carried by `vendor/mes-compiler`
+  - reference delta formerly carried by the in-tree Mes compiler copy
 - `gnu-mes-libc-reference.patch`
   - upstream: GNU Mes `v0.27.1`
     at `c331d801da386ba752f3fe92d0538102a90e988d`

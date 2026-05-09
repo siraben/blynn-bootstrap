@@ -70,16 +70,16 @@ mkDerivation ({
     cat \
       ${blynnSrc}/inn/BasePrecisely.hs \
       ${blynnSrc}/inn/System.hs \
-      Hcc/Token.hs \
-      Hcc/SymbolTable.hs \
-      Hcc/ParseLite.hs \
-      Hcc/ConstExpr.hs \
-      Hcc/Lexer.hs \
-      Hcc/Preprocessor.hs \
-      Hcc/HccSystemCpp.hs \
-      Hcc/DriverCommonCpp.hs \
-      Hcc/IncludeExpand.hs \
-      MainCpp.hs \
+      src/Hcc/Token.hs \
+      src/Hcc/SymbolTable.hs \
+      src/Hcc/ParseLite.hs \
+      src/Hcc/ConstExpr.hs \
+      src/Hcc/Lexer.hs \
+      src/Hcc/Preprocessor.hs \
+      src/Hcc/HccSystemCpp.hs \
+      src/Hcc/DriverCommonCpp.hs \
+      src/Hcc/IncludeExpand.hs \
+      src/MainCpp.hs \
       > hcpp-full.hs
     log_file hcpp-full.hs
 
@@ -87,35 +87,35 @@ mkDerivation ({
     cat \
       ${blynnSrc}/inn/BasePrecisely.hs \
       ${blynnSrc}/inn/System.hs \
-      Hcc/Ast.hs \
-      Hcc/Token.hs \
-      Hcc/SymbolTable.hs \
-      Hcc/ScopeMap.hs \
-      Hcc/IntTable.hs \
-      Hcc/ParseLite.hs \
-      Hcc/ConstExpr.hs \
-      Hcc/Lexer.hs \
-      Hcc/Parser.hs \
-      Hcc/Ir.hs \
-      Hcc/CompileM.hs \
-      Hcc/LowerCommon.hs \
-      Hcc/LowerTypes.hs \
-      Hcc/LowerBuiltins.hs \
-      Hcc/LowerDataValues.hs \
-      Hcc/LowerImplicit.hs \
-      Hcc/LowerLiterals.hs \
-      Hcc/LowerParams.hs \
-      Hcc/LowerBootstrap.hs \
-      Hcc/LowerSwitchHelpers.hs \
-      Hcc/LowerTypeInfo.hs \
-      Hcc/Lower.hs \
-      Hcc/TextBuilder.hs \
-      Hcc/RegAlloc.hs \
-      Hcc/CodegenM1.hs \
-      Hcc/M1Ir.hs \
-      Hcc/HccSystem.hs \
-      Hcc/DriverCommon.hs \
-      MainCc1.hs \
+      src/Hcc/Ast.hs \
+      src/Hcc/Token.hs \
+      src/Hcc/SymbolTable.hs \
+      src/Hcc/ScopeMap.hs \
+      src/Hcc/IntTable.hs \
+      src/Hcc/ParseLite.hs \
+      src/Hcc/ConstExpr.hs \
+      src/Hcc/Lexer.hs \
+      src/Hcc/Parser.hs \
+      src/Hcc/Ir.hs \
+      src/Hcc/CompileM.hs \
+      src/Hcc/LowerCommon.hs \
+      src/Hcc/LowerTypes.hs \
+      src/Hcc/LowerBuiltins.hs \
+      src/Hcc/LowerDataValues.hs \
+      src/Hcc/LowerImplicit.hs \
+      src/Hcc/LowerLiterals.hs \
+      src/Hcc/LowerParams.hs \
+      src/Hcc/LowerBootstrap.hs \
+      src/Hcc/LowerSwitchHelpers.hs \
+      src/Hcc/LowerTypeInfo.hs \
+      src/Hcc/Lower.hs \
+      src/Hcc/TextBuilder.hs \
+      src/Hcc/RegAlloc.hs \
+      src/Hcc/CodegenM1.hs \
+      src/Hcc/M1Ir.hs \
+      src/Hcc/HccSystem.hs \
+      src/Hcc/DriverCommon.hs \
+      src/MainCc1.hs \
       > hcc1-full.hs
     log_file hcc1-full.hs
 
@@ -137,10 +137,10 @@ mkDerivation ({
     log_step "DONE  compile generated C backend"
     ls -l hcpp hcc1
 
-    run_step_shell "hcpp test/pp-smoke.c > pp-smoke.i" "./hcpp test/pp-smoke.c > pp-smoke.i"
+    run_step_shell "hcpp pp-smoke.c > pp-smoke.i" "./hcpp ${../tests/hcc/pp-smoke.c} > pp-smoke.i"
     log_file pp-smoke.i
     run_step "hcc1 --check pp-smoke.i" ./hcc1 --check pp-smoke.i
-    run_step_shell "hcpp test/parse-smoke.c > parse-smoke.i" "./hcpp test/parse-smoke.c > parse-smoke.i"
+    run_step_shell "hcpp parse-smoke.c > parse-smoke.i" "./hcpp ${../tests/hcc/parse-smoke.c} > parse-smoke.i"
     log_file parse-smoke.i
     run_step "hcc1 --check parse-smoke.i" ./hcc1 --check parse-smoke.i
     run_step "hcc1 -S -o smoke.M1 parse-smoke.i" ./hcc1 -S -o smoke.M1 parse-smoke.i

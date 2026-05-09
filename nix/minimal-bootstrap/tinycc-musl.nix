@@ -26,7 +26,7 @@ let
     .${buildPlatform.system};
 
   patches = [
-    ../../vendor/nixpkgs-minimal-bootstrap/tinycc/static-link.patch
+    ../imports/nixpkgs/minimal-bootstrap/tinycc/static-link.patch
     ../patches/upstreams/tinycc-musl-hcc-bootstrap.patch
   ];
 

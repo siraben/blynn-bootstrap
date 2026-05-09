@@ -22,13 +22,13 @@ stdenv.mkDerivation {
     runHook preBuild
     mkdir -p build/hcpp build/hcc1
     ghc -O0 -Wall -Werror -XNoImplicitPrelude -XForeignFunctionInterface \
-      -i. -iHcc MainCpp.hs cbits/hcc_runtime.c -outputdir build/hcpp -o hcpp
+      -isrc -isrc/Hcc src/MainCpp.hs cbits/hcc_runtime.c -outputdir build/hcpp -o hcpp
     ghc -O0 -Wall -Werror -XNoImplicitPrelude -XForeignFunctionInterface \
-      -i. -iHcc MainCc1.hs cbits/hcc_runtime.c -outputdir build/hcc1 -o hcc1
+      -isrc -isrc/Hcc src/MainCc1.hs cbits/hcc_runtime.c -outputdir build/hcc1 -o hcc1
     cc -O2 -Wall -Werror cbits/hcc_m1.c -o hcc-m1
-    ./hcpp test/pp-smoke.c > pp-smoke.i
+    ./hcpp ${../tests/hcc/pp-smoke.c} > pp-smoke.i
     ./hcc1 --check pp-smoke.i
-    ./hcpp test/parse-smoke.c > parse-smoke.i
+    ./hcpp ${../tests/hcc/parse-smoke.c} > parse-smoke.i
     ./hcc1 --check parse-smoke.i
     ./hcc1 -S -o smoke.M1 parse-smoke.i
     ./hcc1 --m1-ir -o smoke.hccir parse-smoke.i

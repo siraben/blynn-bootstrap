@@ -13,7 +13,7 @@
 let
   version = "unstable-2024-07-07";
   rev = "ea3900f6d5e71776c5cfabcabee317652e3a19ee";
-  support = ../vendor/hcc/support;
+  support = ../hcc/support;
   hccTraceArgs = lib.optionalString enableTrace "--trace ";
 
 in

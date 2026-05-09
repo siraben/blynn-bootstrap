@@ -7,7 +7,7 @@ index 0000000..5171066
 +#!/usr/bin/env bash
 +# Builds upstream blynn/compiler's party→precisely chain on top of orians'
 +# methodically. Inputs: $METHODICALLY (path to orians' methodically binary),
-+# $UPSTREAM_DIR (path to ./vendor/blynn-compiler/upstream). Outputs go to
++# $UPSTREAM_DIR (path to the patched blynn/compiler source). Outputs go to
 +# the current working directory: party.c party multiparty.c multiparty
 +# party1.c party1 party2.c party2 crossly_up.c crossly_up
 +# crossly1.c crossly1 precisely_up.c precisely_up.

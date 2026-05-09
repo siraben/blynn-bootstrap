@@ -29,11 +29,11 @@ stdenvNoCC.mkDerivation {
 
     echo "hcc-m1-smoke: using hcc=${hcc}"
     echo "hcc-m1-smoke: using m2libc=${m2libc}"
-    echo "hcc-m1-smoke: source-dir=${../vendor/hcc/test/m1-smoke}"
+    echo "hcc-m1-smoke: source-dir=${../tests/hcc/m1-smoke}"
     echo "hcc-m1-smoke: START python smoke runner"
-    python3 ${../vendor/hcc/test/m1-smoke/run.py} \
+    python3 ${../tests/hcc/m1-smoke/run.py} \
       --m2libc ${m2libc} \
-      --source-dir ${../vendor/hcc/test/m1-smoke} \
+      --source-dir ${../tests/hcc/m1-smoke} \
       --work-dir .
     echo "hcc-m1-smoke: DONE python smoke runner"
 
@@ -44,7 +44,7 @@ stdenvNoCC.mkDerivation {
     runHook preInstall
     mkdir -p $out/bin $out/share/hcc-m1-smoke
     cp ret13 $out/bin/
-    cp ${../vendor/hcc/test/m1-smoke}/examples/*.c *.i *.M1 *.hex2 $out/share/hcc-m1-smoke/
+    cp ${../tests/hcc/m1-smoke}/examples/*.c *.i *.M1 *.hex2 $out/share/hcc-m1-smoke/
     runHook postInstall
   '';
 
