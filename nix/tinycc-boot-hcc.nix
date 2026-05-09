@@ -52,6 +52,8 @@ stdenvNoCC.mkDerivation {
 
     substituteInPlace libtcc.c \
       --replace-fail '#if defined(TCC_MUSL)' '#if defined(TCC_MUSL) || defined(TCC_MES_LIBC)'
+
+    patch -p0 < ${./patches/tinycc-hcc-float-const-negation.patch}
   '';
 
   buildPhase = ''
@@ -347,6 +349,14 @@ stdenvNoCC.mkDerivation {
     printf '%s\n' 'int main(){return 13;}' > smoke.c
     ./tcc -c smoke.c -o smoke.o
     test -s smoke.o
+
+    cat > float-const-smoke.c <<'EOF'
+    float hcc_float_const = -1.0f;
+    double hcc_double_const = -1.0;
+    int main(){return 0;}
+    EOF
+    ./tcc -c float-const-smoke.c -o float-const-smoke.o
+    test -s float-const-smoke.o
 
     printf '%s\n' 'int f(void){return 17;} int main(void){return f();}' > internal-call-smoke.c
     ./tcc -B bootstrap-libs internal-call-smoke.c -o internal-call-smoke

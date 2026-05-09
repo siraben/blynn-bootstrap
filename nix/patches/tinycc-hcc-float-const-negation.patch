@@ -1,0 +1,22 @@
+--- tccgen.c
++++ tccgen.c
+@@ -4776,7 +4776,18 @@ static void unary(void)
+         next();
+         unary();
+         t = vtop->type.t & VT_BTYPE;
+-	if (is_float(t)) {
++	if (is_float(t)
++            && ((vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST)) {
++            unsigned char *hcc_bytes;
++            hcc_bytes = (unsigned char *)&vtop->c;
++            if (t == VT_FLOAT)
++                hcc_bytes[3] = hcc_bytes[3] ^ 128;
++            else if (t == VT_DOUBLE)
++                hcc_bytes[7] = hcc_bytes[7] ^ 128;
++            else
++                hcc_bytes[9] = hcc_bytes[9] ^ 128;
++            break;
++        } else if (is_float(t)) {
+             /* In IEEE negate(x) isn't subtract(0,x), but rather
+ 	       subtract(-0, x).  */
+ 	    vpush(&vtop->type);
