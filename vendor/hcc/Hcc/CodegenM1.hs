@@ -346,7 +346,7 @@ codegenInstr fnName alloc totalSlots instr = case instr of
       Just temp -> storeTemp alloc temp callCode
   ICallIndirect result callee args -> do
     argCode <- loadArguments alloc 0 args
-    calleeCode <- loadOperand alloc callee
+    calleeCode <- loadOperandWithRspBias alloc (callStackBytes args) callee
     let callCode = argCode ++ calleeCode ++ ["  HCC_CALL_rax"] ++ cleanupCallStack args
     case result of
       Nothing -> pure callCode
@@ -365,30 +365,36 @@ codegenTerminator fnName alloc totalSlots term = case term of
 
 loadArguments :: Allocation -> Int -> [Operand] -> Either CodegenError [String]
 loadArguments alloc _ args = do
-  pushCode <- pushArguments alloc 0 (reverse args)
-  popCode <- popRegisterArguments 0 (take 6 args)
-  pure (pushCode ++ popCode)
+  stackCode <- pushStackArguments alloc 0 (reverse (drop 6 args))
+  registerCode <- loadRegisterArguments alloc (callStackBytes args) 0 (take 6 args)
+  pure (stackCode ++ registerCode)
 
-pushArguments :: Allocation -> Int -> [Operand] -> Either CodegenError [String]
-pushArguments alloc pushed args = case args of
+pushStackArguments :: Allocation -> Int -> [Operand] -> Either CodegenError [String]
+pushStackArguments alloc pushed args = case args of
   [] -> pure []
   op:rest -> do
     one <- loadOperandWithRspBias alloc (pushed * 8) op
-    tailCode <- pushArguments alloc (pushed + 1) rest
+    tailCode <- pushStackArguments alloc (pushed + 1) rest
     pure (one ++ ["  PUSH_RAX"] ++ tailCode)
 
-popRegisterArguments :: Int -> [Operand] -> Either CodegenError [String]
-popRegisterArguments index args = case args of
+loadRegisterArguments :: Allocation -> Int -> Int -> [Operand] -> Either CodegenError [String]
+loadRegisterArguments alloc rspBias index args = case args of
   [] -> pure []
-  _:rest -> do
+  op:rest -> do
+    code <- loadOperandWithRspBias alloc rspBias op
     move <- argumentMove index
-    tailCode <- popRegisterArguments (index + 1) rest
-    pure (["  POP_RAX"] ++ move ++ tailCode)
+    tailCode <- loadRegisterArguments alloc rspBias (index + 1) rest
+    pure (code ++ move ++ tailCode)
 
 cleanupCallStack :: [Operand] -> [String]
 cleanupCallStack args =
+  let bytes = callStackBytes args
+  in if bytes <= 0 then [] else ["  HCC_ADD_IMMEDIATE_to_rsp %" ++ show bytes]
+
+callStackBytes :: [Operand] -> Int
+callStackBytes args =
   let stackArgs = length args - 6
-  in if stackArgs <= 0 then [] else ["  HCC_ADD_IMMEDIATE_to_rsp %" ++ show (stackArgs * 8)]
+  in if stackArgs <= 0 then 0 else stackArgs * 8
 
 argumentMove :: Int -> Either CodegenError [String]
 argumentMove index = case index of
