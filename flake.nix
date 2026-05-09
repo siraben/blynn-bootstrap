@@ -653,6 +653,31 @@
           m2.precisely.gccm2 = minimalBootstrapBy.m2.precisely.gccm2.gcc46;
         };
 
+        gcc46CxxBy = {
+          m2.precisely.m2 = minimalBootstrapBy.m2.precisely.m2.gcc46-cxx;
+          m2.precisely.gccm2 = minimalBootstrapBy.m2.precisely.gccm2.gcc46-cxx;
+        };
+
+        gcc10By = {
+          m2.precisely.m2 = minimalBootstrapBy.m2.precisely.m2.gcc10;
+          m2.precisely.gccm2 = minimalBootstrapBy.m2.precisely.gccm2.gcc10;
+        };
+
+        gccLatestBy = {
+          m2.precisely.m2 = minimalBootstrapBy.m2.precisely.m2.gcc-latest;
+          m2.precisely.gccm2 = minimalBootstrapBy.m2.precisely.gccm2.gcc-latest;
+        };
+
+        glibcBy = {
+          m2.precisely.m2 = minimalBootstrapBy.m2.precisely.m2.glibc;
+          m2.precisely.gccm2 = minimalBootstrapBy.m2.precisely.gccm2.glibc;
+        };
+
+        gccGlibcBy = {
+          m2.precisely.m2 = minimalBootstrapBy.m2.precisely.m2.gcc-glibc;
+          m2.precisely.gccm2 = minimalBootstrapBy.m2.precisely.gccm2.gcc-glibc;
+        };
+
         tinyccMuslBy = {
           m2.precisely.m2 = minimalBootstrapBy.m2.precisely.m2.tinycc-musl;
           m2.precisely.gccm2 = minimalBootstrapBy.m2.precisely.gccm2.tinycc-musl;
@@ -663,13 +688,27 @@
             minimal = minimalBootstrapBy.m2.precisely.m2;
             tinycc.mes = minimalBootstrapBy.m2.precisely.m2.tinycc-mes;
             tinycc.musl = minimalBootstrapBy.m2.precisely.m2.tinycc-musl;
-            gcc46 = gcc46By.m2.precisely.m2;
+            gcc = {
+              "4_6" = gcc46By.m2.precisely.m2;
+              "4_6-cxx" = gcc46CxxBy.m2.precisely.m2;
+              "10" = gcc10By.m2.precisely.m2;
+              latest = gccLatestBy.m2.precisely.m2;
+              glibc = gccGlibcBy.m2.precisely.m2;
+            };
+            glibc = glibcBy.m2.precisely.m2;
           };
           m2.precisely.gccm2 = {
             minimal = minimalBootstrapBy.m2.precisely.gccm2;
             tinycc.mes = minimalBootstrapBy.m2.precisely.gccm2.tinycc-mes;
             tinycc.musl = minimalBootstrapBy.m2.precisely.gccm2.tinycc-musl;
-            gcc46 = gcc46By.m2.precisely.gccm2;
+            gcc = {
+              "4_6" = gcc46By.m2.precisely.gccm2;
+              "4_6-cxx" = gcc46CxxBy.m2.precisely.gccm2;
+              "10" = gcc10By.m2.precisely.gccm2;
+              latest = gccLatestBy.m2.precisely.gccm2;
+              glibc = gccGlibcBy.m2.precisely.gccm2;
+            };
+            glibc = glibcBy.m2.precisely.gccm2;
           };
         };
 
@@ -725,6 +764,11 @@
           tinyccMusl = tinyccMuslBy;
 
           gcc46 = gcc46By;
+          gcc46Cxx = gcc46CxxBy;
+          gcc10 = gcc10By;
+          gccLatest = gccLatestBy;
+          glibc = glibcBy;
+          gccGlibc = gccGlibcBy;
 
           bootstrap = bootstrapBy;
 
