@@ -7,12 +7,15 @@
   mesLibc,
   m2libc,
   pname ? "tinycc-boot-hcc",
+  enableDiagnostics ? false,
+  enableTrace ? false,
 }:
 
 let
   version = "unstable-2024-07-07";
   rev = "ea3900f6d5e71776c5cfabcabee317652e3a19ee";
   support = ../vendor/hcc/support;
+  hccTraceArgs = lib.optionalString enableTrace "--trace ";
 
 in
 stdenv.mkDerivation {
@@ -145,22 +148,24 @@ stdenv.mkDerivation {
       tcc.c > tcc-expanded.c"
     log_file tcc-expanded.c
 
-    run_step "hcc1 --tokens tcc-expanded.c" hcc1 --tokens -o tcc.tokens tcc-expanded.c
-    log_file tcc.tokens
-    run_step "hcc1 --ast-summary tcc-expanded.c" hcc1 --ast-summary -o tcc.ast-summary tcc-expanded.c
-    log_file tcc.ast-summary
-    run_step "hcc1 --ir-summary tcc-expanded.c" hcc1 --ir-summary -o tcc.ir-summary tcc-expanded.c
-    log_file tcc.ir-summary
+    ${lib.optionalString enableDiagnostics ''
+      run_step "hcc1 --tokens tcc-expanded.c" hcc1 --tokens -o tcc.tokens tcc-expanded.c
+      log_file tcc.tokens
+      run_step "hcc1 --ast-summary tcc-expanded.c" hcc1 --ast-summary -o tcc.ast-summary tcc-expanded.c
+      log_file tcc.ast-summary
+      run_step "hcc1 --ir-summary tcc-expanded.c" hcc1 --ir-summary -o tcc.ir-summary tcc-expanded.c
+      log_file tcc.ir-summary
+    ''}
 
     run_step_shell "hcpp tcc-bootstrap-support.c > tcc-bootstrap-support.i" "hcpp ${support}/tcc-bootstrap-support.c > tcc-bootstrap-support.i"
     log_file tcc-bootstrap-support.i
-    run_step "hcc1 -S tcc-bootstrap-support.i" hcc1 --trace -S -o tcc-bootstrap-support.M1 tcc-bootstrap-support.i
+    run_step "hcc1 -S tcc-bootstrap-support.i" hcc1 ${hccTraceArgs}-S -o tcc-bootstrap-support.M1 tcc-bootstrap-support.i
     log_file tcc-bootstrap-support.M1
     run_step_shell "hcpp tcc-final-overrides.c > tcc-final-overrides.i" "hcpp ${support}/tcc-final-overrides.c > tcc-final-overrides.i"
     log_file tcc-final-overrides.i
-    run_step "hcc1 -S tcc-final-overrides.i" hcc1 --trace -S -o tcc-final-overrides.M1 tcc-final-overrides.i
+    run_step "hcc1 -S tcc-final-overrides.i" hcc1 ${hccTraceArgs}-S -o tcc-final-overrides.M1 tcc-final-overrides.i
     log_file tcc-final-overrides.M1
-    run_step "hcc1 -S tcc-expanded.c" hcc1 --trace -S -o tcc.M1 tcc-expanded.c
+    run_step "hcc1 -S tcc-expanded.c" hcc1 ${hccTraceArgs}-S -o tcc.M1 tcc-expanded.c
     log_file tcc.M1
 
     M1 --architecture amd64 --little-endian \
