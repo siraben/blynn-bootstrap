@@ -3,6 +3,7 @@ module CodegenM1 where
 import Base
 import Ast
 import CompileM
+import IntTable
 import Ir
 import Lower
 import LowerBootstrap
@@ -219,10 +220,285 @@ header =
   ]
 
 codegenFunction :: FunctionIr -> Either CodegenError Lines
-codegenFunction fn@(FunctionIr name _ blocks) = do
-  alloc <- mapAllocError (allocateFunction fn)
+codegenFunction fn = do
+  let optimized@(FunctionIr name _ blocks) = optimizeFunctionIr fn
+  alloc <- mapAllocError (allocateFunction optimized)
   body <- withCodegenContext ("function " ++ name) (codegenBlocks name alloc (stackSlotCount alloc) blocks)
   pure (line (":FUNCTION_" ++ name) . linesFromList (prologue (stackSlotCount alloc)) . body . line "")
+
+optimizeFunctionIr :: FunctionIr -> FunctionIr
+optimizeFunctionIr fn = case fn of
+  FunctionIr name params blocks ->
+    let stats = functionStats blocks
+    in FunctionIr name params (map (optimizeBasicBlock stats) blocks)
+
+optimizeBasicBlock :: BlockStats -> BasicBlock -> BasicBlock
+optimizeBasicBlock globalStats block = case block of
+  BasicBlock bid instrs term ->
+    if containsCondInstr instrs
+    then block
+    else
+      let localStats = blockStats instrs term
+          optimized = optimizeInstrs globalStats localStats intMapEmpty instrs
+          term' = term
+      in BasicBlock bid optimized term'
+
+functionStats :: [BasicBlock] -> BlockStats
+functionStats blocks =
+  functionStatsFrom blocks (BlockStats intMapEmpty intMapEmpty intMapEmpty)
+
+functionStatsFrom :: [BasicBlock] -> BlockStats -> BlockStats
+functionStatsFrom blocks stats = case blocks of
+  [] -> stats
+  BasicBlock _ instrs term:rest ->
+    functionStatsFrom rest (countTerminator term (countInstrList instrs stats))
+
+containsCondInstr :: [Instr] -> Bool
+containsCondInstr instrs = case instrs of
+  [] -> False
+  ICond _ _ _ _ _ _ _: _ -> True
+  _:rest -> containsCondInstr rest
+
+data BlockStats = BlockStats (IntMap Int) (IntMap Int) (IntMap Bool)
+
+blockStats :: [Instr] -> Terminator -> BlockStats
+blockStats instrs term =
+  let emptyStats = BlockStats intMapEmpty intMapEmpty intMapEmpty
+      instrStats = countInstrList instrs emptyStats
+      termStats = countTerminator term instrStats
+      blockedStats = blockTerminatorTemps term (blockNestedCondTemps instrs termStats)
+  in blockedStats
+
+optimizeInstrs :: BlockStats -> BlockStats -> IntMap Operand -> [Instr] -> [Instr]
+optimizeInstrs globalStats localStats env instrs = case instrs of
+  [] -> []
+  instr:rest ->
+    if pureForwardable globalStats localStats instr
+    then case pureForwardValue instr of
+      Just pair -> case pair of
+        (Temp key, op) ->
+          optimizeInstrs globalStats localStats (intMapInsert key (rewriteOperand env op) env) rest
+      Nothing -> optimizeInstrs globalStats localStats env rest
+    else
+      let instr' = rewriteInstr env instr
+      in instr' : optimizeInstrs globalStats localStats env rest
+
+pureForwardable :: BlockStats -> BlockStats -> Instr -> Bool
+pureForwardable globalStats localStats instr = case pureForwardValue instr of
+  Nothing -> False
+  Just pair -> case pair of
+    (temp, _) ->
+      tempDefCount localStats temp == 1 &&
+      tempDefCount globalStats temp == 1 &&
+      tempUseCount localStats temp == tempUseCount globalStats temp &&
+      tempUseCount localStats temp <= 1 &&
+      not (tempBlocked localStats temp) &&
+      not (tempBlocked globalStats temp)
+
+pureForwardValue :: Instr -> Maybe (Temp, Operand)
+pureForwardValue instr = case instr of
+  IConst temp value -> Just (temp, OImm value)
+  IConstBytes temp bytes -> Just (temp, OImmBytes bytes)
+  ICopy temp op -> Just (temp, op)
+  _ -> Nothing
+
+rewriteInstr :: IntMap Operand -> Instr -> Instr
+rewriteInstr env instr = case instr of
+  ICopy temp op -> ICopy temp (rewriteOperand env op)
+  ILoad64 temp op -> ILoad64 temp (rewriteOperand env op)
+  ILoad32 temp op -> ILoad32 temp (rewriteOperand env op)
+  ILoadS32 temp op -> ILoadS32 temp (rewriteOperand env op)
+  ILoad16 temp op -> ILoad16 temp (rewriteOperand env op)
+  ILoadS16 temp op -> ILoadS16 temp (rewriteOperand env op)
+  ILoad8 temp op -> ILoad8 temp (rewriteOperand env op)
+  ILoadS8 temp op -> ILoadS8 temp (rewriteOperand env op)
+  IStore64 addr value -> IStore64 (rewriteOperand env addr) (rewriteOperand env value)
+  IStore32 addr value -> IStore32 (rewriteOperand env addr) (rewriteOperand env value)
+  IStore16 addr value -> IStore16 (rewriteOperand env addr) (rewriteOperand env value)
+  IStore8 addr value -> IStore8 (rewriteOperand env addr) (rewriteOperand env value)
+  IBin temp op a b -> IBin temp op (rewriteOperand env a) (rewriteOperand env b)
+  ICall result name args -> ICall result name (map (rewriteOperand env) args)
+  ICallIndirect result callee args ->
+    ICallIndirect result (rewriteOperand env callee) (map (rewriteOperand env) args)
+  _ -> instr
+
+rewriteOperand :: IntMap Operand -> Operand -> Operand
+rewriteOperand env op = case op of
+  OTemp temp -> case temp of
+    Temp key -> case intMapLookup key env of
+      Just replacement -> rewriteOperand env replacement
+      Nothing -> op
+  _ -> op
+
+tempUseCount :: BlockStats -> Temp -> Int
+tempUseCount stats temp = case stats of
+  BlockStats uses _ _ -> lookupIntDefault 0 temp uses
+
+tempDefCount :: BlockStats -> Temp -> Int
+tempDefCount stats temp = case stats of
+  BlockStats _ defs _ -> lookupIntDefault 0 temp defs
+
+tempBlocked :: BlockStats -> Temp -> Bool
+tempBlocked stats temp = case stats of
+  BlockStats _ _ blocked -> lookupIntDefault False temp blocked
+
+lookupIntDefault :: a -> Temp -> IntMap a -> a
+lookupIntDefault fallback temp table = case temp of
+  Temp key -> case intMapLookup key table of
+    Just value -> value
+    Nothing -> fallback
+
+countInstrList :: [Instr] -> BlockStats -> BlockStats
+countInstrList instrs stats = case instrs of
+  [] -> stats
+  instr:rest -> countInstrList rest (countInstr instr stats)
+
+countInstr :: Instr -> BlockStats -> BlockStats
+countInstr instr stats = case instr of
+  IParam temp _ -> countDef temp stats
+  IAlloca temp _ -> countDef temp stats
+  IConst temp _ -> countDef temp stats
+  IConstBytes temp _ -> countDef temp stats
+  ICopy temp op -> countDef temp (countOperand op stats)
+  IAddrOf temp source -> countDef temp (countUse source (countBlocked source stats))
+  ILoad64 temp op -> countDef temp (countOperand op stats)
+  ILoad32 temp op -> countDef temp (countOperand op stats)
+  ILoadS32 temp op -> countDef temp (countOperand op stats)
+  ILoad16 temp op -> countDef temp (countOperand op stats)
+  ILoadS16 temp op -> countDef temp (countOperand op stats)
+  ILoad8 temp op -> countDef temp (countOperand op stats)
+  ILoadS8 temp op -> countDef temp (countOperand op stats)
+  IStore64 addr value -> countOperand value (countOperand addr stats)
+  IStore32 addr value -> countOperand value (countOperand addr stats)
+  IStore16 addr value -> countOperand value (countOperand addr stats)
+  IStore8 addr value -> countOperand value (countOperand addr stats)
+  IBin temp _ a b -> countDef temp (countOperand b (countOperand a stats))
+  ICond temp condInstrs condOp trueInstrs trueOp falseInstrs falseOp ->
+    countDef temp
+      (countOperand falseOp
+      (countInstrList falseInstrs
+      (countOperand trueOp
+      (countInstrList trueInstrs
+      (countOperand condOp
+      (countInstrList condInstrs stats))))))
+  ICall result _ args -> countMaybeDef result (countOperands args stats)
+  ICallIndirect result callee args -> countMaybeDef result (countOperands args (countOperand callee stats))
+
+countTerminator :: Terminator -> BlockStats -> BlockStats
+countTerminator term stats = case term of
+  TRet Nothing -> stats
+  TRet (Just op) -> countOperand op stats
+  TJump _ -> stats
+  TBranch op _ _ -> countOperand op stats
+
+countOperands :: [Operand] -> BlockStats -> BlockStats
+countOperands ops stats = case ops of
+  [] -> stats
+  op:rest -> countOperands rest (countOperand op stats)
+
+countOperand :: Operand -> BlockStats -> BlockStats
+countOperand op stats = case op of
+  OTemp temp -> countUse temp stats
+  _ -> stats
+
+countMaybeDef :: Maybe Temp -> BlockStats -> BlockStats
+countMaybeDef mtemp stats = case mtemp of
+  Nothing -> stats
+  Just temp -> countDef temp stats
+
+countUse :: Temp -> BlockStats -> BlockStats
+countUse temp stats = case stats of
+  BlockStats uses defs blocked -> case temp of
+    Temp key -> BlockStats (incrementInt key uses) defs blocked
+
+countDef :: Temp -> BlockStats -> BlockStats
+countDef temp stats = case stats of
+  BlockStats uses defs blocked -> case temp of
+    Temp key -> BlockStats uses (incrementInt key defs) blocked
+
+countBlocked :: Temp -> BlockStats -> BlockStats
+countBlocked temp stats = case stats of
+  BlockStats uses defs blocked -> case temp of
+    Temp key -> BlockStats uses defs (intMapInsert key True blocked)
+
+incrementInt :: Int -> IntMap Int -> IntMap Int
+incrementInt key table = case intMapLookup key table of
+  Nothing -> intMapInsert key 1 table
+  Just value -> intMapInsert key (value + 1) table
+
+blockNestedCondTemps :: [Instr] -> BlockStats -> BlockStats
+blockNestedCondTemps instrs stats = case instrs of
+  [] -> stats
+  instr:rest -> blockNestedCondTemps rest (blockNestedCondTempsInstr instr stats)
+
+blockNestedCondTempsInstr :: Instr -> BlockStats -> BlockStats
+blockNestedCondTempsInstr instr stats = case instr of
+  ICond _ condInstrs condOp trueInstrs trueOp falseInstrs falseOp ->
+    blockOperand falseOp
+      (blockInstrTemps falseInstrs
+      (blockOperand trueOp
+      (blockInstrTemps trueInstrs
+      (blockOperand condOp
+      (blockInstrTemps condInstrs stats)))))
+  _ -> stats
+
+blockInstrTemps :: [Instr] -> BlockStats -> BlockStats
+blockInstrTemps instrs stats = case instrs of
+  [] -> stats
+  instr:rest -> blockInstrTemps rest (blockInstrTempsOne instr stats)
+
+blockInstrTempsOne :: Instr -> BlockStats -> BlockStats
+blockInstrTempsOne instr stats = case instr of
+  IParam temp _ -> countBlocked temp stats
+  IAlloca temp _ -> countBlocked temp stats
+  IConst temp _ -> countBlocked temp stats
+  IConstBytes temp _ -> countBlocked temp stats
+  ICopy temp op -> countBlocked temp (blockOperand op stats)
+  IAddrOf temp source -> countBlocked temp (countBlocked source stats)
+  ILoad64 temp op -> countBlocked temp (blockOperand op stats)
+  ILoad32 temp op -> countBlocked temp (blockOperand op stats)
+  ILoadS32 temp op -> countBlocked temp (blockOperand op stats)
+  ILoad16 temp op -> countBlocked temp (blockOperand op stats)
+  ILoadS16 temp op -> countBlocked temp (blockOperand op stats)
+  ILoad8 temp op -> countBlocked temp (blockOperand op stats)
+  ILoadS8 temp op -> countBlocked temp (blockOperand op stats)
+  IStore64 addr value -> blockOperand value (blockOperand addr stats)
+  IStore32 addr value -> blockOperand value (blockOperand addr stats)
+  IStore16 addr value -> blockOperand value (blockOperand addr stats)
+  IStore8 addr value -> blockOperand value (blockOperand addr stats)
+  IBin temp _ a b -> countBlocked temp (blockOperand b (blockOperand a stats))
+  ICond temp condInstrs condOp trueInstrs trueOp falseInstrs falseOp ->
+    countBlocked temp
+      (blockOperand falseOp
+      (blockInstrTemps falseInstrs
+      (blockOperand trueOp
+      (blockInstrTemps trueInstrs
+      (blockOperand condOp
+      (blockInstrTemps condInstrs stats))))))
+  ICall result _ args -> blockMaybe result (blockOperands args stats)
+  ICallIndirect result callee args -> blockMaybe result (blockOperands args (blockOperand callee stats))
+
+blockOperands :: [Operand] -> BlockStats -> BlockStats
+blockOperands ops stats = case ops of
+  [] -> stats
+  op:rest -> blockOperands rest (blockOperand op stats)
+
+blockOperand :: Operand -> BlockStats -> BlockStats
+blockOperand op stats = case op of
+  OTemp temp -> countBlocked temp stats
+  _ -> stats
+
+blockMaybe :: Maybe Temp -> BlockStats -> BlockStats
+blockMaybe mtemp stats = case mtemp of
+  Nothing -> stats
+  Just temp -> countBlocked temp stats
+
+blockTerminatorTemps :: Terminator -> BlockStats -> BlockStats
+blockTerminatorTemps term stats = case term of
+  TRet Nothing -> stats
+  TRet (Just op) -> blockOperand op stats
+  TJump _ -> stats
+  TBranch op _ _ -> blockOperand op stats
 
 withCodegenContext :: String -> Either CodegenError a -> Either CodegenError a
 withCodegenContext context result = case result of
