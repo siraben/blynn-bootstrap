@@ -186,8 +186,10 @@ header =
   , "DEFINE HCC_COPY_rax_to_rsi 4889C6"
   , "DEFINE HCC_COPY_rax_to_rdx 4889C2"
   , "DEFINE HCC_COPY_rax_to_rcx 4889C1"
+  , "DEFINE HCC_M_RAX_RBX 4889C3"
   , "DEFINE HCC_COPY_rax_to_r8 4989C0"
   , "DEFINE HCC_COPY_rax_to_r9 4989C1"
+  , "DEFINE HCC_M_RDI_RAX 4889F8"
   , "DEFINE HCC_COPY_rsi_to_rax 4889F0"
   , "DEFINE HCC_COPY_rdx_to_rax 4889D0"
   , "DEFINE HCC_COPY_rcx_to_rax 4889C8"
@@ -196,6 +198,8 @@ header =
   , "DEFINE HCC_PUSH_RSI 56"
   , "DEFINE HCC_PUSH_RDX 52"
   , "DEFINE HCC_LOAD_IMMEDIATE64_rax 48B8"
+  , "DEFINE HCC_LI64_80000000 48B80000008000000000"
+  , "DEFINE HCC_LI64_FFFFFFFF 48B8FFFFFFFF00000000"
   , "DEFINE HCC_SHL_rax_cl 48D3E0"
   , "DEFINE HCC_SHR_rax_cl 48D3E8"
   , "DEFINE HCC_SAR_rax_cl 48D3F8"
@@ -292,24 +296,24 @@ codegenInstr fnName alloc totalSlots instr = case instr of
   IStore64 addr value -> do
     addrCode <- loadOperand alloc addr
     valueCode <- loadOperand alloc value
-    pure (addrCode ++ ["  PUSH_RAX", "  POP_RBX"] ++ valueCode ++ ["  HCC_STORE_INTEGER"])
+    pure (addrCode ++ ["  HCC_M_RAX_RBX"] ++ valueCode ++ ["  HCC_STORE_INTEGER"])
   IStore32 addr value -> do
     addrCode <- loadOperand alloc addr
     valueCode <- loadOperand alloc value
-    pure (addrCode ++ ["  PUSH_RAX", "  POP_RBX"] ++ valueCode ++ ["  HCC_STORE_WORD"])
+    pure (addrCode ++ ["  HCC_M_RAX_RBX"] ++ valueCode ++ ["  HCC_STORE_WORD"])
   IStore16 addr value -> do
     addrCode <- loadOperand alloc addr
     valueCode <- loadOperand alloc value
-    pure (addrCode ++ ["  PUSH_RAX", "  POP_RBX"] ++ valueCode ++ ["  HCC_STORE_HALF"])
+    pure (addrCode ++ ["  HCC_M_RAX_RBX"] ++ valueCode ++ ["  HCC_STORE_HALF"])
   IStore8 addr value -> do
     addrCode <- loadOperand alloc addr
     valueCode <- loadOperand alloc value
-    pure (addrCode ++ ["  PUSH_RAX", "  POP_RBX"] ++ valueCode ++ ["  HCC_STORE_CHAR"])
+    pure (addrCode ++ ["  HCC_M_RAX_RBX"] ++ valueCode ++ ["  HCC_STORE_CHAR"])
   IBin temp op a b -> do
     acode <- loadOperand alloc a
     bcode <- loadOperand alloc b
     opCode <- binOpCode op
-    storeTemp alloc temp (acode ++ ["  PUSH_RAX", "  POP_RBX"] ++ bcode ++ opCode)
+    storeTemp alloc temp (acode ++ ["  HCC_M_RAX_RBX"] ++ bcode ++ opCode)
   ICond temp condInstrs condOp trueInstrs trueOp falseInstrs falseOp -> do
     condCode <- codegenInstrs fnName alloc totalSlots condInstrs
     condLoad <- loadOperand alloc condOp
@@ -398,7 +402,7 @@ argumentMove index = case index of
 
 loadParam :: Int -> Int -> Either CodegenError [String]
 loadParam totalSlots index = case index of
-  0 -> Right ["  PUSH_RDI", "  POP_RAX"]
+  0 -> Right ["  HCC_M_RDI_RAX"]
   1 -> Right ["  HCC_COPY_rsi_to_rax"]
   2 -> Right ["  HCC_COPY_rdx_to_rax"]
   3 -> Right ["  HCC_COPY_rcx_to_rax"]
@@ -445,13 +449,25 @@ loadOperandWithRspBias alloc rspBias op = case op of
 
 loadImmediate :: Int -> [String]
 loadImmediate value =
-  if value >= (-2147483648) && value <= 2147483647
-    then ["  LOAD_IMMEDIATE_rax %" ++ show value]
-    else [textRender (textString "  HCC_LOAD_IMMEDIATE64_rax " `textAppend` byteHexWords (word64Bytes value))]
+  if value == 2147483648
+    then ["  HCC_LI64_80000000"]
+    else if value == 4294967295
+      then ["  HCC_LI64_FFFFFFFF"]
+      else if value >= (-2147483648) && value <= 2147483647
+        then ["  LOAD_IMMEDIATE_rax %" ++ show value]
+        else [textRender (textString "  HCC_LOAD_IMMEDIATE64_rax " `textAppend` byteHexWords (word64Bytes value))]
 
 loadImmediateBytes :: [Int] -> [String]
 loadImmediateBytes bytes =
-  [textRender (textString "  HCC_LOAD_IMMEDIATE64_rax " `textAppend` byteHexWords (takeInts 8 (bytes ++ zeroBytes)))]
+  loadImmediateBytes8 (takeInts 8 (bytes ++ zeroBytes))
+
+loadImmediateBytes8 :: [Int] -> [String]
+loadImmediateBytes8 bytes =
+  if bytes == [0, 0, 0, 128, 0, 0, 0, 0]
+    then ["  HCC_LI64_80000000"]
+    else if bytes == [255, 255, 255, 255, 0, 0, 0, 0]
+      then ["  HCC_LI64_FFFFFFFF"]
+      else [textRender (textString "  HCC_LOAD_IMMEDIATE64_rax " `textAppend` byteHexWords bytes)]
 
 zeroBytes :: [Int]
 zeroBytes = 0 : zeroBytes
@@ -472,7 +488,7 @@ loadLocationWithRspBias :: Int -> Location -> Either CodegenError [String]
 loadLocationWithRspBias rspBias loc = case loc of
   InReg Rax -> Right []
   InReg Rbx -> Right ["  MOVE_rbx_to_rax"]
-  InReg Rdi -> Right ["  PUSH_RDI", "  POP_RAX"]
+  InReg Rdi -> Right ["  HCC_M_RDI_RAX"]
   InReg Rsi -> Right ["  HCC_COPY_rsi_to_rax"]
   InReg Rdx -> Right ["  HCC_COPY_rdx_to_rax"]
   OnStack slot -> Right ["  LOAD_RSP_IMMEDIATE_into_rax %" ++ show (8 * slot + rspBias)]
