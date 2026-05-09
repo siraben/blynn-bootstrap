@@ -19,11 +19,6 @@ intMapLookup k (IntMap t) = lookupT k t
 intMapInsert :: Int -> a -> IntMap a -> IntMap a
 intMapInsert k v (IntMap t) = IntMap (insertT k v t)
 
-intMapMember :: Int -> IntMap a -> Bool
-intMapMember k m = case intMapLookup k m of
-  Just _ -> True
-  Nothing -> False
-
 lookupT :: Int -> Tree a -> Maybe a
 lookupT k t = case t of
   E -> Nothing

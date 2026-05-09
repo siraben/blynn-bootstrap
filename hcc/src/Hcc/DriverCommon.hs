@@ -132,18 +132,17 @@ unescapeDefineValue value = case value of
   c:rest -> c : unescapeDefineValue rest
 
 renderDefines :: [(String, String)] -> String
-renderDefines defs = renderDefinesBuilder defs ""
-
-renderDefinesBuilder :: [(String, String)] -> String -> String
-renderDefinesBuilder defs = case defs of
-  [] -> id
-  (name, value):rest ->
-    ("#define "++)
-    . (name++)
-    . (' ':)
-    . (value++)
-    . ('\n':)
-    . renderDefinesBuilder rest
+renderDefines defs = go defs ""
+  where
+    go rest = case rest of
+      [] -> id
+      (name, value):rest' ->
+        ("#define "++)
+        . (name++)
+        . (' ':)
+        . (value++)
+        . ('\n':)
+        . go rest'
 
 replaceExt :: String -> String -> String
 replaceExt path ext = reverse (dropExt (reverse path)) ++ ext where

@@ -979,6 +979,7 @@
             minimalBootstrap.stage0-posix.mescc-tools
             pkgs.coreutils
             pkgs.gcc
+            pkgs.time
             preciselyGhcDebug
             hccBy.host.ghc.native
             hccProfileHostGhcNative

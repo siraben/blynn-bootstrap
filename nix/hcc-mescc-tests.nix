@@ -38,8 +38,10 @@ stdenvNoCC.mkDerivation {
       log_step "START $name expected=$expected"
       log_step "$name: hcpp $src -> $name.i"
       hcpp "$src" > "$name.i"
-      log_step "$name: hcc1 -S $name.i -> $name.M1"
-      hcc1 -S -o "$name.M1" "$name.i"
+      log_step "$name: hcc1 --m1-ir $name.i -> $name.hccir"
+      hcc1 --m1-ir -o "$name.hccir" "$name.i"
+      log_step "$name: hcc-m1 $name.hccir -> $name.M1"
+      hcc-m1 "$name.hccir" "$name.M1"
       log_step "$name: M1 $name.M1 -> $name.hex2"
       M1 --architecture amd64 --little-endian \
         -f ${m2libc}/amd64/amd64_defs.M1 \

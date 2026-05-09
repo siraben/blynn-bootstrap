@@ -1,7 +1,6 @@
 module Main where
 
 import Base
-import CodegenM1 hiding (line, mapCompileError)
 import DriverCommon
 import HccSystem
 import M1Ir
@@ -16,11 +15,10 @@ main = do
     ["--help"] -> usage >> hccExitSuccess
     "--check":files -> checkFiles files
     _ | "--m1-ir" `elem` args -> compileM1Ir args
-    _ | "-S" `elem` args -> compileAssembly args
-    _ -> die "hcc1: expected -S or --check"
+    _ -> die "hcc1: expected --m1-ir or --check"
 
 usage :: IO ()
-usage = hccPutStrLn "usage: hcc1 -S [-o FILE] INPUT.i\n       hcc1 --m1-ir [-o FILE] INPUT.i\n       hcc1 --check FILE..."
+usage = hccPutStrLn "usage: hcc1 --m1-ir [-o FILE] INPUT.i\n       hcc1 --check FILE..."
 
 checkFiles :: [String] -> IO ()
 checkFiles files = case files of
@@ -33,39 +31,6 @@ checkFile path = do
   case lexPlainSource source >>= mapParseError . parseProgram of
     Left msg -> die (path ++ ":" ++ msg)
     Right _ -> pure ()
-
-compileAssembly :: [String] -> IO ()
-compileAssembly args = do
-  case assemblyArgs args of
-    Left msg -> die msg
-    Right opts -> do
-      let trace = hccTraceIf ("--trace" `elem` args)
-      trace ("read " ++ asmInput opts)
-      source <- hccReadFile (asmInput opts)
-      trace "lex"
-      case lexPlainSource source of
-        Left msg -> die (asmInput opts ++ ":" ++ msg)
-        Right toks -> do
-          trace "parse"
-          case mapParseError (parseProgram toks) of
-            Left msg -> dieInput opts msg
-            Right ast -> writeAssembly opts trace ast
-  where
-    dieInput opts msg = die (asmInput opts ++ ":" ++ msg)
-
-    writeAssembly opts trace ast = do
-      traceLine trace ("open " ++ asmOutput opts)
-      handle <- hccOpenWriteFile (asmOutput opts)
-      case handle == 0 of
-        True -> die ("hcc1: cannot write " ++ asmOutput opts)
-        False -> do
-          traceLine trace "codegen start"
-          result <- codegenM1WriteTraceWithDataPrefix (hccWriteAndFlushLines handle) trace (dataLabelPrefix (asmInput opts)) ast
-          traceLine trace "codegen done"
-          hccClose handle
-          case result of
-            Left (CodegenError msg) -> dieInput opts msg
-            Right _ -> pure ()
 
 compileM1Ir :: [String] -> IO ()
 compileM1Ir args = do

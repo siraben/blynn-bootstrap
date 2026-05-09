@@ -35,12 +35,11 @@ mapPreprocessError result = case result of
   Right toks -> Right toks
 
 renderTokens :: [Token] -> String
-renderTokens toks = renderTokensBuilder toks "\n"
-
-renderTokensBuilder :: [Token] -> String -> String
-renderTokensBuilder toks = case toks of
-  [] -> id
-  Token _ kind:rest ->
-    (tokenText kind++)
-    . (' ':)
-    . renderTokensBuilder rest
+renderTokens toks = go toks "\n"
+  where
+    go rest = case rest of
+      [] -> id
+      Token _ kind:rest' ->
+        (tokenText kind++)
+        . (' ':)
+        . go rest'

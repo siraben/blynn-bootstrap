@@ -17,7 +17,15 @@ data Reply a
 data Parser a = Parser { runParser :: SymbolSet -> [Token] -> Consumed (Reply a) }
 
 instance Functor Parser where
-  fmap f p = Parser $ \env toks -> mapConsumed (mapReply f) (runParser p env toks)
+  fmap f p = Parser $ \env toks -> mapConsumed (runParser p env toks)
+    where
+      mapConsumed consumed = case consumed of
+        Unconsumed x -> Unconsumed (mapReply x)
+        Consumed x -> Consumed (mapReply x)
+
+      mapReply reply = case reply of
+        Ok x rest -> Ok (f x) rest
+        Error err -> Error err
 
 instance Applicative Parser where
   pure x = Parser $ \_env toks -> Unconsumed (Ok x toks)
@@ -35,16 +43,6 @@ instance Monad Parser where
     Consumed reply -> Consumed (case reply of
       Error err -> Error err
       Ok x rest -> forceConsumed (runParser (f x) env rest))
-
-mapConsumed :: (a -> b) -> Consumed a -> Consumed b
-mapConsumed f consumed = case consumed of
-  Unconsumed x -> Unconsumed (f x)
-  Consumed x -> Consumed (f x)
-
-mapReply :: (a -> b) -> Reply a -> Reply b
-mapReply f reply = case reply of
-  Ok x rest -> Ok (f x) rest
-  Error err -> Error err
 
 forceConsumed :: Consumed a -> a
 forceConsumed consumed = case consumed of

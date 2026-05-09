@@ -90,8 +90,8 @@ mkDerivation ({
       src/Hcc/Ast.hs \
       src/Hcc/Token.hs \
       src/Hcc/SymbolTable.hs \
-      src/Hcc/ScopeMap.hs \
       src/Hcc/IntTable.hs \
+      src/Hcc/ScopeMap.hs \
       src/Hcc/ParseLite.hs \
       src/Hcc/ConstExpr.hs \
       src/Hcc/Lexer.hs \
@@ -109,9 +109,6 @@ mkDerivation ({
       src/Hcc/LowerSwitchHelpers.hs \
       src/Hcc/LowerTypeInfo.hs \
       src/Hcc/Lower.hs \
-      src/Hcc/TextBuilder.hs \
-      src/Hcc/RegAlloc.hs \
-      src/Hcc/CodegenM1.hs \
       src/Hcc/M1Ir.hs \
       src/Hcc/HccSystem.hs \
       src/Hcc/DriverCommon.hs \
@@ -126,10 +123,8 @@ mkDerivation ({
     log_file hcc1-blynn.c
 
     log_step "START patch generated RTS hcpp TOP=${toString hcppTop}, hcc1 TOP=${toString hcc1Top}"
-    sed -i -E 's/enum\{TOP=[0-9]+\};/enum{TOP=${toString hcppTop}};/' hcpp-blynn.c
-    sed -i -E 's/enum\{TOP=[0-9]+\};/enum{TOP=${toString hcc1Top}};/' hcc1-blynn.c
-    grep -q 'enum{TOP=${toString hcppTop}};' hcpp-blynn.c
-    grep -q 'enum{TOP=${toString hcc1Top}};' hcc1-blynn.c
+    substituteInPlace hcpp-blynn.c --replace-fail 'enum{TOP=16777216};' 'enum{TOP=${toString hcppTop}};'
+    substituteInPlace hcc1-blynn.c --replace-fail 'enum{TOP=16777216};' 'enum{TOP=${toString hcc1Top}};'
     log_step "DONE  patch generated RTS hcpp TOP=${toString hcppTop}, hcc1 TOP=${toString hcc1Top}"
 
     log_step "START compile generated C backend"
@@ -143,13 +138,10 @@ mkDerivation ({
     run_step_shell "hcpp parse-smoke.c > parse-smoke.i" "./hcpp ${../tests/hcc/parse-smoke.c} > parse-smoke.i"
     log_file parse-smoke.i
     run_step "hcc1 --check parse-smoke.i" ./hcc1 --check parse-smoke.i
-    run_step "hcc1 -S -o smoke.M1 parse-smoke.i" ./hcc1 -S -o smoke.M1 parse-smoke.i
-    log_file smoke.M1
     run_step "hcc1 --m1-ir -o smoke.hccir parse-smoke.i" ./hcc1 --m1-ir -o smoke.hccir parse-smoke.i
     log_file smoke.hccir
     run_step "hcc-m1 smoke.hccir smoke-c.M1" ./hcc-m1 smoke.hccir smoke-c.M1
     log_file smoke-c.M1
-    run_step "compare Haskell and C M1 writers" cmp smoke.M1 smoke-c.M1
 
     runHook postBuild
   '';

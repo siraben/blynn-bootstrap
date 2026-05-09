@@ -31,6 +31,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--hcpp", default="hcpp")
     parser.add_argument("--hcc1", default="hcc1")
+    parser.add_argument("--hcc-m1", default="hcc-m1")
     parser.add_argument("--m2libc", required=True)
     parser.add_argument("--source-dir", default=str(pathlib.Path(__file__).parent))
     parser.add_argument("--work-dir", default=".")
@@ -47,6 +48,7 @@ def main():
         log(f"START {name}")
         src = examples_dir / f"{name}.c"
         preprocessed = work_dir / f"{name}.i"
+        hccir = work_dir / f"{name}.hccir"
         m1 = work_dir / f"{name}.M1"
         hex2 = work_dir / f"{name}.hex2"
         end = work_dir / f"{name}-end.hex2"
@@ -55,8 +57,10 @@ def main():
         with preprocessed.open("w") as handle:
             log(f"{name}: hcpp {src.name} -> {preprocessed.name}")
             subprocess.run([args.hcpp, str(src)], check=True, stdout=handle)
-        log(f"{name}: hcc1 -S -> {m1.name}")
-        run([args.hcc1, "-S", "-o", str(m1), str(preprocessed)])
+        log(f"{name}: hcc1 --m1-ir -> {hccir.name}")
+        run([args.hcc1, "--m1-ir", "-o", str(hccir), str(preprocessed)])
+        log(f"{name}: hcc-m1 -> {m1.name}")
+        run([args.hcc_m1, str(hccir), str(m1)])
         log(f"{name}: M1 -> {hex2.name}")
         run([
             "M1",

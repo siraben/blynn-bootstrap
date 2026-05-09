@@ -7,7 +7,6 @@
   m2libc,
   pname ? "tinycc-boot-hcc",
   enableTrace ? false,
-  useCBackend ? true,
   m1ArtifactsOnly ? false,
 }:
 
@@ -75,19 +74,14 @@ stdenvNoCC.mkDerivation {
       log_step "FILE  $file"
     }
 
-    use_c_backend="${if useCBackend then "1" else "0"}"
     m1_artifacts_only="${if m1ArtifactsOnly then "1" else "0"}"
     compile_m1() {
       input="$1"
       output="$2"
       base="''${output%.M1}"
-      if [ "$use_c_backend" = 1 ]; then
-        run_step "hcc1 --m1-ir $input" hcc1 ${hccTraceArgs}--m1-ir -o "$base.hccir" "$input"
-        log_file "$base.hccir"
-        run_step "hcc-m1 $base.hccir" hcc-m1 "$base.hccir" "$output"
-      else
-        run_step "hcc1 -S $input" hcc1 ${hccTraceArgs}-S -o "$output" "$input"
-      fi
+      run_step "hcc1 --m1-ir $input" hcc1 ${hccTraceArgs}--m1-ir -o "$base.hccir" "$input"
+      log_file "$base.hccir"
+      run_step "hcc-m1 $base.hccir" hcc-m1 "$base.hccir" "$output"
       log_file "$output"
     }
 

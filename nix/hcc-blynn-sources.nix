@@ -53,8 +53,8 @@ stdenvNoCC.mkDerivation {
       ${src}/src/Hcc/Ast.hs \
       ${src}/src/Hcc/Token.hs \
       ${src}/src/Hcc/SymbolTable.hs \
-      ${src}/src/Hcc/ScopeMap.hs \
       ${src}/src/Hcc/IntTable.hs \
+      ${src}/src/Hcc/ScopeMap.hs \
       ${src}/src/Hcc/ParseLite.hs \
       ${src}/src/Hcc/ConstExpr.hs \
       ${src}/src/Hcc/Lexer.hs \
@@ -72,9 +72,6 @@ stdenvNoCC.mkDerivation {
       ${src}/src/Hcc/LowerSwitchHelpers.hs \
       ${src}/src/Hcc/LowerTypeInfo.hs \
       ${src}/src/Hcc/Lower.hs \
-      ${src}/src/Hcc/TextBuilder.hs \
-      ${src}/src/Hcc/RegAlloc.hs \
-      ${src}/src/Hcc/CodegenM1.hs \
       ${src}/src/Hcc/M1Ir.hs \
       ${src}/src/Hcc/HccSystem.hs \
       ${src}/src/Hcc/DriverCommon.hs \

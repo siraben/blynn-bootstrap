@@ -44,7 +44,7 @@ stdenvNoCC.mkDerivation {
     runHook preInstall
     mkdir -p $out/bin $out/share/hcc-m1-smoke
     cp ret13 $out/bin/
-    cp ${../tests/hcc/m1-smoke}/examples/*.c *.i *.M1 *.hex2 $out/share/hcc-m1-smoke/
+    cp ${../tests/hcc/m1-smoke}/examples/*.c *.i *.hccir *.M1 *.hex2 $out/share/hcc-m1-smoke/
     runHook postInstall
   '';
 

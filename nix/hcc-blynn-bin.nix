@@ -87,19 +87,10 @@ mkDerivation ({
     run_step_shell "hcpp test/parse-smoke.c > parse-smoke.i" "./hcpp test/parse-smoke.c > parse-smoke.i"
     log_file parse-smoke.i
     run_step "hcc1 --check parse-smoke.i" ./hcc1 --check parse-smoke.i
-    run_step "hcc1 -S -o smoke.M1 parse-smoke.i" ./hcc1 -S -o smoke.M1 parse-smoke.i
-    log_file smoke.M1
     run_step "hcc1 --m1-ir -o smoke.hccir parse-smoke.i" ./hcc1 --m1-ir -o smoke.hccir parse-smoke.i
     log_file smoke.hccir
     run_step "hcc-m1 smoke.hccir smoke-c.M1" ./hcc-m1 smoke.hccir smoke-c.M1
     log_file smoke-c.M1
-    smoke_hs_hash="$(sha256sum smoke.M1)"
-    set -- $smoke_hs_hash
-    smoke_hs_hash="$1"
-    smoke_c_hash="$(sha256sum smoke-c.M1)"
-    set -- $smoke_c_hash
-    smoke_c_hash="$1"
-    test "$smoke_hs_hash" = "$smoke_c_hash"
 
     runHook postBuild
   '';
