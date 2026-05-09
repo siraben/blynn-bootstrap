@@ -10,6 +10,10 @@ stdenv.mkDerivation {
 
   src = minimalBootstrap.stage0-posix.src;
 
+  dontPatch = true;
+  dontConfigure = true;
+  dontUpdateAutotoolsGnuConfigScripts = true;
+
   buildPhase = ''
     runHook preBuild
 

@@ -17,6 +17,11 @@ stdenvNoCC.mkDerivation {
   ];
 
   dontUnpack = true;
+  dontPatch = true;
+  dontConfigure = true;
+  dontUpdateAutotoolsGnuConfigScripts = true;
+  dontFixup = true;
+  dontPatchELF = true;
 
   buildPhase = ''
     runHook preBuild

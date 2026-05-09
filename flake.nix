@@ -321,6 +321,8 @@
           version = "0-unstable-2026-05-06";
 
           dontUnpack = true;
+          dontConfigure = true;
+          dontUpdateAutotoolsGnuConfigScripts = true;
 
           buildPhase = ''
             runHook preBuild

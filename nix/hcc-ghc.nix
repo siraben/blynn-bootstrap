@@ -12,6 +12,10 @@ stdenv.mkDerivation {
 
   inherit src;
 
+  dontPatch = true;
+  dontConfigure = true;
+  dontUpdateAutotoolsGnuConfigScripts = true;
+
   nativeBuildInputs = [ ghc ];
 
   buildPhase = ''

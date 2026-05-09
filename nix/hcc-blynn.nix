@@ -21,6 +21,9 @@
 mkDerivation ({
   inherit pname src nativeBuildInputs;
   version = "0-unstable-2026-05-06";
+  dontPatch = true;
+  dontConfigure = true;
+  dontUpdateAutotoolsGnuConfigScripts = true;
   dontPatchELF = true;
   dontFixup = true;
 

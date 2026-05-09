@@ -1,5 +1,5 @@
 {
-  stdenv,
+  stdenvNoCC,
   lib,
   fetchurl,
   hcc,
@@ -19,11 +19,13 @@ let
   hccTraceArgs = lib.optionalString enableTrace "--trace ";
 
 in
-stdenv.mkDerivation {
+stdenvNoCC.mkDerivation {
   inherit pname;
   inherit version;
   dontPatchELF = true;
   dontFixup = true;
+  dontConfigure = true;
+  dontUpdateAutotoolsGnuConfigScripts = true;
 
   src = fetchurl {
     url = "https://gitlab.com/janneke/tinycc/-/archive/${rev}/tinycc-${rev}.tar.gz";

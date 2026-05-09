@@ -14,6 +14,11 @@ stdenvNoCC.mkDerivation {
   inherit pname version;
 
   dontUnpack = true;
+  dontPatch = true;
+  dontConfigure = true;
+  dontUpdateAutotoolsGnuConfigScripts = true;
+  dontFixup = true;
+  dontPatchELF = true;
 
   nativeBuildInputs = [
     minimalBootstrap.stage0-posix.mescc-tools

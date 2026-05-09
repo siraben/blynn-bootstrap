@@ -10,6 +10,12 @@ stdenvNoCC.mkDerivation {
   inherit pname src;
   version = "0-unstable-2026-05-06";
 
+  dontPatch = true;
+  dontConfigure = true;
+  dontUpdateAutotoolsGnuConfigScripts = true;
+  dontFixup = true;
+  dontPatchELF = true;
+
   buildPhase = ''
     runHook preBuild
 
