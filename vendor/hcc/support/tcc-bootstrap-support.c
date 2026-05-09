@@ -361,10 +361,18 @@ void* fopen(char* path, char* mode)
 {
     int flags = 0;
     int fd;
+    int update = 0;
+    char* p = mode;
+    while (*p) {
+        if (*p == '+') update = 1;
+        p = p + 1;
+    }
     if (mode[0] == 'w') {
-        flags = 577;
+        if (update) flags = 578;
+        else flags = 577;
     } else if (mode[0] == 'a') {
-        flags = 1089;
+        if (update) flags = 1090;
+        else flags = 1089;
     } else {
         flags = 0;
     }
@@ -524,6 +532,39 @@ static char* hcc_append_string(char* out, char* end, int* total, char* text)
     return out;
 }
 
+static int hcc_string_len(char* text)
+{
+    int n = 0;
+    if (!text) text = "(null)";
+    while (text[n]) n = n + 1;
+    return n;
+}
+
+static int hcc_unsigned_len(unsigned long value, int base)
+{
+    int n = 1;
+    while (value >= (unsigned long)base) {
+        value = value / base;
+        n = n + 1;
+    }
+    return n;
+}
+
+static int hcc_signed_len(long value)
+{
+    if (value < 0) return 1 + hcc_unsigned_len(-value, 10);
+    return hcc_unsigned_len(value, 10);
+}
+
+static char* hcc_append_padding(char* out, char* end, int* total, int width, int used)
+{
+    while (width > used) {
+        out = hcc_append_char(out, end, total, ' ');
+        width = width - 1;
+    }
+    return out;
+}
+
 static char* hcc_append_unsigned(char* out, char* end, int* total, unsigned long value, int base)
 {
     char digits[32];
@@ -566,6 +607,9 @@ static int hcc_vformat(char* out, unsigned size, char* fmt, long a, long b, long
     char* end = out;
     int total = 0;
     int arg = 0;
+    int left;
+    int width;
+    int used;
     long value;
     if (size) end = out + size - 1;
     while (*fmt) {
@@ -575,17 +619,44 @@ static int hcc_vformat(char* out, unsigned size, char* fmt, long a, long b, long
             continue;
         }
         fmt = fmt + 1;
-        while (*fmt >= '0' && *fmt <= '9') fmt = fmt + 1;
+        left = 0;
+        width = 0;
+        if (*fmt == '-') {
+            left = 1;
+            fmt = fmt + 1;
+        }
+        while (*fmt >= '0' && *fmt <= '9') {
+            width = width * 10 + *fmt - '0';
+            fmt = fmt + 1;
+        }
         if (*fmt == 'l') fmt = fmt + 1;
         value = hcc_format_arg(arg, a, b, c);
         arg = arg + 1;
-        if (*fmt == 's') p = hcc_append_string(p, end, &total, (char*)value);
-        else if (*fmt == 'd') p = hcc_append_signed(p, end, &total, value);
-        else if (*fmt == 'i') p = hcc_append_signed(p, end, &total, value);
-        else if (*fmt == 'u') p = hcc_append_unsigned(p, end, &total, value, 10);
-        else if (*fmt == 'x') p = hcc_append_unsigned(p, end, &total, value, 16);
-        else if (*fmt == 'X') p = hcc_append_unsigned(p, end, &total, value, 16);
-        else if (*fmt == 'c') p = hcc_append_char(p, end, &total, value);
+        if (*fmt == 's') {
+            used = hcc_string_len((char*)value);
+            if (!left) p = hcc_append_padding(p, end, &total, width, used);
+            p = hcc_append_string(p, end, &total, (char*)value);
+            if (left) p = hcc_append_padding(p, end, &total, width, used);
+        } else if (*fmt == 'd' || *fmt == 'i') {
+            used = hcc_signed_len(value);
+            if (!left) p = hcc_append_padding(p, end, &total, width, used);
+            p = hcc_append_signed(p, end, &total, value);
+            if (left) p = hcc_append_padding(p, end, &total, width, used);
+        } else if (*fmt == 'u') {
+            used = hcc_unsigned_len(value, 10);
+            if (!left) p = hcc_append_padding(p, end, &total, width, used);
+            p = hcc_append_unsigned(p, end, &total, value, 10);
+            if (left) p = hcc_append_padding(p, end, &total, width, used);
+        } else if (*fmt == 'x' || *fmt == 'X') {
+            used = hcc_unsigned_len(value, 16);
+            if (!left) p = hcc_append_padding(p, end, &total, width, used);
+            p = hcc_append_unsigned(p, end, &total, value, 16);
+            if (left) p = hcc_append_padding(p, end, &total, width, used);
+        } else if (*fmt == 'c') {
+            if (!left) p = hcc_append_padding(p, end, &total, width, 1);
+            p = hcc_append_char(p, end, &total, value);
+            if (left) p = hcc_append_padding(p, end, &total, width, 1);
+        }
         else if (*fmt == '%') {
             p = hcc_append_char(p, end, &total, '%');
             arg = arg - 1;

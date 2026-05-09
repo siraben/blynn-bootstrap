@@ -20,11 +20,33 @@
         blynnSrc = ./vendor/blynn-compiler;
         blynnUpstreamSrc = ./vendor/blynn-compiler/upstream;
         m2libcSrc = ./vendor/blynn-compiler/M2libc;
+        mesLibcSrc = ./vendor/mes-libc;
 
         minimalBootstrap = pkgs.minimal-bootstrap;
+        rawDerivation = import ./nix/raw-mk-derivation.nix {
+          inherit lib system;
+          inherit (pkgs)
+            bash
+            coreutils
+            gnused
+            gnugrep
+            gawk
+            gnutar
+            gzip
+            xz
+            bzip2
+            patch
+            findutils
+            diffutils
+            gcc;
+          bootstrapTools = [ minimalBootstrap.stage0-posix.mescc-tools-extra ];
+        };
+        rawStdenvNoCC = rawDerivation.noCC;
+        rawStdenvCC = rawDerivation.cc;
 
         stageRun = args: pkgs.callPackage ./nix/blynn-stage-run.nix ({
           inherit minimalBootstrap;
+          stdenvNoCC = rawStdenvNoCC;
         } // args);
 
         pathName = rel: lib.replaceStrings [ "/" "." "_" ] [ "-" "-" "-" ] rel;
@@ -232,7 +254,7 @@
               ${prev}/bin/${prevBin} < ${name}.input.hs > ${name}.c
             ''}
             ${lib.optionalString (top != null) ''
-              sed -i -E 's/enum\{TOP=[0-9]+\};/enum{TOP=${toString top}};/' ${name}.c
+              substituteInPlace ${name}.c --replace-fail 'enum{TOP=16777216};' 'enum{TOP=${toString top}};'
             ''}
             compile_m2 ${name}.c ${name}
           '';
@@ -297,26 +319,37 @@
           };
         };
 
-        preciselyM2Stage0 = pkgs.runCommand "blynn-precisely-0-unstable-2026-05-06" { } ''
-          mkdir -p "$out/bin" "$out/share/blynn-precisely"
-          ln -s ${blynnUpstreamStages.party}/bin/party "$out/bin/party"
-          ln -s ${blynnUpstreamStages.multiparty}/bin/multiparty "$out/bin/multiparty"
-          ln -s ${blynnUpstreamStages.party1}/bin/party1 "$out/bin/party1"
-          ln -s ${blynnUpstreamStages.party2}/bin/party2 "$out/bin/party2"
-          ln -s ${blynnUpstreamStages.crossly_up}/bin/crossly_up "$out/bin/crossly_up"
-          ln -s ${blynnUpstreamStages.crossly1}/bin/crossly1 "$out/bin/crossly1"
-          ln -s ${blynnUpstreamStages.precisely_up}/bin/precisely_up "$out/bin/precisely_up"
-          ln -s ${blynnShare blynnUpstreamStages.party "party.c"} "$out/share/blynn-precisely/party.c"
-          ln -s ${blynnShare blynnUpstreamStages.multiparty "multiparty.c"} "$out/share/blynn-precisely/multiparty.c"
-          ln -s ${blynnShare blynnUpstreamStages.party1 "party1.c"} "$out/share/blynn-precisely/party1.c"
-          ln -s ${blynnShare blynnUpstreamStages.party2 "party2.c"} "$out/share/blynn-precisely/party2.c"
-          ln -s ${blynnShare blynnUpstreamStages.crossly_up "crossly_up.c"} "$out/share/blynn-precisely/crossly_up.c"
-          ln -s ${blynnShare blynnUpstreamStages.crossly1 "crossly1.c"} "$out/share/blynn-precisely/crossly1.c"
-          ln -s ${blynnShare blynnUpstreamStages.precisely_up "precisely_up.c"} "$out/share/blynn-precisely/precisely_up.c"
-        '';
+        preciselyM2Stage0 = rawStdenvNoCC.mkDerivation {
+          pname = "blynn-precisely";
+          version = "0-unstable-2026-05-06";
+          dontUnpack = true;
+          dontConfigure = true;
+          dontUpdateAutotoolsGnuConfigScripts = true;
+          dontFixup = true;
+          dontPatchELF = true;
+          installPhase = ''
+            runHook preInstall
+            mkdir -p "$out/bin" "$out/share/blynn-precisely"
+            install -Dm555 ${blynnUpstreamStages.party}/bin/party "$out/bin/party"
+            install -Dm555 ${blynnUpstreamStages.multiparty}/bin/multiparty "$out/bin/multiparty"
+            install -Dm555 ${blynnUpstreamStages.party1}/bin/party1 "$out/bin/party1"
+            install -Dm555 ${blynnUpstreamStages.party2}/bin/party2 "$out/bin/party2"
+            install -Dm555 ${blynnUpstreamStages.crossly_up}/bin/crossly_up "$out/bin/crossly_up"
+            install -Dm555 ${blynnUpstreamStages.crossly1}/bin/crossly1 "$out/bin/crossly1"
+            install -Dm555 ${blynnUpstreamStages.precisely_up}/bin/precisely_up "$out/bin/precisely_up"
+            cp ${blynnShare blynnUpstreamStages.party "party.c"} "$out/share/blynn-precisely/party.c"
+            cp ${blynnShare blynnUpstreamStages.multiparty "multiparty.c"} "$out/share/blynn-precisely/multiparty.c"
+            cp ${blynnShare blynnUpstreamStages.party1 "party1.c"} "$out/share/blynn-precisely/party1.c"
+            cp ${blynnShare blynnUpstreamStages.party2 "party2.c"} "$out/share/blynn-precisely/party2.c"
+            cp ${blynnShare blynnUpstreamStages.crossly_up "crossly_up.c"} "$out/share/blynn-precisely/crossly_up.c"
+            cp ${blynnShare blynnUpstreamStages.crossly1 "crossly1.c"} "$out/share/blynn-precisely/crossly1.c"
+            cp ${blynnShare blynnUpstreamStages.precisely_up "precisely_up.c"} "$out/share/blynn-precisely/precisely_up.c"
+            runHook postInstall
+          '';
+        };
 
         preciselyGcc = pname: precisely: shareName: description:
-        pkgs.stdenv.mkDerivation {
+        rawStdenvCC.mkDerivation {
           inherit pname;
           version = "0-unstable-2026-05-06";
 
@@ -354,6 +387,7 @@
           "Upstream Blynn precisely binary compiled with the normal GCC C toolchain";
 
         preciselyGhcDebug = pkgs.callPackage ./nix/blynn-precisely-debug-ghc.nix {
+          stdenv = pkgs.stdenv;
           ghc = pkgs.haskellPackages.ghcWithPackages (hpkgs: [
             hpkgs.raw-strings-qq
           ]);
@@ -361,28 +395,33 @@
         };
 
         m2MesoplanetGcc = pkgs.callPackage ./nix/gcc-m2-mesoplanet.nix {
+          stdenv = pkgs.stdenv;
           inherit minimalBootstrap;
         };
 
         hccHostGhcNative = pkgs.callPackage ./nix/hcc-ghc.nix {
+          stdenv = pkgs.stdenv;
           pname = "hcc-host-ghc-native";
           ghc = pkgs.haskellPackages.ghcWithPackages (_: []);
           src = hccSrc;
         };
 
         hccProfileHostGhcNative = pkgs.callPackage ./nix/hcc-ghc-profile.nix {
+          stdenv = pkgs.stdenv;
           pname = "hcc-profile-host-ghc-native";
           ghc = pkgs.haskellPackages.ghcWithPackages (_: []);
           src = hccSrc;
         };
 
         hccBlynnSources = pkgs.callPackage ./nix/hcc-blynn-sources.nix {
+          stdenvNoCC = rawStdenvNoCC;
           src = hccHsSrc;
           blynnSrc = blynnUpstreamSrc;
         };
 
         hccBlynnCFromPrecisely = pname: precisely:
           pkgs.callPackage ./nix/hcc-blynn-c.nix {
+            stdenvNoCC = rawStdenvNoCC;
             inherit pname precisely;
             sourceBundle = hccBlynnSources;
             shareName = pname;
@@ -413,7 +452,7 @@
 
         hccCBackends = {
           gcc = {
-            mkDerivation = pkgs.stdenv.mkDerivation;
+            mkDerivation = rawStdenvCC.mkDerivation;
             runtimeFile = "cbits/hcc_runtime.c";
             compileCommand = ''
               echo "hcc-blynn: gcc cc hcpp-blynn.c -> hcpp"
@@ -430,7 +469,7 @@
           };
 
           tcc = tcc: {
-            mkDerivation = pkgs.stdenvNoCC.mkDerivation;
+            mkDerivation = rawStdenvNoCC.mkDerivation;
             nativeBuildInputs = [ tcc ];
             runtimeFile = "cbits/hcc_runtime.c";
             compileCommand = ''
@@ -448,34 +487,36 @@
           };
 
           m2 = {
-            mkDerivation = pkgs.stdenvNoCC.mkDerivation;
+            mkDerivation = rawStdenvNoCC.mkDerivation;
             nativeBuildInputs = [
               minimalBootstrap.stage0-posix.mescc-tools
             ];
             runtimeFile = "cbits/hcc_runtime_m2.c";
             compileCommand = ''
-              sed -i '1i#define HCC_RTS_USE_EXTERNAL_ALLOC 1' hcpp-blynn.c hcc1-blynn.c
+              cat hcpp-blynn.c > hcpp-body.c
+              cat hcc1-blynn.c > hcc1-body.c
+              printf '%s\n' '#define HCC_RTS_USE_EXTERNAL_ALLOC 1' > hcpp-blynn.c
+              cat hcpp-body.c >> hcpp-blynn.c
+              printf '%s\n' '#define HCC_RTS_USE_EXTERNAL_ALLOC 1' > hcc1-blynn.c
+              cat hcc1-body.c >> hcc1-blynn.c
               echo "hcc-blynn: M2-Mesoplanet hcpp-blynn.c -> hcpp"
               M2-Mesoplanet --operating-system "$M2_OS" --architecture "$M2_ARCH" \
                 -f hcpp-blynn.c \
                 -f cbits/hcc_runtime_m2.c \
                 -o hcpp
-              chmod 555 hcpp
               echo "hcc-blynn: M2-Mesoplanet hcc1-blynn.c -> hcc1"
               M2-Mesoplanet --operating-system "$M2_OS" --architecture "$M2_ARCH" \
                 -f hcc1-blynn.c \
                 -f cbits/hcc_runtime_m2.c \
                 -o hcc1
-              chmod 555 hcc1
               echo "hcc-blynn: M2-Mesoplanet cbits/hcc_m1.c -> hcc-m1"
               M2-Mesoplanet --operating-system "$M2_OS" --architecture "$M2_ARCH" \
                 -f cbits/hcc_m1.c \
                 -o hcc-m1
-              chmod 555 hcc-m1
             '';
             top = 134217728;
             hcppTop = 134217728;
-            hcc1Top = 268435456;
+            hcc1Top = 134217728;
             m2Arch = minimalBootstrap.stage0-posix.m2libcArch;
             m2Os = minimalBootstrap.stage0-posix.m2libcOS;
             description = "HCC compiled from Blynn output by stage0 M2-Mesoplanet";
@@ -483,7 +524,7 @@
           };
 
           gccm2 = {
-            mkDerivation = pkgs.stdenvNoCC.mkDerivation;
+            mkDerivation = rawStdenvNoCC.mkDerivation;
             nativeBuildInputs = [
               m2MesoplanetGcc
               minimalBootstrap.stage0-posix.mescc-tools
@@ -491,24 +532,26 @@
             runtimeFile = "cbits/hcc_runtime_m2.c";
             compileCommand = ''
               gcc_m2_env="env -i PATH=${minimalBootstrap.stage0-posix.mescc-tools}/bin M2LIBC_PATH=${minimalBootstrap.stage0-posix.src}/M2libc TMPDIR=''${TMPDIR:-/tmp}"
-              sed -i '1i#define HCC_RTS_USE_EXTERNAL_ALLOC 1' hcpp-blynn.c hcc1-blynn.c
+              cat hcpp-blynn.c > hcpp-body.c
+              cat hcc1-blynn.c > hcc1-body.c
+              printf '%s\n' '#define HCC_RTS_USE_EXTERNAL_ALLOC 1' > hcpp-blynn.c
+              cat hcpp-body.c >> hcpp-blynn.c
+              printf '%s\n' '#define HCC_RTS_USE_EXTERNAL_ALLOC 1' > hcc1-blynn.c
+              cat hcc1-body.c >> hcc1-blynn.c
               echo "hcc-blynn: GCC-built M2-Mesoplanet hcpp-blynn.c -> hcpp"
               $gcc_m2_env ${m2MesoplanetGcc}/bin/M2-Mesoplanet --operating-system "$M2_OS" --architecture "$M2_ARCH" \
                 -f hcpp-blynn.c \
                 -f cbits/hcc_runtime_m2.c \
                 -o hcpp
-              chmod 555 hcpp
               echo "hcc-blynn: GCC-built M2-Mesoplanet hcc1-blynn.c -> hcc1"
               $gcc_m2_env ${m2MesoplanetGcc}/bin/M2-Mesoplanet --operating-system "$M2_OS" --architecture "$M2_ARCH" \
                 -f hcc1-blynn.c \
                 -f cbits/hcc_runtime_m2.c \
                 -o hcc1
-              chmod 555 hcc1
               echo "hcc-blynn: GCC-built M2-Mesoplanet cbits/hcc_m1.c -> hcc-m1"
               $gcc_m2_env ${m2MesoplanetGcc}/bin/M2-Mesoplanet --operating-system "$M2_OS" --architecture "$M2_ARCH" \
                 -f cbits/hcc_m1.c \
                 -o hcc-m1
-              chmod 555 hcc-m1
             '';
             top = 134217728;
             hcppTop = 134217728;
@@ -615,8 +658,9 @@
         };
 
         tinyccFromHcc = pname: hcc: pkgs.callPackage ./nix/tinycc-boot-hcc.nix {
+          stdenvNoCC = rawStdenvNoCC;
           inherit pname hcc minimalBootstrap;
-          mesLibc = minimalBootstrap.mes-libc;
+          mesLibc = mesLibcSrc;
           m2libc = m2libcSrc;
         };
 
@@ -638,6 +682,10 @@
         minimalBootstrapFromTinycc = tinycc:
           minimalBootstrap.overrideScope (_final: _prev: {
             tinycc-bootstrappable = lib.recurseIntoAttrs {
+              compiler = tinycc;
+              libs = tinycc;
+            };
+            tinycc-mes = lib.recurseIntoAttrs {
               compiler = tinycc;
               libs = tinycc;
             };
@@ -713,12 +761,14 @@
         };
 
         hcc-m1-smoke = pkgs.callPackage ./nix/hcc-m1-smoke.nix {
+          stdenvNoCC = rawStdenvNoCC;
           hcc = hccBy.m2.precisely.m2;
           inherit minimalBootstrap;
           m2libc = m2libcSrc;
         };
 
         hcc-mescc-tests = pkgs.callPackage ./nix/hcc-mescc-tests.nix {
+          stdenvNoCC = rawStdenvNoCC;
           hcc = hccBy.m2.precisely.m2;
           inherit minimalBootstrap;
           m2libc = m2libcSrc;
@@ -726,6 +776,7 @@
         };
 
         mutable-io-proof = pkgs.callPackage ./nix/mutable-io-proof.nix {
+          stdenv = pkgs.stdenv;
           blynn-precisely-debug-ghc = preciselyGhcDebug;
           inherit minimalBootstrap;
           src = hccSrc;
@@ -733,6 +784,7 @@
         };
 
         precisely-dialect-tests = pkgs.callPackage ./nix/precisely-dialect-tests.nix {
+          stdenv = pkgs.stdenv;
           precisely = preciselyGhcDebug;
           src = hccSrc;
           blynnSrc = blynnUpstreamSrc;

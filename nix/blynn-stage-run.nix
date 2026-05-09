@@ -30,17 +30,20 @@ stdenvNoCC.mkDerivation {
   buildPhase = ''
     runHook preBuild
 
+    ulimit -s unlimited
+
     mkdir -p build
     cd build
+    mkdir -p tmp
+    export TMPDIR="$PWD/tmp"
 
     compile_m2() {
-      local src=$1
-      local out=$2
+      src=$1
+      output_file=$2
       shift 2
-      echo "blynn-stage: M2-Mesoplanet $src -> $out"
+      echo "blynn-stage: M2-Mesoplanet $src -> $output_file"
       M2-Mesoplanet --operating-system "$M2_OS" --architecture "$M2_ARCH" \
-        -f "$src" "$@" -o "$out"
-      chmod 555 "$out"
+        -f "$src" "$@" -o "$output_file"
     }
 
     ${buildScript}

@@ -22,24 +22,20 @@ stdenvNoCC.mkDerivation {
     runHook preBuild
 
     log_step() {
-      printf 'hcc-blynn-c: [%s] %s\n' "$(date -u +%H:%M:%S)" "$1"
+      printf 'hcc-blynn-c: %s\n' "$1"
     }
 
     run_step_shell() {
       label="$1"
       command="$2"
       log_step "START $label"
-      start="$(date +%s)"
       eval "$command"
-      end="$(date +%s)"
-      log_step "DONE  $label ($((end - start))s)"
+      log_step "DONE  $label"
     }
 
     log_file() {
       file="$1"
-      bytes="$(wc -c < "$file")"
-      lines="$(wc -l < "$file")"
-      log_step "FILE  $file: $lines lines, $bytes bytes"
+      log_step "FILE  $file"
     }
 
     cp ${sourceBundle}/share/hcc-blynn-sources/hcpp-full.hs hcpp-full.hs

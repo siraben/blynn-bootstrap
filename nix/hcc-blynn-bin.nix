@@ -20,6 +20,7 @@
 mkDerivation ({
   inherit pname src nativeBuildInputs;
   version = "0-unstable-2026-05-06";
+  dontUnpack = true;
   dontPatch = true;
   dontConfigure = true;
   dontUpdateAutotoolsGnuConfigScripts = true;
@@ -31,56 +32,54 @@ mkDerivation ({
 
     ulimit -s unlimited
 
+    mkdir -p cbits test
+    cp ${src}/cbits/hcc_runtime.c cbits/hcc_runtime.c
+    cp ${src}/cbits/hcc_runtime_m2.c cbits/hcc_runtime_m2.c
+    cp ${src}/cbits/hcc_m1.c cbits/hcc_m1.c
+    cp ${src}/test/pp-smoke.c test/pp-smoke.c
+    cp ${src}/test/parse-smoke.c test/parse-smoke.c
+
     log_step() {
-      printf 'hcc-blynn-bin: [%s] %s\n' "$(date -u +%H:%M:%S)" "$1"
+      printf 'hcc-blynn-bin: %s\n' "$1"
     }
 
     run_step() {
       label="$1"
       shift
       log_step "START $label"
-      start="$(date +%s)"
       "$@"
-      end="$(date +%s)"
-      log_step "DONE  $label ($((end - start))s)"
+      log_step "DONE  $label"
     }
 
     run_step_shell() {
       label="$1"
       command="$2"
       log_step "START $label"
-      start="$(date +%s)"
       eval "$command"
-      end="$(date +%s)"
-      log_step "DONE  $label ($((end - start))s)"
+      log_step "DONE  $label"
     }
 
     log_file() {
       file="$1"
-      bytes="$(wc -c < "$file")"
-      lines="$(wc -l < "$file")"
-      log_step "FILE  $file: $lines lines, $bytes bytes"
+      log_step "FILE  $file"
     }
 
     cp ${generatedC}/share/${generatedC.pname}/hcpp-blynn.c hcpp-blynn.c
     cp ${generatedC}/share/${generatedC.pname}/hcc1-blynn.c hcc1-blynn.c
     cp ${generatedC}/share/${generatedC.pname}/hcpp-full.hs hcpp-full.hs
     cp ${generatedC}/share/${generatedC.pname}/hcc1-full.hs hcc1-full.hs
-    chmod u+w hcpp-blynn.c hcc1-blynn.c hcpp-full.hs hcc1-full.hs
     log_file hcpp-blynn.c
     log_file hcc1-blynn.c
 
     log_step "START patch generated RTS hcpp TOP=${toString hcppTop}, hcc1 TOP=${toString hcc1Top}"
-    sed -i -E 's/enum\{TOP=[0-9]+\};/enum{TOP=${toString hcppTop}};/' hcpp-blynn.c
-    sed -i -E 's/enum\{TOP=[0-9]+\};/enum{TOP=${toString hcc1Top}};/' hcc1-blynn.c
-    grep -q 'enum{TOP=${toString hcppTop}};' hcpp-blynn.c
-    grep -q 'enum{TOP=${toString hcc1Top}};' hcc1-blynn.c
+    substituteInPlace hcpp-blynn.c --replace-fail 'enum{TOP=16777216};' 'enum{TOP=${toString hcppTop}};'
+    substituteInPlace hcc1-blynn.c --replace-fail 'enum{TOP=16777216};' 'enum{TOP=${toString hcc1Top}};'
     log_step "DONE  patch generated RTS hcpp TOP=${toString hcppTop}, hcc1 TOP=${toString hcc1Top}"
 
     log_step "START compile generated C backend"
     ${compileCommand}
     log_step "DONE  compile generated C backend"
-    ls -l hcpp hcc1
+    log_step "compiled hcpp and hcc1"
 
     run_step_shell "hcpp test/pp-smoke.c > pp-smoke.i" "./hcpp test/pp-smoke.c > pp-smoke.i"
     log_file pp-smoke.i
@@ -94,7 +93,13 @@ mkDerivation ({
     log_file smoke.hccir
     run_step "hcc-m1 smoke.hccir smoke-c.M1" ./hcc-m1 smoke.hccir smoke-c.M1
     log_file smoke-c.M1
-    run_step "compare Haskell and C M1 writers" cmp smoke.M1 smoke-c.M1
+    smoke_hs_hash="$(sha256sum smoke.M1)"
+    set -- $smoke_hs_hash
+    smoke_hs_hash="$1"
+    smoke_c_hash="$(sha256sum smoke-c.M1)"
+    set -- $smoke_c_hash
+    smoke_c_hash="$1"
+    test "$smoke_hs_hash" = "$smoke_c_hash"
 
     runHook postBuild
   '';

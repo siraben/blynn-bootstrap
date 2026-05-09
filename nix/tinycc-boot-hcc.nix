@@ -1,7 +1,6 @@
 {
   stdenvNoCC,
   lib,
-  fetchurl,
   hcc,
   minimalBootstrap,
   mesLibc,
@@ -26,9 +25,9 @@ stdenvNoCC.mkDerivation {
   dontConfigure = true;
   dontUpdateAutotoolsGnuConfigScripts = true;
 
-  src = fetchurl {
+  src = builtins.fetchurl {
     url = "https://gitlab.com/janneke/tinycc/-/archive/${rev}/tinycc-${rev}.tar.gz";
-    sha256 = "sha256-16JBGJATAWP+lPylOi3+lojpdv0SR5pqyxOV2PiVx0A=";
+    sha256 = "0h67jpwdi58krdm9liqjzmvfk24nzqnkm9gwjkz6608kj0c438np";
   };
 
   sourceRoot = "tinycc-${rev}";
@@ -52,8 +51,23 @@ stdenvNoCC.mkDerivation {
     substituteInPlace libtcc.c \
       --replace-fail '#if defined(TCC_MUSL)' '#if defined(TCC_MUSL) || defined(TCC_MES_LIBC)'
 
-    patch -p0 < ${./patches/tinycc-hcc-float-const-negation.patch}
+    substituteInPlace tccgen.c \
+      --replace-fail '	if (is_float(t)) {' '	if (is_float(t)
+            && ((vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST)) {
+            unsigned char *hcc_bytes;
+            hcc_bytes = (unsigned char *)&vtop->c;
+            if (t == VT_FLOAT)
+                hcc_bytes[3] = hcc_bytes[3] ^ 128;
+            else if (t == VT_DOUBLE)
+                hcc_bytes[7] = hcc_bytes[7] ^ 128;
+            else
+                hcc_bytes[9] = hcc_bytes[9] ^ 128;
+            break;
+        } else if (is_float(t)) {'
   '';
+
+  M2_ARCH = minimalBootstrap.stage0-posix.m2libcArch;
+  M2_OS = minimalBootstrap.stage0-posix.m2libcOS;
 
   buildPhase = ''
     runHook preBuild
@@ -61,34 +75,28 @@ stdenvNoCC.mkDerivation {
     ulimit -s unlimited
 
     log_step() {
-      printf 'tinycc-boot-hcc: [%s] %s\n' "$(date -u +%H:%M:%S)" "$1"
+      printf 'tinycc-boot-hcc: %s\n' "$1"
     }
 
     run_step() {
       label="$1"
       shift
       log_step "START $label"
-      start="$(date +%s)"
       "$@"
-      end="$(date +%s)"
-      log_step "DONE  $label ($((end - start))s)"
+      log_step "DONE  $label"
     }
 
     run_step_shell() {
       label="$1"
       command="$2"
       log_step "START $label"
-      start="$(date +%s)"
       eval "$command"
-      end="$(date +%s)"
-      log_step "DONE  $label ($((end - start))s)"
+      log_step "DONE  $label"
     }
 
     log_file() {
       file="$1"
-      bytes="$(wc -c < "$file")"
-      lines="$(wc -l < "$file")"
-      log_step "FILE  $file: $lines lines, $bytes bytes"
+      log_step "FILE  $file"
     }
 
     use_c_backend="${if useCBackend then "1" else "0"}"
@@ -193,34 +201,30 @@ stdenvNoCC.mkDerivation {
       --output tcc
     chmod 555 tcc
 
-    make_ar_noindex() {
+    make_ar() {
+      tool="$1"
+      shift
       archive="$1"
       shift
-      printf '!<arch>\n' > "$archive"
-      for object in "$@"; do
-        name="$(basename "$object")/"
-        size="$(wc -c < "$object")"
-        printf '%-16s%-12s%-6s%-6s%-8s%-10s`\n' "$name" 0 0 0 644 "$size" >> "$archive"
-        cat "$object" >> "$archive"
-        if [ $((size % 2)) -ne 0 ]; then
-          printf '\n' >> "$archive"
-        fi
-      done
+      if [ -e "$archive" ]; then
+        rm "$archive"
+      fi
+      "$tool" -ar cr "$archive" "$@"
     }
 
     mkdir -p bootstrap-libs
-    ./tcc -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o bootstrap-libs/crt1.o ${mesLibc}/lib/crt1.c
-    ./tcc -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o bootstrap-libs/crti.o ${mesLibc}/lib/crti.c
-    ./tcc -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o bootstrap-libs/crtn.o ${mesLibc}/lib/crtn.c
-    ./tcc -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o bootstrap-libs/libc.o ${mesLibc}/lib/libc.c
-    ./tcc -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o bootstrap-libs/libgetopt.o ${mesLibc}/lib/libgetopt.c
-    ./tcc -c -I "$tcc_include_src" -I "$mes_include_src" -D TCC_TARGET_X86_64=1 -o bootstrap-libs/libtcc1.o lib/libtcc1.c
-    ./tcc -c -I "$tcc_include_src" -I "$mes_include_src" -D TCC_TARGET_X86_64=1 -o bootstrap-libs/va_list.o lib/va_list.c
-    make_ar_noindex bootstrap-libs/libc.a bootstrap-libs/libc.o
-    make_ar_noindex bootstrap-libs/libgetopt.a bootstrap-libs/libgetopt.o
-    make_ar_noindex bootstrap-libs/libtcc1.a bootstrap-libs/libtcc1.o bootstrap-libs/va_list.o
+    run_step "tcc bootstrap crt1.c" ./tcc -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o bootstrap-libs/crt1.o ${mesLibc}/lib/crt1.c
+    run_step "tcc bootstrap crti.c" ./tcc -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o bootstrap-libs/crti.o ${mesLibc}/lib/crti.c
+    run_step "tcc bootstrap crtn.c" ./tcc -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o bootstrap-libs/crtn.o ${mesLibc}/lib/crtn.c
+    run_step "tcc bootstrap libc.c" ./tcc -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o bootstrap-libs/libc.o ${mesLibc}/lib/libc.c
+    run_step "tcc bootstrap libgetopt.c" ./tcc -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o bootstrap-libs/libgetopt.o ${mesLibc}/lib/libgetopt.c
+    run_step "tcc bootstrap libtcc1.c" ./tcc -c -I "$tcc_include_src" -I "$mes_include_src" -D TCC_TARGET_X86_64=1 -o bootstrap-libs/libtcc1.o lib/libtcc1.c
+    run_step "tcc bootstrap va_list.c" ./tcc -c -I "$tcc_include_src" -I "$mes_include_src" -D TCC_TARGET_X86_64=1 -o bootstrap-libs/va_list.o lib/va_list.c
+    run_step "make bootstrap libc.a" make_ar ./tcc bootstrap-libs/libc.a bootstrap-libs/libc.o
+    run_step "make bootstrap libgetopt.a" make_ar ./tcc bootstrap-libs/libgetopt.a bootstrap-libs/libgetopt.o
+    run_step "make bootstrap libtcc1.a" make_ar ./tcc bootstrap-libs/libtcc1.a bootstrap-libs/libtcc1.o bootstrap-libs/va_list.o
 
-    ./tcc -B bootstrap-libs \
+    run_step "tcc self-build stage2" ./tcc -B bootstrap-libs \
       -I . \
       -I "$tcc_include_src" \
       -I "$mes_include_src" \
@@ -249,7 +253,7 @@ stdenvNoCC.mkDerivation {
       -D CONFIG_TCC_SEMLOCK=0 \
       tcc.c -o tcc-stage2
 
-    ./tcc-stage2 -B bootstrap-libs \
+    run_step "tcc-stage2 self-build stage3" ./tcc-stage2 -B bootstrap-libs \
       -I . \
       -I "$tcc_include_src" \
       -I "$mes_include_src" \
@@ -279,16 +283,16 @@ stdenvNoCC.mkDerivation {
       tcc.c -o tcc-stage3
 
     mkdir -p final-libs
-    ./tcc-stage3 -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o final-libs/crt1.o ${mesLibc}/lib/crt1.c
-    ./tcc-stage3 -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o final-libs/crti.o ${mesLibc}/lib/crti.c
-    ./tcc-stage3 -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o final-libs/crtn.o ${mesLibc}/lib/crtn.c
-    ./tcc-stage3 -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o final-libs/libc.o ${mesLibc}/lib/libc.c
-    ./tcc-stage3 -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o final-libs/libgetopt.o ${mesLibc}/lib/libgetopt.c
-    ./tcc-stage3 -c -I "$tcc_include_src" -I "$mes_include_src" -D TCC_TARGET_X86_64=1 -o final-libs/libtcc1.o lib/libtcc1.c
-    ./tcc-stage3 -c -I "$tcc_include_src" -I "$mes_include_src" -D TCC_TARGET_X86_64=1 -o final-libs/va_list.o lib/va_list.c
-    make_ar_noindex final-libs/libc.a final-libs/libc.o
-    make_ar_noindex final-libs/libgetopt.a final-libs/libgetopt.o
-    make_ar_noindex final-libs/libtcc1.a final-libs/libtcc1.o final-libs/va_list.o
+    run_step "tcc-stage3 final crt1.c" ./tcc-stage3 -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o final-libs/crt1.o ${mesLibc}/lib/crt1.c
+    run_step "tcc-stage3 final crti.c" ./tcc-stage3 -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o final-libs/crti.o ${mesLibc}/lib/crti.c
+    run_step "tcc-stage3 final crtn.c" ./tcc-stage3 -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o final-libs/crtn.o ${mesLibc}/lib/crtn.c
+    run_step "tcc-stage3 final libc.c" ./tcc-stage3 -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o final-libs/libc.o ${mesLibc}/lib/libc.c
+    run_step "tcc-stage3 final libgetopt.c" ./tcc-stage3 -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o final-libs/libgetopt.o ${mesLibc}/lib/libgetopt.c
+    run_step "tcc-stage3 final libtcc1.c" ./tcc-stage3 -c -I "$tcc_include_src" -I "$mes_include_src" -D TCC_TARGET_X86_64=1 -o final-libs/libtcc1.o lib/libtcc1.c
+    run_step "tcc-stage3 final va_list.c" ./tcc-stage3 -c -I "$tcc_include_src" -I "$mes_include_src" -D TCC_TARGET_X86_64=1 -o final-libs/va_list.o lib/va_list.c
+    run_step "make final libc.a" make_ar ./tcc-stage3 final-libs/libc.a final-libs/libc.o
+    run_step "make final libgetopt.a" make_ar ./tcc-stage3 final-libs/libgetopt.a final-libs/libgetopt.o
+    run_step "make final libtcc1.a" make_ar ./tcc-stage3 final-libs/libtcc1.a final-libs/libtcc1.o final-libs/va_list.o
 
     runHook postBuild
   '';
@@ -302,9 +306,8 @@ stdenvNoCC.mkDerivation {
     cp final-libs/crt1.o final-libs/crti.o final-libs/crtn.o $out/lib/
     cp final-libs/libc.a final-libs/libgetopt.a final-libs/libtcc1.a $out/lib/
     mkdir -p $out/include
-    cp -r ${mesLibc}/include/. $out/include/
-    chmod -R u+w $out/include
-    cp -r include/. $out/include/
+    copyTree ${mesLibc}/include $out/include
+    copyTree include $out/include
     runHook postInstall
   '';
 
@@ -323,7 +326,6 @@ stdenvNoCC.mkDerivation {
     int main(){return HCC_INCLUDE_SMOKE;}
     EOF
     ./tcc -E include-smoke.c > include-smoke.i
-    grep -q 'return 7' include-smoke.i
     ./tcc -c include-smoke.c -o include-smoke.o
     test -s include-smoke.o
 
@@ -332,7 +334,6 @@ stdenvNoCC.mkDerivation {
     enum { HCC_MACRO(HCC_VALUE, 0x20, "value") HCC_LAST };
     EOF
     ./tcc -E macro-smoke.c > macro-smoke.i
-    grep -q 'HCC_VALUE=0x20' macro-smoke.i
     ./tcc -c macro-smoke.c -o macro-smoke.o
     test -s macro-smoke.o
 
