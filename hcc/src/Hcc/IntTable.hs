@@ -2,85 +2,85 @@ module IntTable where
 
 import Base
 
-data IntColor = IntRed | IntBlack
+data Color = R | B
 
-data IntTree a
-  = IntEmpty
-  | IntBranch IntColor Int a (IntTree a) (IntTree a)
+data Tree a
+  = E
+  | N Color Int a (Tree a) (Tree a)
 
-data IntMap a = IntMap (IntTree a)
+data IntMap a = IntMap (Tree a)
 
 intMapEmpty :: IntMap a
-intMapEmpty = IntMap IntEmpty
+intMapEmpty = IntMap E
 
 intMapLookup :: Int -> IntMap a -> Maybe a
-intMapLookup key (IntMap tree) = intTreeLookup key tree
+intMapLookup k (IntMap t) = lookupT k t
 
 intMapInsert :: Int -> a -> IntMap a -> IntMap a
-intMapInsert key value (IntMap tree) = IntMap (intTreeInsert key value tree)
+intMapInsert k v (IntMap t) = IntMap (insertT k v t)
 
 intMapMember :: Int -> IntMap a -> Bool
-intMapMember key table = case intMapLookup key table of
+intMapMember k m = case intMapLookup k m of
   Just _ -> True
   Nothing -> False
 
-intTreeLookup :: Int -> IntTree a -> Maybe a
-intTreeLookup key tree = case tree of
-  IntEmpty -> Nothing
-  IntBranch _ nodeKey value left right ->
-    if key < nodeKey
-    then intTreeLookup key left
-    else if key > nodeKey
-         then intTreeLookup key right
-         else Just value
+lookupT :: Int -> Tree a -> Maybe a
+lookupT k t = case t of
+  E -> Nothing
+  N _ x v l r ->
+    if k < x
+    then lookupT k l
+    else if k > x
+         then lookupT k r
+         else Just v
 
-intTreeInsert :: Int -> a -> IntTree a -> IntTree a
-intTreeInsert key value tree = intBlacken (insert tree) where
-  insert current = case current of
-    IntEmpty -> IntBranch IntRed key value IntEmpty IntEmpty
-    IntBranch color nodeKey old left right ->
-      if key < nodeKey
-      then intBalance color nodeKey old (insert left) right
-      else if key > nodeKey
-           then intBalance color nodeKey old left (insert right)
-           else IntBranch color key value left right
+insertT :: Int -> a -> Tree a -> Tree a
+insertT k v t = blacken (go t) where
+  go u = case u of
+    E -> N R k v E E
+    N c x old l r ->
+      if k < x
+      then bal c x old (go l) r
+      else if k > x
+           then bal c x old l (go r)
+           else N c k v l r
 
-intBlacken :: IntTree a -> IntTree a
-intBlacken tree = case tree of
-  IntEmpty -> IntEmpty
-  IntBranch _ key value left right -> IntBranch IntBlack key value left right
+blacken :: Tree a -> Tree a
+blacken t = case t of
+  E -> E
+  N _ k v l r -> N B k v l r
 
-intBalance :: IntColor -> Int -> a -> IntTree a -> IntTree a -> IntTree a
-intBalance color key value left right = case color of
-  IntRed -> IntBranch IntRed key value left right
-  IntBlack -> intBalanceBlack key value left right
+bal :: Color -> Int -> a -> Tree a -> Tree a -> Tree a
+bal c k v l r = case c of
+  R -> N R k v l r
+  B -> balL k v l r
 
-intBalanceBlack :: Int -> a -> IntTree a -> IntTree a -> IntTree a
-intBalanceBlack key value left right = case left of
-  IntBranch IntRed lkey lvalue lleft lright -> case lleft of
-    IntBranch IntRed llkey llvalue llleft llright ->
-      IntBranch IntRed lkey lvalue
-        (IntBranch IntBlack llkey llvalue llleft llright)
-        (IntBranch IntBlack key value lright right)
-    _ -> case lright of
-      IntBranch IntRed lrkey lrvalue lrleft lrright ->
-        IntBranch IntRed lrkey lrvalue
-          (IntBranch IntBlack lkey lvalue lleft lrleft)
-          (IntBranch IntBlack key value lrright right)
-      _ -> intBalanceBlackRight key value left right
-  _ -> intBalanceBlackRight key value left right
+balL :: Int -> a -> Tree a -> Tree a -> Tree a
+balL k v l r = case l of
+  N R lk lv ll lr -> case ll of
+    N R llk llv lll llr ->
+      N R lk lv
+        (N B llk llv lll llr)
+        (N B k v lr r)
+    _ -> case lr of
+      N R lrk lrv lrl lrr ->
+        N R lrk lrv
+          (N B lk lv ll lrl)
+          (N B k v lrr r)
+      _ -> balR k v l r
+  _ -> balR k v l r
 
-intBalanceBlackRight :: Int -> a -> IntTree a -> IntTree a -> IntTree a
-intBalanceBlackRight key value left right = case right of
-  IntBranch IntRed rkey rvalue rleft rright -> case rleft of
-    IntBranch IntRed rlkey rlvalue rlleft rlright ->
-      IntBranch IntRed rlkey rlvalue
-        (IntBranch IntBlack key value left rlleft)
-        (IntBranch IntBlack rkey rvalue rlright rright)
-    _ -> case rright of
-      IntBranch IntRed rrkey rrvalue rrleft rrright ->
-        IntBranch IntRed rkey rvalue
-          (IntBranch IntBlack key value left rleft)
-          (IntBranch IntBlack rrkey rrvalue rrleft rrright)
-      _ -> IntBranch IntBlack key value left right
-  _ -> IntBranch IntBlack key value left right
+balR :: Int -> a -> Tree a -> Tree a -> Tree a
+balR k v l r = case r of
+  N R rk rv rl rr -> case rl of
+    N R rlk rlv rll rlr ->
+      N R rlk rlv
+        (N B k v l rll)
+        (N B rk rv rlr rr)
+    _ -> case rr of
+      N R rrk rrv rrl rrr ->
+        N R rk rv
+          (N B k v l rl)
+          (N B rrk rrv rrl rrr)
+      _ -> N B k v l r
+  _ -> N B k v l r

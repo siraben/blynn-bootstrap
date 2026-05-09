@@ -2,145 +2,145 @@ module SymbolTable where
 
 import Base
 
-data Color = Red | Black
+data Color = R | B
 
 data Tree a
-  = Empty
-  | Branch Color String Int (Maybe a) (Tree a) (Tree a)
+  = E
+  | N Color String Int (Maybe a) (Tree a) (Tree a)
 
 data SymbolMap a = SymbolMap (Tree a)
 
 data SymbolSet = SymbolSet (Tree ())
 
 symbolMapEmpty :: SymbolMap a
-symbolMapEmpty = SymbolMap Empty
+symbolMapEmpty = SymbolMap E
 
 symbolSetEmpty :: SymbolSet
-symbolSetEmpty = SymbolSet Empty
+symbolSetEmpty = SymbolSet E
 
 symbolMapLookup :: String -> SymbolMap a -> Maybe a
-symbolMapLookup key (SymbolMap tree) = treeLookup key tree
+symbolMapLookup k (SymbolMap t) = lookupT k t
 
 symbolMapInsert :: String -> a -> SymbolMap a -> SymbolMap a
-symbolMapInsert key value (SymbolMap tree) = SymbolMap (treeInsert key value tree)
+symbolMapInsert k v (SymbolMap t) = SymbolMap (insertT k v t)
 
 symbolMapDelete :: String -> SymbolMap a -> SymbolMap a
-symbolMapDelete key (SymbolMap tree) = SymbolMap (treeDelete key tree)
+symbolMapDelete k (SymbolMap t) = SymbolMap (deleteT k t)
 
 symbolMapMember :: String -> SymbolMap a -> Bool
-symbolMapMember key table = case symbolMapLookup key table of
+symbolMapMember k m = case symbolMapLookup k m of
   Just _ -> True
   Nothing -> False
 
 symbolSetFromList :: [String] -> SymbolSet
-symbolSetFromList names = case names of
+symbolSetFromList xs = case xs of
   [] -> symbolSetEmpty
-  name:rest -> symbolSetInsert name (symbolSetFromList rest)
+  x:xt -> symbolSetInsert x (symbolSetFromList xt)
 
 symbolSetMember :: String -> SymbolSet -> Bool
-symbolSetMember key (SymbolSet tree) = case treeLookup key tree of
+symbolSetMember k (SymbolSet t) = case lookupT k t of
   Just _ -> True
   Nothing -> False
 
 symbolSetInsert :: String -> SymbolSet -> SymbolSet
-symbolSetInsert key (SymbolSet tree) = SymbolSet (treeInsert key () tree)
+symbolSetInsert k (SymbolSet t) = SymbolSet (insertT k () t)
 
 symbolSetDelete :: String -> SymbolSet -> SymbolSet
-symbolSetDelete key (SymbolSet tree) = SymbolSet (treeDelete key tree)
+symbolSetDelete k (SymbolSet t) = SymbolSet (deleteT k t)
 
-treeLookup :: String -> Tree a -> Maybe a
-treeLookup key tree = treeLookupHashed key (stringHash key) tree
+lookupT :: String -> Tree a -> Maybe a
+lookupT k t = lookupH k (hash k) t
 
-treeLookupHashed :: String -> Int -> Tree a -> Maybe a
-treeLookupHashed key keyHash tree = case tree of
-  Empty -> Nothing
-  Branch _ name nameHash value left right -> case compareHashedString key keyHash name nameHash of
-    IsLess -> treeLookupHashed key keyHash left
-    IsEqual -> value
-    IsGreater -> treeLookupHashed key keyHash right
+lookupH :: String -> Int -> Tree a -> Maybe a
+lookupH k kh t = case t of
+  E -> Nothing
+  N _ x xh v l r -> case cmpHash k kh x xh of
+    Lt -> lookupH k kh l
+    Eq -> v
+    Gt -> lookupH k kh r
 
-treeInsert :: String -> a -> Tree a -> Tree a
-treeInsert key value tree = treeInsertValue key (Just value) tree
+insertT :: String -> a -> Tree a -> Tree a
+insertT k v t = alterT k (Just v) t
 
-treeDelete :: String -> Tree a -> Tree a
-treeDelete key tree = treeInsertValue key Nothing tree
+deleteT :: String -> Tree a -> Tree a
+deleteT k t = alterT k Nothing t
 
-treeInsertValue :: String -> Maybe a -> Tree a -> Tree a
-treeInsertValue key value tree = blacken (insert (stringHash key) tree) where
-  insert keyHash current = case current of
-    Empty -> Branch Red key keyHash value Empty Empty
-    Branch color name nameHash old left right -> case compareHashedString key keyHash name nameHash of
-      IsLess -> balance color name nameHash old (insert keyHash left) right
-      IsEqual -> Branch color key keyHash value left right
-      IsGreater -> balance color name nameHash old left (insert keyHash right)
+alterT :: String -> Maybe a -> Tree a -> Tree a
+alterT k v t = blacken (go (hash k) t) where
+  go kh u = case u of
+    E -> N R k kh v E E
+    N c x xh old l r -> case cmpHash k kh x xh of
+      Lt -> bal c x xh old (go kh l) r
+      Eq -> N c k kh v l r
+      Gt -> bal c x xh old l (go kh r)
 
 blacken :: Tree a -> Tree a
-blacken tree = case tree of
-  Empty -> Empty
-  Branch _ name nameHash value left right -> Branch Black name nameHash value left right
+blacken t = case t of
+  E -> E
+  N _ x xh v l r -> N B x xh v l r
 
-balance :: Color -> String -> Int -> Maybe a -> Tree a -> Tree a -> Tree a
-balance color name nameHash value left right = case color of
-  Red -> Branch Red name nameHash value left right
-  Black -> balanceBlack name nameHash value left right
+bal :: Color -> String -> Int -> Maybe a -> Tree a -> Tree a -> Tree a
+bal c x xh v l r = case c of
+  R -> N R x xh v l r
+  B -> balL x xh v l r
 
-balanceBlack :: String -> Int -> Maybe a -> Tree a -> Tree a -> Tree a
-balanceBlack name nameHash value left right = case left of
-  Branch Red lname lnameHash lvalue lleft lright -> case lleft of
-    Branch Red llname llnameHash llvalue llleft llright ->
-      Branch Red lname lnameHash lvalue
-        (Branch Black llname llnameHash llvalue llleft llright)
-        (Branch Black name nameHash value lright right)
-    _ -> case lright of
-      Branch Red lrname lrnameHash lrvalue lrleft lrright ->
-        Branch Red lrname lrnameHash lrvalue
-          (Branch Black lname lnameHash lvalue lleft lrleft)
-          (Branch Black name nameHash value lrright right)
-      _ -> balanceBlackRight name nameHash value left right
-  _ -> balanceBlackRight name nameHash value left right
+balL :: String -> Int -> Maybe a -> Tree a -> Tree a -> Tree a
+balL x xh v l r = case l of
+  N R lx lxh lv ll lr -> case ll of
+    N R llx llxh llv lll llr ->
+      N R lx lxh lv
+        (N B llx llxh llv lll llr)
+        (N B x xh v lr r)
+    _ -> case lr of
+      N R lrx lrxh lrv lrl lrr ->
+        N R lrx lrxh lrv
+          (N B lx lxh lv ll lrl)
+          (N B x xh v lrr r)
+      _ -> balR x xh v l r
+  _ -> balR x xh v l r
 
-balanceBlackRight :: String -> Int -> Maybe a -> Tree a -> Tree a -> Tree a
-balanceBlackRight name nameHash value left right = case right of
-  Branch Red rname rnameHash rvalue rleft rright -> case rleft of
-    Branch Red rlname rlnameHash rlvalue rlleft rlright ->
-      Branch Red rlname rlnameHash rlvalue
-        (Branch Black name nameHash value left rlleft)
-        (Branch Black rname rnameHash rvalue rlright rright)
-    _ -> case rright of
-      Branch Red rrname rrnameHash rrvalue rrleft rrright ->
-        Branch Red rname rnameHash rvalue
-          (Branch Black name nameHash value left rleft)
-          (Branch Black rrname rrnameHash rrvalue rrleft rrright)
-      _ -> Branch Black name nameHash value left right
-  _ -> Branch Black name nameHash value left right
+balR :: String -> Int -> Maybe a -> Tree a -> Tree a -> Tree a
+balR x xh v l r = case r of
+  N R rx rxh rv rl rr -> case rl of
+    N R rlx rlxh rlv rll rlr ->
+      N R rlx rlxh rlv
+        (N B x xh v l rll)
+        (N B rx rxh rv rlr rr)
+    _ -> case rr of
+      N R rrx rrxh rrv rrl rrr ->
+        N R rx rxh rv
+          (N B x xh v l rl)
+          (N B rrx rrxh rrv rrl rrr)
+      _ -> N B x xh v l r
+  _ -> N B x xh v l r
 
-stringHash :: String -> Int
-stringHash text = go 5381 text where
-  go hash chars = case chars of
-    [] -> hash
-    c:rest -> go (((hash * 33) + fromEnum c) `mod` 2147483647) rest
+hash :: String -> Int
+hash s = go 5381 s where
+  go h xs = case xs of
+    [] -> h
+    c:cs -> go (((h * 33) + fromEnum c) `mod` 2147483647) cs
 
-compareHashedString :: String -> Int -> String -> Int -> Comparison
-compareHashedString left leftHash right rightHash =
-  if leftHash < rightHash
-  then IsLess
-  else if leftHash > rightHash
-       then IsGreater
-       else compareString left right
+cmpHash :: String -> Int -> String -> Int -> Cmp
+cmpHash l lh r rh =
+  if lh < rh
+  then Lt
+  else if lh > rh
+       then Gt
+       else cmpString l r
 
-data Comparison
-  = IsLess
-  | IsEqual
-  | IsGreater
+data Cmp
+  = Lt
+  | Eq
+  | Gt
 
-compareString :: String -> String -> Comparison
-compareString left right = case (left, right) of
-  ([], []) -> IsEqual
-  ([], _) -> IsLess
-  (_, []) -> IsGreater
+cmpString :: String -> String -> Cmp
+cmpString l r = case (l, r) of
+  ([], []) -> Eq
+  ([], _) -> Lt
+  (_, []) -> Gt
   (a:as, b:bs) ->
     if a < b
-    then IsLess
+    then Lt
     else if a > b
-    then IsGreater
-    else compareString as bs
+    then Gt
+    else cmpString as bs
