@@ -635,17 +635,42 @@
             tinyccFromHcc "tinycc-boot-hcc-gcc-precisely-gcc-stats-generational" hccGccPreciselyGccStatsGenerational;
         };
 
-        gcc46FromTinycc = tinycc:
-          minimalBootstrap.gcc46.override {
-            tinycc = {
+        minimalBootstrapFromTinycc = tinycc:
+          minimalBootstrap.overrideScope (_final: _prev: {
+            tinycc-bootstrappable = lib.recurseIntoAttrs {
               compiler = tinycc;
               libs = tinycc;
             };
-          };
+          });
+
+        minimalBootstrapBy = {
+          m2.precisely.m2 = minimalBootstrapFromTinycc tinyccBy.m2.precisely.m2;
+          m2.precisely.gccm2 = minimalBootstrapFromTinycc tinyccBy.m2.precisely.gccm2;
+        };
 
         gcc46By = {
-          m2.precisely.m2 = gcc46FromTinycc tinyccBy.m2.precisely.m2;
-          m2.precisely.gccm2 = gcc46FromTinycc tinyccBy.m2.precisely.gccm2;
+          m2.precisely.m2 = minimalBootstrapBy.m2.precisely.m2.gcc46;
+          m2.precisely.gccm2 = minimalBootstrapBy.m2.precisely.gccm2.gcc46;
+        };
+
+        tinyccMuslBy = {
+          m2.precisely.m2 = minimalBootstrapBy.m2.precisely.m2.tinycc-musl;
+          m2.precisely.gccm2 = minimalBootstrapBy.m2.precisely.gccm2.tinycc-musl;
+        };
+
+        bootstrapBy = {
+          m2.precisely.m2 = {
+            minimal = minimalBootstrapBy.m2.precisely.m2;
+            tinycc.mes = minimalBootstrapBy.m2.precisely.m2.tinycc-mes;
+            tinycc.musl = minimalBootstrapBy.m2.precisely.m2.tinycc-musl;
+            gcc46 = gcc46By.m2.precisely.m2;
+          };
+          m2.precisely.gccm2 = {
+            minimal = minimalBootstrapBy.m2.precisely.gccm2;
+            tinycc.mes = minimalBootstrapBy.m2.precisely.gccm2.tinycc-mes;
+            tinycc.musl = minimalBootstrapBy.m2.precisely.gccm2.tinycc-musl;
+            gcc46 = gcc46By.m2.precisely.gccm2;
+          };
         };
 
         hcc-m1-smoke = pkgs.callPackage ./nix/hcc-m1-smoke.nix {
@@ -697,7 +722,11 @@
 
           tinycc = tinyccBy;
 
+          tinyccMusl = tinyccMuslBy;
+
           gcc46 = gcc46By;
+
+          bootstrap = bootstrapBy;
 
           tests = {
             smoke.m1 = hcc-m1-smoke;
