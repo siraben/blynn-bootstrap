@@ -21,6 +21,8 @@
 mkDerivation ({
   inherit pname src nativeBuildInputs;
   version = "0-unstable-2026-05-06";
+  dontPatchELF = true;
+  dontFixup = true;
 
   buildPhase = ''
     runHook preBuild

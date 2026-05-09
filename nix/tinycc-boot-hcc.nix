@@ -18,6 +18,8 @@ in
 stdenv.mkDerivation {
   inherit pname;
   inherit version;
+  dontPatchELF = true;
+  dontFixup = true;
 
   src = fetchurl {
     url = "https://gitlab.com/janneke/tinycc/-/archive/${rev}/tinycc-${rev}.tar.gz";
