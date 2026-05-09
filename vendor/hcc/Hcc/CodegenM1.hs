@@ -229,8 +229,148 @@ codegenFunction fn = do
 optimizeFunctionIr :: FunctionIr -> FunctionIr
 optimizeFunctionIr fn = case fn of
   FunctionIr name params blocks ->
-    let stats = functionStats blocks
-    in FunctionIr name params (map (optimizeBasicBlock stats) blocks)
+    let simplified = map simplifyBasicBlock blocks
+        stats = functionStats simplified
+    in FunctionIr name params (map (optimizeBasicBlock stats) simplified)
+
+simplifyBasicBlock :: BasicBlock -> BasicBlock
+simplifyBasicBlock block = case block of
+  BasicBlock bid instrs term ->
+    BasicBlock bid (map simplifyInstr instrs) term
+
+simplifyInstr :: Instr -> Instr
+simplifyInstr instr = case instr of
+  IBin temp op a b -> simplifyBin temp op a b
+  _ -> instr
+
+simplifyBin :: Temp -> BinOp -> Operand -> Operand -> Instr
+simplifyBin temp op a b = case op of
+  IAdd ->
+    if isZeroOperand a
+    then ICopy temp b
+    else if isZeroOperand b
+      then ICopy temp a
+      else IBin temp op a b
+  ISub ->
+    if isZeroOperand b || sameOperand a b
+    then if sameOperand a b then IConst temp 0 else ICopy temp a
+    else IBin temp op a b
+  IMul ->
+    if isZeroOperand a || isZeroOperand b
+    then IConst temp 0
+    else if isOneOperand a
+      then ICopy temp b
+      else if isOneOperand b
+        then ICopy temp a
+        else IBin temp op a b
+  IDiv ->
+    if isOneOperand b
+    then ICopy temp a
+    else IBin temp op a b
+  IMod ->
+    if isOneOperand b || sameOperand a b
+    then IConst temp 0
+    else IBin temp op a b
+  IShl ->
+    if isZeroOperand b then ICopy temp a else IBin temp op a b
+  IShr ->
+    if isZeroOperand b then ICopy temp a else IBin temp op a b
+  ISar ->
+    if isZeroOperand b then ICopy temp a else IBin temp op a b
+  IEq ->
+    if sameOperand a b then IConst temp 1 else IBin temp op a b
+  INe ->
+    if sameOperand a b then IConst temp 0 else IBin temp op a b
+  ILt ->
+    if sameOperand a b then IConst temp 0 else IBin temp op a b
+  ILe ->
+    if sameOperand a b then IConst temp 1 else IBin temp op a b
+  IGt ->
+    if sameOperand a b then IConst temp 0 else IBin temp op a b
+  IGe ->
+    if sameOperand a b then IConst temp 1 else IBin temp op a b
+  IULt ->
+    if sameOperand a b then IConst temp 0 else IBin temp op a b
+  IULe ->
+    if sameOperand a b then IConst temp 1 else IBin temp op a b
+  IUGt ->
+    if sameOperand a b then IConst temp 0 else IBin temp op a b
+  IUGe ->
+    if sameOperand a b then IConst temp 1 else IBin temp op a b
+  IAnd ->
+    if isZeroOperand a || isZeroOperand b
+    then IConst temp 0
+    else if sameOperand a b
+      then ICopy temp a
+      else IBin temp op a b
+  IOr ->
+    if isZeroOperand a
+    then ICopy temp b
+    else if isZeroOperand b || sameOperand a b
+      then ICopy temp a
+      else IBin temp op a b
+  IXor ->
+    if isZeroOperand a
+    then ICopy temp b
+    else if isZeroOperand b
+      then ICopy temp a
+      else if sameOperand a b
+        then IConst temp 0
+        else IBin temp op a b
+
+isZeroOperand :: Operand -> Bool
+isZeroOperand op = case op of
+  OImm value -> value == 0
+  OImmBytes bytes -> allZeroBytes bytes
+  _ -> False
+
+isOneOperand :: Operand -> Bool
+isOneOperand op = case op of
+  OImm value -> value == 1
+  OImmBytes bytes -> oneThenZeroBytes bytes
+  _ -> False
+
+oneThenZeroBytes :: [Int] -> Bool
+oneThenZeroBytes bytes = case bytes of
+  [] -> False
+  b:rest -> b == 1 && allZeroBytes rest
+
+allZeroBytes :: [Int] -> Bool
+allZeroBytes bytes = case bytes of
+  [] -> True
+  b:rest -> b == 0 && allZeroBytes rest
+
+sameOperand :: Operand -> Operand -> Bool
+sameOperand a b = case a of
+  OTemp ta -> case b of
+    OTemp tb -> sameTemp ta tb
+    _ -> False
+  OImm va -> case b of
+    OImm vb -> va == vb
+    _ -> False
+  OImmBytes ba -> case b of
+    OImmBytes bb -> sameInts ba bb
+    _ -> False
+  OGlobal na -> case b of
+    OGlobal nb -> na == nb
+    _ -> False
+  OFunction na -> case b of
+    OFunction nb -> na == nb
+    _ -> False
+
+sameTemp :: Temp -> Temp -> Bool
+sameTemp a b = case a of
+  Temp x -> case b of
+    Temp y -> x == y
+
+sameInts :: [Int] -> [Int] -> Bool
+sameInts a b = case a of
+  [] -> case b of
+    [] -> True
+    _ -> False
+  x:xs -> case b of
+    [] -> False
+    y:ys -> x == y && sameInts xs ys
 
 optimizeBasicBlock :: BlockStats -> BasicBlock -> BasicBlock
 optimizeBasicBlock globalStats block = case block of
