@@ -12,10 +12,6 @@ by the bootstrap.
   - upstream: `https://github.com/blynn/compiler.git`
     at `a1f1c47c9bb3ff6a45a0735ced84984396560535`
   - local delta formerly carried by the nested `blynn-compiler/upstream` copy
-- `gnu-mes-compiler-reference.patch`
-  - upstream: GNU Mes `v0.27.1`, subset rooted at `module/mescc`,
-    `module/mescc.scm`, and `scripts/mescc.scm.in`
-  - reference delta formerly carried by the in-tree Mes compiler copy
 - `gnu-mes-libc-reference.patch`
   - upstream: GNU Mes `v0.27.1`
     at `c331d801da386ba752f3fe92d0538102a90e988d`
