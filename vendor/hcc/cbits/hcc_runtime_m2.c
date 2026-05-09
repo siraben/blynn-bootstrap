@@ -316,6 +316,47 @@ void hcc_obuf_put(unsigned long handle, int c)
   obuf_len[ix] = obuf_len[ix] + 1;
 }
 
+void hcc_obuf_put4(unsigned long handle, int c1, int c2, int c3, int c4)
+{
+  int ix = obuf_index(handle);
+  char *data;
+  unsigned pos;
+  if (ix < 0) return;
+  data = obuf_data[ix];
+  ensure_chars(&data, &obuf_cap[ix], obuf_len[ix] + 4);
+  obuf_data[ix] = (unsigned)data;
+  pos = obuf_len[ix];
+  data[pos] = c1;
+  data[pos + 1] = c2;
+  data[pos + 2] = c3;
+  data[pos + 3] = c4;
+  obuf_len[ix] = pos + 4;
+}
+
+void hcc_obuf_put8(
+  unsigned long handle,
+  int c1, int c2, int c3, int c4,
+  int c5, int c6, int c7, int c8)
+{
+  int ix = obuf_index(handle);
+  char *data;
+  unsigned pos;
+  if (ix < 0) return;
+  data = obuf_data[ix];
+  ensure_chars(&data, &obuf_cap[ix], obuf_len[ix] + 8);
+  obuf_data[ix] = (unsigned)data;
+  pos = obuf_len[ix];
+  data[pos] = c1;
+  data[pos + 1] = c2;
+  data[pos + 2] = c3;
+  data[pos + 3] = c4;
+  data[pos + 4] = c5;
+  data[pos + 5] = c6;
+  data[pos + 6] = c7;
+  data[pos + 7] = c8;
+  obuf_len[ix] = pos + 8;
+}
+
 void hcc_obuf_write(int handle, unsigned long obuf_handle)
 {
   FILE *file = get_handle(handle);

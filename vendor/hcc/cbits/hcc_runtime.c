@@ -260,6 +260,33 @@ void hcc_obuf_put(unsigned long handle, int c) {
   out->data[out->len++] = (char)c;
 }
 
+void hcc_obuf_put4(unsigned long handle, int c1, int c2, int c3, int c4) {
+  struct hcc_obuf *out = get_obuf(handle);
+  if (!out) return;
+  ensure_chars(&out->data, &out->cap, out->len + 4);
+  out->data[out->len++] = (char)c1;
+  out->data[out->len++] = (char)c2;
+  out->data[out->len++] = (char)c3;
+  out->data[out->len++] = (char)c4;
+}
+
+void hcc_obuf_put8(
+    unsigned long handle,
+    int c1, int c2, int c3, int c4,
+    int c5, int c6, int c7, int c8) {
+  struct hcc_obuf *out = get_obuf(handle);
+  if (!out) return;
+  ensure_chars(&out->data, &out->cap, out->len + 8);
+  out->data[out->len++] = (char)c1;
+  out->data[out->len++] = (char)c2;
+  out->data[out->len++] = (char)c3;
+  out->data[out->len++] = (char)c4;
+  out->data[out->len++] = (char)c5;
+  out->data[out->len++] = (char)c6;
+  out->data[out->len++] = (char)c7;
+  out->data[out->len++] = (char)c8;
+}
+
 void hcc_obuf_write(int handle, unsigned long obuf_handle) {
   FILE *file = get_handle(handle);
   struct hcc_obuf *out = get_obuf(obuf_handle);

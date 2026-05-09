@@ -22,6 +22,8 @@ foreign import ccall "hcc_obuf_free" hccObufFree :: Word -> IO ()
 foreign import ccall "hcc_obuf_clear" hccObufClear :: Word -> IO ()
 foreign import ccall "hcc_obuf_len" hccObufLen :: Word -> IO Int
 foreign import ccall "hcc_obuf_put" hccObufPut :: Word -> Char -> IO ()
+foreign import ccall "hcc_obuf_put4" hccObufPut4 :: Word -> Char -> Char -> Char -> Char -> IO ()
+foreign import ccall "hcc_obuf_put8" hccObufPut8 :: Word -> Char -> Char -> Char -> Char -> Char -> Char -> Char -> Char -> IO ()
 foreign import ccall "hcc_obuf_write" hccObufWrite :: Int -> Word -> IO ()
 foreign import ccall "hcc_close" hccClose :: Int -> IO ()
 foreign import ccall "hcc_canonicalize" hccCanonicalizeRaw :: IO ()
@@ -162,6 +164,8 @@ hccWriteHandleLines handle lines' = do
 
     writeTextBuffered out text = case text of
       [] -> pure ()
+      c1:c2:c3:c4:c5:c6:c7:c8:rest -> hccObufPut8 out c1 c2 c3 c4 c5 c6 c7 c8 >> writeTextBuffered out rest
+      c1:c2:c3:c4:rest -> hccObufPut4 out c1 c2 c3 c4 >> writeTextBuffered out rest
       c:rest -> hccObufPut out c >> writeTextBuffered out rest
 
 outputChunkSize :: Int

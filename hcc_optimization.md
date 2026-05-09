@@ -1034,6 +1034,58 @@ nix build .#tinycc-boot-hcc .#hcc-m1-smoke .#hcc-mescc-tests
 pass
 ```
 
+## Pass 11: Chunked output-buffer writes
+
+Goal: reduce the cost of writing generated M1 from GHC `-O0` and
+Precisely-built HCC without changing generated output.
+
+Baseline profile, GHC `-O0` profiled `hcc1 -S tcc-expanded.c`:
+
+```text
+real time: 4.677s
+profile total time: 3.13s
+allocated: 4,807,307,640 bytes
+M1 output: 412,408 lines, 11,752,424 bytes
+top hotspot: hccWriteHandleLines.writeTextBuffered, 27.1% time, 24.8% alloc
+```
+
+Changes:
+
+- Added `hcc_obuf_put4` and `hcc_obuf_put8` runtime primitives.
+- Updated `hccWriteHandleLines` to copy output text into the runtime buffer
+  eight characters per FFI call, falling back to four and then one for tails.
+- Implemented the same primitives in the M2-compatible runtime.
+
+Result after `put8`:
+
+```text
+real time: 4.076s
+profile total time: 2.59s
+allocated: 3,926,143,128 bytes
+M1 output: 412,408 lines, 11,752,424 bytes
+sha256: c8fa42557d9ea036d464bacb5368688f0cb08c7cb1b76c0426c414aa565a4bfa
+top hotspot: hccWriteHandleLines.writeTextBuffered, 9.8% time, 7.9% alloc
+```
+
+Validation:
+
+```text
+nix develop -c nix build .#hcc.gcc.precisely.gcc --no-link --print-out-paths -L
+pass
+
+nix develop -c nix build .#tinycc.host.ghc.native --no-link --print-out-paths -L
+pass
+```
+
+Rejected experiment:
+
+```text
+Converted more of CodegenM1's per-instruction helpers to Lines builders.
+Output stayed byte-identical and allocation fell only slightly, but profiled
+real time regressed to 4.442s. Reverted; this needs a broader representation
+change rather than a mechanical type rewrite.
+```
+
 ## Pass 7: Precisely RTS generational GC experiment
 
 Goal: reduce peak runtime memory for Blynn-compiled HCC while preserving the TinyCC self-host path.
