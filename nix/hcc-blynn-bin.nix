@@ -87,6 +87,11 @@ mkDerivation ({
     run_step "hcc1 --check parse-smoke.i" ./hcc1 --check parse-smoke.i
     run_step "hcc1 -S -o smoke.M1 parse-smoke.i" ./hcc1 -S -o smoke.M1 parse-smoke.i
     log_file smoke.M1
+    run_step "hcc1 --m1-ir -o smoke.hccir parse-smoke.i" ./hcc1 --m1-ir -o smoke.hccir parse-smoke.i
+    log_file smoke.hccir
+    run_step "hcc-m1 smoke.hccir smoke-c.M1" ./hcc-m1 smoke.hccir smoke-c.M1
+    log_file smoke-c.M1
+    run_step "compare Haskell and C M1 writers" cmp smoke.M1 smoke-c.M1
 
     runHook postBuild
   '';
@@ -95,6 +100,7 @@ mkDerivation ({
     runHook preInstall
     install -Dm555 hcpp $out/bin/hcpp
     install -Dm555 hcc1 $out/bin/hcc1
+    install -Dm555 hcc-m1 $out/bin/hcc-m1
     install -Dm644 hcpp-blynn.c $out/share/${shareName}/hcpp-blynn.c
     install -Dm644 hcc1-blynn.c $out/share/${shareName}/hcc1-blynn.c
     install -Dm644 hcpp-full.hs $out/share/${shareName}/hcpp-full.hs

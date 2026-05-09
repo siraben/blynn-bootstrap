@@ -23,11 +23,15 @@ stdenv.mkDerivation {
     ghc -O0 -prof -fprof-auto -rtsopts -Wall -Werror \
       -XNoImplicitPrelude -XForeignFunctionInterface \
       -i. -iHcc MainCc1.hs cbits/hcc_runtime.c -outputdir build/hcc1 -o hcc1
+    cc -O2 -Wall -Werror cbits/hcc_m1.c -o hcc-m1
     ./hcpp test/pp-smoke.c > pp-smoke.i
     ./hcc1 --check pp-smoke.i
     ./hcpp test/parse-smoke.c > parse-smoke.i
     ./hcc1 --check parse-smoke.i
     ./hcc1 -S -o smoke.M1 parse-smoke.i
+    ./hcc1 --m1-ir -o smoke.hccir parse-smoke.i
+    ./hcc-m1 smoke.hccir smoke-c.M1
+    cmp smoke.M1 smoke-c.M1
     runHook postBuild
   '';
 
@@ -35,6 +39,7 @@ stdenv.mkDerivation {
     runHook preInstall
     install -Dm555 hcpp $out/bin/hcpp
     install -Dm555 hcc1 $out/bin/hcc1
+    install -Dm555 hcc-m1 $out/bin/hcc-m1
     runHook postInstall
   '';
 

@@ -8,6 +8,7 @@ import DriverCommon
 import HccSystem
 import Ir
 import Lower
+import M1Ir
 import Parser hiding (stringLiteral)
 import Token
 
@@ -22,11 +23,12 @@ main = do
     _ | "--tokens" `elem` args -> dumpTokens args
     _ | "--ast-summary" `elem` args -> dumpAstSummary args
     _ | "--ir-summary" `elem` args -> dumpIrSummary args
+    _ | "--m1-ir" `elem` args -> compileM1Ir args
     _ | "-S" `elem` args -> compileAssembly args
     _ -> die "hcc1: expected -S or --check"
 
 usage :: IO ()
-usage = hccPutStrLn "usage: hcc1 -S [-o FILE] INPUT.i\n       hcc1 --tokens [-o FILE] INPUT.i\n       hcc1 --ast-summary [-o FILE] INPUT.i\n       hcc1 --ir-summary [-o FILE] INPUT.i\n       hcc1 --check FILE..."
+usage = hccPutStrLn "usage: hcc1 -S [-o FILE] INPUT.i\n       hcc1 --m1-ir [-o FILE] INPUT.i\n       hcc1 --tokens [-o FILE] INPUT.i\n       hcc1 --ast-summary [-o FILE] INPUT.i\n       hcc1 --ir-summary [-o FILE] INPUT.i\n       hcc1 --check FILE..."
 
 checkFiles :: [String] -> IO ()
 checkFiles files = case files of
@@ -64,6 +66,35 @@ compileAssembly args = do
                   trace "codegen start"
                   result <- codegenM1WriteTraceWithDataPrefix (hccWriteAndFlushLines handle) trace (dataLabelPrefix (asmInput opts)) ast
                   trace "codegen done"
+                  hccClose handle
+                  case result of
+                    Left (CodegenError msg) -> die (asmInput opts ++ ":" ++ msg)
+                    Right _ -> pure ()
+
+compileM1Ir :: [String] -> IO ()
+compileM1Ir args = do
+  case assemblyArgs args of
+    Left msg -> die msg
+    Right opts -> do
+      let trace = hccTraceIf ("--trace" `elem` args)
+      trace ("read " ++ asmInput opts)
+      source <- hccReadFile (asmInput opts)
+      trace "lex"
+      case lexPlainSource source of
+        Left msg -> die (asmInput opts ++ ":" ++ msg)
+        Right toks -> do
+          trace "parse"
+          case mapParseError (parseProgram toks) of
+            Left msg -> die (asmInput opts ++ ":" ++ msg)
+            Right ast -> do
+              trace ("open " ++ asmOutput opts)
+              handle <- hccOpenWriteFile (asmOutput opts)
+              case handle == 0 of
+                True -> die ("hcc1: cannot write " ++ asmOutput opts)
+                False -> do
+                  trace "m1-ir start"
+                  result <- emitM1IrWithDataPrefix (hccWriteAndFlushLines handle) (dataLabelPrefix (asmInput opts)) ast
+                  trace "m1-ir done"
                   hccClose handle
                   case result of
                     Left (CodegenError msg) -> die (asmInput opts ++ ":" ++ msg)

@@ -418,6 +418,8 @@
               $CC -O2 hcpp-blynn.c cbits/hcc_runtime.c -o hcpp
               echo "hcc-blynn: gcc cc hcc1-blynn.c -> hcc1"
               $CC -O2 hcc1-blynn.c cbits/hcc_runtime.c -o hcc1
+              echo "hcc-blynn: gcc cc cbits/hcc_m1.c -> hcc-m1"
+              $CC -O2 cbits/hcc_m1.c -o hcc-m1
             '';
             top = 536870912;
             hcppTop = 134217728;
@@ -434,6 +436,8 @@
               ${tcc}/bin/tcc -B ${tcc}/lib -I ${tcc}/include hcpp-blynn.c cbits/hcc_runtime.c -o hcpp
               echo "hcc-blynn: tcc hcc1-blynn.c -> hcc1"
               ${tcc}/bin/tcc -B ${tcc}/lib -I ${tcc}/include hcc1-blynn.c cbits/hcc_runtime.c -o hcc1
+              echo "hcc-blynn: tcc cbits/hcc_m1.c -> hcc-m1"
+              ${tcc}/bin/tcc -B ${tcc}/lib -I ${tcc}/include cbits/hcc_m1.c -o hcc-m1
             '';
             top = 536870912;
             hcppTop = 134217728;
@@ -461,6 +465,11 @@
                 -f cbits/hcc_runtime_m2.c \
                 -o hcc1
               chmod 555 hcc1
+              echo "hcc-blynn: M2-Mesoplanet cbits/hcc_m1.c -> hcc-m1"
+              M2-Mesoplanet --operating-system "$M2_OS" --architecture "$M2_ARCH" \
+                -f cbits/hcc_m1.c \
+                -o hcc-m1
+              chmod 555 hcc-m1
             '';
             top = 134217728;
             hcppTop = 134217728;
@@ -493,6 +502,11 @@
                 -f cbits/hcc_runtime_m2.c \
                 -o hcc1
               chmod 555 hcc1
+              echo "hcc-blynn: GCC-built M2-Mesoplanet cbits/hcc_m1.c -> hcc-m1"
+              $gcc_m2_env ${m2MesoplanetGcc}/bin/M2-Mesoplanet --operating-system "$M2_OS" --architecture "$M2_ARCH" \
+                -f cbits/hcc_m1.c \
+                -o hcc-m1
+              chmod 555 hcc-m1
             '';
             top = 134217728;
             hcppTop = 134217728;
@@ -579,6 +593,8 @@
               $CC -O0 -DHCC_RTS_STATS ${extraCFlags} hcpp-blynn.c cbits/hcc_runtime.c -o hcpp
               echo "hcc-blynn: gcc stats cc hcc1-blynn.c -> hcc1"
               $CC -O0 -DHCC_RTS_STATS ${extraCFlags} hcc1-blynn.c cbits/hcc_runtime.c -o hcc1
+              echo "hcc-blynn: gcc stats cc cbits/hcc_m1.c -> hcc-m1"
+              $CC -O2 cbits/hcc_m1.c -o hcc-m1
             '';
             inherit description;
           };

@@ -9,6 +9,7 @@
   pname ? "tinycc-boot-hcc",
   enableDiagnostics ? false,
   enableTrace ? false,
+  useCBackend ? true,
 }:
 
 let
@@ -87,6 +88,21 @@ stdenv.mkDerivation {
       log_step "FILE  $file: $lines lines, $bytes bytes"
     }
 
+    use_c_backend="${if useCBackend then "1" else "0"}"
+    compile_m1() {
+      input="$1"
+      output="$2"
+      base="''${output%.M1}"
+      if [ "$use_c_backend" = 1 ]; then
+        run_step "hcc1 --m1-ir $input" hcc1 ${hccTraceArgs}--m1-ir -o "$base.hccir" "$input"
+        log_file "$base.hccir"
+        run_step "hcc-m1 $base.hccir" hcc-m1 "$base.hccir" "$output"
+      else
+        run_step "hcc1 -S $input" hcc1 ${hccTraceArgs}-S -o "$output" "$input"
+      fi
+      log_file "$output"
+    }
+
     tcc_include_src="$PWD/include"
     mes_include_src="${mesLibc}/include"
 
@@ -159,14 +175,11 @@ stdenv.mkDerivation {
 
     run_step_shell "hcpp tcc-bootstrap-support.c > tcc-bootstrap-support.i" "hcpp ${support}/tcc-bootstrap-support.c > tcc-bootstrap-support.i"
     log_file tcc-bootstrap-support.i
-    run_step "hcc1 -S tcc-bootstrap-support.i" hcc1 ${hccTraceArgs}-S -o tcc-bootstrap-support.M1 tcc-bootstrap-support.i
-    log_file tcc-bootstrap-support.M1
+    compile_m1 tcc-bootstrap-support.i tcc-bootstrap-support.M1
     run_step_shell "hcpp tcc-final-overrides.c > tcc-final-overrides.i" "hcpp ${support}/tcc-final-overrides.c > tcc-final-overrides.i"
     log_file tcc-final-overrides.i
-    run_step "hcc1 -S tcc-final-overrides.i" hcc1 ${hccTraceArgs}-S -o tcc-final-overrides.M1 tcc-final-overrides.i
-    log_file tcc-final-overrides.M1
-    run_step "hcc1 -S tcc-expanded.c" hcc1 ${hccTraceArgs}-S -o tcc.M1 tcc-expanded.c
-    log_file tcc.M1
+    compile_m1 tcc-final-overrides.i tcc-final-overrides.M1
+    compile_m1 tcc-expanded.c tcc.M1
 
     M1 --architecture amd64 --little-endian \
       -f ${m2libc}/amd64/amd64_defs.M1 \

@@ -70,6 +70,7 @@ stdenvNoCC.mkDerivation {
       Hcc/TextBuilder.hs \
       Hcc/RegAlloc.hs \
       Hcc/CodegenM1.hs \
+      Hcc/M1Ir.hs \
       Hcc/HccSystem.hs \
       Hcc/DriverCommon.hs \
       MainCc1.hs \
