@@ -386,10 +386,16 @@
             shareName = pname;
           };
 
-        hccBlynnCByPrecisely = {
-          ghc = hccBlynnCFromPrecisely "hcc-blynn-c-ghc-precisely" preciselyGhcDebug;
-          gcc = hccBlynnCFromPrecisely "hcc-blynn-c-gcc-precisely" preciselyGccHost;
-          m2 = hccBlynnCFromPrecisely "hcc-blynn-c-m2-precisely" preciselyM2Stage0;
+        preciselyBy = {
+          m2.stage0 = preciselyM2Stage0;
+          gcc.host = preciselyGccHost;
+          ghc.debug = preciselyGhcDebug;
+        };
+
+        hccBlynnCBy = {
+          ghc.precisely = hccBlynnCFromPrecisely "hcc-blynn-c-ghc-precisely" preciselyBy.ghc.debug;
+          gcc.precisely = hccBlynnCFromPrecisely "hcc-blynn-c-gcc-precisely" preciselyBy.gcc.host;
+          m2.precisely = hccBlynnCFromPrecisely "hcc-blynn-c-m2-precisely" preciselyBy.m2.stage0;
         };
 
         hccFromPrecisely = {
@@ -498,63 +504,66 @@
           };
         };
 
-        # Bootstrap triple: <precisely-cc>-<hcc-hs>-<hcc-cc>.
+        # Bootstrap path shape: hcc.<precisely-cc>.precisely.<hcc-cc>.
         # - precisely-cc: how the precisely binary was compiled.
-        # - hcc-hs: the Haskell compiler used to compile HCC's Haskell source.
+        # - precisely: the Haskell compiler used to compile HCC's Haskell source.
         # - hcc-cc: how HCC's generated/native code becomes an executable.
         #
-        # `host-ghc-native` is the dev escape hatch: no precisely stage is used,
+        # `hcc.host.ghc.native` is the dev escape hatch: no precisely stage is used,
         # and host GHC compiles HCC directly.
-        hccByTriple = {
-          host-ghc-native = hccHostGhcNative;
+        hccBy = rec {
+          host.ghc.native = hccHostGhcNative;
 
-          ghc-precisely-gcc = hccFromPrecisely {
+          ghc.precisely.gcc = hccFromPrecisely {
             pname = "hcc-ghc-precisely-gcc";
-            generatedC = hccBlynnCByPrecisely.ghc;
+            generatedC = hccBlynnCBy.ghc.precisely;
             cBackend = hccCBackends.gcc // {
               description = "HCC compiled by the GHC-built Blynn precisely debug compiler and GCC";
             };
           };
 
-          gcc-precisely-gcc = hccFromPrecisely {
+          gcc.precisely.gcc = hccFromPrecisely {
             pname = "hcc-gcc-precisely-gcc";
-            generatedC = hccBlynnCByPrecisely.gcc;
+            generatedC = hccBlynnCBy.gcc.precisely;
             cBackend = hccCBackends.gcc // {
               description = "HCC compiled by the GCC-built Blynn precisely compiler and GCC";
             };
           };
 
-          gcc-precisely-tcc = hccFromPrecisely {
+          gcc.precisely.tcc = hccFromPrecisely {
             pname = "hcc-gcc-precisely-tcc";
-            generatedC = hccBlynnCByPrecisely.gcc;
-            cBackend = hccCBackends.tcc tinyccByTriple.gcc-precisely-gcc // {
+            generatedC = hccBlynnCBy.gcc.precisely;
+            cBackend = hccCBackends.tcc tinyccBy.gcc.precisely.gcc // {
               description = "HCC compiled by the GCC-built Blynn precisely compiler and HCC-built TinyCC";
             };
           };
 
-          m2-precisely-m2 = hccFromPrecisely {
+          m2.precisely.m2 = hccFromPrecisely {
             pname = "hcc-m2-precisely-m2";
-            generatedC = hccBlynnCByPrecisely.m2;
+            generatedC = hccBlynnCBy.m2.precisely;
             cBackend = hccCBackends.m2 // {
               description = "HCC compiled by the stage0-built Blynn precisely and M2-Mesoplanet";
             };
           };
 
-          m2-precisely-gcc = hccFromPrecisely {
+          m2.precisely.gcc = hccFromPrecisely {
             pname = "hcc-m2-precisely-gcc";
-            generatedC = hccBlynnCByPrecisely.m2;
+            generatedC = hccBlynnCBy.m2.precisely;
             cBackend = hccCBackends.gcc // {
               description = "HCC compiled by the stage0-built Blynn precisely and GCC";
             };
           };
 
-          m2-precisely-gccm2 = hccFromPrecisely {
+          m2.precisely.gccm2 = hccFromPrecisely {
             pname = "hcc-m2-precisely-gccm2";
-            generatedC = hccBlynnCByPrecisely.m2;
+            generatedC = hccBlynnCBy.m2.precisely;
             cBackend = hccCBackends.gccm2 // {
               description = "HCC compiled by the stage0-built Blynn precisely and a GCC-built M2-Mesoplanet";
             };
           };
+
+          stats.gcc.precisely.gcc.copying = hccGccPreciselyGccStatsCopying;
+          stats.gcc.precisely.gcc.generational = hccGccPreciselyGccStatsGenerational;
         };
 
         hccGccPreciselyGccStatsWith = {
@@ -563,7 +572,7 @@
           description,
         }: hccFromPrecisely {
           inherit pname;
-          generatedC = hccBlynnCByPrecisely.gcc;
+          generatedC = hccBlynnCBy.gcc.precisely;
           cBackend = hccCBackends.gcc // {
             compileCommand = ''
               echo "hcc-blynn: gcc stats cc hcpp-blynn.c -> hcpp"
@@ -593,30 +602,29 @@
           m2libc = m2libcSrc;
         };
 
-        tinyccGccPreciselyGccStatsCopying =
-          tinyccFromHcc "tinycc-boot-hcc-gcc-precisely-gcc-stats-copying" hccGccPreciselyGccStatsCopying;
+        tinyccBy = {
+          host.ghc.native = tinyccFromHcc "tinycc-boot-hcc-host-ghc-native" hccBy.host.ghc.native;
+          ghc.precisely.gcc = tinyccFromHcc "tinycc-boot-hcc-ghc-precisely-gcc" hccBy.ghc.precisely.gcc;
+          gcc.precisely.gcc = tinyccFromHcc "tinycc-boot-hcc-gcc-precisely-gcc" hccBy.gcc.precisely.gcc;
+          gcc.precisely.tcc = tinyccFromHcc "tinycc-boot-hcc-gcc-precisely-tcc" hccBy.gcc.precisely.tcc;
+          m2.precisely.m2 = tinyccFromHcc "tinycc-boot-hcc-m2-precisely-m2" hccBy.m2.precisely.m2;
+          m2.precisely.gcc = tinyccFromHcc "tinycc-boot-hcc-m2-precisely-gcc" hccBy.m2.precisely.gcc;
+          m2.precisely.gccm2 = tinyccFromHcc "tinycc-boot-hcc-m2-precisely-gccm2" hccBy.m2.precisely.gccm2;
 
-        tinyccGccPreciselyGccStatsGenerational =
-          tinyccFromHcc "tinycc-boot-hcc-gcc-precisely-gcc-stats-generational" hccGccPreciselyGccStatsGenerational;
-
-        tinyccByTriple = {
-          host-ghc-native = tinyccFromHcc "tinycc-boot-hcc-host-ghc-native" hccByTriple.host-ghc-native;
-          ghc-precisely-gcc = tinyccFromHcc "tinycc-boot-hcc-ghc-precisely-gcc" hccByTriple.ghc-precisely-gcc;
-          gcc-precisely-gcc = tinyccFromHcc "tinycc-boot-hcc-gcc-precisely-gcc" hccByTriple.gcc-precisely-gcc;
-          gcc-precisely-tcc = tinyccFromHcc "tinycc-boot-hcc-gcc-precisely-tcc" hccByTriple.gcc-precisely-tcc;
-          m2-precisely-m2 = tinyccFromHcc "tinycc-boot-hcc-m2-precisely-m2" hccByTriple.m2-precisely-m2;
-          m2-precisely-gcc = tinyccFromHcc "tinycc-boot-hcc-m2-precisely-gcc" hccByTriple.m2-precisely-gcc;
-          m2-precisely-gccm2 = tinyccFromHcc "tinycc-boot-hcc-m2-precisely-gccm2" hccByTriple.m2-precisely-gccm2;
+          stats.gcc.precisely.gcc.copying =
+            tinyccFromHcc "tinycc-boot-hcc-gcc-precisely-gcc-stats-copying" hccGccPreciselyGccStatsCopying;
+          stats.gcc.precisely.gcc.generational =
+            tinyccFromHcc "tinycc-boot-hcc-gcc-precisely-gcc-stats-generational" hccGccPreciselyGccStatsGenerational;
         };
 
         hcc-m1-smoke = pkgs.callPackage ./nix/hcc-m1-smoke.nix {
-          hcc = hccByTriple.m2-precisely-m2;
+          hcc = hccBy.m2.precisely.m2;
           inherit minimalBootstrap;
           m2libc = m2libcSrc;
         };
 
         hcc-mescc-tests = pkgs.callPackage ./nix/hcc-mescc-tests.nix {
-          hcc = hccByTriple.m2-precisely-m2;
+          hcc = hccBy.m2.precisely.m2;
           inherit minimalBootstrap;
           m2libc = m2libcSrc;
           mesTests = ./vendor/mes-tests;
@@ -636,37 +644,36 @@
         };
       in {
         packages = {
-          blynn-compiler = blynnCompiler;
-          precisely-m2-stage0 = preciselyM2Stage0;
-          precisely-gcc-host = preciselyGccHost;
-          precisely-ghc-debug = preciselyGhcDebug;
-          m2-mesoplanet-gcc = m2MesoplanetGcc;
-          hcc-profile-host-ghc-native = hccProfileHostGhcNative;
-          hcc-blynn-sources = hccBlynnSources;
-          hcc-blynn-c-ghc-precisely = hccBlynnCByPrecisely.ghc;
-          hcc-blynn-c-gcc-precisely = hccBlynnCByPrecisely.gcc;
-          hcc-blynn-c-m2-precisely = hccBlynnCByPrecisely.m2;
-          hcc-gcc-precisely-gcc-stats = hccGccPreciselyGccStatsGenerational;
-          hcc-gcc-precisely-gcc-stats-copying = hccGccPreciselyGccStatsCopying;
-          hcc-gcc-precisely-gcc-stats-generational = hccGccPreciselyGccStatsGenerational;
-          tinycc-boot-hcc-gcc-precisely-gcc-stats = tinyccGccPreciselyGccStatsGenerational;
-          tinycc-boot-hcc-gcc-precisely-gcc-stats-copying = tinyccGccPreciselyGccStatsCopying;
-          tinycc-boot-hcc-gcc-precisely-gcc-stats-generational = tinyccGccPreciselyGccStatsGenerational;
-          inherit hcc-m1-smoke hcc-mescc-tests mutable-io-proof precisely-dialect-tests;
-          default = preciselyM2Stage0;
-        } // lib.mapAttrs' (name: value: {
-          name = "blynn-stage-${name}";
-          inherit value;
-        }) blynnRootStages // lib.mapAttrs' (name: value: {
-          name = "blynn-upstream-stage-${name}";
-          inherit value;
-        }) blynnUpstreamStages // lib.mapAttrs' (name: value: {
-          name = "hcc-${name}";
-          inherit value;
-        }) hccByTriple // lib.mapAttrs' (name: value: {
-          name = "tinycc-boot-hcc-${name}";
-          inherit value;
-        }) tinyccByTriple;
+          default = preciselyBy.m2.stage0;
+
+          blynn = {
+            compiler = blynnCompiler;
+            stage = blynnRootStages;
+            upstream.stage = blynnUpstreamStages;
+          };
+
+          precisely = preciselyBy;
+
+          m2.mesoplanet.gcc = m2MesoplanetGcc;
+
+          hcc = hccBy // {
+            profile.host.ghc.native = hccProfileHostGhcNative;
+            blynn = {
+              sources = hccBlynnSources;
+              c = hccBlynnCBy;
+            };
+          };
+
+          tinycc = tinyccBy;
+
+          tests = {
+            smoke.m1 = hcc-m1-smoke;
+            mescc = hcc-mescc-tests;
+            precisely.dialect = precisely-dialect-tests;
+          };
+
+          proof.mutableIO = mutable-io-proof;
+        };
 
         apps.blynn-precisely-gcc = {
           type = "app";
@@ -684,10 +691,10 @@
             pkgs.coreutils
             pkgs.gcc
             preciselyGhcDebug
-            hccByTriple.host-ghc-native
+            hccBy.host.ghc.native
             hccProfileHostGhcNative
-            hccByTriple.ghc-precisely-gcc
-            hccByTriple.gcc-precisely-gcc
+            hccBy.ghc.precisely.gcc
+            hccBy.gcc.precisely.gcc
             (pkgs.haskellPackages.ghcWithPackages (hpkgs: [
               hpkgs.raw-strings-qq
             ]))
