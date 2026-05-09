@@ -43,8 +43,9 @@ stdenvNoCC.mkDerivation {
       log_step "$name: M1 $name.M1 -> $name.hex2"
       M1 --architecture amd64 --little-endian \
         -f ${m2libc}/amd64/amd64_defs.M1 \
-        -f ${m2libc}/amd64/libc-core.M1 \
+        -f ${../vendor/hcc/support}/amd64-start.M1 \
         -f "$name.M1" \
+        -f ${../vendor/hcc/support}/amd64-syscalls.M1 \
         --output "$name.hex2"
       printf ':ELF_end\n' > "$name-end.hex2"
       log_step "$name: hex2 $name.hex2 -> $name"
