@@ -48,20 +48,24 @@ compileAssembly args = do
         Right toks -> do
           trace "parse"
           case mapParseError (parseProgram toks) of
-            Left msg -> die (asmInput opts ++ ":" ++ msg)
-            Right ast -> do
-              trace ("open " ++ asmOutput opts)
-              handle <- hccOpenWriteFile (asmOutput opts)
-              case handle == 0 of
-                True -> die ("hcc1: cannot write " ++ asmOutput opts)
-                False -> do
-                  trace "codegen start"
-                  result <- codegenM1WriteTraceWithDataPrefix (hccWriteAndFlushLines handle) trace (dataLabelPrefix (asmInput opts)) ast
-                  trace "codegen done"
-                  hccClose handle
-                  case result of
-                    Left (CodegenError msg) -> die (asmInput opts ++ ":" ++ msg)
-                    Right _ -> pure ()
+            Left msg -> dieInput opts msg
+            Right ast -> writeAssembly opts trace ast
+  where
+    dieInput opts msg = die (asmInput opts ++ ":" ++ msg)
+
+    writeAssembly opts trace ast = do
+      traceLine trace ("open " ++ asmOutput opts)
+      handle <- hccOpenWriteFile (asmOutput opts)
+      case handle == 0 of
+        True -> die ("hcc1: cannot write " ++ asmOutput opts)
+        False -> do
+          traceLine trace "codegen start"
+          result <- codegenM1WriteTraceWithDataPrefix (hccWriteAndFlushLines handle) trace (dataLabelPrefix (asmInput opts)) ast
+          traceLine trace "codegen done"
+          hccClose handle
+          case result of
+            Left (CodegenError msg) -> dieInput opts msg
+            Right _ -> pure ()
 
 compileM1Ir :: [String] -> IO ()
 compileM1Ir args = do
@@ -77,20 +81,27 @@ compileM1Ir args = do
         Right toks -> do
           trace "parse"
           case mapParseError (parseProgram toks) of
-            Left msg -> die (asmInput opts ++ ":" ++ msg)
-            Right ast -> do
-              trace ("open " ++ asmOutput opts)
-              handle <- hccOpenWriteFile (asmOutput opts)
-              case handle == 0 of
-                True -> die ("hcc1: cannot write " ++ asmOutput opts)
-                False -> do
-                  trace "m1-ir start"
-                  result <- emitM1IrWithDataPrefix (hccWriteAndFlushLines handle) (dataLabelPrefix (asmInput opts)) ast
-                  trace "m1-ir done"
-                  hccClose handle
-                  case result of
-                    Left (CodegenError msg) -> die (asmInput opts ++ ":" ++ msg)
-                    Right _ -> pure ()
+            Left msg -> dieInput opts msg
+            Right ast -> writeM1Ir opts trace ast
+  where
+    dieInput opts msg = die (asmInput opts ++ ":" ++ msg)
+
+    writeM1Ir opts trace ast = do
+      traceLine trace ("open " ++ asmOutput opts)
+      handle <- hccOpenWriteFile (asmOutput opts)
+      case handle == 0 of
+        True -> die ("hcc1: cannot write " ++ asmOutput opts)
+        False -> do
+          traceLine trace "m1-ir start"
+          result <- emitM1IrWithDataPrefix (hccWriteAndFlushLines handle) (dataLabelPrefix (asmInput opts)) ast
+          traceLine trace "m1-ir done"
+          hccClose handle
+          case result of
+            Left (CodegenError msg) -> dieInput opts msg
+            Right _ -> pure ()
+
+traceLine :: (String -> IO a) -> String -> IO ()
+traceLine trace msg = trace msg >> pure ()
 
 mapParseError :: Either ParseError a -> Either String a
 mapParseError result = case result of

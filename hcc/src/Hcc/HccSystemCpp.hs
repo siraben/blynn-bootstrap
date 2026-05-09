@@ -88,12 +88,11 @@ withBuffer text action = hccBufferClear >> mapM_ hccBufferPut text >> action
 readResult :: IO String
 readResult = do
   len <- hccResultLen
-  readResultChars len []
-
-readResultChars :: Int -> String -> IO String
-readResultChars remaining acc =
-  if remaining <= 0
-  then pure (reverse acc)
-  else do
-    c <- hccResultChar
-    readResultChars (remaining - 1) (c:acc)
+  go len []
+  where
+    go remaining acc =
+      if remaining <= 0
+      then pure (reverse acc)
+      else do
+        c <- hccResultChar
+        go (remaining - 1) (c:acc)

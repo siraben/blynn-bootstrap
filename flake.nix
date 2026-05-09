@@ -695,6 +695,14 @@
           m2libc = m2libcSrc;
         };
 
+        tinyccM1FromHcc = pname: hcc: pkgs.callPackage ./nix/tinycc-boot-hcc.nix {
+          stdenvNoCC = pkgs.stdenvNoCC;
+          inherit pname hcc minimalBootstrap;
+          mesLibc = mesLibcSrc;
+          m2libc = m2libcSrc;
+          m1ArtifactsOnly = true;
+        };
+
         tinyccBy = {
           host.ghc.native = tinyccFromHcc "tinycc-boot-hcc-host-ghc-native" hccBy.host.ghc.native;
           ghc.precisely.gcc = tinyccFromHcc "tinycc-boot-hcc-ghc-precisely-gcc" hccBy.ghc.precisely.gcc;
@@ -709,6 +717,27 @@
           stats.gcc.precisely.gcc.generational =
             tinyccFromHcc "tinycc-boot-hcc-gcc-precisely-gcc-stats-generational" hccGccPreciselyGccStatsGenerational;
         };
+
+        tinyccM1By = {
+          host.ghc.native = tinyccM1FromHcc "tinycc-m1-hcc-host-ghc-native" hccBy.host.ghc.native;
+          m2.precisely.gcc = tinyccM1FromHcc "tinycc-m1-hcc-m2-precisely-gcc" hccBy.m2.precisely.gcc;
+          m2.precisely.m2 = tinyccM1FromHcc "tinycc-m1-hcc-m2-precisely-m2" hccBy.m2.precisely.m2;
+        };
+
+        tinyccM1CompareNativeFaithful = pkgs.runCommand "tinycc-m1-compare-native-faithful" { } ''
+          mkdir -p $out
+          native=${tinyccM1By.host.ghc.native}/share/tinycc-hcc-m1
+          faithful=${tinyccM1By.m2.precisely.gcc}/share/tinycc-hcc-m1
+          cmp "$native/tcc.M1" "$faithful/tcc.M1"
+          cmp "$native/tcc-bootstrap-support.M1" "$faithful/tcc-bootstrap-support.M1"
+          cmp "$native/tcc-final-overrides.M1" "$faithful/tcc-final-overrides.M1"
+          {
+            echo "native:   ${tinyccM1By.host.ghc.native}"
+            echo "faithful: ${tinyccM1By.m2.precisely.gcc}"
+            sha256sum "$native/tcc.M1" "$faithful/tcc.M1"
+            wc -c "$native/tcc.M1" "$faithful/tcc.M1"
+          } > $out/summary.txt
+        '';
 
         minimalBootstrapFromTinycc = tinycc:
           minimalBootstrap.overrideScope (final: _prev: {
@@ -909,7 +938,9 @@
             };
           };
 
-          tinycc = tinyccBy;
+          tinycc = tinyccBy // {
+            m1 = tinyccM1By;
+          };
 
           tinyccMusl = tinyccMuslBy;
 
@@ -927,6 +958,7 @@
             smoke.m1 = hcc-m1-smoke;
             mescc = hcc-mescc-tests;
             precisely.dialect = precisely-dialect-tests;
+            tinyccM1.native-vs-faithful = tinyccM1CompareNativeFaithful;
           };
 
           proof.mutableIO = mutable-io-proof;

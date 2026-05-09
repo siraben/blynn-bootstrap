@@ -117,29 +117,27 @@ withBuffer :: String -> IO a -> IO a
 withBuffer text action = hccBufferClear >> mapM_ hccBufferPut text >> action
 
 readHandle :: Int -> IO String
-readHandle handle = readHandleChars handle []
-
-readHandleChars :: Int -> String -> IO String
-readHandleChars handle acc = do
-  done <- hccHandleEof handle
-  case done /= 0 of
-    True -> pure (reverse acc)
-    False -> do
-      c <- hccHandleReadChar handle
-      readHandleChars handle (c:acc)
+readHandle handle = go []
+  where
+    go acc = do
+      done <- hccHandleEof handle
+      case done /= 0 of
+        True -> pure (reverse acc)
+        False -> do
+          c <- hccHandleReadChar handle
+          go (c:acc)
 
 readResult :: IO String
 readResult = do
   len <- hccResultLen
-  readResultChars len []
-
-readResultChars :: Int -> String -> IO String
-readResultChars remaining acc =
-  if remaining <= 0
-  then pure (reverse acc)
-  else do
-    c <- hccResultChar
-    readResultChars (remaining - 1) (c:acc)
+  go len []
+  where
+    go remaining acc =
+      if remaining <= 0
+      then pure (reverse acc)
+      else do
+        c <- hccResultChar
+        go (remaining - 1) (c:acc)
 
 hccWriteHandleText :: Int -> String -> IO ()
 hccWriteHandleText handle text = withBuffer text (hccHandleWriteBuffer handle)

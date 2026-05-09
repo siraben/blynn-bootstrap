@@ -8,6 +8,7 @@
   pname ? "tinycc-boot-hcc",
   enableTrace ? false,
   useCBackend ? true,
+  m1ArtifactsOnly ? false,
 }:
 
 let
@@ -75,6 +76,7 @@ stdenvNoCC.mkDerivation {
     }
 
     use_c_backend="${if useCBackend then "1" else "0"}"
+    m1_artifacts_only="${if m1ArtifactsOnly then "1" else "0"}"
     compile_m1() {
       input="$1"
       output="$2"
@@ -91,6 +93,7 @@ stdenvNoCC.mkDerivation {
 
     tcc_include_src="$PWD/include"
     mes_include_src="${mesLibc}/include"
+    tcc_sysinclude_path="${if m1ArtifactsOnly then "/hcc-bootstrap/include" else "$out/include"}"
 
     cat > config.h <<EOF
     #define BOOTSTRAP 1
@@ -105,7 +108,7 @@ stdenvNoCC.mkDerivation {
     #define CONFIG_TCC_CRTPREFIX "{B}"
     #define CONFIG_TCC_ELFINTERP "/mes/loader"
     #define CONFIG_TCC_LIBPATHS "{B}"
-    #define CONFIG_TCC_SYSINCLUDEPATHS "$out/include"
+    #define CONFIG_TCC_SYSINCLUDEPATHS "$tcc_sysinclude_path"
     #define TCC_LIBGCC "libc.a"
     #define TCC_LIBTCC1 "libtcc1.a"
     #define CONFIG_TCC_LIBTCC1_MES 0
@@ -135,7 +138,7 @@ stdenvNoCC.mkDerivation {
       -D CONFIG_TCC_CRTPREFIX=\\\"{B}\\\" \
       -D CONFIG_TCC_ELFINTERP=\\\"/mes/loader\\\" \
       -D CONFIG_TCC_LIBPATHS=\\\"{B}\\\" \
-      -D CONFIG_TCC_SYSINCLUDEPATHS=\\\"$out/include\\\" \
+      -D CONFIG_TCC_SYSINCLUDEPATHS=\\\"$tcc_sysinclude_path\\\" \
       -D TCC_LIBGCC=\\\"libc.a\\\" \
       -D TCC_LIBTCC1=\\\"libtcc1.a\\\" \
       -D CONFIG_TCC_LIBTCC1_MES=0 \
@@ -157,6 +160,7 @@ stdenvNoCC.mkDerivation {
     compile_m1 tcc-final-overrides.i tcc-final-overrides.M1
     compile_m1 tcc-expanded.c tcc.M1
 
+    if [ "$m1_artifacts_only" != 1 ]; then
     M1 --architecture amd64 --little-endian \
       -f ${m2libc}/amd64/amd64_defs.M1 \
       -f ${support}/amd64-start.M1 \
@@ -267,12 +271,35 @@ stdenvNoCC.mkDerivation {
     run_step "make final libc.a" make_ar ./tcc-stage3 final-libs/libc.a final-libs/libc.o
     run_step "make final libgetopt.a" make_ar ./tcc-stage3 final-libs/libgetopt.a final-libs/libgetopt.o
     run_step "make final libtcc1.a" make_ar ./tcc-stage3 final-libs/libtcc1.a final-libs/libtcc1.o final-libs/va_list.o
+    fi
 
     runHook postBuild
   '';
 
   installPhase = ''
     runHook preInstall
+    if [ "${if m1ArtifactsOnly then "1" else "0"}" = 1 ]; then
+      mkdir -p $out/share/tinycc-hcc-m1
+      install -Dm644 tcc-expanded.c $out/share/tinycc-hcc-m1/tcc-expanded.c
+      install -Dm644 tcc-bootstrap-support.i $out/share/tinycc-hcc-m1/tcc-bootstrap-support.i
+      install -Dm644 tcc-bootstrap-support.M1 $out/share/tinycc-hcc-m1/tcc-bootstrap-support.M1
+      install -Dm644 tcc-final-overrides.i $out/share/tinycc-hcc-m1/tcc-final-overrides.i
+      install -Dm644 tcc-final-overrides.M1 $out/share/tinycc-hcc-m1/tcc-final-overrides.M1
+      install -Dm644 tcc.M1 $out/share/tinycc-hcc-m1/tcc.M1
+      if [ -e tcc.hccir ]; then
+        install -Dm644 tcc.hccir $out/share/tinycc-hcc-m1/tcc.hccir
+      fi
+      if [ -e tcc-bootstrap-support.hccir ]; then
+        install -Dm644 tcc-bootstrap-support.hccir $out/share/tinycc-hcc-m1/tcc-bootstrap-support.hccir
+      fi
+      if [ -e tcc-final-overrides.hccir ]; then
+        install -Dm644 tcc-final-overrides.hccir $out/share/tinycc-hcc-m1/tcc-final-overrides.hccir
+      fi
+      (
+        cd $out/share/tinycc-hcc-m1
+        sha256sum * > SHA256SUMS
+      )
+    else
     install -Dm555 tcc-stage3 $out/bin/tcc
     install -Dm555 tcc $out/bin/tcc-hcc-stage1
     install -Dm555 tcc-stage2 $out/bin/tcc-stage2
@@ -283,10 +310,11 @@ stdenvNoCC.mkDerivation {
     cp -R ${mesLibc}/include/. $out/include/
     chmod -R u+w $out/include
     cp -R include/. $out/include/
+    fi
     runHook postInstall
   '';
 
-  doCheck = true;
+  doCheck = !m1ArtifactsOnly;
   checkPhase = ''
     runHook preCheck
     ./tcc -version
