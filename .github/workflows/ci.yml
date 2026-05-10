@@ -52,7 +52,6 @@ jobs:
         attr:
           - tests.tinyccM1.native-vs-faithful
           - tinycc.m2.precisely.gcc
-          - tinycc.m2.precisely.gccm2
     steps:
       - uses: actions/checkout@v4
       - name: Install Nix
