@@ -129,12 +129,10 @@ hash s = go 5381 s where
   go h (c:cs) = go (((h * 33) + fromEnum c) `mod` 2147483647) cs
 
 cmpHash :: String -> Int -> String -> Int -> Cmp
-cmpHash l lh r rh =
-  if lh < rh
-  then Lt
-  else if lh > rh
-       then Gt
-       else cmpString l r
+cmpHash l lh r rh
+  | lh < rh = Lt
+  | lh > rh = Gt
+  | otherwise = cmpString l r
 
 data Cmp
   = Lt
@@ -145,9 +143,7 @@ cmpString :: String -> String -> Cmp
 cmpString [] [] = Eq
 cmpString [] _ = Lt
 cmpString _ [] = Gt
-cmpString (a:as) (b:bs) =
-  if a < b
-  then Lt
-  else if a > b
-  then Gt
-  else cmpString as bs
+cmpString (a:as) (b:bs)
+  | a < b = Lt
+  | a > b = Gt
+  | otherwise = cmpString as bs

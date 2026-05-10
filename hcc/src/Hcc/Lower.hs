@@ -701,7 +701,7 @@ lowerBinaryExpr op a b =
 
 isComparisonOpString :: String -> Bool
 isComparisonOpString op =
-  op `elem` ("<" : "<=" : ">" : ">=" : [])
+  op `elem` ["<", "<=", ">", ">="]
 
 lowerComparisonExpr :: String -> Expr -> Expr -> CompileM ([Instr], Operand)
 lowerComparisonExpr op a b = do
@@ -1478,8 +1478,15 @@ targetNamedTypeSize name size =
 
 targetWordSizedNames :: [String]
 targetWordSizedNames =
-  "unsigned_long" : "size_t" : "ssize_t" : "time_t" : "ptrdiff_t" :
-  "intptr_t" : "uintptr_t" : "addr_t" : []
+  [ "unsigned_long"
+  , "size_t"
+  , "ssize_t"
+  , "time_t"
+  , "ptrdiff_t"
+  , "intptr_t"
+  , "uintptr_t"
+  , "addr_t"
+  ]
 
 typeAlign :: CType -> CompileM Int
 typeAlign ty = case ty of

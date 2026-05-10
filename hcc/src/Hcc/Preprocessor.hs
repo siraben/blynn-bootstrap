@@ -365,7 +365,7 @@ macroArgHiddenNames macros args = case args of
 joinVariadicArgs :: Span -> [[Token]] -> [Token]
 joinVariadicArgs sp args = case args of
   [] -> []
-  first:rest -> first ++ concatMap ((commaToken sp :) . id) rest
+  first:rest -> first ++ concatMap (commaToken sp :) rest
 
 commaToken :: Span -> Token
 commaToken sp = Token sp (TokPunct ",")

@@ -29,13 +29,22 @@ bitNotInt :: Int -> Int
 bitNotInt value = 0 - value - 1
 
 bitAndInt :: Int -> Int -> Int
-bitAndInt lhs rhs = bitFoldInt (\x y -> x && y) lhs rhs 1 0
+bitAndInt lhs rhs = bitFoldInt bitAndBool lhs rhs 1 0
 
 bitOrInt :: Int -> Int -> Int
-bitOrInt lhs rhs = bitFoldInt (\x y -> x || y) lhs rhs 1 0
+bitOrInt lhs rhs = bitFoldInt bitOrBool lhs rhs 1 0
 
 bitXorInt :: Int -> Int -> Int
-bitXorInt lhs rhs = bitFoldInt (\x y -> x /= y) lhs rhs 1 0
+bitXorInt lhs rhs = bitFoldInt bitXorBool lhs rhs 1 0
+
+bitAndBool :: Bool -> Bool -> Bool
+bitAndBool lhs rhs = lhs && rhs
+
+bitOrBool :: Bool -> Bool -> Bool
+bitOrBool lhs rhs = lhs || rhs
+
+bitXorBool :: Bool -> Bool -> Bool
+bitXorBool lhs rhs = lhs /= rhs
 
 bitFoldInt :: (Bool -> Bool -> Bool) -> Int -> Int -> Int -> Int -> Int
 bitFoldInt op lhs rhs bit acc =
@@ -60,7 +69,7 @@ shiftRightInt value amount = value `div` pow2 amount
 intLiteralIsUnsigned :: String -> Bool
 intLiteralIsUnsigned text = case text of
   [] -> False
-  c:rest -> if c == 'u' || c == 'U' then True else intLiteralIsUnsigned rest
+  c:rest -> c == 'u' || c == 'U' || intLiteralIsUnsigned rest
 
 parseInt :: String -> Int
 parseInt text =
@@ -126,7 +135,7 @@ charValue :: String -> Int
 charValue text = case text of
   '\'':'\\':rest ->
     fst (decodeEscape (dropClosingQuote rest))
-  '\'':c:'\'':[] -> fromEnum c
+  ['\'', c, '\''] -> fromEnum c
   _ -> 0
 
 stringBytes :: String -> [Int]
@@ -213,14 +222,11 @@ decimalDigit :: Char -> Int
 decimalDigit c = fromEnum c - fromEnum '0'
 
 hexDigit :: Char -> Int
-hexDigit c =
-  if c >= '0' && c <= '9'
-    then decimalDigit c
-    else if c >= 'a' && c <= 'f'
-      then 10 + fromEnum c - fromEnum 'a'
-      else if c >= 'A' && c <= 'F'
-        then 10 + fromEnum c - fromEnum 'A'
-        else 0
+hexDigit c
+  | c >= '0' && c <= '9' = decimalDigit c
+  | c >= 'a' && c <= 'f' = 10 + fromEnum c - fromEnum 'a'
+  | c >= 'A' && c <= 'F' = 10 + fromEnum c - fromEnum 'A'
+  | otherwise = 0
 
 stripQuotes :: String -> String
 stripQuotes text = stripTrailingQuote (stripLeadingQuote text)

@@ -38,5 +38,5 @@ isAggregateType ty = case ty of
 isPointerType :: CType -> Bool
 isPointerType ty = case ty of
   CPtr _ -> True
-  CNamed name -> name `elem` ("intptr_t" : "uintptr_t" : [])
+  CNamed name -> name `elem` ["intptr_t", "uintptr_t"]
   _ -> False

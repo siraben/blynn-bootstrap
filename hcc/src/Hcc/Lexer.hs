@@ -227,7 +227,7 @@ advance :: Char -> LexState -> LexState
 advance c st = st { lsPos = nextPos c (lsPos st), lsBol = nextBol c (lsBol st) }
 
 advanceSpace :: Char -> LexState -> LexState
-advanceSpace c st = st { lsPos = nextPos c (lsPos st), lsBol = if c == '\n' then True else lsBol st }
+advanceSpace c st = st { lsPos = nextPos c (lsPos st), lsBol = c == '\n' || lsBol st }
 
 nextPos :: Char -> SrcPos -> SrcPos
 nextPos c (SrcPos line col) =
@@ -235,7 +235,7 @@ nextPos c (SrcPos line col) =
 
 nextBol :: Char -> Bool -> Bool
 nextBol c bol =
-  if c == '\n' then True else if lexerIsSpaceNoNewline c then bol else False
+  c == '\n' || lexerIsSpaceNoNewline c && bol
 
 lexerIsSpace :: Char -> Bool
 lexerIsSpace c =

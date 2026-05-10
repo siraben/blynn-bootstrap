@@ -434,10 +434,8 @@ ctype = do
       TokIdent "union" -> aggregateType CUnion CUnionNamed CUnionDef
       TokIdent "enum" -> enumType
       TokIdent name -> do
-        known <- isKnownTypeNameP name
-        if known
-          then advanceToken >> pure (CNamed name)
-          else advanceToken >> pure (CNamed name)
+        advanceToken
+        pure (CNamed name)
       _ -> failAt tok "expected type"
 
 typeName :: Parser CType

@@ -65,14 +65,11 @@ digitValidForBase :: Int -> Char -> Bool
 digitValidForBase base c = digitValue c < base
 
 digitValue :: Char -> Int
-digitValue c =
-  if c >= '0' && c <= '9'
-    then fromEnum c - fromEnum '0'
-    else if c >= 'a' && c <= 'f'
-      then 10 + fromEnum c - fromEnum 'a'
-      else if c >= 'A' && c <= 'F'
-        then 10 + fromEnum c - fromEnum 'A'
-        else 99
+digitValue c
+  | c >= '0' && c <= '9' = fromEnum c - fromEnum '0'
+  | c >= 'a' && c <= 'f' = 10 + fromEnum c - fromEnum 'a'
+  | c >= 'A' && c <= 'F' = fromEnum c - fromEnum 'A' + 10
+  | otherwise = 99
 
 zeroByteWord :: [Int]
 zeroByteWord = [0,0,0,0,0,0,0,0]
