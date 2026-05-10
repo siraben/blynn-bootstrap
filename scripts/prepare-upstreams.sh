@@ -54,6 +54,6 @@ copy_upstream \
   "$blynn_src"
 patch_upstream \
   "$out_dir/blynn-compiler" \
-  "$repo_dir/nix/patches/upstreams/blynn-compiler-local.patch"
+  "$repo_dir/patches/upstreams/blynn-compiler-local.patch"
 
 msg "patched upstreams are in $out_dir"

@@ -17,7 +17,7 @@
           filter = path: type:
             type == "directory" || lib.hasSuffix ".hs" (baseNameOf path);
         };
-        upstreamPatches = ./nix/patches/upstreams;
+        upstreamPatches = ./patches/upstreams;
         upstreamSources = {
           oriansjBlynnCompiler = pkgs.fetchgit {
             url = "https://github.com/OriansJ/blynn-compiler.git";

@@ -26,7 +26,7 @@ let
     .${buildPlatform.system};
 
   patches = [
-    ../patches/upstreams/tinycc-musl-hcc-bootstrap.patch
+    ../../patches/upstreams/tinycc-musl-hcc-bootstrap.patch
   ];
 
   meta = {

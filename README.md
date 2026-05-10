@@ -50,7 +50,7 @@ nix build .#gccLatest.m2.precisely.gccm2
 
 `nix develop` provides the GHC-built HCC tools for local profiling and
 byte-for-byte output checks. Upstream Blynn and Mes sources are fetched by
-fixed-output derivations and patched with `nix/patches/upstreams`.
+fixed-output derivations and patched with `patches/upstreams`.
 
 ## Portable Bootstrap
 

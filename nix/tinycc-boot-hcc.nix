@@ -33,7 +33,7 @@ stdenvNoCC.mkDerivation {
   sourceRoot = "tinycc-${rev}";
 
   patches = [
-    ./patches/upstreams/tinycc-hcc-bootstrap.patch
+    ../patches/upstreams/tinycc-hcc-bootstrap.patch
   ];
 
   nativeBuildInputs = [

@@ -13,7 +13,7 @@ stdenv.mkDerivation {
   inherit src;
 
   patches = [
-    ./patches/blynn-precisely-debug-fail-join.patch
+    ../patches/blynn-precisely-debug-fail-join.patch
   ];
 
   nativeBuildInputs = [
