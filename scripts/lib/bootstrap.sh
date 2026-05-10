@@ -3,11 +3,11 @@
 set -eu
 
 msg() {
-  printf '%s\n' "bootstrap: $*" >&2
+  printf '%s\n' "${BOOTSTRAP_LOG_NAME:-bootstrap}: $*" >&2
 }
 
 die() {
-  printf '%s\n' "bootstrap: error: $*" >&2
+  printf '%s\n' "${BOOTSTRAP_LOG_NAME:-bootstrap}: error: $*" >&2
   exit 1
 }
 
@@ -20,6 +20,18 @@ abspath() {
     /*) printf '%s\n' "$1" ;;
     *) printf '%s\n' "$(pwd)/$1" ;;
   esac
+}
+
+append_file() {
+  _src=$1
+  _dest=$2
+  if command -v cat >/dev/null 2>&1; then
+    cat "$_src" >> "$_dest"
+  else
+    while IFS= read -r _line || [ -n "$_line" ]; do
+      printf '%s\n' "$_line" >> "$_dest"
+    done < "$_src"
+  fi
 }
 
 compile_m2() {

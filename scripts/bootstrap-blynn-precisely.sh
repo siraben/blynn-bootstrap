@@ -2,10 +2,15 @@
 
 set -eu
 
-script_dir=$(CDPATH= cd "$(dirname "$0")" && pwd)
+case $0 in
+  */*) script_path=$0 ;;
+  *) script_path=$(command -v "$0") || exit 1 ;;
+esac
+script_dir=${script_path%/*}
+[ "$script_dir" = "$script_path" ] && script_dir=.
+script_dir=$(CDPATH= cd "$script_dir" && pwd)
 . "$script_dir/lib/bootstrap.sh"
 
-require_cmd cat
 require_cmd chmod
 require_cmd mkdir
 require_cmd mv
@@ -37,9 +42,9 @@ party_step() {
 
   : > "$input"
   for module in "$@"; do
-    cat "$inn_dir/$module.hs" >> "$input"
+    append_file "$inn_dir/$module.hs" "$input"
   done
-  cat "$inn_dir/$leaf.hs" >> "$input"
+  append_file "$inn_dir/$leaf.hs" "$input"
 
   msg "$prev -> $out.c"
   if [ "$prev" = party ]; then
@@ -49,7 +54,7 @@ party_step() {
   fi
   if [ "$out" = precisely_up ]; then
     tmp=$gen_dir/$out.c.tmp
-    sed -E "s/enum\\{TOP=[0-9]+\\};/enum{TOP=${PRECISELY_TOP:-33554432}};/" "$gen_dir/$out.c" > "$tmp"
+    sed "s/enum{TOP=[0-9][0-9]*};/enum{TOP=${PRECISELY_TOP:-33554432}};/" "$gen_dir/$out.c" > "$tmp"
     mv "$tmp" "$gen_dir/$out.c"
   fi
   compile_m2 "$gen_dir/$out.c" "$bin_dir/$out"

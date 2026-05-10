@@ -2,7 +2,13 @@
 
 set -eu
 
-script_dir=$(CDPATH= cd "$(dirname "$0")" && pwd)
+case $0 in
+  */*) script_path=$0 ;;
+  *) script_path=$(command -v "$0") || exit 1 ;;
+esac
+script_dir=${script_path%/*}
+[ "$script_dir" = "$script_path" ] && script_dir=.
+script_dir=$(CDPATH= cd "$script_dir" && pwd)
 
 base_out=${OUT_DIR:-build}
 upstream_out=${UPSTREAM_OUT_DIR:-$base_out/upstreams}

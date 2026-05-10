@@ -23,15 +23,24 @@ stdenvNoCC.mkDerivation (
 
       ${nixLib.shellHelpers { name = "hcc-blynn-c"; }}
 
-      cp ${sourceBundle}/share/hcc-blynn-sources/hcpp-full.hs hcpp-full.hs
-      cp ${sourceBundle}/share/hcc-blynn-sources/hcc1-full.hs hcc1-full.hs
+      mkdir -p source generated
+      cp ${sourceBundle}/share/hcc-blynn-sources/hcpp-full.hs source/hcpp-full.hs
+      cp ${sourceBundle}/share/hcc-blynn-sources/hcc1-full.hs source/hcc1-full.hs
+
+      BOOTSTRAP_LOG_NAME=hcc-blynn-c \
+      BOOTSTRAP_LIB=${../scripts/lib/bootstrap.sh} \
+      HCC_BLYNN_SOURCES_DIR=source \
+      PRECISELY_UP=${precisely}/bin/precisely_up \
+      OUT_DIR=generated \
+        ${../scripts/hcc-blynn-c.sh}
+
+      cp generated/hcpp-full.hs hcpp-full.hs
+      cp generated/hcc1-full.hs hcc1-full.hs
+      cp generated/hcpp-blynn.c hcpp-blynn.c
+      cp generated/hcc1-blynn.c hcc1-blynn.c
       log_file hcpp-full.hs
       log_file hcc1-full.hs
-
-      log_step "precisely_up translates concatenated Blynn-dialect Haskell to C; hcc1 is the long stage"
-      run_step_shell "precisely_up hcpp-full.hs -> hcpp-blynn.c" "${precisely}/bin/precisely_up < hcpp-full.hs > hcpp-blynn.c"
       log_file hcpp-blynn.c
-      run_step_shell "precisely_up hcc1-full.hs -> hcc1-blynn.c" "${precisely}/bin/precisely_up < hcc1-full.hs > hcc1-blynn.c"
       log_file hcc1-blynn.c
 
       runHook postBuild

@@ -2,7 +2,14 @@
 
 set -eu
 
-repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+path_dir() {
+  case $1 in
+    */*) printf '%s\n' "${1%/*}" ;;
+    *) printf '.\n' ;;
+  esac
+}
+
+repo=$(CDPATH= cd "$(path_dir "$0")/.." && pwd)
 out_dir=${1:-$(mktemp -d /tmp/hcc-m2-bench.XXXXXX)}
 runs=${RUNS:-3}
 
@@ -24,7 +31,7 @@ need_cmd wc
 m2_planet=${M2_PLANET:-$(command -v M2-Planet)}
 m2_mesoplanet=${M2_MESOPLANET:-$(command -v M2-Mesoplanet)}
 time_cmd=$(command -v time)
-mescc_tools=${MESCC_TOOLS:-$(dirname "$m2_planet")}
+mescc_tools=${MESCC_TOOLS:-$(path_dir "$m2_planet")}
 stage0_src=${STAGE0_SRC:-}
 if [ -z "$stage0_src" ]; then
   m2_drv=$(nix path-info --derivation "$repo#m2.mesoplanet.gcc" 2>/dev/null)
@@ -39,21 +46,21 @@ if [ -z "$blynn_src" ]; then
     printf 'bench-m2: set BLYNN_SRC to a blynn/compiler source tree with inn/BasePrecisely.hs\n' >&2
     exit 1
   fi
-  blynn_src=$(dirname "$(dirname "$base_file")")
+  blynn_src=$(path_dir "$(path_dir "$base_file")")
 fi
 
 blynn_compiler=${BLYNN_COMPILER:-}
 if [ -z "$blynn_compiler" ]; then
   vm_path=$(ls /nix/store/*-blynn-compiler-0-unstable-2026-05-06/bin/vm 2>/dev/null | head -n 1 || true)
   if [ -n "$vm_path" ]; then
-    blynn_compiler=$(dirname "$(dirname "$vm_path")")
+    blynn_compiler=$(path_dir "$(path_dir "$vm_path")")
   fi
 fi
 vm_src=${VM_SRC:-}
 if [ -z "$vm_src" ]; then
   vm_src_file=$(ls /nix/store/*-oriansj-blynn-compiler-hcc/patty.hs 2>/dev/null | head -n 1 || true)
   if [ -n "$vm_src_file" ]; then
-    vm_src=$(dirname "$vm_src_file")
+    vm_src=$(path_dir "$vm_src_file")
   fi
 fi
 

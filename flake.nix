@@ -17,6 +17,13 @@
           filter = path: type:
             type == "directory" || lib.hasSuffix ".hs" (baseNameOf path);
         };
+        hccBlynnInputSrc = lib.cleanSourceWith {
+          src = hccSrc;
+          filter = path: type:
+            type == "directory"
+            || lib.hasSuffix ".hs" (baseNameOf path)
+            || lib.hasSuffix ".modules" (baseNameOf path);
+        };
         upstreamPatches = ./patches/upstreams;
         upstreamSources = {
           oriansjBlynnCompiler = pkgs.fetchgit {
@@ -571,7 +578,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
 
         hccBlynnSources = pkgs.callPackage ./nix/hcc-blynn-sources.nix {
           stdenvNoCC = rawStdenvNoCC;
-          src = hccHsSrc;
+          src = hccBlynnInputSrc;
           blynnSrc = blynnUpstreamSrc;
         };
 

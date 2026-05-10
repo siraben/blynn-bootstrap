@@ -29,6 +29,7 @@ flake.nix                         # package graph and bootstrap target exports
 nix/                              # derivations and bootstrap patches
 scripts/                          # portable bootstrap drivers, independent of Nix
 hcc/                              # HCC sources and smoke fixtures
+hcc/*.modules                     # ordered source manifests for Blynn stages
 tests/                            # HCC and MesCC reference tests
 upstream/                         # pinned upstream mirrors used to refresh patches
 ```
@@ -62,7 +63,7 @@ remaining separate derivations so intermediate bootstrap products stay cached.
 
 Minimum requirements:
 
-- POSIX `sh`, `patch`, `sed`, `cp`, `mkdir`, `chmod`, `ln`, and `cat`
+- POSIX `sh`, `patch`, `sed`, `cp`, `mkdir`, `chmod`, `ln`, `rm`, and `mv`
 - `M2-Mesoplanet` on `PATH`
 - initialized upstream checkouts:
 
@@ -71,6 +72,8 @@ git submodule update --init --recursive
 scripts/prepare-upstreams.sh
 scripts/bootstrap-blynn-root.sh
 METHODICALLY=$PWD/build/blynn-root/bin/methodically scripts/bootstrap-blynn-precisely.sh
+scripts/hcc-blynn-sources.sh
+PRECISELY_UP=$PWD/build/blynn-precisely/bin/precisely_up scripts/hcc-blynn-c.sh
 ```
 
 The default outputs are:
@@ -80,6 +83,9 @@ The default outputs are:
   `crossly`, and `precisely`
 - `build/blynn-precisely`: current `blynn/compiler` party chain through
   `precisely_up`
+- `build/hcc-blynn-sources`: single-stream Blynn inputs assembled from
+  `hcc/hcpp.modules` and `hcc/hcc1.modules`
+- `build/hcc-blynn-c`: C generated from those HCC Blynn inputs
 
 Use `M2_ARCH` and `M2_OS` to select the M2libc target, matching the stage0
 tooling convention used by nixpkgs' minimal-bootstrap. For example:
