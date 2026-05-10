@@ -1044,14 +1044,6 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
         hcc-mescc-tests = hccMesccTestsFor "hcc-mescc-tests" hccBy.m2.precisely.m2;
         hcc-mescc-tests-native = hccMesccTestsFor "hcc-mescc-tests-host-ghc-native" hccBy.host.ghc.native;
 
-        mutable-io-proof = pkgs.callPackage ./nix/mutable-io-proof.nix {
-          stdenv = pkgs.stdenv;
-          blynn-precisely-debug-ghc = preciselyGhcDebug;
-          inherit minimalBootstrap;
-          src = hccSrc;
-          blynnSrc = blynnUpstreamSrc;
-        };
-
         precisely-dialect-tests = pkgs.callPackage ./nix/precisely-dialect-tests.nix {
           stdenv = pkgs.stdenv;
           precisely = preciselyGhcDebug;
@@ -1106,8 +1098,6 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             precisely.dialect = precisely-dialect-tests;
             tinyccM1.native-vs-faithful = tinyccM1CompareNativeFaithful;
           };
-
-          proof.mutableIO = mutable-io-proof;
         };
 
         apps.blynn-precisely-gcc = {

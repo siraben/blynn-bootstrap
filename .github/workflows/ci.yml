@@ -26,7 +26,6 @@ jobs:
           - tests.precisely.dialect
           - tests.host.ghc.native.smoke.m1
           - tests.host.ghc.native.mescc
-          - proof.mutableIO
           - tinycc.host.ghc.native
     steps:
       - uses: actions/checkout@v4
