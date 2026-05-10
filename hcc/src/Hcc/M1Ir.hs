@@ -95,11 +95,7 @@ paramDeclNamesIr params = case params of
   Param _ name:rest -> name : paramDeclNamesIr rest
 
 emitDataItems :: ([String] -> IO ()) -> [DataItem] -> IO ()
-emitDataItems write items = case items of
-  [] -> pure ()
-  item:rest -> do
-    emitDataItem write item
-    emitDataItems write rest
+emitDataItems write items = mapM_ (emitDataItem write) items
 
 emitDataItem :: ([String] -> IO ()) -> DataItem -> IO ()
 emitDataItem write item = case item of
@@ -111,10 +107,11 @@ emitDataItem write item = case item of
 emitDataValues :: ([String] -> IO ()) -> [DataValue] -> IO ()
 emitDataValues write values = case values of
   [] -> pure ()
-  DByte 0:rest -> do
-    let count = 1 + countZeroBytes rest
-    write ["DZ " ++ show count]
-    emitDataValues write (dropZeroBytes rest)
+  DByte 0:_ ->
+    case zeroRun values of
+      (count, rest) -> do
+        write ["DZ " ++ show count]
+        emitDataValues write rest
   value:rest -> do
     write [dataValueLine value]
     emitDataValues write rest
@@ -124,15 +121,12 @@ dataValueLine value = case value of
   DByte byte -> "DV B " ++ show byte
   DAddress label -> "DV A " ++ label
 
-countZeroBytes :: [DataValue] -> Int
-countZeroBytes values = case values of
-  DByte 0:rest -> 1 + countZeroBytes rest
-  _ -> 0
-
-dropZeroBytes :: [DataValue] -> [DataValue]
-dropZeroBytes values = case values of
-  DByte 0:rest -> dropZeroBytes rest
-  _ -> values
+zeroRun :: [DataValue] -> (Int, [DataValue])
+zeroRun values = case values of
+  DByte 0:rest ->
+    case zeroRun rest of
+      (count, tailValues) -> (count + 1, tailValues)
+  _ -> (0, values)
 
 emitFunction :: ([String] -> IO ()) -> FunctionIr -> IO ()
 emitFunction write fn = case fn of
@@ -142,11 +136,7 @@ emitFunction write fn = case fn of
     write ["ENDFUNC"]
 
 emitBlocks :: ([String] -> IO ()) -> [BasicBlock] -> IO ()
-emitBlocks write blocks = case blocks of
-  [] -> pure ()
-  block:rest -> do
-    emitBlock write block
-    emitBlocks write rest
+emitBlocks write blocks = mapM_ (emitBlock write) blocks
 
 emitBlock :: ([String] -> IO ()) -> BasicBlock -> IO ()
 emitBlock write block = case block of
@@ -156,11 +146,7 @@ emitBlock write block = case block of
     write [terminatorLine term]
 
 emitInstrs :: ([String] -> IO ()) -> [Instr] -> IO ()
-emitInstrs write instrs = case instrs of
-  [] -> pure ()
-  instr:rest -> do
-    emitInstr write instr
-    emitInstrs write rest
+emitInstrs write instrs = mapM_ (emitInstr write) instrs
 
 emitInstr :: ([String] -> IO ()) -> Instr -> IO ()
 emitInstr write instr = case instr of

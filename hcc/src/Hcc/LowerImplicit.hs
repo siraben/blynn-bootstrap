@@ -6,11 +6,7 @@ import CompileM
 import LowerBuiltins
 
 registerImplicitCalls :: [String] -> [Stmt] -> CompileM ()
-registerImplicitCalls locals stmts = case stmts of
-  [] -> pure ()
-  stmt:rest -> do
-    locals' <- registerImplicitCallsStmt locals stmt
-    registerImplicitCalls locals' rest
+registerImplicitCalls locals stmts = foldM registerImplicitCallsStmt locals stmts >> pure ()
 
 registerImplicitCallsStmt :: [String] -> Stmt -> CompileM [String]
 registerImplicitCallsStmt locals stmt = case stmt of
@@ -97,11 +93,7 @@ registerImplicitCallsExpr locals expr = case expr of
   _ -> pure ()
 
 registerImplicitCallsExprs :: [String] -> [Expr] -> CompileM ()
-registerImplicitCallsExprs locals exprs = case exprs of
-  [] -> pure ()
-  expr:rest -> do
-    registerImplicitCallsExpr locals expr
-    registerImplicitCallsExprs locals rest
+registerImplicitCallsExprs locals exprs = mapM_ (registerImplicitCallsExpr locals) exprs
 
 switchBodyStatements :: [Stmt] -> [Stmt]
 switchBodyStatements body = case body of

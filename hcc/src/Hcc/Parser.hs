@@ -3,57 +3,19 @@ module Parser where
 import Base
 import TypesAst
 import ConstExpr
+import ParseLite
 import SymbolTable
 import TypesToken
 
 data ParseError = ParseError SrcPos String
 
-data Consumed a = Consumed a | Unconsumed a
-
-data Reply a
-  = Ok a [Token]
-  | Error ParseError
-
-data Parser a = Parser { runParser :: SymbolSet -> [Token] -> Consumed (Reply a) }
-
-instance Functor Parser where
-  fmap f p = Parser $ \env toks -> mapConsumed (runParser p env toks)
-    where
-      mapConsumed consumed = case consumed of
-        Unconsumed x -> Unconsumed (mapReply x)
-        Consumed x -> Consumed (mapReply x)
-
-      mapReply reply = case reply of
-        Ok x rest -> Ok (f x) rest
-        Error err -> Error err
-
-instance Applicative Parser where
-  pure x = Parser $ \_env toks -> Unconsumed (Ok x toks)
-  pf <*> px = do
-    f <- pf
-    x <- px
-    pure (f x)
-
-instance Monad Parser where
-  return = pure
-  p >>= f = Parser $ \env toks -> case runParser p env toks of
-    Unconsumed reply -> case reply of
-      Error err -> Unconsumed (Error err)
-      Ok x rest -> runParser (f x) env rest
-    Consumed reply -> Consumed (case reply of
-      Error err -> Error err
-      Ok x rest -> forceConsumed (runParser (f x) env rest))
-
-forceConsumed :: Consumed a -> a
-forceConsumed consumed = case consumed of
-  Unconsumed x -> x
-  Consumed x -> x
+type Parser a = P SymbolSet Token ParseError a
 
 parseProgram :: [Token] -> Either ParseError Program
-parseProgram toks = case forceConsumed (runParser program (symbolSetFromList (builtinTypeNames ++ collectTypedefNames toks)) toks) of
-  Error err -> Left err
-  Ok (Program decls) [] -> Right (Program (EnumConstants (collectEnumConstants toks) : decls))
-  Ok _ (tok:_) -> Left (parseErrorAt tok "trailing tokens")
+parseProgram toks = case parseRest program (symbolSetFromList (builtinTypeNames ++ collectTypedefNames toks)) toks of
+  Left err -> Left err
+  Right (Program decls, []) -> Right (Program (EnumConstants (collectEnumConstants toks) : decls))
+  Right (_, tok:_) -> Left (parseErrorAt tok "trailing tokens")
 
 program :: Parser Program
 program = Program <$> topDecls
@@ -131,7 +93,7 @@ globalDecl isExtern decls =
     externPair (ty, name, _) = (ty, name)
 
 leadingExternQualifier :: Parser Bool
-leadingExternQualifier = Parser $ \_env toks -> Unconsumed (Ok (go toks) toks) where
+leadingExternQualifier = pRaw $ \_env toks -> Unconsumed (Ok (go toks) toks) where
   go ts = case ts of
     Token _ (TokIdent "extern"):_ -> True
     Token _ (TokIdent name):rest | name `elem` ["const", "volatile", "static", "register", "inline"] -> go rest
@@ -224,7 +186,7 @@ parameters = do
         else parseNonEmptyParams
 
 parameterVoidOnly :: Parser Bool
-parameterVoidOnly = Parser $ \_env toks -> case toks of
+parameterVoidOnly = pRaw $ \_env toks -> case toks of
   Token _ (TokIdent "void"):Token _ (TokPunct ")"):rest -> Consumed (Ok True rest)
   _ -> Unconsumed (Ok False toks)
 
@@ -768,13 +730,13 @@ parseSizeof = do
     else ESizeofExpr <$> (postfix =<< unary)
 
 sizeofParen :: Parser Expr
-sizeofParen = Parser $ \env toks ->
+sizeofParen = pRaw $ \env toks ->
   case toks of
     tok:_ | tokenStartsTypeInEnv env tok ->
-      case forceConsumed (runParser (typeName <* needPunct ")") env toks) of
+      case forceConsumed (runP (typeName <* needPunct ")") env toks) of
         Ok ty rest | not (postfixContinues rest) -> Consumed (Ok (ESizeofType ty) rest)
-        _ -> runParser sizeofParenExpr env toks
-    _ -> runParser sizeofParenExpr env toks
+        _ -> runP sizeofParenExpr env toks
+    _ -> runP sizeofParenExpr env toks
 
 sizeofParenExpr :: Parser Expr
 sizeofParenExpr = do
@@ -894,7 +856,7 @@ tokenStartsTypeInEnv env tok = case tokenKind tok of
   _ -> False
 
 identifierStartsDeclaration :: Parser Bool
-identifierStartsDeclaration = Parser $ \env toks -> Unconsumed (Ok (go env toks) toks) where
+identifierStartsDeclaration = pRaw $ \env toks -> Unconsumed (Ok (go env toks) toks) where
   go env toks = case toks of
     Token _ (TokIdent name):rest
       | startsTypeName name -> True
@@ -916,28 +878,18 @@ identifierStartsDeclaration = Parser $ \env toks -> Unconsumed (Ok (go env toks)
     _ -> toks
 
 isKnownTypeNameP :: String -> Parser Bool
-isKnownTypeNameP name = Parser $ \env toks -> Unconsumed (Ok (symbolSetMember name env) toks)
+isKnownTypeNameP name = do
+  env <- pEnv
+  pure (symbolSetMember name env)
 
 manyP :: Parser a -> Parser [a]
-manyP p = do
-  mx <- optionalP p
-  case mx of
-    Nothing -> pure []
-    Just x -> (x:) <$> manyP p
+manyP = pMany
 
 manyUntil :: Parser Bool -> Parser a -> Parser [a]
-manyUntil end p = do
-  done <- end
-  if done
-    then pure []
-    else do
-      x <- p
-      xs <- manyUntil end p
-      pure (x:xs)
+manyUntil = pManyUntil
 
 skipUntilTopLevelSemi :: Parser ()
-skipUntilTopLevelSemi = go 0 0 0 where
-  go :: Int -> Int -> Int -> Parser ()
+skipUntilTopLevelSemi = go (0 :: Int) (0 :: Int) (0 :: Int) where
   go braces parens brackets = do
     tok <- peek
     case tokenKind tok of
@@ -962,16 +914,10 @@ skipBalanced open close = go (1 :: Int) where
           _ -> advanceToken >> go depth
 
 optionalP :: Parser a -> Parser (Maybe a)
-optionalP p = Parser $ \env toks -> case runParser p env toks of
-  Unconsumed (Error _) -> Unconsumed (Ok Nothing toks)
-  Unconsumed (Ok x rest) -> Unconsumed (Ok (Just x) rest)
-  Consumed (Ok x rest) -> Consumed (Ok (Just x) rest)
-  Consumed (Error err) -> Consumed (Error err)
+optionalP = pOptional
 
 tryP :: Parser a -> Parser a
-tryP p = Parser $ \env toks -> case runParser p env toks of
-  Consumed (Error err) -> Unconsumed (Error err)
-  other -> other
+tryP = pTry
 
 ifM :: Parser Bool -> Parser a -> Parser a -> Parser a
 ifM test yes no = do
@@ -979,7 +925,7 @@ ifM test yes no = do
   if b then yes else no
 
 eatPunct :: String -> Parser Bool
-eatPunct s = Parser $ \_env toks -> case toks of
+eatPunct s = pRaw $ \_env toks -> case toks of
   Token _ (TokPunct p):rest | p == s -> Consumed (Ok True rest)
   _ -> Unconsumed (Ok False toks)
 
@@ -989,7 +935,7 @@ needPunct s = do
   if ok then pure () else peek >>= \tok -> failAt tok ("expected " ++ show s)
 
 eatIdent :: String -> Parser Bool
-eatIdent s = Parser $ \_env toks -> case toks of
+eatIdent s = pRaw $ \_env toks -> case toks of
   Token _ (TokIdent p):rest | p == s -> Consumed (Ok True rest)
   _ -> Unconsumed (Ok False toks)
 
@@ -1015,15 +961,17 @@ needIdentValue expected = do
     _ -> failAt tok ("expected " ++ show expected)
 
 peek :: Parser Token
-peek = Parser $ \_env toks -> case toks of
-  [] -> Unconsumed (Error (ParseError (SrcPos 1 1) "unexpected end of input"))
-  tok:_ -> Unconsumed (Ok tok toks)
+peek = do
+  mtok <- peekMaybe
+  case mtok of
+    Nothing -> pFail unexpectedEof
+    Just tok -> pure tok
 
 peekMaybe :: Parser (Maybe Token)
-peekMaybe = Parser $ \_env toks -> Unconsumed (Ok (case toks of [] -> Nothing; tok:_ -> Just tok) toks)
+peekMaybe = pPeekMaybe
 
 peekSecondPunct :: String -> Parser Bool
-peekSecondPunct punct = Parser $ \_env toks -> case toks of
+peekSecondPunct punct = pRaw $ \_env toks -> case toks of
   _:Token _ (TokPunct p):_ | p == punct -> Unconsumed (Ok True toks)
   _ -> Unconsumed (Ok False toks)
 
@@ -1035,12 +983,13 @@ nextStartsType = do
     Nothing -> pure False
 
 advanceToken :: Parser ()
-advanceToken = Parser $ \_env toks -> case toks of
-  [] -> Unconsumed (Error (ParseError (SrcPos 1 1) "unexpected end of input"))
-  _:rest -> Consumed (Ok () rest)
+advanceToken = pTake unexpectedEof >> pure ()
 
 failAt :: Token -> String -> Parser a
-failAt tok msg = Parser $ \_env _ -> Unconsumed (Error (parseErrorAt tok msg))
+failAt tok msg = pFail (parseErrorAt tok msg)
+
+unexpectedEof :: ParseError
+unexpectedEof = ParseError (SrcPos 1 1) "unexpected end of input"
 
 parseErrorAt :: Token -> String -> ParseError
 parseErrorAt (Token (Span pos _) kind) msg = ParseError pos (msg ++ " near " ++ show (tokenText kind))
