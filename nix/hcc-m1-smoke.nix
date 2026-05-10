@@ -6,6 +6,7 @@
   minimalBootstrap,
   m2libc,
   python3,
+  target ? "amd64",
 }:
 
 let
@@ -35,7 +36,8 @@ stdenvNoCC.mkDerivation (
       python3 ${../tests/hcc/m1-smoke/run.py} \
         --m2libc ${m2libc} \
         --source-dir ${../tests/hcc/m1-smoke} \
-        --work-dir .
+        --work-dir . \
+        --target ${target}
       echo "hcc-m1-smoke: DONE python smoke runner"
 
       runHook postBuild

@@ -1,0 +1,82 @@
+## Final cdecl syscall definitions for stage0-posix x86 M1.
+
+:FUNCTION_read
+	mov_eax,[esp+DWORD] %4
+	mov_ebx,eax
+	mov_eax,[esp+DWORD] %8
+	mov_ecx,eax
+	mov_eax,[esp+DWORD] %12
+	mov_edx,eax
+	mov_eax, %3
+	int !0x80
+	ret
+
+:FUNCTION_write
+	mov_eax,[esp+DWORD] %4
+	mov_ebx,eax
+	mov_eax,[esp+DWORD] %8
+	mov_ecx,eax
+	mov_eax,[esp+DWORD] %12
+	mov_edx,eax
+	mov_eax, %4
+	int !0x80
+	ret
+
+:FUNCTION_open
+	mov_eax,[esp+DWORD] %4
+	mov_ebx,eax
+	mov_eax,[esp+DWORD] %8
+	mov_ecx,eax
+	mov_eax,[esp+DWORD] %12
+	mov_edx,eax
+	mov_eax, %5
+	int !0x80
+	ret
+
+:FUNCTION_close
+	mov_eax,[esp+DWORD] %4
+	mov_ebx,eax
+	mov_eax, %6
+	int !0x80
+	ret
+
+:FUNCTION_lseek
+	mov_eax,[esp+DWORD] %4
+	mov_ebx,eax
+	mov_eax,[esp+DWORD] %8
+	mov_ecx,eax
+	mov_eax,[esp+DWORD] %12
+	mov_edx,eax
+	mov_eax, %19
+	int !0x80
+	ret
+
+:FUNCTION_access
+	mov_eax,[esp+DWORD] %4
+	mov_ebx,eax
+	mov_eax,[esp+DWORD] %8
+	mov_ecx,eax
+	mov_eax, %33
+	int !0x80
+	ret
+
+:FUNCTION___assert_fail
+	mov_ebx, %1
+	mov_eax, %1
+	int !0x80
+	ret
+
+:FUNCTION___builtin_va_start
+	ret
+
+:FUNCTION___builtin_va_end
+	ret
+
+:FUNCTION_getcwd
+	mov_eax,[esp+DWORD] %4
+	mov_ebx,eax
+	mov_eax,[esp+DWORD] %8
+	mov_ecx,eax
+	mov_eax, %183
+	int !0x80
+	ret

@@ -58,7 +58,7 @@ compileM1Ir args = do
         True -> die ("hcc1: cannot write " ++ asmOutput opts)
         False -> do
           traceLine trace "m1-ir start"
-          result <- emitM1IrWithDataPrefix (hccWriteAndFlushLines handle) (dataLabelPrefix (asmInput opts)) ast
+          result <- emitM1IrWithDataPrefixTarget (hccWriteAndFlushLines handle) (dataLabelPrefix (asmInput opts)) (asmTargetBits opts) ast
           traceLine trace "m1-ir done"
           hccClose handle
           case result of

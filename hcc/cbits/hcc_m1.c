@@ -90,6 +90,13 @@ typedef struct Module Module;
 typedef struct Loc Loc;
 typedef struct LocArray LocArray;
 
+enum {
+  TARGET_AMD64 = 1,
+  TARGET_I386 = 2
+};
+
+static int target_arch = TARGET_AMD64;
+
 struct Operand {
   int kind;
   long value;
@@ -972,7 +979,8 @@ static void alloc_object(LocArray *locs, int *next_slot, int temp, int size)
   loc = loc_at(locs->items, temp);
   if (loc->kind != LOC_NONE) return;
   if (size < 1) size = 1;
-  slots = (size + 7) / 8;
+  if (target_arch == TARGET_I386) slots = (size + 3) / 4;
+  else slots = (size + 7) / 8;
   loc->kind = LOC_OBJECT;
   loc->slot = *next_slot;
   loc->slots = slots;
@@ -1042,8 +1050,66 @@ static Loc *lookup_loc(LocArray *locs, int temp)
 static void emit_header(FILE *out)
 {
   fprintf(out, "## hcc M1 output\n");
+  if (target_arch == TARGET_I386) {
+    fprintf(out, "## target: stage0-posix x86 M1\n");
+    fprintf(out, "\n");
+    fprintf(out, "DEFINE HCC_ADD_IMMEDIATE_to_esp 81C4\n");
+    fprintf(out, "DEFINE HCC_STORE_ESP_IMMEDIATE_from_eax 898424\n");
+    fprintf(out, "DEFINE HCC_LOAD_EFFECTIVE_ADDRESS_eax 8D8424\n");
+    fprintf(out, "DEFINE HCC_LOAD_SIGNED_WORD 8B00\n");
+    fprintf(out, "DEFINE HCC_STORE_WORD 8903\n");
+    fprintf(out, "DEFINE HCC_STORE_HALF 668903\n");
+    fprintf(out, "DEFINE HCC_STORE_CHAR 8803\n");
+    fprintf(out, "DEFINE HCC_CALL_eax FFD0\n");
+    fprintf(out, "DEFINE CALL_IMMEDIATE E8\n");
+    fprintf(out, "\n");
+    return;
+  }
   fprintf(out, "## target: stage0-posix amd64 M1\n");
   fprintf(out, "\n");
+  fprintf(out, "DEFINE ADD_rbx_to_rax 4801D8\n");
+  fprintf(out, "DEFINE AND_rax_rbx 4821D8\n");
+  fprintf(out, "DEFINE CALL_IMMEDIATE E8\n");
+  fprintf(out, "DEFINE CMP 4839C3\n");
+  fprintf(out, "DEFINE COPY_rax_to_rdi 4889C7\n");
+  fprintf(out, "DEFINE COPY_rax_to_rcx 4889C1\n");
+  fprintf(out, "DEFINE COPY_rsp_to_rbp 4889E5\n");
+  fprintf(out, "DEFINE COPY_rbp_to_rax 4889E8\n");
+  fprintf(out, "DEFINE CQTO 4899\n");
+  fprintf(out, "DEFINE JUMP E9\n");
+  fprintf(out, "DEFINE JUMP_EQ 0F84\n");
+  fprintf(out, "DEFINE JUMP_NE 0F85\n");
+  fprintf(out, "DEFINE LOAD_BASE_ADDRESS_rax 488D85\n");
+  fprintf(out, "DEFINE LOAD_BYTE 0FBE00\n");
+  fprintf(out, "DEFINE LOAD_IMMEDIATE_rax 48C7C0\n");
+  fprintf(out, "DEFINE LOAD_IMMEDIATE_rdi 48C7C7\n");
+  fprintf(out, "DEFINE LOAD_IMMEDIATE_rsi 48C7C6\n");
+  fprintf(out, "DEFINE LOAD_INTEGER 488B00\n");
+  fprintf(out, "DEFINE LOAD_RSP_IMMEDIATE_into_rax 488B8424\n");
+  fprintf(out, "DEFINE MOVE_rbx_to_rax 4889D8\n");
+  fprintf(out, "DEFINE MOVE_rdx_to_rax 4889D0\n");
+  fprintf(out, "DEFINE MOVEZX 480FB6C0\n");
+  fprintf(out, "DEFINE DIVIDES_rax_by_rbx_into_rax 48F7FB\n");
+  fprintf(out, "DEFINE MODULUSS_rax_from_rbx_into_rbx 48F7FB\n");
+  fprintf(out, "DEFINE MULTIPLY_rax_by_rbx_into_rax 48F7EB\n");
+  fprintf(out, "DEFINE OR_rax_rbx 4809D8\n");
+  fprintf(out, "DEFINE PUSH_RAX 50\n");
+  fprintf(out, "DEFINE RETURN C3\n");
+  fprintf(out, "DEFINE SETA 0F97C0\n");
+  fprintf(out, "DEFINE SETAE 0F93C0\n");
+  fprintf(out, "DEFINE SETB 0F92C0\n");
+  fprintf(out, "DEFINE SETBE 0F96C0\n");
+  fprintf(out, "DEFINE SETE 0F94C0\n");
+  fprintf(out, "DEFINE SETG 0F9FC0\n");
+  fprintf(out, "DEFINE SETGE 0F9DC0\n");
+  fprintf(out, "DEFINE SETL 0F9CC0\n");
+  fprintf(out, "DEFINE SETLE 0F9EC0\n");
+  fprintf(out, "DEFINE SETNE 0F95C0\n");
+  fprintf(out, "DEFINE STORE_INTEGER 488903\n");
+  fprintf(out, "DEFINE SUBTRACT_rax_from_rbx_into_rbx 4829C3\n");
+  fprintf(out, "DEFINE SYSCALL 0F05\n");
+  fprintf(out, "DEFINE TEST 4885C0\n");
+  fprintf(out, "DEFINE XCHG_rax_rbx 4893\n");
   fprintf(out, "DEFINE HCC_ADD_IMMEDIATE_to_rsp 4881C4\n");
   fprintf(out, "DEFINE HCC_SUB_IMMEDIATE_from_rsp 4881EC\n");
   fprintf(out, "DEFINE HCC_STORE_RSP_IMMEDIATE_from_rax 48898424\n");
@@ -1126,7 +1192,8 @@ static void emit_data_item(FILE *out, DataItem *item)
       if (v->kind == 1) {
         emit_byte(out, v->byte);
       } else {
-        fprintf(out, "&%s '00' '00' '00' '00'", v->label);
+        if (target_arch == TARGET_I386) fprintf(out, "&%s", v->label);
+        else fprintf(out, "&%s '00' '00' '00' '00'", v->label);
       }
       count = count + 1;
       j = j + 1;
@@ -1138,12 +1205,19 @@ static void emit_data_item(FILE *out, DataItem *item)
 
 static void emit_load_immediate(FILE *out, long value)
 {
-  int small = (int)value;
+  int small;
+  unsigned long u;
+  int i;
+  if (target_arch == TARGET_I386) {
+    fprintf(out, "  mov_eax, %%%d\n", (int)value);
+    return;
+  }
+  small = (int)value;
   if ((long)small == value) {
     fprintf(out, "  LOAD_IMMEDIATE_rax %%%d\n", small);
   } else {
-    unsigned long u = (unsigned long)value;
-    int i = 0;
+    u = (unsigned long)value;
+    i = 0;
     fprintf(out, "  HCC_LOAD_IMMEDIATE64_rax ");
     while (i < 8) {
       if (i) fputc(' ', out);
@@ -1159,10 +1233,20 @@ static void emit_load_immediate_bytes(FILE *out, Operand *op)
 {
   int bytes[8];
   int i = 0;
+  unsigned long value = 0;
   while (i < 8) {
     if (i < op->count) bytes[i] = op->bytes[i];
     else bytes[i] = 0;
     i = i + 1;
+  }
+  if (target_arch == TARGET_I386) {
+    i = 3;
+    while (i >= 0) {
+      value = (value << 8) + (unsigned long)(bytes[i] & 255);
+      i = i - 1;
+    }
+    fprintf(out, "  mov_eax, %%%u\n", (unsigned int)value);
+    return;
   }
   if (bytes[0] == 0 && bytes[1] == 0 && bytes[2] == 0 && bytes[3] == 128 &&
       bytes[4] == 0 && bytes[5] == 0 && bytes[6] == 0 && bytes[7] == 0) {
@@ -1185,9 +1269,11 @@ static void emit_load_immediate_bytes(FILE *out, Operand *op)
 static void emit_load_location(FILE *out, Loc *loc, int rsp_bias)
 {
   if (loc->kind == LOC_STACK) {
-    fprintf(out, "  LOAD_RSP_IMMEDIATE_into_rax %%%d\n", 8 * loc->slot + rsp_bias);
+    if (target_arch == TARGET_I386) fprintf(out, "  mov_eax,[esp+DWORD] %%%d\n", 4 * loc->slot + rsp_bias);
+    else fprintf(out, "  LOAD_RSP_IMMEDIATE_into_rax %%%d\n", 8 * loc->slot + rsp_bias);
   } else if (loc->kind == LOC_OBJECT) {
-    fprintf(out, "  HCC_LOAD_EFFECTIVE_ADDRESS_rax %%%d\n", 8 * loc->slot + rsp_bias);
+    if (target_arch == TARGET_I386) fprintf(out, "  HCC_LOAD_EFFECTIVE_ADDRESS_eax %%%d\n", 4 * loc->slot + rsp_bias);
+    else fprintf(out, "  HCC_LOAD_EFFECTIVE_ADDRESS_rax %%%d\n", 8 * loc->slot + rsp_bias);
   }
 }
 
@@ -1196,8 +1282,13 @@ static void emit_load_operand(FILE *out, LocArray *locs, int rsp_bias, Operand *
   Loc *loc;
   if (op->kind == OP_IMM) emit_load_immediate(out, op->value);
   else if (op->kind == OP_BYTES) emit_load_immediate_bytes(out, op);
-  else if (op->kind == OP_GLOBAL) fprintf(out, "  LOAD_IMMEDIATE_rax &%s\n", op->name);
-  else if (op->kind == OP_FUNC) fprintf(out, "  LOAD_IMMEDIATE_rax &FUNCTION_%s\n", op->name);
+  else if (op->kind == OP_GLOBAL) {
+    if (target_arch == TARGET_I386) fprintf(out, "  mov_eax, &%s\n", op->name);
+    else fprintf(out, "  LOAD_IMMEDIATE_rax &%s\n", op->name);
+  } else if (op->kind == OP_FUNC) {
+    if (target_arch == TARGET_I386) fprintf(out, "  mov_eax, &FUNCTION_%s\n", op->name);
+    else fprintf(out, "  LOAD_IMMEDIATE_rax &FUNCTION_%s\n", op->name);
+  }
   else if (op->kind == OP_TEMP) {
     loc = lookup_loc(locs, op->value);
     emit_load_location(out, loc, rsp_bias);
@@ -1208,7 +1299,8 @@ static void emit_store_temp(FILE *out, LocArray *locs, int temp)
 {
   Loc *loc = lookup_loc(locs, temp);
   if (loc->kind == LOC_STACK) {
-    fprintf(out, "  HCC_STORE_RSP_IMMEDIATE_from_rax %%%d\n", 8 * loc->slot);
+    if (target_arch == TARGET_I386) fprintf(out, "  HCC_STORE_ESP_IMMEDIATE_from_eax %%%d\n", 4 * loc->slot);
+    else fprintf(out, "  HCC_STORE_RSP_IMMEDIATE_from_rax %%%d\n", 8 * loc->slot);
   } else if (loc->kind == LOC_OBJECT) {
     die("cannot assign stack object");
   }
@@ -1218,7 +1310,8 @@ static void emit_address_of(FILE *out, LocArray *locs, int temp)
 {
   Loc *loc = lookup_loc(locs, temp);
   if (loc->kind == LOC_STACK || loc->kind == LOC_OBJECT) {
-    fprintf(out, "  HCC_LOAD_EFFECTIVE_ADDRESS_rax %%%d\n", 8 * loc->slot);
+    if (target_arch == TARGET_I386) fprintf(out, "  HCC_LOAD_EFFECTIVE_ADDRESS_eax %%%d\n", 4 * loc->slot);
+    else fprintf(out, "  HCC_LOAD_EFFECTIVE_ADDRESS_rax %%%d\n", 8 * loc->slot);
   } else {
     die("cannot take address");
   }
@@ -1226,6 +1319,32 @@ static void emit_address_of(FILE *out, LocArray *locs, int temp)
 
 static void emit_binop(FILE *out, int op)
 {
+  if (target_arch == TARGET_I386) {
+    switch (op) {
+      case BK_ADD: fprintf(out, "  add_eax,ebx\n"); break;
+      case BK_SUB: fprintf(out, "  sub_ebx,eax\n  mov_eax,ebx\n"); break;
+      case BK_MUL: fprintf(out, "  imul_ebx\n"); break;
+      case BK_DIV: fprintf(out, "  xchg_ebx,eax\n  cdq\n  idiv_ebx\n"); break;
+      case BK_MOD: fprintf(out, "  xchg_ebx,eax\n  cdq\n  idiv_ebx\n  mov_eax,edx\n"); break;
+      case BK_SHL: fprintf(out, "  mov_ecx,eax\n  mov_eax,ebx\n  shl_eax,cl\n"); break;
+      case BK_SHR: fprintf(out, "  mov_ecx,eax\n  mov_eax,ebx\n  shr_eax,cl\n"); break;
+      case BK_SAR: fprintf(out, "  mov_ecx,eax\n  mov_eax,ebx\n  sar_eax,cl\n"); break;
+      case BK_EQ: fprintf(out, "  cmp_ebx,eax\n  sete_al\n  movzx_eax,al\n"); break;
+      case BK_NE: fprintf(out, "  cmp_ebx,eax\n  setne_al\n  movzx_eax,al\n"); break;
+      case BK_LT: fprintf(out, "  cmp_ebx,eax\n  setl_al\n  movzx_eax,al\n"); break;
+      case BK_LE: fprintf(out, "  cmp_ebx,eax\n  setle_al\n  movzx_eax,al\n"); break;
+      case BK_GT: fprintf(out, "  cmp_ebx,eax\n  setg_al\n  movzx_eax,al\n"); break;
+      case BK_GE: fprintf(out, "  cmp_ebx,eax\n  setge_al\n  movzx_eax,al\n"); break;
+      case BK_ULT: fprintf(out, "  cmp_ebx,eax\n  setb_al\n  movzx_eax,al\n"); break;
+      case BK_ULE: fprintf(out, "  cmp_ebx,eax\n  setbe_al\n  movzx_eax,al\n"); break;
+      case BK_UGT: fprintf(out, "  cmp_ebx,eax\n  seta_al\n  movzx_eax,al\n"); break;
+      case BK_UGE: fprintf(out, "  cmp_ebx,eax\n  setae_al\n  movzx_eax,al\n"); break;
+      case BK_AND: fprintf(out, "  and_eax,ebx\n"); break;
+      case BK_OR: fprintf(out, "  or_eax,ebx\n"); break;
+      case BK_XOR: fprintf(out, "  xor_eax,ebx\n"); break;
+    }
+    return;
+  }
   switch (op) {
     case BK_ADD: fprintf(out, "  ADD_rbx_to_rax\n"); break;
     case BK_SUB: fprintf(out, "  SUBTRACT_rax_from_rbx_into_rbx\n  MOVE_rbx_to_rax\n"); break;
@@ -1254,6 +1373,7 @@ static void emit_binop(FILE *out, int op)
 static int call_stack_bytes(int argc)
 {
   int stack_args = argc - 6;
+  if (target_arch == TARGET_I386) return argc * 4;
   if (stack_args <= 0) return 0;
   return stack_args * 8;
 }
@@ -1261,7 +1381,10 @@ static int call_stack_bytes(int argc)
 static void emit_call_cleanup(FILE *out, int argc)
 {
   int bytes = call_stack_bytes(argc);
-  if (bytes > 0) fprintf(out, "  HCC_ADD_IMMEDIATE_to_rsp %%%d\n", bytes);
+  if (bytes > 0) {
+    if (target_arch == TARGET_I386) fprintf(out, "  HCC_ADD_IMMEDIATE_to_esp %%%d\n", bytes);
+    else fprintf(out, "  HCC_ADD_IMMEDIATE_to_rsp %%%d\n", bytes);
+  }
 }
 
 static void emit_argument_move(FILE *out, int index)
@@ -1279,6 +1402,15 @@ static void emit_arguments(FILE *out, LocArray *locs, Operand *args, int argc)
 {
   int i = argc - 1;
   int pushed = 0;
+  if (target_arch == TARGET_I386) {
+    while (i >= 0) {
+      emit_load_operand(out, locs, pushed * 4, operand_at(args, i));
+      fprintf(out, "  push_eax\n");
+      pushed = pushed + 1;
+      i = i - 1;
+    }
+    return;
+  }
   while (i >= 6) {
     emit_load_operand(out, locs, pushed * 8, operand_at(args, i));
     fprintf(out, "  PUSH_RAX\n");
@@ -1297,15 +1429,22 @@ static void emit_instrs(FILE *out, const char *fn_name, LocArray *locs, int tota
 
 static void emit_instr(FILE *out, const char *fn_name, LocArray *locs, int total_slots, Instr *in)
 {
+  int param_offset;
   switch (in->kind) {
     case IK_PARAM:
-      if (in->value == 0) fprintf(out, "  HCC_M_RDI_RAX\n");
+      if (target_arch == TARGET_I386) {
+        param_offset = total_slots * 4 + 4 + in->value * 4;
+        fprintf(out, "  mov_eax,[esp+DWORD] %%%d\n", param_offset);
+      } else if (in->value == 0) fprintf(out, "  HCC_M_RDI_RAX\n");
       else if (in->value == 1) fprintf(out, "  HCC_COPY_rsi_to_rax\n");
       else if (in->value == 2) fprintf(out, "  HCC_COPY_rdx_to_rax\n");
       else if (in->value == 3) fprintf(out, "  HCC_COPY_rcx_to_rax\n");
       else if (in->value == 4) fprintf(out, "  HCC_COPY_r8_to_rax\n");
       else if (in->value == 5) fprintf(out, "  HCC_COPY_r9_to_rax\n");
-      else fprintf(out, "  LOAD_RSP_IMMEDIATE_into_rax %%%d\n", (int)(total_slots * 8 + 8 + (in->value - 6) * 8));
+      else {
+        param_offset = total_slots * 8 + 8 + (in->value - 6) * 8;
+        fprintf(out, "  LOAD_RSP_IMMEDIATE_into_rax %%%d\n", param_offset);
+      }
       emit_store_temp(out, locs, in->temp);
       break;
     case IK_ALLOCA:
@@ -1327,13 +1466,15 @@ static void emit_instr(FILE *out, const char *fn_name, LocArray *locs, int total
       emit_store_temp(out, locs, in->temp);
       break;
     case IK_LOAD64:
+      if (target_arch == TARGET_I386) die("i386 M1 backend cannot lower 64-bit load");
       emit_load_operand(out, locs, 0, instr_a_ptr(in));
       fprintf(out, "  HCC_LOAD_INTEGER\n");
       emit_store_temp(out, locs, in->temp);
       break;
     case IK_LOAD32:
       emit_load_operand(out, locs, 0, instr_a_ptr(in));
-      fprintf(out, "  HCC_LOAD_WORD\n");
+      if (target_arch == TARGET_I386) fprintf(out, "  mov_eax,[eax]\n");
+      else fprintf(out, "  HCC_LOAD_WORD\n");
       emit_store_temp(out, locs, in->temp);
       break;
     case IK_LOADS32:
@@ -1343,25 +1484,30 @@ static void emit_instr(FILE *out, const char *fn_name, LocArray *locs, int total
       break;
     case IK_LOAD16:
       emit_load_operand(out, locs, 0, instr_a_ptr(in));
-      fprintf(out, "  HCC_LOAD_HALF\n");
+      if (target_arch == TARGET_I386) fprintf(out, "  movzx_eax,WORD_PTR_[eax]\n");
+      else fprintf(out, "  HCC_LOAD_HALF\n");
       emit_store_temp(out, locs, in->temp);
       break;
     case IK_LOADS16:
       emit_load_operand(out, locs, 0, instr_a_ptr(in));
-      fprintf(out, "  HCC_LOAD_SIGNED_HALF\n");
+      if (target_arch == TARGET_I386) fprintf(out, "  movsx_eax,WORD_PTR_[eax]\n");
+      else fprintf(out, "  HCC_LOAD_SIGNED_HALF\n");
       emit_store_temp(out, locs, in->temp);
       break;
     case IK_LOAD8:
       emit_load_operand(out, locs, 0, instr_a_ptr(in));
-      fprintf(out, "  LOAD_BYTE\n  MOVEZX\n");
+      if (target_arch == TARGET_I386) fprintf(out, "  movzx_eax,BYTE_PTR_[eax]\n");
+      else fprintf(out, "  LOAD_BYTE\n  MOVEZX\n");
       emit_store_temp(out, locs, in->temp);
       break;
     case IK_LOADS8:
       emit_load_operand(out, locs, 0, instr_a_ptr(in));
-      fprintf(out, "  HCC_LOAD_SIGNED_CHAR\n");
+      if (target_arch == TARGET_I386) fprintf(out, "  movsx_eax,BYTE_PTR_[eax]\n");
+      else fprintf(out, "  HCC_LOAD_SIGNED_CHAR\n");
       emit_store_temp(out, locs, in->temp);
       break;
     case IK_STORE64:
+      if (target_arch == TARGET_I386) die("i386 M1 backend cannot lower 64-bit store");
       emit_load_operand(out, locs, 0, instr_a_ptr(in));
       fprintf(out, "  HCC_M_RAX_RBX\n");
       emit_load_operand(out, locs, 0, instr_b_ptr(in));
@@ -1369,25 +1515,29 @@ static void emit_instr(FILE *out, const char *fn_name, LocArray *locs, int total
       break;
     case IK_STORE32:
       emit_load_operand(out, locs, 0, instr_a_ptr(in));
-      fprintf(out, "  HCC_M_RAX_RBX\n");
+      if (target_arch == TARGET_I386) fprintf(out, "  mov_ebx,eax\n");
+      else fprintf(out, "  HCC_M_RAX_RBX\n");
       emit_load_operand(out, locs, 0, instr_b_ptr(in));
       fprintf(out, "  HCC_STORE_WORD\n");
       break;
     case IK_STORE16:
       emit_load_operand(out, locs, 0, instr_a_ptr(in));
-      fprintf(out, "  HCC_M_RAX_RBX\n");
+      if (target_arch == TARGET_I386) fprintf(out, "  mov_ebx,eax\n");
+      else fprintf(out, "  HCC_M_RAX_RBX\n");
       emit_load_operand(out, locs, 0, instr_b_ptr(in));
       fprintf(out, "  HCC_STORE_HALF\n");
       break;
     case IK_STORE8:
       emit_load_operand(out, locs, 0, instr_a_ptr(in));
-      fprintf(out, "  HCC_M_RAX_RBX\n");
+      if (target_arch == TARGET_I386) fprintf(out, "  mov_ebx,eax\n");
+      else fprintf(out, "  HCC_M_RAX_RBX\n");
       emit_load_operand(out, locs, 0, instr_b_ptr(in));
       fprintf(out, "  HCC_STORE_CHAR\n");
       break;
     case IK_BIN:
       emit_load_operand(out, locs, 0, instr_a_ptr(in));
-      fprintf(out, "  HCC_M_RAX_RBX\n");
+      if (target_arch == TARGET_I386) fprintf(out, "  mov_ebx,eax\n");
+      else fprintf(out, "  HCC_M_RAX_RBX\n");
       emit_load_operand(out, locs, 0, instr_b_ptr(in));
       emit_binop(out, in->binop);
       emit_store_temp(out, locs, in->temp);
@@ -1401,18 +1551,21 @@ static void emit_instr(FILE *out, const char *fn_name, LocArray *locs, int total
     case IK_CALLI:
       emit_arguments(out, locs, in->args, in->argc);
       emit_load_operand(out, locs, call_stack_bytes(in->argc), instr_callee_ptr(in));
-      fprintf(out, "  HCC_CALL_rax\n");
+      if (target_arch == TARGET_I386) fprintf(out, "  HCC_CALL_eax\n");
+      else fprintf(out, "  HCC_CALL_rax\n");
       emit_call_cleanup(out, in->argc);
       if (in->result >= 0) emit_store_temp(out, locs, in->result);
       break;
     case IK_COND:
       emit_instrs(out, fn_name, locs, total_slots, instr_cond_instrs_ptr(in));
       emit_load_operand(out, locs, 0, instr_cond_op_ptr(in));
-      fprintf(out, "  TEST\n  JUMP_EQ %%HCC_COND_ELSE_%s_%d\n", fn_name, in->temp);
+      if (target_arch == TARGET_I386) fprintf(out, "  test_eax,eax\n  je %%HCC_COND_ELSE_%s_%d\n", fn_name, in->temp);
+      else fprintf(out, "  TEST\n  JUMP_EQ %%HCC_COND_ELSE_%s_%d\n", fn_name, in->temp);
       emit_instrs(out, fn_name, locs, total_slots, instr_true_instrs_ptr(in));
       emit_load_operand(out, locs, 0, instr_true_op_ptr(in));
       emit_store_temp(out, locs, in->temp);
-      fprintf(out, "  JUMP %%HCC_COND_DONE_%s_%d\n:HCC_COND_ELSE_%s_%d\n", fn_name, in->temp, fn_name, in->temp);
+      if (target_arch == TARGET_I386) fprintf(out, "  jmp %%HCC_COND_DONE_%s_%d\n:HCC_COND_ELSE_%s_%d\n", fn_name, in->temp, fn_name, in->temp);
+      else fprintf(out, "  JUMP %%HCC_COND_DONE_%s_%d\n:HCC_COND_ELSE_%s_%d\n", fn_name, in->temp, fn_name, in->temp);
       emit_instrs(out, fn_name, locs, total_slots, instr_false_instrs_ptr(in));
       emit_load_operand(out, locs, 0, instr_false_op_ptr(in));
       emit_store_temp(out, locs, in->temp);
@@ -1437,7 +1590,10 @@ static void emit_block_ref(FILE *out, const char *fn_name, int id)
 
 static void emit_cleanup_stack(FILE *out, int total_slots)
 {
-  if (total_slots > 0) fprintf(out, "  HCC_ADD_IMMEDIATE_to_rsp %%%d\n", total_slots * 8);
+  if (total_slots > 0) {
+    if (target_arch == TARGET_I386) fprintf(out, "  HCC_ADD_IMMEDIATE_to_esp %%%d\n", total_slots * 4);
+    else fprintf(out, "  HCC_ADD_IMMEDIATE_to_rsp %%%d\n", total_slots * 8);
+  }
 }
 
 static void emit_terminator(FILE *out, Function *fn, int block_index, LocArray *locs, int total_slots, Block *block)
@@ -1451,27 +1607,33 @@ static void emit_terminator(FILE *out, Function *fn, int block_index, LocArray *
     if (block->term_op.kind == 0) emit_load_immediate(out, 0);
     else emit_load_operand(out, locs, 0, block_term_op_ptr(block));
     emit_cleanup_stack(out, total_slots);
-    fprintf(out, "  RETURN\n");
+    if (target_arch == TARGET_I386) fprintf(out, "  ret\n");
+    else fprintf(out, "  RETURN\n");
   } else if (block->term_kind == TK_JUMP) {
     if (next_id != block->yes) {
-      fprintf(out, "  JUMP %%");
+      if (target_arch == TARGET_I386) fprintf(out, "  jmp %%");
+      else fprintf(out, "  JUMP %%");
       emit_block_ref(out, fn->name, block->yes);
       fputc('\n', out);
     }
   } else if (block->term_kind == TK_BRANCH) {
     emit_load_operand(out, locs, 0, block_term_op_ptr(block));
     if (next_id == block->yes) {
-      fprintf(out, "  TEST\n  JUMP_EQ %%");
+      if (target_arch == TARGET_I386) fprintf(out, "  test_eax,eax\n  je %%");
+      else fprintf(out, "  TEST\n  JUMP_EQ %%");
       emit_block_ref(out, fn->name, block->no);
       fputc('\n', out);
     } else if (next_id == block->no) {
-      fprintf(out, "  TEST\n  JUMP_NE %%");
+      if (target_arch == TARGET_I386) fprintf(out, "  test_eax,eax\n  jne %%");
+      else fprintf(out, "  TEST\n  JUMP_NE %%");
       emit_block_ref(out, fn->name, block->yes);
       fputc('\n', out);
     } else {
-      fprintf(out, "  TEST\n  JUMP_NE %%");
+      if (target_arch == TARGET_I386) fprintf(out, "  test_eax,eax\n  jne %%");
+      else fprintf(out, "  TEST\n  JUMP_NE %%");
       emit_block_ref(out, fn->name, block->yes);
-      fprintf(out, "\n  JUMP %%");
+      if (target_arch == TARGET_I386) fprintf(out, "\n  jmp %%");
+      else fprintf(out, "\n  JUMP %%");
       emit_block_ref(out, fn->name, block->no);
       fputc('\n', out);
     }
@@ -1485,7 +1647,10 @@ static void emit_function(FILE *out, Function *fn)
   int i;
   total_slots = allocate_function(fn, &locs);
   fprintf(out, ":FUNCTION_%s\n", fn->name);
-  if (total_slots > 0) fprintf(out, "  HCC_SUB_IMMEDIATE_from_rsp %%%d\n", total_slots * 8);
+  if (total_slots > 0) {
+    if (target_arch == TARGET_I386) fprintf(out, "  sub_esp, %%%d\n", total_slots * 4);
+    else fprintf(out, "  HCC_SUB_IMMEDIATE_from_rsp %%%d\n", total_slots * 8);
+  }
   i = 0;
   while (i < fn->len) {
     Block *block = block_at(fn->blocks, i);
@@ -1520,13 +1685,22 @@ int main(int argc, char **argv)
   FILE *in;
   FILE *out;
   Module module;
-  if (argc != 3) {
-    fputs("usage: hcc-m1 INPUT.hccir OUTPUT.M1\n", stderr);
+  int argi;
+  if (argc == 5 && strcmp(argv[1], "--target") == 0) {
+    if (strcmp(argv[2], "amd64") == 0 || strcmp(argv[2], "x86_64") == 0) target_arch = TARGET_AMD64;
+    else if (strcmp(argv[2], "i386") == 0 || strcmp(argv[2], "x86") == 0) target_arch = TARGET_I386;
+    else die("unknown target");
+    argi = 3;
+  } else {
+    argi = 1;
+  }
+  if (argc - argi != 2) {
+    fputs("usage: hcc-m1 [--target amd64|i386] INPUT.hccir OUTPUT.M1\n", stderr);
     return 2;
   }
-  in = fopen(argv[1], "r");
+  in = fopen(argv[argi], "r");
   if (!in) die("cannot open input");
-  out = fopen(argv[2], "w");
+  out = fopen(argv[argi + 1], "w");
   if (!out) die("cannot open output");
   parse_module(in, &module);
   fclose(in);

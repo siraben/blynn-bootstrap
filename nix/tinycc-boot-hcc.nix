@@ -157,6 +157,7 @@ stdenvNoCC.mkDerivation {
     if [ "$m1_artifacts_only" != 1 ]; then
     M1 --architecture amd64 --little-endian \
       -f ${m2libc}/amd64/amd64_defs.M1 \
+      -f ${support}/amd64-compat.M1 \
       -f ${support}/amd64-start.M1 \
       -f ${support}/amd64-memory.M1 \
       -f tcc-bootstrap-support.M1 \

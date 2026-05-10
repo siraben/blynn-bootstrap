@@ -1,0 +1,66 @@
+## hcc cdecl bump allocator for stage0-posix x86 M1.
+
+DEFINE HCC_ADD_IMMEDIATE_to_esp 81C4
+
+:FUNCTION_malloc
+	mov_eax, &hcc_support_brk
+	mov_eax,[eax]
+	test_eax,eax
+	jne %HCC_MEM_MALLOC_READY
+	mov_ebx, %0
+	mov_eax, %45
+	int !0x80
+	push_eax
+	mov_eax, &hcc_support_brk
+	push_eax
+	pop_ebx
+	pop_eax
+	mov_[ebx],eax
+:HCC_MEM_MALLOC_READY
+	mov_eax,[esp+DWORD] %4
+	mov_edx,eax
+	mov_eax, &hcc_support_brk
+	mov_eax,[eax]
+	push_eax
+	add_eax,edx
+	mov_ebx,eax
+	mov_eax, %45
+	int !0x80
+	push_eax
+	mov_eax, &hcc_support_brk
+	push_eax
+	pop_ebx
+	pop_eax
+	mov_[ebx],eax
+	pop_eax
+	ret
+
+:FUNCTION_calloc
+	mov_eax,[esp+DWORD] %4
+	mov_ebx,eax
+	mov_eax,[esp+DWORD] %8
+	imul_ebx
+	push_eax
+	push_eax
+	call %FUNCTION_malloc
+	HCC_ADD_IMMEDIATE_to_esp %4
+	pop_ebx
+	push_eax
+	push_ebx
+	mov_eax, %0
+	push_eax
+	mov_eax,[esp+DWORD] %8
+	push_eax
+	call %FUNCTION_memset
+	HCC_ADD_IMMEDIATE_to_esp %12
+	pop_eax
+	ret
+
+:FUNCTION_free
+	ret
+
+:hcc_support_brk
+	'00' '00' '00' '00'
+
+:__FUNCTION__
+	'68' '63' '63' '00'

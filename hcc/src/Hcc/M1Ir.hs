@@ -12,9 +12,12 @@ import LowerImplicit
 data CodegenError = CodegenError String
 
 emitM1IrWithDataPrefix :: ([String] -> IO ()) -> String -> Program -> IO (Either CodegenError ())
-emitM1IrWithDataPrefix write prefix ast = case ast of
+emitM1IrWithDataPrefix write prefix ast = emitM1IrWithDataPrefixTarget write prefix 64 ast
+
+emitM1IrWithDataPrefixTarget :: ([String] -> IO ()) -> String -> Int -> Program -> IO (Either CodegenError ())
+emitM1IrWithDataPrefixTarget write prefix target ast = case ast of
   Program decls ->
-    case mapCompileRun (unCompileM registerBuiltinStructs initialCompileState { csDataPrefix = prefix }) of
+    case mapCompileRun (unCompileM registerBuiltinStructs (initialCompileStateForTarget prefix target)) of
       Left err -> pure (Left err)
       Right (_, st0) -> do
         write ["HCCM1IR 1"]

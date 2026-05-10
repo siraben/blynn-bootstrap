@@ -19,6 +19,28 @@ CASES = [
 ]
 
 
+TARGETS = {
+    "amd64": {
+        "hcc_target": "amd64",
+        "m1_arch": "amd64",
+        "m2_dir": "amd64",
+        "defs": "amd64_defs.M1",
+        "libc_core": "libc-core.M1",
+        "elf": "ELF-amd64.hex2",
+        "base": "0x00600000",
+    },
+    "i386": {
+        "hcc_target": "i386",
+        "m1_arch": "x86",
+        "m2_dir": "x86",
+        "defs": "x86_defs.M1",
+        "libc_core": "libc-core.M1",
+        "elf": "ELF-x86.hex2",
+        "base": "0x08048000",
+    },
+}
+
+
 def run(argv):
     subprocess.run(argv, check=True)
 
@@ -35,15 +57,18 @@ def main():
     parser.add_argument("--m2libc", required=True)
     parser.add_argument("--source-dir", default=str(pathlib.Path(__file__).parent))
     parser.add_argument("--work-dir", default=".")
+    parser.add_argument("--target", choices=sorted(TARGETS), default="amd64")
+    parser.add_argument("--no-run", action="store_true")
     args = parser.parse_args()
 
+    target = TARGETS[args.target]
     source_dir = pathlib.Path(args.source_dir)
     work_dir = pathlib.Path(args.work_dir)
     examples_dir = source_dir / "examples"
     m2libc = pathlib.Path(args.m2libc)
 
     work_dir.mkdir(parents=True, exist_ok=True)
-    log(f"running {len(CASES)} cases")
+    log(f"running {len(CASES)} cases for {args.target}")
     for name, expected in CASES:
         log(f"START {name}")
         src = examples_dir / f"{name}.c"
@@ -58,16 +83,16 @@ def main():
             log(f"{name}: hcpp {src.name} -> {preprocessed.name}")
             subprocess.run([args.hcpp, str(src)], check=True, stdout=handle)
         log(f"{name}: hcc1 --m1-ir -> {hccir.name}")
-        run([args.hcc1, "--m1-ir", "-o", str(hccir), str(preprocessed)])
+        run([args.hcc1, "--target", target["hcc_target"], "--m1-ir", "-o", str(hccir), str(preprocessed)])
         log(f"{name}: hcc-m1 -> {m1.name}")
-        run([args.hcc_m1, str(hccir), str(m1)])
+        run([args.hcc_m1, "--target", target["hcc_target"], str(hccir), str(m1)])
         log(f"{name}: M1 -> {hex2.name}")
         run([
             "M1",
-            "--architecture", "amd64",
+            "--architecture", target["m1_arch"],
             "--little-endian",
-            "-f", str(m2libc / "amd64" / "amd64_defs.M1"),
-            "-f", str(m2libc / "amd64" / "libc-core.M1"),
+            "-f", str(m2libc / target["m2_dir"] / target["defs"]),
+            "-f", str(m2libc / target["m2_dir"] / target["libc_core"]),
             "-f", str(m1),
             "--output", str(hex2),
         ])
@@ -75,15 +100,19 @@ def main():
         log(f"{name}: hex2 -> {exe.name}")
         run([
             "hex2",
-            "--architecture", "amd64",
+            "--architecture", target["m1_arch"],
             "--little-endian",
-            "--base-address", "0x00600000",
-            "--file", str(m2libc / "amd64" / "ELF-amd64.hex2"),
+            "--base-address", target["base"],
+            "--file", str(m2libc / target["m2_dir"] / target["elf"]),
             "--file", str(hex2),
             "--file", str(end),
             "--output", str(exe),
         ])
         exe.chmod(0o755)
+        if args.no_run:
+            log(f"{name}: assembled")
+            log(f"DONE  {name}")
+            continue
         log(f"{name}: execute, expect exit {expected}")
         result = subprocess.run([str(exe.resolve())])
         if result.returncode != expected:

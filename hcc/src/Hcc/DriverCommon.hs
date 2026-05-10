@@ -91,30 +91,42 @@ data AsmOptions = AsmOptions
   , asmOutput :: String
   , asmIncludeDirs :: [String]
   , asmDefines :: [(String, String)]
+  , asmTargetBits :: Int
   }
 
 assemblyArgs :: [String] -> Either String AsmOptions
-assemblyArgs args = finish (go args Nothing Nothing [] []) where
+assemblyArgs args = finish (go args Nothing Nothing [] [] 64) where
   finish parsed = case parsed of
     Left msg -> Left msg
-    Right (out, input, includes, defines) -> case input of
+    Right (out, input, includes, defines, target) -> case input of
       Nothing -> Left "hcc: no input files"
-      Just path -> Right (AsmOptions path (maybe (replaceExt path ".M1") id out) (reverse includes) (reverse defines))
+      Just path -> Right (AsmOptions path (maybe (replaceExt path ".M1") id out) (reverse includes) (reverse defines) target)
 
-  go rest out input includes defines = case rest of
-    [] -> Right (out, input, includes, defines)
-    "-S":xs -> go xs out input includes defines
-    "-o":path:xs -> go xs (Just path) input includes defines
-    "-I":path:xs -> go xs out input (path:includes) defines
-    "-D":def:xs -> go xs out input includes (parseDefine def:defines)
+  go rest out input includes defines target = case rest of
+    [] -> Right (out, input, includes, defines, target)
+    "-S":xs -> go xs out input includes defines target
+    "-o":path:xs -> go xs (Just path) input includes defines target
+    "-I":path:xs -> go xs out input (path:includes) defines target
+    "-D":def:xs -> go xs out input includes (parseDefine def:defines) target
+    "--target":targetName:xs -> case parseTargetBits targetName of
+      Just bits -> go xs out input includes defines bits
+      Nothing -> Left ("hcc: unsupported target: " ++ targetName)
     flag:xs | "-I" `prefixOf` flag && length flag > 2 ->
-      go xs out input (drop 2 flag:includes) defines
+      go xs out input (drop 2 flag:includes) defines target
     flag:xs | "-D" `prefixOf` flag && length flag > 2 ->
-      go xs out input includes (parseDefine (drop 2 flag):defines)
+      go xs out input includes (parseDefine (drop 2 flag):defines) target
     flag:xs | ignoredAssemblyFlag flag ->
-      go xs out input includes defines
+      go xs out input includes defines target
     flag:_ | take 1 flag == "-" -> Left ("hcc: unsupported option: " ++ flag)
-    path:xs -> go xs out (Just path) includes defines
+    path:xs -> go xs out (Just path) includes defines target
+
+parseTargetBits :: String -> Maybe Int
+parseTargetBits target = case target of
+  "amd64" -> Just 64
+  "x86_64" -> Just 64
+  "i386" -> Just 32
+  "x86" -> Just 32
+  _ -> Nothing
 
 ignoredAssemblyFlag :: String -> Bool
 ignoredAssemblyFlag flag =

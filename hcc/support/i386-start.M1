@@ -1,0 +1,19 @@
+## hcc cdecl entry point for stage0-posix x86 M1.
+
+:_start
+	mov_ebp,esp
+	lea_eax,[ebp+DWORD] %4
+	push_eax
+	mov_eax,ebp
+	mov_eax,[eax]
+	push_eax
+	call %FUNCTION_main
+	mov_ebx,eax
+	mov_eax, %1
+	int !0x80
+
+:FUNCTION_exit
+:FUNCTION__exit
+	mov_ebx,eax
+	mov_eax, %1
+	int !0x80

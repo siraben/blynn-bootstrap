@@ -652,7 +652,7 @@ lowerExpr expr = case expr of
     pure ([IConst temp size], OTemp temp)
   ESizeofExpr value -> do
     mty <- exprType value
-    size <- maybe (pure 8) typeSize mty
+    size <- maybe targetWordSize typeSize mty
     temp <- freshTemp
     pure ([IConst temp size], OTemp temp)
   ECond cond yes no -> do
@@ -1102,7 +1102,8 @@ copyObjectBytes dst src offset remaining =
   if remaining <= 0
     then pure []
     else do
-      let width = if remaining >= 8 then 8 else if remaining >= 4 then 4 else 1
+      word <- targetWordSize
+      let width = if remaining >= word then word else if remaining >= 4 then 4 else 1
       dstResult <- offsetAddress dst offset
       srcResult <- offsetAddress src offset
       let dstInstrs = fst dstResult
@@ -1505,10 +1506,10 @@ typeSize ty = case ty of
   CInt -> pure 4
   CUnsigned -> pure 4
   CFloat -> pure 4
-  CLong -> pure 8
+  CLong -> targetWordSize
   CDouble -> pure 8
   CLongDouble -> pure 16
-  CPtr _ -> pure 8
+  CPtr _ -> targetWordSize
   CArray inner count -> do
     size <- typeSize inner
     bound <- arrayBoundSize count
@@ -1528,12 +1529,23 @@ typeSize ty = case ty of
 
 namedTypeSize :: String -> CompileM Int
 namedTypeSize name = case namedIntegerSize name of
-  Just size -> pure size
+  Just size -> targetNamedTypeSize name size
   Nothing -> do
       fields <- lookupStruct name
       case fields of
         Just _ -> structSize name
-        Nothing -> pure 8
+        Nothing -> targetWordSize
+
+targetNamedTypeSize :: String -> Int -> CompileM Int
+targetNamedTypeSize name size =
+  if name `elem` targetWordSizedNames
+    then targetWordSize
+    else pure size
+
+targetWordSizedNames :: [String]
+targetWordSizedNames =
+  "unsigned_long" : "size_t" : "ssize_t" : "time_t" : "ptrdiff_t" :
+  "intptr_t" : "uintptr_t" : "addr_t" : []
 
 typeAlign :: CType -> CompileM Int
 typeAlign ty = case ty of
@@ -1550,7 +1562,7 @@ structSize name = do
     Nothing -> do
       aggregate <- lookupStruct name
       case aggregate of
-        Nothing -> pure 8
+        Nothing -> targetWordSize
         Just aggregateInfo -> case aggregateInfo of
           (isUnion, fields) -> do
             size <- aggregateSize isUnion fields
@@ -1605,7 +1617,7 @@ globalData :: CType -> Maybe Expr -> CompileM [DataValue]
 globalData ty initExpr = do
   values <- globalDataValue ty initExpr
   size <- initializedSize ty values initExpr
-  pure (padData size values)
+  padDataTarget size values
 
 initializedSize :: CType -> [DataValue] -> Maybe Expr -> CompileM Int
 initializedSize ty values initExpr = case ty of
@@ -1617,9 +1629,9 @@ initializedSize ty values initExpr = case ty of
 initializedUnboundedArraySize :: CType -> [DataValue] -> Maybe Expr -> CompileM Int
 initializedUnboundedArraySize inner values initExpr = case initExpr of
   Just expr -> case expr of
-    EInitList _ -> pure (dataSize values)
+    EInitList _ -> dataSizeTarget values
     EString _ -> case inner of
-      CChar -> pure (dataSize values)
+      CChar -> dataSizeTarget values
       _ -> typeSize (CArray inner Nothing)
     _ -> typeSize (CArray inner Nothing)
   Nothing -> typeSize (CArray inner Nothing)
@@ -1670,7 +1682,7 @@ globalArrayInitData inner count exprs = do
     Just bound -> do
       n <- constExprValue bound
       elemSize <- typeSize inner
-      pure (padData (n * elemSize) items)
+      padDataTarget (n * elemSize) items
 
 globalAggregateInitData :: CType -> [Expr] -> CompileM [DataValue]
 globalAggregateInitData ty exprs = do
@@ -1685,7 +1697,7 @@ globalStringData :: CType -> String -> CompileM [DataValue]
 globalStringData ty text = case ty of
   CArray CChar count -> do
     size <- stringDataSize count text
-    pure (padData size (bytesData (stringBytes text)))
+    padDataTarget size (bytesData (stringBytes text))
   _ -> if isPointerType ty
     then do
       dataLabel <- freshDataLabel
@@ -1723,14 +1735,15 @@ globalArrayData inner exprs = case exprs of
     item <- globalDataValue inner (Just expr)
     elemSize <- typeSize inner
     tailItems <- globalArrayData inner rest
-    pure (padData elemSize item ++ tailItems)
+    padded <- padDataTarget elemSize item
+    pure (padded ++ tailItems)
 
 globalStructData :: [Field] -> [Expr] -> CompileM [DataValue]
 globalStructData fields exprs = do
   result <- structFields 0 fields exprs
   let values = fst result
   let used = snd result
-  pure (padData used values)
+  padDataTarget used values
 
 structFields :: Int -> [Field] -> [Expr] -> CompileM ([DataValue], Int)
 structFields offset remaining values = case remaining of
@@ -1743,10 +1756,11 @@ structFields offset remaining values = case remaining of
       let valueHead = maybeExprHead values
       let valueTail = exprTail values
       fieldData <- globalDataValue fieldTy valueHead
+      paddedField <- padDataTarget fieldSize fieldData
       result <- structFields (aligned + fieldSize) rest valueTail
       let restData = fst result
       let end = snd result
-      pure (zeroData (aligned - offset) ++ padData fieldSize fieldData ++ restData, end)
+      pure (zeroData (aligned - offset) ++ paddedField ++ restData, end)
 
 maybeExprHead :: [Expr] -> Maybe Expr
 maybeExprHead values = case values of
@@ -1767,7 +1781,7 @@ globalUnionData fields exprs = case fields of
       Field fieldTy _ -> do
         item <- globalDataValue fieldTy (Just expr)
         size <- unionSizeFromFields fields
-        pure (padData size item)
+        padDataTarget size item
 
 zeroUnionData :: [Field] -> CompileM [DataValue]
 zeroUnionData fields = do
@@ -1795,6 +1809,39 @@ scalarData ty value = do
   size <- typeSize ty
   pure (bytesData (intBytes size value))
 
+padDataTarget :: Int -> [DataValue] -> CompileM [DataValue]
+padDataTarget size values = do
+  used <- dataSizeTarget values
+  if used >= size
+    then takeDataTarget size values
+    else pure (values ++ zeroData (size - used))
+
+takeDataTarget :: Int -> [DataValue] -> CompileM [DataValue]
+takeDataTarget size values =
+  if size <= 0 then pure [] else case values of
+    [] -> pure []
+    DByte byte:rest -> do
+      tailValues <- takeDataTarget (size - 1) rest
+      pure (DByte byte : tailValues)
+    DAddress label:rest -> do
+      word <- targetWordSize
+      if size >= word
+        then do
+          tailValues <- takeDataTarget (size - word) rest
+          pure (DAddress label : tailValues)
+        else pure (zeroData size)
+
+dataSizeTarget :: [DataValue] -> CompileM Int
+dataSizeTarget values = case values of
+  [] -> pure 0
+  DByte _:rest -> do
+    n <- dataSizeTarget rest
+    pure (n + 1)
+  DAddress _:rest -> do
+    word <- targetWordSize
+    n <- dataSizeTarget rest
+    pure (n + word)
+
 globalAddressData :: String -> CompileM [DataValue]
 globalAddressData name = do
   function <- lookupFunction name
@@ -1807,7 +1854,7 @@ constExprValue expr = case expr of
   ESizeofType ty -> typeSize ty
   ESizeofExpr value -> do
     mty <- exprType value
-    maybe (pure 8) typeSize mty
+    maybe targetWordSize typeSize mty
   ECast _ (EUnary "&" (EPtrMember (ECast (CPtr ty) (EInt "0")) field)) -> do
     info <- memberInfo (Just (CPtr ty)) field
     pure (snd info)

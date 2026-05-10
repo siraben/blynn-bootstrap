@@ -24,6 +24,7 @@ data CompileState = CompileState
   , csDataItems :: [DataItem]
   , csBreakTargets :: [BlockId]
   , csContinueTargets :: [BlockId]
+  , csTargetBits :: Int
   }
 
 data CompileM a = CompileM
@@ -66,6 +67,7 @@ initialCompileState = CompileState
   , csDataItems = []
   , csBreakTargets = []
   , csContinueTargets = []
+  , csTargetBits = 64
   }
 
 runCompileM :: CompileM a -> Either CompileError a
@@ -75,6 +77,10 @@ runCompileMWithDataPrefix :: String -> CompileM a -> Either CompileError a
 runCompileMWithDataPrefix prefix action = case unCompileM action initialCompileState { csDataPrefix = prefix } of
   Left err -> Left err
   Right (x, _) -> Right x
+
+initialCompileStateForTarget :: String -> Int -> CompileState
+initialCompileStateForTarget prefix bits =
+  initialCompileState { csDataPrefix = prefix, csTargetBits = bits }
 
 throwC :: String -> CompileM a
 throwC msg = CompileM $ \_ -> Left (CompileError msg)
@@ -184,6 +190,14 @@ cacheStructMember structName fieldName info = CompileM $ \st ->
         Nothing -> symbolMapEmpty
       members' = symbolMapInsert fieldName info members
   in Right ((), st { csStructMembers = symbolMapInsert structName members' (csStructMembers st) })
+
+targetBits :: CompileM Int
+targetBits = CompileM $ \st -> Right (csTargetBits st, st)
+
+targetWordSize :: CompileM Int
+targetWordSize = do
+  bits <- targetBits
+  pure (if bits == 32 then 4 else 8)
 
 withFunctionScope :: CompileM a -> CompileM a
 withFunctionScope action = CompileM $ \st ->
