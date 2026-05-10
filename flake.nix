@@ -677,7 +677,12 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             ];
             runtimeFile = "cbits/hcc_runtime_m2.c";
             compileCommand = ''
-              gcc_m2_env="env -i PATH=${minimalBootstrap.stage0-posix.mescc-tools}/bin M2LIBC_PATH=${minimalBootstrap.stage0-posix.src}/M2libc TMPDIR=''${TMPDIR:-/tmp}"
+              run_gcc_m2() {
+                PATH=${minimalBootstrap.stage0-posix.mescc-tools}/bin \
+                M2LIBC_PATH=${minimalBootstrap.stage0-posix.src}/M2libc \
+                TMPDIR="''${TMPDIR:-/tmp}" \
+                "$@"
+              }
               cat hcpp-blynn.c > hcpp-body.c
               cat hcc1-blynn.c > hcc1-body.c
               printf '%s\n' '#define HCC_RTS_USE_EXTERNAL_ALLOC 1' > hcpp-blynn.c
@@ -685,23 +690,23 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
               printf '%s\n' '#define HCC_RTS_USE_EXTERNAL_ALLOC 1' > hcc1-blynn.c
               cat hcc1-body.c >> hcc1-blynn.c
               echo "hcc-blynn: GCC-built M2-Mesoplanet hcpp-blynn.c -> hcpp"
-              $gcc_m2_env ${m2MesoplanetGcc}/bin/M2-Mesoplanet --operating-system "$M2_OS" --architecture "$M2_ARCH" \
+              run_gcc_m2 ${m2MesoplanetGcc}/bin/M2-Mesoplanet --operating-system "$M2_OS" --architecture "$M2_ARCH" \
                 -f hcpp-blynn.c \
                 -f cbits/hcc_runtime_m2.c \
                 -o hcpp
               echo "hcc-blynn: GCC-built M2-Mesoplanet hcc1-blynn.c -> hcc1"
-              $gcc_m2_env ${m2MesoplanetGcc}/bin/M2-Mesoplanet --operating-system "$M2_OS" --architecture "$M2_ARCH" \
+              run_gcc_m2 ${m2MesoplanetGcc}/bin/M2-Mesoplanet --operating-system "$M2_OS" --architecture "$M2_ARCH" \
                 -f hcc1-blynn.c \
                 -f cbits/hcc_runtime_m2.c \
                 -o hcc1
               echo "hcc-blynn: GCC-built M2-Mesoplanet cbits/hcc_m1.c -> hcc-m1"
-              $gcc_m2_env ${m2MesoplanetGcc}/bin/M2-Mesoplanet --operating-system "$M2_OS" --architecture "$M2_ARCH" \
+              run_gcc_m2 ${m2MesoplanetGcc}/bin/M2-Mesoplanet --operating-system "$M2_OS" --architecture "$M2_ARCH" \
                 -f cbits/hcc_m1.c \
                 -o hcc-m1
             '';
             top = 134217728;
             hcppTop = 134217728;
-            hcc1Top = 268435456;
+            hcc1Top = 134217728;
             m2Arch = minimalBootstrap.stage0-posix.m2libcArch;
             m2Os = minimalBootstrap.stage0-posix.m2libcOS;
             description = "HCC compiled from Blynn output by a GCC-built M2-Mesoplanet";

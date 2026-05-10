@@ -1,6 +1,7 @@
 {
   lib,
   stdenvNoCC,
+  fetchurl,
   buildPlatform,
   hostPlatform,
   bootstrap,
@@ -18,9 +19,9 @@ stdenvNoCC.mkDerivation (
   // nixLib.scriptOnly
   // {
 
-    src = builtins.fetchurl {
+    src = fetchurl {
       url = "mirror://gnu/hello/hello-2.12.3.tar.gz";
-      sha256 = "183a6rxnhixiyykd7qis0y9g9cfqhpkk872a245y3zl28can0pqd";
+      hash = "sha256-DV9gFUOC/uELEUocNOeF2LH0kgc64tOm97FHaHs2aqA=";
     };
 
     nativeBuildInputs = [
