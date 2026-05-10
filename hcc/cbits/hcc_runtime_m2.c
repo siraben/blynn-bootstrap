@@ -3,7 +3,6 @@
 #include <string.h>
 
 #define HCC_MAX_HANDLES 256
-#define HCC_MAX_IARRAYS 1024
 #define HCC_MAX_OBUFS 256
 
 static char *buffer;
@@ -13,11 +12,8 @@ static unsigned buffer_cap;
 static char *result;
 static unsigned result_len;
 static unsigned result_cap;
-static unsigned result_pos;
 
 static unsigned handles[HCC_MAX_HANDLES];
-static unsigned iarrays[HCC_MAX_IARRAYS];
-static int iarray_lens[HCC_MAX_IARRAYS];
 static unsigned obuf_data[HCC_MAX_OBUFS];
 static unsigned obuf_len[HCC_MAX_OBUFS];
 static unsigned obuf_cap[HCC_MAX_OBUFS];
@@ -138,7 +134,6 @@ static void set_result(char *text)
   ensure_chars(&result, &result_cap, len + 1);
   memcpy(result, text, len + 1);
   result_len = len;
-  result_pos = 0;
 }
 
 int hcc_read_file(void)
@@ -146,7 +141,6 @@ int hcc_read_file(void)
   FILE *file = fopen(current_buffer(), "r");
   if (!file) return 0;
   result_len = 0;
-  result_pos = 0;
   ensure_chars(&result, &result_cap, 1);
   int c = fgetc(file);
   while (c != EOF) {
@@ -158,18 +152,6 @@ int hcc_read_file(void)
   result[result_len] = 0;
   fclose(file);
   return 1;
-}
-
-int hcc_result_eof(void)
-{
-  return result_pos >= result_len;
-}
-
-int hcc_result_char(void)
-{
-  if (result_pos >= result_len) return 0;
-  result_pos = result_pos + 1;
-  return result[result_pos - 1];
 }
 
 int hcc_result_len(void)
@@ -401,16 +383,6 @@ void hcc_close(int handle)
   handles[handle - 1] = 0;
 }
 
-int hcc_lookup_env(void)
-{
-  return 0;
-}
-
-int hcc_find_executable(void)
-{
-  return 0;
-}
-
 void hcc_canonicalize(void)
 {
   set_result(current_buffer());
@@ -422,64 +394,4 @@ int hcc_does_file_exist(void)
   if (!file) return 0;
   fclose(file);
   return 1;
-}
-
-void hcc_process_clear(void)
-{
-}
-
-void hcc_process_push(void)
-{
-}
-
-int hcc_process_run(void)
-{
-  return 1;
-}
-
-int hcc_iarray_new(int size, int initial)
-{
-  int i = 0;
-  if (size < 0) return 0;
-  while (i < HCC_MAX_IARRAYS) {
-    if (!iarrays[i]) {
-      int alloc_size = size;
-      if (!alloc_size) alloc_size = 1;
-      int *values = hcc_alloc(alloc_size * sizeof(int));
-      int j = 0;
-      while (j < size) {
-        values[j] = initial;
-        j = j + 1;
-      }
-      iarrays[i] = (unsigned)values;
-      iarray_lens[i] = size;
-      return i + 1;
-    }
-    i = i + 1;
-  }
-  return 0;
-}
-
-int hcc_iarray_read(int ident, int index)
-{
-  if (ident <= 0) return 0;
-  if (ident > HCC_MAX_IARRAYS) return 0;
-  int slot = ident - 1;
-  if (!iarrays[slot]) return 0;
-  if (index < 0) return 0;
-  if (index >= iarray_lens[slot]) return 0;
-  int *values = iarrays[slot];
-  return values[index];
-}
-
-void hcc_iarray_write(int ident, int index, int value)
-{
-  if (ident <= 0) return;
-  if (ident > HCC_MAX_IARRAYS) return;
-  int slot = ident - 1;
-  if (!iarrays[slot]) return;
-  if (index < 0) return;
-  if (index >= iarray_lens[slot]) return;
-  int *values = iarrays[slot];
-  values[index] = value;
 }

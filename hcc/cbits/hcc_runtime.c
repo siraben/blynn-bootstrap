@@ -1,27 +1,15 @@
-#include <errno.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <sys/wait.h>
-#include <unistd.h>
 
 #ifndef PATH_MAX
 #define PATH_MAX 4096
 #endif
 
-#ifndef WIFEXITED
-#define WIFEXITED(status) (((status) & 0x7f) == 0)
-#endif
-
-#ifndef WEXITSTATUS
-#define WEXITSTATUS(status) (((status) >> 8) & 0xff)
-#endif
-
 #define HCC_MAX_HANDLES 256
-#define HCC_MAX_IARRAYS 1024
 #define HCC_MAX_OBUFS 256
 
 static char *buffer;
@@ -31,11 +19,8 @@ static size_t buffer_cap;
 static char *result;
 static size_t result_len;
 static size_t result_cap;
-static size_t result_pos;
 
 static FILE *handles[HCC_MAX_HANDLES];
-static int *iarrays[HCC_MAX_IARRAYS];
-static int iarray_lens[HCC_MAX_IARRAYS];
 
 struct hcc_obuf {
   char *data;
@@ -44,10 +29,6 @@ struct hcc_obuf {
 };
 
 static struct hcc_obuf *obufs[HCC_MAX_OBUFS];
-
-static char **process_argv;
-static size_t process_argc;
-static size_t process_cap;
 
 static void *checked_realloc(void *ptr, size_t size) {
   void *out = realloc(ptr, size);
@@ -64,13 +45,6 @@ static void ensure_chars(char **ptr, size_t *cap, size_t needed) {
   while (next < needed) next *= 2;
   *ptr = checked_realloc(*ptr, next);
   *cap = next;
-}
-
-static char *copy_string(const char *src) {
-  size_t len = strlen(src);
-  char *out = checked_realloc(NULL, len + 1);
-  memcpy(out, src, len + 1);
-  return out;
 }
 
 void hcc_buffer_clear(void) {
@@ -123,14 +97,12 @@ static void set_result(const char *text) {
   ensure_chars(&result, &result_cap, len + 1);
   memcpy(result, text, len + 1);
   result_len = len;
-  result_pos = 0;
 }
 
 int hcc_read_file(void) {
   FILE *file = fopen(current_buffer(), "rb");
   if (!file) return 0;
   result_len = 0;
-  result_pos = 0;
   ensure_chars(&result, &result_cap, 1);
   int c = fgetc(file);
   while (c != EOF) {
@@ -141,15 +113,6 @@ int hcc_read_file(void) {
   result[result_len] = 0;
   fclose(file);
   return 1;
-}
-
-int hcc_result_eof(void) {
-  return result_pos >= result_len;
-}
-
-int hcc_result_char(void) {
-  if (result_pos >= result_len) return 0;
-  return (unsigned char)result[result_pos++];
 }
 
 int hcc_result_len(void) {
@@ -326,65 +289,6 @@ void hcc_close(int handle) {
   handles[handle - 1] = NULL;
 }
 
-int hcc_lookup_env(void) {
-  const char *value = getenv(current_buffer());
-  if (!value) return 0;
-  set_result(value);
-  return 1;
-}
-
-static int is_executable(const char *path) {
-  struct stat st;
-  return stat(path, &st) == 0 && S_ISREG(st.st_mode) && access(path, X_OK) == 0;
-}
-
-static int has_slash(const char *text) {
-  while (*text) {
-    if (*text++ == '/') return 1;
-  }
-  return 0;
-}
-
-int hcc_find_executable(void) {
-  const char *name = current_buffer();
-  if (has_slash(name)) {
-    if (is_executable(name)) {
-      set_result(name);
-      return 1;
-    }
-    return 0;
-  }
-
-  const char *path = getenv("PATH");
-  if (!path) path = "/bin:/usr/bin";
-  const char *start = path;
-  for (;;) {
-    const char *end = start;
-    while (*end && *end != ':') end++;
-    size_t dir_len = (size_t)(end - start);
-    size_t effective_dir_len = dir_len ? dir_len : 1;
-    size_t len = effective_dir_len + 1 + strlen(name) + 1;
-    char *candidate = checked_realloc(NULL, len);
-    if (dir_len) {
-      memcpy(candidate, start, dir_len);
-      candidate[dir_len] = '/';
-    } else {
-      candidate[0] = '.';
-      candidate[1] = '/';
-    }
-    strcpy(candidate + effective_dir_len + 1, name);
-    if (is_executable(candidate)) {
-      set_result(candidate);
-      free(candidate);
-      return 1;
-    }
-    free(candidate);
-    if (!*end) break;
-    start = end + 1;
-  }
-  return 0;
-}
-
 void hcc_canonicalize(void) {
   char resolved[PATH_MAX];
   if (realpath(current_buffer(), resolved)) {
@@ -397,65 +301,4 @@ void hcc_canonicalize(void) {
 int hcc_does_file_exist(void) {
   struct stat st;
   return stat(current_buffer(), &st) == 0 && S_ISREG(st.st_mode);
-}
-
-void hcc_process_clear(void) {
-  for (size_t i = 0; i < process_argc; i++) free(process_argv[i]);
-  process_argc = 0;
-}
-
-void hcc_process_push(void) {
-  if (process_argc + 2 > process_cap) {
-    size_t next = process_cap ? process_cap * 2 : 8;
-    process_argv = checked_realloc(process_argv, next * sizeof(char *));
-    process_cap = next;
-  }
-  process_argv[process_argc++] = copy_string(current_buffer());
-  process_argv[process_argc] = NULL;
-}
-
-int hcc_process_run(void) {
-  if (!process_argc) return 1;
-  pid_t pid = fork();
-  if (pid < 0) return 1;
-  if (pid == 0) {
-    execvp(process_argv[0], process_argv);
-    _exit(errno == ENOENT ? 127 : 126);
-  }
-  int status = 0;
-  while (waitpid(pid, &status, 0) < 0) {
-    if (errno != EINTR) return 1;
-  }
-  if (WIFEXITED(status)) return WEXITSTATUS(status);
-  return 1;
-}
-
-int hcc_iarray_new(int size, int initial) {
-  if (size < 0) return 0;
-  for (int i = 0; i < HCC_MAX_IARRAYS; i++) {
-    if (!iarrays[i]) {
-      int *values = checked_realloc(NULL, (size_t)(size ? size : 1) * sizeof(int));
-      for (int j = 0; j < size; j++) values[j] = initial;
-      iarrays[i] = values;
-      iarray_lens[i] = size;
-      return i + 1;
-    }
-  }
-  return 0;
-}
-
-int hcc_iarray_read(int ident, int index) {
-  if (ident <= 0 || ident > HCC_MAX_IARRAYS) return 0;
-  int slot = ident - 1;
-  if (!iarrays[slot]) return 0;
-  if (index < 0 || index >= iarray_lens[slot]) return 0;
-  return iarrays[slot][index];
-}
-
-void hcc_iarray_write(int ident, int index, int value) {
-  if (ident <= 0 || ident > HCC_MAX_IARRAYS) return;
-  int slot = ident - 1;
-  if (!iarrays[slot]) return;
-  if (index < 0 || index >= iarray_lens[slot]) return;
-  iarrays[slot][index] = value;
 }

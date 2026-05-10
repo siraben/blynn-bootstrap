@@ -132,11 +132,6 @@ readRuntimeResult = do
         c <- hccResultAt index
         go (index - 1) (c:acc)
 
-hccWriteHandleLines :: Int -> [String] -> IO ()
-hccWriteHandleLines handle lines' = hccWithObuf outputChunkSize $ \out -> do
-  hccWriteBufferedLines handle out lines'
-  hccObufWrite handle out
-
 hccWithObuf :: Int -> (Word -> IO a) -> IO a
 hccWithObuf initialCap action = do
   out <- hccObufNew initialCap

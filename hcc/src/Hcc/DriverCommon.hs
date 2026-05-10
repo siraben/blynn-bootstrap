@@ -60,11 +60,6 @@ stripCharLiteral ('\\':c:rest) = '\\' : c : stripCharLiteral rest
 stripCharLiteral ('\'':rest) = '\'' : stripCommentNormal rest
 stripCharLiteral (c:rest) = c : stripCharLiteral rest
 
-hccWriteAndFlushLines :: Int -> [String] -> IO ()
-hccWriteAndFlushLines handle lines' = do
-  hccWriteHandleLines handle lines'
-  hccHandleFlush handle
-
 dataLabelPrefix :: String -> String
 dataLabelPrefix path =
   "HCC_DATA_" ++ sanitized
