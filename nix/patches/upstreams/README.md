@@ -3,10 +3,6 @@
 This directory records the local deltas against the external source trees used
 by the bootstrap.
 
-- `oriansj-blynn-compiler-local.patch`
-  - upstream: `https://github.com/OriansJ/blynn-compiler.git`
-    at `9e46a8da1df90032f1d270a49a6ef5d0cc909658`, including submodules
-  - source compatibility delta for the root compiler chain
 - `blynn-compiler-local.patch`
   - upstream: `https://github.com/blynn/compiler.git`
     at `a1f1c47c9bb3ff6a45a0735ced84984396560535`

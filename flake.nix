@@ -60,9 +60,6 @@
         blynnSrc = patchedUpstreamSource {
           name = "oriansj-blynn-compiler-hcc";
           src = upstreamSources.oriansjBlynnCompiler;
-          patches = [
-            (upstreamPatches + "/oriansj-blynn-compiler-local.patch")
-          ];
         };
         blynnUpstreamSrc = patchedUpstreamSource {
           name = "blynn-compiler-hcc";
