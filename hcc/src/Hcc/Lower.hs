@@ -1,4 +1,13 @@
-module Lower where
+module Lower
+  ( lowerProgram
+  , lowerProgramWithDataPrefix
+  , registerTypeAggregates
+  , registerExternGlobals
+  , registerConstants
+  , registerFieldAggregates
+  , lowerFunction
+  , globalData
+  ) where
 
 import Base
 import TypesAst

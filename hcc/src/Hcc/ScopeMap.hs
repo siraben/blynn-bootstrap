@@ -1,4 +1,11 @@
-module ScopeMap where
+module ScopeMap
+  ( ScopeMap
+  , scopeMapEmpty
+  , scopeMapEnter
+  , scopeMapLeave
+  , scopeMapInsert
+  , scopeMapLookup
+  ) where
 
 import Base
 import SymbolTable

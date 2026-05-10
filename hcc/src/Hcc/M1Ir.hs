@@ -1,4 +1,8 @@
-module M1Ir where
+module M1Ir
+  ( CodegenError(..)
+  , emitM1IrWithDataPrefix
+  , emitM1IrWithDataPrefixTarget
+  ) where
 
 import Base
 import TypesAst

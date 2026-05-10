@@ -1,4 +1,15 @@
-module LowerLiterals where
+module LowerLiterals
+  ( constBinOp
+  , pow2
+  , intBytes
+  , takeInts
+  , intConstInstr
+  , lowerBinOp
+  , intLiteralIsUnsigned
+  , parseInt
+  , charValue
+  , stringBytes
+  ) where
 
 import Base
 import TypesIr

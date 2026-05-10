@@ -1,4 +1,21 @@
-module ParseLite where
+module ParseLite
+  ( Consumed(..)
+  , Reply(..)
+  , P(..)
+  , forceConsumed
+  , parseRest
+  , pEnv
+  , pRaw
+  , pFail
+  , pPeekMaybe
+  , pTake
+  , pSatisfy
+  , pExpect
+  , pTry
+  , pOptional
+  , pMany
+  , pManyUntil
+  ) where
 
 import Base
 

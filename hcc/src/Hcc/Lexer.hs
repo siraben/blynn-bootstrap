@@ -1,6 +1,10 @@
-module Lexer where
+module Lexer
+  ( LexError(..)
+  , lexC
+  ) where
 
 import Base
+import TextUtil
 import TypesToken
 
 data LexError = LexError SrcPos String
@@ -216,12 +220,6 @@ takeWhileState predicate st = go st [] where
     c:cs | predicate c -> go (advance c cur { lsInput = cs }) (c:acc)
     _ -> (reverse acc, cur)
 
-isIdentStart :: Char -> Bool
-isIdentStart c = c == '_' || isAsciiAlpha c
-
-isIdentChar :: Char -> Bool
-isIdentChar c = c == '_' || isAsciiAlphaNum c
-
 advanceMany :: String -> LexState -> LexState
 advanceMany s st = foldl (flip advance) st s
 
@@ -248,17 +246,8 @@ lexerIsSpaceNoNewline c =
   let code = charCode c
   in code == 9 || code == 13 || code == 11 || code == 12
 
-charCode :: Char -> Int
-charCode = fromEnum
-
 isDigit :: Char -> Bool
 isDigit c = c >= '0' && c <= '9'
 
 isHexDigit :: Char -> Bool
 isHexDigit c = isDigit c || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
-
-isAsciiAlpha :: Char -> Bool
-isAsciiAlpha c = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
-
-isAsciiAlphaNum :: Char -> Bool
-isAsciiAlphaNum c = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || isDigit c

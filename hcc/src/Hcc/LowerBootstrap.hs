@@ -1,4 +1,6 @@
-module LowerBootstrap where
+module LowerBootstrap
+  ( registerBuiltinStructs
+  ) where
 
 import Base
 import TypesAst

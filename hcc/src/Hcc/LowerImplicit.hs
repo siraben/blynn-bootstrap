@@ -1,4 +1,7 @@
-module LowerImplicit where
+module LowerImplicit
+  ( registerImplicitCalls
+  , switchBodyStatements
+  ) where
 
 import Base
 import TypesAst

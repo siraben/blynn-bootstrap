@@ -1,4 +1,45 @@
-module CompileM where
+module CompileM
+  ( CompileError(..)
+  , CompileState(..)
+  , CompileM(..)
+  , initialCompileState
+  , runCompileM
+  , runCompileMWithDataPrefix
+  , initialCompileStateForTarget
+  , throwC
+  , withErrorContext
+  , freshTemp
+  , freshBlock
+  , freshLabel
+  , freshDataLabel
+  , addDataItem
+  , getDataItems
+  , bindVar
+  , bindStruct
+  , bindGlobal
+  , bindConstant
+  , bindFunction
+  , lookupVar
+  , lookupVarMaybe
+  , lookupVarType
+  , lookupGlobalType
+  , lookupConstant
+  , lookupFunction
+  , lookupStruct
+  , lookupStructSizeCache
+  , cacheStructSize
+  , lookupStructMemberCache
+  , cacheStructMember
+  , targetBits
+  , targetWordSize
+  , withFunctionScope
+  , withVarScope
+  , withLoopTargets
+  , withBreakTarget
+  , currentBreakTarget
+  , currentContinueTarget
+  , labelBlock
+  ) where
 
 import Base
 import TypesAst

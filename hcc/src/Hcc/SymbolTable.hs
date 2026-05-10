@@ -1,4 +1,17 @@
-module SymbolTable where
+module SymbolTable
+  ( SymbolMap
+  , SymbolSet
+  , symbolMapEmpty
+  , symbolSetEmpty
+  , symbolMapLookup
+  , symbolMapInsert
+  , symbolMapDelete
+  , symbolMapMember
+  , symbolSetFromList
+  , symbolSetMember
+  , symbolSetInsert
+  , symbolSetDelete
+  ) where
 
 import Base
 

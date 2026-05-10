@@ -1,4 +1,11 @@
-module LowerSwitchHelpers where
+module LowerSwitchHelpers
+  ( collectSwitchClauses
+  , freshBlocks
+  , switchDefaultTarget
+  , switchCases
+  , switchNextDispatchTarget
+  , switchFallthroughTarget
+  ) where
 
 import Base
 import TypesAst

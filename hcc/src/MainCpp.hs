@@ -4,7 +4,7 @@ import Base
 import DriverCommon
 import HccSystem
 import IncludeExpand
-import Preprocessor hiding (charCode, directiveName, dropSpaces, isAsciiAlpha, isAsciiAlphaNum, isDigitChar, isIdentChar, isIdentStart, ppIsSpace, prefixOf, spanStart, suffixOf, token, tokenKind, tokenStart, tokens, trim)
+import Preprocessor
 import TypesToken
 
 main :: IO ()

@@ -1,9 +1,11 @@
-module IncludeExpand where
+module IncludeExpand
+  ( readSourceWithIncludes
+  ) where
 
 import Base
-import DriverCommon hiding (charCode)
 import HccSystem
 import SymbolTable
+import TextUtil
 
 readSourceWithIncludes :: [String] -> [(String, String)] -> String -> IO String
 readSourceWithIncludes includeDirs defines path = do
@@ -174,17 +176,11 @@ splitTopLevel sep text = go 0 text "" where
       | depth == 0 && sep `prefixOf` rest -> reverse current : go depth (drop (length sep) rest) ""
       | otherwise -> go depth cs (c:current)
 
-trim :: String -> String
-trim = reverse . dropWhile isSpaceChar . reverse . dropWhile isSpaceChar
-
 lastMaybe :: [a] -> Maybe a
 lastMaybe xs = case xs of
   [] -> Nothing
   [x] -> Just x
   _:rest -> lastMaybe rest
-
-isDigitChar :: Char -> Bool
-isDigitChar c = c >= '0' && c <= '9'
 
 isMacroNameChar :: Char -> Bool
 isMacroNameChar c =
@@ -340,10 +336,3 @@ stripCommentsForDirectives source = normal source where
     '\\':c:rest -> '\\' : c : charLiteral rest
     '\'':rest -> '\'' : normal rest
     c:rest -> c : charLiteral rest
-
-isSpaceChar :: Char -> Bool
-isSpaceChar c =
-  c == ' ' || c == '\n' || charCode c == 9 || charCode c == 13
-
-charCode :: Char -> Int
-charCode = fromEnum

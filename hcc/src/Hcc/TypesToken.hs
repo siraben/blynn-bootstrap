@@ -1,4 +1,10 @@
-module TypesToken where
+module TypesToken
+  ( SrcPos(..)
+  , Span(..)
+  , Token(..)
+  , TokenKind(..)
+  , tokenText
+  ) where
 
 import Base
 

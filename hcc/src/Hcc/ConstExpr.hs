@@ -1,7 +1,10 @@
-module ConstExpr where
+module ConstExpr
+  ( parseConstExpr
+  ) where
 
 import Base
 import ParseLite
+import TextUtil
 import TypesToken
 
 type ConstParser a = P [(String, Int)] Token String a
@@ -338,9 +341,6 @@ hexDigitValue c
   | c >= '0' && c <= '9' = Just (charCode c - charCode '0')
   | c >= 'a' && c <= 'f' = Just (10 + charCode c - charCode 'a')
   | otherwise = Nothing
-
-charCode :: Char -> Int
-charCode = fromEnum
 
 bitNotInt :: Int -> Int
 bitNotInt value = 0 - value - 1

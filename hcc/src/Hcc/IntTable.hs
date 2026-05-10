@@ -1,4 +1,11 @@
-module IntTable where
+module IntTable
+  ( IntMap
+  , intMapEmpty
+  , intMapLookup
+  , intMapInsert
+  , intMapLookupDefault
+  , intMapIncrement
+  ) where
 
 import Base
 

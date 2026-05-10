@@ -1,4 +1,8 @@
-module LowerTypeInfo where
+module LowerTypeInfo
+  ( aggregateFields
+  , isAggregateType
+  , isPointerType
+  ) where
 
 import Base
 import TypesAst

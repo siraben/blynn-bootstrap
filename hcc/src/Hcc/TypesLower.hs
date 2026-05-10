@@ -1,4 +1,7 @@
-module TypesLower where
+module TypesLower
+  ( LValue(..)
+  , SwitchClause(..)
+  ) where
 
 import Base
 import TypesAst

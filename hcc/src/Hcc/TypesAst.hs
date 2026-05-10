@@ -1,4 +1,14 @@
-module TypesAst where
+module TypesAst
+  ( Program(..)
+  , TopDecl(..)
+  , Param(..)
+  , Field(..)
+  , CType(..)
+  , Stmt(..)
+  , Expr(..)
+  , renderStmtTag
+  , renderExprTag
+  ) where
 
 import Base
 

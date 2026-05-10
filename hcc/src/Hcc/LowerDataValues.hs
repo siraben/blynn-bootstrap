@@ -1,4 +1,10 @@
-module LowerDataValues where
+module LowerDataValues
+  ( padData
+  , takeData
+  , dataSize
+  , zeroData
+  , bytesData
+  ) where
 
 import Base
 import TypesIr

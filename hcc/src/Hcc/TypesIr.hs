@@ -1,4 +1,17 @@
-module TypesIr where
+module TypesIr
+  ( Temp(..)
+  , BlockId(..)
+  , Operand(..)
+  , BinOp(..)
+  , Instr(..)
+  , Terminator(..)
+  , BasicBlock(..)
+  , DataValue(..)
+  , DataItem(..)
+  , FunctionIr(..)
+  , ModuleIr(..)
+  , renderTemp
+  ) where
 
 import Base
 

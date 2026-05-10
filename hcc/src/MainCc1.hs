@@ -4,7 +4,7 @@ import Base
 import DriverCommon
 import HccSystem
 import M1Ir
-import Parser hiding (stringLiteral)
+import Parser
 import TypesAst
 
 main :: IO ()

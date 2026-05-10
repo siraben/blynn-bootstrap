@@ -1,4 +1,21 @@
-module HccSystem where
+module HccSystem
+  ( hccInit
+  , hccArgs
+  , hccExitSuccess
+  , hccExitFailure
+  , hccPutStr
+  , hccPutStrLn
+  , hccPutErrLine
+  , hccReadFile
+  , hccWithOpenWriteFile
+  , hccCanonicalizePath
+  , hccDoesFileExist
+  , hccFilterExisting
+  , hccPathJoin
+  , hccTakeDirectory
+  , hccTakeFileName
+  , hccWithHandleLineWriter
+  ) where
 
 import Base
 import System

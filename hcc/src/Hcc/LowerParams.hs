@@ -1,4 +1,7 @@
-module LowerParams where
+module LowerParams
+  ( lowerParams
+  , paramNames
+  ) where
 
 import Base
 import TypesAst

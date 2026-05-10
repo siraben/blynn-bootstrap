@@ -1,9 +1,13 @@
-module Preprocessor where
+module Preprocessor
+  ( PreprocessError(..)
+  , preprocess
+  ) where
 
 import Base
-import ConstExpr hiding (charCode)
-import Lexer hiding (charCode, isAsciiAlpha, isAsciiAlphaNum, isIdentChar, isIdentStart, lexerIsSpace)
+import ConstExpr
+import Lexer
 import SymbolTable
+import TextUtil
 import TypesToken
 
 data PreprocessError = PreprocessError SrcPos String
@@ -23,11 +27,7 @@ type MacroArgs = SymbolMap MacroArg
 
 data Chunk = Chunk [String] [Token]
 
-data IfFrame = IfFrame
-  { ifParentActive :: Bool
-  , ifBranchTaken :: Bool
-  , ifActive :: Bool
-  }
+data IfFrame = IfFrame Bool Bool Bool
 
 preprocess :: [Token] -> Either PreprocessError [Token]
 preprocess toks = go symbolMapEmpty [] (sourceFromTokens toks) id where
@@ -116,7 +116,7 @@ ignoredDirectives = ["#line", "#pragma"]
 currentActive :: [IfFrame] -> Bool
 currentActive frames = case frames of
   [] -> True
-  frame:_ -> ifActive frame
+  IfFrame _ _ active:_ -> active
 
 pushIf :: [IfFrame] -> Bool -> [IfFrame]
 pushIf frames cond = IfFrame parent cond (parent && cond) : frames where
@@ -513,33 +513,6 @@ tokenKind (Token _ kind) = kind
 dropSpaces :: String -> String
 dropSpaces = dropWhile ppIsSpace
 
-trim :: String -> String
-trim = reverse . dropSpaces . reverse . dropSpaces
-
-suffixOf :: String -> String -> Bool
-suffixOf suffix text = reverse suffix `prefixOf` reverse text
-
-prefixOf :: String -> String -> Bool
-prefixOf prefix text = take (length prefix) text == prefix
-
-isIdentStart :: Char -> Bool
-isIdentStart c = isAsciiAlpha c || c == '_'
-
-isIdentChar :: Char -> Bool
-isIdentChar c = isAsciiAlphaNum c || c == '_'
-
 ppIsSpace :: Char -> Bool
 ppIsSpace c =
   c == ' ' || c == '\n' || charCode c == 9 || charCode c == 13 || charCode c == 11 || charCode c == 12
-
-isDigitChar :: Char -> Bool
-isDigitChar c = c >= '0' && c <= '9'
-
-isAsciiAlpha :: Char -> Bool
-isAsciiAlpha c = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
-
-isAsciiAlphaNum :: Char -> Bool
-isAsciiAlphaNum c = isAsciiAlpha c || isDigitChar c
-
-charCode :: Char -> Int
-charCode = fromEnum

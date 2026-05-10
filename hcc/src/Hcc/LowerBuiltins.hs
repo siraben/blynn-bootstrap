@@ -1,4 +1,10 @@
-module LowerBuiltins where
+module LowerBuiltins
+  ( builtinConstant
+  , isIgnoredSideEffectCall
+  , isSignedNamedInteger
+  , namedIntegerSize
+  , signedNamedIntegerTypes
+  ) where
 
 import Base
 

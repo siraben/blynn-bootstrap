@@ -1,8 +1,21 @@
-module DriverCommon where
+module DriverCommon
+  ( AsmOptions(..)
+  , die
+  , lexPlainSource
+  , spliceContinuations
+  , stripComments
+  , stripLineComment
+  , dataLabelPrefix
+  , assemblyArgs
+  , renderDefines
+  , replaceExt
+  , showPos
+  ) where
 
 import Base
 import HccSystem
-import Lexer hiding (charCode, isAsciiAlpha, isAsciiAlphaNum, isDigit, isHexDigit, isIdentChar, isIdentStart, lexerIsSpace)
+import Lexer
+import TextUtil
 import TypesToken
 
 die :: String -> IO ()
@@ -75,10 +88,6 @@ sanitizeLabel (c:rest) = sanitizeLabelChar c ++ sanitizeLabel rest
 sanitizeLabelChar :: Char -> String
 sanitizeLabelChar c =
   if isAsciiAlphaNum c then [c] else "_"
-
-isAsciiAlphaNum :: Char -> Bool
-isAsciiAlphaNum c =
-  (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
 
 data AsmOptions = AsmOptions
   { asmInput :: String
@@ -164,11 +173,5 @@ replaceExt path ext = reverse (dropExt (reverse path)) ++ ext where
     '.':_ -> []
     c:rest -> c : dropExt rest
 
-prefixOf :: String -> String -> Bool
-prefixOf prefix text = take (length prefix) text == prefix
-
 showPos :: SrcPos -> String
 showPos (SrcPos line col) = show line ++ ":" ++ show col
-
-charCode :: Char -> Int
-charCode = fromEnum
