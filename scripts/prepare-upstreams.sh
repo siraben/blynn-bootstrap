@@ -24,30 +24,36 @@ blynn_src=$(abspath "$blynn_src")
 
 mkdir -p "$out_dir"
 
-copy_and_patch() {
+copy_upstream() {
   name=$1
   src=$2
-  patch_file=$3
   dest=$out_dir/$name
 
   msg "prepare $name"
   rm -rf "$dest"
   cp -R "$src" "$dest"
   chmod -R u+w "$dest"
+}
+
+patch_upstream() {
+  dest=$1
+  patch_file=$2
+
   (
     cd "$dest"
     patch -p1 < "$patch_file"
   )
 }
 
-copy_and_patch \
+copy_upstream \
   oriansj-blynn-compiler \
-  "$oriansj_src" \
-  "$repo_dir/nix/patches/upstreams/oriansj-blynn-compiler-local.patch"
+  "$oriansj_src"
 
-copy_and_patch \
+copy_upstream \
   blynn-compiler \
-  "$blynn_src" \
+  "$blynn_src"
+patch_upstream \
+  "$out_dir/blynn-compiler" \
   "$repo_dir/nix/patches/upstreams/blynn-compiler-local.patch"
 
 msg "patched upstreams are in $out_dir"
