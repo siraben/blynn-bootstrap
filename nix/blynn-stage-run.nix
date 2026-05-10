@@ -10,51 +10,53 @@
   description ? "Blynn bootstrap stage",
 }:
 
-stdenvNoCC.mkDerivation {
-  inherit pname version;
+let
+  nixLib = import ./lib.nix { inherit lib; };
+in
+stdenvNoCC.mkDerivation (
+  {
+    inherit pname version;
+  }
+  // nixLib.scriptOnly
+  // {
 
-  dontUnpack = true;
-  dontPatch = true;
-  dontConfigure = true;
-  dontUpdateAutotoolsGnuConfigScripts = true;
-  dontFixup = true;
-  dontPatchELF = true;
+    nativeBuildInputs = [
+      minimalBootstrap.stage0-posix.mescc-tools
+    ]
+    ++ nativeBuildInputs;
 
-  nativeBuildInputs = [
-    minimalBootstrap.stage0-posix.mescc-tools
-  ] ++ nativeBuildInputs;
+    M2_ARCH = minimalBootstrap.stage0-posix.m2libcArch;
+    M2_OS = minimalBootstrap.stage0-posix.m2libcOS;
 
-  M2_ARCH = minimalBootstrap.stage0-posix.m2libcArch;
-  M2_OS = minimalBootstrap.stage0-posix.m2libcOS;
+    buildPhase = ''
+      runHook preBuild
 
-  buildPhase = ''
-    runHook preBuild
+      ulimit -s unlimited
 
-    ulimit -s unlimited
+      mkdir -p build
+      cd build
+      mkdir -p tmp
+      export TMPDIR="$PWD/tmp"
 
-    mkdir -p build
-    cd build
-    mkdir -p tmp
-    export TMPDIR="$PWD/tmp"
+      . ${../scripts/lib/bootstrap.sh}
 
-    . ${../scripts/lib/bootstrap.sh}
+      ${buildScript}
 
-    ${buildScript}
+      runHook postBuild
+    '';
 
-    runHook postBuild
-  '';
+    installPhase = ''
+      runHook preInstall
+      mkdir -p "$out/bin" "$out/share/blynn"
+      ${installScript}
+      runHook postInstall
+    '';
 
-  installPhase = ''
-    runHook preInstall
-    mkdir -p "$out/bin" "$out/share/blynn"
-    ${installScript}
-    runHook postInstall
-  '';
-
-  meta = with lib; {
-    inherit description;
-    homepage = "https://github.com/blynn/compiler";
-    license = licenses.gpl3Only;
-    platforms = platforms.linux;
-  };
-}
+    meta = with lib; {
+      inherit description;
+      homepage = "https://github.com/blynn/compiler";
+      license = licenses.gpl3Only;
+      platforms = platforms.linux;
+    };
+  }
+)

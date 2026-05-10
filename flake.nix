@@ -1100,6 +1100,8 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           program = "${preciselyGhcDebug}/bin/precisely_up";
         };
 
+        formatter = pkgs.nixfmt;
+
         devShells.default = pkgs.mkShell {
           packages = [
             minimalBootstrap.stage0-posix.mescc-tools

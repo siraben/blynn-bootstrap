@@ -7,6 +7,9 @@
   blynnSrc,
 }:
 
+let
+  nixLib = import ./lib.nix { inherit lib; };
+in
 stdenv.mkDerivation {
   pname = "mutable-io-proof";
   version = "0-unstable-2026-05-06";
@@ -32,7 +35,7 @@ stdenv.mkDerivation {
       > mutable-demo.hs
 
     precisely_up < mutable-demo.hs > mutable-demo.c
-    sed -i -E 's/enum\{TOP=[0-9]+\};/enum{TOP=134217728};/' mutable-demo.c
+    ${nixLib.patchGeneratedTop "mutable-demo.c" 134217728}
 
     $CC -O0 mutable-demo.c cbits/hcc_runtime.c -o mutable-demo-gcc
     ./mutable-demo-gcc > gcc.out
