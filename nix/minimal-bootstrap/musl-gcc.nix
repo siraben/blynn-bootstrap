@@ -7,6 +7,7 @@
   gcc,
   binutils,
   gnumake,
+  gnupatch,
   gnugrep,
   gnused,
   gnutar,
@@ -27,6 +28,10 @@ let
     url = "https://musl.libc.org/releases/musl-${version}.tar.gz";
     hash = "sha256-1YX9O2E8ZhUfwySejtRPdwIMtebB5jWmFtP5+CRgUSo=";
   };
+
+  patches = [
+    ../../patches/upstreams/musl-runtime-shell-path.patch
+  ];
 in
 bash.runCommand "${pname}-${version}"
   {
@@ -36,6 +41,7 @@ bash.runCommand "${pname}-${version}"
       gcc
       binutils
       gnumake
+      gnupatch
       gnused
       gnugrep
       gnutar
@@ -69,13 +75,11 @@ bash.runCommand "${pname}-${version}"
     tar xzf ${src}
     cd musl-${version}
 
-    # Avoid impure /bin/sh in helper scripts and runtime shell lookups.
+    ${lib.concatMapStringsSep "\n" (f: "patch -Np0 -i ${f}") patches}
+
+    # Avoid impure /bin/sh in helper scripts.
     sed -i 's|/bin/sh|${bash}/bin/bash|' \
       tools/*.sh
-    sed -i 's|posix_spawn(&pid, "/bin/sh",|posix_spawnp(\&pid, "sh",|' \
-      src/stdio/popen.c src/process/system.c
-    sed -i 's|execl("/bin/sh", "sh", "-c",|execlp("sh", "-c",|'\
-      src/misc/wordexp.c
 
     bash ./configure \
       --prefix=$out \

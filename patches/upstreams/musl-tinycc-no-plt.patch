@@ -1,0 +1,13 @@
+--- src/math/x86_64/expl.s
++++ src/math/x86_64/expl.s
+@@ -40 +40 @@ expl:
+-	call exp2l@PLT
++	call exp2l
+--- src/signal/x86_64/sigsetjmp.s
++++ src/signal/x86_64/sigsetjmp.s
+@@ -14 +14 @@ __sigsetjmp:
+-	call setjmp@PLT
++	call setjmp
+@@ -24 +24 @@ __sigsetjmp:
+-1:	jmp setjmp@PLT
++1:	jmp setjmp

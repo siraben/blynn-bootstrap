@@ -1,0 +1,15 @@
+--- src/stdio/popen.c
++++ src/stdio/popen.c
+@@ -41 +41 @@ FILE *popen(const char *cmd, const char *mode)
+-			if (!(e = posix_spawn(&pid, "/bin/sh", &fa, 0,
++			if (!(e = posix_spawnp(&pid, "sh", &fa, 0,
+--- src/process/system.c
++++ src/process/system.c
+@@ -35 +35 @@ int system(const char *cmd)
+-	ret = posix_spawn(&pid, "/bin/sh", 0, &attr,
++	ret = posix_spawnp(&pid, "sh", 0, &attr,
+--- src/misc/wordexp.c
++++ src/misc/wordexp.c
+@@ -111 +111 @@ static int do_wordexp(const char *s, wordexp_t *we, int flags)
+-		execl("/bin/sh", "sh", "-c",
++		execlp("sh", "-c",
