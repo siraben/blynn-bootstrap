@@ -627,7 +627,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             '';
             top = 536870912;
             hcppTop = 134217728;
-            hcc1Top = 268435456;
+            hcc1Top = 134217728;
             description = "HCC compiled from Blynn output by the normal GCC C toolchain";
           };
 
@@ -645,7 +645,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             '';
             top = 536870912;
             hcppTop = 134217728;
-            hcc1Top = 268435456;
+            hcc1Top = 134217728;
             description = "HCC compiled from Blynn output by HCC-built TinyCC";
           };
 
