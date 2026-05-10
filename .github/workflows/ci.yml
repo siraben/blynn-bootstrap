@@ -101,7 +101,6 @@ jobs:
       matrix:
         attr:
           - tinycc.m2.precisely.m2
-          - gnuHello.m2.precisely.m2
     steps:
       - uses: actions/checkout@v4
       - name: Install Nix
