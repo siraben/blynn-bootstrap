@@ -616,6 +616,19 @@ static void append_data_value(DataItem *item, DataValue *value)
   item->len = item->len + 1;
 }
 
+static void append_zero_data_values(DataItem *item, int count)
+{
+  DataValue value;
+  if (count < 0) die("negative zero data run");
+  memset(&value, 0, sizeof(value));
+  value.kind = 1;
+  value.byte = 0;
+  while (count > 0) {
+    append_data_value(item, &value);
+    count = count - 1;
+  }
+}
+
 static void append_data_item(Module *module, DataItem *item)
 {
   if (module->data_len >= module->data_cap) {
@@ -878,6 +891,10 @@ static void parse_data_item(FILE *file, char *first_line, DataItem *item)
     }
     cursor = line;
     tok = need_token(&cursor);
+    if (str_eq(tok, "DZ")) {
+      append_zero_data_values(item, parse_int_token(&cursor));
+      continue;
+    }
     if (strcmp(tok, "DV")) die("expected data value");
     tok = need_token(&cursor);
     memset(&value, 0, sizeof(value));

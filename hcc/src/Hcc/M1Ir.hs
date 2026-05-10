@@ -111,6 +111,10 @@ emitDataItem write item = case item of
 emitDataValues :: ([String] -> IO ()) -> [DataValue] -> IO ()
 emitDataValues write values = case values of
   [] -> pure ()
+  DByte 0:rest -> do
+    let count = 1 + countZeroBytes rest
+    write ["DZ " ++ show count]
+    emitDataValues write (dropZeroBytes rest)
   value:rest -> do
     write [dataValueLine value]
     emitDataValues write rest
@@ -119,6 +123,16 @@ dataValueLine :: DataValue -> String
 dataValueLine value = case value of
   DByte byte -> "DV B " ++ show byte
   DAddress label -> "DV A " ++ label
+
+countZeroBytes :: [DataValue] -> Int
+countZeroBytes values = case values of
+  DByte 0:rest -> 1 + countZeroBytes rest
+  _ -> 0
+
+dropZeroBytes :: [DataValue] -> [DataValue]
+dropZeroBytes values = case values of
+  DByte 0:rest -> dropZeroBytes rest
+  _ -> values
 
 emitFunction :: ([String] -> IO ()) -> FunctionIr -> IO ()
 emitFunction write fn = case fn of
