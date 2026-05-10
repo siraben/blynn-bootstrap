@@ -30,16 +30,11 @@ preprocessFile args = case assemblyArgs ("-S":args) of
       Right toks -> hccPutStr (renderTokens toks)
 
 mapPreprocessError :: Either PreprocessError a -> Either String a
-mapPreprocessError result = case result of
-  Left (PreprocessError pos msg) -> Left (showPos pos ++ ": " ++ msg)
-  Right toks -> Right toks
+mapPreprocessError (Left (PreprocessError pos msg)) = Left (showPos pos ++ ": " ++ msg)
+mapPreprocessError (Right toks) = Right toks
 
 renderTokens :: [Token] -> String
-renderTokens toks = go toks "\n"
-  where
-    go rest = case rest of
-      [] -> id
-      Token _ kind:rest' ->
-        (tokenText kind++)
-        . (' ':)
-        . go rest'
+renderTokens toks = foldr renderToken "\n" toks
+
+renderToken :: Token -> String -> String
+renderToken (Token _ kind) rest = tokenText kind ++ ' ' : rest

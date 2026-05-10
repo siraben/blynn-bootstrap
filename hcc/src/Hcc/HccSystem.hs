@@ -69,21 +69,18 @@ hccDoesFileExistBuffered = do
   pure (exists /= 0)
 
 hccFilterExisting :: [String] -> IO [String]
-hccFilterExisting paths = case paths of
-  [] -> pure []
-  path:rest -> do
-    exists <- hccDoesFileExist path
-    kept <- hccFilterExisting rest
-    pure (if exists then path:kept else kept)
+hccFilterExisting [] = pure []
+hccFilterExisting (path:rest) = do
+  exists <- hccDoesFileExist path
+  kept <- hccFilterExisting rest
+  pure (if exists then path:kept else kept)
 
 hccPathJoin :: String -> String -> String
-hccPathJoin left right = case null left of
-  True -> right
-  False -> case null right of
-    True -> left
-    False -> case last left == '/' of
-      True -> left ++ right
-      False -> left ++ "/" ++ right
+hccPathJoin [] right = right
+hccPathJoin left [] = left
+hccPathJoin left right
+  | last left == '/' = left ++ right
+  | otherwise = left ++ "/" ++ right
 
 hccTakeDirectory :: String -> String
 hccTakeDirectory path = case dropWhile (/= '/') (reverse path) of
