@@ -22,12 +22,12 @@ collectSwitchClausesFinish currentLabel currentBody clauses stmts = case stmts o
       Nothing ->
         collectSwitchClausesFinish currentLabel currentBody clauses rest
       Just _ ->
-        collectSwitchClausesFinish currentLabel (currentBody ++ [stmt]) clauses rest
+        collectSwitchClausesFinish currentLabel (stmt:currentBody) clauses rest
 
 collectSwitchClauseFinishOne :: Maybe (Maybe Expr) -> [Stmt] -> [SwitchClause] -> [SwitchClause]
 collectSwitchClauseFinishOne currentLabel currentBody clauses = case currentLabel of
   Nothing -> clauses
-  Just label -> SwitchClause label currentBody : clauses
+  Just label -> SwitchClause label (reverse currentBody) : clauses
 
 freshBlocks :: Int -> CompileM [BlockId]
 freshBlocks count =
