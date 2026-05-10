@@ -21,22 +21,7 @@ stdenvNoCC.mkDerivation (
     buildPhase = ''
       runHook preBuild
 
-      log_step() {
-        printf 'hcc-blynn-c: %s\n' "$1"
-      }
-
-      run_step_shell() {
-        label="$1"
-        command="$2"
-        log_step "START $label"
-        eval "$command"
-        log_step "DONE  $label"
-      }
-
-      log_file() {
-        file="$1"
-        log_step "FILE  $file"
-      }
+      ${nixLib.shellHelpers { name = "hcc-blynn-c"; }}
 
       cp ${sourceBundle}/share/hcc-blynn-sources/hcpp-full.hs hcpp-full.hs
       cp ${sourceBundle}/share/hcc-blynn-sources/hcc1-full.hs hcc1-full.hs

@@ -20,14 +20,7 @@ stdenvNoCC.mkDerivation (
     buildPhase = ''
       runHook preBuild
 
-      log_step() {
-        printf 'hcc-blynn-sources: %s\n' "$1"
-      }
-
-      log_file() {
-        file="$1"
-        log_step "FILE  $file"
-      }
+      ${nixLib.shellHelpers { name = "hcc-blynn-sources"; }}
 
       log_step "START concatenate hcpp Haskell sources"
       cat \

@@ -40,30 +40,7 @@ mkDerivation (
       cp ${../tests/hcc/pp-smoke.c} test/pp-smoke.c
       cp ${../tests/hcc/parse-smoke.c} test/parse-smoke.c
 
-      log_step() {
-        printf 'hcc-blynn-bin: %s\n' "$1"
-      }
-
-      run_step() {
-        label="$1"
-        shift
-        log_step "START $label"
-        "$@"
-        log_step "DONE  $label"
-      }
-
-      run_step_shell() {
-        label="$1"
-        command="$2"
-        log_step "START $label"
-        eval "$command"
-        log_step "DONE  $label"
-      }
-
-      log_file() {
-        file="$1"
-        log_step "FILE  $file"
-      }
+      ${nixLib.shellHelpers { name = "hcc-blynn-bin"; }}
 
       cp ${generatedC}/share/${generatedC.pname}/hcpp-blynn.c hcpp-blynn.c
       cp ${generatedC}/share/${generatedC.pname}/hcc1-blynn.c hcc1-blynn.c

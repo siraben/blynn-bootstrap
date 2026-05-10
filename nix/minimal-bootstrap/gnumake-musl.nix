@@ -15,9 +15,14 @@
   nixpkgsPath,
 }:
 let
-  inherit (import ./common.nix { inherit lib; }) meta;
+  common = import ./common.nix { inherit lib; };
   pname = "gnumake-musl";
   version = "4.4.1";
+  meta = common.mkMeta {
+    description = "Tool to control the generation of non-source files from sources";
+    homepage = "https://www.gnu.org/software/make/";
+    mainProgram = "make";
+  };
 
   src = fetchurl {
     url = "mirror://gnu/make/make-${version}.tar.gz";
@@ -45,12 +50,7 @@ bash.runCommand "${pname}-${version}"
       gzip
     ];
 
-    passthru.tests.get-version =
-      result:
-      bash.runCommand "${pname}-get-version-${version}" { } ''
-        ${result}/bin/make --version
-        mkdir $out
-      '';
+    passthru.tests.get-version = common.mkVersionTest bash pname version "make";
   }
   ''
     tar xzf ${src}

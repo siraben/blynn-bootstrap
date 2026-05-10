@@ -10,9 +10,14 @@
   gnugrep,
 }:
 let
-  inherit (import ./common.nix { inherit lib; }) meta;
+  common = import ./common.nix { inherit lib; };
   pname = "gnutar";
   version = "1.12";
+  meta = common.mkMeta {
+    description = "GNU implementation of the tar archiver";
+    homepage = "https://www.gnu.org/software/tar/";
+    mainProgram = "tar";
+  };
 
   src = fetchurl {
     url = "mirror://gnu/tar/tar-${version}.tar.gz";
@@ -30,12 +35,7 @@ bash.runCommand "${pname}-${version}"
       gnugrep
     ];
 
-    passthru.tests.get-version =
-      result:
-      bash.runCommand "${pname}-get-version-${version}" { } ''
-        ${result}/bin/tar --version
-        mkdir $out
-      '';
+    passthru.tests.get-version = common.mkVersionTest bash pname version "tar";
   }
   ''
     ungz --file ${src} --output tar.tar

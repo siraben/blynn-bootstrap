@@ -13,18 +13,21 @@
 }:
 
 let
-  inherit (import ./common.nix { inherit lib; }) meta;
+  common = import ./common.nix { inherit lib; };
   pname = "gnused";
-  # last version that can be bootstrapped with our slightly buggy gnused-mes
   version = "4.2";
+  meta = common.mkMeta {
+    description = "GNU sed, a batch stream editor";
+    homepage = "https://www.gnu.org/software/sed/";
+    mainProgram = "sed";
+  };
 
   src = fetchurl {
     url = "mirror://gnu/sed/sed-${version}.tar.gz";
     hash = "sha256-20XNY/0BDmUFN9ZdXfznaJplJ0UjZgbl5ceCk3Jn2YM=";
   };
 
-  # config.sub was generated with outdated autotools, which get confused by
-  # 4-component target tuples
+  # Ancient config.sub rejects musl-flavoured 4-component tuples.
   fakeBuildPlatform = lib.strings.removeSuffix "-musl" buildPlatform.config;
   fakeHostPlatform = lib.strings.removeSuffix "-musl" hostPlatform.config;
 in
@@ -41,19 +44,12 @@ bash.runCommand "${pname}-${version}"
       gzip
     ];
 
-    passthru.tests.get-version =
-      result:
-      bash.runCommand "${pname}-get-version-${version}" { } ''
-        ${result}/bin/sed --version
-        mkdir ''${out}
-      '';
+    passthru.tests.get-version = common.mkVersionTest bash pname version "sed";
   }
   ''
-    # Unpack
     tar xzf ${src}
     cd sed-${version}
 
-    # Configure
     export CC="tcc -B ${tinycc.libs}/lib"
     export LD=tcc
     ./configure \
@@ -64,10 +60,8 @@ bash.runCommand "${pname}-${version}"
       --disable-dependency-tracking \
       --prefix=$out
 
-    # Build
-    # NOTE: parallel build (-j) under tcc-musl is unstable; keep serial.
+    # Parallel tcc-musl builds have been unstable here.
     make AR="tcc -ar"
 
-    # Install
     make install
   ''
