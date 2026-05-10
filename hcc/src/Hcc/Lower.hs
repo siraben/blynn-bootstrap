@@ -1,7 +1,5 @@
 module Lower
-  ( lowerProgram
-  , lowerProgramWithDataPrefix
-  , registerTypeAggregates
+  ( registerTypeAggregates
   , registerExternGlobals
   , registerConstants
   , registerFieldAggregates
@@ -13,77 +11,15 @@ import Base
 import TypesAst
 import CompileM
 import TypesIr
-import LowerBootstrap
 import LowerBuiltins
 import LowerDataValues
 import LowerImplicit
+import Literal
 import LowerLiterals
 import LowerParams
 import LowerSwitchHelpers
 import TypesLower
 import LowerTypeInfo
-
-lowerProgram :: Program -> Either CompileError ModuleIr
-lowerProgram = lowerProgramWithDataPrefix "HCC_DATA"
-
-lowerProgramWithDataPrefix :: String -> Program -> Either CompileError ModuleIr
-lowerProgramWithDataPrefix prefix (Program decls) = runCompileMWithDataPrefix prefix (do
-  registerBuiltinStructs
-  registerTopDecls decls
-  fns <- lowerTopDecls decls
-  dataItems <- getDataItems
-  pure (ModuleIr dataItems fns)
-  )
-
-registerTopDecls :: [TopDecl] -> CompileM ()
-registerTopDecls decls = case decls of
-  [] -> pure ()
-  Function ty name params body:rest -> do
-    registerTypeAggregates ty
-    bindGlobal name ty
-    bindFunction name
-    registerImplicitCalls (paramNames params) body
-    registerTopDecls rest
-  Prototype ty name _:rest -> do
-    registerTypeAggregates ty
-    bindGlobal name ty
-    bindFunction name
-    registerTopDecls rest
-  StructDecl isUnion name fields:rest -> do
-    registerFieldAggregates fields
-    bindStruct name isUnion fields
-    registerTopDecls rest
-  Global ty name initExpr:rest -> do
-    registerTypeAggregates ty
-    bindGlobal name ty
-    values <- globalData ty initExpr
-    addDataItem (DataItem name values)
-    registerTopDecls rest
-  ExternGlobals globals:rest -> do
-    registerExternGlobals globals
-    registerTopDecls rest
-  Globals globals:rest -> do
-    registerGlobals globals
-    registerTopDecls rest
-  EnumConstants constants:rest -> do
-    registerConstants constants
-    registerTopDecls rest
-  _:rest -> registerTopDecls rest
-
-lowerTopDecls :: [TopDecl] -> CompileM [FunctionIr]
-lowerTopDecls decls = case decls of
-  [] -> pure []
-  Function _ name params body:rest -> do
-    fn <- lowerFunction name params body
-    fns <- lowerTopDecls rest
-    pure (fn:fns)
-  Prototype _ _ _:rest -> lowerTopDecls rest
-  Global _ _ _:rest -> lowerTopDecls rest
-  ExternGlobals _:rest -> lowerTopDecls rest
-  Globals _:rest -> lowerTopDecls rest
-  StructDecl _ _ _:rest -> lowerTopDecls rest
-  EnumConstants _:rest -> lowerTopDecls rest
-  TypeDecl:rest -> lowerTopDecls rest
 
 lowerFunction :: String -> [Param] -> [Stmt] -> CompileM FunctionIr
 lowerFunction name params body =
@@ -551,17 +487,6 @@ lowerAggregateElementScalarWrite addr fieldTy expr = do
   let coerceOp = snd coerceResult
   store <- storeInstr fieldTy addr coerceOp
   pure (exprInstrs ++ coerceInstrs ++ [store])
-
-registerGlobals :: [(CType, String, Maybe Expr)] -> CompileM ()
-registerGlobals globals = case globals of
-  [] -> pure ()
-  global:rest -> case global of
-    (ty, name, initExpr) -> do
-      registerTypeAggregates ty
-      bindGlobal name ty
-      values <- globalData ty initExpr
-      addDataItem (DataItem name values)
-      registerGlobals rest
 
 registerExternGlobals :: [(CType, String)] -> CompileM ()
 registerExternGlobals globals = case globals of

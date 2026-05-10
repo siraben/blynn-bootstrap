@@ -1,17 +1,11 @@
 module LowerLiterals
   ( constBinOp
-  , pow2
-  , intBytes
-  , takeInts
   , intConstInstr
   , lowerBinOp
-  , intLiteralIsUnsigned
-  , parseInt
-  , charValue
-  , stringBytes
   ) where
 
 import Base
+import Literal
 import TypesIr
 
 constBinOp :: String -> Int -> Int -> Int
@@ -23,9 +17,9 @@ constBinOp op a b = case op of
   "%" -> if b == 0 then 0 else a `mod` b
   "<<" -> a * pow2 b
   ">>" -> a `div` pow2 b
-  "|" -> bitOr a b
-  "&" -> bitAnd a b
-  "^" -> bitXor a b
+  "|" -> bitOrInt a b
+  "&" -> bitAndInt a b
+  "^" -> bitXorInt a b
   "==" -> truthInt (a == b)
   "!=" -> truthInt (a /= b)
   "<" -> truthInt (a < b)
@@ -38,55 +32,6 @@ constBinOp op a b = case op of
 
 truthInt :: Bool -> Int
 truthInt value = if value then 1 else 0
-
-pow2 :: Int -> Int
-pow2 n = if n <= 0 then 1 else 2 * pow2 (n - 1)
-
-bitAnd :: Int -> Int -> Int
-bitAnd a b = bitFoldInt bitAndBool a b 1 0
-
-bitOr :: Int -> Int -> Int
-bitOr a b = bitFoldInt bitOrBool a b 1 0
-
-bitXor :: Int -> Int -> Int
-bitXor a b = bitFoldInt bitXorBool a b 1 0
-
-bitFoldInt :: (Bool -> Bool -> Bool) -> Int -> Int -> Int -> Int -> Int
-bitFoldInt op a b bit out =
-  if bit > 1073741824
-    then out
-    else
-      let out' = if op (bitSet a bit) (bitSet b bit) then out + bit else out
-      in if bit == 1073741824 then out' else bitFoldInt op a b (bit * 2) out'
-
-bitSet :: Int -> Int -> Bool
-bitSet value bit =
-  if value >= 0
-    then ((value `div` bit) `mod` 2) == 1
-    else not (bitSet (0 - value - 1) bit)
-
-bitAndBool :: Bool -> Bool -> Bool
-bitAndBool x y = x && y
-
-bitOrBool :: Bool -> Bool -> Bool
-bitOrBool x y = x || y
-
-bitXorBool :: Bool -> Bool -> Bool
-bitXorBool x y = x /= y
-
-intBytes :: Int -> Int -> [Int]
-intBytes size value = takeInts size (intBytesFrom value)
-
-intBytesFrom :: Int -> [Int]
-intBytesFrom n = (n `mod` 256) : intBytesFrom (n `div` 256)
-
-takeInts :: Int -> [Int] -> [Int]
-takeInts count values =
-  if count <= 0
-    then []
-    else case values of
-      [] -> []
-      value:rest -> value : takeInts (count - 1) rest
 
 intConstInstr :: Temp -> String -> Instr
 intConstInstr temp text = case parseIntBytes text of
@@ -178,170 +123,3 @@ lowerBinOp op = case op of
   "&&" -> Just IAnd
   "||" -> Just IOr
   _ -> Nothing
-
-intLiteralIsUnsigned :: String -> Bool
-intLiteralIsUnsigned text = case text of
-  [] -> False
-  c:rest -> if c == 'u' || c == 'U' then True else intLiteralIsUnsigned rest
-
-parseInt :: String -> Int
-parseInt text =
-  let clean = stripIntSuffix text
-  in case clean of
-    '0':'x':xs -> readHex xs
-    '0':'X':xs -> readHex xs
-    '0':xs -> readOctal xs
-    _ -> readDecimalPrefix clean
-
-readDecimalPrefix :: String -> Int
-readDecimalPrefix text = readDecimalPrefixFrom 0 text
-
-readDecimalPrefixFrom :: Int -> String -> Int
-readDecimalPrefixFrom acc xs = case xs of
-  c:rest ->
-    if isDecimalDigit c
-      then readDecimalPrefixFrom (acc * 10 + decimalDigit c) rest
-      else acc
-  [] -> acc
-
-isDecimalDigit :: Char -> Bool
-isDecimalDigit c = c >= '0' && c <= '9'
-
-decimalDigit :: Char -> Int
-decimalDigit c = fromEnum c - fromEnum '0'
-
-readOctal :: String -> Int
-readOctal text = readOctalFrom 0 text
-
-readOctalFrom :: Int -> String -> Int
-readOctalFrom n xs = case xs of
-  [] -> n
-  c:rest ->
-    if isOctalDigit c
-      then readOctalFrom (n * 8 + fromEnum c - fromEnum '0') rest
-      else n
-
-stripIntSuffix :: String -> String
-stripIntSuffix text = reverse (dropIntSuffix (reverse text))
-
-dropIntSuffix :: String -> String
-dropIntSuffix text = case text of
-  [] -> []
-  c:rest -> if isIntSuffix c then dropIntSuffix rest else text
-
-isIntSuffix :: Char -> Bool
-isIntSuffix c =
-  c == 'u' || c == 'U' || c == 'l' || c == 'L'
-
-readHex :: String -> Int
-readHex text = readHexFrom 0 text
-
-readHexFrom :: Int -> String -> Int
-readHexFrom n xs = case xs of
-  [] -> n
-  c:rest -> readHexFrom (n * 16 + hexDigit c) rest
-
-hexDigit :: Char -> Int
-hexDigit c =
-  if c >= '0' && c <= '9'
-    then fromEnum c - fromEnum '0'
-    else if c >= 'a' && c <= 'f'
-      then 10 + fromEnum c - fromEnum 'a'
-      else if c >= 'A' && c <= 'F'
-        then 10 + fromEnum c - fromEnum 'A'
-        else 0
-
-charValue :: String -> Int
-charValue text = case text of
-  '\'':'\\':rest ->
-    fst (decodeEscape (dropClosingQuote rest))
-  '\'':c:'\'':[] -> fromEnum c
-  _ -> 0
-
-stringBytes :: String -> [Int]
-stringBytes text = stringBytesFrom (stripQuotes text)
-
-stringBytesFrom :: String -> [Int]
-stringBytesFrom chars = case chars of
-  [] -> [0]
-  '\\':rest ->
-    let decoded = decodeEscape rest
-        value = fst decoded
-        tailChars = snd decoded
-    in value : stringBytesFrom tailChars
-  c:rest -> fromEnum c : stringBytesFrom rest
-
-dropClosingQuote :: String -> String
-dropClosingQuote text = case reverse text of
-  '\'':rest -> reverse rest
-  _ -> text
-
-decodeEscape :: String -> (Int, String)
-decodeEscape text = case text of
-  'n':rest -> (10, rest)
-  't':rest -> (9, rest)
-  'r':rest -> (13, rest)
-  'f':rest -> (12, rest)
-  'v':rest -> (11, rest)
-  'a':rest -> (7, rest)
-  'b':rest -> (8, rest)
-  '\\':rest -> (92, rest)
-  '\'':rest -> (39, rest)
-  '"':rest -> (34, rest)
-  'x':rest -> readHexEscape rest
-  c:rest ->
-    if isOctalDigit c
-      then readOctalEscape 0 0 (c:rest)
-      else (fromEnum c, rest)
-  [] -> (0, [])
-
-readOctalEscape :: Int -> Int -> String -> (Int, String)
-readOctalEscape count value text =
-  if count >= 3
-    then (value, text)
-    else case text of
-      c:rest ->
-        if isOctalDigit c
-          then readOctalEscape (count + 1) (value * 8 + fromEnum c - fromEnum '0') rest
-          else (value, text)
-      [] -> (value, text)
-
-readHexEscape :: String -> (Int, String)
-readHexEscape text =
-  case readHexEscapeFrom 0 text of
-    (value, rest, consumed) ->
-      if consumed then (value, rest) else (fromEnum 'x', text)
-
-readHexEscapeFrom :: Int -> String -> (Int, String, Bool)
-readHexEscapeFrom value chars = case chars of
-  c:rest ->
-    if isHexDigit c
-      then
-        case readHexEscapeFrom (value * 16 + hexDigit c) rest of
-          (v, r, _) -> (v, r, True)
-      else (value, chars, False)
-  [] -> (value, chars, False)
-
-isOctalDigit :: Char -> Bool
-isOctalDigit c = c >= '0' && c <= '7'
-
-isHexDigit :: Char -> Bool
-isHexDigit c =
-  isDecimalDigit c || isLowerHexDigit c || isUpperHexDigit c
-
-isLowerHexDigit :: Char -> Bool
-isLowerHexDigit c = c >= 'a' && c <= 'f'
-
-isUpperHexDigit :: Char -> Bool
-isUpperHexDigit c = c >= 'A' && c <= 'F'
-
-stripQuotes :: String -> String
-stripQuotes text = stripTrailingQuote (stripLeadingQuote text)
-
-stripLeadingQuote :: String -> String
-stripLeadingQuote text = case text of
-  c:rest -> if fromEnum c == 34 then rest else text
-  [] -> []
-
-stripTrailingQuote :: String -> String
-stripTrailingQuote text = reverse (stripLeadingQuote (reverse text))

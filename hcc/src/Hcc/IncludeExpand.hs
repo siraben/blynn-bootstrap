@@ -3,6 +3,7 @@ module IncludeExpand
   ) where
 
 import Base
+import DriverCommon
 import HccSystem
 import SymbolTable
 import TextUtil
@@ -198,7 +199,7 @@ data IncludeGuard
 
 includeGuard :: String -> String -> Maybe IncludeGuard
 includeGuard path source =
-  let cleanedLines = lines (stripCommentsForDirectives source)
+  let cleanedLines = lines (stripComments source)
       indexedLines = zip [0..] cleanedLines
   in case dropBlankLines indexedLines of
     (start, line):rest
@@ -295,44 +296,3 @@ toUpperAscii c =
   if c >= 'a' && c <= 'z'
   then toEnum (fromEnum c - 32)
   else c
-
-stripCommentsForDirectives :: String -> String
-stripCommentsForDirectives source = normal source where
-  normal :: String -> String
-  normal text = case text of
-    [] -> []
-    '/':'/':rest -> lineComment rest
-    '/':'*':rest -> blockComment 1 rest
-    '"':rest -> '"' : stringLiteral rest
-    '\'':rest -> '\'' : charLiteral rest
-    c:rest -> c : normal rest
-
-  lineComment :: String -> String
-  lineComment text = case text of
-    [] -> []
-    '\n':rest -> '\n' : normal rest
-    _:rest -> lineComment rest
-
-  blockComment :: Int -> String -> String
-  blockComment depth text
-    | depth <= 0 = normal text
-    | otherwise = case text of
-        [] -> []
-        '/':'*':rest -> blockComment (depth + 1) rest
-        '*':'/':rest -> blockComment (depth - 1) rest
-        '\n':rest -> '\n' : blockComment depth rest
-        _:rest -> blockComment depth rest
-
-  stringLiteral :: String -> String
-  stringLiteral text = case text of
-    [] -> []
-    '\\':c:rest -> '\\' : c : stringLiteral rest
-    '"':rest -> '"' : normal rest
-    c:rest -> c : stringLiteral rest
-
-  charLiteral :: String -> String
-  charLiteral text = case text of
-    [] -> []
-    '\\':c:rest -> '\\' : c : charLiteral rest
-    '\'':rest -> '\'' : normal rest
-    c:rest -> c : charLiteral rest

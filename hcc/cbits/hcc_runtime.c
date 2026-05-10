@@ -154,38 +154,8 @@ static FILE *get_handle(int handle) {
   return handles[handle - 1];
 }
 
-int hcc_open_read(void) {
-  return alloc_handle(fopen(current_buffer(), "rb"));
-}
-
 int hcc_open_write(void) {
   return alloc_handle(fopen(current_buffer(), "wb"));
-}
-
-int hcc_handle_eof(int handle) {
-  FILE *file = get_handle(handle);
-  if (!file) return 1;
-  int c = fgetc(file);
-  if (c == EOF) return 1;
-  ungetc(c, file);
-  return 0;
-}
-
-int hcc_handle_read_char(int handle) {
-  FILE *file = get_handle(handle);
-  if (!file) return 0;
-  int c = fgetc(file);
-  return c == EOF ? 0 : c;
-}
-
-void hcc_handle_write_char(int handle, int c) {
-  FILE *file = get_handle(handle);
-  if (file) fputc(c, file);
-}
-
-void hcc_handle_write_buffer(int handle) {
-  FILE *file = get_handle(handle);
-  if (file) fputs(current_buffer(), file);
 }
 
 void hcc_handle_flush(int handle) {

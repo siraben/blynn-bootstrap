@@ -3,8 +3,8 @@ module ConstExpr
   ) where
 
 import Base
+import Literal
 import ParseLite
-import TextUtil
 import TypesToken
 
 type ConstParser a = P [(String, Int)] Token String a
@@ -237,8 +237,8 @@ parsePrimary = do
         TokIdent name -> do
           env <- pEnv
           pure (maybe 0 id (lookup name env))
-        TokInt value -> pure (parseIntLiteral value)
-        TokChar value -> pure (charInt value)
+        TokInt value -> pure (parseInt value)
+        TokChar value -> pure (charValue value)
         _ -> pFail "unsupported token in constant expression"
 
 parseDefinedOperator :: ConstParser Int
@@ -275,116 +275,3 @@ truth value = if value then 1 else 0
 
 constTokenKind :: Token -> TokenKind
 constTokenKind (Token _ kind) = kind
-
-parseIntLiteral :: String -> Int
-parseIntLiteral value = case readNumber (map toLowerAscii (stripIntSuffix value)) of
-  Just n -> n
-  Nothing -> 0
-
-stripIntSuffix :: String -> String
-stripIntSuffix text = reverse (dropWhile (`elem` "uUlL") (reverse text))
-
-readNumber :: String -> Maybe Int
-readNumber text = case text of
-  '0':'x':digits -> readRadix 16 hexDigitValue digits
-  '0':digits | any isOctDigit digits -> readRadix 8 octDigitValue digits
-  _ -> readRadix 10 decDigitValue text
-
-readRadix :: Int -> (Char -> Maybe Int) -> String -> Maybe Int
-readRadix radix valueOf text = go 0 text where
-  go acc rest = case rest of
-    [] -> Just acc
-    c:cs -> case valueOf c of
-      Just value -> go (acc * radix + value) cs
-      Nothing -> Nothing
-
-charInt :: String -> Int
-charInt text = case text of
-  '\'':'\\':c:_ -> escapeChar c
-  '\'':c:_ -> charCode c
-  _ -> 0
-
-escapeChar :: Char -> Int
-escapeChar c = case c of
-  'n' -> 10
-  'r' -> 13
-  't' -> 9
-  '0' -> 0
-  '\\' -> 92
-  '\'' -> 39
-  '"' -> 34
-  _ -> charCode c
-
-toLowerAscii :: Char -> Char
-toLowerAscii c =
-  if c >= 'A' && c <= 'Z'
-  then toEnum (fromEnum c + 32)
-  else c
-
-isOctDigit :: Char -> Bool
-isOctDigit c = c >= '0' && c <= '7'
-
-decDigitValue :: Char -> Maybe Int
-decDigitValue c =
-  if c >= '0' && c <= '9'
-  then Just (charCode c - charCode '0')
-  else Nothing
-
-octDigitValue :: Char -> Maybe Int
-octDigitValue c =
-  if c >= '0' && c <= '7'
-  then Just (charCode c - charCode '0')
-  else Nothing
-
-hexDigitValue :: Char -> Maybe Int
-hexDigitValue c
-  | c >= '0' && c <= '9' = Just (charCode c - charCode '0')
-  | c >= 'a' && c <= 'f' = Just (10 + charCode c - charCode 'a')
-  | otherwise = Nothing
-
-bitNotInt :: Int -> Int
-bitNotInt value = 0 - value - 1
-
-bitAndInt :: Int -> Int -> Int
-bitAndInt lhs rhs = bitFoldInt bitAndBits lhs rhs 1 0
-
-bitOrInt :: Int -> Int -> Int
-bitOrInt lhs rhs = bitFoldInt bitOrBits lhs rhs 1 0
-
-bitXorInt :: Int -> Int -> Int
-bitXorInt lhs rhs = bitFoldInt bitXorBits lhs rhs 1 0
-
-bitFoldInt :: (Bool -> Bool -> Bool) -> Int -> Int -> Int -> Int -> Int
-bitFoldInt op lhs rhs bit acc =
-  if bit > 1073741824
-  then acc
-  else
-    let acc' = if op (bitSet lhs bit) (bitSet rhs bit) then acc + bit else acc
-    in if bit == 1073741824 then acc' else bitFoldInt op lhs rhs (bit * 2) acc'
-
-bitSet :: Int -> Int -> Bool
-bitSet value bit =
-  if value >= 0
-  then ((value `div` bit) `mod` 2) == 1
-  else not (bitSet (bitNotInt value) bit)
-
-bitAndBits :: Bool -> Bool -> Bool
-bitAndBits lhs rhs = lhs && rhs
-
-bitOrBits :: Bool -> Bool -> Bool
-bitOrBits lhs rhs = lhs || rhs
-
-bitXorBits :: Bool -> Bool -> Bool
-bitXorBits lhs rhs = lhs /= rhs
-
-shiftLeftInt :: Int -> Int -> Int
-shiftLeftInt value amount = value * powerOfTwo amount
-
-shiftRightInt :: Int -> Int -> Int
-shiftRightInt value amount = value `div` powerOfTwo amount
-
-powerOfTwo :: Int -> Int
-powerOfTwo amount =
-  if amount <= 0
-  then 1
-  else 2 * powerOfTwo (amount - 1)

@@ -3,8 +3,6 @@ module CompileM
   , CompileState(..)
   , CompileM(..)
   , initialCompileState
-  , runCompileM
-  , runCompileMWithDataPrefix
   , initialCompileStateForTarget
   , throwC
   , withErrorContext
@@ -13,13 +11,11 @@ module CompileM
   , freshLabel
   , freshDataLabel
   , addDataItem
-  , getDataItems
   , bindVar
   , bindStruct
   , bindGlobal
   , bindConstant
   , bindFunction
-  , lookupVar
   , lookupVarMaybe
   , lookupVarType
   , lookupGlobalType
@@ -30,7 +26,6 @@ module CompileM
   , cacheStructSize
   , lookupStructMemberCache
   , cacheStructMember
-  , targetBits
   , targetWordSize
   , withFunctionScope
   , withVarScope
@@ -111,14 +106,6 @@ initialCompileState = CompileState
   , csTargetBits = 64
   }
 
-runCompileM :: CompileM a -> Either CompileError a
-runCompileM = runCompileMWithDataPrefix "HCC_DATA"
-
-runCompileMWithDataPrefix :: String -> CompileM a -> Either CompileError a
-runCompileMWithDataPrefix prefix action = case unCompileM action initialCompileState { csDataPrefix = prefix } of
-  Left err -> Left err
-  Right (x, _) -> Right x
-
 initialCompileStateForTarget :: String -> Int -> CompileState
 initialCompileStateForTarget prefix bits =
   initialCompileState { csDataPrefix = prefix, csTargetBits = bits }
@@ -161,9 +148,6 @@ addDataItem item@(DataItem label _) = CompileM $ \st ->
       DataItem label' _:rest | label' == key -> removeLabel key rest
       x:rest -> x : removeLabel key rest
 
-getDataItems :: CompileM [DataItem]
-getDataItems = CompileM $ \st -> Right (reverse (csDataItems st), st)
-
 bindVar :: String -> Temp -> CType -> CompileM ()
 bindVar name temp ty = CompileM $ \st ->
   Right ((), st { csVars = scopeMapInsert name (temp, ty) (csVars st) })
@@ -187,11 +171,6 @@ bindConstant name value = CompileM $ \st ->
 bindFunction :: String -> CompileM ()
 bindFunction name = CompileM $ \st ->
   Right ((), st { csFunctions = symbolSetInsert name (csFunctions st) })
-
-lookupVar :: String -> CompileM Temp
-lookupVar name = CompileM $ \st -> case scopeMapLookup name (csVars st) of
-  Just (temp, _) -> Right (temp, st)
-  Nothing -> Left (CompileError ("unbound variable: " ++ name))
 
 lookupVarMaybe :: String -> CompileM (Maybe Temp)
 lookupVarMaybe name = CompileM $ \st -> Right (fmap fst (scopeMapLookup name (csVars st)), st)
