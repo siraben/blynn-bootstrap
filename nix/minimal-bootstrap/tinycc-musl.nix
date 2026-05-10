@@ -26,7 +26,6 @@ let
     .${buildPlatform.system};
 
   patches = [
-    ../patches/upstreams/tinycc-musl-static-link.patch
     ../patches/upstreams/tinycc-musl-hcc-bootstrap.patch
   ];
 
@@ -58,6 +57,9 @@ let
 
         touch config.h
         hcc_va_list_flags="${lib.optionalString hccTinyccVaList "-D__HCC_TCC_VA_LIST"}"
+        if [ -n "$hcc_va_list_flags" ]; then
+          cp ${../support/tinycc/va_list.c} lib/va_list.c
+        fi
 
         # The source tree's include/stdarg.h is part of TinyCC's x86_64 va_arg
         # support. With an HCC-built bootstrap compiler, the musl stdarg shim is
@@ -144,7 +146,18 @@ let
 
     installPhase = ''
         runHook preInstall
-        install -D tcc-musl $out/bin/tcc
+        install -D tcc-musl $out/libexec/tcc
+        mkdir -p $out/bin
+        cat > $out/bin/tcc <<EOF
+#!${bash}/bin/bash
+for arg in "\$@"; do
+  if [ "\$arg" = -ar ]; then
+    exec "$out/libexec/tcc" "\$@"
+  fi
+done
+exec "$out/libexec/tcc" -static "\$@"
+EOF
+        chmod 555 $out/bin/tcc
         install -Dm444 libtcc1.a $out/lib/libtcc1.a
         runHook postInstall
       '';
