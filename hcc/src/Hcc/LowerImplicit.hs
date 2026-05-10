@@ -4,7 +4,6 @@ import Base
 import TypesAst
 import CompileM
 import LowerBuiltins
-import LowerCommon
 
 registerImplicitCalls :: [String] -> [Stmt] -> CompileM ()
 registerImplicitCalls locals stmts = case stmts of
@@ -65,7 +64,7 @@ maybeRegisterImplicitCallsExpr locals expr = case expr of
 registerImplicitCallsExpr :: [String] -> Expr -> CompileM ()
 registerImplicitCallsExpr locals expr = case expr of
   ECall (EVar name) args -> do
-    if stringMember name locals || isIgnoredSideEffectCall name
+    if name `elem` locals || isIgnoredSideEffectCall name
       then pure ()
       else do
         global <- lookupGlobalType name

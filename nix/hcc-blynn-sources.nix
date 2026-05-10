@@ -61,7 +61,6 @@ stdenvNoCC.mkDerivation {
       ${src}/src/Hcc/Parser.hs \
       ${src}/src/Hcc/TypesIr.hs \
       ${src}/src/Hcc/CompileM.hs \
-      ${src}/src/Hcc/LowerCommon.hs \
       ${src}/src/Hcc/TypesLower.hs \
       ${src}/src/Hcc/LowerBuiltins.hs \
       ${src}/src/Hcc/LowerDataValues.hs \

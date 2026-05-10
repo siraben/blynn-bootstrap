@@ -2,7 +2,6 @@ module LowerLiterals where
 
 import Base
 import TypesIr
-import LowerCommon
 
 constBinOp :: String -> Int -> Int -> Int
 constBinOp op a b = case op of
@@ -244,7 +243,7 @@ hexDigit c =
 charValue :: String -> Int
 charValue text = case text of
   '\'':'\\':rest ->
-    pairFirst (decodeEscape (dropClosingQuote rest))
+    fst (decodeEscape (dropClosingQuote rest))
   '\'':c:'\'':[] -> fromEnum c
   _ -> 0
 
@@ -256,8 +255,8 @@ stringBytesFrom chars = case chars of
   [] -> [0]
   '\\':rest ->
     let decoded = decodeEscape rest
-        value = pairFirst decoded
-        tailChars = pairSecond decoded
+        value = fst decoded
+        tailChars = snd decoded
     in value : stringBytesFrom tailChars
   c:rest -> fromEnum c : stringBytesFrom rest
 
@@ -298,21 +297,17 @@ readOctalEscape count value text =
 
 readHexEscape :: String -> (Int, String)
 readHexEscape text =
-  let result = readHexEscapeFrom 0 text
-      value = tripleFirst result
-      rest = tripleSecond result
-      consumed = tripleThird result
-  in if consumed then (value, rest) else (fromEnum 'x', text)
+  case readHexEscapeFrom 0 text of
+    (value, rest, consumed) ->
+      if consumed then (value, rest) else (fromEnum 'x', text)
 
 readHexEscapeFrom :: Int -> String -> (Int, String, Bool)
 readHexEscapeFrom value chars = case chars of
   c:rest ->
     if isHexDigit c
       then
-        let result = readHexEscapeFrom (value * 16 + hexDigit c) rest
-            v = tripleFirst result
-            r = tripleSecond result
-        in (v, r, True)
+        case readHexEscapeFrom (value * 16 + hexDigit c) rest of
+          (v, r, _) -> (v, r, True)
       else (value, chars, False)
   [] -> (value, chars, False)
 

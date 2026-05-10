@@ -3,7 +3,6 @@ module LowerTypeInfo where
 import Base
 import TypesAst
 import CompileM
-import LowerCommon
 
 aggregateFields :: CType -> CompileM (Maybe (Bool, [Field]))
 aggregateFields ty = case ty of
@@ -35,5 +34,5 @@ isAggregateType ty = case ty of
 isPointerType :: CType -> Bool
 isPointerType ty = case ty of
   CPtr _ -> True
-  CNamed name -> stringMember name ("intptr_t" : "uintptr_t" : [])
+  CNamed name -> name `elem` ("intptr_t" : "uintptr_t" : [])
   _ -> False

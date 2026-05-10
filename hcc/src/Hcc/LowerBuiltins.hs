@@ -1,7 +1,6 @@
 module LowerBuiltins where
 
 import Base
-import LowerCommon
 
 builtinConstant :: String -> Maybe Int
 builtinConstant name = case name of
@@ -24,23 +23,23 @@ builtinConstant name = case name of
   _ -> Nothing
 
 isIgnoredSideEffectCall :: String -> Bool
-isIgnoredSideEffectCall name = stringMember name ignoredSideEffectCalls
+isIgnoredSideEffectCall name = name `elem` ignoredSideEffectCalls
 
 ignoredSideEffectCalls :: [String]
 ignoredSideEffectCalls = "asm" : "oputs" : "eputs" : []
 
 isSignedNamedInteger :: String -> Bool
-isSignedNamedInteger name = stringMember name signedNamedIntegerTypes
+isSignedNamedInteger name = name `elem` signedNamedIntegerTypes
 
 namedIntegerSize :: String -> Maybe Int
 namedIntegerSize name =
-  if stringMember name namedIntegerSize1
+  if name `elem` namedIntegerSize1
     then Just 1
-    else if stringMember name namedIntegerSize2
+    else if name `elem` namedIntegerSize2
       then Just 2
-      else if stringMember name namedIntegerSize4
+      else if name `elem` namedIntegerSize4
         then Just 4
-        else if stringMember name namedIntegerSize8
+        else if name `elem` namedIntegerSize8
           then Just 8
           else Nothing
 

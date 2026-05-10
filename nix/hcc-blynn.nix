@@ -98,7 +98,6 @@ mkDerivation ({
       src/Hcc/Parser.hs \
       src/Hcc/TypesIr.hs \
       src/Hcc/CompileM.hs \
-      src/Hcc/LowerCommon.hs \
       src/Hcc/TypesLower.hs \
       src/Hcc/LowerBuiltins.hs \
       src/Hcc/LowerDataValues.hs \

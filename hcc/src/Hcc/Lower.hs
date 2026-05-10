@@ -6,7 +6,6 @@ import CompileM
 import TypesIr
 import LowerBootstrap
 import LowerBuiltins
-import LowerCommon
 import LowerDataValues
 import LowerImplicit
 import LowerLiterals
@@ -104,7 +103,7 @@ lowerStatementsFrom bid instrs stmts defaultTerm = case stmts of
           tailBlocks <- lowerUnreachableLabels rest defaultTerm
           pure (BasicBlock bid (instrs ++ retInstrs) (TRet (Just op)) : tailBlocks)
   SBlock body:rest -> do
-    if listIsEmpty rest
+    if null rest
       then withVarScope (lowerStatementsFrom bid instrs body defaultTerm)
       else do
         restId <- freshBlock
@@ -206,7 +205,7 @@ lowerIfJoinTarget rest defaultTerm = do
 
 lowerIfNoTarget :: [Stmt] -> BlockId -> BlockId -> BlockId
 lowerIfNoTarget no restId noId =
-  if listIsEmpty no then restId else noId
+  if null no then restId else noId
 
 lowerIfNoBlocks :: [Stmt] -> BlockId -> BlockId -> CompileM [BasicBlock]
 lowerIfNoBlocks no noId restId = case no of
@@ -511,8 +510,8 @@ lowerStructInitWrites dst offset fields exprs = case fields of
 lowerAggregateElementWrite :: Operand -> Int -> CType -> Expr -> CompileM [Instr]
 lowerAggregateElementWrite dst offset fieldTy expr = do
   addrResult <- offsetAddress dst offset
-  let addrInstrs = pairFirst addrResult
-  let addr = pairSecond addrResult
+  let addrInstrs = fst addrResult
+  let addr = snd addrResult
   aggregateStorage <- isAggregateTypeM fieldTy
   valueInstrs <- lowerAggregateElementValueWrite aggregateStorage addr fieldTy expr
   pure (addrInstrs ++ valueInstrs)
@@ -528,19 +527,19 @@ lowerAggregateElementAggregateWrite addr fieldTy expr = case expr of
   EInitList exprs -> lowerAggregateInitList addr fieldTy exprs
   _ -> do
     result <- lowerExpr expr
-    let exprInstrs = pairFirst result
-    let op = pairSecond result
+    let exprInstrs = fst result
+    let op = snd result
     copyInstrs <- copyObject addr op fieldTy
     pure (exprInstrs ++ copyInstrs)
 
 lowerAggregateElementScalarWrite :: Operand -> CType -> Expr -> CompileM [Instr]
 lowerAggregateElementScalarWrite addr fieldTy expr = do
   result <- lowerExpr expr
-  let exprInstrs = pairFirst result
-  let op = pairSecond result
+  let exprInstrs = fst result
+  let op = snd result
   coerceResult <- coerceScalar fieldTy op
-  let coerceInstrs = pairFirst coerceResult
-  let coerceOp = pairSecond coerceResult
+  let coerceInstrs = fst coerceResult
+  let coerceOp = snd coerceResult
   store <- storeInstr fieldTy addr coerceOp
   pure (exprInstrs ++ coerceInstrs ++ [store])
 
@@ -611,22 +610,22 @@ lowerExpr expr = case expr of
   EUnary "+" x -> lowerExpr x
   EUnary "-" x -> do
     result <- lowerExpr x
-    let a = pairFirst result
-    let op = pairSecond result
+    let a = fst result
+    let op = snd result
     zero <- freshTemp
     out <- freshTemp
     pure (a ++ [IConst zero 0, IBin out ISub (OTemp zero) op], OTemp out)
   EUnary "!" x -> do
     result <- lowerExpr x
-    let a = pairFirst result
-    let op = pairSecond result
+    let a = fst result
+    let op = snd result
     zero <- freshTemp
     out <- freshTemp
     pure (a ++ [IConst zero 0, IBin out IEq op (OTemp zero)], OTemp out)
   EUnary "~" x -> do
     result <- lowerExpr x
-    let a = pairFirst result
-    let op = pairSecond result
+    let a = fst result
+    let op = snd result
     zero <- freshTemp
     neg <- freshTemp
     out <- freshTemp
@@ -643,8 +642,8 @@ lowerExpr expr = case expr of
     lowerIncDec True ISub target
   ECast ty x -> do
     result <- lowerExpr x
-    let a = pairFirst result
-    let op = pairSecond result
+    let a = fst result
+    let op = snd result
     (coerceInstrs, coerceOp) <- coerceScalar ty op
     pure (a ++ coerceInstrs, coerceOp)
   ESizeofType ty -> do
@@ -660,19 +659,19 @@ lowerExpr expr = case expr of
     condResult <- lowerExpr cond
     yesResult <- lowerExpr yes
     noResult <- lowerExpr no
-    let ci = pairFirst condResult
-    let co = pairSecond condResult
-    let yi = pairFirst yesResult
-    let yo = pairSecond yesResult
-    let ni = pairFirst noResult
-    let noOp = pairSecond noResult
+    let ci = fst condResult
+    let co = snd condResult
+    let yi = fst yesResult
+    let yo = snd yesResult
+    let ni = fst noResult
+    let noOp = snd noResult
     out <- freshTemp
     pure ([ICond out ci co yi yo ni noOp], OTemp out)
   EBinary "," a b -> do
     ai <- lowerSideEffect a
     bResult <- lowerExpr b
-    let bi = pairFirst bResult
-    let bo = pairSecond bResult
+    let bi = fst bResult
+    let bo = snd bResult
     pure (ai ++ bi, bo)
   EBinary "&&" a b ->
     lowerLogicalAnd a b
@@ -768,16 +767,16 @@ lowerBinaryExpr op a b =
 
 isComparisonOpString :: String -> Bool
 isComparisonOpString op =
-  stringMember op ("<" : "<=" : ">" : ">=" : [])
+  op `elem` ("<" : "<=" : ">" : ">=" : [])
 
 lowerComparisonExpr :: String -> Expr -> Expr -> CompileM ([Instr], Operand)
 lowerComparisonExpr op a b = do
   leftResult <- lowerExpr a
   rightResult <- lowerExpr b
-  let ai = pairFirst leftResult
-  let ao = pairSecond leftResult
-  let bi = pairFirst rightResult
-  let bo = pairSecond rightResult
+  let ai = fst leftResult
+  let ao = snd leftResult
+  let bi = fst rightResult
+  let bo = snd rightResult
   out <- freshTemp
   iop <- comparisonOp op a b
   pure (ai ++ bi ++ [IBin out iop ao bo], OTemp out)
@@ -813,10 +812,10 @@ lowerLogicalAnd :: Expr -> Expr -> CompileM ([Instr], Operand)
 lowerLogicalAnd left right = do
   leftResult <- lowerExpr left
   rightResult <- lowerTruthExpr right
-  let leftInstrs = pairFirst leftResult
-  let leftOp = pairSecond leftResult
-  let rightInstrs = pairFirst rightResult
-  let rightBool = pairSecond rightResult
+  let leftInstrs = fst leftResult
+  let leftOp = snd leftResult
+  let rightInstrs = fst rightResult
+  let rightBool = snd rightResult
   out <- freshTemp
   pure ([ICond out leftInstrs leftOp rightInstrs rightBool [] (OImm 0)], OTemp out)
 
@@ -824,18 +823,18 @@ lowerLogicalOr :: Expr -> Expr -> CompileM ([Instr], Operand)
 lowerLogicalOr left right = do
   leftResult <- lowerExpr left
   rightResult <- lowerTruthExpr right
-  let leftInstrs = pairFirst leftResult
-  let leftOp = pairSecond leftResult
-  let rightInstrs = pairFirst rightResult
-  let rightBool = pairSecond rightResult
+  let leftInstrs = fst leftResult
+  let leftOp = snd leftResult
+  let rightInstrs = fst rightResult
+  let rightBool = snd rightResult
   out <- freshTemp
   pure ([ICond out leftInstrs leftOp [] (OImm 1) rightInstrs rightBool], OTemp out)
 
 lowerTruthExpr :: Expr -> CompileM ([Instr], Operand)
 lowerTruthExpr expr = do
   result <- lowerExpr expr
-  let instrs = pairFirst result
-  let op = pairSecond result
+  let instrs = fst result
+  let op = snd result
   out <- freshTemp
   pure (instrs ++ [IBin out INe op (OImm 0)], OTemp out)
 
@@ -843,10 +842,10 @@ lowerShiftExpr :: String -> Expr -> Expr -> CompileM ([Instr], Operand)
 lowerShiftExpr op left right = do
   leftResult <- lowerExpr left
   rightResult <- lowerExpr right
-  let leftInstrs = pairFirst leftResult
-  let leftOp = pairSecond leftResult
-  let rightInstrs = pairFirst rightResult
-  let rightOp = pairSecond rightResult
+  let leftInstrs = fst leftResult
+  let leftOp = snd leftResult
+  let rightInstrs = fst rightResult
+  let rightOp = snd rightResult
   out <- freshTemp
   iop <- case op of
     ">>" -> shiftRightOp left
@@ -880,10 +879,10 @@ lowerPointerDiff :: Expr -> Expr -> CType -> CompileM ([Instr], Operand)
 lowerPointerDiff a b elemTy = do
   leftResult <- lowerExpr a
   rightResult <- lowerExpr b
-  let ai = pairFirst leftResult
-  let ao = pairSecond leftResult
-  let bi = pairFirst rightResult
-  let bo = pairSecond rightResult
+  let ai = fst leftResult
+  let ao = snd leftResult
+  let bi = fst rightResult
+  let bo = snd rightResult
   diff <- freshTemp
   out <- freshTemp
   size <- typeSize elemTy
@@ -893,10 +892,10 @@ lowerPointerOffset :: BinOp -> Expr -> Expr -> CType -> CompileM ([Instr], Opera
 lowerPointerOffset op ptr offset elemTy = do
   ptrResult <- lowerExpr ptr
   offsetResult <- lowerExpr offset
-  let ptrInstrs = pairFirst ptrResult
-  let po = pairSecond ptrResult
-  let oi = pairFirst offsetResult
-  let oo = pairSecond offsetResult
+  let ptrInstrs = fst ptrResult
+  let po = snd ptrResult
+  let oi = fst offsetResult
+  let oo = snd offsetResult
   size <- typeSize elemTy
   scaled <- freshTemp
   out <- freshTemp
@@ -906,22 +905,22 @@ lowerPlainBin :: BinOp -> Expr -> Expr -> CompileM ([Instr], Operand)
 lowerPlainBin op a b = do
   leftResult <- lowerExpr a
   rightResult <- lowerExpr b
-  let ai = pairFirst leftResult
-  let ao = pairSecond leftResult
-  let bi = pairFirst rightResult
-  let bo = pairSecond rightResult
+  let ai = fst leftResult
+  let ao = snd leftResult
+  let bi = fst rightResult
+  let bo = snd rightResult
   commonTy <- usualArithmeticType a b
   acoerceResult <- coerceScalar commonTy ao
   bcoerceResult <- coerceScalar commonTy bo
-  let acoerceInstrs = pairFirst acoerceResult
-  let acoerceOp = pairSecond acoerceResult
-  let bcoerceInstrs = pairFirst bcoerceResult
-  let bcoerceOp = pairSecond bcoerceResult
+  let acoerceInstrs = fst acoerceResult
+  let acoerceOp = snd acoerceResult
+  let bcoerceInstrs = fst bcoerceResult
+  let bcoerceOp = snd bcoerceResult
   out <- freshTemp
   let resultTy = if isComparisonBinOp op then CInt else commonTy
   coerceResult <- coerceScalar resultTy (OTemp out)
-  let coerceInstrs = pairFirst coerceResult
-  let coerceOp = pairSecond coerceResult
+  let coerceInstrs = fst coerceResult
+  let coerceOp = snd coerceResult
   pure ( ai ++ bi ++ acoerceInstrs ++ bcoerceInstrs ++
          [IBin out op acoerceOp bcoerceOp] ++ coerceInstrs
        , coerceOp)
@@ -950,25 +949,25 @@ lowerAssignment :: Expr -> Expr -> CompileM ([Instr], Operand)
 lowerAssignment lhs rhs = do
   lhsResult <- lowerLValue lhs
   rhsResult <- lowerExpr rhs
-  let lhsInstrs = pairFirst lhsResult
-  let lvalue = pairSecond lhsResult
-  let rhsInstrs = pairFirst rhsResult
-  let rhsOp = pairSecond rhsResult
+  let lhsInstrs = fst lhsResult
+  let lvalue = snd lhsResult
+  let rhsInstrs = fst rhsResult
+  let rhsOp = snd rhsResult
   targetTy <- lValueType lvalue
   coerceResult <- coerceScalar targetTy rhsOp
-  let coerceInstrs = pairFirst coerceResult
-  let coerceOp = pairSecond coerceResult
+  let coerceInstrs = fst coerceResult
+  let coerceOp = snd coerceResult
   writeInstrs <- writeLValue lvalue coerceOp
   pure (lhsInstrs ++ rhsInstrs ++ coerceInstrs ++ writeInstrs, coerceOp)
 
 lowerIncDec :: Bool -> BinOp -> Expr -> CompileM ([Instr], Operand)
 lowerIncDec prefix op target = do
   lvResult <- lowerLValue target
-  let lvInstrs = pairFirst lvResult
-  let lvalue = pairSecond lvResult
+  let lvInstrs = fst lvResult
+  let lvalue = snd lvResult
   readResult <- readLValue lvalue
-  let readInstrs = pairFirst readResult
-  let current = pairSecond readResult
+  let readInstrs = fst readResult
+  let current = snd readResult
   old <- freshTemp
   out <- freshTemp
   step <- incDecStep target
@@ -986,11 +985,11 @@ incDecStep target = do
 readLValueExpr :: Expr -> CompileM ([Instr], Operand)
 readLValueExpr target = do
   lvResult <- lowerLValue target
-  let instrs = pairFirst lvResult
-  let lvalue = pairSecond lvResult
+  let instrs = fst lvResult
+  let lvalue = snd lvResult
   readResult <- readLValue lvalue
-  let readInstrs = pairFirst readResult
-  let op = pairSecond readResult
+  let readInstrs = fst readResult
+  let op = snd readResult
   pure (instrs ++ readInstrs, op)
 
 readLValue :: LValue -> CompileM ([Instr], Operand)
@@ -1106,10 +1105,10 @@ copyObjectBytes dst src offset remaining =
       let width = if remaining >= 8 then 8 else if remaining >= 4 then 4 else 1
       dstResult <- offsetAddress dst offset
       srcResult <- offsetAddress src offset
-      let dstInstrs = pairFirst dstResult
-      let dstAddr = pairSecond dstResult
-      let srcInstrs = pairFirst srcResult
-      let srcAddr = pairSecond srcResult
+      let dstInstrs = fst dstResult
+      let dstAddr = snd dstResult
+      let srcInstrs = fst srcResult
+      let srcAddr = snd srcResult
       val <- freshTemp
       let load = if width == 8 then ILoad64 val srcAddr else if width == 4 then ILoad32 val srcAddr else ILoad8 val srcAddr
       let store = if width == 8 then IStore64 dstAddr (OTemp val) else if width == 4 then IStore32 dstAddr (OTemp val) else IStore8 dstAddr (OTemp val)
@@ -1144,8 +1143,8 @@ lowerVarAddress name = do
 lowerNonFunctionAddress :: Expr -> CompileM ([Instr], Operand)
 lowerNonFunctionAddress target = do
   result <- lowerLValue target
-  let instrs = pairFirst result
-  let lvalue = pairSecond result
+  let instrs = fst result
+  let lvalue = snd result
   case lvalue of
     LAddress addr _ -> pure (instrs, addr)
     LLocal temp ty -> do
@@ -1169,42 +1168,42 @@ lowerLValue target = case target of
         pure ([], LAddress (OGlobal name) (maybe CLong id ty))
   EUnary "*" ptr -> do
     result <- lowerExpr ptr
-    let instrs = pairFirst result
-    let op = pairSecond result
+    let instrs = fst result
+    let op = snd result
     ty <- exprType target
     pure (instrs, LAddress op (maybe CLong id ty))
   EIndex base ix -> do
     baseResult <- lowerExpr base
     ixResult <- lowerExpr ix
-    let baseInstrs = pairFirst baseResult
-    let baseOp = pairSecond baseResult
-    let ixInstrs = pairFirst ixResult
-    let ixOp = pairSecond ixResult
+    let baseInstrs = fst baseResult
+    let baseOp = snd baseResult
+    let ixInstrs = fst ixResult
+    let ixOp = snd ixResult
     elemTy <- indexedElementType base
     elemSize <- typeSize elemTy
     scaleResult <- scaledIndex ixOp elemSize
-    let scaleInstrs = pairFirst scaleResult
-    let offsetOp = pairSecond scaleResult
+    let scaleInstrs = fst scaleResult
+    let offsetOp = snd scaleResult
     addr <- freshTemp
     pure (baseInstrs ++ ixInstrs ++ scaleInstrs ++ [IBin addr IAdd baseOp offsetOp], LAddress (OTemp addr) elemTy)
   EPtrMember base field -> do
     baseResult <- lowerExpr base
-    let baseInstrs = pairFirst baseResult
-    let baseOp = pairSecond baseResult
+    let baseInstrs = fst baseResult
+    let baseOp = snd baseResult
     baseTy <- exprType base
     fieldResult <- memberInfo baseTy field
-    let fieldTy = pairFirst fieldResult
-    let offset = pairSecond fieldResult
+    let fieldTy = fst fieldResult
+    let offset = snd fieldResult
     addr <- freshTemp
     pure (baseInstrs ++ [IBin addr IAdd baseOp (OImm offset)], LAddress (OTemp addr) fieldTy)
   EMember base field -> do
     baseResult <- lowerLValueAddress base
-    let baseInstrs = pairFirst baseResult
-    let baseAddr = pairSecond baseResult
+    let baseInstrs = fst baseResult
+    let baseAddr = snd baseResult
     baseTy <- exprType base
     fieldResult <- memberInfo (Just (CPtr (maybe CLong id baseTy))) field
-    let fieldTy = pairFirst fieldResult
-    let offset = pairSecond fieldResult
+    let fieldTy = fst fieldResult
+    let offset = snd fieldResult
     addr <- freshTemp
     pure (baseInstrs ++ [IBin addr IAdd baseAddr (OImm offset)], LAddress (OTemp addr) fieldTy)
   _ -> throwC ("unsupported lvalue: " ++ renderExprTag target)
@@ -1729,8 +1728,8 @@ globalArrayData inner exprs = case exprs of
 globalStructData :: [Field] -> [Expr] -> CompileM [DataValue]
 globalStructData fields exprs = do
   result <- structFields 0 fields exprs
-  let values = pairFirst result
-  let used = pairSecond result
+  let values = fst result
+  let used = snd result
   pure (padData used values)
 
 structFields :: Int -> [Field] -> [Expr] -> CompileM ([DataValue], Int)
@@ -1745,8 +1744,8 @@ structFields offset remaining values = case remaining of
       let valueTail = exprTail values
       fieldData <- globalDataValue fieldTy valueHead
       result <- structFields (aligned + fieldSize) rest valueTail
-      let restData = pairFirst result
-      let end = pairSecond result
+      let restData = fst result
+      let end = snd result
       pure (zeroData (aligned - offset) ++ padData fieldSize fieldData ++ restData, end)
 
 maybeExprHead :: [Expr] -> Maybe Expr
@@ -1811,10 +1810,10 @@ constExprValue expr = case expr of
     maybe (pure 8) typeSize mty
   ECast _ (EUnary "&" (EPtrMember (ECast (CPtr ty) (EInt "0")) field)) -> do
     info <- memberInfo (Just (CPtr ty)) field
-    pure (pairSecond info)
+    pure (snd info)
   EUnary "&" (EPtrMember (ECast (CPtr ty) (EInt "0")) field) -> do
     info <- memberInfo (Just (CPtr ty)) field
-    pure (pairSecond info)
+    pure (snd info)
   EVar name -> do
     constant <- lookupConstant name
     pure (maybe (maybe 0 id (builtinConstant name)) id constant)
@@ -1870,6 +1869,6 @@ isUnsignedType ty = case ty of
   CPtr _ -> True
   CArray _ _ -> True
   CNamed name -> case namedIntegerSize name of
-    Just _ -> not (stringMember name signedNamedIntegerTypes)
+    Just _ -> not (name `elem` signedNamedIntegerTypes)
     Nothing -> False
   _ -> False
