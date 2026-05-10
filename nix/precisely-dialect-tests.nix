@@ -35,8 +35,28 @@ stdenv.mkDerivation {
       grep -q "^$expected$" "$name.out"
     }
 
+    run_case_stdin() {
+      name="$1"
+      main="$2"
+      input="$3"
+      expected="$4"
+
+      cat \
+        ${blynnSrc}/inn/BasePrecisely.hs \
+        ${blynnSrc}/inn/System.hs \
+        "${../tests/hcc/precisely-dialect}/$main" \
+        > "$name.hs"
+
+      precisely_up < "$name.hs" > "$name.c"
+      sed -i -E 's/enum\{TOP=[0-9]+\};/enum{TOP=134217728};/' "$name.c"
+      $CC -O0 "$name.c" cbits/hcc_runtime.c -o "$name"
+      printf '%s' "$input" | "./$name" > "$name.out"
+      grep -q "^$expected$" "$name.out"
+    }
+
     run_case where Where.hs "where: ok"
     run_case local-syntax LocalSyntax.hs "local-syntax: ok"
+    run_case_stdin reverse-input ReverseInput.hs "stage0" "0egats"
 
     runHook postBuild
   '';
@@ -49,6 +69,9 @@ stdenv.mkDerivation {
     install -Dm644 local-syntax.hs $out/share/precisely-dialect-tests/local-syntax.hs
     install -Dm644 local-syntax.c $out/share/precisely-dialect-tests/local-syntax.c
     install -Dm644 local-syntax.out $out/share/precisely-dialect-tests/local-syntax.out
+    install -Dm644 reverse-input.hs $out/share/precisely-dialect-tests/reverse-input.hs
+    install -Dm644 reverse-input.c $out/share/precisely-dialect-tests/reverse-input.c
+    install -Dm644 reverse-input.out $out/share/precisely-dialect-tests/reverse-input.out
     runHook postInstall
   '';
 

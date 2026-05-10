@@ -1,6 +1,7 @@
 {
   stdenvNoCC,
   lib,
+  pname ? "hcc-m1-smoke",
   hcc,
   minimalBootstrap,
   m2libc,
@@ -8,7 +9,7 @@
 }:
 
 stdenvNoCC.mkDerivation {
-  pname = "hcc-m1-smoke";
+  inherit pname;
   version = "0-unstable-2026-05-06";
 
   nativeBuildInputs = [

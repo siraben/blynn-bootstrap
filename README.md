@@ -19,6 +19,8 @@ through the usual minimal-bootstrap GCC chain.
 - `gcc46.m2.precisely.m2` has built successfully from the HCC-built TinyCC.
 - The rest of nixpkgs' minimal-bootstrap chain is exposed as flake targets:
   `gcc46Cxx`, `gcc10`, `gccLatest`, `glibc`, and `gccGlibc`.
+- The current HCC bootstrap support is amd64/x86_64-linux only. The M1 and
+  hex2 support files under `hcc/support` are amd64-specific.
 
 ## Layout
 
@@ -29,7 +31,6 @@ scripts/                          # portable bootstrap drivers, independent of N
 hcc/                              # HCC sources and smoke fixtures
 tests/                            # HCC and MesCC reference tests
 upstream/                         # pinned upstream mirrors used to refresh patches
-nix/imports/nixpkgs/              # copied minimal-bootstrap package set
 ```
 
 ## Building

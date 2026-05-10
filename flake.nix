@@ -1005,20 +1005,26 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           };
         };
 
-        hcc-m1-smoke = pkgs.callPackage ./nix/hcc-m1-smoke.nix {
+        hccM1SmokeFor = pname: hcc: pkgs.callPackage ./nix/hcc-m1-smoke.nix {
           stdenvNoCC = rawStdenvNoCC;
-          hcc = hccBy.m2.precisely.m2;
+          inherit pname hcc;
           inherit minimalBootstrap;
           m2libc = m2libcSrc;
         };
 
-        hcc-mescc-tests = pkgs.callPackage ./nix/hcc-mescc-tests.nix {
+        hccMesccTestsFor = pname: hcc: pkgs.callPackage ./nix/hcc-mescc-tests.nix {
           stdenvNoCC = rawStdenvNoCC;
-          hcc = hccBy.m2.precisely.m2;
+          inherit pname hcc;
           inherit minimalBootstrap;
           m2libc = m2libcSrc;
           mesTests = ./tests/mescc;
         };
+
+        hcc-m1-smoke = hccM1SmokeFor "hcc-m1-smoke" hccBy.m2.precisely.m2;
+        hcc-m1-smoke-native = hccM1SmokeFor "hcc-m1-smoke-host-ghc-native" hccBy.host.ghc.native;
+
+        hcc-mescc-tests = hccMesccTestsFor "hcc-mescc-tests" hccBy.m2.precisely.m2;
+        hcc-mescc-tests-native = hccMesccTestsFor "hcc-mescc-tests-host-ghc-native" hccBy.host.ghc.native;
 
         mutable-io-proof = pkgs.callPackage ./nix/mutable-io-proof.nix {
           stdenv = pkgs.stdenv;
@@ -1075,6 +1081,8 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           tests = {
             smoke.m1 = hcc-m1-smoke;
             mescc = hcc-mescc-tests;
+            host.ghc.native.smoke.m1 = hcc-m1-smoke-native;
+            host.ghc.native.mescc = hcc-mescc-tests-native;
             precisely.dialect = precisely-dialect-tests;
             tinyccM1.native-vs-faithful = tinyccM1CompareNativeFaithful;
           };
