@@ -1,7 +1,7 @@
 --- libtcc.c
 +++ libtcc.c
-@@ -793,6 +793,7 @@ LIBTCCAPI TCCState *tcc_new(void)
- 
+@@ -871,6 +871,7 @@ LIBTCCAPI TCCState *tcc_new(void)
+ #undef gnu_ext
      s->gnu_ext = 1;
      s->tcc_ext = 1;
 +    s->static_link = 1;

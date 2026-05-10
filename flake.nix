@@ -36,6 +36,17 @@
             hash = "sha256-iw1/MP0dwXOs9gyB7WhnvpCz59zveeoYy85wt0j+fWA=";
           };
         };
+        mesLibcArch =
+          lib.attrByPath [ system ] (throw "unsupported Mes libc bootstrap platform: ${system}") {
+            "x86_64-linux" = "x86_64";
+            "i686-linux" = "x86";
+          };
+        mesLibcSources =
+          (lib.importJSON "${pkgs.path}/pkgs/os-specific/linux/minimal-bootstrap/mes/sources.json").${mesLibcArch}.linux.gcc;
+        mesLibcSourceFiles =
+          map (rel: "$out/${rel}") (lib.take 100 mesLibcSources.libc_gnu_SOURCES)
+          ++ [ "${pkgs.path}/pkgs/os-specific/linux/minimal-bootstrap/mes/ldexpl.c" ]
+          ++ map (rel: "$out/${rel}") (lib.drop 100 mesLibcSources.libc_gnu_SOURCES);
         patchedUpstreamSource = { name, src, patches ? [ ] }:
           pkgs.runCommand name {
             nativeBuildInputs = [ pkgs.coreutils pkgs.patch ];
@@ -61,14 +72,121 @@
           ];
         };
         m2libcSrc = "${blynnSrc}/M2libc";
-        mesLibcSrc = patchedUpstreamSource {
-          name = "gnu-mes-libc-hcc";
-          src = upstreamSources.gnuMes;
-          patches = [
-            (upstreamPatches + "/gnu-mes-libc-reference.patch")
-            (upstreamPatches + "/gnu-mes-libc-bootstrap-layout.patch")
-          ];
-        };
+        mesLibcSrc = pkgs.runCommand "gnu-mes-libc-hcc" {
+          nativeBuildInputs = [ pkgs.coreutils ];
+        } ''
+          cp -R --no-preserve=mode,ownership ${upstreamSources.gnuMes} "$out"
+          chmod -R u+w "$out"
+
+          mkdir -p "$out/include/arch" "$out/include/mes" "$out/lib"
+          substituteInPlace "$out/include/linux/${mesLibcArch}/syscall.h" \
+            --replace-fail '#define SYS_nanosleep 0x33' '#define SYS_nanosleep 0x23'
+          substituteInPlace "$out/lib/linux/${mesLibcArch}-mes-gcc/_exit.c" \
+            --replace-fail ': "rm" (code)' ': "rm" (code) : "rax", "rdi"'
+          substituteInPlace "$out/lib/mes/ntoab.c" \
+            --replace-fail 'size_t
+__mesabi_uldiv (size_t a, size_t b, size_t *remainder)' 'unsigned long
+__mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
+            --replace-fail '  size_t i;
+  size_t u;
+  size_t b = base;' '  unsigned long i;
+  unsigned long u;
+  unsigned long b = base;'
+          substituteInPlace "$out/lib/linux/ioctl3.c" \
+            --replace-fail 'ioctl3 (int filedes, size_t command, long data)' \
+                           'ioctl3 (int filedes, unsigned long command, long data)'
+          substituteInPlace "$out/lib/linux/link.c" \
+            --replace-fail 'return _sys_call4 (SYS_linkat, AT_FDCWD, (long) old_name, AT_FDCWD, (long) new_name);' \
+                           'return _sys_call5 (SYS_linkat, AT_FDCWD, (long) old_name, AT_FDCWD, (long) new_name, 0);'
+          substituteInPlace "$out/lib/string/strpbrk.c" \
+            --replace-fail '  while (*p)
+    if (strchr (stopset, *p))
+      break;
+    else
+      p++;
+  return p;' '  while (*p)
+    if (strchr (stopset, *p))
+      return p;
+    else
+      p++;
+  return 0;'
+          substituteInPlace "$out/lib/stdio/vfprintf.c" \
+            --replace-fail '  int count = 0;
+  while (*p)' '  int count = 0;
+  int has_l = 0;
+  while (*p)' \
+            --replace-fail "        if (c == 'l')
+          c = *++p;" "        if (c == 'l')
+          {
+            has_l = 1;
+            c = *++p;
+          }
+        if (c == 'l')
+          {
+            has_l = 1;
+            c = *++p;
+          }" \
+            --replace-fail '              long d = va_arg (ap, long);' '              long d;
+              if (has_l)
+                {
+                  has_l = 0;
+                  d = va_arg (ap, long);
+                }
+              else if (c != '"'"'d'"'"' && c != '"'"'i'"'"')
+                d = (long) (va_arg (ap, unsigned int));
+              else
+                d = (long) (va_arg (ap, int));' \
+            --replace-fail '              double d = va_arg8 (ap, double);' \
+                           '              double d = va_arg (ap, double);'
+          substituteInPlace "$out/lib/stdio/vsnprintf.c" \
+            --replace-fail '  int count = 0;
+  char c;' '  int count = 0;
+  int has_l = 0;
+  char c;' \
+            --replace-fail "        if (c == 'l')
+          c = *++p;
+        if (c == 'l')
+          c = *++p;" "        if (c == 'l')
+          {
+            has_l = 1;
+            c = *++p;
+          }
+        if (c == 'l')
+          {
+            has_l = 1;
+            c = *++p;
+          }
+        if (c == 'l')
+          {
+            has_l = 1;
+            c = *++p;
+          }" \
+            --replace-fail '              long d = va_arg (ap, long);' '              long d;
+              if (has_l)
+                {
+                  has_l = 0;
+                  d = va_arg (ap, long);
+                }
+              else if (c != '"'"'d'"'"' && c != '"'"'i'"'"')
+                d = (long) (va_arg (ap, unsigned int));
+              else
+                d = (long) (va_arg (ap, int));' \
+            --replace-fail '              double d = va_arg8 (ap, double);' \
+                           '              double d = va_arg (ap, double);'
+          cp ${./nix/sources/mes-libc/x86_64-setjmp.c} "$out/lib/x86_64-mes-gcc/setjmp.c"
+
+          cp "$out/include/linux/${mesLibcArch}/kernel-stat.h" "$out/include/arch/kernel-stat.h"
+          cp "$out/include/linux/${mesLibcArch}/signal.h" "$out/include/arch/signal.h"
+          cp "$out/include/linux/${mesLibcArch}/syscall.h" "$out/include/arch/syscall.h"
+
+          cp ${./nix/sources/mes-libc/config.h} "$out/include/mes/config.h"
+
+          cat ${lib.concatStringsSep " " mesLibcSourceFiles} > "$out/lib/libc.c"
+          cp "$out/lib/linux/${mesLibcArch}-mes-gcc/crt1.c" "$out/lib/crt1.c"
+          cp "$out/lib/linux/${mesLibcArch}-mes-gcc/crti.c" "$out/lib/crti.c"
+          cp "$out/lib/linux/${mesLibcArch}-mes-gcc/crtn.c" "$out/lib/crtn.c"
+          cp "$out/lib/posix/getopt.c" "$out/lib/libgetopt.c"
+        '';
 
         minimalBootstrap = pkgs.minimal-bootstrap;
         rawDerivation = import ./nix/raw-mk-derivation.nix {

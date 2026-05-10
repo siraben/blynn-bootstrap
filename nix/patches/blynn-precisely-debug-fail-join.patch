@@ -2,7 +2,7 @@ diff --git a/inn/TyperPrecisely.hs b/inn/TyperPrecisely.hs
 index 9e1d53a..a99dc55 100644
 --- a/inn/TyperPrecisely.hs
 +++ b/inn/TyperPrecisely.hs
-@@ -482,5 +482,6 @@ prims = let
+@@ -481,5 +481,6 @@ prims = let
    wordy = foldr arr (TAp (TAp (TC ",") (TC "Word")) (TC "Word")) [TC "Word", TC "Word", TC "Word", TC "Word"]
    bin s = A (ro "Q") (ro s)
 +  debugTrap msg = A (V "primitiveError") (E $ Lit (TAp (TC "[]") (TC "Char"), msg))
