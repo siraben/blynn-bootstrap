@@ -76,8 +76,8 @@ mkDerivation ({
       src/Hcc/ConstExpr.hs \
       src/Hcc/Lexer.hs \
       src/Hcc/Preprocessor.hs \
-      src/Hcc/HccSystemCpp.hs \
-      src/Hcc/DriverCommonCpp.hs \
+      src/Hcc/HccSystem.hs \
+      src/Hcc/DriverCommon.hs \
       src/Hcc/IncludeExpand.hs \
       src/MainCpp.hs \
       > hcpp-full.hs

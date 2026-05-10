@@ -9,12 +9,8 @@ foreign import ccall "hcc_stdout_buffer" hccStdoutBuffer :: IO ()
 foreign import ccall "hcc_stderr_char" hccStderrChar :: Char -> IO ()
 foreign import ccall "hcc_exit_success" hccExitSuccessRaw :: IO ()
 foreign import ccall "hcc_exit_failure" hccExitFailureRaw :: IO ()
-foreign import ccall "hcc_open_read" hccOpenRead :: IO Int
 foreign import ccall "hcc_open_write" hccOpenWrite :: IO Int
 foreign import ccall "hcc_read_file" hccReadFileRaw :: IO Int
-foreign import ccall "hcc_handle_eof" hccHandleEof :: Int -> IO Int
-foreign import ccall "hcc_handle_read_char" hccHandleReadChar :: Int -> IO Char
-foreign import ccall "hcc_handle_write_char" hccHandleWriteChar :: Int -> Char -> IO ()
 foreign import ccall "hcc_handle_write_buffer" hccHandleWriteBuffer :: Int -> IO ()
 foreign import ccall "hcc_handle_flush" hccHandleFlush :: Int -> IO ()
 foreign import ccall "hcc_obuf_new" hccObufNew :: Int -> IO Word
@@ -31,7 +27,6 @@ foreign import ccall "hcc_does_file_exist" hccDoesFileExistRaw :: IO Int
 foreign import ccall "hcc_result_eof" hccResultEof :: IO Int
 foreign import ccall "hcc_result_char" hccResultChar :: IO Char
 foreign import ccall "hcc_result_len" hccResultLen :: IO Int
-foreign import ccall "hcc_result_at" hccResultAt :: Int -> IO Char
 
 hccInit :: IO ()
 hccInit = pure ()
@@ -60,16 +55,6 @@ hccReadFile path = withBuffer path $ do
   case ok == 0 of
     True -> hccPutErrLine ("hcc: cannot read " ++ path) >> hccExitFailure
     False -> readResult
-
-hccReadFileBuffered :: String -> IO String
-hccReadFileBuffered path = do
-  handle <- hccOpenRead
-  case handle == 0 of
-    True -> hccPutErrLine ("hcc: cannot read " ++ path) >> hccExitFailure
-    False -> do
-      text <- readHandle handle
-      hccClose handle
-      pure text
 
 hccOpenWriteFile :: String -> IO Int
 hccOpenWriteFile path = withBuffer path hccOpenWrite
@@ -116,17 +101,6 @@ hccTakeFileName path = reverse (takeWhile (/= '/') (reverse path))
 withBuffer :: String -> IO a -> IO a
 withBuffer text action = hccBufferClear >> mapM_ hccBufferPut text >> action
 
-readHandle :: Int -> IO String
-readHandle handle = go []
-  where
-    go acc = do
-      done <- hccHandleEof handle
-      case done /= 0 of
-        True -> pure (reverse acc)
-        False -> do
-          c <- hccHandleReadChar handle
-          go (c:acc)
-
 readResult :: IO String
 readResult = do
   len <- hccResultLen
@@ -138,9 +112,6 @@ readResult = do
       else do
         c <- hccResultChar
         go (remaining - 1) (c:acc)
-
-hccWriteHandleText :: Int -> String -> IO ()
-hccWriteHandleText handle text = withBuffer text (hccHandleWriteBuffer handle)
 
 hccWriteHandleLines :: Int -> [String] -> IO ()
 hccWriteHandleLines handle lines' = do

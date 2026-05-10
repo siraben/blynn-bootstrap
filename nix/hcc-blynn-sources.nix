@@ -39,8 +39,8 @@ stdenvNoCC.mkDerivation {
       ${src}/src/Hcc/ConstExpr.hs \
       ${src}/src/Hcc/Lexer.hs \
       ${src}/src/Hcc/Preprocessor.hs \
-      ${src}/src/Hcc/HccSystemCpp.hs \
-      ${src}/src/Hcc/DriverCommonCpp.hs \
+      ${src}/src/Hcc/HccSystem.hs \
+      ${src}/src/Hcc/DriverCommon.hs \
       ${src}/src/Hcc/IncludeExpand.hs \
       ${src}/src/MainCpp.hs \
       > hcpp-full.hs

@@ -94,12 +94,6 @@ paramDeclNamesIr params = case params of
   [] -> []
   Param _ name:rest -> name : paramDeclNamesIr rest
 
-emitModule :: ([String] -> IO ()) -> ModuleIr -> IO ()
-emitModule write moduleIr = case moduleIr of
-  ModuleIr dataItems functions -> do
-    emitDataItems write dataItems
-    emitFunctions write functions
-
 emitDataItems :: ([String] -> IO ()) -> [DataItem] -> IO ()
 emitDataItems write items = case items of
   [] -> pure ()
@@ -125,13 +119,6 @@ dataValueLine :: DataValue -> String
 dataValueLine value = case value of
   DByte byte -> "DV B " ++ show byte
   DAddress label -> "DV A " ++ label
-
-emitFunctions :: ([String] -> IO ()) -> [FunctionIr] -> IO ()
-emitFunctions write functions = case functions of
-  [] -> pure ()
-  fn:rest -> do
-    emitFunction write (optimizeFunctionIr fn)
-    emitFunctions write rest
 
 emitFunction :: ([String] -> IO ()) -> FunctionIr -> IO ()
 emitFunction write fn = case fn of
