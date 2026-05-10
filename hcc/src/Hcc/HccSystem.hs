@@ -11,7 +11,6 @@ foreign import ccall "hcc_exit_success" hccExitSuccessRaw :: IO ()
 foreign import ccall "hcc_exit_failure" hccExitFailureRaw :: IO ()
 foreign import ccall "hcc_open_write" hccOpenWrite :: IO Int
 foreign import ccall "hcc_read_file" hccReadFileRaw :: IO Int
-foreign import ccall "hcc_handle_write_buffer" hccHandleWriteBuffer :: Int -> IO ()
 foreign import ccall "hcc_handle_flush" hccHandleFlush :: Int -> IO ()
 foreign import ccall "hcc_obuf_new" hccObufNew :: Int -> IO Word
 foreign import ccall "hcc_obuf_free" hccObufFree :: Word -> IO ()
@@ -24,7 +23,6 @@ foreign import ccall "hcc_obuf_write" hccObufWrite :: Int -> Word -> IO ()
 foreign import ccall "hcc_close" hccClose :: Int -> IO ()
 foreign import ccall "hcc_canonicalize" hccCanonicalizeRaw :: IO ()
 foreign import ccall "hcc_does_file_exist" hccDoesFileExistRaw :: IO Int
-foreign import ccall "hcc_result_eof" hccResultEof :: IO Int
 foreign import ccall "hcc_result_char" hccResultChar :: IO Char
 foreign import ccall "hcc_result_len" hccResultLen :: IO Int
 
@@ -54,13 +52,13 @@ hccReadFile path = withBuffer path $ do
   ok <- hccReadFileRaw
   case ok == 0 of
     True -> hccPutErrLine ("hcc: cannot read " ++ path) >> hccExitFailure
-    False -> readResult
+    False -> readRuntimeResult
 
 hccOpenWriteFile :: String -> IO Int
 hccOpenWriteFile path = withBuffer path hccOpenWrite
 
 hccCanonicalizePath :: String -> IO String
-hccCanonicalizePath path = withBuffer path $ hccCanonicalizeRaw >> readResult
+hccCanonicalizePath path = withBuffer path $ hccCanonicalizeRaw >> readRuntimeResult
 
 hccDoesFileExist :: String -> IO Bool
 hccDoesFileExist path = withBuffer path hccDoesFileExistBuffered
@@ -101,8 +99,8 @@ hccTakeFileName path = reverse (takeWhile (/= '/') (reverse path))
 withBuffer :: String -> IO a -> IO a
 withBuffer text action = hccBufferClear >> mapM_ hccBufferPut text >> action
 
-readResult :: IO String
-readResult = do
+readRuntimeResult :: IO String
+readRuntimeResult = do
   len <- hccResultLen
   go len []
   where

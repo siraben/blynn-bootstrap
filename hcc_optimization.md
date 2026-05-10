@@ -2,6 +2,79 @@
 
 Working metrics for improving HCC efficiency and modularity. The primary benchmark is the end-to-end TinyCC bootstrap path, with direct HCC-on-expanded-TCC measurements used to isolate compiler runtime and memory.
 
+## Pass 8: M2-Planet C-shape benchmarks
+
+Goal: make the C that stage0 M2-Mesoplanet sees cheaper without changing HCC semantics.
+
+Changes:
+
+- Restored the normal `hcc_runtime.c` after the C89-style declaration pass regressed the host runtime shape.
+- Added `scripts/bench-m2-planet.sh` for M2-Planet microbenchmarks and Precisely-generated sample programs.
+- Changed `hcc_runtime_m2.c` locals toward declaration initializers where M2-Planet supports them.
+
+M2-Planet microbenchmarks:
+
+```text
+RUNS=1 COUNTS=10 nix develop -c scripts/bench-m2-planet.sh /tmp/hcc-m2-bench-runtime-check
+
+micro init 10 m1_bytes=6637 m1_lines=271
+micro assign 10 m1_bytes=7207 m1_lines=291
+micro for-init 10 m1_bytes=15037 m1_lines=601
+micro for-assign 10 m1_bytes=15607 m1_lines=621
+```
+
+M2-Mesoplanet sample timings:
+
+```text
+where         elapsed=1.23s maxrss=109056 KiB c_bytes=72035 bin_bytes=254406
+local-syntax  elapsed=1.24s maxrss=109824 KiB c_bytes=72078 bin_bytes=254470
+reverse-input elapsed=1.26s maxrss=108288 KiB c_bytes=70782 bin_bytes=251950
+```
+
+Blynn VM raw-stage sample timings:
+
+```text
+lonely-raw elapsed=10.79s maxrss=261120 KiB
+patty      elapsed=8.20s  maxrss=262144 KiB
+guardedly  elapsed=9.75s  maxrss=262144 KiB
+```
+
+Runtime C before/after comparison on the generated `where.c` sample:
+
+```text
+old bin=254450 m2=849479 m1=698951
+new bin=254406 m2=848225 m1=698819
+```
+
+Generated Precisely C inspection:
+
+```text
+hcc1-blynn.c from stage0/GCC Precisely: 756 lines, 515707 bytes
+hcc1-blynn.c largest line:             487486 bytes
+root8 payload integers:                130979
+non-root generated C bytes:            28220
+step dispatch:                         89 lines, 4694 bytes
+run dispatch:                          89 lines, 4659 bytes
+```
+
+Observations:
+
+- M2-Planet emits smaller M1 for declaration initializers than for declaration plus later assignment. The diff removes the generic assignment path's extra `_common_recursion` push/pop around local stores.
+- `hcc1-blynn.c` is dominated by one huge `static u root8[]` initializer. This is a better next target than more handwritten-runtime polish.
+- The generated RTS contains two near-duplicate dispatch loops, `step` and `run`. The byte savings are smaller than compacting `root8`, but this is simple enough to benchmark.
+- GHC-debug Precisely and GCC/stage0 Precisely generate slightly different C sizes for the same HCC source. The stage0 and GCC Precisely outputs match each other in the inspected build.
+
+Validation:
+
+```text
+nix build .#hcc.m2.precisely.gcc --no-link --print-out-paths -L
+pass: /nix/store/fj14nnqmr45qczz4lp1qgc651k7hwlzg-hcc-m2-precisely-gcc-0-unstable-2026-05-06
+
+sh -n scripts/bench-m2-planet.sh
+git diff --check
+pass
+```
+
 ## Baseline: 2026-05-07
 
 Repository state: `fca44e9 Install self-hosted hcc TinyCC`.
@@ -1084,6 +1157,57 @@ Converted more of CodegenM1's per-instruction helpers to Lines builders.
 Output stayed byte-identical and allocation fell only slightly, but profiled
 real time regressed to 4.442s. Reverted; this needs a broader representation
 change rather than a mechanical type rewrite.
+```
+
+## Pass 8: M2-Planet C-shape benchmarks
+
+Goal: optimize the C that is compiled by M2-Planet, using C source shapes that
+M2-Planet lowers to smaller M1.
+
+Findings from `scripts/bench-m2-planet.sh`:
+
+```text
+micro init 100:       62,618 bytes, 2,521 M1 lines
+micro assign 100:     68,318 bytes, 2,721 M1 lines
+micro for-init 100:  147,338 bytes, 5,821 M1 lines
+micro for-assign 100:153,038 bytes, 6,021 M1 lines
+
+VM raw-stage smoke:
+  lonely-raw  10.8s, ~262 MiB RSS
+  patty        8.2s, ~262 MiB RSS
+  guardedly    9.8s, ~262 MiB RSS
+```
+
+Source audit:
+
+- M2-Planet's local declaration initializer path calls `expression()` and then
+  `load_address_of_variable_into_register` once.
+- A later assignment goes through the general assignment path and
+  `common_recursion`, adding push/pop traffic in emitted M1.
+
+Change:
+
+- Reverted the native C89-style split-declaration pass.
+- Changed `hcc_runtime_m2.c` locals from `int x; ... x = ...;` to declaration
+  initializers where M2-Planet accepts them.
+- Added `scripts/bench-m2-planet.sh` for repeatable M2 microbenchmarks, Precisely
+  sample builds, and VM raw-stage measurements.
+
+Measured on the generated `where` Precisely sample:
+
+```text
+old runtime: bin=254450 bytes, M2=849479 bytes, M1=698951 bytes
+new runtime: bin=254406 bytes, M2=848225 bytes, M1=698819 bytes
+```
+
+Validation:
+
+```text
+RUNS=1 COUNTS=10 nix develop -c scripts/bench-m2-planet.sh /tmp/hcc-m2-bench-runtime-check
+pass
+
+nix build .#hcc.m2.precisely.gcc --no-link --print-out-paths -L
+pass
 ```
 
 ## Pass 7: Precisely RTS generational GC experiment

@@ -62,9 +62,8 @@ static void *hcc_realloc(void *ptr, unsigned old_size, unsigned new_size)
 
 static void ensure_chars(char **ptr, unsigned *cap, unsigned needed)
 {
-  unsigned next;
+  unsigned next = *cap;
   if (*cap >= needed) return;
-  next = *cap;
   if (!next) next = 64;
   while (next < needed) next = next * 2;
   *ptr = hcc_realloc(*ptr, *cap, next);
@@ -109,12 +108,11 @@ static void set_result(char *text)
 int hcc_read_file(void)
 {
   FILE *file = fopen(current_buffer(), "r");
-  int c;
   if (!file) return 0;
   result_len = 0;
   result_pos = 0;
   ensure_chars(&result, &result_cap, 1);
-  c = fgetc(file);
+  int c = fgetc(file);
   while (c != EOF) {
     ensure_chars(&result, &result_cap, result_len + 2);
     result[result_len] = c;
@@ -183,10 +181,9 @@ static int alloc_handle(FILE *file)
 
 static FILE *get_handle(int handle)
 {
-  unsigned file;
   if (handle <= 0) return 0;
   if (handle > HCC_MAX_HANDLES) return 0;
-  file = handles[handle - 1];
+  unsigned file = handles[handle - 1];
   return file;
 }
 
@@ -203,9 +200,8 @@ int hcc_open_write(void)
 int hcc_handle_eof(int handle)
 {
   FILE *file = get_handle(handle);
-  int c;
   if (!file) return 1;
-  c = fgetc(file);
+  int c = fgetc(file);
   if (c == EOF) return 1;
   ungetc(c, file);
   return 0;
@@ -214,9 +210,8 @@ int hcc_handle_eof(int handle)
 int hcc_handle_read_char(int handle)
 {
   FILE *file = get_handle(handle);
-  int c;
   if (!file) return 0;
-  c = fgetc(file);
+  int c = fgetc(file);
   if (c == EOF) return 0;
   return c;
 }
@@ -266,12 +261,10 @@ static unsigned long alloc_obuf(void)
 unsigned long hcc_obuf_new(int initial_cap)
 {
   unsigned cap = initial_cap;
-  unsigned long handle;
-  int ix;
   if (!cap) cap = 64;
-  handle = alloc_obuf();
+  unsigned long handle = alloc_obuf();
   if (!handle) return 0;
-  ix = handle - 1;
+  int ix = handle - 1;
   obuf_data[ix] = (unsigned)hcc_alloc(cap);
   obuf_cap[ix] = cap;
   return handle;
@@ -280,9 +273,8 @@ unsigned long hcc_obuf_new(int initial_cap)
 void hcc_obuf_free(unsigned long handle)
 {
   int ix = obuf_index(handle);
-  char *data;
   if (ix < 0) return;
-  data = obuf_data[ix];
+  char *data = obuf_data[ix];
   free(data);
   obuf_data[ix] = 0;
   obuf_len[ix] = 0;
@@ -307,9 +299,8 @@ int hcc_obuf_len(unsigned long handle)
 void hcc_obuf_put(unsigned long handle, int c)
 {
   int ix = obuf_index(handle);
-  char *data;
   if (ix < 0) return;
-  data = obuf_data[ix];
+  char *data = obuf_data[ix];
   ensure_chars(&data, &obuf_cap[ix], obuf_len[ix] + 1);
   obuf_data[ix] = (unsigned)data;
   data[obuf_len[ix]] = c;
@@ -319,13 +310,11 @@ void hcc_obuf_put(unsigned long handle, int c)
 void hcc_obuf_put4(unsigned long handle, int c1, int c2, int c3, int c4)
 {
   int ix = obuf_index(handle);
-  char *data;
-  unsigned pos;
   if (ix < 0) return;
-  data = obuf_data[ix];
+  char *data = obuf_data[ix];
   ensure_chars(&data, &obuf_cap[ix], obuf_len[ix] + 4);
   obuf_data[ix] = (unsigned)data;
-  pos = obuf_len[ix];
+  unsigned pos = obuf_len[ix];
   data[pos] = c1;
   data[pos + 1] = c2;
   data[pos + 2] = c3;
@@ -339,13 +328,11 @@ void hcc_obuf_put8(
   int c5, int c6, int c7, int c8)
 {
   int ix = obuf_index(handle);
-  char *data;
-  unsigned pos;
   if (ix < 0) return;
-  data = obuf_data[ix];
+  char *data = obuf_data[ix];
   ensure_chars(&data, &obuf_cap[ix], obuf_len[ix] + 8);
   obuf_data[ix] = (unsigned)data;
-  pos = obuf_len[ix];
+  unsigned pos = obuf_len[ix];
   data[pos] = c1;
   data[pos + 1] = c2;
   data[pos + 2] = c3;
@@ -361,20 +348,18 @@ void hcc_obuf_write(int handle, unsigned long obuf_handle)
 {
   FILE *file = get_handle(handle);
   int ix = obuf_index(obuf_handle);
-  char *data;
   if (!file) return;
   if (ix < 0) return;
   if (!obuf_len[ix]) return;
-  data = obuf_data[ix];
+  char *data = obuf_data[ix];
   fwrite(data, 1, obuf_len[ix], file);
 }
 
 void hcc_close(int handle)
 {
-  FILE *file;
   if (handle <= 0) return;
   if (handle > HCC_MAX_HANDLES) return;
-  file = handles[handle - 1];
+  FILE *file = handles[handle - 1];
   if (!file) return;
   fclose(file);
   handles[handle - 1] = 0;
@@ -419,16 +404,13 @@ int hcc_process_run(void)
 int hcc_iarray_new(int size, int initial)
 {
   int i = 0;
-  int j;
-  int alloc_size;
-  int *values;
   if (size < 0) return 0;
   while (i < HCC_MAX_IARRAYS) {
     if (!iarrays[i]) {
-      alloc_size = size;
+      int alloc_size = size;
       if (!alloc_size) alloc_size = 1;
-      values = hcc_alloc(alloc_size * sizeof(int));
-      j = 0;
+      int *values = hcc_alloc(alloc_size * sizeof(int));
+      int j = 0;
       while (j < size) {
         values[j] = initial;
         j = j + 1;
@@ -444,28 +426,24 @@ int hcc_iarray_new(int size, int initial)
 
 int hcc_iarray_read(int ident, int index)
 {
-  int slot;
-  int *values;
   if (ident <= 0) return 0;
   if (ident > HCC_MAX_IARRAYS) return 0;
-  slot = ident - 1;
+  int slot = ident - 1;
   if (!iarrays[slot]) return 0;
   if (index < 0) return 0;
   if (index >= iarray_lens[slot]) return 0;
-  values = iarrays[slot];
+  int *values = iarrays[slot];
   return values[index];
 }
 
 void hcc_iarray_write(int ident, int index, int value)
 {
-  int slot;
-  int *values;
   if (ident <= 0) return;
   if (ident > HCC_MAX_IARRAYS) return;
-  slot = ident - 1;
+  int slot = ident - 1;
   if (!iarrays[slot]) return;
   if (index < 0) return;
   if (index >= iarray_lens[slot]) return;
-  values = iarrays[slot];
+  int *values = iarrays[slot];
   values[index] = value;
 }

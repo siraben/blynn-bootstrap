@@ -1107,6 +1107,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             minimalBootstrap.stage0-posix.mescc-tools
             pkgs.coreutils
             pkgs.gcc
+            pkgs.jq
             pkgs.time
             preciselyGhcDebug
             hccBy.host.ghc.native
