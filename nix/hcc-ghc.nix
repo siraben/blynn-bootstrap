@@ -5,6 +5,7 @@
   src,
   pname ? "hcc-host-ghc-native",
   extraGhcFlags ? [ ],
+  extraCFlags ? [ ],
   description ? "GHC-backed development build of the hcc bootstrap C compiler",
 }:
 
@@ -13,12 +14,37 @@ let
   ghcFlags = lib.concatStringsSep " " (
     [
       "-O0"
+      "-fno-cse"
+      "-fno-enable-rewrite-rules"
+      "-fno-full-laziness"
+      "-fno-specialise"
+      "-fno-state-hack"
+      "-fno-strictness"
+      "-fno-worker-wrapper"
       "-Wall"
       "-Werror"
       "-XNoImplicitPrelude"
       "-XForeignFunctionInterface"
     ]
     ++ extraGhcFlags
+  );
+  cFlags = lib.concatStringsSep " " (
+    [
+      "-O0"
+      "-U_FORTIFY_SOURCE"
+      "-Wall"
+      "-Werror"
+    ]
+    ++ extraCFlags
+  );
+  ghcCFlags = lib.concatStringsSep " " (
+    map (flag: "-optc${flag}") (
+      [
+        "-O0"
+        "-U_FORTIFY_SOURCE"
+      ]
+      ++ extraCFlags
+    )
   );
 in
 stdenv.mkDerivation (
@@ -32,15 +58,16 @@ stdenv.mkDerivation (
   // {
 
     nativeBuildInputs = [ ghc ];
+    hardeningDisable = [ "fortify" ];
 
     buildPhase = ''
       runHook preBuild
       mkdir -p build/hcpp build/hcc1
-      ghc ${ghcFlags} \
+      ghc ${ghcFlags} ${ghcCFlags} \
         -isrc -isrc/Hcc src/MainCpp.hs cbits/hcc_runtime.c -outputdir build/hcpp -o hcpp
-      ghc ${ghcFlags} \
+      ghc ${ghcFlags} ${ghcCFlags} \
         -isrc -isrc/Hcc src/MainCc1.hs cbits/hcc_runtime.c -outputdir build/hcc1 -o hcc1
-      cc -O2 -Wall -Werror cbits/hcc_m1.c -o hcc-m1
+      cc ${cFlags} cbits/hcc_m1.c -o hcc-m1
       ./hcpp ${../tests/hcc/pp-smoke.c} > pp-smoke.i
       ./hcc1 --check pp-smoke.i
       ./hcpp ${../tests/hcc/parse-smoke.c} > parse-smoke.i

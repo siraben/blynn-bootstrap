@@ -2,6 +2,125 @@
 
 Working metrics for improving HCC efficiency and modularity. The primary benchmark is the end-to-end TinyCC bootstrap path, with direct HCC-on-expanded-TCC measurements used to isolate compiler runtime and memory.
 
+## Pass 12: Faithful GHC O0 profile mode
+
+Goal: make the GHC development/profile path a closer proxy for Precisely-built
+HCC, then profile the real TinyCC compile workload under that mode.
+
+Faithful GHC settings:
+
+```text
+GHC source flags:
+  -O0
+  -fno-cse
+  -fno-enable-rewrite-rules
+  -fno-full-laziness
+  -fno-specialise
+  -fno-state-hack
+  -fno-strictness
+  -fno-worker-wrapper
+  -Wall -Werror
+  -XNoImplicitPrelude
+  -XForeignFunctionInterface
+
+C/runtime flags:
+  -O0
+  -U_FORTIFY_SOURCE
+  -Wall -Werror
+
+Nix hardening:
+  hardeningDisable = [ "fortify" ]
+```
+
+Rationale:
+
+- Precisely does not run GHC's optimizer. Use `-O0` and explicitly disable the
+  major simplifier optimizations that would otherwise make the native profile a
+  poor guide for the bootstrap compiler.
+- Compile the C runtime side at `-O0` as well. Otherwise `hcc_runtime.c` can hide
+  costs that remain visible in the Precisely-generated C path.
+- Disable fortify for this derivation. Nix's default `_FORTIFY_SOURCE` emits a
+  glibc warning at `-O0`, and the faithful profile path treats warnings as
+  errors.
+
+How to profile the realistic TinyCC compile path:
+
+```sh
+nix build .#hcc.profile.host.ghc.native --no-link --print-out-paths -L
+nix build .#tinycc.m1.host.ghc.native --no-link --print-out-paths -L
+
+nix develop .#bench -c bash -lc '
+  profile=/nix/store/...-hcc-profile-host-ghc-native-0-unstable-2026-05-06
+  artifact=/nix/store/...-tinycc-m1-hcc-host-ghc-native-unstable-2024-07-07
+  work=build/hcc-ghc-o0-faithful-profile-tcc
+  rm -rf "$work"
+  mkdir -p "$work"
+  cd "$work"
+  env time -v "$profile/bin/hcc1" \
+    --m1-ir -o tcc.hccir \
+    "$artifact/share/tinycc-hcc-m1/tcc-expanded.c" \
+    +RTS -p -s -RTS \
+    > hcc1.stdout 2> hcc1.time-rts
+  mv hcc1.prof hcc1-cost.prof
+  env time -v "$profile/bin/hcc-m1" tcc.hccir tcc.M1 \
+    > hcc-m1.stdout 2> hcc-m1.time
+'
+```
+
+Profile run on 2026-05-10:
+
+```text
+hcc1 --m1-ir tcc-expanded.c:
+  elapsed:              3.74s
+  RTS total elapsed:    3.668s
+  RTS MUT elapsed:      2.829s
+  RTS GC elapsed:       0.838s
+  productivity:         77.1%
+  heap allocated:       6,227,785,776 bytes
+  profile allocation:   2,742,146,240 bytes
+  max residency:        128,000,568 bytes
+  max RSS:              386,248 KiB
+
+hcc-m1 tcc.hccir:
+  elapsed:              0.38s
+  max RSS:              437,368 KiB
+
+output:
+  tcc.hccir:            124,131 lines, 3,577,850 bytes
+  tcc.M1:               413,834 lines, 11,790,615 bytes
+  tcc.M1 sha256:        52442d38f19333d1ce26fae1230fa206f750295bdd56a8f5537e715a54fc7ef9
+  cmp against native artifact tcc.M1: byte-identical
+```
+
+Top `hcc1` cost centres:
+
+```text
+hccWriteAndFlushLines                  20.5% time, 0.6% alloc
+ParseLite >>=                           5.0% time, 3.0% alloc
+IntTable.lookupT                        4.5% time, 0.0% alloc
+Parser.removeEnumConstant               3.5% time, 1.9% alloc
+hccWriteHandleLines.writeTextBuffered   3.5% time, 3.4% alloc
+lexerIsSpace                            3.3% time, 4.0% alloc
+SymbolTable.hash.go                     3.2% time, 4.0% alloc
+IntTable.insertT.go                     2.6% time, 3.0% alloc
+CompileM >>=                            2.4% time, 1.2% alloc
+readRuntimeResult.go                    2.4% time, 3.5% alloc
+emitInstr                               2.2% time, 6.1% alloc
+```
+
+Interpretation:
+
+- The output side is still the largest single cost even after chunked writes:
+  `hccWriteAndFlushLines` plus `HccSystem` write helpers account for roughly a
+  quarter of sampled CPU.
+- Parser monad bind and enum cleanup are now prominent enough to justify a
+  focused parser pass, but still below output and table costs.
+- `IntTable` lookup/insert is time-visible but allocation-light. That suggests
+  the tree shape is acceptable for now, and further gains likely come from
+  reducing how often we hit the tables.
+- `hcc-m1` is fast enough that the next optimization work should stay in `hcc1`
+  rather than the C M1 writer.
+
 ## Pass 8: M2-Planet C-shape benchmarks
 
 Goal: make the C that stage0 M2-Mesoplanet sees cheaper without changing HCC semantics.
