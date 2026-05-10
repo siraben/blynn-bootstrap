@@ -174,7 +174,7 @@ takeMacroParams sp text = go 1 [] text where
 parseMacroParams :: Span -> String -> Either PreprocessError ([String], Maybe String)
 parseMacroParams sp text =
   let pieces = splitCommas text
-      trimmed = filter (not . null) (map trim pieces)
+      trimmed = trimNonEmpty pieces
   in parsePieces [] Nothing trimmed
   where
     parsePieces params variadic pieces = case pieces of
@@ -189,6 +189,15 @@ parseMacroParams sp text =
         _ | all isIdentChar piece && not (null piece) ->
           parsePieces (piece:params) variadic rest
         _ -> Left (PreprocessError (spanStart sp) ("bad macro parameter: " ++ piece))
+
+trimNonEmpty :: [String] -> [String]
+trimNonEmpty pieces = case pieces of
+  [] -> []
+  piece:rest ->
+    let trimmed = trim piece
+    in if null trimmed
+       then trimNonEmpty rest
+       else trimmed : trimNonEmpty rest
 
 splitCommas :: String -> [String]
 splitCommas text = go 0 [] [] text where
