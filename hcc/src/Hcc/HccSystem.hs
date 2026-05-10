@@ -111,26 +111,37 @@ readRuntimeResult = do
 hccWriteHandleLines :: Int -> [String] -> IO ()
 hccWriteHandleLines handle lines' = do
   out <- hccObufNew outputChunkSize
-  writeLinesBuffered out lines'
+  hccWriteBufferedLines handle out lines'
   hccObufWrite handle out
   hccObufFree out
-  where
-    writeLinesBuffered out rest = case rest of
-      [] -> pure ()
-      line:linesRest -> do
-        writeTextBuffered out line
-        hccObufPut out '\n'
-        len <- hccObufLen out
-        case len >= outputChunkSize of
-          True -> hccObufWrite handle out >> hccObufClear out
-          False -> pure ()
-        writeLinesBuffered out linesRest
 
-    writeTextBuffered out text = case text of
-      [] -> pure ()
-      c1:c2:c3:c4:c5:c6:c7:c8:rest -> hccObufPut8 out c1 c2 c3 c4 c5 c6 c7 c8 >> writeTextBuffered out rest
-      c1:c2:c3:c4:rest -> hccObufPut4 out c1 c2 c3 c4 >> writeTextBuffered out rest
-      c:rest -> hccObufPut out c >> writeTextBuffered out rest
+hccWithHandleLineWriter :: Int -> (([String] -> IO ()) -> IO a) -> IO a
+hccWithHandleLineWriter handle action = do
+  out <- hccObufNew outputChunkSize
+  result <- action (hccWriteBufferedLines handle out)
+  hccObufWrite handle out
+  hccHandleFlush handle
+  hccObufFree out
+  pure result
+
+hccWriteBufferedLines :: Int -> Word -> [String] -> IO ()
+hccWriteBufferedLines handle out rest = case rest of
+  [] -> pure ()
+  line:linesRest -> do
+    hccWriteBufferedText out line
+    hccObufPut out '\n'
+    len <- hccObufLen out
+    case len >= outputChunkSize of
+      True -> hccObufWrite handle out >> hccObufClear out
+      False -> pure ()
+    hccWriteBufferedLines handle out linesRest
+
+hccWriteBufferedText :: Word -> String -> IO ()
+hccWriteBufferedText out text = case text of
+  [] -> pure ()
+  c1:c2:c3:c4:c5:c6:c7:c8:rest -> hccObufPut8 out c1 c2 c3 c4 c5 c6 c7 c8 >> hccWriteBufferedText out rest
+  c1:c2:c3:c4:rest -> hccObufPut4 out c1 c2 c3 c4 >> hccWriteBufferedText out rest
+  c:rest -> hccObufPut out c >> hccWriteBufferedText out rest
 
 outputChunkSize :: Int
 outputChunkSize = 65536

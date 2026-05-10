@@ -202,7 +202,7 @@ operandsFields ops = show (length ops) ++ operandsFieldsRest ops
 operandsFieldsRest :: [Operand] -> String
 operandsFieldsRest ops = case ops of
   [] -> ""
-  op:rest -> " " ++ operandFields op ++ operandsFieldsRest rest
+  op:rest -> ' ' : operandFields op ++ operandsFieldsRest rest
 
 operandFields :: Operand -> String
 operandFields op = case op of
@@ -218,7 +218,7 @@ intListFields values = show (length values) ++ intListFieldsRest values
 intListFieldsRest :: [Int] -> String
 intListFieldsRest values = case values of
   [] -> ""
-  value:rest -> " " ++ show value ++ intListFieldsRest rest
+  value:rest -> ' ' : show value ++ intListFieldsRest rest
 
 maybeTempText :: Maybe Temp -> String
 maybeTempText maybeTemp = case maybeTemp of
@@ -463,14 +463,10 @@ lookupTempInt fallback temp table = case temp of
   Temp key -> lookupIntDefault fallback key table
 
 lookupIntDefault :: a -> Int -> IntMap a -> a
-lookupIntDefault fallback key table = case intMapLookup key table of
-  Just value -> value
-  Nothing -> fallback
+lookupIntDefault fallback key table = intMapLookupDefault fallback key table
 
 incrementInt :: Int -> IntMap Int -> IntMap Int
-incrementInt key table = case intMapLookup key table of
-  Nothing -> intMapInsert key 1 table
-  Just value -> intMapInsert key (value + 1) table
+incrementInt key table = intMapIncrement key table
 
 countInstrList :: [Instr] -> BlockStats -> BlockStats
 countInstrList instrs stats = case instrs of

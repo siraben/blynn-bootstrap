@@ -2,6 +2,63 @@
 
 Working metrics for improving HCC efficiency and modularity. The primary benchmark is the end-to-end TinyCC bootstrap path, with direct HCC-on-expanded-TCC measurements used to isolate compiler runtime and memory.
 
+## Pass 13: HCC1 output and table hot paths
+
+Goal: reduce the time spent writing HCC1's M1 IR and remove avoidable table work
+without changing the generated TinyCC M1.
+
+Changes:
+
+- Reused one output buffer across `emitM1IrWithDataPrefixTarget` instead of
+  allocating/flushing a buffer for each `write ["line"]` call.
+- Removed per-enum duplicate deletion; enum lookup and final registration already
+  preserve newest-binding-wins semantics.
+- Avoided a repeated whitespace classification in the lexer fast path.
+- Added one-pass/default operations to `IntTable` and used them for temp stats.
+- Trimmed small separator appends in M1 IR text rendering.
+
+Current best native profile run on 2026-05-10:
+
+```text
+hcc1 --m1-ir tcc-expanded.c:
+  elapsed:              2.93s
+  RTS total elapsed:    2.844s
+  RTS MUT elapsed:      2.021s
+  RTS GC elapsed:       0.822s
+  productivity:         71.1%
+  max residency:        122,824,624 bytes
+  max RSS:              373,920 KiB
+
+hcc-m1 tcc.hccir:
+  elapsed:              0.38s
+  max RSS:              437,880 KiB
+
+output:
+  tcc.hccir:            124,131 lines, 3,577,850 bytes
+  tcc.M1:               413,834 lines, 11,790,615 bytes
+  tcc.M1 sha256:        52442d38f19333d1ce26fae1230fa206f750295bdd56a8f5537e715a54fc7ef9
+  cmp against native artifact tcc.M1: byte-identical
+```
+
+Compared with Pass 12, `hcc1` wall time moved from 3.74s to 2.93s, about a 22%
+reduction on the GHC O0 profile path. The main win was the scoped output writer;
+the later lexer and `IntTable` changes are smaller but keep the output identical
+and reduce redundant work in hot loops.
+
+Current top `hcc1` cost centres:
+
+```text
+ParseLite >>=             5.9% time, 3.3% alloc
+hccWriteBufferedText      5.5% time, 3.5% alloc
+SymbolTable.hash.go       4.5% time, 4.4% alloc
+IntTable.incrementT.go    4.4% time, 3.5% alloc
+CompileM >>=              3.6% time, 1.3% alloc
+readRuntimeResult.go      2.8% time, 3.8% alloc
+lexC.go                   2.7% time, 1.3% alloc
+emitInstr                 2.5% time, 6.7% alloc
+lexerIsSpaceNoNewline     2.3% time, 1.9% alloc
+```
+
 ## Pass 12: Faithful GHC O0 profile mode
 
 Goal: make the GHC development/profile path a closer proxy for Precisely-built

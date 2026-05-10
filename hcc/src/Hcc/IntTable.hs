@@ -19,6 +19,12 @@ intMapLookup k (IntMap t) = lookupT k t
 intMapInsert :: Int -> a -> IntMap a -> IntMap a
 intMapInsert k v (IntMap t) = IntMap (insertT k v t)
 
+intMapLookupDefault :: a -> Int -> IntMap a -> a
+intMapLookupDefault fallback k (IntMap t) = lookupDefaultT fallback k t
+
+intMapIncrement :: Int -> IntMap Int -> IntMap Int
+intMapIncrement k (IntMap t) = IntMap (incrementT k t)
+
 lookupT :: Int -> Tree a -> Maybe a
 lookupT k t = case t of
   E -> Nothing
@@ -28,6 +34,16 @@ lookupT k t = case t of
     else if k > x
          then lookupT k r
          else Just v
+
+lookupDefaultT :: a -> Int -> Tree a -> a
+lookupDefaultT fallback k t = case t of
+  E -> fallback
+  N _ x v l r ->
+    if k < x
+    then lookupDefaultT fallback k l
+    else if k > x
+         then lookupDefaultT fallback k r
+         else v
 
 insertT :: Int -> a -> Tree a -> Tree a
 insertT k v t = blacken (go t) where
@@ -39,6 +55,17 @@ insertT k v t = blacken (go t) where
       else if k > x
            then bal c x old l (go r)
            else N c k v l r
+
+incrementT :: Int -> Tree Int -> Tree Int
+incrementT k t = blacken (go t) where
+  go u = case u of
+    E -> N R k 1 E E
+    N c x old l r ->
+      if k < x
+      then bal c x old (go l) r
+      else if k > x
+           then bal c x old l (go r)
+           else N c k (old + 1) l r
 
 blacken :: Tree a -> Tree a
 blacken t = case t of

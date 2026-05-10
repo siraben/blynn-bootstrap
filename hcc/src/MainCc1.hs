@@ -60,11 +60,12 @@ writeM1Ir opts trace ast = do
     True -> die ("hcc1: cannot write " ++ asmOutput opts)
     False -> do
       traceLine trace "m1-ir start"
-      result <- emitM1IrWithDataPrefixTarget
-        (hccWriteAndFlushLines handle)
-        (dataLabelPrefix (asmInput opts))
-        (asmTargetBits opts)
-        ast
+      result <- hccWithHandleLineWriter handle $ \writeLines ->
+        emitM1IrWithDataPrefixTarget
+          writeLines
+          (dataLabelPrefix (asmInput opts))
+          (asmTargetBits opts)
+          ast
       traceLine trace "m1-ir done"
       hccClose handle
       case result of

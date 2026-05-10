@@ -1022,7 +1022,7 @@ parseEnumBody env nextValue toks = case toks of
   Token _ (TokPunct ","):rest -> parseEnumBody env nextValue rest
   Token _ (TokIdent name):rest ->
     let (value, afterValue) = enumValue env nextValue rest
-        env' = (name, value) : removeEnumConstant name env
+        env' = (name, value) : env
     in parseEnumBody env' (value + 1) afterValue
   Token _ (TokPunct "{"):rest ->
     parseEnumBody env nextValue (dropBalancedBrace 1 rest)
@@ -1059,12 +1059,6 @@ takeEnumValueExpr = go 0 0 0 [] where
       TokPunct "[" -> go braces parens (brackets + 1) (tok:acc) rest
       TokPunct "]" -> go braces parens (max 0 (brackets - 1)) (tok:acc) rest
       _ -> go braces parens brackets (tok:acc) rest
-
-removeEnumConstant :: String -> [(String, Int)] -> [(String, Int)]
-removeEnumConstant name constants = case constants of
-  [] -> []
-  (k, v):rest | k == name -> removeEnumConstant name rest
-              | otherwise -> (k, v) : removeEnumConstant name rest
 
 collectTypedefNames :: [Token] -> [String]
 collectTypedefNames toks = unique (go toks) where

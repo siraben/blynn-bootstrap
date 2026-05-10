@@ -16,7 +16,7 @@ lexC source = go (LexState source (SrcPos 1 1) True) [] where
   go st acc = case lsInput st of
     [] -> Right (reverse acc)
     c:cs
-      | lexerIsSpace c -> go (advance c st { lsInput = cs }) acc
+      | lexerIsSpace c -> go (advanceSpace c st { lsInput = cs }) acc
       | isDirectiveStart st c -> lexDirective st >>= \(tok, st') -> go st' (tok:acc)
       | startsLineComment (lsInput st) -> go (skipLineComment st) acc
       | startsBlockComment (lsInput st) -> case skipBlockComment st of
@@ -222,17 +222,25 @@ advanceMany s st = foldl (flip advance) st s
 advance :: Char -> LexState -> LexState
 advance c st = st { lsPos = nextPos c (lsPos st), lsBol = nextBol c (lsBol st) }
 
+advanceSpace :: Char -> LexState -> LexState
+advanceSpace c st = st { lsPos = nextPos c (lsPos st), lsBol = if c == '\n' then True else lsBol st }
+
 nextPos :: Char -> SrcPos -> SrcPos
 nextPos c (SrcPos line col) =
   if c == '\n' then SrcPos (line + 1) 1 else SrcPos line (col + 1)
 
 nextBol :: Char -> Bool -> Bool
 nextBol c bol =
-  if c == '\n' then True else if lexerIsSpace c then bol else False
+  if c == '\n' then True else if lexerIsSpaceNoNewline c then bol else False
 
 lexerIsSpace :: Char -> Bool
 lexerIsSpace c =
-  c == ' ' || c == '\n' || charCode c == 9 || charCode c == 13 || charCode c == 11 || charCode c == 12
+  c == ' ' || c == '\n' || lexerIsSpaceNoNewline c
+
+lexerIsSpaceNoNewline :: Char -> Bool
+lexerIsSpaceNoNewline c =
+  let code = charCode c
+  in code == 9 || code == 13 || code == 11 || code == 12
 
 charCode :: Char -> Int
 charCode = fromEnum
@@ -247,4 +255,4 @@ isAsciiAlpha :: Char -> Bool
 isAsciiAlpha c = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
 
 isAsciiAlphaNum :: Char -> Bool
-isAsciiAlphaNum c = isAsciiAlpha c || isDigit c
+isAsciiAlphaNum c = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || isDigit c
