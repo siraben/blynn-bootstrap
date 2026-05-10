@@ -85,6 +85,42 @@ void hcc_buffer_put(int c)
   buffer[buffer_len] = 0;
 }
 
+void hcc_buffer_put4(int c1, int c2, int c3, int c4)
+{
+  ensure_chars(&buffer, &buffer_cap, buffer_len + 5);
+  buffer[buffer_len] = c1;
+  buffer_len = buffer_len + 1;
+  buffer[buffer_len] = c2;
+  buffer_len = buffer_len + 1;
+  buffer[buffer_len] = c3;
+  buffer_len = buffer_len + 1;
+  buffer[buffer_len] = c4;
+  buffer_len = buffer_len + 1;
+  buffer[buffer_len] = 0;
+}
+
+void hcc_buffer_put8(int c1, int c2, int c3, int c4, int c5, int c6, int c7, int c8)
+{
+  ensure_chars(&buffer, &buffer_cap, buffer_len + 9);
+  buffer[buffer_len] = c1;
+  buffer_len = buffer_len + 1;
+  buffer[buffer_len] = c2;
+  buffer_len = buffer_len + 1;
+  buffer[buffer_len] = c3;
+  buffer_len = buffer_len + 1;
+  buffer[buffer_len] = c4;
+  buffer_len = buffer_len + 1;
+  buffer[buffer_len] = c5;
+  buffer_len = buffer_len + 1;
+  buffer[buffer_len] = c6;
+  buffer_len = buffer_len + 1;
+  buffer[buffer_len] = c7;
+  buffer_len = buffer_len + 1;
+  buffer[buffer_len] = c8;
+  buffer_len = buffer_len + 1;
+  buffer[buffer_len] = 0;
+}
+
 static char *current_buffer(void)
 {
   if (!buffer) hcc_buffer_clear();

@@ -70,8 +70,14 @@ skipBlockComment st = go (advanceMany "/*" st { lsInput = drop 2 (lsInput st) })
 lexIdent :: LexState -> (Token, LexState)
 lexIdent st = (Token (Span start end) (TokIdent text), st') where
   start = lsPos st
-  (text, st') = takeWhileState isIdentChar st
+  (text, st') = takeIdent st
   end = lsPos st'
+
+takeIdent :: LexState -> (String, LexState)
+takeIdent st = go st [] where
+  go cur acc = case lsInput cur of
+    c:cs | isIdentChar c -> go (advance c cur { lsInput = cs }) (c:acc)
+    _ -> (reverse acc, cur)
 
 lexNumber :: LexState -> (Token, LexState)
 lexNumber st = (Token (Span start end) (TokInt text), st') where
@@ -211,10 +217,10 @@ takeWhileState predicate st = go st [] where
     _ -> (reverse acc, cur)
 
 isIdentStart :: Char -> Bool
-isIdentStart c = isAsciiAlpha c || c == '_'
+isIdentStart c = c == '_' || isAsciiAlpha c
 
 isIdentChar :: Char -> Bool
-isIdentChar c = isAsciiAlphaNum c || c == '_'
+isIdentChar c = c == '_' || isAsciiAlphaNum c
 
 advanceMany :: String -> LexState -> LexState
 advanceMany s st = foldl (flip advance) st s

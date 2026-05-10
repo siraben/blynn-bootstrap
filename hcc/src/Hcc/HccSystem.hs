@@ -5,6 +5,8 @@ import System
 
 foreign import ccall "hcc_buffer_clear" hccBufferClear :: IO ()
 foreign import ccall "hcc_buffer_put" hccBufferPut :: Char -> IO ()
+foreign import ccall "hcc_buffer_put4" hccBufferPut4 :: Char -> Char -> Char -> Char -> IO ()
+foreign import ccall "hcc_buffer_put8" hccBufferPut8 :: Char -> Char -> Char -> Char -> Char -> Char -> Char -> Char -> IO ()
 foreign import ccall "hcc_stdout_buffer" hccStdoutBuffer :: IO ()
 foreign import ccall "hcc_stderr_char" hccStderrChar :: Char -> IO ()
 foreign import ccall "hcc_exit_success" hccExitSuccessRaw :: IO ()
@@ -23,8 +25,8 @@ foreign import ccall "hcc_obuf_write" hccObufWrite :: Int -> Word -> IO ()
 foreign import ccall "hcc_close" hccClose :: Int -> IO ()
 foreign import ccall "hcc_canonicalize" hccCanonicalizeRaw :: IO ()
 foreign import ccall "hcc_does_file_exist" hccDoesFileExistRaw :: IO Int
-foreign import ccall "hcc_result_char" hccResultChar :: IO Char
 foreign import ccall "hcc_result_len" hccResultLen :: IO Int
+foreign import ccall "hcc_result_at" hccResultAt :: Int -> IO Char
 
 hccInit :: IO ()
 hccInit = pure ()
@@ -94,19 +96,26 @@ hccTakeFileName :: String -> String
 hccTakeFileName path = reverse (takeWhile (/= '/') (reverse path))
 
 withBuffer :: String -> IO a -> IO a
-withBuffer text action = hccBufferClear >> mapM_ hccBufferPut text >> action
+withBuffer text action = hccBufferClear >> hccBufferText text >> action
+
+hccBufferText :: String -> IO ()
+hccBufferText text = case text of
+  [] -> pure ()
+  c1:c2:c3:c4:c5:c6:c7:c8:rest -> hccBufferPut8 c1 c2 c3 c4 c5 c6 c7 c8 >> hccBufferText rest
+  c1:c2:c3:c4:rest -> hccBufferPut4 c1 c2 c3 c4 >> hccBufferText rest
+  c:rest -> hccBufferPut c >> hccBufferText rest
 
 readRuntimeResult :: IO String
 readRuntimeResult = do
   len <- hccResultLen
-  go len []
+  go (len - 1) []
   where
-    go remaining acc =
-      if remaining <= 0
-      then pure (reverse acc)
+    go index acc =
+      if index < 0
+      then pure acc
       else do
-        c <- hccResultChar
-        go (remaining - 1) (c:acc)
+        c <- hccResultAt index
+        go (index - 1) (c:acc)
 
 hccWriteHandleLines :: Int -> [String] -> IO ()
 hccWriteHandleLines handle lines' = do
