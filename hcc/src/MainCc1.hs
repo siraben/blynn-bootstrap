@@ -55,22 +55,21 @@ dieInputFile opts msg = die (asmInput opts ++ ":" ++ msg)
 writeM1Ir :: AsmOptions -> (String -> IO ()) -> Program -> IO ()
 writeM1Ir opts trace ast = do
   traceLine trace ("open " ++ asmOutput opts)
-  handle <- hccOpenWriteFile (asmOutput opts)
-  case handle == 0 of
-    True -> die ("hcc1: cannot write " ++ asmOutput opts)
-    False -> do
-      traceLine trace "m1-ir start"
-      result <- hccWithHandleLineWriter handle $ \writeLines ->
-        emitM1IrWithDataPrefixTarget
-          writeLines
-          (dataLabelPrefix (asmInput opts))
-          (asmTargetBits opts)
-          ast
-      traceLine trace "m1-ir done"
-      hccClose handle
-      case result of
-        Left (CodegenError msg) -> dieInputFile opts msg
-        Right _ -> pure ()
+  opened <- hccWithOpenWriteFile (asmOutput opts) $ \handle -> do
+    traceLine trace "m1-ir start"
+    result <- hccWithHandleLineWriter handle $ \writeLines ->
+      emitM1IrWithDataPrefixTarget
+        writeLines
+        (dataLabelPrefix (asmInput opts))
+        (asmTargetBits opts)
+        ast
+    traceLine trace "m1-ir done"
+    pure result
+  case opened of
+    Nothing -> die ("hcc1: cannot write " ++ asmOutput opts)
+    Just result -> case result of
+      Left (CodegenError msg) -> dieInputFile opts msg
+      Right _ -> pure ()
 
 traceLine :: (String -> IO a) -> String -> IO ()
 traceLine trace msg = trace msg >> pure ()

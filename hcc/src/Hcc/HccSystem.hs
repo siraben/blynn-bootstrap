@@ -59,6 +59,16 @@ hccReadFile path = withBuffer path $ do
 hccOpenWriteFile :: String -> IO Int
 hccOpenWriteFile path = withBuffer path hccOpenWrite
 
+hccWithOpenWriteFile :: String -> (Int -> IO a) -> IO (Maybe a)
+hccWithOpenWriteFile path action = do
+  handle <- hccOpenWriteFile path
+  case handle == 0 of
+    True -> pure Nothing
+    False -> do
+      result <- action handle
+      hccClose handle
+      pure (Just result)
+
 hccCanonicalizePath :: String -> IO String
 hccCanonicalizePath path = withBuffer path $ hccCanonicalizeRaw >> readRuntimeResult
 
@@ -96,7 +106,12 @@ hccTakeFileName :: String -> String
 hccTakeFileName path = reverse (takeWhile (/= '/') (reverse path))
 
 withBuffer :: String -> IO a -> IO a
-withBuffer text action = hccBufferClear >> hccBufferText text >> action
+withBuffer text action = do
+  hccBufferClear
+  hccBufferText text
+  result <- action
+  hccBufferClear
+  pure result
 
 hccBufferText :: String -> IO ()
 hccBufferText text = case text of
@@ -118,19 +133,25 @@ readRuntimeResult = do
         go (index - 1) (c:acc)
 
 hccWriteHandleLines :: Int -> [String] -> IO ()
-hccWriteHandleLines handle lines' = do
-  out <- hccObufNew outputChunkSize
+hccWriteHandleLines handle lines' = hccWithObuf outputChunkSize $ \out -> do
   hccWriteBufferedLines handle out lines'
   hccObufWrite handle out
-  hccObufFree out
+
+hccWithObuf :: Int -> (Word -> IO a) -> IO a
+hccWithObuf initialCap action = do
+  out <- hccObufNew initialCap
+  case out == 0 of
+    True -> hccPutErrLine "hcc: cannot allocate output buffer" >> hccExitFailure
+    False -> do
+      result <- action out
+      hccObufFree out
+      pure result
 
 hccWithHandleLineWriter :: Int -> (([String] -> IO ()) -> IO a) -> IO a
-hccWithHandleLineWriter handle action = do
-  out <- hccObufNew outputChunkSize
+hccWithHandleLineWriter handle action = hccWithObuf outputChunkSize $ \out -> do
   result <- action (hccWriteBufferedLines handle out)
   hccObufWrite handle out
   hccHandleFlush handle
-  hccObufFree out
   pure result
 
 hccWriteBufferedLines :: Int -> Word -> [String] -> IO ()
