@@ -6,13 +6,6 @@ import CompileM
 import TypesIr
 import TypesLower
 
-zipSwitchClauses :: [SwitchClause] -> [BlockId] -> [(SwitchClause, BlockId)]
-zipSwitchClauses clauses ids = case clauses of
-  [] -> []
-  clause:restClauses -> case ids of
-    [] -> []
-    bid:restIds -> (clause, bid) : zipSwitchClauses restClauses restIds
-
 collectSwitchClauses :: [Stmt] -> [SwitchClause]
 collectSwitchClauses stmts =
   reverse (collectSwitchClausesFinish Nothing [] [] stmts)

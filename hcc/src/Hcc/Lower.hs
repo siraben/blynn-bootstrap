@@ -270,7 +270,7 @@ lowerSwitch dispatchId restId valueOp body = do
   let bodyStmts = switchBodyStatements body
   let clauses = collectSwitchClauses bodyStmts
   clauseIds <- freshBlocks (length clauses)
-  let clausePairs = zipSwitchClauses clauses clauseIds
+  let clausePairs = zip clauses clauseIds
   let defaultTarget = switchDefaultTarget restId clausePairs
   let switchCasePairs = switchCases clausePairs
   dispatchBlocks <- lowerSwitchDispatch dispatchId valueOp defaultTarget switchCasePairs
