@@ -864,6 +864,13 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
               compiler = tinycc;
               libs = tinycc;
             };
+            gnumake-musl = final.callPackage ./nix/minimal-bootstrap/gnumake-musl.nix {
+              bash = final.bash_2_05;
+              tinycc = final.tinycc-musl;
+              gawk = final.gawk-mes;
+              gnumakeBoot = final.gnumake;
+              nixpkgsPath = pkgs.path;
+            };
             musl = final.callPackage ./nix/minimal-bootstrap/musl-gcc.nix {
               gcc = final.gcc46;
               gnumake = final.gnumake-musl;
