@@ -1,0 +1,17 @@
+## hcc AArch64 entry point for stage0-posix output.
+
+:_start
+	INIT_SP
+	LDR_X0_[SP]
+	ADD_X1_SP_8
+	LOAD_W16_AHEAD
+	SKIP_32_DATA
+	&FUNCTION_main
+	BLR_X16
+	SET_X8_TO_SYS_EXIT
+	SYSCALL
+
+:FUNCTION_exit
+:FUNCTION__exit
+	SET_X8_TO_SYS_EXIT
+	SYSCALL
