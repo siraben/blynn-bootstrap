@@ -71,11 +71,6 @@ enum {
 };
 
 enum {
-  TOP_DATA = 1,
-  TOP_FUNC = 2
-};
-
-enum {
   LINE_CAP = 8192
 };
 
@@ -86,7 +81,6 @@ typedef struct Block Block;
 typedef struct Function Function;
 typedef struct DataValue DataValue;
 typedef struct DataItem DataItem;
-typedef struct Module Module;
 typedef struct Loc Loc;
 typedef struct LocArray LocArray;
 
@@ -159,19 +153,6 @@ struct DataItem {
   DataValue *values;
   int len;
   int cap;
-};
-
-struct Module {
-  DataItem *data_items;
-  int data_len;
-  int data_cap;
-  Function *functions;
-  int fn_len;
-  int fn_cap;
-  int *top_kinds;
-  int *top_indices;
-  int top_len;
-  int top_cap;
 };
 
 struct Loc {
@@ -297,19 +278,9 @@ static Block *block_at(Block *items, int index)
   return (Block *)((char *)items + sizeof(Block) * index);
 }
 
-static Function *function_at(Function *items, int index)
-{
-  return (Function *)((char *)items + sizeof(Function) * index);
-}
-
 static DataValue *data_value_at(DataValue *items, int index)
 {
   return (DataValue *)((char *)items + sizeof(DataValue) * index);
-}
-
-static DataItem *data_item_at(DataItem *items, int index)
-{
-  return (DataItem *)((char *)items + sizeof(DataItem) * index);
 }
 
 static Operand *operand_at(Operand *items, int index)
@@ -504,68 +475,6 @@ static int str_prefix_n(const char *a, const char *b, int count)
   return strncmp(a, b, count) == 0;
 }
 
-static void parse_operand(char **cursor, Operand *op)
-{
-  char *kind = need_token(cursor);
-  int i;
-  op->kind = 0;
-  op->value = 0;
-  op->count = 0;
-  op->bytes = 0;
-  op->name = 0;
-  if (str_eq(kind, "T")) {
-    op->kind = OP_TEMP;
-    op->value = parse_int_token(cursor);
-  } else if (str_eq(kind, "I")) {
-    op->kind = OP_IMM;
-    op->value = parse_long_token(cursor);
-  } else if (str_eq(kind, "B")) {
-    op->kind = OP_BYTES;
-    op->count = parse_int_token(cursor);
-    if (op->count > 0) op->bytes = xrealloc(0, sizeof(int) * op->count);
-    i = 0;
-    while (i < op->count) {
-      op->bytes[i] = parse_int_token(cursor);
-      i = i + 1;
-    }
-  } else if (str_eq(kind, "G")) {
-    op->kind = OP_GLOBAL;
-    op->name = xstrdup(need_token(cursor));
-  } else if (str_eq(kind, "F")) {
-    op->kind = OP_FUNC;
-    op->name = xstrdup(need_token(cursor));
-  } else {
-    die_token("unknown operand kind", kind);
-  }
-}
-
-static int parse_binop(char *tok)
-{
-  if (str_eq(tok, "ADD")) return BK_ADD;
-  if (str_eq(tok, "SUB")) return BK_SUB;
-  if (str_eq(tok, "MUL")) return BK_MUL;
-  if (str_eq(tok, "DIV")) return BK_DIV;
-  if (str_eq(tok, "MOD")) return BK_MOD;
-  if (str_eq(tok, "SHL")) return BK_SHL;
-  if (str_eq(tok, "SHR")) return BK_SHR;
-  if (str_eq(tok, "SAR")) return BK_SAR;
-  if (str_eq(tok, "EQ")) return BK_EQ;
-  if (str_eq(tok, "NE")) return BK_NE;
-  if (str_eq(tok, "LT")) return BK_LT;
-  if (str_eq(tok, "LE")) return BK_LE;
-  if (str_eq(tok, "GT")) return BK_GT;
-  if (str_eq(tok, "GE")) return BK_GE;
-  if (str_eq(tok, "ULT")) return BK_ULT;
-  if (str_eq(tok, "ULE")) return BK_ULE;
-  if (str_eq(tok, "UGT")) return BK_UGT;
-  if (str_eq(tok, "UGE")) return BK_UGE;
-  if (str_eq(tok, "AND")) return BK_AND;
-  if (str_eq(tok, "OR")) return BK_OR;
-  if (str_eq(tok, "XOR")) return BK_XOR;
-  die("unknown binop");
-  return 0;
-}
-
 static void append_instr(InstrList *list, Instr *instr)
 {
   if (list->len >= list->cap) {
@@ -586,30 +495,6 @@ static void append_block(Function *fn, Block *block)
   }
   copy_bytes(block_at(fn->blocks, fn->len), block, sizeof(Block));
   fn->len = fn->len + 1;
-}
-
-static void append_function(Module *module, Function *fn)
-{
-  if (module->fn_len >= module->fn_cap) {
-    if (module->fn_cap) module->fn_cap = module->fn_cap * 2;
-    else module->fn_cap = 16;
-    module->functions = xrealloc(module->functions, sizeof(Function) * module->fn_cap);
-  }
-  copy_bytes(function_at(module->functions, module->fn_len), fn, sizeof(Function));
-  module->fn_len = module->fn_len + 1;
-}
-
-static void append_top(Module *module, int kind, int index)
-{
-  if (module->top_len >= module->top_cap) {
-    if (module->top_cap) module->top_cap = module->top_cap * 2;
-    else module->top_cap = 32;
-    module->top_kinds = xrealloc(module->top_kinds, sizeof(int) * module->top_cap);
-    module->top_indices = xrealloc(module->top_indices, sizeof(int) * module->top_cap);
-  }
-  module->top_kinds[module->top_len] = kind;
-  module->top_indices[module->top_len] = index;
-  module->top_len = module->top_len + 1;
 }
 
 static void append_data_value(DataItem *item, DataValue *value)
@@ -636,19 +521,6 @@ static void append_zero_data_values(DataItem *item, int count)
   }
 }
 
-static void append_data_item(Module *module, DataItem *item)
-{
-  if (module->data_len >= module->data_cap) {
-    if (module->data_cap) module->data_cap = module->data_cap * 2;
-    else module->data_cap = 16;
-    module->data_items = xrealloc(module->data_items, sizeof(DataItem) * module->data_cap);
-  }
-  copy_bytes(data_item_at(module->data_items, module->data_len), item, sizeof(DataItem));
-  module->data_len = module->data_len + 1;
-}
-
-static void parse_instrs_until_end(FILE *file, InstrList *list);
-
 static void expect_line(FILE *file, const char *expected)
 {
   char *line;
@@ -657,15 +529,55 @@ static void expect_line(FILE *file, const char *expected)
   if (strcmp(line, expected)) die("unexpected section marker");
 }
 
-static void parse_prefixed_operand(char *line, const char *prefix, Operand *op)
+static void parse_ir_operand(char **cursor, Operand *op)
+{
+  char *tok = need_token(cursor);
+  int i;
+  memset(op, 0, sizeof(Operand));
+  if (tok[0] == 'T') {
+    op->kind = OP_TEMP;
+    op->value = parse_long_text(tok + 1);
+  } else if (tok[0] == 'I') {
+    op->kind = OP_IMM;
+    op->value = parse_long_text(tok + 1);
+  } else if (tok[0] == 'B') {
+    op->kind = OP_BYTES;
+    op->count = (int)parse_long_text(tok + 1);
+    if (op->count > 0) op->bytes = xrealloc(0, sizeof(int) * op->count);
+    i = 0;
+    while (i < op->count) {
+      op->bytes[i] = parse_int_token(cursor);
+      i = i + 1;
+    }
+  } else if (tok[0] == 'G') {
+    op->kind = OP_GLOBAL;
+    op->name = xstrdup(tok + 1);
+  } else if (tok[0] == 'F') {
+    op->kind = OP_FUNC;
+    op->name = xstrdup(tok + 1);
+  } else {
+    die_token("unknown IR operand kind", tok);
+  }
+}
+
+static int parse_ir_result(char **cursor)
+{
+  char *tok = need_token(cursor);
+  if (str_eq(tok, "-")) return -1;
+  return (int)parse_long_text(tok);
+}
+
+static void parse_ir_prefixed_operand(char *line, const char *prefix, Operand *op)
 {
   char *cursor = line;
   char *tok = need_token(&cursor);
-  if (strcmp(tok, prefix)) die("unexpected operand prefix");
-  parse_operand(&cursor, op);
+  if (strcmp(tok, prefix)) die("unexpected IR operand prefix");
+  parse_ir_operand(&cursor, op);
 }
 
-static void parse_instr_line(FILE *file, char *line, Instr *instr)
+static void parse_ir_instrs_until_end(FILE *file, InstrList *list);
+
+static void parse_ir_instr_line(FILE *file, char *line, Instr *instr)
 {
   char *cursor = line;
   char *tok;
@@ -674,171 +586,132 @@ static void parse_instr_line(FILE *file, char *line, Instr *instr)
   memset(instr, 0, sizeof(Instr));
   instr->result = -1;
   tok = need_token(&cursor);
-  if (strcmp(tok, "I")) die("expected instruction");
-  tok = need_token(&cursor);
-  if (str_eq(tok, "PARAM")) {
-    instr->kind = IK_PARAM;
-    instr->temp = parse_int_token(&cursor);
-    instr->value = parse_int_token(&cursor);
-  } else if (str_eq(tok, "ALLOCA")) {
-    instr->kind = IK_ALLOCA;
-    instr->temp = parse_int_token(&cursor);
-    instr->value = parse_int_token(&cursor);
-  } else if (str_eq(tok, "CONST")) {
-    instr->kind = IK_CONST;
-    instr->temp = parse_int_token(&cursor);
-    instr->value = parse_long_token(&cursor);
-  } else if (str_eq(tok, "CONSTB")) {
-    instr->kind = IK_CONSTB;
-    instr->temp = parse_int_token(&cursor);
-    parse_operand(&cursor, instr_a_ptr(instr));
-    if (instr->a.kind != OP_BYTES) die("CONSTB needs bytes");
-  } else if (str_eq(tok, "COPY")) {
-    instr->kind = IK_COPY;
-    instr->temp = parse_int_token(&cursor);
-    parse_operand(&cursor, instr_a_ptr(instr));
-  } else if (str_eq(tok, "ADDROF")) {
-    instr->kind = IK_ADDROF;
-    instr->temp = parse_int_token(&cursor);
-    instr->temp2 = parse_int_token(&cursor);
-  } else if (str_eq(tok, "LOAD64")) {
-    instr->kind = IK_LOAD64;
-    instr->temp = parse_int_token(&cursor);
-    parse_operand(&cursor, instr_a_ptr(instr));
-  } else if (str_eq(tok, "LOAD32")) {
-    instr->kind = IK_LOAD32;
-    instr->temp = parse_int_token(&cursor);
-    parse_operand(&cursor, instr_a_ptr(instr));
-  } else if (str_eq(tok, "LOADS32")) {
-    instr->kind = IK_LOADS32;
-    instr->temp = parse_int_token(&cursor);
-    parse_operand(&cursor, instr_a_ptr(instr));
-  } else if (str_eq(tok, "LOAD16")) {
-    instr->kind = IK_LOAD16;
-    instr->temp = parse_int_token(&cursor);
-    parse_operand(&cursor, instr_a_ptr(instr));
-  } else if (str_eq(tok, "LOADS16")) {
-    instr->kind = IK_LOADS16;
-    instr->temp = parse_int_token(&cursor);
-    parse_operand(&cursor, instr_a_ptr(instr));
-  } else if (str_eq(tok, "LOAD8")) {
-    instr->kind = IK_LOAD8;
-    instr->temp = parse_int_token(&cursor);
-    parse_operand(&cursor, instr_a_ptr(instr));
-  } else if (str_eq(tok, "LOADS8")) {
-    instr->kind = IK_LOADS8;
-    instr->temp = parse_int_token(&cursor);
-    parse_operand(&cursor, instr_a_ptr(instr));
-  } else if (str_eq(tok, "STORE64")) {
-    instr->kind = IK_STORE64;
-    parse_operand(&cursor, instr_a_ptr(instr));
-    parse_operand(&cursor, instr_b_ptr(instr));
-  } else if (str_eq(tok, "STORE32")) {
-    instr->kind = IK_STORE32;
-    parse_operand(&cursor, instr_a_ptr(instr));
-    parse_operand(&cursor, instr_b_ptr(instr));
-  } else if (str_eq(tok, "STORE16")) {
-    instr->kind = IK_STORE16;
-    parse_operand(&cursor, instr_a_ptr(instr));
-    parse_operand(&cursor, instr_b_ptr(instr));
-  } else if (str_eq(tok, "STORE8")) {
-    instr->kind = IK_STORE8;
-    parse_operand(&cursor, instr_a_ptr(instr));
-    parse_operand(&cursor, instr_b_ptr(instr));
-  } else if (str_eq(tok, "BIN")) {
-    instr->kind = IK_BIN;
-    instr->temp = parse_int_token(&cursor);
-    instr->binop = parse_binop(need_token(&cursor));
-    parse_operand(&cursor, instr_a_ptr(instr));
-    parse_operand(&cursor, instr_b_ptr(instr));
-  } else if (str_eq(tok, "CALL")) {
-    instr->kind = IK_CALL;
-    tok = need_token(&cursor);
-    if (strcmp(tok, "-")) instr->result = (int)parse_long_text(tok);
-    instr->name = xstrdup(need_token(&cursor));
-    instr->argc = parse_int_token(&cursor);
-    if (instr->argc > 0) instr->args = xrealloc(0, sizeof(Operand) * instr->argc);
-    i = 0;
-    while (i < instr->argc) {
-      parse_operand(&cursor, operand_at(instr->args, i));
-      i = i + 1;
-    }
-  } else if (str_eq(tok, "CALLI")) {
-    instr->kind = IK_CALLI;
-    tok = need_token(&cursor);
-    if (strcmp(tok, "-")) instr->result = (int)parse_long_text(tok);
-    parse_operand(&cursor, instr_callee_ptr(instr));
-    instr->argc = parse_int_token(&cursor);
-    if (instr->argc > 0) instr->args = xrealloc(0, sizeof(Operand) * instr->argc);
-    i = 0;
-    while (i < instr->argc) {
-      parse_operand(&cursor, operand_at(instr->args, i));
-      i = i + 1;
-    }
-  } else if (str_eq(tok, "COND")) {
-    section = xrealloc(0, LINE_CAP);
-    instr->kind = IK_COND;
-    instr->temp = parse_int_token(&cursor);
-    expect_line(file, "BEGIN");
-    parse_instrs_until_end(file, instr_cond_instrs_ptr(instr));
-    if (!read_line(file, section, LINE_CAP)) die("missing CONDOP");
-    parse_prefixed_operand(section, "CONDOP", instr_cond_op_ptr(instr));
-    expect_line(file, "BEGIN");
-    parse_instrs_until_end(file, instr_true_instrs_ptr(instr));
-    if (!read_line(file, section, LINE_CAP)) die("missing TRUEOP");
-    parse_prefixed_operand(section, "TRUEOP", instr_true_op_ptr(instr));
-    expect_line(file, "BEGIN");
-    parse_instrs_until_end(file, instr_false_instrs_ptr(instr));
-    if (!read_line(file, section, LINE_CAP)) die("missing FALSEOP");
-    parse_prefixed_operand(section, "FALSEOP", instr_false_op_ptr(instr));
-    expect_line(file, "ENDCOND");
-  } else {
-    die("unknown instruction");
+  instr->kind = (int)parse_long_text(tok);
+  switch (instr->kind) {
+    case IK_PARAM:
+    case IK_ALLOCA:
+    case IK_CONST:
+      instr->temp = parse_int_token(&cursor);
+      instr->value = parse_long_token(&cursor);
+      break;
+    case IK_CONSTB:
+      instr->temp = parse_int_token(&cursor);
+      parse_ir_operand(&cursor, instr_a_ptr(instr));
+      if (instr->a.kind != OP_BYTES) die("IR CONSTB needs bytes");
+      break;
+    case IK_COPY:
+    case IK_LOAD64:
+    case IK_LOAD32:
+    case IK_LOADS32:
+    case IK_LOAD16:
+    case IK_LOADS16:
+    case IK_LOAD8:
+    case IK_LOADS8:
+      instr->temp = parse_int_token(&cursor);
+      parse_ir_operand(&cursor, instr_a_ptr(instr));
+      break;
+    case IK_ADDROF:
+      instr->temp = parse_int_token(&cursor);
+      instr->temp2 = parse_int_token(&cursor);
+      break;
+    case IK_STORE64:
+    case IK_STORE32:
+    case IK_STORE16:
+    case IK_STORE8:
+      parse_ir_operand(&cursor, instr_a_ptr(instr));
+      parse_ir_operand(&cursor, instr_b_ptr(instr));
+      break;
+    case IK_BIN:
+      instr->temp = parse_int_token(&cursor);
+      instr->binop = parse_int_token(&cursor);
+      parse_ir_operand(&cursor, instr_a_ptr(instr));
+      parse_ir_operand(&cursor, instr_b_ptr(instr));
+      break;
+    case IK_CALL:
+      instr->result = parse_ir_result(&cursor);
+      instr->name = xstrdup(need_token(&cursor));
+      instr->argc = parse_int_token(&cursor);
+      if (instr->argc > 0) instr->args = xrealloc(0, sizeof(Operand) * instr->argc);
+      i = 0;
+      while (i < instr->argc) {
+        parse_ir_operand(&cursor, operand_at(instr->args, i));
+        i = i + 1;
+      }
+      break;
+    case IK_CALLI:
+      instr->result = parse_ir_result(&cursor);
+      parse_ir_operand(&cursor, instr_callee_ptr(instr));
+      instr->argc = parse_int_token(&cursor);
+      if (instr->argc > 0) instr->args = xrealloc(0, sizeof(Operand) * instr->argc);
+      i = 0;
+      while (i < instr->argc) {
+        parse_ir_operand(&cursor, operand_at(instr->args, i));
+        i = i + 1;
+      }
+      break;
+    case IK_COND:
+      section = xrealloc(0, LINE_CAP);
+      instr->temp = parse_int_token(&cursor);
+      expect_line(file, "[");
+      parse_ir_instrs_until_end(file, instr_cond_instrs_ptr(instr));
+      if (!read_line(file, section, LINE_CAP)) die("missing IR CONDOP");
+      parse_ir_prefixed_operand(section, "O", instr_cond_op_ptr(instr));
+      expect_line(file, "[");
+      parse_ir_instrs_until_end(file, instr_true_instrs_ptr(instr));
+      if (!read_line(file, section, LINE_CAP)) die("missing IR TRUEOP");
+      parse_ir_prefixed_operand(section, "O", instr_true_op_ptr(instr));
+      expect_line(file, "[");
+      parse_ir_instrs_until_end(file, instr_false_instrs_ptr(instr));
+      if (!read_line(file, section, LINE_CAP)) die("missing IR FALSEOP");
+      parse_ir_prefixed_operand(section, "O", instr_false_op_ptr(instr));
+      expect_line(file, "Q");
+      break;
+    default:
+      die("unknown IR instruction");
   }
 }
 
-static void parse_instrs_until_end(FILE *file, InstrList *list)
+static void parse_ir_instrs_until_end(FILE *file, InstrList *list)
 {
   Instr instr;
   char *line;
   memset(list, 0, sizeof(InstrList));
   line = xrealloc(0, LINE_CAP);
   while (read_line(file, line, LINE_CAP)) {
-    if (str_eq(line, "END")) {
-      return;
-    }
-    parse_instr_line(file, line, &instr);
+    if (str_eq(line, "]")) return;
+    parse_ir_instr_line(file, line, &instr);
     append_instr(list, &instr);
   }
-  die("unexpected eof in nested instructions");
+  die("unexpected eof in IR nested instructions");
 }
 
-static void parse_term(Block *block, char *line)
+static void parse_ir_term(Block *block, char *line)
 {
   char *cursor = line;
-  char *tok;
-  tok = need_token(&cursor);
-  if (strcmp(tok, "TERM")) die("expected terminator");
-  tok = need_token(&cursor);
-  if (str_eq(tok, "RET")) {
+  char *tok = need_token(&cursor);
+  if (str_eq(tok, "R")) {
     block->term_kind = TK_RET;
-    tok = need_token(&cursor);
-    if (str_eq(tok, "Y")) parse_operand(&cursor, block_term_op_ptr(block));
-    else block->term_op.kind = 0;
-  } else if (str_eq(tok, "JUMP")) {
+    tok = next_token(&cursor);
+    if (tok) {
+      cursor = tok;
+      parse_ir_operand(&cursor, block_term_op_ptr(block));
+    } else {
+      block->term_op.kind = 0;
+    }
+  } else if (str_eq(tok, "J")) {
     block->term_kind = TK_JUMP;
     block->yes = parse_int_token(&cursor);
-  } else if (str_eq(tok, "BRANCH")) {
+  } else if (str_eq(tok, "B")) {
     block->term_kind = TK_BRANCH;
-    parse_operand(&cursor, block_term_op_ptr(block));
+    parse_ir_operand(&cursor, block_term_op_ptr(block));
     block->yes = parse_int_token(&cursor);
     block->no = parse_int_token(&cursor);
   } else {
-    die("unknown terminator");
+    die("unknown IR terminator");
   }
 }
 
-static void parse_block(FILE *file, char *first_line, Block *block)
+static void parse_ir_block(FILE *file, char *first_line, Block *block)
 {
   char *cursor = first_line;
   char *tok;
@@ -846,21 +719,21 @@ static void parse_block(FILE *file, char *first_line, Block *block)
   char *line;
   memset(block, 0, sizeof(Block));
   tok = need_token(&cursor);
-  if (strcmp(tok, "BLOCK")) die("expected block");
+  if (strcmp(tok, "L")) die("expected IR block");
   block->id = parse_int_token(&cursor);
   line = xrealloc(0, LINE_CAP);
   while (read_line(file, line, LINE_CAP)) {
-    if (str_prefix_n(line, "TERM ", 5)) {
-      parse_term(block, line);
+    if (str_prefix_n(line, "R", 1) || str_prefix_n(line, "J ", 2) || str_prefix_n(line, "B ", 2)) {
+      parse_ir_term(block, line);
       return;
     }
-    parse_instr_line(file, line, &instr);
+    parse_ir_instr_line(file, line, &instr);
     append_instr(block_instrs_ptr(block), &instr);
   }
-  die("unexpected eof in block");
+  die("unexpected eof in IR block");
 }
 
-static void parse_function(FILE *file, char *first_line, Function *fn)
+static void parse_ir_function(FILE *file, char *first_line, Function *fn)
 {
   char *cursor = first_line;
   char *tok;
@@ -868,78 +741,149 @@ static void parse_function(FILE *file, char *first_line, Function *fn)
   char *line;
   memset(fn, 0, sizeof(Function));
   tok = need_token(&cursor);
-  if (strcmp(tok, "FUNC")) die("expected function");
+  if (strcmp(tok, "F")) die("expected IR function");
   fn->name = xstrdup(need_token(&cursor));
   line = xrealloc(0, LINE_CAP);
   while (read_line(file, line, LINE_CAP)) {
-    if (str_eq(line, "ENDFUNC")) {
-      return;
-    }
-    parse_block(file, line, &block);
+    if (str_eq(line, "E")) return;
+    parse_ir_block(file, line, &block);
     append_block(fn, &block);
   }
-  die("unexpected eof in function");
+  die("unexpected eof in IR function");
 }
 
-static void parse_data_item(FILE *file, char *first_line, DataItem *item)
+static void parse_ir_data_item(FILE *file, char *first_line, DataItem *item)
 {
   char *cursor = first_line;
   char *tok;
   char *line;
   memset(item, 0, sizeof(DataItem));
   tok = need_token(&cursor);
-  if (strcmp(tok, "DATA")) die_token("expected data item", tok);
+  if (strcmp(tok, "D")) die_token("expected IR data item", tok);
   item->label = xstrdup(need_token(&cursor));
   line = xrealloc(0, LINE_CAP);
   while (read_line(file, line, LINE_CAP)) {
     DataValue value;
-    if (str_eq(line, "ENDDATA")) {
-      return;
-    }
+    if (str_eq(line, "E")) return;
     cursor = line;
     tok = need_token(&cursor);
-    if (str_eq(tok, "DZ")) {
+    if (str_eq(tok, "z")) {
       append_zero_data_values(item, parse_int_token(&cursor));
       continue;
     }
-    if (strcmp(tok, "DV")) die("expected data value");
-    tok = need_token(&cursor);
     memset(&value, 0, sizeof(value));
-    if (str_eq(tok, "B")) {
+    if (str_eq(tok, "b")) {
       value.kind = 1;
       value.byte = parse_int_token(&cursor);
-    } else if (str_eq(tok, "A")) {
+    } else if (str_eq(tok, "a")) {
       value.kind = 2;
       value.label = xstrdup(need_token(&cursor));
     } else {
-      die("unknown data value");
+      die("unknown IR data value");
     }
     append_data_value(item, &value);
   }
-  die("unexpected eof in data");
+  die("unexpected eof in IR data");
 }
 
-static void parse_module(FILE *file, Module *module)
+static void emit_header(FILE *out);
+static void emit_data_item(FILE *out, DataItem *item);
+static void emit_function(FILE *out, Function *fn);
+
+#if !defined(__M2__)
+static void free_operand(Operand *op)
+{
+  if (op->bytes) free(op->bytes);
+  if (op->name) free(op->name);
+}
+
+static void free_instr_list(InstrList *list);
+
+static void free_instr(Instr *in)
+{
+  int i;
+  free_operand(instr_a_ptr(in));
+  free_operand(instr_b_ptr(in));
+  free_operand(instr_callee_ptr(in));
+  if (in->name) free(in->name);
+  i = 0;
+  while (i < in->argc) {
+    free_operand(operand_at(in->args, i));
+    i = i + 1;
+  }
+  if (in->args) free(in->args);
+  free_instr_list(instr_cond_instrs_ptr(in));
+  free_instr_list(instr_true_instrs_ptr(in));
+  free_instr_list(instr_false_instrs_ptr(in));
+  free_operand(instr_cond_op_ptr(in));
+  free_operand(instr_true_op_ptr(in));
+  free_operand(instr_false_op_ptr(in));
+}
+
+static void free_instr_list(InstrList *list)
+{
+  int i = 0;
+  while (i < list->len) {
+    free_instr(instr_at(list->items, i));
+    i = i + 1;
+  }
+  if (list->items) free(list->items);
+}
+
+static void free_block(Block *block)
+{
+  free_instr_list(block_instrs_ptr(block));
+  free_operand(block_term_op_ptr(block));
+}
+
+static void free_function(Function *fn)
+{
+  int i = 0;
+  if (fn->name) free(fn->name);
+  while (i < fn->len) {
+    free_block(block_at(fn->blocks, i));
+    i = i + 1;
+  }
+  if (fn->blocks) free(fn->blocks);
+}
+
+static void free_data_item(DataItem *item)
+{
+  int i = 0;
+  if (item->label) free(item->label);
+  while (i < item->len) {
+    DataValue *value = data_value_at(item->values, i);
+    if (value->label) free(value->label);
+    i = i + 1;
+  }
+  if (item->values) free(item->values);
+}
+#else
+static void free_function(Function *fn) { (void)fn; }
+static void free_data_item(DataItem *item) { (void)item; }
+#endif
+
+static void translate_ir_module(FILE *file, FILE *out)
 {
   DataItem item;
   Function fn;
   char *line;
-  memset(module, 0, sizeof(Module));
+  emit_header(out);
   line = xrealloc(0, LINE_CAP);
-  if (!read_line(file, line, LINE_CAP)) die("empty input");
-  if (strcmp(line, "HCCM1IR 1")) die("bad input header");
   while (read_line(file, line, LINE_CAP)) {
-    if (str_prefix_n(line, "DATA ", 5)) {
-      parse_data_item(file, line, &item);
-      append_data_item(module, &item);
-      append_top(module, TOP_DATA, module->data_len - 1);
-    } else if (str_prefix_n(line, "FUNC ", 5)) {
-      parse_function(file, line, &fn);
-      append_function(module, &fn);
-      append_top(module, TOP_FUNC, module->fn_len - 1);
-    }
-    else if (line[0] != 0) die("unexpected top-level line");
+    if (str_prefix_n(line, "D ", 2)) {
+      parse_ir_data_item(file, line, &item);
+      emit_data_item(out, &item);
+      free_data_item(&item);
+    } else if (str_prefix_n(line, "F ", 2)) {
+      parse_ir_function(file, line, &fn);
+      emit_function(out, &fn);
+      free_function(&fn);
+    } else if (line[0] != 0) die("unexpected IR top-level line");
   }
+#if !defined(__M2__)
+  free(line);
+#endif
 }
 
 static void ensure_loc(LocArray *locs, int temp)
@@ -1664,27 +1608,16 @@ static void emit_function(FILE *out, Function *fn)
     i = i + 1;
   }
   fputc('\n', out);
-}
-
-static void emit_module(FILE *out, Module *module)
-{
-  int i = 0;
-  emit_header(out);
-  while (i < module->top_len) {
-    if (module->top_kinds[i] == TOP_DATA) {
-      emit_data_item(out, data_item_at(module->data_items, module->top_indices[i]));
-    } else {
-      emit_function(out, function_at(module->functions, module->top_indices[i]));
-    }
-    i = i + 1;
-  }
+#if !defined(__M2__)
+  if (locs.items) free(locs.items);
+#endif
 }
 
 int main(int argc, char **argv)
 {
   FILE *in;
   FILE *out;
-  Module module;
+  char *header;
   int argi;
   if (argc == 5 && strcmp(argv[1], "--target") == 0) {
     if (strcmp(argv[2], "amd64") == 0 || strcmp(argv[2], "x86_64") == 0) target_arch = TARGET_AMD64;
@@ -1702,9 +1635,11 @@ int main(int argc, char **argv)
   if (!in) die("cannot open input");
   out = fopen(argv[argi + 1], "w");
   if (!out) die("cannot open output");
-  parse_module(in, &module);
+  header = xrealloc(0, LINE_CAP);
+  if (!read_line(in, header, LINE_CAP)) die("empty input");
+  if (!str_eq(header, "HCCIR 1")) die("bad IR input header");
+  translate_ir_module(in, out);
   fclose(in);
-  emit_module(out, &module);
   fclose(out);
   return 0;
 }

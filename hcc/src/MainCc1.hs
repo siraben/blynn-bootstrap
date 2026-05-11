@@ -15,11 +15,10 @@ main = do
     [] -> die "hcc1: no input files"
     ["--help"] -> usage >> hccExitSuccess
     "--check":files -> checkFiles files
-    _ | "--m1-ir" `elem` args -> compileM1Ir args
-    _ -> die "hcc1: expected --m1-ir or --check"
+    _ -> compileM1Ir args
 
 usage :: IO ()
-usage = hccPutStrLn "usage: hcc1 --m1-ir [-o FILE] INPUT.i\n       hcc1 --check FILE..."
+usage = hccPutStrLn "usage: hcc1 [--m1-ir] [-o FILE] INPUT.i\n       hcc1 --check FILE..."
 
 checkFiles :: [String] -> IO ()
 checkFiles [] = die "hcc1: no input files"

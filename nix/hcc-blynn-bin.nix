@@ -67,8 +67,8 @@ mkDerivation (
       run_step "hcc1 --check parse-smoke.i" ./hcc1 --check parse-smoke.i
       run_step "hcc1 --m1-ir -o smoke.hccir parse-smoke.i" ./hcc1 --m1-ir -o smoke.hccir parse-smoke.i
       log_file smoke.hccir
-      run_step "hcc-m1 smoke.hccir smoke-c.M1" ./hcc-m1 smoke.hccir smoke-c.M1
-      log_file smoke-c.M1
+      run_step "hcc-m1 smoke.hccir smoke.M1" ./hcc-m1 smoke.hccir smoke.M1
+      log_file smoke.M1
 
       runHook postBuild
     '';

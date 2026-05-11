@@ -24,7 +24,7 @@ emitM1IrWithDataPrefixTarget write prefix target ast = case ast of
     case mapCompileRun (unCompileM registerBuiltinStructs (initialCompileStateForTarget prefix target)) of
       Left err -> pure (Left err)
       Right (_, st0) -> do
-        write ["HCCM1IR 1"]
+        write ["HCCIR 1"]
         registered <- registerTopDeclsIr write st0 decls
         case registered of
           Left err -> pure (Left err)
@@ -37,7 +37,7 @@ emitTopDeclsIr write st decls = case decls of
     case mapCompileRun (unCompileM (registerImplicitCalls (paramDeclNamesIr params) body >> lowerFunction name params body) st) of
       Left err -> pure (Left err)
       Right (fn, st') -> do
-        emitFunction write (optimizeFunctionIr fn)
+        emitFunctionIr write (optimizeFunctionIr fn)
         st'' <- flushPendingDataItemsIr write st'
         emitTopDeclsIr write st'' rest
   _:rest -> emitTopDeclsIr write st rest
@@ -57,7 +57,7 @@ registerTopDeclIr write st decl = case decl of
     case unCompileM (registerTypeAggregates ty >> bindGlobal name ty >> globalData ty initExpr) st of
       Left err -> pure (Left err)
       Right (values, st') -> do
-        emitDataItem write (DataItem name values)
+        emitDataItemIr write (DataItem name values)
         st'' <- flushPendingDataItemsIr write st'
         pure (Right ((), st''))
   Globals globals ->
@@ -85,7 +85,7 @@ registerGlobalsIr write st globals = case globals of
     case unCompileM (registerTypeAggregates ty >> bindGlobal name ty >> globalData ty initExpr) st of
       Left err -> pure (Left err)
       Right (values, st') -> do
-        emitDataItem write (DataItem name values)
+        emitDataItemIr write (DataItem name values)
         st'' <- flushPendingDataItemsIr write st'
         registerGlobalsIr write st'' rest
 
@@ -93,7 +93,7 @@ flushPendingDataItemsIr :: ([String] -> IO ()) -> CompileState -> IO CompileStat
 flushPendingDataItemsIr write st = case csDataItems st of
   [] -> pure st
   items -> do
-    emitDataItems write (reverse items)
+    mapM_ (emitDataItemIr write) (reverse items)
     pure st { csDataItems = [] }
 
 paramDeclNamesIr :: [Param] -> [String]
@@ -101,32 +101,29 @@ paramDeclNamesIr params = case params of
   [] -> []
   Param _ name:rest -> name : paramDeclNamesIr rest
 
-emitDataItems :: ([String] -> IO ()) -> [DataItem] -> IO ()
-emitDataItems write items = mapM_ (emitDataItem write) items
-
-emitDataItem :: ([String] -> IO ()) -> DataItem -> IO ()
-emitDataItem write item = case item of
+emitDataItemIr :: ([String] -> IO ()) -> DataItem -> IO ()
+emitDataItemIr write item = case item of
   DataItem label values -> do
-    write ["DATA " ++ label]
-    emitDataValues write values
-    write ["ENDDATA"]
+    write ["D " ++ label]
+    emitDataValuesIr write values
+    write ["E"]
 
-emitDataValues :: ([String] -> IO ()) -> [DataValue] -> IO ()
-emitDataValues write values = case values of
+emitDataValuesIr :: ([String] -> IO ()) -> [DataValue] -> IO ()
+emitDataValuesIr write values = case values of
   [] -> pure ()
   DByte 0:_ ->
     case zeroRun values of
       (count, rest) -> do
-        write ["DZ " ++ show count]
-        emitDataValues write rest
+        write ["z " ++ show count]
+        emitDataValuesIr write rest
   value:rest -> do
-    write [dataValueLine value]
-    emitDataValues write rest
+    write [dataValueIrLine value]
+    emitDataValuesIr write rest
 
-dataValueLine :: DataValue -> String
-dataValueLine value = case value of
-  DByte byte -> "DV B " ++ show byte
-  DAddress label -> "DV A " ++ label
+dataValueIrLine :: DataValue -> String
+dataValueIrLine value = case value of
+  DByte byte -> "b " ++ show byte
+  DAddress label -> "a " ++ label
 
 zeroRun :: [DataValue] -> (Int, [DataValue])
 zeroRun values = case values of
@@ -135,86 +132,86 @@ zeroRun values = case values of
       (count, tailValues) -> (count + 1, tailValues)
   _ -> (0, values)
 
-emitFunction :: ([String] -> IO ()) -> FunctionIr -> IO ()
-emitFunction write fn = case fn of
+emitFunctionIr :: ([String] -> IO ()) -> FunctionIr -> IO ()
+emitFunctionIr write fn = case fn of
   FunctionIr name _ blocks -> do
-    write ["FUNC " ++ name]
-    emitBlocks write blocks
-    write ["ENDFUNC"]
+    write ["F " ++ name]
+    emitBlocksIr write blocks
+    write ["E"]
 
-emitBlocks :: ([String] -> IO ()) -> [BasicBlock] -> IO ()
-emitBlocks write blocks = mapM_ (emitBlock write) blocks
+emitBlocksIr :: ([String] -> IO ()) -> [BasicBlock] -> IO ()
+emitBlocksIr write blocks = mapM_ (emitBlockIr write) blocks
 
-emitBlock :: ([String] -> IO ()) -> BasicBlock -> IO ()
-emitBlock write block = case block of
+emitBlockIr :: ([String] -> IO ()) -> BasicBlock -> IO ()
+emitBlockIr write block = case block of
   BasicBlock bid instrs term -> do
-    write ["BLOCK " ++ blockIdText bid]
-    emitInstrs write instrs
-    write [terminatorLine term]
+    write ["L " ++ blockIdText bid]
+    emitInstrsIr write instrs
+    write [terminatorIrLine term]
 
-emitInstrs :: ([String] -> IO ()) -> [Instr] -> IO ()
-emitInstrs write instrs = mapM_ (emitInstr write) instrs
+emitInstrsIr :: ([String] -> IO ()) -> [Instr] -> IO ()
+emitInstrsIr write instrs = mapM_ (emitInstrIr write) instrs
 
-emitInstr :: ([String] -> IO ()) -> Instr -> IO ()
-emitInstr write instr = case instr of
-  IParam temp index -> write ["I PARAM " ++ tempText temp ++ " " ++ show index]
-  IAlloca temp size -> write ["I ALLOCA " ++ tempText temp ++ " " ++ show size]
-  IConst temp value -> write ["I CONST " ++ tempText temp ++ " " ++ show value]
-  IConstBytes temp bytes -> write ["I CONSTB " ++ tempText temp ++ " B " ++ intListFields bytes]
-  ICopy temp op -> write ["I COPY " ++ tempText temp ++ " " ++ operandFields op]
-  IAddrOf temp source -> write ["I ADDROF " ++ tempText temp ++ " " ++ tempText source]
-  ILoad64 temp op -> write ["I LOAD64 " ++ tempText temp ++ " " ++ operandFields op]
-  ILoad32 temp op -> write ["I LOAD32 " ++ tempText temp ++ " " ++ operandFields op]
-  ILoadS32 temp op -> write ["I LOADS32 " ++ tempText temp ++ " " ++ operandFields op]
-  ILoad16 temp op -> write ["I LOAD16 " ++ tempText temp ++ " " ++ operandFields op]
-  ILoadS16 temp op -> write ["I LOADS16 " ++ tempText temp ++ " " ++ operandFields op]
-  ILoad8 temp op -> write ["I LOAD8 " ++ tempText temp ++ " " ++ operandFields op]
-  ILoadS8 temp op -> write ["I LOADS8 " ++ tempText temp ++ " " ++ operandFields op]
-  IStore64 addr value -> write ["I STORE64 " ++ operandFields addr ++ " " ++ operandFields value]
-  IStore32 addr value -> write ["I STORE32 " ++ operandFields addr ++ " " ++ operandFields value]
-  IStore16 addr value -> write ["I STORE16 " ++ operandFields addr ++ " " ++ operandFields value]
-  IStore8 addr value -> write ["I STORE8 " ++ operandFields addr ++ " " ++ operandFields value]
-  IBin temp op left right -> write ["I BIN " ++ tempText temp ++ " " ++ binOpText op ++ " " ++ operandFields left ++ " " ++ operandFields right]
-  ICall result name args -> write ["I CALL " ++ maybeTempText result ++ " " ++ name ++ " " ++ operandsFields args]
-  ICallIndirect result callee args -> write ["I CALLI " ++ maybeTempText result ++ " " ++ operandFields callee ++ " " ++ operandsFields args]
+emitInstrIr :: ([String] -> IO ()) -> Instr -> IO ()
+emitInstrIr write instr = case instr of
+  IParam temp index -> write ["1 " ++ tempText temp ++ " " ++ show index]
+  IAlloca temp size -> write ["2 " ++ tempText temp ++ " " ++ show size]
+  IConst temp value -> write ["3 " ++ tempText temp ++ " " ++ show value]
+  IConstBytes temp bytes -> write ["4 " ++ tempText temp ++ " B" ++ intListFields bytes]
+  ICopy temp op -> write ["5 " ++ tempText temp ++ " " ++ operandIrFields op]
+  IAddrOf temp source -> write ["6 " ++ tempText temp ++ " " ++ tempText source]
+  ILoad64 temp op -> write ["7 " ++ tempText temp ++ " " ++ operandIrFields op]
+  ILoad32 temp op -> write ["8 " ++ tempText temp ++ " " ++ operandIrFields op]
+  ILoadS32 temp op -> write ["9 " ++ tempText temp ++ " " ++ operandIrFields op]
+  ILoad16 temp op -> write ["10 " ++ tempText temp ++ " " ++ operandIrFields op]
+  ILoadS16 temp op -> write ["11 " ++ tempText temp ++ " " ++ operandIrFields op]
+  ILoad8 temp op -> write ["12 " ++ tempText temp ++ " " ++ operandIrFields op]
+  ILoadS8 temp op -> write ["13 " ++ tempText temp ++ " " ++ operandIrFields op]
+  IStore64 addr value -> write ["14 " ++ operandIrFields addr ++ " " ++ operandIrFields value]
+  IStore32 addr value -> write ["15 " ++ operandIrFields addr ++ " " ++ operandIrFields value]
+  IStore16 addr value -> write ["16 " ++ operandIrFields addr ++ " " ++ operandIrFields value]
+  IStore8 addr value -> write ["17 " ++ operandIrFields addr ++ " " ++ operandIrFields value]
+  IBin temp op left right -> write ["18 " ++ tempText temp ++ " " ++ show (binOpCode op) ++ " " ++ operandIrFields left ++ " " ++ operandIrFields right]
+  ICall result name args -> write ["19 " ++ maybeTempText result ++ " " ++ name ++ " " ++ operandsIrFields args]
+  ICallIndirect result callee args -> write ["20 " ++ maybeTempText result ++ " " ++ operandIrFields callee ++ " " ++ operandsIrFields args]
   ICond temp condInstrs condOp trueInstrs trueOp falseInstrs falseOp -> do
-    write ["I COND " ++ tempText temp]
-    write ["BEGIN"]
-    emitInstrs write condInstrs
-    write ["END"]
-    write ["CONDOP " ++ operandFields condOp]
-    write ["BEGIN"]
-    emitInstrs write trueInstrs
-    write ["END"]
-    write ["TRUEOP " ++ operandFields trueOp]
-    write ["BEGIN"]
-    emitInstrs write falseInstrs
-    write ["END"]
-    write ["FALSEOP " ++ operandFields falseOp]
-    write ["ENDCOND"]
+    write ["21 " ++ tempText temp]
+    write ["["]
+    emitInstrsIr write condInstrs
+    write ["]"]
+    write ["O " ++ operandIrFields condOp]
+    write ["["]
+    emitInstrsIr write trueInstrs
+    write ["]"]
+    write ["O " ++ operandIrFields trueOp]
+    write ["["]
+    emitInstrsIr write falseInstrs
+    write ["]"]
+    write ["O " ++ operandIrFields falseOp]
+    write ["Q"]
 
-terminatorLine :: Terminator -> String
-terminatorLine term = case term of
-  TRet Nothing -> "TERM RET N"
-  TRet (Just op) -> "TERM RET Y " ++ operandFields op
-  TJump bid -> "TERM JUMP " ++ blockIdText bid
-  TBranch op yes no -> "TERM BRANCH " ++ operandFields op ++ " " ++ blockIdText yes ++ " " ++ blockIdText no
+terminatorIrLine :: Terminator -> String
+terminatorIrLine term = case term of
+  TRet Nothing -> "R"
+  TRet (Just op) -> "R " ++ operandIrFields op
+  TJump bid -> "J " ++ blockIdText bid
+  TBranch op yes no -> "B " ++ operandIrFields op ++ " " ++ blockIdText yes ++ " " ++ blockIdText no
 
-operandsFields :: [Operand] -> String
-operandsFields ops = show (length ops) ++ operandsFieldsRest ops
+operandsIrFields :: [Operand] -> String
+operandsIrFields ops = show (length ops) ++ operandsIrFieldsRest ops
 
-operandsFieldsRest :: [Operand] -> String
-operandsFieldsRest ops = case ops of
+operandsIrFieldsRest :: [Operand] -> String
+operandsIrFieldsRest ops = case ops of
   [] -> ""
-  op:rest -> ' ' : operandFields op ++ operandsFieldsRest rest
+  op:rest -> ' ' : operandIrFields op ++ operandsIrFieldsRest rest
 
-operandFields :: Operand -> String
-operandFields op = case op of
-  OTemp temp -> "T " ++ tempText temp
-  OImm value -> "I " ++ show value
-  OImmBytes bytes -> "B " ++ intListFields bytes
-  OGlobal name -> "G " ++ name
-  OFunction name -> "F " ++ name
+operandIrFields :: Operand -> String
+operandIrFields op = case op of
+  OTemp temp -> "T" ++ tempText temp
+  OImm value -> "I" ++ show value
+  OImmBytes bytes -> "B" ++ intListFields bytes
+  OGlobal name -> "G" ++ name
+  OFunction name -> "F" ++ name
 
 intListFields :: [Int] -> String
 intListFields values = show (length values) ++ intListFieldsRest values
@@ -237,29 +234,29 @@ blockIdText :: BlockId -> String
 blockIdText bid = case bid of
   BlockId n -> show n
 
-binOpText :: BinOp -> String
-binOpText op = case op of
-  IAdd -> "ADD"
-  ISub -> "SUB"
-  IMul -> "MUL"
-  IDiv -> "DIV"
-  IMod -> "MOD"
-  IShl -> "SHL"
-  IShr -> "SHR"
-  ISar -> "SAR"
-  IEq -> "EQ"
-  INe -> "NE"
-  ILt -> "LT"
-  ILe -> "LE"
-  IGt -> "GT"
-  IGe -> "GE"
-  IULt -> "ULT"
-  IULe -> "ULE"
-  IUGt -> "UGT"
-  IUGe -> "UGE"
-  IAnd -> "AND"
-  IOr -> "OR"
-  IXor -> "XOR"
+binOpCode :: BinOp -> Int
+binOpCode op = case op of
+  IAdd -> 1
+  ISub -> 2
+  IMul -> 3
+  IDiv -> 4
+  IMod -> 5
+  IShl -> 6
+  IShr -> 7
+  ISar -> 8
+  IEq -> 9
+  INe -> 10
+  ILt -> 11
+  ILe -> 12
+  IGt -> 13
+  IGe -> 14
+  IULt -> 15
+  IULe -> 16
+  IUGt -> 17
+  IUGe -> 18
+  IAnd -> 19
+  IOr -> 20
+  IXor -> 21
 
 optimizeFunctionIr :: FunctionIr -> FunctionIr
 optimizeFunctionIr fn = case fn of
@@ -460,14 +457,11 @@ tempBlocked stats temp = case stats of
 
 lookupTempBool :: Bool -> Temp -> IntMap Bool -> Bool
 lookupTempBool fallback temp table = case temp of
-  Temp key -> lookupIntDefault fallback key table
+  Temp key -> intMapLookupDefault fallback key table
 
 lookupTempInt :: Int -> Temp -> IntMap Int -> Int
 lookupTempInt fallback temp table = case temp of
-  Temp key -> lookupIntDefault fallback key table
-
-lookupIntDefault :: a -> Int -> IntMap a -> a
-lookupIntDefault fallback key table = intMapLookupDefault fallback key table
+  Temp key -> intMapLookupDefault fallback key table
 
 incrementInt :: Int -> IntMap Int -> IntMap Int
 incrementInt key table = intMapIncrement key table

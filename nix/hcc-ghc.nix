@@ -73,7 +73,7 @@ stdenv.mkDerivation (
       ./hcpp ${../tests/hcc/parse-smoke.c} > parse-smoke.i
       ./hcc1 --check parse-smoke.i
       ./hcc1 --m1-ir -o smoke.hccir parse-smoke.i
-      ./hcc-m1 smoke.hccir smoke-c.M1
+      ./hcc-m1 smoke.hccir smoke.M1
       runHook postBuild
     '';
 

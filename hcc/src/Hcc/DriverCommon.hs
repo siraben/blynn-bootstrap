@@ -103,7 +103,7 @@ assemblyArgs args = finish (go args Nothing Nothing [] [] 64)
     finish (Left msg) = Left msg
     finish (Right (_, Nothing, _, _, _)) = Left "hcc: no input files"
     finish (Right (out, Just path, includes, defines, target)) =
-      Right (AsmOptions path (maybe (replaceExt path ".M1") id out) (reverse includes) (reverse defines) target)
+      Right (AsmOptions path (maybe (replaceExt path ".hccir") id out) (reverse includes) (reverse defines) target)
 
     go [] out input includes defines target =
       Right (out, input, includes, defines, target)
