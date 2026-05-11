@@ -12,8 +12,10 @@ by the bootstrap.
     `ea3900f6d5e71776c5cfabcabee317652e3a19ee`
   - applied by `nix/tinycc-boot-hcc.nix`
   - minimized to the hunks still needed by the HCC-built TinyCC path:
-    `max_align_t`, Mes libc path selection, PLT relocation, static/qualified
-    array parameters, and empty archive creation
+    high x86_64 inline-asm register operands, i386/x86_64 `ldmxcsr`/`stmxcsr`
+    assembler opcodes, x86_64 HCC codegen workarounds, `max_align_t`, Mes libc
+    path selection, PLT relocation, static/qualified array parameters, constant
+    floating unary minus for file-scope initializers, and empty archive creation
 - `upstreams/tinycc-musl-hcc-bootstrap.patch`
   - upstream: `https://repo.or.cz/tinycc.git` at
     `cb41cbfe717e4c00d7bb70035cda5ee5f0ff9341`
