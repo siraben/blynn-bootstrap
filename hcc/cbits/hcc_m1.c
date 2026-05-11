@@ -1376,6 +1376,7 @@ static void emit_byte(FILE *out, int byte)
 static void emit_data_item(FILE *out, DataItem *item)
 {
   int j = 0;
+  int emitted = 0;
   fprintf(out, ":%s\n", item->label);
   while (j < item->len) {
     int count = 0;
@@ -1391,6 +1392,18 @@ static void emit_data_item(FILE *out, DataItem *item)
       }
       count = count + 1;
       j = j + 1;
+      if (v->kind == 1) emitted = emitted + 1;
+      else if (target_arch == TARGET_I386) emitted = emitted + 4;
+      else emitted = emitted + 8;
+    }
+    fputc('\n', out);
+  }
+  if (target_arch == TARGET_AARCH64 && emitted % 4 != 0) {
+    fprintf(out, "  ");
+    while (emitted % 4 != 0) {
+      emit_byte(out, 0);
+      emitted = emitted + 1;
+      if (emitted % 4 != 0) fputc(' ', out);
     }
     fputc('\n', out);
   }
