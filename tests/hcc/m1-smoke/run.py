@@ -38,6 +38,15 @@ TARGETS = {
         "elf": "ELF-x86.hex2",
         "base": "0x08048000",
     },
+    "aarch64": {
+        "hcc_target": "aarch64",
+        "m1_arch": "aarch64",
+        "m2_dir": "aarch64",
+        "defs": "aarch64_defs.M1",
+        "libc_core": "libc-core.M1",
+        "elf": "ELF-aarch64.hex2",
+        "base": "0x00600000",
+    },
 }
 
 
