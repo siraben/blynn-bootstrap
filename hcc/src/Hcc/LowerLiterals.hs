@@ -1,6 +1,6 @@
 module LowerLiterals
   ( constBinOp
-  , intConstInstr
+  , intConstOperand
   , lowerBinOp
   ) where
 
@@ -33,10 +33,10 @@ constBinOp op a b = case op of
 truthInt :: Bool -> Int
 truthInt value = if value then 1 else 0
 
-intConstInstr :: Temp -> String -> Instr
-intConstInstr temp text = case parseIntBytes text of
-  Just bytes -> IConstBytes temp bytes
-  Nothing -> IConst temp (parseInt text)
+intConstOperand :: String -> Operand
+intConstOperand text = case parseIntBytes text of
+  Just bytes -> OImmBytes bytes
+  Nothing -> OImm (parseInt text)
 
 parseIntBytes :: String -> Maybe [Int]
 parseIntBytes text =

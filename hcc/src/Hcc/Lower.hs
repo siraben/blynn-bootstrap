@@ -40,11 +40,22 @@ lowerStatementsFrom bid instrs stmts defaultTerm = case stmts of
       tailBlocks <- lowerUnreachableLabels rest defaultTerm
       pure (BasicBlock bid instrs (TRet Nothing) : tailBlocks)
     Just expr -> do
-      result <- lowerExpr expr
-      case result of
-        (retInstrs, op) -> do
+      if exprIsShortCircuitBoolean expr
+        then do
+          yesId <- freshBlock
+          noId <- freshBlock
+          condBlocks <- lowerConditionBlock bid instrs expr yesId noId
           tailBlocks <- lowerUnreachableLabels rest defaultTerm
-          pure (BasicBlock bid (instrs ++ retInstrs) (TRet (Just op)) : tailBlocks)
+          pure ( condBlocks ++
+                 [ BasicBlock yesId [] (TRet (Just (OImm 1)))
+                 , BasicBlock noId [] (TRet (Just (OImm 0)))
+                 ] ++ tailBlocks)
+        else do
+          result <- lowerExpr expr
+          case result of
+            (retInstrs, op) -> do
+              tailBlocks <- lowerUnreachableLabels rest defaultTerm
+              pure (BasicBlock bid (instrs ++ retInstrs) (TRet (Just op)) : tailBlocks)
   SBlock body:rest -> do
     if null rest
       then withVarScope (lowerStatementsFrom bid instrs body defaultTerm)
@@ -528,12 +539,10 @@ registerTypeAggregates ty = case ty of
 
 lowerExpr :: Expr -> CompileM ([Instr], Operand)
 lowerExpr expr = case expr of
-  EInt text -> do
-    temp <- freshTemp
-    pure ([intConstInstr temp text], OTemp temp)
-  EChar text -> do
-    temp <- freshTemp
-    pure ([IConst temp (charValue text)], OTemp temp)
+  EInt text ->
+    pure ([], intConstOperand text)
+  EChar text ->
+    pure ([], OImm (charValue text))
   EString text -> do
     dataLabel <- freshDataLabel
     addDataItem (DataItem dataLabel (bytesData (stringBytes text)))
@@ -767,8 +776,23 @@ lowerTruthExpr expr = do
   result <- lowerExpr expr
   let instrs = fst result
   let op = snd result
-  out <- freshTemp
-  pure (instrs ++ [IBin out INe op (OImm 0)], OTemp out)
+  if exprIsBoolean expr
+    then pure (instrs, op)
+    else do
+      out <- freshTemp
+      pure (instrs ++ [IBin out INe op (OImm 0)], OTemp out)
+
+exprIsBoolean :: Expr -> Bool
+exprIsBoolean expr = case expr of
+  EUnary "!" _ -> True
+  EBinary op _ _ -> op `elem` ["==", "!=", "<", "<=", ">", ">=", "&&", "||"]
+  _ -> False
+
+exprIsShortCircuitBoolean :: Expr -> Bool
+exprIsShortCircuitBoolean expr = case expr of
+  EBinary "&&" _ _ -> True
+  EBinary "||" _ _ -> True
+  _ -> False
 
 lowerShiftExpr :: String -> Expr -> Expr -> CompileM ([Instr], Operand)
 lowerShiftExpr op left right = do
@@ -842,8 +866,8 @@ lowerPlainBin op a b = do
   let bi = fst rightResult
   let bo = snd rightResult
   commonTy <- usualArithmeticType a b
-  acoerceResult <- coerceScalar commonTy ao
-  bcoerceResult <- coerceScalar commonTy bo
+  acoerceResult <- coerceBinOperand commonTy a ao
+  bcoerceResult <- coerceBinOperand commonTy b bo
   let acoerceInstrs = fst acoerceResult
   let acoerceOp = snd acoerceResult
   let bcoerceInstrs = fst bcoerceResult
@@ -858,6 +882,15 @@ lowerPlainBin op a b = do
   pure ( ai ++ bi ++ acoerceInstrs ++ bcoerceInstrs ++
          [IBin out op acoerceOp bcoerceOp] ++ coerceInstrs
        , coerceOp)
+
+coerceBinOperand :: CType -> Expr -> Operand -> CompileM ([Instr], Operand)
+coerceBinOperand commonTy expr op = case expr of
+  EVar name -> do
+    constant <- lookupConstant name
+    case (constant, builtinConstant name) of
+      (Nothing, Nothing) -> pure ([], op)
+      _ -> coerceScalar commonTy op
+  _ -> coerceScalar commonTy op
 
 isComparisonBinOp :: BinOp -> Bool
 isComparisonBinOp op = case op of
@@ -975,9 +1008,52 @@ coerceScalar ty op = do
       size <- typeSize ty
       if size >= 8
         then pure ([], op)
-        else if isSignedIntegerType ty
-          then signExtendScalar size op
-          else maskScalar size op
+        else case coerceImmediateScalar (isSignedIntegerType ty) size op of
+          Just coerced -> pure ([], coerced)
+          Nothing ->
+            if isSignedIntegerType ty
+              then signExtendScalar size op
+              else maskScalar size op
+
+coerceImmediateScalar :: Bool -> Int -> Operand -> Maybe Operand
+coerceImmediateScalar signed size op =
+  if size >= 4
+    then coerceWordImmediateScalar signed op
+    else case immediateScalarValue op of
+      Nothing -> Nothing
+      Just value ->
+        let modulus = pow2 (size * 8)
+            masked = positiveMod value modulus
+            signBit = pow2 (size * 8 - 1)
+            coerced =
+              if signed && masked >= signBit
+                then masked - modulus
+                else masked
+        in Just (OImm coerced)
+
+coerceWordImmediateScalar :: Bool -> Operand -> Maybe Operand
+coerceWordImmediateScalar signed op = case op of
+  OImm value ->
+    if signed || value >= 0
+      then Just (OImm value)
+      else Nothing
+  _ -> Nothing
+
+immediateScalarValue :: Operand -> Maybe Int
+immediateScalarValue op = case op of
+  OImm value -> Just value
+  OImmBytes bytes -> Just (littleEndianValue bytes 0)
+  _ -> Nothing
+
+littleEndianValue :: [Int] -> Int -> Int
+littleEndianValue bytes shift = case bytes of
+  [] -> 0
+  byte:rest -> byte * pow2 shift + littleEndianValue rest (shift + 8)
+
+positiveMod :: Int -> Int -> Int
+positiveMod value modulus =
+  let result = value `mod` modulus
+  in if result < 0 then result + modulus else result
 
 maskScalar :: Int -> Operand -> CompileM ([Instr], Operand)
 maskScalar size op = do

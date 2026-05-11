@@ -39,6 +39,7 @@ mkDerivation (
       cp ${src}/cbits/hcc_m1.c cbits/hcc_m1.c
       cp ${../tests/hcc/pp-smoke.c} test/pp-smoke.c
       cp ${../tests/hcc/parse-smoke.c} test/parse-smoke.c
+      cp ${../tests/hcc/scalar-immediate-smoke.c} test/scalar-immediate-smoke.c
 
       ${nixLib.shellHelpers { name = "hcc-blynn-bin"; }}
 
@@ -69,6 +70,10 @@ mkDerivation (
       log_file smoke.hccir
       run_step "hcc-m1 smoke.hccir smoke.M1" ./hcc-m1 smoke.hccir smoke.M1
       log_file smoke.M1
+      run_step_shell "hcpp test/scalar-immediate-smoke.c > scalar-immediate-smoke.i" "./hcpp test/scalar-immediate-smoke.c > scalar-immediate-smoke.i"
+      log_file scalar-immediate-smoke.i
+      run_step "hcc1 --m1-ir -o scalar-immediate-smoke.hccir scalar-immediate-smoke.i" ./hcc1 --m1-ir -o scalar-immediate-smoke.hccir scalar-immediate-smoke.i
+      log_file scalar-immediate-smoke.hccir
 
       runHook postBuild
     '';
