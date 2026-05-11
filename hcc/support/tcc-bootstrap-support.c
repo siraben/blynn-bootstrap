@@ -5,6 +5,10 @@ typedef unsigned char uint8_t;
 typedef long time_t;
 typedef long ssize_t;
 
+#ifdef __TINYC__
+#include <stdarg.h>
+#endif
+
 void* malloc(unsigned size);
 void free(void* ptr);
 void _exit(int value);
@@ -101,6 +105,11 @@ unsigned long strtoull(char* nptr, char** endptr, int base)
     return parse_unsigned(nptr, endptr, base);
 }
 
+long strtoll(char* nptr, char** endptr, int base)
+{
+    return strtol(nptr, endptr, base);
+}
+
 int atoi(char* nptr)
 {
     return strtol(nptr, 0, 10);
@@ -132,6 +141,11 @@ long ldexp(long value, int exp)
         exp = exp + 1;
     }
     return value;
+}
+
+long ldexpl(long value, int exp)
+{
+    return ldexp(value, exp);
 }
 
 int memcmp(void* s1, void* s2, size_t size)
@@ -381,6 +395,14 @@ void* fopen(char* path, char* mode)
     return (void*)(long)fd;
 }
 
+void* freopen(char* path, char* mode, void* stream)
+{
+    void* next = fopen(path, mode);
+    if (next && stream && stream != stdin && stream != stdout && stream != stderr)
+        close((int)(long)stream);
+    return next;
+}
+
 int fclose(void* stream)
 {
     int fd = (int)(long)stream;
@@ -532,11 +554,31 @@ static char* hcc_append_string(char* out, char* end, int* total, char* text)
     return out;
 }
 
+static char* hcc_append_string_limit(char* out, char* end, int* total, char* text, int limit)
+{
+    int n = 0;
+    if (!text) text = "(null)";
+    while (*text && (limit < 0 || n < limit)) {
+        out = hcc_append_char(out, end, total, *text);
+        text = text + 1;
+        n = n + 1;
+    }
+    return out;
+}
+
 static int hcc_string_len(char* text)
 {
     int n = 0;
     if (!text) text = "(null)";
     while (text[n]) n = n + 1;
+    return n;
+}
+
+static int hcc_string_n_len(char* text, int limit)
+{
+    int n = 0;
+    if (!text) text = "(null)";
+    while (text[n] && (limit < 0 || n < limit)) n = n + 1;
     return n;
 }
 
@@ -681,6 +723,101 @@ int fprintf(void* stream, char* fmt, long a, long b, long c)
 int sprintf(char* out, char* fmt, long a, long b, long c) { return hcc_vformat(out, 0xffffffff, fmt, a, b, c); }
 int snprintf(char* out, unsigned size, char* fmt, long a, long b, long c) { return hcc_vformat(out, size, fmt, a, b, c); }
 int sscanf(char* input, char* fmt) { return 0; }
+#ifdef __TINYC__
+int vsnprintf(char* out, unsigned size, char* fmt, va_list ap)
+{
+    char* p = out;
+    char* end = out;
+    int total = 0;
+    int left;
+    int width;
+    int precision;
+    int is_long;
+    int used;
+    long value;
+    char* text;
+    if (size) end = out + size - 1;
+    while (*fmt) {
+        if (*fmt != '%') {
+            p = hcc_append_char(p, end, &total, *fmt);
+            fmt = fmt + 1;
+            continue;
+        }
+        fmt = fmt + 1;
+        left = 0;
+        width = 0;
+        precision = -1;
+        is_long = 0;
+        if (*fmt == '-') {
+            left = 1;
+            fmt = fmt + 1;
+        }
+        while (*fmt >= '0' && *fmt <= '9') {
+            width = width * 10 + *fmt - '0';
+            fmt = fmt + 1;
+        }
+        if (*fmt == '.') {
+            fmt = fmt + 1;
+            if (*fmt == '*') {
+                precision = va_arg(ap, int);
+                fmt = fmt + 1;
+            } else {
+                precision = 0;
+                while (*fmt >= '0' && *fmt <= '9') {
+                    precision = precision * 10 + *fmt - '0';
+                    fmt = fmt + 1;
+                }
+            }
+        }
+        if (*fmt == 'l') {
+            is_long = 1;
+            fmt = fmt + 1;
+            if (*fmt == 'l') fmt = fmt + 1;
+        }
+        if (*fmt == 's') {
+            text = va_arg(ap, char*);
+            used = hcc_string_n_len(text, precision);
+            if (!left) p = hcc_append_padding(p, end, &total, width, used);
+            p = hcc_append_string_limit(p, end, &total, text, precision);
+            if (left) p = hcc_append_padding(p, end, &total, width, used);
+        } else if (*fmt == 'd' || *fmt == 'i') {
+            if (is_long) value = va_arg(ap, long);
+            else value = va_arg(ap, int);
+            used = hcc_signed_len(value);
+            if (!left) p = hcc_append_padding(p, end, &total, width, used);
+            p = hcc_append_signed(p, end, &total, value);
+            if (left) p = hcc_append_padding(p, end, &total, width, used);
+        } else if (*fmt == 'u') {
+            if (is_long) value = va_arg(ap, unsigned long);
+            else value = va_arg(ap, unsigned int);
+            used = hcc_unsigned_len(value, 10);
+            if (!left) p = hcc_append_padding(p, end, &total, width, used);
+            p = hcc_append_unsigned(p, end, &total, value, 10);
+            if (left) p = hcc_append_padding(p, end, &total, width, used);
+        } else if (*fmt == 'x' || *fmt == 'X') {
+            if (is_long) value = va_arg(ap, unsigned long);
+            else value = va_arg(ap, unsigned int);
+            used = hcc_unsigned_len(value, 16);
+            if (!left) p = hcc_append_padding(p, end, &total, width, used);
+            p = hcc_append_unsigned(p, end, &total, value, 16);
+            if (left) p = hcc_append_padding(p, end, &total, width, used);
+        } else if (*fmt == 'c') {
+            value = va_arg(ap, int);
+            if (!left) p = hcc_append_padding(p, end, &total, width, 1);
+            p = hcc_append_char(p, end, &total, value);
+            if (left) p = hcc_append_padding(p, end, &total, width, 1);
+        } else if (*fmt == '%') {
+            p = hcc_append_char(p, end, &total, '%');
+        } else {
+            p = hcc_append_char(p, end, &total, '%');
+            p = hcc_append_char(p, end, &total, *fmt);
+        }
+        if (*fmt) fmt = fmt + 1;
+    }
+    if (out && size) *p = 0;
+    return total;
+}
+#else
 int vsnprintf(char* out, unsigned size, char* fmt, void* ap)
 {
     int total = 0;
@@ -701,11 +838,24 @@ int vsnprintf(char* out, unsigned size, char* fmt, void* ap)
     if (out && size) *p = 0;
     return total;
 }
+#endif
+#ifdef __TINYC__
+int vfprintf(void* stream, char* fmt, va_list ap) { return fputs(fmt, stream); }
+int vprintf(char* fmt, va_list ap) { return vfprintf(stdout, fmt, ap); }
+int vsprintf(char* out, char* fmt, va_list ap) { return vsnprintf(out, 0xffffffff, fmt, ap); }
+int vsscanf(char* input, char* fmt, va_list ap) { return 0; }
+int vfscanf(void* stream, char* fmt, va_list ap) { return 0; }
+#else
 int vfprintf(void* stream, char* fmt, void* ap) { return fputs(fmt, stream); }
+int vprintf(char* fmt, void* ap) { return vfprintf(stdout, fmt, ap); }
+int vsprintf(char* out, char* fmt, void* ap) { return vsnprintf(out, 0xffffffff, fmt, ap); }
+int vsscanf(char* input, char* fmt, void* ap) { return 0; }
+int vfscanf(void* stream, char* fmt, void* ap) { return 0; }
 void va_start(void* ap, void* last) {}
 void va_end(void* ap) {}
 void va_copy(void* dest, void* src) {}
 long va_arg(void* ap, long type_hint) { return 0; }
+#endif
 
 int ELF64_ST_BIND(int value) { return (value >> 4) & 15; }
 int ELF64_ST_TYPE(int value) { return value & 15; }

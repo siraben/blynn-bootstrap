@@ -76,6 +76,15 @@ scripts/hcc-blynn-sources.sh
 PRECISELY_UP=$PWD/build/blynn-precisely/bin/precisely_up scripts/hcc-blynn-c.sh
 ```
 
+If you are preparing the TinyCC source used by the HCC bootstrap outside Nix,
+pass the same TinyCC checkout to `prepare-upstreams.sh`; it applies
+`patches/upstreams/tinycc-mescc-source.patch`, the same patch used by
+`nix/tinycc-boot-hcc.nix`:
+
+```sh
+TINYCC_DIR=$PWD/upstream/tinycc scripts/prepare-upstreams.sh
+```
+
 The default outputs are:
 
 - `build/upstreams`: patched upstream source trees

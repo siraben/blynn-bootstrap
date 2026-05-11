@@ -63,5 +63,12 @@ DEFINE HCC_A64_SET_X3_TO_0 030080d2
 :FUNCTION___builtin_va_start
 	RETURN
 
+:FUNCTION___builtin_va_arg
+	SET_X0_TO_0
+	RETURN
+
+:FUNCTION___builtin_va_copy
+	RETURN
+
 :FUNCTION___builtin_va_end
 	RETURN
