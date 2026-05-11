@@ -6,10 +6,29 @@
   minimalBootstrap,
   m2libc,
   mesTests,
+  target ? "amd64",
 }:
 
 let
   nixLib = import ./lib.nix { inherit lib; };
+  targetCfg =
+    if target == "aarch64" || target == "arm64" then {
+      hcc = "aarch64";
+      m1 = "aarch64";
+      m2 = "aarch64";
+      defs = "aarch64_defs.M1";
+      elf = "ELF-aarch64.hex2";
+      start = "aarch64-start.M1";
+      syscalls = "aarch64-syscalls.M1";
+    } else {
+      hcc = "amd64";
+      m1 = "amd64";
+      m2 = "amd64";
+      defs = "amd64_defs.M1";
+      elf = "ELF-amd64.hex2";
+      start = "amd64-start.M1";
+      syscalls = "amd64-syscalls.M1";
+    };
 in
 stdenvNoCC.mkDerivation (
   {
@@ -40,20 +59,20 @@ stdenvNoCC.mkDerivation (
         log_step "$name: hcpp $src -> $name.i"
         hcpp "$src" > "$name.i"
         log_step "$name: hcc1 --m1-ir $name.i -> $name.hccir"
-        hcc1 --m1-ir -o "$name.hccir" "$name.i"
+        hcc1 --target ${targetCfg.hcc} --m1-ir -o "$name.hccir" "$name.i"
         log_step "$name: hcc-m1 $name.hccir -> $name.M1"
-        hcc-m1 "$name.hccir" "$name.M1"
+        hcc-m1 --target ${targetCfg.hcc} "$name.hccir" "$name.M1"
         log_step "$name: M1 $name.M1 -> $name.hex2"
-        M1 --architecture amd64 --little-endian \
-          -f ${m2libc}/amd64/amd64_defs.M1 \
-          -f ${../hcc/support}/amd64-start.M1 \
+        M1 --architecture ${targetCfg.m1} --little-endian \
+          -f ${m2libc}/${targetCfg.m2}/${targetCfg.defs} \
+          -f ${../hcc/support}/${targetCfg.start} \
           -f "$name.M1" \
-          -f ${../hcc/support}/amd64-syscalls.M1 \
+          -f ${../hcc/support}/${targetCfg.syscalls} \
           --output "$name.hex2"
         printf ':ELF_end\n' > "$name-end.hex2"
         log_step "$name: hex2 $name.hex2 -> $name"
-        hex2 --architecture amd64 --little-endian --base-address 0x00600000 \
-          --file ${m2libc}/amd64/ELF-amd64.hex2 \
+        hex2 --architecture ${targetCfg.m1} --little-endian --base-address 0x00600000 \
+          --file ${m2libc}/${targetCfg.m2}/${targetCfg.elf} \
           --file "$name.hex2" \
           --file "$name-end.hex2" \
           --output "$name"

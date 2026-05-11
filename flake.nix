@@ -1037,9 +1037,9 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           m2libc = "${minimalBootstrap.stage0-posix.src}/M2libc";
         };
 
-        hccMesccTestsFor = pname: hcc: pkgs.callPackage ./nix/hcc-mescc-tests.nix {
+        hccMesccTestsFor = pname: hcc: target: pkgs.callPackage ./nix/hcc-mescc-tests.nix {
           stdenvNoCC = rawStdenvNoCC;
-          inherit pname hcc;
+          inherit pname hcc target;
           inherit minimalBootstrap;
           m2libc = m2libcSrc;
           mesTests = ./tests/mescc;
@@ -1052,8 +1052,8 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
         hcc-m1-smoke-native-aarch64 = hccM1SmokeFor "hcc-m1-smoke-host-ghc-native-aarch64" hccBy.host.ghc.native "aarch64";
         hcc-m1-smoke-native-i386 = hccM1SmokeFor "hcc-m1-smoke-host-ghc-native-i386" hccBy.host.ghc.native "i386";
 
-        hcc-mescc-tests = hccMesccTestsFor "hcc-mescc-tests" hccBy.m2.precisely.m2;
-        hcc-mescc-tests-native = hccMesccTestsFor "hcc-mescc-tests-host-ghc-native" hccBy.host.ghc.native;
+        hcc-mescc-tests = hccMesccTestsFor "hcc-mescc-tests" hccBy.m2.precisely.m2 "amd64";
+        hcc-mescc-tests-native = hccMesccTestsFor "hcc-mescc-tests-host-ghc-native" hccBy.host.ghc.native nativeM1Target;
 
         precisely-dialect-tests = pkgs.callPackage ./nix/precisely-dialect-tests.nix {
           stdenv = pkgs.stdenv;
