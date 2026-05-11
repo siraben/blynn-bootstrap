@@ -316,6 +316,47 @@ stdenvNoCC.mkDerivation {
     ./tcc-stage2 -version
     ./tcc-stage3 -version
 
+    check_patch_hunk() {
+      file="$1"
+      needle="$2"
+      found=0
+      in_hunk=0
+      while IFS= read -r line; do
+        case "$line" in
+          "diff --git a/$file "*)
+            in_hunk=1
+            ;;
+          "diff --git "*)
+            if [ "$in_hunk" = 1 ]; then
+              break
+            fi
+            ;;
+        esac
+        if [ "$in_hunk" = 1 ]; then
+          case "$line" in
+            *"$needle"*)
+              found=1
+              ;;
+          esac
+        fi
+      done < ${../patches/upstreams/tinycc-hcc-bootstrap.patch}
+      if [ "$found" != 1 ]; then
+        echo "tinycc-boot-hcc: missing patch hunk in $file: $needle" >&2
+        exit 1
+      fi
+    }
+
+    check_patch_hunk i386-asm.h "DEF_ASM_OP1(ldmxcsr, 0x0fae, 2"
+    check_patch_hunk i386-asm.h "DEF_ASM_OP1(stmxcsr, 0x0fae, 3"
+
+    for src in ${../tests/tinycc-hcc}/*.c; do
+      file="''${src##*/}"
+      obj="tinycc-hcc-regression-''${file%.c}.o"
+      echo "tinycc-boot-hcc: regression $src -> $obj"
+      ./tcc -c "$src" -o "$obj"
+      test -s "$obj"
+    done
+
     cat > include-smoke-header.h <<'EOF'
     #define HCC_INCLUDE_SMOKE 7
     EOF
