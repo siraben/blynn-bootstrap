@@ -83,6 +83,7 @@ typedef struct DataValue DataValue;
 typedef struct DataItem DataItem;
 typedef struct Loc Loc;
 typedef struct LocArray LocArray;
+typedef struct EmitState EmitState;
 
 enum {
   TARGET_AMD64 = 1,
@@ -164,6 +165,10 @@ struct Loc {
 struct LocArray {
   Loc *items;
   int cap;
+};
+
+struct EmitState {
+  int rax_temp;
 };
 
 static void die(const char *msg)
@@ -991,6 +996,21 @@ static Loc *lookup_loc(LocArray *locs, int temp)
   return loc;
 }
 
+static void emit_state_init(EmitState *state)
+{
+  state->rax_temp = -1;
+}
+
+static void emit_forget_rax(EmitState *state)
+{
+  state->rax_temp = -1;
+}
+
+static void emit_remember_rax_temp(EmitState *state, int temp)
+{
+  state->rax_temp = temp;
+}
+
 static void emit_header(FILE *out)
 {
   fprintf(out, "## hcc M1 output\n");
@@ -1147,11 +1167,12 @@ static void emit_data_item(FILE *out, DataItem *item)
   fputc('\n', out);
 }
 
-static void emit_load_immediate(FILE *out, long value)
+static void emit_load_immediate(FILE *out, EmitState *state, long value)
 {
   int small;
   unsigned long u;
   int i;
+  emit_forget_rax(state);
   if (target_arch == TARGET_I386) {
     fprintf(out, "  mov_eax, %%%d\n", (int)value);
     return;
@@ -1173,11 +1194,12 @@ static void emit_load_immediate(FILE *out, long value)
   }
 }
 
-static void emit_load_immediate_bytes(FILE *out, Operand *op)
+static void emit_load_immediate_bytes(FILE *out, EmitState *state, Operand *op)
 {
   int bytes[8];
   int i = 0;
   unsigned long value = 0;
+  emit_forget_rax(state);
   while (i < 8) {
     if (i < op->count) bytes[i] = op->bytes[i];
     else bytes[i] = 0;
@@ -1210,8 +1232,9 @@ static void emit_load_immediate_bytes(FILE *out, Operand *op)
   }
 }
 
-static void emit_load_location(FILE *out, Loc *loc, int rsp_bias)
+static void emit_load_location(FILE *out, EmitState *state, Loc *loc, int rsp_bias)
 {
+  emit_forget_rax(state);
   if (loc->kind == LOC_STACK) {
     if (target_arch == TARGET_I386) fprintf(out, "  mov_eax,[esp+DWORD] %%%d\n", 4 * loc->slot + rsp_bias);
     else fprintf(out, "  LOAD_RSP_IMMEDIATE_into_rax %%%d\n", 8 * loc->slot + rsp_bias);
@@ -1221,38 +1244,44 @@ static void emit_load_location(FILE *out, Loc *loc, int rsp_bias)
   }
 }
 
-static void emit_load_operand(FILE *out, LocArray *locs, int rsp_bias, Operand *op)
+static void emit_load_operand(FILE *out, EmitState *state, LocArray *locs, int rsp_bias, Operand *op)
 {
   Loc *loc;
-  if (op->kind == OP_IMM) emit_load_immediate(out, op->value);
-  else if (op->kind == OP_BYTES) emit_load_immediate_bytes(out, op);
+  if (op->kind == OP_IMM) emit_load_immediate(out, state, op->value);
+  else if (op->kind == OP_BYTES) emit_load_immediate_bytes(out, state, op);
   else if (op->kind == OP_GLOBAL) {
+    emit_forget_rax(state);
     if (target_arch == TARGET_I386) fprintf(out, "  mov_eax, &%s\n", op->name);
     else fprintf(out, "  LOAD_IMMEDIATE_rax &%s\n", op->name);
   } else if (op->kind == OP_FUNC) {
+    emit_forget_rax(state);
     if (target_arch == TARGET_I386) fprintf(out, "  mov_eax, &FUNCTION_%s\n", op->name);
     else fprintf(out, "  LOAD_IMMEDIATE_rax &FUNCTION_%s\n", op->name);
   }
   else if (op->kind == OP_TEMP) {
     loc = lookup_loc(locs, op->value);
-    emit_load_location(out, loc, rsp_bias);
+    if (rsp_bias == 0 && loc->kind == LOC_STACK && state->rax_temp == op->value) return;
+    emit_load_location(out, state, loc, rsp_bias);
+    if (rsp_bias == 0 && loc->kind == LOC_STACK) emit_remember_rax_temp(state, op->value);
   }
 }
 
-static void emit_store_temp(FILE *out, LocArray *locs, int temp)
+static void emit_store_temp(FILE *out, EmitState *state, LocArray *locs, int temp)
 {
   Loc *loc = lookup_loc(locs, temp);
   if (loc->kind == LOC_STACK) {
     if (target_arch == TARGET_I386) fprintf(out, "  HCC_STORE_ESP_IMMEDIATE_from_eax %%%d\n", 4 * loc->slot);
     else fprintf(out, "  HCC_STORE_RSP_IMMEDIATE_from_rax %%%d\n", 8 * loc->slot);
+    emit_remember_rax_temp(state, temp);
   } else if (loc->kind == LOC_OBJECT) {
     die("cannot assign stack object");
   }
 }
 
-static void emit_address_of(FILE *out, LocArray *locs, int temp)
+static void emit_address_of(FILE *out, EmitState *state, LocArray *locs, int temp)
 {
   Loc *loc = lookup_loc(locs, temp);
+  emit_forget_rax(state);
   if (loc->kind == LOC_STACK || loc->kind == LOC_OBJECT) {
     if (target_arch == TARGET_I386) fprintf(out, "  HCC_LOAD_EFFECTIVE_ADDRESS_eax %%%d\n", 4 * loc->slot);
     else fprintf(out, "  HCC_LOAD_EFFECTIVE_ADDRESS_rax %%%d\n", 8 * loc->slot);
@@ -1342,13 +1371,13 @@ static void emit_argument_move(FILE *out, int index)
   else die("bad argument register");
 }
 
-static void emit_arguments(FILE *out, LocArray *locs, Operand *args, int argc)
+static void emit_arguments(FILE *out, EmitState *state, LocArray *locs, Operand *args, int argc)
 {
   int i = argc - 1;
   int pushed = 0;
   if (target_arch == TARGET_I386) {
     while (i >= 0) {
-      emit_load_operand(out, locs, pushed * 4, operand_at(args, i));
+      emit_load_operand(out, state, locs, pushed * 4, operand_at(args, i));
       fprintf(out, "  push_eax\n");
       pushed = pushed + 1;
       i = i - 1;
@@ -1356,22 +1385,22 @@ static void emit_arguments(FILE *out, LocArray *locs, Operand *args, int argc)
     return;
   }
   while (i >= 6) {
-    emit_load_operand(out, locs, pushed * 8, operand_at(args, i));
+    emit_load_operand(out, state, locs, pushed * 8, operand_at(args, i));
     fprintf(out, "  PUSH_RAX\n");
     pushed = pushed + 1;
     i = i - 1;
   }
   i = 0;
   while (i < argc && i < 6) {
-    emit_load_operand(out, locs, call_stack_bytes(argc), operand_at(args, i));
+    emit_load_operand(out, state, locs, call_stack_bytes(argc), operand_at(args, i));
     emit_argument_move(out, i);
     i = i + 1;
   }
 }
 
-static void emit_instrs(FILE *out, const char *fn_name, LocArray *locs, int total_slots, InstrList *list);
+static void emit_instrs(FILE *out, const char *fn_name, EmitState *state, LocArray *locs, int total_slots, InstrList *list);
 
-static void emit_instr(FILE *out, const char *fn_name, LocArray *locs, int total_slots, Instr *in)
+static void emit_instr(FILE *out, const char *fn_name, EmitState *state, LocArray *locs, int total_slots, Instr *in)
 {
   int param_offset;
   switch (in->kind) {
@@ -1389,140 +1418,145 @@ static void emit_instr(FILE *out, const char *fn_name, LocArray *locs, int total
         param_offset = total_slots * 8 + 8 + (in->value - 6) * 8;
         fprintf(out, "  LOAD_RSP_IMMEDIATE_into_rax %%%d\n", param_offset);
       }
-      emit_store_temp(out, locs, in->temp);
+      emit_store_temp(out, state, locs, in->temp);
       break;
     case IK_ALLOCA:
       break;
     case IK_CONST:
-      emit_load_immediate(out, in->value);
-      emit_store_temp(out, locs, in->temp);
+      emit_load_immediate(out, state, in->value);
+      emit_store_temp(out, state, locs, in->temp);
       break;
     case IK_CONSTB:
-      emit_load_immediate_bytes(out, instr_a_ptr(in));
-      emit_store_temp(out, locs, in->temp);
+      emit_load_immediate_bytes(out, state, instr_a_ptr(in));
+      emit_store_temp(out, state, locs, in->temp);
       break;
     case IK_COPY:
-      emit_load_operand(out, locs, 0, instr_a_ptr(in));
-      emit_store_temp(out, locs, in->temp);
+      emit_load_operand(out, state, locs, 0, instr_a_ptr(in));
+      emit_store_temp(out, state, locs, in->temp);
       break;
     case IK_ADDROF:
-      emit_address_of(out, locs, in->temp2);
-      emit_store_temp(out, locs, in->temp);
+      emit_address_of(out, state, locs, in->temp2);
+      emit_store_temp(out, state, locs, in->temp);
       break;
     case IK_LOAD64:
       if (target_arch == TARGET_I386) die("i386 M1 backend cannot lower 64-bit load");
-      emit_load_operand(out, locs, 0, instr_a_ptr(in));
+      emit_load_operand(out, state, locs, 0, instr_a_ptr(in));
       fprintf(out, "  HCC_LOAD_INTEGER\n");
-      emit_store_temp(out, locs, in->temp);
+      emit_store_temp(out, state, locs, in->temp);
       break;
     case IK_LOAD32:
-      emit_load_operand(out, locs, 0, instr_a_ptr(in));
+      emit_load_operand(out, state, locs, 0, instr_a_ptr(in));
       if (target_arch == TARGET_I386) fprintf(out, "  mov_eax,[eax]\n");
       else fprintf(out, "  HCC_LOAD_WORD\n");
-      emit_store_temp(out, locs, in->temp);
+      emit_store_temp(out, state, locs, in->temp);
       break;
     case IK_LOADS32:
-      emit_load_operand(out, locs, 0, instr_a_ptr(in));
+      emit_load_operand(out, state, locs, 0, instr_a_ptr(in));
       fprintf(out, "  HCC_LOAD_SIGNED_WORD\n");
-      emit_store_temp(out, locs, in->temp);
+      emit_store_temp(out, state, locs, in->temp);
       break;
     case IK_LOAD16:
-      emit_load_operand(out, locs, 0, instr_a_ptr(in));
+      emit_load_operand(out, state, locs, 0, instr_a_ptr(in));
       if (target_arch == TARGET_I386) fprintf(out, "  movzx_eax,WORD_PTR_[eax]\n");
       else fprintf(out, "  HCC_LOAD_HALF\n");
-      emit_store_temp(out, locs, in->temp);
+      emit_store_temp(out, state, locs, in->temp);
       break;
     case IK_LOADS16:
-      emit_load_operand(out, locs, 0, instr_a_ptr(in));
+      emit_load_operand(out, state, locs, 0, instr_a_ptr(in));
       if (target_arch == TARGET_I386) fprintf(out, "  movsx_eax,WORD_PTR_[eax]\n");
       else fprintf(out, "  HCC_LOAD_SIGNED_HALF\n");
-      emit_store_temp(out, locs, in->temp);
+      emit_store_temp(out, state, locs, in->temp);
       break;
     case IK_LOAD8:
-      emit_load_operand(out, locs, 0, instr_a_ptr(in));
+      emit_load_operand(out, state, locs, 0, instr_a_ptr(in));
       if (target_arch == TARGET_I386) fprintf(out, "  movzx_eax,BYTE_PTR_[eax]\n");
       else fprintf(out, "  LOAD_BYTE\n  MOVEZX\n");
-      emit_store_temp(out, locs, in->temp);
+      emit_store_temp(out, state, locs, in->temp);
       break;
     case IK_LOADS8:
-      emit_load_operand(out, locs, 0, instr_a_ptr(in));
+      emit_load_operand(out, state, locs, 0, instr_a_ptr(in));
       if (target_arch == TARGET_I386) fprintf(out, "  movsx_eax,BYTE_PTR_[eax]\n");
       else fprintf(out, "  HCC_LOAD_SIGNED_CHAR\n");
-      emit_store_temp(out, locs, in->temp);
+      emit_store_temp(out, state, locs, in->temp);
       break;
     case IK_STORE64:
       if (target_arch == TARGET_I386) die("i386 M1 backend cannot lower 64-bit store");
-      emit_load_operand(out, locs, 0, instr_a_ptr(in));
+      emit_load_operand(out, state, locs, 0, instr_a_ptr(in));
       fprintf(out, "  HCC_M_RAX_RBX\n");
-      emit_load_operand(out, locs, 0, instr_b_ptr(in));
+      emit_load_operand(out, state, locs, 0, instr_b_ptr(in));
       fprintf(out, "  HCC_STORE_INTEGER\n");
       break;
     case IK_STORE32:
-      emit_load_operand(out, locs, 0, instr_a_ptr(in));
+      emit_load_operand(out, state, locs, 0, instr_a_ptr(in));
       if (target_arch == TARGET_I386) fprintf(out, "  mov_ebx,eax\n");
       else fprintf(out, "  HCC_M_RAX_RBX\n");
-      emit_load_operand(out, locs, 0, instr_b_ptr(in));
+      emit_load_operand(out, state, locs, 0, instr_b_ptr(in));
       fprintf(out, "  HCC_STORE_WORD\n");
       break;
     case IK_STORE16:
-      emit_load_operand(out, locs, 0, instr_a_ptr(in));
+      emit_load_operand(out, state, locs, 0, instr_a_ptr(in));
       if (target_arch == TARGET_I386) fprintf(out, "  mov_ebx,eax\n");
       else fprintf(out, "  HCC_M_RAX_RBX\n");
-      emit_load_operand(out, locs, 0, instr_b_ptr(in));
+      emit_load_operand(out, state, locs, 0, instr_b_ptr(in));
       fprintf(out, "  HCC_STORE_HALF\n");
       break;
     case IK_STORE8:
-      emit_load_operand(out, locs, 0, instr_a_ptr(in));
+      emit_load_operand(out, state, locs, 0, instr_a_ptr(in));
       if (target_arch == TARGET_I386) fprintf(out, "  mov_ebx,eax\n");
       else fprintf(out, "  HCC_M_RAX_RBX\n");
-      emit_load_operand(out, locs, 0, instr_b_ptr(in));
+      emit_load_operand(out, state, locs, 0, instr_b_ptr(in));
       fprintf(out, "  HCC_STORE_CHAR\n");
       break;
     case IK_BIN:
-      emit_load_operand(out, locs, 0, instr_a_ptr(in));
+      emit_load_operand(out, state, locs, 0, instr_a_ptr(in));
       if (target_arch == TARGET_I386) fprintf(out, "  mov_ebx,eax\n");
       else fprintf(out, "  HCC_M_RAX_RBX\n");
-      emit_load_operand(out, locs, 0, instr_b_ptr(in));
+      emit_load_operand(out, state, locs, 0, instr_b_ptr(in));
       emit_binop(out, in->binop);
-      emit_store_temp(out, locs, in->temp);
+      emit_store_temp(out, state, locs, in->temp);
       break;
     case IK_CALL:
-      emit_arguments(out, locs, in->args, in->argc);
+      emit_arguments(out, state, locs, in->args, in->argc);
       fprintf(out, "  CALL_IMMEDIATE %%FUNCTION_%s\n", in->name);
+      emit_forget_rax(state);
       emit_call_cleanup(out, in->argc);
-      if (in->result >= 0) emit_store_temp(out, locs, in->result);
+      if (in->result >= 0) emit_store_temp(out, state, locs, in->result);
       break;
     case IK_CALLI:
-      emit_arguments(out, locs, in->args, in->argc);
-      emit_load_operand(out, locs, call_stack_bytes(in->argc), instr_callee_ptr(in));
+      emit_arguments(out, state, locs, in->args, in->argc);
+      emit_load_operand(out, state, locs, call_stack_bytes(in->argc), instr_callee_ptr(in));
       if (target_arch == TARGET_I386) fprintf(out, "  HCC_CALL_eax\n");
       else fprintf(out, "  HCC_CALL_rax\n");
+      emit_forget_rax(state);
       emit_call_cleanup(out, in->argc);
-      if (in->result >= 0) emit_store_temp(out, locs, in->result);
+      if (in->result >= 0) emit_store_temp(out, state, locs, in->result);
       break;
     case IK_COND:
-      emit_instrs(out, fn_name, locs, total_slots, instr_cond_instrs_ptr(in));
-      emit_load_operand(out, locs, 0, instr_cond_op_ptr(in));
+      emit_instrs(out, fn_name, state, locs, total_slots, instr_cond_instrs_ptr(in));
+      emit_load_operand(out, state, locs, 0, instr_cond_op_ptr(in));
       if (target_arch == TARGET_I386) fprintf(out, "  test_eax,eax\n  je %%HCC_COND_ELSE_%s_%d\n", fn_name, in->temp);
       else fprintf(out, "  TEST\n  JUMP_EQ %%HCC_COND_ELSE_%s_%d\n", fn_name, in->temp);
-      emit_instrs(out, fn_name, locs, total_slots, instr_true_instrs_ptr(in));
-      emit_load_operand(out, locs, 0, instr_true_op_ptr(in));
-      emit_store_temp(out, locs, in->temp);
+      emit_forget_rax(state);
+      emit_instrs(out, fn_name, state, locs, total_slots, instr_true_instrs_ptr(in));
+      emit_load_operand(out, state, locs, 0, instr_true_op_ptr(in));
+      emit_store_temp(out, state, locs, in->temp);
       if (target_arch == TARGET_I386) fprintf(out, "  jmp %%HCC_COND_DONE_%s_%d\n:HCC_COND_ELSE_%s_%d\n", fn_name, in->temp, fn_name, in->temp);
       else fprintf(out, "  JUMP %%HCC_COND_DONE_%s_%d\n:HCC_COND_ELSE_%s_%d\n", fn_name, in->temp, fn_name, in->temp);
-      emit_instrs(out, fn_name, locs, total_slots, instr_false_instrs_ptr(in));
-      emit_load_operand(out, locs, 0, instr_false_op_ptr(in));
-      emit_store_temp(out, locs, in->temp);
+      emit_forget_rax(state);
+      emit_instrs(out, fn_name, state, locs, total_slots, instr_false_instrs_ptr(in));
+      emit_load_operand(out, state, locs, 0, instr_false_op_ptr(in));
+      emit_store_temp(out, state, locs, in->temp);
       fprintf(out, ":HCC_COND_DONE_%s_%d\n", fn_name, in->temp);
+      emit_forget_rax(state);
       break;
   }
 }
 
-static void emit_instrs(FILE *out, const char *fn_name, LocArray *locs, int total_slots, InstrList *list)
+static void emit_instrs(FILE *out, const char *fn_name, EmitState *state, LocArray *locs, int total_slots, InstrList *list)
 {
   int i = 0;
   while (i < list->len) {
-    emit_instr(out, fn_name, locs, total_slots, instr_at(list->items, i));
+    emit_instr(out, fn_name, state, locs, total_slots, instr_at(list->items, i));
     i = i + 1;
   }
 }
@@ -1540,7 +1574,7 @@ static void emit_cleanup_stack(FILE *out, int total_slots)
   }
 }
 
-static void emit_terminator(FILE *out, Function *fn, int block_index, LocArray *locs, int total_slots, Block *block)
+static void emit_terminator(FILE *out, Function *fn, int block_index, EmitState *state, LocArray *locs, int total_slots, Block *block)
 {
   int next_id = -1;
   if (block_index + 1 < fn->len) {
@@ -1548,8 +1582,8 @@ static void emit_terminator(FILE *out, Function *fn, int block_index, LocArray *
     next_id = next_block->id;
   }
   if (block->term_kind == TK_RET) {
-    if (block->term_op.kind == 0) emit_load_immediate(out, 0);
-    else emit_load_operand(out, locs, 0, block_term_op_ptr(block));
+    if (block->term_op.kind == 0) emit_load_immediate(out, state, 0);
+    else emit_load_operand(out, state, locs, 0, block_term_op_ptr(block));
     emit_cleanup_stack(out, total_slots);
     if (target_arch == TARGET_I386) fprintf(out, "  ret\n");
     else fprintf(out, "  RETURN\n");
@@ -1561,7 +1595,7 @@ static void emit_terminator(FILE *out, Function *fn, int block_index, LocArray *
       fputc('\n', out);
     }
   } else if (block->term_kind == TK_BRANCH) {
-    emit_load_operand(out, locs, 0, block_term_op_ptr(block));
+    emit_load_operand(out, state, locs, 0, block_term_op_ptr(block));
     if (next_id == block->yes) {
       if (target_arch == TARGET_I386) fprintf(out, "  test_eax,eax\n  je %%");
       else fprintf(out, "  TEST\n  JUMP_EQ %%");
@@ -1582,14 +1616,17 @@ static void emit_terminator(FILE *out, Function *fn, int block_index, LocArray *
       fputc('\n', out);
     }
   }
+  emit_forget_rax(state);
 }
 
 static void emit_function(FILE *out, Function *fn)
 {
   LocArray locs;
+  EmitState state;
   int total_slots;
   int i;
   total_slots = allocate_function(fn, &locs);
+  emit_state_init(&state);
   fprintf(out, ":FUNCTION_%s\n", fn->name);
   if (total_slots > 0) {
     if (target_arch == TARGET_I386) fprintf(out, "  sub_esp, %%%d\n", total_slots * 4);
@@ -1599,12 +1636,13 @@ static void emit_function(FILE *out, Function *fn)
   while (i < fn->len) {
     Block *block = block_at(fn->blocks, i);
     if (block->id != 0) {
+      emit_forget_rax(&state);
       fprintf(out, ":");
       emit_block_ref(out, fn->name, block->id);
       fputc('\n', out);
     }
-    emit_instrs(out, fn->name, &locs, total_slots, block_instrs_ptr(block));
-    emit_terminator(out, fn, i, &locs, total_slots, block);
+    emit_instrs(out, fn->name, &state, &locs, total_slots, block_instrs_ptr(block));
+    emit_terminator(out, fn, i, &state, &locs, total_slots, block);
     i = i + 1;
   }
   fputc('\n', out);
