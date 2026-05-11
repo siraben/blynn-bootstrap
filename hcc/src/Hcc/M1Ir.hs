@@ -1,6 +1,5 @@
 module M1Ir
   ( CodegenError(..)
-  , emitM1IrWithDataPrefix
   , emitM1IrWithDataPrefixTarget
   ) where
 
@@ -15,54 +14,67 @@ import LowerImplicit
 
 data CodegenError = CodegenError String
 
-emitM1IrWithDataPrefix :: ([String] -> IO ()) -> String -> Program -> IO (Either CodegenError ())
-emitM1IrWithDataPrefix write prefix ast = emitM1IrWithDataPrefixTarget write prefix 64 ast
-
 emitM1IrWithDataPrefixTarget :: ([String] -> IO ()) -> String -> Int -> Program -> IO (Either CodegenError ())
-emitM1IrWithDataPrefixTarget write prefix target ast = case ast of
+emitM1IrWithDataPrefixTarget write prefix target ast =
+  case buildM1IrModuleWithDataPrefixTarget prefix target ast of
+    Left err -> pure (Left err)
+    Right ir -> do
+      write ["HCCIR 1"]
+      emitModuleIr write (optimizeModuleIr ir)
+      pure (Right ())
+
+buildM1IrModuleWithDataPrefixTarget :: String -> Int -> Program -> Either CodegenError ModuleIr
+buildM1IrModuleWithDataPrefixTarget prefix target ast = case ast of
   Program decls ->
     case mapCompileRun (unCompileM registerBuiltinStructs (initialCompileStateForTarget prefix target)) of
-      Left err -> pure (Left err)
-      Right (_, st0) -> do
-        write ["HCCIR 1"]
-        registered <- registerTopDeclsIr write st0 decls
-        case registered of
-          Left err -> pure (Left err)
-          Right st -> emitTopDeclsIr write st decls
+      Left err -> Left err
+      Right (_, st0) ->
+        case registerTopDeclsIr st0 decls of
+          Left err -> Left err
+          Right (st, registeredItems) ->
+            case lowerTopDeclsIr st decls of
+              Left err -> Left err
+              Right (_, functionItems) -> Right (ModuleIr (registeredItems ++ functionItems))
 
-emitTopDeclsIr :: ([String] -> IO ()) -> CompileState -> [TopDecl] -> IO (Either CodegenError ())
-emitTopDeclsIr write st decls = case decls of
-  [] -> pure (Right ())
+lowerTopDeclsIr :: CompileState -> [TopDecl] -> Either CodegenError (CompileState, [TopItemIr])
+lowerTopDeclsIr st decls = case decls of
+  [] -> Right (st, [])
   Function _ name params body:rest ->
     case mapCompileRun (unCompileM (registerImplicitCalls (paramDeclNamesIr params) body >> lowerFunction name params body) st) of
-      Left err -> pure (Left err)
-      Right (fn, st') -> do
-        emitFunctionIr write (optimizeFunctionIr fn)
-        st'' <- flushPendingDataItemsIr write st'
-        emitTopDeclsIr write st'' rest
-  _:rest -> emitTopDeclsIr write st rest
+      Left err -> Left err
+      Right (fn, st') ->
+        case pendingDataItemsIr st' of
+          (pending, st'') ->
+            case lowerTopDeclsIr st'' rest of
+              Left err -> Left err
+              Right (stFinal, restItems) -> Right (stFinal, TopFunction fn : pending ++ restItems)
+  _:rest -> lowerTopDeclsIr st rest
 
-registerTopDeclsIr :: ([String] -> IO ()) -> CompileState -> [TopDecl] -> IO (Either CodegenError CompileState)
-registerTopDeclsIr write st decls = case decls of
-  [] -> pure (Right st)
-  decl:rest -> do
-    result <- registerTopDeclIr write st decl
-    case mapCompileRun result of
-      Left err -> pure (Left err)
-      Right (_, st') -> registerTopDeclsIr write st' rest
+registerTopDeclsIr :: CompileState -> [TopDecl] -> Either CodegenError (CompileState, [TopItemIr])
+registerTopDeclsIr st decls = case decls of
+  [] -> Right (st, [])
+  decl:rest ->
+    case registerTopDeclIr st decl of
+      Left err -> Left err
+      Right (st', items) ->
+        case registerTopDeclsIr st' rest of
+          Left err -> Left err
+          Right (st'', restItems) -> Right (st'', items ++ restItems)
 
-registerTopDeclIr :: ([String] -> IO ()) -> CompileState -> TopDecl -> IO (Either CompileError ((), CompileState))
-registerTopDeclIr write st decl = case decl of
+registerTopDeclIr :: CompileState -> TopDecl -> Either CodegenError (CompileState, [TopItemIr])
+registerTopDeclIr st decl = case decl of
   Global ty name initExpr ->
-    case unCompileM (registerTypeAggregates ty >> bindGlobal name ty >> globalData ty initExpr) st of
-      Left err -> pure (Left err)
+    case mapCompileRun (unCompileM (registerTypeAggregates ty >> bindGlobal name ty >> globalData ty initExpr) st) of
+      Left err -> Left err
       Right (values, st') -> do
-        emitDataItemIr write (DataItem name values)
-        st'' <- flushPendingDataItemsIr write st'
-        pure (Right ((), st''))
+        case pendingDataItemsIr st' of
+          (pending, st'') -> Right (st'', TopData (DataItem name values) : pending)
   Globals globals ->
-    registerGlobalsIr write st globals
-  _ -> pure (registerTopDeclShallowState st decl)
+    registerGlobalsIr st globals
+  _ ->
+    case mapCompileRun (registerTopDeclShallowState st decl) of
+      Left err -> Left err
+      Right (_, st') -> Right (st', [])
 
 registerTopDeclShallowState :: CompileState -> TopDecl -> Either CompileError ((), CompileState)
 registerTopDeclShallowState st decl = case decl of
@@ -78,28 +90,44 @@ registerTopDeclShallowState st decl = case decl of
     unCompileM (registerConstants constants) st
   _ -> Right ((), st)
 
-registerGlobalsIr :: ([String] -> IO ()) -> CompileState -> [(CType, String, Maybe Expr)] -> IO (Either CompileError ((), CompileState))
-registerGlobalsIr write st globals = case globals of
-  [] -> pure (Right ((), st))
+registerGlobalsIr :: CompileState -> [(CType, String, Maybe Expr)] -> Either CodegenError (CompileState, [TopItemIr])
+registerGlobalsIr st globals = case globals of
+  [] -> Right (st, [])
   (ty, name, initExpr):rest ->
-    case unCompileM (registerTypeAggregates ty >> bindGlobal name ty >> globalData ty initExpr) st of
-      Left err -> pure (Left err)
-      Right (values, st') -> do
-        emitDataItemIr write (DataItem name values)
-        st'' <- flushPendingDataItemsIr write st'
-        registerGlobalsIr write st'' rest
+    case mapCompileRun (unCompileM (registerTypeAggregates ty >> bindGlobal name ty >> globalData ty initExpr) st) of
+      Left err -> Left err
+      Right (values, st') ->
+        case pendingDataItemsIr st' of
+          (pending, st'') ->
+            case registerGlobalsIr st'' rest of
+              Left err -> Left err
+              Right (stFinal, restItems) -> Right (stFinal, TopData (DataItem name values) : pending ++ restItems)
 
-flushPendingDataItemsIr :: ([String] -> IO ()) -> CompileState -> IO CompileState
-flushPendingDataItemsIr write st = case csDataItems st of
-  [] -> pure st
-  items -> do
-    mapM_ (emitDataItemIr write) (reverse items)
-    pure st { csDataItems = [] }
+pendingDataItemsIr :: CompileState -> ([TopItemIr], CompileState)
+pendingDataItemsIr st = case csDataItems st of
+  [] -> ([], st)
+  items -> (map TopData (reverse items), st { csDataItems = [] })
 
 paramDeclNamesIr :: [Param] -> [String]
 paramDeclNamesIr params = case params of
   [] -> []
   Param _ name:rest -> name : paramDeclNamesIr rest
+
+emitModuleIr :: ([String] -> IO ()) -> ModuleIr -> IO ()
+emitModuleIr write ir = case ir of
+  ModuleIr items -> emitTopItemsIr write items
+
+emitTopItemsIr :: ([String] -> IO ()) -> [TopItemIr] -> IO ()
+emitTopItemsIr write items = case items of
+  [] -> pure ()
+  item:rest -> do
+    emitTopItemIr write item
+    emitTopItemsIr write rest
+
+emitTopItemIr :: ([String] -> IO ()) -> TopItemIr -> IO ()
+emitTopItemIr write item = case item of
+  TopData dataItem -> emitDataItemIr write dataItem
+  TopFunction fn -> emitFunctionIr write fn
 
 emitDataItemIr :: ([String] -> IO ()) -> DataItem -> IO ()
 emitDataItemIr write item = case item of
@@ -134,7 +162,7 @@ zeroRun values = case values of
 
 emitFunctionIr :: ([String] -> IO ()) -> FunctionIr -> IO ()
 emitFunctionIr write fn = case fn of
-  FunctionIr name _ blocks -> do
+  FunctionIr name blocks -> do
     write ["F " ++ name]
     emitBlocksIr write blocks
     write ["E"]
@@ -260,10 +288,19 @@ binOpCode op = case op of
 
 optimizeFunctionIr :: FunctionIr -> FunctionIr
 optimizeFunctionIr fn = case fn of
-  FunctionIr name params blocks ->
+  FunctionIr name blocks ->
     let simplified = map simplifyBasicBlock blocks
         stats = functionStats simplified
-    in FunctionIr name params (map (optimizeBasicBlock stats) simplified)
+    in FunctionIr name (map (optimizeBasicBlock stats) simplified)
+
+optimizeModuleIr :: ModuleIr -> ModuleIr
+optimizeModuleIr ir = case ir of
+  ModuleIr items -> ModuleIr (map optimizeTopItemIr items)
+
+optimizeTopItemIr :: TopItemIr -> TopItemIr
+optimizeTopItemIr item = case item of
+  TopData dataItem -> TopData dataItem
+  TopFunction fn -> TopFunction (optimizeFunctionIr fn)
 
 simplifyBasicBlock :: BasicBlock -> BasicBlock
 simplifyBasicBlock block = case block of

@@ -28,11 +28,9 @@ lowerFunction name params body =
 lowerFunctionBody :: String -> [Param] -> [Stmt] -> CompileM FunctionIr
 lowerFunctionBody name params body = do
   bid <- freshBlock
-  paramResult <- lowerParams 0 params
-  case paramResult of
-    (names, paramInstrs) -> do
-      blocks <- lowerStatementsFrom bid paramInstrs body (TRet (Just (OImm 0)))
-      pure (FunctionIr name names blocks)
+  paramInstrs <- lowerParams 0 params
+  blocks <- lowerStatementsFrom bid paramInstrs body (TRet (Just (OImm 0)))
+  pure (FunctionIr name blocks)
 
 lowerStatementsFrom :: BlockId -> [Instr] -> [Stmt] -> Terminator -> CompileM [BasicBlock]
 lowerStatementsFrom bid instrs stmts defaultTerm = case stmts of

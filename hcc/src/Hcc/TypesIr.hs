@@ -9,8 +9,8 @@ module TypesIr
   , DataValue(..)
   , DataItem(..)
   , FunctionIr(..)
+  , TopItemIr(..)
   , ModuleIr(..)
-  , renderTemp
   ) where
 
 import Base
@@ -85,9 +85,10 @@ data DataValue
 
 data DataItem = DataItem String [DataValue]
 
-data FunctionIr = FunctionIr String [String] [BasicBlock]
+data FunctionIr = FunctionIr String [BasicBlock]
 
-data ModuleIr = ModuleIr [DataItem] [FunctionIr]
+data TopItemIr
+  = TopData DataItem
+  | TopFunction FunctionIr
 
-renderTemp :: Temp -> String
-renderTemp (Temp n) = "Temp " ++ show n
+data ModuleIr = ModuleIr [TopItemIr]
