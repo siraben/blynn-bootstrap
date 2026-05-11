@@ -199,6 +199,9 @@ emitInstrIr write instr = case instr of
   IStore32 addr value -> write ["15 " ++ operandIrFields addr ++ " " ++ operandIrFields value]
   IStore16 addr value -> write ["16 " ++ operandIrFields addr ++ " " ++ operandIrFields value]
   IStore8 addr value -> write ["17 " ++ operandIrFields addr ++ " " ++ operandIrFields value]
+  ISExt temp size op -> write ["22 " ++ tempText temp ++ " " ++ show size ++ " " ++ operandIrFields op]
+  IZExt temp size op -> write ["23 " ++ tempText temp ++ " " ++ show size ++ " " ++ operandIrFields op]
+  ITrunc temp size op -> write ["24 " ++ tempText temp ++ " " ++ show size ++ " " ++ operandIrFields op]
   IBin temp op left right -> write ["18 " ++ tempText temp ++ " " ++ show (binOpCode op) ++ " " ++ operandIrFields left ++ " " ++ operandIrFields right]
   ICall result name args -> write ["19 " ++ maybeTempText result ++ " " ++ name ++ " " ++ operandsIrFields args]
   ICallIndirect result callee args -> write ["20 " ++ maybeTempText result ++ " " ++ operandIrFields callee ++ " " ++ operandsIrFields args]
@@ -224,6 +227,7 @@ terminatorIrLine term = case term of
   TRet (Just op) -> "R " ++ operandIrFields op
   TJump bid -> "J " ++ blockIdText bid
   TBranch op yes no -> "B " ++ operandIrFields op ++ " " ++ blockIdText yes ++ " " ++ blockIdText no
+  TBranchCmp op a b yes no -> "C " ++ show (binOpCode op) ++ " " ++ operandIrFields a ++ " " ++ operandIrFields b ++ " " ++ blockIdText yes ++ " " ++ blockIdText no
 
 operandsIrFields :: [Operand] -> String
 operandsIrFields ops = show (length ops) ++ operandsIrFieldsRest ops
@@ -468,6 +472,9 @@ rewriteInstr env instr = case instr of
   IStore32 addr value -> IStore32 (rewriteOperand env addr) (rewriteOperand env value)
   IStore16 addr value -> IStore16 (rewriteOperand env addr) (rewriteOperand env value)
   IStore8 addr value -> IStore8 (rewriteOperand env addr) (rewriteOperand env value)
+  ISExt temp size op -> ISExt temp size (rewriteOperand env op)
+  IZExt temp size op -> IZExt temp size (rewriteOperand env op)
+  ITrunc temp size op -> ITrunc temp size (rewriteOperand env op)
   IBin temp op a b -> IBin temp op (rewriteOperand env a) (rewriteOperand env b)
   ICall result name args -> ICall result name (map (rewriteOperand env) args)
   ICallIndirect result callee args -> ICallIndirect result (rewriteOperand env callee) (map (rewriteOperand env) args)
@@ -528,6 +535,9 @@ countInstr instr stats = case instr of
   IStore32 addr value -> countOperand value (countOperand addr stats)
   IStore16 addr value -> countOperand value (countOperand addr stats)
   IStore8 addr value -> countOperand value (countOperand addr stats)
+  ISExt temp _ op -> countDef temp (countOperand op stats)
+  IZExt temp _ op -> countDef temp (countOperand op stats)
+  ITrunc temp _ op -> countDef temp (countOperand op stats)
   IBin temp _ a b -> countDef temp (countOperand b (countOperand a stats))
   ICond temp condInstrs condOp trueInstrs trueOp falseInstrs falseOp ->
     countDef temp
@@ -546,6 +556,7 @@ countTerminator term stats = case term of
   TRet (Just op) -> countOperand op stats
   TJump _ -> stats
   TBranch op _ _ -> countOperand op stats
+  TBranchCmp _ a b _ _ -> countOperand b (countOperand a stats)
 
 countOperands :: [Operand] -> BlockStats -> BlockStats
 countOperands ops stats = case ops of
@@ -617,6 +628,9 @@ blockInstrTempsOne instr stats = case instr of
   IStore32 addr value -> blockOperand value (blockOperand addr stats)
   IStore16 addr value -> blockOperand value (blockOperand addr stats)
   IStore8 addr value -> blockOperand value (blockOperand addr stats)
+  ISExt temp _ op -> countBlocked temp (blockOperand op stats)
+  IZExt temp _ op -> countBlocked temp (blockOperand op stats)
+  ITrunc temp _ op -> countBlocked temp (blockOperand op stats)
   IBin temp _ a b -> countBlocked temp (blockOperand b (blockOperand a stats))
   ICond temp condInstrs condOp trueInstrs trueOp falseInstrs falseOp ->
     countBlocked temp
@@ -650,6 +664,7 @@ blockTerminatorTemps term stats = case term of
   TRet (Just op) -> blockOperand op stats
   TJump _ -> stats
   TBranch op _ _ -> blockOperand op stats
+  TBranchCmp _ a b _ _ -> blockOperand b (blockOperand a stats)
 
 mapCompileRun :: Either CompileError a -> Either CodegenError a
 mapCompileRun result = case result of

@@ -37,7 +37,10 @@ enum {
   IK_BIN = 18,
   IK_CALL = 19,
   IK_CALLI = 20,
-  IK_COND = 21
+  IK_COND = 21,
+  IK_SEXT = 22,
+  IK_ZEXT = 23,
+  IK_TRUNC = 24
 };
 
 enum {
@@ -67,7 +70,8 @@ enum {
 enum {
   TK_RET = 1,
   TK_JUMP = 2,
-  TK_BRANCH = 3
+  TK_BRANCH = 3,
+  TK_BRANCH_CMP = 4
 };
 
 enum {
@@ -132,6 +136,8 @@ struct Block {
   InstrList instrs;
   int term_kind;
   Operand term_op;
+  Operand term_b;
+  int term_binop;
   int yes;
   int no;
 };
@@ -397,6 +403,15 @@ static Operand *block_term_op_ptr(Block *block)
 #endif
 }
 
+static Operand *block_term_b_ptr(Block *block)
+{
+#if defined(__M2__)
+  return (Operand *)((char *)block + 80);
+#else
+  return &block->term_b;
+#endif
+}
+
 static int read_line(FILE *file, char *buf, int cap)
 {
   int len = 0;
@@ -615,6 +630,13 @@ static void parse_ir_instr_line(FILE *file, char *line, Instr *instr)
       instr->temp = parse_int_token(&cursor);
       parse_ir_operand(&cursor, instr_a_ptr(instr));
       break;
+    case IK_SEXT:
+    case IK_ZEXT:
+    case IK_TRUNC:
+      instr->temp = parse_int_token(&cursor);
+      instr->value = parse_long_token(&cursor);
+      parse_ir_operand(&cursor, instr_a_ptr(instr));
+      break;
     case IK_ADDROF:
       instr->temp = parse_int_token(&cursor);
       instr->temp2 = parse_int_token(&cursor);
@@ -711,6 +733,13 @@ static void parse_ir_term(Block *block, char *line)
     parse_ir_operand(&cursor, block_term_op_ptr(block));
     block->yes = parse_int_token(&cursor);
     block->no = parse_int_token(&cursor);
+  } else if (str_eq(tok, "C")) {
+    block->term_kind = TK_BRANCH_CMP;
+    block->term_binop = parse_int_token(&cursor);
+    parse_ir_operand(&cursor, block_term_op_ptr(block));
+    parse_ir_operand(&cursor, block_term_b_ptr(block));
+    block->yes = parse_int_token(&cursor);
+    block->no = parse_int_token(&cursor);
   } else {
     die("unknown IR terminator");
   }
@@ -728,7 +757,7 @@ static void parse_ir_block(FILE *file, char *first_line, Block *block)
   block->id = parse_int_token(&cursor);
   line = xrealloc(0, LINE_CAP);
   while (read_line(file, line, LINE_CAP)) {
-    if (str_prefix_n(line, "R", 1) || str_prefix_n(line, "J ", 2) || str_prefix_n(line, "B ", 2)) {
+    if (str_prefix_n(line, "R", 1) || str_prefix_n(line, "J ", 2) || str_prefix_n(line, "B ", 2) || str_prefix_n(line, "C ", 2)) {
       parse_ir_term(block, line);
       return;
     }
@@ -839,6 +868,7 @@ static void free_block(Block *block)
 {
   free_instr_list(block_instrs_ptr(block));
   free_operand(block_term_op_ptr(block));
+  free_operand(block_term_b_ptr(block));
 }
 
 static void free_function(Function *fn)
@@ -955,6 +985,9 @@ static void allocate_instrs(InstrList *list, LocArray *locs, int *next_slot)
       case IK_LOADS16:
       case IK_LOAD8:
       case IK_LOADS8:
+      case IK_SEXT:
+      case IK_ZEXT:
+      case IK_TRUNC:
       case IK_BIN:
         alloc_def(locs, next_slot, in->temp);
         break;
@@ -1024,6 +1057,16 @@ static void emit_header(FILE *out)
     fprintf(out, "DEFINE HCC_STORE_WORD 8903\n");
     fprintf(out, "DEFINE HCC_STORE_HALF 668903\n");
     fprintf(out, "DEFINE HCC_STORE_CHAR 8803\n");
+    fprintf(out, "DEFINE HCC_JUMP_EQ 0F84\n");
+    fprintf(out, "DEFINE HCC_JUMP_NE 0F85\n");
+    fprintf(out, "DEFINE HCC_JUMP_LT 0F8C\n");
+    fprintf(out, "DEFINE HCC_JUMP_LE 0F8E\n");
+    fprintf(out, "DEFINE HCC_JUMP_GT 0F8F\n");
+    fprintf(out, "DEFINE HCC_JUMP_GE 0F8D\n");
+    fprintf(out, "DEFINE HCC_JUMP_ULT 0F82\n");
+    fprintf(out, "DEFINE HCC_JUMP_ULE 0F86\n");
+    fprintf(out, "DEFINE HCC_JUMP_UGT 0F87\n");
+    fprintf(out, "DEFINE HCC_JUMP_UGE 0F83\n");
     fprintf(out, "DEFINE HCC_CALL_eax FFD0\n");
     fprintf(out, "DEFINE CALL_IMMEDIATE E8\n");
     fprintf(out, "\n");
@@ -1043,6 +1086,16 @@ static void emit_header(FILE *out)
   fprintf(out, "DEFINE JUMP E9\n");
   fprintf(out, "DEFINE JUMP_EQ 0F84\n");
   fprintf(out, "DEFINE JUMP_NE 0F85\n");
+  fprintf(out, "DEFINE HCC_JUMP_EQ 0F84\n");
+  fprintf(out, "DEFINE HCC_JUMP_NE 0F85\n");
+  fprintf(out, "DEFINE HCC_JUMP_LT 0F8C\n");
+  fprintf(out, "DEFINE HCC_JUMP_LE 0F8E\n");
+  fprintf(out, "DEFINE HCC_JUMP_GT 0F8F\n");
+  fprintf(out, "DEFINE HCC_JUMP_GE 0F8D\n");
+  fprintf(out, "DEFINE HCC_JUMP_ULT 0F82\n");
+  fprintf(out, "DEFINE HCC_JUMP_ULE 0F86\n");
+  fprintf(out, "DEFINE HCC_JUMP_UGT 0F87\n");
+  fprintf(out, "DEFINE HCC_JUMP_UGE 0F83\n");
   fprintf(out, "DEFINE LOAD_BASE_ADDRESS_rax 488D85\n");
   fprintf(out, "DEFINE LOAD_BYTE 0FBE00\n");
   fprintf(out, "DEFINE LOAD_IMMEDIATE_rax 48C7C0\n");
@@ -1095,6 +1148,11 @@ static void emit_header(FILE *out)
   fprintf(out, "DEFINE HCC_LOAD_IMMEDIATE64_rax 48B8\n");
   fprintf(out, "DEFINE HCC_LI64_80000000 48B80000008000000000\n");
   fprintf(out, "DEFINE HCC_LI64_FFFFFFFF 48B8FFFFFFFF00000000\n");
+  fprintf(out, "DEFINE HCC_SEXT8_RAX 480FBEC0\n");
+  fprintf(out, "DEFINE HCC_SEXT16_RAX 480FBFC0\n");
+  fprintf(out, "DEFINE HCC_SEXT32_RAX 4863C0\n");
+  fprintf(out, "DEFINE HCC_ZEXT16_RAX 480FB7C0\n");
+  fprintf(out, "DEFINE HCC_ZEXT32_RAX 89C0\n");
   fprintf(out, "DEFINE HCC_SHL_rax_cl 48D3E0\n");
   fprintf(out, "DEFINE HCC_SHR_rax_cl 48D3E8\n");
   fprintf(out, "DEFINE HCC_SAR_rax_cl 48D3F8\n");
@@ -1343,6 +1401,177 @@ static void emit_binop(FILE *out, int op)
   }
 }
 
+static long mask_for_size(int size)
+{
+  if (size <= 1) return 255;
+  if (size <= 2) return 65535;
+  return -1;
+}
+
+static long sign_bit_for_size(int size)
+{
+  if (size <= 1) return 128;
+  if (size <= 2) return 32768;
+  return 2147483648L;
+}
+
+static void emit_copy_acc_to_scratch(FILE *out)
+{
+  if (target_arch == TARGET_I386) fprintf(out, "  mov_ebx,eax\n");
+  else fprintf(out, "  HCC_M_RAX_RBX\n");
+}
+
+static void emit_amd64_zext_loaded_rax(FILE *out, int size)
+{
+  if (size <= 1) fprintf(out, "  MOVEZX\n");
+  else if (size <= 2) fprintf(out, "  HCC_ZEXT16_RAX\n");
+  else if (size <= 4) fprintf(out, "  HCC_ZEXT32_RAX\n");
+}
+
+static void emit_i386_zext_loaded_eax(FILE *out, EmitState *state, int size)
+{
+  if (size >= 4) return;
+  emit_copy_acc_to_scratch(out);
+  emit_load_immediate(out, state, mask_for_size(size));
+  emit_binop(out, BK_AND);
+}
+
+static void emit_amd64_sext_loaded_rax(FILE *out, int size)
+{
+  if (size <= 1) fprintf(out, "  HCC_SEXT8_RAX\n");
+  else if (size <= 2) fprintf(out, "  HCC_SEXT16_RAX\n");
+  else if (size <= 4) fprintf(out, "  HCC_SEXT32_RAX\n");
+}
+
+static void emit_i386_sext_loaded_eax(FILE *out, EmitState *state, int size)
+{
+  long sign_bit;
+  if (size >= 4) return;
+  sign_bit = sign_bit_for_size(size);
+  emit_copy_acc_to_scratch(out);
+  emit_load_immediate(out, state, mask_for_size(size));
+  emit_binop(out, BK_AND);
+  emit_copy_acc_to_scratch(out);
+  emit_load_immediate(out, state, sign_bit);
+  emit_binop(out, BK_XOR);
+  emit_copy_acc_to_scratch(out);
+  emit_load_immediate(out, state, sign_bit);
+  emit_binop(out, BK_SUB);
+}
+
+static void emit_zext_loaded_acc(FILE *out, EmitState *state, int size)
+{
+  if (target_arch == TARGET_I386) emit_i386_zext_loaded_eax(out, state, size);
+  else emit_amd64_zext_loaded_rax(out, size);
+  emit_forget_rax(state);
+}
+
+static void emit_sext_loaded_acc(FILE *out, EmitState *state, int size)
+{
+  if (target_arch == TARGET_I386) emit_i386_sext_loaded_eax(out, state, size);
+  else emit_amd64_sext_loaded_rax(out, size);
+  emit_forget_rax(state);
+}
+
+static int invert_binop(int op)
+{
+  switch (op) {
+    case BK_EQ: return BK_NE;
+    case BK_NE: return BK_EQ;
+    case BK_LT: return BK_GE;
+    case BK_LE: return BK_GT;
+    case BK_GT: return BK_LE;
+    case BK_GE: return BK_LT;
+    case BK_ULT: return BK_UGE;
+    case BK_ULE: return BK_UGT;
+    case BK_UGT: return BK_ULE;
+    case BK_UGE: return BK_ULT;
+  }
+  die("cannot invert branch comparison");
+  return BK_NE;
+}
+
+static void emit_compare(FILE *out, EmitState *state, LocArray *locs, Operand *a, Operand *b)
+{
+  emit_load_operand(out, state, locs, 0, a);
+  emit_copy_acc_to_scratch(out);
+  emit_load_operand(out, state, locs, 0, b);
+  if (target_arch == TARGET_I386) fprintf(out, "  cmp_ebx,eax\n");
+  else fprintf(out, "  CMP\n");
+}
+
+static const char *jump_name_for_binop(int op)
+{
+  switch (op) {
+    case BK_EQ: return "HCC_JUMP_EQ";
+    case BK_NE: return "HCC_JUMP_NE";
+    case BK_LT: return "HCC_JUMP_LT";
+    case BK_LE: return "HCC_JUMP_LE";
+    case BK_GT: return "HCC_JUMP_GT";
+    case BK_GE: return "HCC_JUMP_GE";
+    case BK_ULT: return "HCC_JUMP_ULT";
+    case BK_ULE: return "HCC_JUMP_ULE";
+    case BK_UGT: return "HCC_JUMP_UGT";
+    case BK_UGE: return "HCC_JUMP_UGE";
+  }
+  die("bad branch comparison");
+  return "HCC_JUMP_NE";
+}
+
+static void emit_block_ref(FILE *out, const char *fn_name, int id);
+
+static void emit_jump(FILE *out, const char *fn_name, int target)
+{
+  if (target_arch == TARGET_I386) fprintf(out, "  jmp %%");
+  else fprintf(out, "  JUMP %%");
+  emit_block_ref(out, fn_name, target);
+  fputc('\n', out);
+}
+
+static void emit_compare_jump(FILE *out, const char *fn_name, int op, int target)
+{
+  fprintf(out, "  %s %%", jump_name_for_binop(op));
+  emit_block_ref(out, fn_name, target);
+  fputc('\n', out);
+}
+
+static void emit_truth_jump(FILE *out, const char *fn_name, int jump_if_true, int target)
+{
+  if (target_arch == TARGET_I386) {
+    if (jump_if_true) fprintf(out, "  test_eax,eax\n  jne %%");
+    else fprintf(out, "  test_eax,eax\n  je %%");
+  } else {
+    if (jump_if_true) fprintf(out, "  TEST\n  JUMP_NE %%");
+    else fprintf(out, "  TEST\n  JUMP_EQ %%");
+  }
+  emit_block_ref(out, fn_name, target);
+  fputc('\n', out);
+}
+
+static void emit_truth_branch(FILE *out, const char *fn_name, int yes, int no, int next_id)
+{
+  if (next_id == yes) {
+    emit_truth_jump(out, fn_name, 0, no);
+  } else if (next_id == no) {
+    emit_truth_jump(out, fn_name, 1, yes);
+  } else {
+    emit_truth_jump(out, fn_name, 1, yes);
+    emit_jump(out, fn_name, no);
+  }
+}
+
+static void emit_compare_branch(FILE *out, const char *fn_name, int op, int yes, int no, int next_id)
+{
+  if (next_id == yes) {
+    emit_compare_jump(out, fn_name, invert_binop(op), no);
+  } else if (next_id == no) {
+    emit_compare_jump(out, fn_name, op, yes);
+  } else {
+    emit_compare_jump(out, fn_name, op, yes);
+    emit_jump(out, fn_name, no);
+  }
+}
+
 static int call_stack_bytes(int argc)
 {
   int stack_args = argc - 6;
@@ -1403,6 +1632,30 @@ static void emit_instrs(FILE *out, const char *fn_name, EmitState *state, LocArr
 static void emit_instr(FILE *out, const char *fn_name, EmitState *state, LocArray *locs, int total_slots, Instr *in)
 {
   int param_offset;
+  int width;
+
+  if (in->kind == IK_SEXT) {
+    width = in->value;
+    emit_load_operand(out, state, locs, 0, instr_a_ptr(in));
+    emit_sext_loaded_acc(out, state, width);
+    emit_store_temp(out, state, locs, in->temp);
+    return;
+  }
+  if (in->kind == IK_ZEXT) {
+    width = in->value;
+    emit_load_operand(out, state, locs, 0, instr_a_ptr(in));
+    emit_zext_loaded_acc(out, state, width);
+    emit_store_temp(out, state, locs, in->temp);
+    return;
+  }
+  if (in->kind == IK_TRUNC) {
+    width = in->value;
+    emit_load_operand(out, state, locs, 0, instr_a_ptr(in));
+    emit_zext_loaded_acc(out, state, width);
+    emit_store_temp(out, state, locs, in->temp);
+    return;
+  }
+
   switch (in->kind) {
     case IK_PARAM:
       if (target_arch == TARGET_I386) {
@@ -1589,32 +1842,14 @@ static void emit_terminator(FILE *out, Function *fn, int block_index, EmitState 
     else fprintf(out, "  RETURN\n");
   } else if (block->term_kind == TK_JUMP) {
     if (next_id != block->yes) {
-      if (target_arch == TARGET_I386) fprintf(out, "  jmp %%");
-      else fprintf(out, "  JUMP %%");
-      emit_block_ref(out, fn->name, block->yes);
-      fputc('\n', out);
+      emit_jump(out, fn->name, block->yes);
     }
   } else if (block->term_kind == TK_BRANCH) {
     emit_load_operand(out, state, locs, 0, block_term_op_ptr(block));
-    if (next_id == block->yes) {
-      if (target_arch == TARGET_I386) fprintf(out, "  test_eax,eax\n  je %%");
-      else fprintf(out, "  TEST\n  JUMP_EQ %%");
-      emit_block_ref(out, fn->name, block->no);
-      fputc('\n', out);
-    } else if (next_id == block->no) {
-      if (target_arch == TARGET_I386) fprintf(out, "  test_eax,eax\n  jne %%");
-      else fprintf(out, "  TEST\n  JUMP_NE %%");
-      emit_block_ref(out, fn->name, block->yes);
-      fputc('\n', out);
-    } else {
-      if (target_arch == TARGET_I386) fprintf(out, "  test_eax,eax\n  jne %%");
-      else fprintf(out, "  TEST\n  JUMP_NE %%");
-      emit_block_ref(out, fn->name, block->yes);
-      if (target_arch == TARGET_I386) fprintf(out, "\n  jmp %%");
-      else fprintf(out, "\n  JUMP %%");
-      emit_block_ref(out, fn->name, block->no);
-      fputc('\n', out);
-    }
+    emit_truth_branch(out, fn->name, block->yes, block->no, next_id);
+  } else if (block->term_kind == TK_BRANCH_CMP) {
+    emit_compare(out, state, locs, block_term_op_ptr(block), block_term_b_ptr(block));
+    emit_compare_branch(out, fn->name, block->term_binop, block->yes, block->no, next_id);
   }
   emit_forget_rax(state);
 }

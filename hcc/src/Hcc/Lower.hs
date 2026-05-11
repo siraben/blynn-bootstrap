@@ -199,11 +199,36 @@ lowerConditionBlock bid instrs cond trueId falseId = case cond of
     pure (leftBlocks ++ rightBlocks)
   EUnary "!" value ->
     lowerConditionBlock bid instrs value falseId trueId
-  _ -> do
-    result <- lowerExpr cond
-    case result of
-      (condInstrs, condOp) ->
-        pure [BasicBlock bid (instrs ++ condInstrs) (TBranch condOp trueId falseId)]
+  EBinary op left right ->
+    if isBranchComparisonOpString op
+      then do
+        result <- lowerBranchComparison op left right
+        case result of
+          (condInstrs, iop, leftOp, rightOp) ->
+            pure [BasicBlock bid (instrs ++ condInstrs) (TBranchCmp iop leftOp rightOp trueId falseId)]
+      else lowerValueConditionBlock bid instrs cond trueId falseId
+  _ ->
+    lowerValueConditionBlock bid instrs cond trueId falseId
+
+lowerValueConditionBlock :: BlockId -> [Instr] -> Expr -> BlockId -> BlockId -> CompileM [BasicBlock]
+lowerValueConditionBlock bid instrs cond trueId falseId = do
+  result <- lowerExpr cond
+  case result of
+    (condInstrs, condOp) ->
+      pure [BasicBlock bid (instrs ++ condInstrs) (TBranch condOp trueId falseId)]
+
+isBranchComparisonOpString :: String -> Bool
+isBranchComparisonOpString op =
+  op `elem` ["==", "!=", "<", "<=", ">", ">="]
+
+lowerBranchComparison :: String -> Expr -> Expr -> CompileM ([Instr], BinOp, Operand, Operand)
+lowerBranchComparison op a b = do
+  operandResult <- lowerComparisonOperands a b
+  let instrs = fst3 operandResult
+  let ao = snd3 operandResult
+  let bo = thd3 operandResult
+  iop <- if op == "==" then pure IEq else if op == "!=" then pure INe else comparisonOp op a b
+  pure (instrs, iop, ao, bo)
 
 requireBreakTarget :: CompileM BlockId
 requireBreakTarget = do
@@ -244,9 +269,7 @@ lowerSwitchDispatchFrom bid valueOp defaultTarget switchCasePairs = case switchC
       result <- lowerExpr caseExpr
       case result of
         (caseInstrs, caseOp) -> do
-          eq <- freshTemp
-          let compareInstr = IBin eq IEq valueOp caseOp
-          let block = BasicBlock bid (caseInstrs ++ [compareInstr]) (TBranch (OTemp eq) target nextId)
+          let block = BasicBlock bid caseInstrs (TBranchCmp IEq valueOp caseOp target nextId)
           switchDispatchTail block nextId valueOp defaultTarget tailCases
 
 switchDispatchTail :: BasicBlock -> BlockId -> Operand -> BlockId -> [(Expr, BlockId)] -> CompileM [BasicBlock]
@@ -712,15 +735,42 @@ isComparisonOpString op =
 
 lowerComparisonExpr :: String -> Expr -> Expr -> CompileM ([Instr], Operand)
 lowerComparisonExpr op a b = do
+  operandResult <- lowerComparisonOperands a b
+  let instrs = fst3 operandResult
+  let ao = snd3 operandResult
+  let bo = thd3 operandResult
+  out <- freshTemp
+  iop <- comparisonOp op a b
+  pure (instrs ++ [IBin out iop ao bo], OTemp out)
+
+lowerComparisonOperands :: Expr -> Expr -> CompileM ([Instr], Operand, Operand)
+lowerComparisonOperands a b = do
   leftResult <- lowerExpr a
   rightResult <- lowerExpr b
   let ai = fst leftResult
   let ao = snd leftResult
   let bi = fst rightResult
   let bo = snd rightResult
-  out <- freshTemp
-  iop <- comparisonOp op a b
-  pure (ai ++ bi ++ [IBin out iop ao bo], OTemp out)
+  commonTy <- usualArithmeticType a b
+  acoerceResult <- coerceBinOperand commonTy a ao
+  bcoerceResult <- coerceBinOperand commonTy b bo
+  let acoerceInstrs = fst acoerceResult
+  let acoerceOp = snd acoerceResult
+  let bcoerceInstrs = fst bcoerceResult
+  let bcoerceOp = snd bcoerceResult
+  pure (ai ++ bi ++ acoerceInstrs ++ bcoerceInstrs, acoerceOp, bcoerceOp)
+
+fst3 :: (a, b, c) -> a
+fst3 value = case value of
+  (a, _, _) -> a
+
+snd3 :: (a, b, c) -> b
+snd3 value = case value of
+  (_, b, _) -> b
+
+thd3 :: (a, b, c) -> c
+thd3 value = case value of
+  (_, _, c) -> c
 
 lowerDirectCallExpr :: String -> [Expr] -> CompileM ([Instr], Operand)
 lowerDirectCallExpr name args = do
@@ -1058,49 +1108,12 @@ positiveMod value modulus =
 maskScalar :: Int -> Operand -> CompileM ([Instr], Operand)
 maskScalar size op = do
   out <- freshTemp
-  pure ([IBin out IAnd op (byteMaskOperand size)], OTemp out)
+  pure ([IZExt out size op], OTemp out)
 
 signExtendScalar :: Int -> Operand -> CompileM ([Instr], Operand)
 signExtendScalar size op = do
-  masked <- freshTemp
-  flipped <- freshTemp
   out <- freshTemp
-  let signBit = signBitOperand size
-  pure ( [ IBin masked IAnd op (byteMaskOperand size)
-         , IBin flipped IXor (OTemp masked) signBit
-         , IBin out ISub (OTemp flipped) signBit
-         ]
-       , OTemp out)
-
-byteMask :: Int -> Int
-byteMask size = pow2 (size * 8) - 1
-
-byteMaskOperand :: Int -> Operand
-byteMaskOperand size =
-  if size >= 4
-  then OImmBytes (byteMaskBytes size)
-  else OImm (byteMask size)
-
-signBitOperand :: Int -> Operand
-signBitOperand size =
-  if size >= 4
-  then OImmBytes (signBitBytes size)
-  else OImm (pow2 (size * 8 - 1))
-
-byteMaskBytes :: Int -> [Int]
-byteMaskBytes size = takeInts 8 (byteOnes size ++ byteZeros)
-
-signBitBytes :: Int -> [Int]
-signBitBytes size = takeInts 8 (byteZerosN (size - 1) ++ [128] ++ byteZeros)
-
-byteOnes :: Int -> [Int]
-byteOnes count = if count <= 0 then [] else 255 : byteOnes (count - 1)
-
-byteZerosN :: Int -> [Int]
-byteZerosN count = if count <= 0 then [] else 0 : byteZerosN (count - 1)
-
-byteZeros :: [Int]
-byteZeros = 0 : byteZeros
+  pure ([ISExt out size op], OTemp out)
 
 copyObject :: Operand -> Operand -> CType -> CompileM [Instr]
 copyObject dst src ty = do

@@ -67,6 +67,9 @@ data Instr
   | IStore32 Operand Operand
   | IStore16 Operand Operand
   | IStore8 Operand Operand
+  | ISExt Temp Int Operand
+  | IZExt Temp Int Operand
+  | ITrunc Temp Int Operand
   | IBin Temp BinOp Operand Operand
   | ICond Temp [Instr] Operand [Instr] Operand [Instr] Operand
   | ICall (Maybe Temp) String [Operand]
@@ -76,6 +79,7 @@ data Terminator
   = TRet (Maybe Operand)
   | TJump BlockId
   | TBranch Operand BlockId BlockId
+  | TBranchCmp BinOp Operand Operand BlockId BlockId
 
 data BasicBlock = BasicBlock BlockId [Instr] Terminator
 
