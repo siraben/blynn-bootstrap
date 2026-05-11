@@ -15,90 +15,104 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  fast-native:
-    name: fast native
-    runs-on: ubuntu-latest
-    timeout-minutes: 120
+  build:
+    name: ${{ matrix.suite }} (${{ matrix.arch }}, ${{ matrix.attr }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: ${{ matrix.timeout }}
     strategy:
       fail-fast: false
       matrix:
-        attr:
-          - tests.precisely.dialect
-          - tests.host.ghc.native.smoke.m1
-          - tests.host.ghc.native.mescc
-          - tinycc.host.ghc.native
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install Nix
-        uses: cachix/install-nix-action@v31.5.2
-        with:
-          github_access_token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Setup Cachix
-        uses: cachix/cachix-action@v12
-        with:
-          name: siraben
-          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-      - name: Build ${{ matrix.attr }}
-        run: nix build --print-build-logs ".#${{ matrix.attr }}"
-
-  faithful:
-    name: faithful debug path
-    runs-on: ubuntu-latest
-    timeout-minutes: 360
-    strategy:
-      fail-fast: false
-      matrix:
-        attr:
-          - tests.tinyccM1.native-vs-faithful
-          - tinycc.m2.precisely.gcc
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install Nix
-        uses: cachix/install-nix-action@v31.5.2
-        with:
-          github_access_token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Setup Cachix
-        uses: cachix/cachix-action@v12
-        with:
-          name: siraben
-          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-      - name: Build ${{ matrix.attr }}
-        run: nix build --print-build-logs ".#${{ matrix.attr }}"
-
-  tcc-precisely-backend:
-    name: tcc backend
-    runs-on: ubuntu-latest
-    timeout-minutes: 360
-    strategy:
-      fail-fast: false
-      matrix:
-        attr:
-          - hcc.gcc.precisely.tcc
-          - tinycc.gcc.precisely.tcc
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install Nix
-        uses: cachix/install-nix-action@v31.5.2
-        with:
-          github_access_token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Setup Cachix
-        uses: cachix/cachix-action@v12
-        with:
-          name: siraben
-          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-      - name: Build ${{ matrix.attr }}
-        run: nix build --print-build-logs ".#${{ matrix.attr }}"
-
-  boss:
-    name: boss stage0 path
-    runs-on: ubuntu-latest
-    timeout-minutes: 720
-    strategy:
-      fail-fast: false
-      max-parallel: 1
-      matrix:
-        attr:
-          - tinycc.m2.precisely.m2
+        include:
+          - suite: fast native
+            arch: amd64
+            runner: ubuntu-latest
+            timeout: 120
+            attr: tests.precisely.dialect
+          - suite: fast native
+            arch: amd64
+            runner: ubuntu-latest
+            timeout: 120
+            attr: tests.host.ghc.native.smoke.m1
+          - suite: fast native
+            arch: amd64
+            runner: ubuntu-latest
+            timeout: 120
+            attr: tests.host.ghc.native.mescc
+          - suite: fast native
+            arch: amd64
+            runner: ubuntu-latest
+            timeout: 120
+            attr: tinycc.host.ghc.native
+          - suite: fast native
+            arch: aarch64
+            runner: ubuntu-24.04-arm
+            timeout: 120
+            attr: tests.precisely.dialect
+          - suite: fast native
+            arch: aarch64
+            runner: ubuntu-24.04-arm
+            timeout: 120
+            attr: tests.host.ghc.native.smoke.m1
+          - suite: fast native
+            arch: aarch64
+            runner: ubuntu-24.04-arm
+            timeout: 120
+            attr: tests.host.ghc.native.mescc
+          - suite: fast native
+            arch: aarch64
+            runner: ubuntu-24.04-arm
+            timeout: 120
+            attr: tinycc.host.ghc.native
+          - suite: faithful debug path
+            arch: amd64
+            runner: ubuntu-latest
+            timeout: 360
+            attr: tests.tinyccM1.native-vs-faithful
+          - suite: faithful debug path
+            arch: amd64
+            runner: ubuntu-latest
+            timeout: 360
+            attr: tinycc.m2.precisely.gcc
+          - suite: faithful debug path
+            arch: aarch64
+            runner: ubuntu-24.04-arm
+            timeout: 360
+            attr: tests.tinyccM1.native-vs-faithful
+          - suite: faithful debug path
+            arch: aarch64
+            runner: ubuntu-24.04-arm
+            timeout: 360
+            attr: tinycc.m2.precisely.gcc
+          - suite: tcc backend
+            arch: amd64
+            runner: ubuntu-latest
+            timeout: 360
+            attr: hcc.gcc.precisely.tcc
+          - suite: tcc backend
+            arch: amd64
+            runner: ubuntu-latest
+            timeout: 360
+            attr: tinycc.gcc.precisely.tcc
+          - suite: tcc backend
+            arch: aarch64
+            runner: ubuntu-24.04-arm
+            timeout: 360
+            attr: hcc.gcc.precisely.tcc
+          - suite: tcc backend
+            arch: aarch64
+            runner: ubuntu-24.04-arm
+            timeout: 360
+            attr: tinycc.gcc.precisely.tcc
+          - suite: boss stage0 path
+            arch: amd64
+            runner: ubuntu-latest
+            timeout: 720
+            attr: tinycc.m2.precisely.m2
+          - suite: boss stage0 path
+            arch: aarch64
+            runner: ubuntu-24.04-arm
+            timeout: 720
+            attr: tinycc.m2.precisely.m2
     steps:
       - uses: actions/checkout@v4
       - name: Install Nix
