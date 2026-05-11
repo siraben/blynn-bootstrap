@@ -1,3 +1,31 @@
+diff --git a/i386-asm.c b/i386-asm.c
+index 00bd7f15..aa7f773b 100644
+--- a/i386-asm.c
++++ b/i386-asm.c
+@@ -1204 +1204,3 @@ ST_FUNC int asm_parse_regvar (int t)
+-    if (s[0] != '%')
++    if (s[0] == '%')
++        s++;
++    if (!s[0])
+@@ -1206 +1208 @@ ST_FUNC int asm_parse_regvar (int t)
+-    t = tok_alloc(s+1, strlen(s)-1)->tok;
++    t = tok_alloc(s, strlen(s))->tok;
+@@ -1554,0 +1557,8 @@ ST_FUNC void subst_asm_operand(CString *add_str,
++        }
++        if (reg >= 8) {
++            if (size == 8 || size == -1)
++                snprintf(buf, sizeof(buf), "%%r%d", reg);
++            else
++                snprintf(buf, sizeof(buf), "%%r%d%c", reg, (size == 1) ? 'b' : ((size == 2) ? 'w' : 'd'));
++            cstr_cat(add_str, buf, -1);
++            return;
+diff --git a/i386-asm.h b/i386-asm.h
+index 65d51795..03e5758a 100644
+--- a/i386-asm.h
++++ b/i386-asm.h
+@@ -340,0 +341,2 @@ ALT(DEF_ASM_OP1(fstsw, 0xdd, 7, OPC_MODRM | OPC_FWAIT, OPT_EA ))
++    DEF_ASM_OP1(ldmxcsr, 0x0fae, 2, OPC_MODRM, OPT_EA )
++    DEF_ASM_OP1(stmxcsr, 0x0fae, 3, OPC_MODRM, OPT_EA )
 diff --git a/include/stddef.h b/include/stddef.h
 index 8f885fcd..5326ef38 100644
 --- a/include/stddef.h
@@ -31,6 +59,20 @@ index 487dbf18..7855a3c1 100644
 +                   || tok == TOK_RESTRICT1 || tok == TOK_RESTRICT2 || tok == TOK_RESTRICT3)
 +                next();
 +        }
+@@ -4779 +4786,12 @@ ST_FUNC void unary(void)
+-	if (is_float(t)) {
++	if (is_float(t)
++            && ((vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST)) {
++            unsigned char *hcc_bytes;
++            hcc_bytes = (unsigned char *)&vtop->c;
++            if (t == VT_FLOAT)
++                hcc_bytes[3] = hcc_bytes[3] ^ 128;
++            else if (t == VT_DOUBLE)
++                hcc_bytes[7] = hcc_bytes[7] ^ 128;
++            else
++                hcc_bytes[9] = hcc_bytes[9] ^ 128;
++            break;
++        } else if (is_float(t)) {
 diff --git a/tcctools.c b/tcctools.c
 index 990fbccc..5d93c12c 100644
 --- a/tcctools.c
@@ -45,3 +87,20 @@ index 990fbccc..5d93c12c 100644
 +        goto the_end;
 +    }
 +
+diff --git a/x86_64-asm.h b/x86_64-asm.h
+index cb9eb16c..fcfd35f1 100644
+--- a/x86_64-asm.h
++++ b/x86_64-asm.h
+@@ -352,0 +353,2 @@ ALT(DEF_ASM_OP1(fstsw, 0xdd, 7, OPC_MODRM | OPC_FWAIT, OPT_EA ))
++    DEF_ASM_OP1(ldmxcsr, 0x0fae, 2, OPC_MODRM, OPT_EA )
++    DEF_ASM_OP1(stmxcsr, 0x0fae, 3, OPC_MODRM, OPT_EA )
+diff --git a/x86_64-gen.c b/x86_64-gen.c
+index b939c0dd..f935acda 100644
+--- a/x86_64-gen.c
++++ b/x86_64-gen.c
+@@ -1203 +1203 @@ void gfunc_call(int nb_args)
+-    char _onstack[nb_args], *onstack = _onstack;
++    char *onstack = tcc_malloc(nb_args);
+@@ -1782 +1782 @@ void gen_opi(int op)
+-            g(vtop->c.i & (ll ? 63 : 31));
++            if (ll) g(vtop->c.i & 63); else g(vtop->c.i & 31);
