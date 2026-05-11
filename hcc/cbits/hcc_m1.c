@@ -1214,7 +1214,16 @@ static void emit_header(FILE *out)
   if (target_arch == TARGET_I386) {
     fprintf(out, "## target: stage0-posix x86 M1\n");
     fprintf(out, "\n");
+    fprintf(out, "DEFINE HCC_ADD_IMMEDIATE_to_acc 05\n");
     fprintf(out, "DEFINE HCC_ADD_IMMEDIATE_to_esp 81C4\n");
+    fprintf(out, "DEFINE HCC_AND_IMMEDIATE_acc 25\n");
+    fprintf(out, "DEFINE HCC_IMUL_IMMEDIATE_acc 69C0\n");
+    fprintf(out, "DEFINE HCC_OR_IMMEDIATE_acc 0D\n");
+    fprintf(out, "DEFINE HCC_SAR_acc_IMMEDIATE C1F8\n");
+    fprintf(out, "DEFINE HCC_SHL_acc_IMMEDIATE C1E0\n");
+    fprintf(out, "DEFINE HCC_SHR_acc_IMMEDIATE C1E8\n");
+    fprintf(out, "DEFINE HCC_SUB_IMMEDIATE_from_acc 2D\n");
+    fprintf(out, "DEFINE HCC_XOR_IMMEDIATE_acc 35\n");
     fprintf(out, "DEFINE HCC_STORE_ESP_IMMEDIATE_from_eax 898424\n");
     fprintf(out, "DEFINE HCC_LOAD_EFFECTIVE_ADDRESS_eax 8D8424\n");
     fprintf(out, "DEFINE HCC_LOAD_SIGNED_WORD 8B00\n");
@@ -1250,6 +1259,16 @@ static void emit_header(FILE *out)
   fprintf(out, "DEFINE AND_rax_rbx 4821D8\n");
   fprintf(out, "DEFINE CALL_IMMEDIATE E8\n");
   fprintf(out, "DEFINE CMP 4839C3\n");
+  fprintf(out, "DEFINE HCC_ADD_IMMEDIATE_to_acc 4805\n");
+  fprintf(out, "DEFINE HCC_AND_IMMEDIATE_acc 4825\n");
+  fprintf(out, "DEFINE HCC_CMP_RAX_IMMEDIATE 483D\n");
+  fprintf(out, "DEFINE HCC_IMUL_IMMEDIATE_acc 4869C0\n");
+  fprintf(out, "DEFINE HCC_OR_IMMEDIATE_acc 480D\n");
+  fprintf(out, "DEFINE HCC_SAR_acc_IMMEDIATE 48C1F8\n");
+  fprintf(out, "DEFINE HCC_SHL_acc_IMMEDIATE 48C1E0\n");
+  fprintf(out, "DEFINE HCC_SHR_acc_IMMEDIATE 48C1E8\n");
+  fprintf(out, "DEFINE HCC_SUB_IMMEDIATE_from_acc 482D\n");
+  fprintf(out, "DEFINE HCC_XOR_IMMEDIATE_acc 4835\n");
   fprintf(out, "DEFINE COPY_rax_to_rdi 4889C7\n");
   fprintf(out, "DEFINE COPY_rax_to_rcx 4889C1\n");
   fprintf(out, "DEFINE COPY_rsp_to_rbp 4889E5\n");
@@ -1381,7 +1400,7 @@ static void emit_data_item(FILE *out, DataItem *item)
   while (j < item->len) {
     int count = 0;
     fprintf(out, "  ");
-    while (j < item->len && count < 16) {
+    while (j < item->len && count < 128) {
       DataValue *v = data_value_at(item->values, j);
       if (count) fputc(' ', out);
       if (v->kind == 1) {
@@ -1637,6 +1656,72 @@ static void emit_binop(FILE *out, int op)
   }
 }
 
+static int emit_binop_immediate(FILE *out, EmitState *state, LocArray *locs, Instr *in)
+{
+  Operand *b;
+  char *name;
+  long value;
+  int small;
+  int count;
+
+  b = instr_b_ptr(in);
+  if (b->kind != OP_IMM) return 0;
+
+  value = b->value;
+  small = value;
+  count = value;
+  name = 0;
+  if ((long)small == value) {
+    switch (in->binop) {
+      case BK_ADD:
+        name = "HCC_ADD_IMMEDIATE_to_acc";
+        break;
+      case BK_SUB:
+        name = "HCC_SUB_IMMEDIATE_from_acc";
+        break;
+      case BK_MUL:
+        name = "HCC_IMUL_IMMEDIATE_acc";
+        break;
+      case BK_AND:
+        name = "HCC_AND_IMMEDIATE_acc";
+        break;
+      case BK_OR:
+        name = "HCC_OR_IMMEDIATE_acc";
+        break;
+      case BK_XOR:
+        name = "HCC_XOR_IMMEDIATE_acc";
+        break;
+    }
+    if (name) {
+      emit_load_operand(out, state, locs, 0, instr_a_ptr(in));
+      fprintf(out, "  %s %%%d\n", name, small);
+      emit_forget_rax(state);
+      return 1;
+    }
+  }
+
+  name = 0;
+  if ((long)count == value && count >= 0 && count <= 255) {
+    if (in->binop == BK_SHL) {
+      name = "HCC_SHL_acc_IMMEDIATE";
+    } else if (in->binop == BK_SHR) {
+      name = "HCC_SHR_acc_IMMEDIATE";
+    } else if (in->binop == BK_SAR) {
+      name = "HCC_SAR_acc_IMMEDIATE";
+    }
+    if (name) {
+      emit_load_operand(out, state, locs, 0, instr_a_ptr(in));
+      fprintf(out, "  %s ", name);
+      emit_byte(out, count);
+      fputc('\n', out);
+      emit_forget_rax(state);
+      return 1;
+    }
+  }
+
+  return 0;
+}
+
 static long mask_for_size(int size)
 {
   if (size <= 1) return 255;
@@ -1773,6 +1858,15 @@ static int invert_binop(int op)
 
 static void emit_compare(FILE *out, EmitState *state, LocArray *locs, Operand *a, Operand *b)
 {
+  if (target_arch != TARGET_I386 && b->kind == OP_IMM) {
+    int small = b->value;
+    if ((long)small == b->value) {
+      emit_load_operand(out, state, locs, 0, a);
+      fprintf(out, "  HCC_CMP_RAX_IMMEDIATE %%%d\n", small);
+      emit_forget_rax(state);
+      return;
+    }
+  }
   emit_load_operand(out, state, locs, 0, a);
   emit_copy_acc_to_scratch(out);
   emit_load_operand(out, state, locs, 0, b);
@@ -2136,12 +2230,14 @@ static void emit_instr(FILE *out, const char *fn_name, EmitState *state, LocArra
       else fprintf(out, "  HCC_STORE_CHAR\n");
       break;
     case IK_BIN:
-      emit_load_operand(out, state, locs, 0, instr_a_ptr(in));
-      if (target_arch == TARGET_I386) fprintf(out, "  mov_ebx,eax\n");
-      else if (target_arch == TARGET_AARCH64) fprintf(out, "  SET_X1_FROM_X0\n");
-      else fprintf(out, "  HCC_M_RAX_RBX\n");
-      emit_load_operand(out, state, locs, 0, instr_b_ptr(in));
-      emit_binop(out, in->binop);
+      if (target_arch == TARGET_AARCH64 || !emit_binop_immediate(out, state, locs, in)) {
+        emit_load_operand(out, state, locs, 0, instr_a_ptr(in));
+        if (target_arch == TARGET_I386) fprintf(out, "  mov_ebx,eax\n");
+        else if (target_arch == TARGET_AARCH64) fprintf(out, "  SET_X1_FROM_X0\n");
+        else fprintf(out, "  HCC_M_RAX_RBX\n");
+        emit_load_operand(out, state, locs, 0, instr_b_ptr(in));
+        emit_binop(out, in->binop);
+      }
       emit_store_temp(out, state, locs, in->temp);
       break;
     case IK_CALL:
