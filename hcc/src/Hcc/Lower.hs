@@ -849,8 +849,10 @@ lowerPlainBin op a b = do
   let bcoerceInstrs = fst bcoerceResult
   let bcoerceOp = snd bcoerceResult
   out <- freshTemp
-  let resultTy = if isComparisonBinOp op then CInt else commonTy
-  coerceResult <- coerceScalar resultTy (OTemp out)
+  coerceResult <-
+    if isComparisonBinOp op
+    then pure ([], OTemp out)
+    else coerceScalar commonTy (OTemp out)
   let coerceInstrs = fst coerceResult
   let coerceOp = snd coerceResult
   pure ( ai ++ bi ++ acoerceInstrs ++ bcoerceInstrs ++
