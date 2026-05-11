@@ -429,11 +429,12 @@ optimizeInstrs :: BlockStats -> BlockStats -> IntMap Operand -> [Instr] -> [Inst
 optimizeInstrs globalStats localStats env instrs = case instrs of
   [] -> []
   instr:rest ->
-    if pureForwardable globalStats localStats instr
-    then case pureForwardValue instr of
-      Just (Temp key, op) -> optimizeInstrs globalStats localStats (intMapInsert key (rewriteOperand env op) env) rest
-      Nothing -> optimizeInstrs globalStats localStats env rest
-    else rewriteInstr env instr : optimizeInstrs globalStats localStats env rest
+    let rewritten = simplifyInstr (rewriteInstr env instr)
+    in if pureForwardable globalStats localStats rewritten
+       then case pureForwardValue rewritten of
+         Just (Temp key, op) -> optimizeInstrs globalStats localStats (intMapInsert key op env) rest
+         Nothing -> optimizeInstrs globalStats localStats env rest
+       else rewritten : optimizeInstrs globalStats localStats env rest
 
 pureForwardable :: BlockStats -> BlockStats -> Instr -> Bool
 pureForwardable globalStats localStats instr = case pureForwardValue instr of
