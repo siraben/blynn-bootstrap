@@ -1,22 +1,21 @@
 --- include/alltypes.h.in
 +++ include/alltypes.h.in
-@@ -69,2 +69,17 @@ STRUCT _IO_FILE { char __x; };
+@@ -69,2 +69,16 @@ STRUCT _IO_FILE { char __x; };
 -TYPEDEF __builtin_va_list va_list;
 -TYPEDEF __builtin_va_list __isoc_va_list;
-+#if defined(__TINYC__) && defined(__x86_64__) && defined(__HCC_TCC_VA_LIST)
-+#if !defined(__DEFINED___va_list_struct)
-+typedef struct { unsigned int gp_offset; unsigned int fp_offset; union { unsigned int overflow_offset; char *overflow_arg_area; }; char *reg_save_area; } __va_list_struct;
-+#define __DEFINED___va_list_struct
++#if defined(__TINYC__) && defined(__x86_64__) && defined(__HCC_TCC_VA_LIST) && !defined(__DEFINED___hcc_va)
++typedef struct { unsigned int gp_offset; unsigned int fp_offset; union { unsigned int overflow_offset; char *overflow_arg_area; }; char *reg_save_area; } __hcc_va;
++#define __DEFINED___hcc_va
 +#endif
-+#if defined(__NEED_va_list) && !defined(__DEFINED_va_list)
-+typedef __va_list_struct va_list[1];
++#if defined(__TINYC__) && defined(__x86_64__) && defined(__HCC_TCC_VA_LIST) && defined(__NEED_va_list) && !defined(__DEFINED_va_list)
++typedef __hcc_va va_list[1];
 +#define __DEFINED_va_list
 +#endif
-+#if defined(__NEED___isoc_va_list) && !defined(__DEFINED___isoc_va_list)
-+typedef __va_list_struct __isoc_va_list[1];
++#if defined(__TINYC__) && defined(__x86_64__) && defined(__HCC_TCC_VA_LIST) && defined(__NEED___isoc_va_list) && !defined(__DEFINED___isoc_va_list)
++typedef __hcc_va __isoc_va_list[1];
 +#define __DEFINED___isoc_va_list
 +#endif
-+#else
++#if !(defined(__TINYC__) && defined(__x86_64__) && defined(__HCC_TCC_VA_LIST))
 +TYPEDEF __builtin_va_list va_list;
 +TYPEDEF __builtin_va_list __isoc_va_list;
 +#endif
@@ -28,8 +27,8 @@
 -#define va_arg(v,l)     __builtin_va_arg(v,l)
 -#define va_copy(d,s)    __builtin_va_copy(d,s)
 +#if defined(__TINYC__) && defined(__x86_64__) && defined(__HCC_TCC_VA_LIST)
-+void __va_start(__va_list_struct *ap, void *fp);
-+void *__va_arg(__va_list_struct *ap, int arg_type, int size, int align);
++void __va_start(void *ap, void *fp);
++void *__va_arg(void *ap, int arg_type, int size, int align);
 +#define va_start(ap, last) __va_start(ap, __builtin_frame_address(0))
 +#define va_arg(ap, type) (*(type *)(__va_arg(ap, __builtin_va_arg_types(type), sizeof(type), __alignof__(type))))
 +#define va_copy(dest, src) (*(dest) = *(src))

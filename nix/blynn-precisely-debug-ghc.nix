@@ -12,10 +12,6 @@ stdenv.mkDerivation {
 
   inherit src;
 
-  patches = [
-    ../patches/blynn-precisely-debug-fail-join.patch
-  ];
-
   nativeBuildInputs = [
     ghc
     perl

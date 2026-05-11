@@ -11,14 +11,25 @@ by the bootstrap.
   - upstream: `upstream/janneke-tinycc` at
     `ea3900f6d5e71776c5cfabcabee317652e3a19ee`
   - applied by `nix/tinycc-boot-hcc.nix`
+  - minimized to the hunks still needed by the HCC-built TinyCC path:
+    `max_align_t`, Mes libc path selection, PLT relocation, static/qualified
+    array parameters, and empty archive creation
 - `upstreams/tinycc-musl-hcc-bootstrap.patch`
   - upstream: `https://repo.or.cz/tinycc.git` at
     `cb41cbfe717e4c00d7bb70035cda5ee5f0ff9341`
   - minimal source fixes for the HCC-built TinyCC musl path
-- `blynn-precisely-debug-fail-join.patch`
-  - local debug-only patch for the GHC-built `precisely` variant used when
-    tracing generated `join`/`fail` code.
-
+- `upstreams/musl-hcc-tinycc-va-list.patch`
+  - upstream: `https://git.musl-libc.org/cgit/musl` at
+    `a9b0b1f2a0c03f1526691fc682db16215ff56834`
+  - HCC/TinyCC compatibility for musl's `va_list` handling
+- `upstreams/musl-runtime-shell-path.patch`
+  - upstream: `https://git.musl-libc.org/cgit/musl` at
+    `a9b0b1f2a0c03f1526691fc682db16215ff56834`
+  - runtime shell path adjustment used by minimal-bootstrap musl builds
+- `upstreams/musl-tinycc-no-plt.patch`
+  - upstream: `https://git.musl-libc.org/cgit/musl` at
+    `a9b0b1f2a0c03f1526691fc682db16215ff56834`
+  - disables PLT-dependent assembly for the TinyCC-built musl path
 The GNU Mes libc reference is generated in `flake.nix` from the pinned GNU Mes
 tree plus nixpkgs' minimal-bootstrap Mes source list, rather than carried as a
 large generated patch.
