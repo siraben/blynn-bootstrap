@@ -42,6 +42,13 @@ DEFINE HCC_SYS_COPY_rdi_to_rax 4889F8
 :FUNCTION___builtin_va_start
 	RETURN
 
+:FUNCTION___builtin_va_arg
+	LOAD_IMMEDIATE_rax %0
+	RETURN
+
+:FUNCTION___builtin_va_copy
+	RETURN
+
 :FUNCTION___builtin_va_end
 	RETURN
 

@@ -69,6 +69,13 @@
 :FUNCTION___builtin_va_start
 	ret
 
+:FUNCTION___builtin_va_arg
+	mov_eax, %0
+	ret
+
+:FUNCTION___builtin_va_copy
+	ret
+
 :FUNCTION___builtin_va_end
 	ret
 

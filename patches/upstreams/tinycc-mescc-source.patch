@@ -1,0 +1,73 @@
+diff --git a/libtcc.c b/libtcc.c
+index 64c772d..cb5d284 100644
+--- a/libtcc.c
++++ b/libtcc.c
+@@ -849,7 +849,11 @@ LIBTCCAPI void tcc_define_symbol(TCCState *s1, const char *sym, const char *valu
+         eq = strchr(sym, 0);
+     if (NULL == value)
+         value = *eq ? eq + 1 : "1";
+-    cstr_printf(&s1->cmdline_defs, "#define %.*s %s\n", (int)(eq-sym), sym, value);
++    cstr_cat(&s1->cmdline_defs, "#define ", -1);
++    cstr_cat(&s1->cmdline_defs, sym, eq - sym);
++    cstr_cat(&s1->cmdline_defs, " ", 1);
++    cstr_cat(&s1->cmdline_defs, value, -1);
++    cstr_cat(&s1->cmdline_defs, "\n", 1);
+ }
+ 
+ /* undefine a preprocessor symbol */
+@@ -876,6 +876,9 @@ LIBTCCAPI TCCState *tcc_new(void)
+     s->warn_implicit_function_declaration = 1;
+     s->warn_discarded_qualifiers = 1;
+     s->ms_extensions = 1;
++#if BOOTSTRAP
++    s->static_link = 1;
++#endif
+     s->unwind_tables = 1;
+ 
+ #ifdef CHAR_IS_UNSIGNED
+diff --git a/i386-asm.c b/i386-asm.c
+index 9f5fe40..b1f8b10 100644
+--- a/i386-asm.c
++++ b/i386-asm.c
+@@ -1596,7 +1596,7 @@ static void asm_opcode(TCCState *s1, int opcode)
+ #endif
+         }
+ 
+-        switch(size) {
++        if (reg >= 8) { cstr_printf(add_str, "%%r%d%c", reg, (size == 1) ? 'b' : ((size == 2) ? 'w' : ((size == 4) ? 'd' : ' '))); return; } switch(size) {
+         case -1:
+             reg = TOK_ASM_ah + reg;
+             break;
+diff --git a/tccelf.c b/tccelf.c
+index 9b71a39..a598d53 100644
+--- a/tccelf.c
++++ b/tccelf.c
+@@ -3028,7 +3028,7 @@ static int elf_output_file(TCCState *s1, const char *filename)
+ 	}
+         /* Perform relocation to GOT or PLT entries */
+         if (file_type == TCC_OUTPUT_EXE && s1->static_link)
+-            fill_got(s1);
++            { fill_got(s1); relocate_plt(s1); }
+         else if (s1->got)
+             fill_local_got_entries(s1);
+ 
+diff --git a/tccgen.c b/tccgen.c
+index 1498059..5fa0d85 100644
+--- a/tccgen.c
++++ b/tccgen.c
+@@ -3073,6 +3073,6 @@ static void gen_opi_regular(int op)
+             if (op != '-')
+                 goto op_err;
+-            vpush_type_size(pointed_type(&vtop[-1].type), &align);
++            vpush_type_size(pointed_type(&vtop[-1].type), &align); if (!(vtop[-1].type.t & VT_UNSIGNED)) gen_cast_s(VT_PTRDIFF_T);
+             vtop->type.t &= ~VT_UNSIGNED;
+             vrott(3);
+             gen_opic(op);
+@@ -3096,6 +3096,6 @@ static void gen_opi_regular(int op)
+ #endif
+             type1 = vtop[-1].type;
+-            vpush_type_size(pointed_type(&vtop[-1].type), &align);
++            vpush_type_size(pointed_type(&vtop[-1].type), &align); if (!(vtop[-1].type.t & VT_UNSIGNED)) gen_cast_s(VT_PTRDIFF_T);
+             gen_op('*');
+ #ifdef CONFIG_TCC_BCHECK
+             if (tcc_state->do_bounds_check && !CONST_WANTED) {
