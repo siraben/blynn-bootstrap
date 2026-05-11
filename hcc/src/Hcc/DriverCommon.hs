@@ -135,6 +135,8 @@ parseTargetBits :: String -> Maybe Int
 parseTargetBits target = case target of
   "amd64" -> Just 64
   "x86_64" -> Just 64
+  "aarch64" -> Just 64
+  "arm64" -> Just 64
   "i386" -> Just 32
   "x86" -> Just 32
   _ -> Nothing

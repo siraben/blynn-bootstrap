@@ -48,6 +48,12 @@
             "x86_64-linux" = "x86_64";
             "i686-linux" = "x86";
           };
+        nativeM1Target =
+          lib.attrByPath [ system ] "amd64" {
+            "aarch64-linux" = "aarch64";
+            "x86_64-linux" = "amd64";
+            "i686-linux" = "i386";
+          };
         mesLibcSources =
           (lib.importJSON "${pkgs.path}/pkgs/os-specific/linux/minimal-bootstrap/mes/sources.json").${mesLibcArch}.linux.gcc;
         mesLibcSourceFiles =
@@ -1038,7 +1044,9 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
 
         hcc-m1-smoke = hccM1SmokeFor "hcc-m1-smoke" hccBy.m2.precisely.m2 "amd64";
         hcc-m1-smoke-i386 = hccM1SmokeFor "hcc-m1-smoke-i386" hccBy.m2.precisely.m2 "i386";
-        hcc-m1-smoke-native = hccM1SmokeFor "hcc-m1-smoke-host-ghc-native" hccBy.host.ghc.native "amd64";
+        hcc-m1-smoke-aarch64 = hccM1SmokeFor "hcc-m1-smoke-aarch64" hccBy.m2.precisely.m2 "aarch64";
+        hcc-m1-smoke-native = hccM1SmokeFor "hcc-m1-smoke-host-ghc-native" hccBy.host.ghc.native nativeM1Target;
+        hcc-m1-smoke-native-aarch64 = hccM1SmokeFor "hcc-m1-smoke-host-ghc-native-aarch64" hccBy.host.ghc.native "aarch64";
         hcc-m1-smoke-native-i386 = hccM1SmokeFor "hcc-m1-smoke-host-ghc-native-i386" hccBy.host.ghc.native "i386";
 
         hcc-mescc-tests = hccMesccTestsFor "hcc-mescc-tests" hccBy.m2.precisely.m2;
@@ -1091,9 +1099,11 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           tests = {
             smoke.m1 = hcc-m1-smoke;
             smoke.m1-i386 = hcc-m1-smoke-i386;
+            smoke.m1-aarch64 = hcc-m1-smoke-aarch64;
             mescc = hcc-mescc-tests;
             host.ghc.native.smoke.m1 = hcc-m1-smoke-native;
             host.ghc.native.smoke.m1-i386 = hcc-m1-smoke-native-i386;
+            host.ghc.native.smoke.m1-aarch64 = hcc-m1-smoke-native-aarch64;
             host.ghc.native.mescc = hcc-mescc-tests-native;
             precisely.dialect = precisely-dialect-tests;
             tinyccM1.native-vs-faithful = tinyccM1CompareNativeFaithful;
