@@ -8,6 +8,7 @@
   pname ? "tinycc-boot-hcc",
   enableTrace ? false,
   m1ArtifactsOnly ? false,
+  target ? "amd64",
 }:
 
 let
@@ -15,6 +16,39 @@ let
   rev = "ea3900f6d5e71776c5cfabcabee317652e3a19ee";
   support = ../hcc/support;
   hccTraceArgs = lib.optionalString enableTrace "--trace ";
+  targetCfg =
+    if target == "aarch64" || target == "arm64" then {
+      hcc = "aarch64";
+      m1 = "aarch64";
+      m2 = "aarch64";
+      tccDefine = "TCC_TARGET_ARM64";
+      defs = "aarch64_defs.M1";
+      elf = "ELF-aarch64.hex2";
+      start = "aarch64-start.M1";
+      memory = "aarch64-memory.M1";
+      syscalls = "aarch64-syscalls.M1";
+      compatArg = "";
+      base = "0x00600000";
+      libtcc1ExtraBootstrap = "bootstrap-libs/lib-arm64.o";
+      libtcc1ExtraFinal = "final-libs/lib-arm64.o";
+      buildArm64Lib = true;
+    } else {
+      hcc = "amd64";
+      m1 = "amd64";
+      m2 = "amd64";
+      tccDefine = "TCC_TARGET_X86_64";
+      defs = "amd64_defs.M1";
+      elf = "ELF-amd64.hex2";
+      start = "amd64-start.M1";
+      memory = "amd64-memory.M1";
+      syscalls = "amd64-syscalls.M1";
+      compatArg = "-f ${support}/amd64-compat.M1";
+      base = "0x00600000";
+      libtcc1ExtraBootstrap = "bootstrap-libs/va_list.o";
+      libtcc1ExtraFinal = "final-libs/va_list.o";
+      buildArm64Lib = false;
+    };
+  targetDefineArg = "-D ${targetCfg.tccDefine}=1";
 
 in
 stdenvNoCC.mkDerivation {
@@ -79,9 +113,9 @@ stdenvNoCC.mkDerivation {
       input="$1"
       output="$2"
       base="''${output%.M1}"
-      run_step "hcc1 --m1-ir $input" hcc1 ${hccTraceArgs}--m1-ir -o "$base.hccir" "$input"
+      run_step "hcc1 --m1-ir $input" hcc1 ${hccTraceArgs}--target ${targetCfg.hcc} --m1-ir -o "$base.hccir" "$input"
       log_file "$base.hccir"
-      run_step "hcc-m1 $base.hccir" hcc-m1 "$base.hccir" "$output"
+      run_step "hcc-m1 $base.hccir" hcc-m1 --target ${targetCfg.hcc} "$base.hccir" "$output"
       log_file "$output"
     }
 
@@ -95,7 +129,7 @@ stdenvNoCC.mkDerivation {
     #define HAVE_SETJMP 1
     #define HAVE_BITFIELD 1
     #define HAVE_FLOAT 1
-    #define TCC_TARGET_X86_64 1
+    #define ${targetCfg.tccDefine} 1
     #define inline
     #define CONFIG_TCCDIR ""
     #define CONFIG_SYSROOT ""
@@ -125,7 +159,7 @@ stdenvNoCC.mkDerivation {
       -D HAVE_SETJMP=1 \
       -D HAVE_BITFIELD=1 \
       -D HAVE_FLOAT=1 \
-      -D TCC_TARGET_X86_64=1 \
+      ${targetDefineArg} \
       -D inline= \
       -D CONFIG_TCCDIR=\\\"\\\" \
       -D CONFIG_SYSROOT=\\\"\\\" \
@@ -155,20 +189,20 @@ stdenvNoCC.mkDerivation {
     compile_m1 tcc-expanded.c tcc.M1
 
     if [ "$m1_artifacts_only" != 1 ]; then
-    M1 --architecture amd64 --little-endian \
-      -f ${m2libc}/amd64/amd64_defs.M1 \
-      -f ${support}/amd64-compat.M1 \
-      -f ${support}/amd64-start.M1 \
-      -f ${support}/amd64-memory.M1 \
+    M1 --architecture ${targetCfg.m1} --little-endian \
+      -f ${m2libc}/${targetCfg.m2}/${targetCfg.defs} \
+      ${targetCfg.compatArg} \
+      -f ${support}/${targetCfg.start} \
+      -f ${support}/${targetCfg.memory} \
       -f tcc-bootstrap-support.M1 \
       -f tcc.M1 \
       -f tcc-final-overrides.M1 \
-      -f ${support}/amd64-syscalls.M1 \
+      -f ${support}/${targetCfg.syscalls} \
       --output tcc.hex2
 
     printf ':ELF_end\n' > tcc-end.hex2
-    hex2 --architecture amd64 --little-endian --base-address 0x00600000 \
-      --file ${m2libc}/amd64/ELF-amd64.hex2 \
+    hex2 --architecture ${targetCfg.m1} --little-endian --base-address ${targetCfg.base} \
+      --file ${m2libc}/${targetCfg.m2}/${targetCfg.elf} \
       --file tcc.hex2 \
       --file tcc-end.hex2 \
       --output tcc
@@ -191,11 +225,16 @@ stdenvNoCC.mkDerivation {
     run_step "tcc bootstrap crtn.c" ./tcc -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o bootstrap-libs/crtn.o ${mesLibc}/lib/crtn.c
     run_step "tcc bootstrap libc.c" ./tcc -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o bootstrap-libs/libc.o ${mesLibc}/lib/libc.c
     run_step "tcc bootstrap libgetopt.c" ./tcc -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o bootstrap-libs/libgetopt.o ${mesLibc}/lib/libgetopt.c
-    run_step "tcc bootstrap libtcc1.c" ./tcc -c -I "$tcc_include_src" -I "$mes_include_src" -D TCC_TARGET_X86_64=1 -o bootstrap-libs/libtcc1.o lib/libtcc1.c
+    run_step "tcc bootstrap libtcc1.c" ./tcc -c -I "$tcc_include_src" -I "$mes_include_src" ${targetDefineArg} -o bootstrap-libs/libtcc1.o lib/libtcc1.c
+    ${lib.optionalString (!targetCfg.buildArm64Lib) ''
     run_step "tcc bootstrap va_list.c" ./tcc -c -I "$tcc_include_src" -I "$mes_include_src" -D TCC_TARGET_X86_64=1 -o bootstrap-libs/va_list.o lib/va_list.c
+    ''}
+    ${lib.optionalString targetCfg.buildArm64Lib ''
+    run_step "tcc bootstrap lib-arm64.c" ./tcc -c -I "$tcc_include_src" -I "$mes_include_src" ${targetDefineArg} -o bootstrap-libs/lib-arm64.o lib/lib-arm64.c
+    ''}
     run_step "make bootstrap libc.a" make_ar ./tcc bootstrap-libs/libc.a bootstrap-libs/libc.o
     run_step "make bootstrap libgetopt.a" make_ar ./tcc bootstrap-libs/libgetopt.a bootstrap-libs/libgetopt.o
-    run_step "make bootstrap libtcc1.a" make_ar ./tcc bootstrap-libs/libtcc1.a bootstrap-libs/libtcc1.o bootstrap-libs/va_list.o
+    run_step "make bootstrap libtcc1.a" make_ar ./tcc bootstrap-libs/libtcc1.a bootstrap-libs/libtcc1.o ${targetCfg.libtcc1ExtraBootstrap}
 
     run_step "tcc self-build stage2" ./tcc -B bootstrap-libs \
       -I . \
@@ -207,7 +246,7 @@ stdenvNoCC.mkDerivation {
       -D HAVE_SETJMP=1 \
       -D HAVE_BITFIELD=1 \
       -D HAVE_FLOAT=1 \
-      -D TCC_TARGET_X86_64=1 \
+      ${targetDefineArg} \
       -D inline= \
       -D CONFIG_TCCDIR=\"\" \
       -D CONFIG_SYSROOT=\"\" \
@@ -236,7 +275,7 @@ stdenvNoCC.mkDerivation {
       -D HAVE_SETJMP=1 \
       -D HAVE_BITFIELD=1 \
       -D HAVE_FLOAT=1 \
-      -D TCC_TARGET_X86_64=1 \
+      ${targetDefineArg} \
       -D inline= \
       -D CONFIG_TCCDIR=\"\" \
       -D CONFIG_SYSROOT=\"\" \
@@ -261,11 +300,16 @@ stdenvNoCC.mkDerivation {
     run_step "tcc-stage3 final crtn.c" ./tcc-stage3 -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o final-libs/crtn.o ${mesLibc}/lib/crtn.c
     run_step "tcc-stage3 final libc.c" ./tcc-stage3 -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o final-libs/libc.o ${mesLibc}/lib/libc.c
     run_step "tcc-stage3 final libgetopt.c" ./tcc-stage3 -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o final-libs/libgetopt.o ${mesLibc}/lib/libgetopt.c
-    run_step "tcc-stage3 final libtcc1.c" ./tcc-stage3 -c -I "$tcc_include_src" -I "$mes_include_src" -D TCC_TARGET_X86_64=1 -o final-libs/libtcc1.o lib/libtcc1.c
+    run_step "tcc-stage3 final libtcc1.c" ./tcc-stage3 -c -I "$tcc_include_src" -I "$mes_include_src" ${targetDefineArg} -o final-libs/libtcc1.o lib/libtcc1.c
+    ${lib.optionalString (!targetCfg.buildArm64Lib) ''
     run_step "tcc-stage3 final va_list.c" ./tcc-stage3 -c -I "$tcc_include_src" -I "$mes_include_src" -D TCC_TARGET_X86_64=1 -o final-libs/va_list.o lib/va_list.c
+    ''}
+    ${lib.optionalString targetCfg.buildArm64Lib ''
+    run_step "tcc-stage3 final lib-arm64.c" ./tcc-stage3 -c -I "$tcc_include_src" -I "$mes_include_src" ${targetDefineArg} -o final-libs/lib-arm64.o lib/lib-arm64.c
+    ''}
     run_step "make final libc.a" make_ar ./tcc-stage3 final-libs/libc.a final-libs/libc.o
     run_step "make final libgetopt.a" make_ar ./tcc-stage3 final-libs/libgetopt.a final-libs/libgetopt.o
-    run_step "make final libtcc1.a" make_ar ./tcc-stage3 final-libs/libtcc1.a final-libs/libtcc1.o final-libs/va_list.o
+    run_step "make final libtcc1.a" make_ar ./tcc-stage3 final-libs/libtcc1.a final-libs/libtcc1.o ${targetCfg.libtcc1ExtraFinal}
     fi
 
     runHook postBuild
@@ -372,7 +416,7 @@ stdenvNoCC.mkDerivation {
       -D HAVE_SETJMP=1 \
       -D HAVE_BITFIELD=1 \
       -D HAVE_FLOAT=1 \
-      -D TCC_TARGET_X86_64=1 \
+      ${targetDefineArg} \
       -D inline= \
       -D CONFIG_TCCDIR=\"\" \
       -D CONFIG_SYSROOT=\"\" \
@@ -402,7 +446,7 @@ stdenvNoCC.mkDerivation {
       -D HAVE_SETJMP=1 \
       -D HAVE_BITFIELD=1 \
       -D HAVE_FLOAT=1 \
-      -D TCC_TARGET_X86_64=1 \
+      ${targetDefineArg} \
       -D TCC_MES_LIBC=1 \
       lib/libtcc1.c -o libtcc1.o
     ./tcc-stage3 -ar rcs libtcc1.a libtcc1.o
@@ -440,7 +484,7 @@ stdenvNoCC.mkDerivation {
       -D HAVE_SETJMP=1 \
       -D HAVE_BITFIELD=1 \
       -D HAVE_FLOAT=1 \
-      -D TCC_TARGET_X86_64=1 \
+      ${targetDefineArg} \
       -D inline= \
       -D CONFIG_TCCDIR=\"\" \
       -D CONFIG_SYSROOT=\"\" \
@@ -474,6 +518,6 @@ stdenvNoCC.mkDerivation {
     description = "Bootstrappable tinycc built through the GHC-backed hcc driver";
     homepage = "https://gitlab.com/janneke/tinycc";
     license = licenses.lgpl21Only;
-    platforms = [ "x86_64-linux" ];
+    platforms = [ "x86_64-linux" "aarch64-linux" ];
   };
 }

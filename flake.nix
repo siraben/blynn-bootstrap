@@ -46,6 +46,7 @@
         mesLibcArch =
           lib.attrByPath [ system ] (throw "unsupported Mes libc bootstrap platform: ${system}") {
             "x86_64-linux" = "x86_64";
+            "aarch64-linux" = "x86_64";
             "i686-linux" = "x86";
           };
         nativeM1Target =
@@ -826,6 +827,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           inherit pname hcc minimalBootstrap;
           mesLibc = mesLibcSrc;
           m2libc = m2libcSrc;
+          target = nativeM1Target;
         };
 
         tinyccM1FromHcc = pname: hcc: pkgs.callPackage ./nix/tinycc-boot-hcc.nix {
@@ -833,6 +835,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           inherit pname hcc minimalBootstrap;
           mesLibc = mesLibcSrc;
           m2libc = m2libcSrc;
+          target = nativeM1Target;
           m1ArtifactsOnly = true;
         };
 
