@@ -37,6 +37,7 @@ mkDerivation (
       cp ${src}/cbits/hcc_runtime.c cbits/hcc_runtime.c
       cp ${src}/cbits/hcc_runtime_m2.c cbits/hcc_runtime_m2.c
       cp ${src}/cbits/hcc_m1.c cbits/hcc_m1.c
+      cp ${src}/cbits/hcc_m1_arch_*.c cbits/
       cp ${../tests/hcc/pp-smoke.c} test/pp-smoke.c
       cp ${../tests/hcc/parse-smoke.c} test/parse-smoke.c
       cp ${../tests/hcc/scalar-immediate-smoke.c} test/scalar-immediate-smoke.c
