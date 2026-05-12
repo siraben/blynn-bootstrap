@@ -1057,17 +1057,6 @@ static int target_register_arg_count(void)
   return 6;
 }
 
-static void emit_word_le(FILE *out, unsigned long word)
-{
-  int i = 0;
-  while (i < 4) {
-    if (i) fputc(' ', out);
-    emit_byte(out, (int)(word & 255));
-    word = word >> 8;
-    i = i + 1;
-  }
-}
-
 static void emit_data64_le(FILE *out, unsigned long value)
 {
   int i = 0;
@@ -1549,15 +1538,7 @@ static void emit_zext_loaded_acc(FILE *out, EmitState *state, int size)
   if (target_arch == TARGET_I386) emit_i386_zext_loaded_eax(out, state, size);
   else if (target_arch == TARGET_AARCH64) {
     if (size == 4) {
-      fprintf(out, "  ");
-      emit_byte(out, 224);
-      fputc(' ', out);
-      emit_byte(out, 3);
-      fputc(' ', out);
-      emit_byte(out, 0);
-      fputc(' ', out);
-      emit_byte(out, 42);
-      fputc('\n', out);
+      fprintf(out, "  UXTW_X0_W0\n");
     } else if (size < 8) {
       emit_copy_acc_to_scratch(out);
       emit_load_immediate(out, state, mask_for_size(size));
@@ -1574,15 +1555,7 @@ static void emit_sext_loaded_acc(FILE *out, EmitState *state, int size)
   else if (target_arch == TARGET_AARCH64) {
     long sign_bit;
     if (size == 4) {
-      fprintf(out, "  ");
-      emit_byte(out, 0);
-      fputc(' ', out);
-      emit_byte(out, 124);
-      fputc(' ', out);
-      emit_byte(out, 64);
-      fputc(' ', out);
-      emit_byte(out, 147);
-      fputc('\n', out);
+      fprintf(out, "  SXTW_X0_W0\n");
     } else if (size < 8) {
       sign_bit = sign_bit_for_size(size);
       emit_copy_acc_to_scratch(out);

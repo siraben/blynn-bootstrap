@@ -1,13 +1,30 @@
-static void aarch64_emit_insn(FILE *out, unsigned long word)
+static void aarch64_emit_insn_bytes(FILE *out, int b0, int b1, int b2, int b3)
 {
   fprintf(out, "  ");
-  emit_word_le(out, word);
+  emit_byte(out, b0);
+  fputc(' ', out);
+  emit_byte(out, b1);
+  fputc(' ', out);
+  emit_byte(out, b2);
+  fputc(' ', out);
+  emit_byte(out, b3);
   fputc('\n', out);
 }
 
 static void aarch64_emit_mov_reg(FILE *out, int dst, int src)
 {
-  aarch64_emit_insn(out, 0xAA0003E0UL | ((unsigned long)src << 16) | (unsigned long)dst);
+  aarch64_emit_insn_bytes(out, 224 + dst, 3, src, 170);
+}
+
+static void aarch64_emit_add_sub_imm(FILE *out, int is_sub, int dst, int src, int imm)
+{
+  int opcode = 145;
+  if (is_sub) opcode = 209;
+  aarch64_emit_insn_bytes(out,
+    ((src & 7) << 5) | dst,
+    (src >> 3) | ((imm & 63) << 2),
+    (imm >> 6) & 63,
+    opcode);
 }
 
 static void aarch64_emit_add_imm_reg(FILE *out, int dst, int src, int imm)
@@ -23,11 +40,7 @@ static void aarch64_emit_add_imm_reg(FILE *out, int dst, int src, int imm)
     int base = dst;
     if (chunk > 4095) chunk = 4095;
     if (first) base = src;
-    aarch64_emit_insn(out,
-      0x91000000UL |
-      ((unsigned long)chunk << 10) |
-      ((unsigned long)base << 5) |
-      (unsigned long)dst);
+    aarch64_emit_add_sub_imm(out, 0, dst, base, chunk);
     remaining = remaining - chunk;
     first = 0;
   }
@@ -39,19 +52,15 @@ static void aarch64_emit_sub_imm_reg(FILE *out, int reg, int imm)
   while (remaining > 0) {
     int chunk = remaining;
     if (chunk > 4095) chunk = 4095;
-    aarch64_emit_insn(out,
-      0xD1000000UL |
-      ((unsigned long)chunk << 10) |
-      ((unsigned long)reg << 5) |
-      (unsigned long)reg);
+    aarch64_emit_add_sub_imm(out, 1, reg, reg, chunk);
     remaining = remaining - chunk;
   }
 }
 
 static void aarch64_emit_load_literal_prefix(FILE *out, int reg)
 {
-  aarch64_emit_insn(out, 0x58000040UL | (unsigned long)reg);
-  aarch64_emit_insn(out, 0x14000003UL);
+  aarch64_emit_insn_bytes(out, 64 + reg, 0, 0, 88);
+  fprintf(out, "  SKIP_64_DATA\n");
 }
 
 static void aarch64_emit_data64(FILE *out, unsigned long value)
@@ -67,28 +76,34 @@ static void aarch64_emit_load_label(FILE *out, int reg, const char *label)
 
 static void aarch64_emit_load_store(FILE *out, int is_load, int size, int is_signed, int base, int offset)
 {
-  unsigned long op;
+  int op2;
+  int op3;
   int scale = 0;
   if (size == 8) scale = 3;
   else if (size == 4) scale = 2;
   else if (size == 2) scale = 1;
   if (offset >= 0 && (offset & ((1 << scale) - 1)) == 0 && (offset >> scale) < 4096) {
-    unsigned long imm = (unsigned long)(offset >> scale);
+    int imm = offset >> scale;
     if (is_load) {
-      if (size == 8) op = 0xF9400000UL;
-      else if (size == 4 && is_signed) op = 0xB9800000UL;
-      else if (size == 4) op = 0xB9400000UL;
-      else if (size == 2 && is_signed) op = 0x79800000UL;
-      else if (size == 2) op = 0x79400000UL;
-      else if (is_signed) op = 0x39800000UL;
-      else op = 0x39400000UL;
+      if (size == 8) { op2 = 64; op3 = 249; }
+      else if (size == 4 && is_signed) { op2 = 128; op3 = 185; }
+      else if (size == 4) { op2 = 64; op3 = 185; }
+      else if (size == 2 && is_signed) { op2 = 128; op3 = 121; }
+      else if (size == 2) { op2 = 64; op3 = 121; }
+      else if (is_signed) { op2 = 128; op3 = 57; }
+      else { op2 = 64; op3 = 57; }
     } else {
-      if (size == 8) op = 0xF9000000UL;
-      else if (size == 4) op = 0xB9000000UL;
-      else if (size == 2) op = 0x79000000UL;
-      else op = 0x39000000UL;
+      op2 = 0;
+      if (size == 8) op3 = 249;
+      else if (size == 4) op3 = 185;
+      else if (size == 2) op3 = 121;
+      else op3 = 57;
     }
-    aarch64_emit_insn(out, op | (imm << 10) | ((unsigned long)base << 5));
+    aarch64_emit_insn_bytes(out,
+      (base & 7) << 5,
+      (base >> 3) | ((imm & 63) << 2),
+      op2 | ((imm >> 6) & 63),
+      op3);
     return;
   }
   aarch64_emit_add_imm_reg(out, 16, base, offset);
@@ -102,6 +117,7 @@ static void aarch64_emit_header(FILE *out)
   fprintf(out, "DEFINE BR_X16 00021fd6\n");
   fprintf(out, "DEFINE BLR_X16 00023fd6\n");
   fprintf(out, "DEFINE RETURN c0035fd6\n");
+  fprintf(out, "DEFINE SKIP_64_DATA 03000014\n");
   fprintf(out, "DEFINE HCC_CBZ_X0_PAST_BR 400000b4\n");
   fprintf(out, "DEFINE HCC_CBNZ_X0_PAST_BR 400000b5\n");
   fprintf(out, "DEFINE SKIP_INST_EQ 40000054\n");
@@ -139,6 +155,8 @@ static void aarch64_emit_header(FILE *out)
   fprintf(out, "DEFINE AND_X0_X1_X0 2000008a\n");
   fprintf(out, "DEFINE OR_X0_X1_X0 200000aa\n");
   fprintf(out, "DEFINE XOR_X0_X1_X0 000001ca\n");
+  fprintf(out, "DEFINE UXTW_X0_W0 e003002a\n");
+  fprintf(out, "DEFINE SXTW_X0_W0 007c4093\n");
   fprintf(out, "DEFINE CMP_X1_X0 3f0000eb\n");
   fprintf(out, "DEFINE SYSCALL 010000d4\n");
   fprintf(out, "\n");
