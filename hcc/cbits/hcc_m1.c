@@ -2001,7 +2001,7 @@ static void emit_instr(FILE *out, const char *fn_name, EmitState *state, LocArra
       else if (target_arch == TARGET_AARCH64) {
         aarch64_emit_load_literal_prefix(out, 16);
         fprintf(out, "  &HCC_COND_ELSE_%s_%d '00' '00' '00' '00'\n", fn_name, in->temp);
-        fprintf(out, "  CBNZ_X0_PAST_BR\n  BR_X16\n");
+        fprintf(out, "  HCC_CBNZ_X0_PAST_BR\n  BR_X16\n");
       }
       else fprintf(out, "  TEST\n  JUMP_EQ %%HCC_COND_ELSE_%s_%d\n", fn_name, in->temp);
       emit_forget_rax(state);
