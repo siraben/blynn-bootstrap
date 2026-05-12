@@ -1115,5 +1115,9 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             pkgs.time
           ];
         };
-      });
+      }) // {
+        overlays.default = final: _prev: {
+          blynn-bootstrap = self.packages.${final.stdenv.buildPlatform.system};
+        };
+      };
 }
