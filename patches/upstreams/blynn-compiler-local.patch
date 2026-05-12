@@ -928,7 +928,7 @@ index fd2d391..fe57c42 100644
  |]
  
  argList t = case t of
-@@ -214,123 +214,408 @@ runFun opts ffis = ("enum{_UNDEFINED=0,"++)
+@@ -214,123 +214,251 @@ runFun opts ffis = ("enum{_UNDEFINED=0,"++)
    . ("};\n"++)
    . ([r|#define EXPORT(f, sym) void f() asm(sym) __attribute__((export_name(sym)));
  void *malloc(unsigned long);
@@ -940,36 +940,13 @@ index fd2d391..fe57c42 100644
 +#endif
  enum { FORWARD = 127, REDUCING = 126 };
  static u *mem, *altmem, *sp, *spTop, hp;
-+#ifdef HCC_RTS_GENERATIONAL
-+#ifndef HCC_RTS_NURSERY_WORDS
-+#define HCC_RTS_NURSERY_WORDS 16777216
-+#endif
-+#ifndef HCC_RTS_CARD_SHIFT
-+#define HCC_RTS_CARD_SHIFT 10
-+#endif
-+#define HCC_RTS_CARD_WORDS ((u) 1 << HCC_RTS_CARD_SHIFT)
-+static u old_hp, young_base;
-+static u *remembered, *remembered_list;
-+static u remembered_count, remembered_cap;
-+static inline u isYoung(u n) { return n >= young_base; }
-+static inline u isOld(u n) { return n >= 128 && n < young_base; }
-+static inline u cardOf(u n) { return n >> HCC_RTS_CARD_SHIFT; }
-+#endif
++#define HCC_RTS_ADAPTIVE_MAJOR_WORDS 83886080
++static u major_base;
 +#ifdef HCC_RTS_STATS
-+static u rts_gc_count, rts_minor_gc_count, rts_major_gc_count;
-+static u rts_peak_hp, rts_peak_live, rts_peak_old, rts_peak_stack, rts_peak_scratch, rts_peak_remembered;
++static u rts_gc_count, rts_major_gc_count;
++static u rts_peak_hp, rts_peak_live, rts_peak_stack, rts_peak_scratch;
 +static void rts_note_hp() { if (hp > rts_peak_hp) rts_peak_hp = hp; }
 +static void rts_note_live() { if (hp > rts_peak_live) rts_peak_live = hp; }
-+static void rts_note_old() {
-+#ifdef HCC_RTS_GENERATIONAL
-+  if (old_hp > rts_peak_old) rts_peak_old = old_hp;
-+#endif
-+}
-+static void rts_note_remembered() {
-+#ifdef HCC_RTS_GENERATIONAL
-+  if (remembered_count > rts_peak_remembered) rts_peak_remembered = remembered_count;
-+#endif
-+}
 +static void rts_note_stack(u used) { if (used > rts_peak_stack) rts_peak_stack = used; }
 +static void rts_note_scratch() {
 +  u used = (u)(((char*)scratchpadend - (char*)scratchpad) / sizeof(u));
@@ -977,21 +954,13 @@ index fd2d391..fe57c42 100644
 +}
 +static void rts_report_stats() {
 +  rts_note_hp();
-+  rts_note_old();
-+  rts_note_remembered();
-+  fprintf(stderr, "precisely RTS stats: gc=%u minor_gc=%u major_gc=%u peak_hp=%u peak_live=%u peak_old=%u peak_stack=%u peak_scratch=%u peak_remembered=%u top=%u nursery=%u remembered_cap=%u progsz=%u rootsz=%u\n",
-+    rts_gc_count, rts_minor_gc_count, rts_major_gc_count, rts_peak_hp, rts_peak_live, rts_peak_old,
-+#ifdef HCC_RTS_GENERATIONAL
-+    rts_peak_stack, rts_peak_scratch, rts_peak_remembered, TOP, HCC_RTS_NURSERY_WORDS, remembered_cap, PROGSZ, ROOTSZ);
-+#else
-+    rts_peak_stack, rts_peak_scratch, rts_peak_remembered, TOP, 0, 0, PROGSZ, ROOTSZ);
-+#endif
++  fprintf(stderr, "precisely RTS stats: gc=%u major_gc=%u peak_hp=%u peak_live=%u peak_stack=%u peak_scratch=%u top=%u adaptive_major=%u progsz=%u rootsz=%u\n",
++    rts_gc_count, rts_major_gc_count, rts_peak_hp, rts_peak_live,
++    rts_peak_stack, rts_peak_scratch, TOP, HCC_RTS_ADAPTIVE_MAJOR_WORDS, PROGSZ, ROOTSZ);
 +}
 +#else
 +static void rts_note_hp() {}
 +static void rts_note_live() {}
-+static void rts_note_old() {}
-+static void rts_note_remembered() {}
 +static void rts_note_stack(u used) {}
 +static void rts_note_scratch() {}
 +static void rts_report_stats() {}
@@ -1138,12 +1107,7 @@ index fd2d391..fe57c42 100644
    mem = altmem;
    altmem = tmp;
 -  for(u usage = 0;; usage++) {
-+#ifdef HCC_RTS_GENERATIONAL
-+  old_hp = hp;
-+  young_base = old_hp;
-+  remembered_count = 0;
-+  rts_note_old();
-+#endif
++  major_base = hp;
 +  u usage = 0;
 +  while(1) {
      u x = *sp;
@@ -1156,130 +1120,9 @@ index fd2d391..fe57c42 100644
 +    usage = usage + 1;
    }
  }
-+#ifdef HCC_RTS_GENERATIONAL
-+static u minor_gc_failed;
-+static inline void remember_field(u slot, u value) {
-+  if (!isYoung(value)) return;
-+  u card = cardOf(slot);
-+  if (remembered[card] == 0) {
-+    remembered[card] = 1;
-+    remembered_list[remembered_count] = card;
-+    remembered_count = remembered_count + 1;
-+    rts_note_remembered();
-+  }
-+}
-+
-+static u minor_evac(u n) {
-+  if (!isYoung(n)) return n;
-+  u *p = (u*)((char*)mem + n * sizeof(u));
-+  u x = *p;
-+  if (x == FORWARD) {
-+    p = (u*)((char*)mem + (n + 1) * sizeof(u));
-+    return *p;
-+  }
-+  u size = 2;
-+  if (x == _NUM64) size = 4;
-+  if (old_hp + size + HCC_RTS_NURSERY_WORDS + 8 >= TOP) {
-+    minor_gc_failed = 1;
-+    return n;
-+  }
-+  u z = old_hp;
-+  old_hp = old_hp + size;
-+  u i = 0;
-+  while (i < size) {
-+    u *from = (u*)((char*)mem + (n + i) * sizeof(u));
-+    u *to = (u*)((char*)mem + (z + i) * sizeof(u));
-+    *to = *from;
-+    i = i + 1;
-+  }
-+  p = (u*)((char*)mem + n * sizeof(u));
-+  *p = FORWARD;
-+  p = (u*)((char*)mem + (n + 1) * sizeof(u));
-+  *p = z;
-+  return z;
-+}
-+
-+static u minor_scan_range(u di, u lim) {
-+  while (di < lim) {
-+    u *p = (u*)((char*)mem + di * sizeof(u));
-+    u x = minor_evac(*p);
-+    if (minor_gc_failed) return 1;
-+    *p = x;
-+    di = di + 1;
-+    if (x == _NUM64) di = di + 3;
-+    else if (x != _NUM) {
-+      p = (u*)((char*)mem + di * sizeof(u));
-+      x = minor_evac(*p);
-+      if (minor_gc_failed) return 1;
-+      *p = x;
-+      di = di + 1;
-+    } else di = di + 1;
-+  }
-+  return 0;
-+}
-+
-+static u minor_scan_cards() {
-+  u i = 0;
-+  while (i < remembered_count) {
-+    u card = remembered_list[i];
-+    remembered[card] = 0;
-+    u start = card << HCC_RTS_CARD_SHIFT;
-+    u lim = (card + 1) << HCC_RTS_CARD_SHIFT;
-+    if (start < 128) start = 128;
-+    if (lim > old_hp) lim = old_hp;
-+    if (minor_scan_range(start, lim)) return 1;
-+    i = i + 1;
-+  }
-+  remembered_count = 0;
-+  return 0;
-+}
-+
-+static u minor_gc() {
-+  minor_gc_failed = 0;
-+  u promoted_start = old_hp;
-+#ifdef HCC_RTS_STATS
-+  rts_gc_count = rts_gc_count + 1;
-+  rts_minor_gc_count = rts_minor_gc_count + 1;
-+#endif
-+  for(u *r = root; r != rootend; r = (u*)((char*)r + sizeof(u))) {
-+    u x = minor_evac(*r);
-+    if (minor_gc_failed) return 1;
-+    *r = x;
-+  }
-+  u x = minor_evac(*spTop);
-+  if (minor_gc_failed) return 1;
-+  *spTop = x;
-+  if (minor_scan_cards()) return 1;
-+  if (minor_scan_range(promoted_start, old_hp)) return 1;
-+  sp = (u*)((char*)mem + (TOP - 1) * sizeof(u));
-+  *sp = *spTop;
-+  u usage = 0;
-+  while(1) {
-+    x = *sp;
-+    if (isAddr(x)) {
-+      u *p = (u*)((char*)mem + x * sizeof(u));
-+      sp = (u*)((char*)sp - sizeof(u));
-+      *sp = *p;
-+    } else {
-+      spTop = sp;
-+      rts_note_stack(usage);
-+      rts_note_old();
-+      young_base = old_hp;
-+      hp = young_base;
-+      remembered_count = 0;
-+      rts_note_hp();
-+      return usage + old_hp + HCC_RTS_NURSERY_WORDS + 8 >= TOP;
-+    }
-+    usage = usage + 1;
-+  }
-+}
-+#endif
 +static inline void rts_store(u obj, u off, u val) {
 +  u *p = (u*)((char*)mem + (obj + off) * sizeof(u));
 +  *p = val;
-+#ifdef HCC_RTS_GENERATIONAL
-+  if (isOld(obj)) remember_field(obj + off, val);
-+#endif
 +}
  static u*global;
  u get_global(){return*global;}
@@ -1395,7 +1238,7 @@ index fd2d391..fe57c42 100644
  }
  void vmrun() {
    u x = tagcheck(num(1));
-@@ -341,34 +626,50 @@ void vmrun() {
+@@ -341,34 +626,47 @@ void vmrun() {
  void vmgcroot() {
    gc();
    u *p = scratchpad;
@@ -1439,13 +1282,10 @@ index fd2d391..fe57c42 100644
  
  giantSwitch = ([r|
 -  if (mem + hp > sp - 8 && gc()) return 3;
-+#ifdef HCC_RTS_GENERATIONAL
-+  if (hp - young_base >= HCC_RTS_NURSERY_WORDS) {
-+    if (old_hp + (hp - young_base) + HCC_RTS_NURSERY_WORDS + 8 >= TOP || minor_gc()) {
-+      if (gc()) return 3;
-+    }
++  if (hp - major_base >= HCC_RTS_ADAPTIVE_MAJOR_WORDS) {
++    rts_note_hp();
++    if (gc()) return 3;
 +  }
-+#endif
 +  if ((u*)((char*)mem + hp * sizeof(u)) > (u*)((char*)sp - 8 * sizeof(u))) {
 +    rts_note_hp();
 +    if (gc()) return 3;
@@ -1456,7 +1296,7 @@ index fd2d391..fe57c42 100644
  |]++)
    . foldr (.) id (genComb <$> comdefs)
    . ("  }\n"++)
-@@ -376,33 +677,83 @@ giantSwitch = ([r|
+@@ -376,33 +677,58 @@ giantSwitch = ([r|
  rtsInit opts
    | "warts" `elem` opts = ([r|void rts_init() {
    mem = (u*) HEAP_BASE;
@@ -1497,26 +1337,6 @@ index fd2d391..fe57c42 100644
 +    fputs("precisely RTS: malloc scratchpad failed\n", stderr);
 +    exit(1);
 +  }
-+#ifdef HCC_RTS_GENERATIONAL
-+  remembered_cap = (TOP >> HCC_RTS_CARD_SHIFT) + 2;
-+  remembered = rts_alloc(remembered_cap * sizeof(u));
-+  if (remembered == 0) {
-+    fputs("precisely RTS: malloc remembered failed\n", stderr);
-+    exit(1);
-+  }
-+  remembered_list = rts_alloc(remembered_cap * sizeof(u));
-+  if (remembered_list == 0) {
-+    fputs("precisely RTS: malloc remembered list failed\n", stderr);
-+    exit(1);
-+  }
-+  {
-+    u i = 0;
-+    while (i < remembered_cap) {
-+      remembered[i] = 0;
-+      i = i + 1;
-+    }
-+  }
-+#endif
 +  scratchpadend = scratchpad;
    hp = 128;
 -  unsigned char *p = (void *)rootend;
@@ -1544,12 +1364,7 @@ index fd2d391..fe57c42 100644
 +  *global = _K;
 +  rootend = (u*)((char*)rootend + sizeof(u));
    vmroot = rootend;
-+#ifdef HCC_RTS_GENERATIONAL
-+  old_hp = hp;
-+  young_base = old_hp;
-+  remembered_count = 0;
-+  rts_note_old();
-+#endif
++  major_base = hp;
  }
  |]++)
  
