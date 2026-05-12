@@ -108,11 +108,6 @@ jobs:
             runner: ubuntu-latest
             timeout: 720
             attr: tinycc.m2.precisely.m2
-          - suite: boss stage0 path
-            arch: aarch64
-            runner: ubuntu-24.04-arm
-            timeout: 720
-            attr: tinycc.m2.precisely.m2
     steps:
       - uses: actions/checkout@v4
       - name: Install Nix

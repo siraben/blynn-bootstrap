@@ -2,6 +2,7 @@
   stdenvNoCC,
   lib,
   hcc,
+  binutils,
   minimalBootstrap,
   mesLibc,
   m2libc,
@@ -112,6 +113,7 @@ stdenvNoCC.mkDerivation {
 
     m1_artifacts_only="${if m1ArtifactsOnly then "1" else "0"}"
     target_is_aarch64="${if targetCfg.buildArm64Lib then "1" else "0"}"
+    aarch64_as="${lib.optionalString targetCfg.buildArm64Lib "${binutils}/bin/as"}"
     compile_m1() {
       input="$1"
       output="$2"
@@ -212,105 +214,6 @@ stdenvNoCC.mkDerivation {
       --output tcc
     chmod 555 tcc
 
-    make_aarch64_syscalls_object() {
-      local syscall_out="$1"
-      : > "$syscall_out"
-      byte() { printf "\\$(printf '%03o' "$1")" >> "$syscall_out"; }
-      u16() { byte $(( $1 & 255 )); byte $(( ($1 >> 8) & 255 )); }
-      u32() { byte $(( $1 & 255 )); byte $(( ($1 >> 8) & 255 )); byte $(( ($1 >> 16) & 255 )); byte $(( ($1 >> 24) & 255 )); }
-      u64() { u32 $(( $1 & 0xffffffff )); u32 $(( ($1 >> 32) & 0xffffffff )); }
-      pad_to() {
-        local target=$(( $1 ))
-        local size=$(wc -c < "$syscall_out")
-        while [ "$size" -lt "$target" ]; do byte 0; size=$((size + 1)); done
-      }
-      sym() {
-        u32 "$1"; byte "$2"; byte 0; u16 "$3"; u64 "$4"; u64 "$5"
-      }
-      shdr() {
-        u32 "$1"; u32 "$2"; u64 "$3"; u64 0; u64 "$4"; u64 "$5"; u32 "$6"; u32 "$7"; u64 "$8"; u64 "$9"
-      }
-
-      printf '\177ELF\002\001\001\000\000\000\000\000\000\000\000\000' >> "$syscall_out"
-      u16 1; u16 183; u32 1; u64 0; u64 0; u64 0x230; u32 0
-      u16 64; u16 0; u16 0; u16 64; u16 5; u16 4
-      pad_to 0x40
-      printf '\350\007\200\322\001\000\000\324\300\003\137\326' >> "$syscall_out"
-      printf '\010\010\200\322\001\000\000\324\300\003\137\326' >> "$syscall_out"
-      printf '\050\007\200\322\001\000\000\324\300\003\137\326' >> "$syscall_out"
-      printf '\310\007\200\322\001\000\000\324\300\003\137\326' >> "$syscall_out"
-      printf '\310\032\200\322\001\000\000\324\300\003\137\326' >> "$syscall_out"
-      printf '\050\002\200\322\001\000\000\324\300\003\137\326' >> "$syscall_out"
-      printf '\343\003\002\252\342\003\001\252\341\003\000\252\140\014\200\222\010\007\200\322\001\000\000\324\300\003\137\326' >> "$syscall_out"
-      printf '\342\003\001\252\341\003\000\252\140\014\200\222\003\000\200\322\010\006\200\322\001\000\000\324\300\003\137\326' >> "$syscall_out"
-      printf '\250\013\200\322\001\000\000\324\300\003\137\326' >> "$syscall_out"
-      pad_to 0xd0
-      sym 0 0 0 0 0
-      sym 0 3 1 0 0
-      sym 1 18 1 0 12
-      sym 6 18 1 12 12
-      sym 12 18 1 24 12
-      sym 18 18 1 36 12
-      sym 24 18 1 48 12
-      sym 28 18 1 60 12
-      sym 35 18 1 72 28
-      sym 40 18 1 100 28
-      sym 47 18 1 128 12
-      printf '\000read\000write\000close\000lseek\000brk\000getcwd\000open\000access\000_exit\000' >> "$syscall_out"
-      printf '\000.text\000.symtab\000.strtab\000.shstrtab\000' >> "$syscall_out"
-      pad_to 0x230
-      shdr 0 0 0 0 0 0 0 0 0
-      shdr 1 1 6 0x40 0x8c 0 0 4 0
-      shdr 7 2 0 0xd0 0x108 3 2 8 24
-      shdr 15 3 0 0x1d8 0x35 0 0 1 0
-      shdr 23 3 0 0x20d 0x21 0 0 1 0
-    }
-
-    make_aarch64_crt1_object() {
-      local crt_out="$1"
-      : > "$crt_out"
-      byte() { printf "\\$(printf '%03o' "$1")" >> "$crt_out"; }
-      u16() { byte $(( $1 & 255 )); byte $(( ($1 >> 8) & 255 )); }
-      u32() { byte $(( $1 & 255 )); byte $(( ($1 >> 8) & 255 )); byte $(( ($1 >> 16) & 255 )); byte $(( ($1 >> 24) & 255 )); }
-      u64() { u32 $(( $1 & 0xffffffff )); u32 $(( ($1 >> 32) & 0xffffffff )); }
-      pad_to() {
-        local target=$(( $1 ))
-        local size=$(wc -c < "$crt_out")
-        while [ "$size" -lt "$target" ]; do byte 0; size=$((size + 1)); done
-      }
-      sym() {
-        u32 "$1"; byte "$2"; byte 0; u16 "$3"; u64 "$4"; u64 "$5"
-      }
-      rela() {
-        u64 "$1"; u64 "$2"; u64 "$3"
-      }
-      shdr() {
-        u32 "$1"; u32 "$2"; u64 "$3"; u64 0; u64 "$4"; u64 "$5"; u32 "$6"; u32 "$7"; u64 "$8"; u64 "$9"
-      }
-
-      printf '\177ELF\002\001\001\000\000\000\000\000\000\000\000\000' >> "$crt_out"
-      u16 1; u16 183; u32 1; u64 0; u64 0; u64 0x110; u32 0
-      u16 64; u16 0; u16 0; u16 64; u16 6; u16 5
-      pad_to 0x40
-      printf '\340\003\100\371\341\043\000\221\000\000\000\224\250\013\200\322\001\000\000\324' >> "$crt_out"
-      pad_to 0x58
-      rela 8 0x30000011b 0
-      pad_to 0x70
-      sym 0 0 0 0 0
-      sym 0 3 1 0 0
-      sym 1 18 1 0 20
-      sym 8 18 0 0 0
-      printf '\000_start\000main\000' >> "$crt_out"
-      printf '\000.text\000.rela.text\000.symtab\000.strtab\000.shstrtab\000' >> "$crt_out"
-      pad_to 0x110
-      shdr 0 0 0 0 0 0 0 0 0
-      shdr 1 1 6 0x40 0x14 0 0 4 0
-      shdr 7 4 0 0x58 0x18 3 1 8 24
-      shdr 18 2 0 0x70 0x60 4 2 8 24
-      shdr 26 3 0 0xd0 0xd 0 0 1 0
-      shdr 34 3 0 0xdd 0x2c 0 0 1 0
-    }
-
     make_ar() {
       tool="$1"
       shift
@@ -324,11 +227,11 @@ stdenvNoCC.mkDerivation {
 
     mkdir -p bootstrap-libs
     if [ "$target_is_aarch64" = 1 ]; then
-    run_step "make bootstrap aarch64 crt1.o" make_aarch64_crt1_object bootstrap-libs/crt1.o
+    run_step "as bootstrap aarch64 crt1.s" "$aarch64_as" -o bootstrap-libs/crt1.o ${support}/tcc-aarch64-crt1.s
     run_step "tcc bootstrap aarch64 crti.c" ./tcc -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o bootstrap-libs/crti.o ${support}/tcc-aarch64-empty.c
     run_step "tcc bootstrap aarch64 crtn.c" ./tcc -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o bootstrap-libs/crtn.o ${support}/tcc-aarch64-empty.c
     run_step "tcc bootstrap aarch64 runtime.c" ./tcc -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o bootstrap-libs/aarch64-runtime.o ${support}/tcc-aarch64-runtime.c
-    run_step "make bootstrap aarch64 syscalls.o" make_aarch64_syscalls_object bootstrap-libs/aarch64-syscalls.o
+    run_step "as bootstrap aarch64 syscalls.s" "$aarch64_as" -o bootstrap-libs/aarch64-syscalls.o ${support}/tcc-aarch64-syscalls.s
     run_step "tcc bootstrap support.c" ./tcc -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o bootstrap-libs/tcc-bootstrap-support.o ${support}/tcc-bootstrap-support.c
     run_step "tcc bootstrap libgetopt.c" ./tcc -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o bootstrap-libs/libgetopt.o ${mesLibc}/lib/libgetopt.c
     else
@@ -429,11 +332,11 @@ stdenvNoCC.mkDerivation {
 
     mkdir -p final-libs
     if [ "$target_is_aarch64" = 1 ]; then
-    run_step "make final aarch64 crt1.o" make_aarch64_crt1_object final-libs/crt1.o
+    run_step "as final aarch64 crt1.s" "$aarch64_as" -o final-libs/crt1.o ${support}/tcc-aarch64-crt1.s
     run_step "tcc-stage3 final aarch64 crti.c" ./tcc-stage3 -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o final-libs/crti.o ${support}/tcc-aarch64-empty.c
     run_step "tcc-stage3 final aarch64 crtn.c" ./tcc-stage3 -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o final-libs/crtn.o ${support}/tcc-aarch64-empty.c
     run_step "tcc-stage3 final aarch64 runtime.c" ./tcc-stage3 -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o final-libs/aarch64-runtime.o ${support}/tcc-aarch64-runtime.c
-    run_step "make final aarch64 syscalls.o" make_aarch64_syscalls_object final-libs/aarch64-syscalls.o
+    run_step "as final aarch64 syscalls.s" "$aarch64_as" -o final-libs/aarch64-syscalls.o ${support}/tcc-aarch64-syscalls.s
     run_step "tcc-stage3 final support.c" ./tcc-stage3 -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o final-libs/tcc-bootstrap-support.o ${support}/tcc-bootstrap-support.c
     run_step "tcc-stage3 final libgetopt.c" ./tcc-stage3 -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o final-libs/libgetopt.o ${mesLibc}/lib/libgetopt.c
     else
