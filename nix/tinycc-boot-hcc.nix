@@ -63,11 +63,11 @@ stdenvNoCC.mkDerivation {
   dontUpdateAutotoolsGnuConfigScripts = true;
 
   src = builtins.fetchurl {
-    url = "https://github.com/TinyCC/tinycc/archive/${rev}.tar.gz";
-    sha256 = "sha256-c4H5RKqSVc1WDoGSxbAkEkbSyD7qVLjrMXECmS/h4rs=";
+    url = "https://repo.or.cz/tinycc.git/snapshot/${rev}.tar.gz";
+    sha256 = "sha256-MRuqq3TKcfIahtUWdhAcYhqDiGPkAjS8UTMsDE+/jGU=";
   };
 
-  sourceRoot = "tinycc-${rev}";
+  sourceRoot = "tinycc-${shortRev}";
 
   patches = [
     ../patches/upstreams/tinycc-mescc-source.patch
