@@ -114,6 +114,7 @@ stdenvNoCC.mkDerivation {
     m1_artifacts_only="${if m1ArtifactsOnly then "1" else "0"}"
     target_is_aarch64="${if targetCfg.buildArm64Lib then "1" else "0"}"
     aarch64_as="${lib.optionalString targetCfg.buildArm64Lib "${binutils}/bin/as"}"
+    aarch64_objcopy="${lib.optionalString targetCfg.buildArm64Lib "${binutils}/bin/objcopy"}"
     compile_m1() {
       input="$1"
       output="$2"
@@ -225,13 +226,25 @@ stdenvNoCC.mkDerivation {
       "$tool" -ar cr "$archive" "$@"
     }
 
+    assemble_aarch64_support_object() {
+      output="$1"
+      input="$2"
+      tmp="$output.tmp"
+      "$aarch64_as" -o "$tmp" "$input"
+      "$aarch64_objcopy" \
+        --remove-section=.data \
+        --remove-section=.bss \
+        "$tmp" "$output"
+      rm "$tmp"
+    }
+
     mkdir -p bootstrap-libs
     if [ "$target_is_aarch64" = 1 ]; then
-    run_step "as bootstrap aarch64 crt1.s" "$aarch64_as" -o bootstrap-libs/crt1.o ${support}/tcc-aarch64-crt1.s
+    run_step "as bootstrap aarch64 crt1.s" assemble_aarch64_support_object bootstrap-libs/crt1.o ${support}/tcc-aarch64-crt1.s
     run_step "tcc bootstrap aarch64 crti.c" ./tcc -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o bootstrap-libs/crti.o ${support}/tcc-aarch64-empty.c
     run_step "tcc bootstrap aarch64 crtn.c" ./tcc -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o bootstrap-libs/crtn.o ${support}/tcc-aarch64-empty.c
     run_step "tcc bootstrap aarch64 runtime.c" ./tcc -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o bootstrap-libs/aarch64-runtime.o ${support}/tcc-aarch64-runtime.c
-    run_step "as bootstrap aarch64 syscalls.s" "$aarch64_as" -o bootstrap-libs/aarch64-syscalls.o ${support}/tcc-aarch64-syscalls.s
+    run_step "as bootstrap aarch64 syscalls.s" assemble_aarch64_support_object bootstrap-libs/aarch64-syscalls.o ${support}/tcc-aarch64-syscalls.s
     run_step "tcc bootstrap support.c" ./tcc -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o bootstrap-libs/tcc-bootstrap-support.o ${support}/tcc-bootstrap-support.c
     run_step "tcc bootstrap libgetopt.c" ./tcc -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o bootstrap-libs/libgetopt.o ${mesLibc}/lib/libgetopt.c
     else
@@ -332,11 +345,11 @@ stdenvNoCC.mkDerivation {
 
     mkdir -p final-libs
     if [ "$target_is_aarch64" = 1 ]; then
-    run_step "as final aarch64 crt1.s" "$aarch64_as" -o final-libs/crt1.o ${support}/tcc-aarch64-crt1.s
+    run_step "as final aarch64 crt1.s" assemble_aarch64_support_object final-libs/crt1.o ${support}/tcc-aarch64-crt1.s
     run_step "tcc-stage3 final aarch64 crti.c" ./tcc-stage3 -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o final-libs/crti.o ${support}/tcc-aarch64-empty.c
     run_step "tcc-stage3 final aarch64 crtn.c" ./tcc-stage3 -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o final-libs/crtn.o ${support}/tcc-aarch64-empty.c
     run_step "tcc-stage3 final aarch64 runtime.c" ./tcc-stage3 -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o final-libs/aarch64-runtime.o ${support}/tcc-aarch64-runtime.c
-    run_step "as final aarch64 syscalls.s" "$aarch64_as" -o final-libs/aarch64-syscalls.o ${support}/tcc-aarch64-syscalls.s
+    run_step "as final aarch64 syscalls.s" assemble_aarch64_support_object final-libs/aarch64-syscalls.o ${support}/tcc-aarch64-syscalls.s
     run_step "tcc-stage3 final support.c" ./tcc-stage3 -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o final-libs/tcc-bootstrap-support.o ${support}/tcc-bootstrap-support.c
     run_step "tcc-stage3 final libgetopt.c" ./tcc-stage3 -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o final-libs/libgetopt.o ${mesLibc}/lib/libgetopt.c
     else
