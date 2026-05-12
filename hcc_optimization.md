@@ -2,6 +2,47 @@
 
 Working metrics for improving HCC efficiency and modularity. The primary benchmark is the end-to-end TinyCC bootstrap path, with direct HCC-on-expanded-TCC measurements used to isolate compiler runtime and memory.
 
+## Pass 15: Generated RTS GC selection
+
+Goal: reduce end-to-end TinyCC bootstrap time by changing the generated
+Blynn/Precisely runtime used by HCC.
+
+Change:
+
+- Replaced the generated RTS generational GC experiment with an adaptive
+  full-GC trigger.
+- The trigger runs the existing full copying collector when
+  `hp - major_base >= 83886080`, then resets `major_base` to the live heap size
+  after the collection.
+- The policy is implemented in the patched Blynn/Precisely RTS, so no extra
+  per-target flake attributes or compiler flags are needed.
+
+Fully M2 boss TinyCC rebuilds, serial, average of 3 measured `--rebuild` reps
+after warmup:
+
+```text
+collector / threshold words        avg elapsed   min      max      avg RSS
+adaptive-major / 83886080          138.73s       138.57s  139.03s  157140 KiB
+former generational / 67108864     141.84s       141.08s  142.92s  155143 KiB
+copying / none                     144.39s       142.77s  146.17s  155512 KiB
+early-major / 100663296            144.78s       142.17s  148.17s  155857 KiB
+```
+
+The adaptive policy was the best fully M2 boss result measured. It keeps the
+simple full-copying collector and removes the generational remembered-set,
+card-table, write-barrier, and minor-collection machinery from the generated
+RTS.
+
+Validation:
+
+```text
+nix develop -c nix build --no-link --print-out-paths .#tinycc.m2.precisely.m2
+pass
+
+nix develop -c git diff --check
+pass
+```
+
 ## Pass 14: Faithful HCC fixed heap sizing
 
 Goal: reduce faithful-debug peak RSS without making the common TinyCC compile path

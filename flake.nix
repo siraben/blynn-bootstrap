@@ -785,41 +785,6 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
               description = "HCC compiled by the stage0-built Blynn precisely and a GCC-built M2-Mesoplanet";
             };
           };
-
-          stats.gcc.precisely.gcc.copying = hccGccPreciselyGccStatsCopying;
-          stats.gcc.precisely.gcc.generational = hccGccPreciselyGccStatsGenerational;
-        };
-
-        hccGccPreciselyGccStatsWith = {
-          pname,
-          extraCFlags,
-          description,
-        }: hccFromPrecisely {
-          inherit pname;
-          generatedC = hccBlynnCBy.gcc.precisely;
-          cBackend = hccCBackends.gcc // {
-            compileCommand = ''
-              echo "hcc-blynn: gcc stats cc hcpp-blynn.c -> hcpp"
-              $CC -O0 -DHCC_RTS_STATS ${extraCFlags} hcpp-blynn.c cbits/hcc_runtime.c -o hcpp
-              echo "hcc-blynn: gcc stats cc hcc1-blynn.c -> hcc1"
-              $CC -O0 -DHCC_RTS_STATS ${extraCFlags} hcc1-blynn.c cbits/hcc_runtime.c -o hcc1
-              echo "hcc-blynn: gcc stats cc cbits/hcc_m1.c -> hcc-m1"
-              $CC -O2 cbits/hcc_m1.c -o hcc-m1
-            '';
-            inherit description;
-          };
-        };
-
-        hccGccPreciselyGccStatsCopying = hccGccPreciselyGccStatsWith {
-          pname = "hcc-gcc-precisely-gcc-stats-copying";
-          extraCFlags = "";
-          description = "Stats-enabled semispace HCC compiled by the GCC-built Blynn precisely compiler and GCC";
-        };
-
-        hccGccPreciselyGccStatsGenerational = hccGccPreciselyGccStatsWith {
-          pname = "hcc-gcc-precisely-gcc-stats-generational";
-          extraCFlags = "-DHCC_RTS_GENERATIONAL -DHCC_RTS_NURSERY_WORDS=67108864";
-          description = "Stats-enabled generational HCC compiled by the GCC-built Blynn precisely compiler and GCC";
         };
 
         tinyccFromHcc = pname: hcc: pkgs.callPackage ./nix/tinycc-boot-hcc.nix {
@@ -847,11 +812,6 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           m2.precisely.m2 = tinyccFromHcc "tinycc-boot-hcc-m2-precisely-m2" hccBy.m2.precisely.m2;
           m2.precisely.gcc = tinyccFromHcc "tinycc-boot-hcc-m2-precisely-gcc" hccBy.m2.precisely.gcc;
           m2.precisely.gccm2 = tinyccFromHcc "tinycc-boot-hcc-m2-precisely-gccm2" hccBy.m2.precisely.gccm2;
-
-          stats.gcc.precisely.gcc.copying =
-            tinyccFromHcc "tinycc-boot-hcc-gcc-precisely-gcc-stats-copying" hccGccPreciselyGccStatsCopying;
-          stats.gcc.precisely.gcc.generational =
-            tinyccFromHcc "tinycc-boot-hcc-gcc-precisely-gcc-stats-generational" hccGccPreciselyGccStatsGenerational;
         };
 
         tinyccM1By = {
