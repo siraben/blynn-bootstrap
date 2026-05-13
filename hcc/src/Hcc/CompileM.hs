@@ -16,17 +16,21 @@ module CompileM
   , bindGlobal
   , bindConstant
   , bindFunction
+  , bindFunctionType
   , lookupVarMaybe
   , lookupVarType
   , lookupGlobalType
   , lookupConstant
   , lookupFunction
+  , lookupFunctionType
   , lookupStruct
   , lookupStructSizeCache
   , cacheStructSize
   , lookupStructMemberCache
   , cacheStructMember
   , targetWordSize
+  , currentFunctionName
+  , withCurrentFunction
   , withFunctionScope
   , withVarScope
   , withLoopTargets
@@ -56,11 +60,13 @@ data CompileState = CompileState
   , csGlobals :: SymbolMap CType
   , csConstants :: SymbolMap Int
   , csFunctions :: SymbolSet
+  , csFunctionTypes :: SymbolMap CType
   , csLabels :: SymbolMap BlockId
   , csDataItems :: [DataItem]
   , csBreakTargets :: [BlockId]
   , csContinueTargets :: [BlockId]
   , csTargetBits :: Int
+  , csCurrentFunction :: Maybe String
   }
 
 data CompileM a = CompileM
@@ -99,11 +105,13 @@ initialCompileState = CompileState
   , csGlobals = symbolMapEmpty
   , csConstants = symbolMapEmpty
   , csFunctions = symbolSetEmpty
+  , csFunctionTypes = symbolMapEmpty
   , csLabels = symbolMapEmpty
   , csDataItems = []
   , csBreakTargets = []
   , csContinueTargets = []
   , csTargetBits = 64
+  , csCurrentFunction = Nothing
   }
 
 initialCompileStateForTarget :: String -> Int -> CompileState
@@ -172,6 +180,17 @@ bindFunction :: String -> CompileM ()
 bindFunction name = CompileM $ \st ->
   Right ((), st { csFunctions = symbolSetInsert name (csFunctions st) })
 
+bindFunctionType :: String -> CType -> [Param] -> CompileM ()
+bindFunctionType name retTy params = CompileM $ \st ->
+  Right ((), st
+    { csFunctions = symbolSetInsert name (csFunctions st)
+    , csFunctionTypes = symbolMapInsert name (CFunc retTy (paramTypes params)) (csFunctionTypes st)
+    })
+  where
+    paramTypes xs = case xs of
+      [] -> []
+      Param ty _:rest -> ty : paramTypes rest
+
 lookupVarMaybe :: String -> CompileM (Maybe Temp)
 lookupVarMaybe name = CompileM $ \st -> Right (fmap fst (scopeMapLookup name (csVars st)), st)
 
@@ -186,6 +205,9 @@ lookupConstant name = CompileM $ \st -> Right (symbolMapLookup name (csConstants
 
 lookupFunction :: String -> CompileM Bool
 lookupFunction name = CompileM $ \st -> Right (symbolSetMember name (csFunctions st), st)
+
+lookupFunctionType :: String -> CompileM (Maybe CType)
+lookupFunctionType name = CompileM $ \st -> Right (symbolMapLookup name (csFunctionTypes st), st)
 
 lookupStruct :: String -> CompileM (Maybe (Bool, [Field]))
 lookupStruct name = CompileM $ \st -> Right (symbolMapLookup name (csStructs st), st)
@@ -218,6 +240,15 @@ targetWordSize :: CompileM Int
 targetWordSize = do
   bits <- targetBits
   pure (if bits == 32 then 4 else 8)
+
+currentFunctionName :: CompileM (Maybe String)
+currentFunctionName = CompileM $ \st -> Right (csCurrentFunction st, st)
+
+withCurrentFunction :: String -> CompileM a -> CompileM a
+withCurrentFunction name action = CompileM $ \st ->
+  case unCompileM action st { csCurrentFunction = Just name } of
+    Left err -> Left err
+    Right (x, st') -> Right (x, st' { csCurrentFunction = csCurrentFunction st })
 
 withFunctionScope :: CompileM a -> CompileM a
 withFunctionScope action = CompileM $ \st ->

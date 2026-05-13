@@ -22,7 +22,7 @@ data TopDecl
   | ExternGlobals [(CType, String)]
   | StructDecl Bool String [Field]
   | EnumConstants [(String, Int)]
-  | TypeDecl
+  | TypeDecl [CType]
 
 data Param = Param CType String
 
@@ -31,10 +31,16 @@ data Field = Field CType String
 data CType
   = CVoid
   | CInt
+  | CShort
   | CChar
   | CUnsigned
+  | CUnsignedShort
   | CUnsignedChar
   | CLong
+  | CUnsignedLong
+  | CLongLong
+  | CUnsignedLongLong
+  | CBool
   | CFloat
   | CDouble
   | CLongDouble
@@ -47,11 +53,13 @@ data CType
   | CEnum String
   | CNamed String
   | CArray CType (Maybe Expr)
+  | CFunc CType [CType]
   | CPtr CType
 
 data Stmt
   = SDecl CType String (Maybe Expr)
   | SDecls [(CType, String, Maybe Expr)]
+  | STypedef
   | SReturn (Maybe Expr)
   | SExpr Expr
   | SIf Expr [Stmt] [Stmt]
@@ -90,6 +98,7 @@ renderStmtTag :: Stmt -> String
 renderStmtTag stmt = case stmt of
   SDecl _ _ _ -> "SDecl"
   SDecls _ -> "SDecls"
+  STypedef -> "STypedef"
   SReturn _ -> "SReturn"
   SExpr _ -> "SExpr"
   SIf _ _ _ -> "SIf"

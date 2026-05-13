@@ -32,7 +32,6 @@ isAggregateType ty = case ty of
   CUnionNamed _ _ -> True
   CStructDef _ -> True
   CUnionDef _ -> True
-  CNamed _ -> True
   _ -> False
 
 isPointerType :: CType -> Bool
