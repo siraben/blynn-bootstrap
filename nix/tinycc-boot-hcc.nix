@@ -1,6 +1,7 @@
 {
   stdenvNoCC,
   lib,
+  fetchgit,
   hcc,
   binutils,
   minimalBootstrap,
@@ -62,9 +63,10 @@ stdenvNoCC.mkDerivation {
   dontConfigure = true;
   dontUpdateAutotoolsGnuConfigScripts = true;
 
-  src = builtins.fetchurl {
-    url = "https://repo.or.cz/tinycc.git/snapshot/${rev}.tar.gz";
-    sha256 = "sha256-MRuqq3TKcfIahtUWdhAcYhqDiGPkAjS8UTMsDE+/jGU=";
+  src = fetchgit {
+    url = "https://repo.or.cz/tinycc.git";
+    inherit rev;
+    hash = "sha256-LgYeX6Q80Z6VNJ7iPk46fPpEr/dEAezqvR6jQddSsxI=";
   };
 
   sourceRoot = "tinycc-${shortRev}";

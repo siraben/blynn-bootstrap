@@ -1,7 +1,7 @@
 {
   lib,
   stdenvNoCC,
-  fetchurl,
+  fetchgit,
   bash,
   tinycc,
   musl,
@@ -13,9 +13,10 @@ let
   version = "unstable-2025-12-03";
   rev = "cb41cbfe717e4c00d7bb70035cda5ee5f0ff9341";
 
-  src = fetchurl {
-    url = "https://repo.or.cz/tinycc.git/snapshot/${rev}.tar.gz";
-    hash = "sha256-MRuqq3TKcfIahtUWdhAcYhqDiGPkAjS8UTMsDE+/jGU=";
+  src = fetchgit {
+    url = "https://repo.or.cz/tinycc.git";
+    inherit rev;
+    hash = "sha256-LgYeX6Q80Z6VNJ7iPk46fPpEr/dEAezqvR6jQddSsxI=";
   };
 
   tccTarget =
