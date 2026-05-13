@@ -10,224 +10,104 @@ import TypesToken
 type ConstParser a = P [(String, Int)] Token String a
 
 parseConstExpr :: [(String, Int)] -> [Token] -> Either String (Int, [Token])
-parseConstExpr env toks = parseRest parseCond env toks
+parseConstExpr env toks = parseRest (expression 0) env toks
 
-parseCond :: ConstParser Int
-parseCond = do
-  cond <- parseOr
-  question <- constEatPunct "?"
-  if question
-    then do
-      yes <- parseCond
-      constNeedPunct ":" "expected ':' in constant expression"
-      no <- parseCond
-      pure (if cond /= 0 then yes else no)
-    else pure cond
-
-parseOr :: ConstParser Int
-parseOr = do
-  lhs <- parseLogicalAnd
-  parseOrTail lhs
-
-parseOrTail :: Int -> ConstParser Int
-parseOrTail lhs = do
-  found <- constEatPunct "||"
-  if found
-    then do
-      rhs <- parseLogicalAnd
-      parseOrTail (truth (lhs /= 0 || rhs /= 0))
-    else pure lhs
-
-parseLogicalAnd :: ConstParser Int
-parseLogicalAnd = do
-  lhs <- parseBitOr
-  parseLogicalAndTail lhs
-
-parseLogicalAndTail :: Int -> ConstParser Int
-parseLogicalAndTail lhs = do
-  found <- constEatPunct "&&"
-  if found
-    then do
-      rhs <- parseBitOr
-      parseLogicalAndTail (truth (lhs /= 0 && rhs /= 0))
-    else pure lhs
-
-parseBitOr :: ConstParser Int
-parseBitOr = do
-  lhs <- parseBitXor
-  parseBitOrTail lhs
-
-parseBitOrTail :: Int -> ConstParser Int
-parseBitOrTail lhs = do
-  found <- constEatPunct "|"
-  if found
-    then do
-      rhs <- parseBitXor
-      parseBitOrTail (bitOrInt lhs rhs)
-    else pure lhs
-
-parseBitXor :: ConstParser Int
-parseBitXor = do
-  lhs <- parseBitAnd
-  parseBitXorTail lhs
-
-parseBitXorTail :: Int -> ConstParser Int
-parseBitXorTail lhs = do
-  found <- constEatPunct "^"
-  if found
-    then do
-      rhs <- parseBitAnd
-      parseBitXorTail (bitXorInt lhs rhs)
-    else pure lhs
-
-parseBitAnd :: ConstParser Int
-parseBitAnd = do
-  lhs <- parseEq
-  parseBitAndTail lhs
-
-parseBitAndTail :: Int -> ConstParser Int
-parseBitAndTail lhs = do
-  found <- constEatPunct "&"
-  if found
-    then do
-      rhs <- parseEq
-      parseBitAndTail (bitAndInt lhs rhs)
-    else pure lhs
-
-parseEq :: ConstParser Int
-parseEq = do
-  lhs <- parseRel
-  eq <- constEatPunct "=="
-  if eq
-    then compareTail (==) lhs
-    else do
-      ne <- constEatPunct "!="
-      if ne then compareTail (/=) lhs else pure lhs
-
-parseRel :: ConstParser Int
-parseRel = do
-  lhs <- parseShift
-  lt <- constEatPunct "<"
-  if lt
-    then compareTail (<) lhs
-    else do
-      le <- constEatPunct "<="
-      if le
-        then compareTail (<=) lhs
-        else do
-          gt <- constEatPunct ">"
-          if gt
-            then compareTail (>) lhs
-            else do
-              ge <- constEatPunct ">="
-              if ge then compareTail (>=) lhs else pure lhs
-
-compareTail :: (Int -> Int -> Bool) -> Int -> ConstParser Int
-compareTail op lhs = do
-  rhs <- parseShift
-  pure (truth (lhs `op` rhs))
-
-parseShift :: ConstParser Int
-parseShift = do
-  lhs <- parseAdd
-  parseShiftTail lhs
-
-parseShiftTail :: Int -> ConstParser Int
-parseShiftTail lhs = do
-  left <- constEatPunct "<<"
-  if left
-    then do
-      rhs <- parseAdd
-      parseShiftTail (shiftLeftInt lhs (max 0 rhs))
-    else do
-      right <- constEatPunct ">>"
-      if right
-        then do
-          rhs <- parseAdd
-          parseShiftTail (shiftRightInt lhs (max 0 rhs))
-        else pure lhs
-
-parseAdd :: ConstParser Int
-parseAdd = do
-  lhs <- parseMul
-  parseAddTail lhs
-
-parseAddTail :: Int -> ConstParser Int
-parseAddTail lhs = do
-  plus <- constEatPunct "+"
-  if plus
-    then do
-      rhs <- parseMul
-      parseAddTail (lhs + rhs)
-    else do
-      minus <- constEatPunct "-"
-      if minus
-        then do
-          rhs <- parseMul
-          parseAddTail (lhs - rhs)
-        else pure lhs
-
-parseMul :: ConstParser Int
-parseMul = do
+expression :: Int -> ConstParser Int
+expression minPrec = do
   lhs <- parseUnary
-  parseMulTail lhs
+  climb lhs
+  where
+    climb lhs = do
+      mtok <- pPeekMaybe
+      case mtok of
+        Just tok -> case constTokenKind tok of
+          TokPunct "?" | minPrec <= 2 -> do
+            advance
+            yes <- expression 0
+            constNeedPunct ":" "expected ':' in constant expression"
+            no <- expression 2
+            climb (if lhs /= 0 then yes else no)
+          TokPunct op | Just (prec, assoc) <- binop op, prec >= minPrec -> do
+            advance
+            rhs <- expression (if rightAssoc assoc then prec else prec + 1)
+            value <- applyOp op lhs rhs
+            climb value
+          _ -> pure lhs
+        Nothing -> pure lhs
 
-parseMulTail :: Int -> ConstParser Int
-parseMulTail lhs = do
-  star <- constEatPunct "*"
-  if star
-    then do
-      rhs <- parseUnary
-      parseMulTail (lhs * rhs)
-    else do
-      slash <- constEatPunct "/"
-      if slash
-        then do
-          rhs <- parseUnary
-          if rhs == 0
-            then pFail "division by zero in constant expression"
-            else parseMulTail (lhs `div` rhs)
-        else do
-          percent <- constEatPunct "%"
-          if percent
-            then do
-              rhs <- parseUnary
-              if rhs == 0
-                then pFail "modulo by zero in constant expression"
-                else parseMulTail (lhs `mod` rhs)
-            else pure lhs
+data Assoc = LeftAssoc | RightAssoc
+
+rightAssoc :: Assoc -> Bool
+rightAssoc assoc = case assoc of
+  RightAssoc -> True
+  LeftAssoc -> False
+
+binop :: String -> Maybe (Int, Assoc)
+binop op = case op of
+  "||" -> Just (3, LeftAssoc)
+  "&&" -> Just (4, LeftAssoc)
+  "|" -> Just (5, LeftAssoc)
+  "^" -> Just (6, LeftAssoc)
+  "&" -> Just (7, LeftAssoc)
+  "==" -> Just (8, LeftAssoc)
+  "!=" -> Just (8, LeftAssoc)
+  "<" -> Just (9, LeftAssoc)
+  "<=" -> Just (9, LeftAssoc)
+  ">" -> Just (9, LeftAssoc)
+  ">=" -> Just (9, LeftAssoc)
+  "<<" -> Just (10, LeftAssoc)
+  ">>" -> Just (10, LeftAssoc)
+  "+" -> Just (11, LeftAssoc)
+  "-" -> Just (11, LeftAssoc)
+  "*" -> Just (12, LeftAssoc)
+  "/" -> Just (12, LeftAssoc)
+  "%" -> Just (12, LeftAssoc)
+  _ -> Nothing
+
+applyOp :: String -> Int -> Int -> ConstParser Int
+applyOp op lhs rhs = case op of
+  "+" -> pure (lhs + rhs)
+  "-" -> pure (lhs - rhs)
+  "*" -> pure (lhs * rhs)
+  "/" -> if rhs == 0
+    then pFail "division by zero in constant expression"
+    else pure (lhs `div` rhs)
+  "%" -> if rhs == 0
+    then pFail "modulo by zero in constant expression"
+    else pure (lhs `mod` rhs)
+  "<<" -> pure (shiftLeftInt lhs (max 0 rhs))
+  ">>" -> pure (shiftRightInt lhs (max 0 rhs))
+  "<" -> pure (truth (lhs < rhs))
+  "<=" -> pure (truth (lhs <= rhs))
+  ">" -> pure (truth (lhs > rhs))
+  ">=" -> pure (truth (lhs >= rhs))
+  "==" -> pure (truth (lhs == rhs))
+  "!=" -> pure (truth (lhs /= rhs))
+  "&" -> pure (bitAndInt lhs rhs)
+  "^" -> pure (bitXorInt lhs rhs)
+  "|" -> pure (bitOrInt lhs rhs)
+  "&&" -> pure (truth (lhs /= 0 && rhs /= 0))
+  "||" -> pure (truth (lhs /= 0 || rhs /= 0))
+  _ -> pFail ("unhandled operator in constant expression: " ++ op)
 
 parseUnary :: ConstParser Int
 parseUnary = do
-  bang <- constEatPunct "!"
-  if bang
-    then do
-      value <- parseUnary
-      pure (truth (value == 0))
-    else do
-      plus <- constEatPunct "+"
-      if plus
-        then parseUnary
-        else do
-          minus <- constEatPunct "-"
-          if minus
-            then do
-              value <- parseUnary
-              pure (-value)
-            else do
-              tilde <- constEatPunct "~"
-              if tilde
-                then do
-                  value <- parseUnary
-                  pure (bitNotInt value)
-                else parsePrimary
+  mtok <- pPeekMaybe
+  case mtok of
+    Just tok -> case constTokenKind tok of
+      TokPunct "!" -> advance >> ((truth . (== 0)) <$> parseUnary)
+      TokPunct "+" -> advance >> parseUnary
+      TokPunct "-" -> advance >> (negate <$> parseUnary)
+      TokPunct "~" -> advance >> (bitNotInt <$> parseUnary)
+      _ -> parsePrimary
+    Nothing -> pFail "empty constant expression"
 
 parsePrimary :: ConstParser Int
 parsePrimary = do
   paren <- constEatPunct "("
   if paren
     then do
-      value <- parseCond
+      value <- expression 0
       constNeedPunct ")" "expected ')' in constant expression"
       pure value
     else do
@@ -252,6 +132,9 @@ parseDefinedOperator = do
     else do
       name <- constNeedIdent "bad defined operator in #if expression"
       pure (truth (name /= ""))
+
+advance :: ConstParser ()
+advance = pSkip "unexpected end of constant expression"
 
 constEatPunct :: String -> ConstParser Bool
 constEatPunct expected = pRaw $ \_env toks -> case toks of
