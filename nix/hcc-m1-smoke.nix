@@ -1,16 +1,21 @@
 {
   stdenvNoCC,
+  stdenv,
   lib,
   pname ? "hcc-m1-smoke",
   hcc,
   minimalBootstrap,
   m2libc,
   python3,
+  qemu,
   target ? "amd64",
 }:
 
 let
   nixLib = import ./lib.nix { inherit lib; };
+  needsAarch64Runner = target == "aarch64" && stdenv.hostPlatform.system != "aarch64-linux";
+  runnerArgs =
+    lib.optionalString needsAarch64Runner "--runner ${qemu}/bin/qemu-aarch64";
 in
 stdenvNoCC.mkDerivation (
   {
@@ -24,7 +29,7 @@ stdenvNoCC.mkDerivation (
       hcc
       minimalBootstrap.stage0-posix.mescc-tools
       python3
-    ];
+    ] ++ lib.optional needsAarch64Runner qemu;
 
     buildPhase = ''
       runHook preBuild
@@ -37,7 +42,8 @@ stdenvNoCC.mkDerivation (
         --m2libc ${m2libc} \
         --source-dir ${../tests/hcc/m1-smoke} \
         --work-dir . \
-        --target ${target}
+        --target ${target} \
+        ${runnerArgs}
       echo "hcc-m1-smoke: DONE python smoke runner"
 
       runHook postBuild
