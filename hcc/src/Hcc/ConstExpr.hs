@@ -137,9 +137,9 @@ advance :: ConstParser ()
 advance = pSkip "unexpected end of constant expression"
 
 constEatPunct :: String -> ConstParser Bool
-constEatPunct expected = pRaw $ \_env toks -> case toks of
-  Token _ (TokPunct punct):rest | punct == expected -> Consumed (Ok True rest)
-  _ -> Unconsumed (Ok False toks)
+constEatPunct expected = pRaw $ \env toks -> case toks of
+  Token _ (TokPunct punct):rest | punct == expected -> Consumed (Ok True env rest)
+  _ -> Unconsumed (Ok False env toks)
 
 constNeedPunct :: String -> String -> ConstParser ()
 constNeedPunct expected err = do
