@@ -43,6 +43,12 @@ jobs:
             runner: ubuntu-latest
             timeout: 120
             attr: tinycc.host.ghc.native
+          - suite: non-blocking stats
+            arch: amd64
+            runner: ubuntu-latest
+            timeout: 120
+            attr: tests.hcc.tinycc-tests2-stat
+            allow_failure: true
           - suite: fast native
             arch: aarch64
             runner: ubuntu-24.04-arm
@@ -126,4 +132,5 @@ jobs:
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
           skipPush: ${{ github.event_name == 'pull_request' }}
       - name: Build ${{ matrix.attr }}
+        continue-on-error: ${{ matrix.allow_failure == true }}
         run: nix build --print-build-logs ".#${{ matrix.attr }}"
