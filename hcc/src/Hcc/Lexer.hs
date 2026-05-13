@@ -211,7 +211,7 @@ lexPunct st = case lsInput st of
   _ -> Nothing
   where
     punct text rest =
-      let st' = advanceMany text st { lsInput = rest }
+      let st' = advancePunct text st { lsInput = rest }
       in Just (Token (Span (lsPos st) (lsPos st')) (TokPunct text), st')
 
 takeWhileState :: (Char -> Bool) -> LexState -> (String, LexState)
@@ -222,6 +222,13 @@ takeWhileState predicate st = go st [] where
 
 advanceMany :: String -> LexState -> LexState
 advanceMany s st = foldl (flip advance) st s
+
+advancePunct :: String -> LexState -> LexState
+advancePunct text st = st { lsPos = addColumns (length text) (lsPos st), lsBol = False }
+
+addColumns :: Int -> SrcPos -> SrcPos
+addColumns count pos = case pos of
+  SrcPos line col -> SrcPos line (col + count)
 
 advance :: Char -> LexState -> LexState
 advance c st = st { lsPos = nextPos c (lsPos st), lsBol = nextBol c (lsBol st) }
