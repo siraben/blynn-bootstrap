@@ -14,12 +14,12 @@ import LowerImplicit
 
 data CodegenError = CodegenError String
 
-emitM1IrWithDataPrefixTarget :: ([String] -> IO ()) -> String -> Int -> Program -> IO (Either CodegenError ())
+emitM1IrWithDataPrefixTarget :: (String -> IO ()) -> String -> Int -> Program -> IO (Either CodegenError ())
 emitM1IrWithDataPrefixTarget write prefix target ast =
   case buildM1IrModuleWithDataPrefixTarget prefix target ast of
     Left err -> pure (Left err)
     Right ir -> do
-      write ["HCCIR 1"]
+      write "HCCIR 1"
       emitModuleIr write (optimizeModuleIr ir)
       pure (Right ())
 
@@ -113,39 +113,39 @@ paramDeclNamesIr params = case params of
   [] -> []
   Param _ name:rest -> name : paramDeclNamesIr rest
 
-emitModuleIr :: ([String] -> IO ()) -> ModuleIr -> IO ()
+emitModuleIr :: (String -> IO ()) -> ModuleIr -> IO ()
 emitModuleIr write ir = case ir of
   ModuleIr items -> emitTopItemsIr write items
 
-emitTopItemsIr :: ([String] -> IO ()) -> [TopItemIr] -> IO ()
+emitTopItemsIr :: (String -> IO ()) -> [TopItemIr] -> IO ()
 emitTopItemsIr write items = case items of
   [] -> pure ()
   item:rest -> do
     emitTopItemIr write item
     emitTopItemsIr write rest
 
-emitTopItemIr :: ([String] -> IO ()) -> TopItemIr -> IO ()
+emitTopItemIr :: (String -> IO ()) -> TopItemIr -> IO ()
 emitTopItemIr write item = case item of
   TopData dataItem -> emitDataItemIr write dataItem
   TopFunction fn -> emitFunctionIr write fn
 
-emitDataItemIr :: ([String] -> IO ()) -> DataItem -> IO ()
+emitDataItemIr :: (String -> IO ()) -> DataItem -> IO ()
 emitDataItemIr write item = case item of
   DataItem label values -> do
-    write ["D " ++ label]
+    write ("D " ++ label)
     emitDataValuesIr write values
-    write ["E"]
+    write "E"
 
-emitDataValuesIr :: ([String] -> IO ()) -> [DataValue] -> IO ()
+emitDataValuesIr :: (String -> IO ()) -> [DataValue] -> IO ()
 emitDataValuesIr write values = case values of
   [] -> pure ()
   DByte 0:_ ->
     case zeroRun values of
       (count, rest) -> do
-        write ["z " ++ show count]
+        write ("z " ++ show count)
         emitDataValuesIr write rest
   value:rest -> do
-    write [dataValueIrLine value]
+    write (dataValueIrLine value)
     emitDataValuesIr write rest
 
 dataValueIrLine :: DataValue -> String
@@ -160,66 +160,66 @@ zeroRun values = case values of
       (count, tailValues) -> (count + 1, tailValues)
   _ -> (0, values)
 
-emitFunctionIr :: ([String] -> IO ()) -> FunctionIr -> IO ()
+emitFunctionIr :: (String -> IO ()) -> FunctionIr -> IO ()
 emitFunctionIr write fn = case fn of
   FunctionIr name blocks -> do
-    write ["F " ++ name]
+    write ("F " ++ name)
     emitBlocksIr write blocks
-    write ["E"]
+    write "E"
 
-emitBlocksIr :: ([String] -> IO ()) -> [BasicBlock] -> IO ()
+emitBlocksIr :: (String -> IO ()) -> [BasicBlock] -> IO ()
 emitBlocksIr write blocks = mapM_ (emitBlockIr write) blocks
 
-emitBlockIr :: ([String] -> IO ()) -> BasicBlock -> IO ()
+emitBlockIr :: (String -> IO ()) -> BasicBlock -> IO ()
 emitBlockIr write block = case block of
   BasicBlock bid instrs term -> do
-    write ["L " ++ blockIdText bid]
+    write ("L " ++ blockIdText bid)
     emitInstrsIr write instrs
-    write [terminatorIrLine term]
+    write (terminatorIrLine term)
 
-emitInstrsIr :: ([String] -> IO ()) -> [Instr] -> IO ()
+emitInstrsIr :: (String -> IO ()) -> [Instr] -> IO ()
 emitInstrsIr write instrs = mapM_ (emitInstrIr write) instrs
 
-emitInstrIr :: ([String] -> IO ()) -> Instr -> IO ()
+emitInstrIr :: (String -> IO ()) -> Instr -> IO ()
 emitInstrIr write instr = case instr of
-  IParam temp index -> write ["1 " ++ tempText temp ++ " " ++ show index]
-  IAlloca temp size -> write ["2 " ++ tempText temp ++ " " ++ show size]
-  IConst temp value -> write ["3 " ++ tempText temp ++ " " ++ show value]
-  IConstBytes temp bytes -> write ["4 " ++ tempText temp ++ " B" ++ intListFields bytes]
-  ICopy temp op -> write ["5 " ++ tempText temp ++ " " ++ operandIrFields op]
-  IAddrOf temp source -> write ["6 " ++ tempText temp ++ " " ++ tempText source]
-  ILoad64 temp op -> write ["7 " ++ tempText temp ++ " " ++ operandIrFields op]
-  ILoad32 temp op -> write ["8 " ++ tempText temp ++ " " ++ operandIrFields op]
-  ILoadS32 temp op -> write ["9 " ++ tempText temp ++ " " ++ operandIrFields op]
-  ILoad16 temp op -> write ["10 " ++ tempText temp ++ " " ++ operandIrFields op]
-  ILoadS16 temp op -> write ["11 " ++ tempText temp ++ " " ++ operandIrFields op]
-  ILoad8 temp op -> write ["12 " ++ tempText temp ++ " " ++ operandIrFields op]
-  ILoadS8 temp op -> write ["13 " ++ tempText temp ++ " " ++ operandIrFields op]
-  IStore64 addr value -> write ["14 " ++ operandIrFields addr ++ " " ++ operandIrFields value]
-  IStore32 addr value -> write ["15 " ++ operandIrFields addr ++ " " ++ operandIrFields value]
-  IStore16 addr value -> write ["16 " ++ operandIrFields addr ++ " " ++ operandIrFields value]
-  IStore8 addr value -> write ["17 " ++ operandIrFields addr ++ " " ++ operandIrFields value]
-  ISExt temp size op -> write ["22 " ++ tempText temp ++ " " ++ show size ++ " " ++ operandIrFields op]
-  IZExt temp size op -> write ["23 " ++ tempText temp ++ " " ++ show size ++ " " ++ operandIrFields op]
-  ITrunc temp size op -> write ["24 " ++ tempText temp ++ " " ++ show size ++ " " ++ operandIrFields op]
-  IBin temp op left right -> write ["18 " ++ tempText temp ++ " " ++ show (binOpCode op) ++ " " ++ operandIrFields left ++ " " ++ operandIrFields right]
-  ICall result name args -> write ["19 " ++ maybeTempText result ++ " " ++ name ++ " " ++ operandsIrFields args]
-  ICallIndirect result callee args -> write ["20 " ++ maybeTempText result ++ " " ++ operandIrFields callee ++ " " ++ operandsIrFields args]
+  IParam temp index -> write ("1 " ++ tempText temp ++ " " ++ show index)
+  IAlloca temp size -> write ("2 " ++ tempText temp ++ " " ++ show size)
+  IConst temp value -> write ("3 " ++ tempText temp ++ " " ++ show value)
+  IConstBytes temp bytes -> write ("4 " ++ tempText temp ++ " B" ++ intListFields bytes)
+  ICopy temp op -> write ("5 " ++ tempText temp ++ " " ++ operandIrFields op)
+  IAddrOf temp source -> write ("6 " ++ tempText temp ++ " " ++ tempText source)
+  ILoad64 temp op -> write ("7 " ++ tempText temp ++ " " ++ operandIrFields op)
+  ILoad32 temp op -> write ("8 " ++ tempText temp ++ " " ++ operandIrFields op)
+  ILoadS32 temp op -> write ("9 " ++ tempText temp ++ " " ++ operandIrFields op)
+  ILoad16 temp op -> write ("10 " ++ tempText temp ++ " " ++ operandIrFields op)
+  ILoadS16 temp op -> write ("11 " ++ tempText temp ++ " " ++ operandIrFields op)
+  ILoad8 temp op -> write ("12 " ++ tempText temp ++ " " ++ operandIrFields op)
+  ILoadS8 temp op -> write ("13 " ++ tempText temp ++ " " ++ operandIrFields op)
+  IStore64 addr value -> write ("14 " ++ operandIrFields addr ++ " " ++ operandIrFields value)
+  IStore32 addr value -> write ("15 " ++ operandIrFields addr ++ " " ++ operandIrFields value)
+  IStore16 addr value -> write ("16 " ++ operandIrFields addr ++ " " ++ operandIrFields value)
+  IStore8 addr value -> write ("17 " ++ operandIrFields addr ++ " " ++ operandIrFields value)
+  ISExt temp size op -> write ("22 " ++ tempText temp ++ " " ++ show size ++ " " ++ operandIrFields op)
+  IZExt temp size op -> write ("23 " ++ tempText temp ++ " " ++ show size ++ " " ++ operandIrFields op)
+  ITrunc temp size op -> write ("24 " ++ tempText temp ++ " " ++ show size ++ " " ++ operandIrFields op)
+  IBin temp op left right -> write ("18 " ++ tempText temp ++ " " ++ show (binOpCode op) ++ " " ++ operandIrFields left ++ " " ++ operandIrFields right)
+  ICall result name args -> write ("19 " ++ maybeTempText result ++ " " ++ name ++ " " ++ operandsIrFields args)
+  ICallIndirect result callee args -> write ("20 " ++ maybeTempText result ++ " " ++ operandIrFields callee ++ " " ++ operandsIrFields args)
   ICond temp condInstrs condOp trueInstrs trueOp falseInstrs falseOp -> do
-    write ["21 " ++ tempText temp]
-    write ["["]
+    write ("21 " ++ tempText temp)
+    write "["
     emitInstrsIr write condInstrs
-    write ["]"]
-    write ["O " ++ operandIrFields condOp]
-    write ["["]
+    write "]"
+    write ("O " ++ operandIrFields condOp)
+    write "["
     emitInstrsIr write trueInstrs
-    write ["]"]
-    write ["O " ++ operandIrFields trueOp]
-    write ["["]
+    write "]"
+    write ("O " ++ operandIrFields trueOp)
+    write "["
     emitInstrsIr write falseInstrs
-    write ["]"]
-    write ["O " ++ operandIrFields falseOp]
-    write ["Q"]
+    write "]"
+    write ("O " ++ operandIrFields falseOp)
+    write "Q"
 
 terminatorIrLine :: Terminator -> String
 terminatorIrLine term = case term of

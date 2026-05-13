@@ -159,24 +159,21 @@ hccWithObuf initialCap action = do
       hccObufFree out
       pure result
 
-hccWithHandleLineWriter :: Int -> (([String] -> IO ()) -> IO a) -> IO a
+hccWithHandleLineWriter :: Int -> ((String -> IO ()) -> IO a) -> IO a
 hccWithHandleLineWriter handle action = hccWithObuf outputChunkSize $ \out -> do
-  result <- action (hccWriteBufferedLines handle out)
+  result <- action (hccWriteBufferedLine handle out)
   hccObufWrite handle out
   hccHandleFlush handle
   pure result
 
-hccWriteBufferedLines :: Int -> Word -> [String] -> IO ()
-hccWriteBufferedLines handle out rest = case rest of
-  [] -> pure ()
-  line:linesRest -> do
-    hccWriteBufferedText out line
-    hccObufPut out '\n'
-    len <- hccObufLen out
-    case len >= outputChunkSize of
-      True -> hccObufWrite handle out >> hccObufClear out
-      False -> pure ()
-    hccWriteBufferedLines handle out linesRest
+hccWriteBufferedLine :: Int -> Word -> String -> IO ()
+hccWriteBufferedLine handle out line = do
+  hccWriteBufferedText out line
+  hccObufPut out '\n'
+  len <- hccObufLen out
+  case len >= outputChunkSize of
+    True -> hccObufWrite handle out >> hccObufClear out
+    False -> pure ()
 
 hccWriteBufferedText :: Word -> String -> IO ()
 hccWriteBufferedText out text = case text of
