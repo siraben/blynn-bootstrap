@@ -19,8 +19,9 @@ through the usual minimal-bootstrap GCC chain.
 - `gcc46.m2.precisely.m2` has built successfully from the HCC-built TinyCC.
 - The rest of nixpkgs' minimal-bootstrap chain is exposed as flake targets:
   `gcc46Cxx`, `gcc10`, `gccLatest`, `glibc`, and `gccGlibc`.
-- HCC emits stage0 M1 for amd64 and i386 smoke targets. The full TinyCC
-  bootstrap path is still wired for amd64.
+- HCC emits stage0 M1 for amd64, i386, and aarch64 smoke targets. The full
+  TinyCC bootstrap path is wired for amd64 and aarch64; i386 currently remains
+  a backend smoke target.
 
 ## Layout
 
