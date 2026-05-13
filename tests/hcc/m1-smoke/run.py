@@ -16,6 +16,9 @@ CASES = [
     ("address-written-scalar", 0),
     ("escaped-string-magic", 0),
     ("archive-header-layout", 0),
+    ("scoped-typedef-enum", 0),
+    ("wide-integer-types", 0),
+    ("function-pointer-call-type", 0),
 ]
 
 
@@ -67,6 +70,7 @@ def main():
     parser.add_argument("--source-dir", default=str(pathlib.Path(__file__).parent))
     parser.add_argument("--work-dir", default=".")
     parser.add_argument("--target", choices=sorted(TARGETS), default="amd64")
+    parser.add_argument("--runner", action="append", default=[])
     parser.add_argument("--no-run", action="store_true")
     args = parser.parse_args()
 
@@ -123,7 +127,7 @@ def main():
             log(f"DONE  {name}")
             continue
         log(f"{name}: execute, expect exit {expected}")
-        result = subprocess.run([str(exe.resolve())])
+        result = subprocess.run(args.runner + [str(exe.resolve())])
         if result.returncode != expected:
             raise SystemExit(f"{name}: got exit {result.returncode}, expected {expected}")
         log(f"DONE  {name}")

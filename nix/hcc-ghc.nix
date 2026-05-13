@@ -74,6 +74,37 @@ stdenv.mkDerivation (
       ./hcc1 --check parse-smoke.i
       ./hcc1 --m1-ir -o smoke.hccir parse-smoke.i
       ./hcc-m1 smoke.hccir smoke.M1
+      expect_file_contains() {
+        pattern="$1"
+        file="$2"
+        found=0
+        while IFS= read -r line; do
+          case "$line" in
+            *"$pattern"*) found=1; break ;;
+          esac
+        done < "$file"
+        if test "$found" != 1; then
+          echo "$file: expected diagnostic containing: $pattern" >&2
+          exit 1
+        fi
+      }
+      expect_hcc1_fail() {
+        name="$1"
+        pattern="$2"
+        src="$3"
+        ./hcpp "$src" > "$name.i"
+        set +e
+        ./hcc1 --m1-ir -o "$name.hccir" "$name.i" 2> "$name.err"
+        code="$?"
+        set -e
+        if test "$code" = 0; then
+          echo "$name: expected hcc1 failure" >&2
+          exit 1
+        fi
+        expect_file_contains "$pattern" "$name.err"
+      }
+      expect_hcc1_fail unknown-identifier "unknown identifier: missing_global" ${../tests/hcc/diagnostics/unknown-identifier.c}
+      expect_hcc1_fail unknown-global-initializer "unknown constant: missing_global" ${../tests/hcc/diagnostics/unknown-global-initializer.c}
       runHook postBuild
     '';
 

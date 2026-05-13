@@ -41,6 +41,8 @@ mkDerivation (
       cp ${../tests/hcc/pp-smoke.c} test/pp-smoke.c
       cp ${../tests/hcc/parse-smoke.c} test/parse-smoke.c
       cp ${../tests/hcc/scalar-immediate-smoke.c} test/scalar-immediate-smoke.c
+      cp ${../tests/hcc/diagnostics/unknown-identifier.c} test/unknown-identifier.c
+      cp ${../tests/hcc/diagnostics/unknown-global-initializer.c} test/unknown-global-initializer.c
 
       ${nixLib.shellHelpers { name = "hcc-blynn-bin"; }}
 
@@ -75,6 +77,42 @@ mkDerivation (
       log_file scalar-immediate-smoke.i
       run_step "hcc1 --m1-ir -o scalar-immediate-smoke.hccir scalar-immediate-smoke.i" ./hcc1 --m1-ir -o scalar-immediate-smoke.hccir scalar-immediate-smoke.i
       log_file scalar-immediate-smoke.hccir
+
+      expect_file_contains() {
+        pattern="$1"
+        file="$2"
+        found=0
+        while IFS= read -r line; do
+          case "$line" in
+            *"$pattern"*) found=1; break ;;
+          esac
+        done < "$file"
+        if test "$found" != 1; then
+          echo "$file: expected diagnostic containing: $pattern" >&2
+          exit 1
+        fi
+      }
+      expect_hcc1_fail() {
+        name="$1"
+        pattern="$2"
+        src="$3"
+        run_step_shell "hcpp $name" "./hcpp \"$src\" > \"$name.i\""
+        log_file "$name.i"
+        log_step "START expect hcc1 failure $name"
+        set +e
+        ./hcc1 --m1-ir -o "$name.hccir" "$name.i" 2> "$name.err"
+        code="$?"
+        set -e
+        log_file "$name.err"
+        if test "$code" = 0; then
+          echo "$name: expected hcc1 failure" >&2
+          exit 1
+        fi
+        expect_file_contains "$pattern" "$name.err"
+        log_step "DONE  expect hcc1 failure $name"
+      }
+      expect_hcc1_fail unknown-identifier "unknown identifier: missing_global" test/unknown-identifier.c
+      expect_hcc1_fail unknown-global-initializer "unknown constant: missing_global" test/unknown-global-initializer.c
 
       runHook postBuild
     '';

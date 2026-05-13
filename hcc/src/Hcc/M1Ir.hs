@@ -78,17 +78,40 @@ registerTopDeclIr st decl = case decl of
 
 registerTopDeclShallowState :: CompileState -> TopDecl -> Either CompileError ((), CompileState)
 registerTopDeclShallowState st decl = case decl of
-  Function ty name _ _ ->
-    unCompileM (registerTypeAggregates ty >> bindGlobal name ty >> bindFunction name) st
-  Prototype ty name _ ->
-    unCompileM (registerTypeAggregates ty >> bindGlobal name ty >> bindFunction name) st
+  Function ty name params _ ->
+    unCompileM (registerFunctionDecl ty name params) st
+  Prototype ty name params ->
+    unCompileM (registerFunctionDecl ty name params) st
   StructDecl isUnion name fields ->
     unCompileM (registerFieldAggregates fields >> bindStruct name isUnion fields) st
   ExternGlobals globals ->
     unCompileM (registerExternGlobals globals) st
   EnumConstants constants ->
     unCompileM (registerConstants constants) st
+  TypeDecl types ->
+    unCompileM (registerTypesAggregatesIr types) st
   _ -> Right ((), st)
+
+registerFunctionDecl :: CType -> String -> [Param] -> CompileM ()
+registerFunctionDecl ty name params = do
+  registerTypeAggregates ty
+  registerParamAggregates params
+  bindGlobal name ty
+  bindFunctionType name ty params
+
+registerParamAggregates :: [Param] -> CompileM ()
+registerParamAggregates params = case params of
+  [] -> pure ()
+  Param ty _:rest -> do
+    registerTypeAggregates ty
+    registerParamAggregates rest
+
+registerTypesAggregatesIr :: [CType] -> CompileM ()
+registerTypesAggregatesIr types = case types of
+  [] -> pure ()
+  ty:rest -> do
+    registerTypeAggregates ty
+    registerTypesAggregatesIr rest
 
 registerGlobalsIr :: CompileState -> [(CType, String, Maybe Expr)] -> Either CodegenError (CompileState, [TopItemIr])
 registerGlobalsIr st globals = case globals of

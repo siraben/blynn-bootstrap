@@ -23,7 +23,7 @@ import LowerTypeInfo
 
 lowerFunction :: String -> [Param] -> [Stmt] -> CompileM FunctionIr
 lowerFunction name params body =
-  withErrorContext ("function " ++ name) (withFunctionScope (lowerFunctionBody name params body))
+  withErrorContext ("function " ++ name) (withFunctionScope (withCurrentFunction name (lowerFunctionBody name params body)))
 
 lowerFunctionBody :: String -> [Param] -> [Stmt] -> CompileM FunctionIr
 lowerFunctionBody name params body = do
@@ -70,6 +70,8 @@ lowerStatementsFrom bid instrs stmts defaultTerm = case stmts of
   SDecls decls:rest -> do
     declInstrs <- lowerDecls decls
     lowerStatementsFrom bid (instrs ++ declInstrs) rest defaultTerm
+  STypedef:rest ->
+    lowerStatementsFrom bid instrs rest defaultTerm
   SExpr expr:rest -> do
     exprInstrs <- lowerSideEffect expr
     lowerStatementsFrom bid (instrs ++ exprInstrs) rest defaultTerm
@@ -394,6 +396,8 @@ lowerAggregateDeclTemplate ty temp initExpr label = do
 
 lowerAggregateDeclRuntime :: CType -> Temp -> Maybe Expr -> CompileM [Instr]
 lowerAggregateDeclRuntime ty temp initExpr = case initExpr of
+  Just (EInitList _) ->
+    lowerAggregateInitWrites (OTemp temp) ty initExpr
   Just expr -> do
     (exprInstrs, op) <- lowerExpr expr
     copyInstrs <- copyObject (OTemp temp) op ty
@@ -415,10 +419,13 @@ localAggregateTemplateData ty initExpr = case ty of
 
 localArrayTemplateData :: CType -> Maybe Expr -> CompileM (Maybe String)
 localArrayTemplateData ty initExpr = case initExpr of
-  Just expr -> case expr of
-    EInitList _ -> localDataItem ty initExpr
-    EString _ -> localDataItem ty initExpr
-    _ -> pure Nothing
+  Just expr ->
+    if staticInitializerExpr expr
+    then case expr of
+      EInitList _ -> localDataItem ty initExpr
+      EString _ -> localDataItem ty initExpr
+      _ -> pure Nothing
+    else pure Nothing
   Nothing -> pure Nothing
 
 localNonArrayTemplateData :: CType -> Maybe Expr -> CompileM (Maybe String)
@@ -426,9 +433,33 @@ localNonArrayTemplateData ty initExpr = case initExpr of
   Just expr -> case expr of
     EInitList _ -> do
       aggregateStorage <- isAggregateTypeM ty
-      if aggregateStorage then localDataItem ty initExpr else pure Nothing
+      if aggregateStorage && staticInitializerExpr expr then localDataItem ty initExpr else pure Nothing
     _ -> pure Nothing
   Nothing -> pure Nothing
+
+staticInitializerExpr :: Expr -> Bool
+staticInitializerExpr expr = case expr of
+  EInitList exprs -> allStaticInitializerExprs exprs
+  EString _ -> True
+  EInt _ -> True
+  EChar _ -> True
+  ECast _ value -> staticInitializerExpr value
+  EUnary "-" value -> staticInitializerExpr value
+  EUnary "+" value -> staticInitializerExpr value
+  EUnary "~" value -> staticInitializerExpr value
+  EUnary "!" value -> staticInitializerExpr value
+  EUnary "&" _ -> True
+  EVar _ -> True
+  EBinary op left right ->
+    op /= "," && staticInitializerExpr left && staticInitializerExpr right
+  ECond cond yes no ->
+    staticInitializerExpr cond && staticInitializerExpr yes && staticInitializerExpr no
+  _ -> False
+
+allStaticInitializerExprs :: [Expr] -> Bool
+allStaticInitializerExprs exprs = case exprs of
+  [] -> True
+  expr:rest -> staticInitializerExpr expr && allStaticInitializerExprs rest
 
 localDataItem :: CType -> Maybe Expr -> CompileM (Maybe String)
 localDataItem ty initExpr = do
@@ -548,6 +579,9 @@ registerTypeAggregates :: CType -> CompileM ()
 registerTypeAggregates ty = case ty of
   CPtr inner -> registerTypeAggregates inner
   CArray inner _ -> registerTypeAggregates inner
+  CFunc ret params -> do
+    registerTypeAggregates ret
+    registerTypesAggregates params
   CStructNamed name fields -> do
     registerFieldAggregates fields
     bindStruct name False fields
@@ -559,6 +593,13 @@ registerTypeAggregates ty = case ty of
   CUnionDef fields ->
     registerFieldAggregates fields
   _ -> pure ()
+
+registerTypesAggregates :: [CType] -> CompileM ()
+registerTypesAggregates types = case types of
+  [] -> pure ()
+  ty:rest -> do
+    registerTypeAggregates ty
+    registerTypesAggregates rest
 
 lowerExpr :: Expr -> CompileM ([Instr], Operand)
 lowerExpr expr = case expr of
@@ -616,7 +657,8 @@ lowerExpr expr = case expr of
     pure ([IConst temp size], OTemp temp)
   ESizeofExpr value -> do
     mty <- exprType value
-    size <- maybe targetWordSize typeSize mty
+    ty <- requireMaybeType "sizeof expression has unknown type" mty
+    size <- typeSize ty
     temp <- freshTemp
     pure ([IConst temp size], OTemp temp)
   ECond cond yes no -> do
@@ -670,9 +712,19 @@ lowerExpr expr = case expr of
   _ -> throwC ("unsupported expression in lowering: " ++ renderExprTag expr)
 
 lowerVarExpr :: String -> CompileM ([Instr], Operand)
-lowerVarExpr name = case builtinConstant name of
-  Just value -> pure ([], OImm value)
-  Nothing -> lowerNonBuiltinVarExpr name
+lowerVarExpr name =
+  if isFunctionNameMacro name
+    then lowerFunctionNameMacro
+    else case builtinConstant name of
+      Just value -> pure ([], OImm value)
+      Nothing -> lowerNonBuiltinVarExpr name
+
+lowerFunctionNameMacro :: CompileM ([Instr], Operand)
+lowerFunctionNameMacro = do
+  mname <- currentFunctionName
+  case mname of
+    Just name -> lowerExpr (EString name)
+    Nothing -> pure ([], OImm 0)
 
 lowerNonBuiltinVarExpr :: String -> CompileM ([Instr], Operand)
 lowerNonBuiltinVarExpr name = do
@@ -687,7 +739,8 @@ lowerNonConstantVarExpr name = do
   case local of
     Just temp -> do
       mty <- lookupVarType name
-      coerceScalar (maybe CLong id mty) (OTemp temp)
+      ty <- requireMaybeType ("unknown local type: " ++ name) mty
+      coerceScalar ty (OTemp temp)
     Nothing -> lowerNonLocalVarExpr name
 
 lowerNonLocalVarExpr :: String -> CompileM ([Instr], Operand)
@@ -702,9 +755,7 @@ lowerGlobalVarExpr name = do
   globalTy <- lookupGlobalType name
   case globalTy of
     Just ty -> lowerTypedGlobalVarExpr name ty
-    Nothing -> do
-      out <- freshTemp
-      pure ([ILoad64 out (OGlobal name)], OTemp out)
+    Nothing -> throwC ("unknown identifier: " ++ name)
 
 lowerTypedGlobalVarExpr :: String -> CType -> CompileM ([Instr], Operand)
 lowerTypedGlobalVarExpr name ty = case ty of
@@ -1050,20 +1101,29 @@ coerceMaybeScalar mty op = case mty of
   Nothing -> pure ([], op)
 
 coerceScalar :: CType -> Operand -> CompileM ([Instr], Operand)
-coerceScalar ty op = do
-  integer <- isIntegerTypeM ty
-  if not integer
-    then pure ([], op)
-    else do
-      size <- typeSize ty
-      if size >= 8
-        then pure ([], op)
-        else case coerceImmediateScalar (isSignedIntegerType ty) size op of
-          Just coerced -> pure ([], coerced)
-          Nothing ->
-            if isSignedIntegerType ty
-              then signExtendScalar size op
-              else maskScalar size op
+coerceScalar ty op = case ty of
+  CBool -> coerceBool op
+  _ -> do
+    integer <- isIntegerTypeM ty
+    if not integer
+      then pure ([], op)
+      else do
+        size <- typeSize ty
+        if size >= 8
+          then pure ([], op)
+          else case coerceImmediateScalar (isSignedIntegerType ty) size op of
+            Just coerced -> pure ([], coerced)
+            Nothing ->
+              if isSignedIntegerType ty
+                then signExtendScalar size op
+                else maskScalar size op
+
+coerceBool :: Operand -> CompileM ([Instr], Operand)
+coerceBool op = case immediateScalarValue op of
+  Just value -> pure ([], OImm (if value == 0 then 0 else 1))
+  Nothing -> do
+    out <- freshTemp
+    pure ([IBin out INe op (OImm 0)], OTemp out)
 
 coerceImmediateScalar :: Bool -> Int -> Operand -> Maybe Operand
 coerceImmediateScalar signed size op =
@@ -1186,16 +1246,19 @@ lowerLValue target = case target of
     case local of
       Just temp -> do
         ty <- lookupVarType name
-        pure ([], LLocal temp (maybe CLong id ty))
+        knownTy <- requireMaybeType ("unknown local type: " ++ name) ty
+        pure ([], LLocal temp knownTy)
       Nothing -> do
         ty <- lookupGlobalType name
-        pure ([], LAddress (OGlobal name) (maybe CLong id ty))
+        knownTy <- requireMaybeType ("unknown global type: " ++ name) ty
+        pure ([], LAddress (OGlobal name) knownTy)
   EUnary "*" ptr -> do
     result <- lowerExpr ptr
     let instrs = fst result
     let op = snd result
     ty <- exprType target
-    pure (instrs, LAddress op (maybe CLong id ty))
+    knownTy <- requireMaybeType "dereference has unknown pointed-to type" ty
+    pure (instrs, LAddress op knownTy)
   EIndex base ix -> do
     baseResult <- lowerExpr base
     ixResult <- lowerExpr ix
@@ -1225,20 +1288,26 @@ lowerLValue target = case target of
     let baseInstrs = fst baseResult
     let baseAddr = snd baseResult
     baseTy <- exprType base
-    fieldResult <- memberInfo (Just (CPtr (maybe CLong id baseTy))) field
+    knownBaseTy <- requireMaybeType "member base has unknown type" baseTy
+    fieldResult <- memberInfo (Just (CPtr knownBaseTy)) field
     let fieldTy = fst fieldResult
     let offset = snd fieldResult
     addr <- freshTemp
     pure (baseInstrs ++ [IBin addr IAdd baseAddr (OImm offset)], LAddress (OTemp addr) fieldTy)
   _ -> throwC ("unsupported lvalue: " ++ renderExprTag target)
 
+requireMaybeType :: String -> Maybe CType -> CompileM CType
+requireMaybeType msg mty = case mty of
+  Just ty -> pure ty
+  Nothing -> throwC msg
+
 indexedElementType :: Expr -> CompileM CType
 indexedElementType base = do
   mty <- exprType base
-  pure (case mty of
-    Just (CPtr ty) -> ty
-    Just (CArray ty _) -> ty
-    _ -> CUnsignedChar)
+  case mty of
+    Just (CPtr ty) -> pure ty
+    Just (CArray ty _) -> pure ty
+    _ -> throwC "subscripted value has unknown element type"
 
 scaledIndex :: Operand -> Int -> CompileM ([Instr], Operand)
 scaledIndex index size =
@@ -1256,10 +1325,17 @@ exprType expr = case expr of
   ESizeofType _ -> pure (Just CInt)
   ESizeofExpr _ -> pure (Just CInt)
   EVar name -> do
-    local <- lookupVarType name
-    case local of
-      Just ty -> pure (Just ty)
-      Nothing -> lookupGlobalType name
+    if isFunctionNameMacro name
+      then pure (Just (CPtr CChar))
+      else do
+        local <- lookupVarType name
+        case local of
+          Just ty -> pure (Just ty)
+          Nothing -> do
+            functionTy <- lookupFunctionType name
+            case functionTy of
+              Just ty -> pure (Just ty)
+              Nothing -> lookupGlobalType name
   ECast ty _ -> pure (Just ty)
   EUnary "+" value -> do
     mty <- exprType value
@@ -1275,6 +1351,7 @@ exprType expr = case expr of
     mty <- exprType value
     pure (case mty of
       Just (CPtr ty) -> Just ty
+      Just (CArray ty _) -> Just ty
       _ -> Nothing)
   EUnary "&" value -> do
     mty <- exprType value
@@ -1291,7 +1368,8 @@ exprType expr = case expr of
     pure (maybeMemberType info)
   EMember base field -> do
     baseTy <- exprType base
-    info <- memberInfoMaybe (Just (CPtr (maybe CLong id baseTy))) field
+    knownBaseTy <- requireMaybeType "member base has unknown type" baseTy
+    info <- memberInfoMaybe (Just (CPtr knownBaseTy)) field
     pure (maybeMemberType info)
   EBinary "+" left right -> do
     leftTy <- exprType left
@@ -1312,6 +1390,23 @@ exprType expr = case expr of
   EBinary "," _ right -> exprType right
   EBinary "&&" _ _ -> pure (Just CInt)
   EBinary "||" _ _ -> pure (Just CInt)
+  EBinary op left right -> do
+    if isComparisonOpString op || op `elem` ["==", "!="]
+      then pure (Just CInt)
+      else do
+        leftTy <- exprType left
+        rightTy <- exprType right
+        arithmeticTy <- usualArithmeticType left right
+        pure (case op of
+          "*" -> Just arithmeticTy
+          "/" -> Just arithmeticTy
+          "%" -> Just arithmeticTy
+          "&" -> Just arithmeticTy
+          "|" -> Just arithmeticTy
+          "^" -> Just arithmeticTy
+          _ -> case (leftTy, rightTy) of
+            (Just _, Just _) -> Just arithmeticTy
+            _ -> Nothing)
   ECond _ yes no -> do
     yesTy <- exprType yes
     noTy <- exprType no
@@ -1324,8 +1419,24 @@ exprType expr = case expr of
   EPostfix _ value -> exprType value
   EUnary "++" value -> exprType value
   EUnary "--" value -> exprType value
-  ECall (EVar name) _ ->
-    lookupGlobalType name
+  ECall (EVar name) _ -> do
+    localTy <- lookupVarType name
+    case localTy of
+      Just ty -> pure (functionResultType ty)
+      Nothing -> do
+        functionTy <- lookupFunctionType name
+        case functionResultType =<< functionTy of
+          Just retTy -> pure (Just retTy)
+          Nothing -> do
+            globalTy <- lookupGlobalType name
+            case functionResultType =<< globalTy of
+              Just retTy -> pure (Just retTy)
+              Nothing -> do
+                function <- lookupFunction name
+                pure (if function then Just CLong else Nothing)
+  ECall callee _ -> do
+    calleeTy <- exprType callee
+    pure (functionResultType =<< calleeTy)
   _ -> pure Nothing
 
 promoteMaybeIntegerType :: Maybe CType -> CompileM (Maybe CType)
@@ -1339,6 +1450,16 @@ maybePtrType :: Maybe CType -> Maybe CType
 maybePtrType mty = case mty of
   Nothing -> Nothing
   Just ty -> Just (CPtr ty)
+
+functionResultType :: CType -> Maybe CType
+functionResultType ty = case ty of
+  CFunc ret _ -> Just ret
+  CPtr inner -> functionResultType inner
+  _ -> Nothing
+
+isFunctionNameMacro :: String -> Bool
+isFunctionNameMacro name =
+  name `elem` ["__func__", "__FUNCTION__", "__PRETTY_FUNCTION__"]
 
 maybeMemberType :: Maybe (CType, Int) -> Maybe CType
 maybeMemberType info = case info of
@@ -1468,8 +1589,10 @@ loadInstr out ty addr = do
 isSignedIntegerType :: CType -> Bool
 isSignedIntegerType ty = case ty of
   CChar -> True
+  CShort -> True
   CInt -> True
   CLong -> True
+  CLongLong -> True
   CEnum _ -> True
   CNamed name -> isSignedNamedInteger name
   _ -> False
@@ -1477,10 +1600,16 @@ isSignedIntegerType ty = case ty of
 isIntegerTypeM :: CType -> CompileM Bool
 isIntegerTypeM ty = case ty of
   CChar -> pure True
+  CShort -> pure True
   CUnsignedChar -> pure True
+  CUnsignedShort -> pure True
   CInt -> pure True
   CUnsigned -> pure True
   CLong -> pure True
+  CUnsignedLong -> pure True
+  CLongLong -> pure True
+  CUnsignedLongLong -> pure True
+  CBool -> pure True
   CEnum _ -> pure True
   CNamed name -> pure (maybe False (const True) (namedIntegerSize name))
   _ -> pure False
@@ -1503,8 +1632,8 @@ usualArithmeticType left right = do
   let size = max leftSize rightSize
   let unsigned = isUnsignedType leftTy || isUnsignedType rightTy
   pure (case (size >= 8, unsigned) of
-    (True, True) -> CNamed "unsigned_long"
-    (True, False) -> CLong
+    (True, True) -> CUnsignedLongLong
+    (True, False) -> CLongLong
     (False, True) -> CUnsigned
     (False, False) -> CInt)
 
@@ -1514,7 +1643,8 @@ promotedExprType expr = case expr of
     if intLiteralIsUnsigned text then pure CUnsigned else pure CInt
   _ -> do
     mty <- exprType expr
-    promoteIntegerType (maybe CLong id mty)
+    ty <- requireMaybeType ("expression has unknown type: " ++ renderExprTag expr) mty
+    promoteIntegerType ty
 
 storeInstr :: CType -> Operand -> Operand -> CompileM Instr
 storeInstr ty addr value = do
@@ -1524,15 +1654,22 @@ storeInstr ty addr value = do
 typeSize :: CType -> CompileM Int
 typeSize ty = case ty of
   CVoid -> pure 1
+  CBool -> pure 1
   CChar -> pure 1
   CUnsignedChar -> pure 1
+  CShort -> pure 2
+  CUnsignedShort -> pure 2
   CInt -> pure 4
   CUnsigned -> pure 4
   CFloat -> pure 4
   CLong -> targetWordSize
+  CUnsignedLong -> targetWordSize
+  CLongLong -> pure 8
+  CUnsignedLongLong -> pure 8
   CDouble -> pure 8
   CLongDouble -> pure 16
   CPtr _ -> targetWordSize
+  CFunc _ _ -> targetWordSize
   CArray inner count -> do
     size <- typeSize inner
     bound <- arrayBoundSize count
@@ -1557,7 +1694,7 @@ namedTypeSize name = case namedIntegerSize name of
       fields <- lookupStruct name
       case fields of
         Just _ -> structSize name
-        Nothing -> targetWordSize
+        Nothing -> throwC ("unknown type: " ++ name)
 
 targetNamedTypeSize :: String -> Int -> CompileM Int
 targetNamedTypeSize name size =
@@ -1592,7 +1729,7 @@ structSize name = do
     Nothing -> do
       aggregate <- lookupStruct name
       case aggregate of
-        Nothing -> targetWordSize
+        Nothing -> throwC ("unknown struct or union: " ++ name)
         Just aggregateInfo -> case aggregateInfo of
           (isUnion, fields) -> do
             size <- aggregateSize isUnion fields
@@ -1884,7 +2021,8 @@ constExprValue expr = case expr of
   ESizeofType ty -> typeSize ty
   ESizeofExpr value -> do
     mty <- exprType value
-    maybe targetWordSize typeSize mty
+    ty <- requireMaybeType "sizeof expression has unknown type" mty
+    typeSize ty
   ECast _ (EUnary "&" (EPtrMember (ECast (CPtr ty) (EInt "0")) field)) -> do
     info <- memberInfo (Just (CPtr ty)) field
     pure (snd info)
@@ -1893,7 +2031,11 @@ constExprValue expr = case expr of
     pure (snd info)
   EVar name -> do
     constant <- lookupConstant name
-    pure (maybe (maybe 0 id (builtinConstant name)) id constant)
+    case constant of
+      Just value -> pure value
+      Nothing -> case builtinConstant name of
+        Just value -> pure value
+        Nothing -> throwC ("unknown constant: " ++ name)
   ECast _ value -> constExprValue value
   EUnary "-" value -> do
     n <- constExprValue value
@@ -1912,7 +2054,7 @@ constExprValue expr = case expr of
   ECond cond yes no -> do
     c <- constExprValue cond
     constExprValue (if c /= 0 then yes else no)
-  _ -> pure 0
+  _ -> throwC ("unsupported constant expression: " ++ renderExprTag expr)
 
 arrayBoundSize :: Maybe Expr -> CompileM Int
 arrayBoundSize bound = case bound of
@@ -1943,6 +2085,10 @@ isUnsignedType :: CType -> Bool
 isUnsignedType ty = case ty of
   CUnsigned -> True
   CUnsignedChar -> True
+  CUnsignedShort -> True
+  CUnsignedLong -> True
+  CUnsignedLongLong -> True
+  CBool -> True
   CPtr _ -> True
   CArray _ _ -> True
   CNamed name -> case namedIntegerSize name of

@@ -4,21 +4,98 @@ module Parser
   ) where
 
 import Base
+import ConstExpr
 import TypesAst
 import ParseLite
-import ParserScan
-import SymbolTable
+import ScopeMap
 import TypesToken
 
 data ParseError = ParseError SrcPos String
 
-type Parser a = P SymbolSet Token ParseError a
+data ParserEnv = ParserEnv (ScopeMap CType) [(String, Int)]
+
+type Parser a = P ParserEnv Token ParseError a
+
+initialParserEnv :: ParserEnv
+initialParserEnv = ParserEnv (builtinTypeEnv builtinTypeAliases) []
+
+builtinTypeEnv :: [(String, CType)] -> ScopeMap CType
+builtinTypeEnv aliases = case aliases of
+  [] -> scopeMapEmpty
+  (name, ty):rest -> scopeMapInsert name ty (builtinTypeEnv rest)
+
+builtinTypeAliases :: [(String, CType)]
+builtinTypeAliases =
+  [ ("FILE", CStruct "FILE")
+  , ("FUNCTION", CLong)
+  , ("size_t", CNamed "size_t")
+  , ("ssize_t", CNamed "ssize_t")
+  , ("time_t", CNamed "time_t")
+  , ("ptrdiff_t", CNamed "ptrdiff_t")
+  , ("intptr_t", CNamed "intptr_t")
+  , ("uintptr_t", CNamed "uintptr_t")
+  , ("int8_t", CNamed "int8_t")
+  , ("int16_t", CNamed "int16_t")
+  , ("int32_t", CNamed "int32_t")
+  , ("int64_t", CNamed "int64_t")
+  , ("uint8_t", CNamed "uint8_t")
+  , ("uint16_t", CNamed "uint16_t")
+  , ("uint32_t", CNamed "uint32_t")
+  , ("uint64_t", CNamed "uint64_t")
+  , ("va_list", CPtr CVoid)
+  , ("__builtin_va_list", CPtr CVoid)
+  , ("jmp_buf", CPtr CVoid)
+  ]
+
+lookupParserType :: String -> Parser (Maybe CType)
+lookupParserType name = do
+  env <- pEnv
+  pure (case env of
+    ParserEnv types _ -> scopeMapLookup name types)
+
+bindParserType :: String -> CType -> Parser ()
+bindParserType name ty = do
+  env <- pEnv
+  case env of
+    ParserEnv types constants ->
+      pSetEnv (ParserEnv (scopeMapInsert name ty types) constants)
+
+lookupParserConstant :: String -> Parser (Maybe Int)
+lookupParserConstant name = do
+  env <- pEnv
+  pure (case env of
+    ParserEnv _ constants -> lookup name constants)
+
+bindParserConstant :: String -> Int -> Parser ()
+bindParserConstant name value = do
+  env <- pEnv
+  case env of
+    ParserEnv types constants ->
+      pSetEnv (ParserEnv types ((name, value):constants))
+
+parserConstants :: Parser [(String, Int)]
+parserConstants = do
+  env <- pEnv
+  pure (case env of
+    ParserEnv _ constants -> constants)
+
+enterParserScope :: ParserEnv -> ParserEnv
+enterParserScope env = case env of
+  ParserEnv types constants -> ParserEnv (scopeMapEnter types) constants
+
+leaveParserScope :: ParserEnv -> ParserEnv -> ParserEnv
+leaveParserScope outer inner = case outer of
+  ParserEnv _ outerConstants -> case inner of
+    ParserEnv innerTypes _ -> ParserEnv (scopeMapLeave innerTypes) outerConstants
+
+withParserScope :: Parser a -> Parser a
+withParserScope = pLocalEnv enterParserScope leaveParserScope
 
 parseProgram :: [Token] -> Either ParseError Program
-parseProgram toks = case parseRest program (symbolSetFromList (builtinTypeNames ++ collectTypedefNames toks)) toks of
+parseProgram toks = case parseRestWithEnv program initialParserEnv toks of
   Left err -> Left err
-  Right (Program decls, []) -> Right (Program (EnumConstants (collectEnumConstants toks) : decls))
-  Right (_, tok:_) -> Left (parseErrorAt tok "trailing tokens")
+  Right (Program decls, _env, []) -> Right (Program decls)
+  Right (_, _, tok:_) -> Left (parseErrorAt tok "trailing tokens")
 
 program :: Parser Program
 program = Program <$> topDecls
@@ -37,18 +114,14 @@ topDecl :: Parser TopDecl
 topDecl = do
   emptyDecl <- eatPunct ";"
   if emptyDecl
-    then pure TypeDecl
+    then pure (TypeDecl [])
     else topDeclNonEmpty
 
 topDeclNonEmpty :: Parser TopDecl
 topDeclNonEmpty = do
   typedef <- eatIdent "typedef"
   if typedef
-    then do
-      structDecl <- optionalP (tryP typedefAggregateDecl)
-      case structDecl of
-        Just decl -> pure decl
-        Nothing -> skipUntilTopLevelSemi >> pure TypeDecl
+    then typedefDecl
     else topDeclNoTypedef
 
 topDeclNoTypedef :: Parser TopDecl
@@ -64,7 +137,7 @@ topDeclNoStruct = do
   ty0 <- ctype
   standalone <- eatPunct ";"
   if standalone
-    then pure TypeDecl
+    then pure (TypeDecl [ty0])
     else do
       (ty, name) <- declarator ty0
       ifM (eatPunct "(")
@@ -96,20 +169,45 @@ globalDecl isExtern decls =
     externPair (ty, name, _) = (ty, name)
 
 leadingExternQualifier :: Parser Bool
-leadingExternQualifier = pRaw $ \_env toks -> Unconsumed (Ok (go toks) toks) where
+leadingExternQualifier = pRaw $ \env toks -> Unconsumed (Ok (go toks) env toks) where
   go ts = case ts of
     Token _ (TokIdent "extern"):_ -> True
-    Token _ (TokIdent name):rest | name `elem` ["const", "volatile", "static", "register", "inline"] -> go rest
+    Token _ (TokIdent name):rest | name `elem` storageAndTypeQualifiers -> go rest
     _ -> False
 
-typedefAggregateDecl :: Parser TopDecl
-typedefAggregateDecl = do
-  isUnion <- aggregateKeyword
-  tag <- optionalIdent
-  fields <- aggregateBody
-  alias <- optionalIdent
-  skipTypedefDeclaratorTail
-  pure (StructDecl isUnion (structDeclName tag alias) fields)
+typedefDecl :: Parser TopDecl
+typedefDecl = do
+  ty0 <- ctype
+  first <- typedefItem ty0
+  rest <- typedefItemsTail ty0
+  mapM_ bindTypedef (first:rest)
+  pure (TypeDecl (map typedefType (first:rest)))
+  where
+    typedefType item = case item of
+      (_, ty) -> ty
+
+typedefItem :: CType -> Parser (String, CType)
+typedefItem ty0 = do
+  (ty, name) <- declarator ty0
+  ty' <- optionalFunctionSuffix ty
+  skipAttributes
+  pure (name, ty')
+
+typedefItemsTail :: CType -> Parser [(String, CType)]
+typedefItemsTail ty0 = do
+  semi <- eatPunct ";"
+  if semi
+    then pure []
+    else do
+      needPunct ","
+      item <- typedefItem ty0
+      rest <- typedefItemsTail ty0
+      pure (item:rest)
+
+bindTypedef :: (String, CType) -> Parser ()
+bindTypedef item = case item of
+  ("", _) -> pure ()
+  (name, ty) -> bindParserType name ty
 
 standaloneAggregateDecl :: Parser TopDecl
 standaloneAggregateDecl = do
@@ -126,10 +224,6 @@ aggregateKeyword = do
     TokIdent "struct" -> advanceToken >> pure False
     TokIdent "union" -> advanceToken >> pure True
     _ -> failAt tok "expected aggregate declaration"
-
-structDeclName :: String -> String -> String
-structDeclName tag alias =
-  if tag /= "" then tag else alias
 
 aggregateBody :: Parser [Field]
 aggregateBody = do
@@ -158,8 +252,9 @@ fieldDeclarator ty0 = do
       name <- optionalIdent
       needPunct ")"
       fnTail <- eatPunct "("
-      if fnTail then skipBalanced "(" ")" else pure ()
-      ty' <- arraySuffixes (CPtr ty)
+      fnParams <- if fnTail then parameters else pure []
+      let fnTy = if fnTail then CPtr (CFunc ty (paramTypes fnParams)) else CPtr ty
+      ty' <- arraySuffixes fnTy
       pure (Field ty' name)
     else do
       ty <- pointerStars ty0
@@ -169,13 +264,6 @@ fieldDeclarator ty0 = do
         then assignExpr >> pure ty
         else arraySuffixes ty
       pure (Field ty' name)
-
-skipTypedefDeclaratorTail :: Parser ()
-skipTypedefDeclaratorTail = do
-  comma <- eatPunct ","
-  if comma
-    then skipUntilTopLevelSemi
-    else needPunct ";"
 
 parameters :: Parser [Param]
 parameters = do
@@ -189,9 +277,9 @@ parameters = do
         else parseNonEmptyParams
 
 parameterVoidOnly :: Parser Bool
-parameterVoidOnly = pRaw $ \_env toks -> case toks of
-  Token _ (TokIdent "void"):Token _ (TokPunct ")"):rest -> Consumed (Ok True rest)
-  _ -> Unconsumed (Ok False toks)
+parameterVoidOnly = pRaw $ \env toks -> case toks of
+  Token _ (TokIdent "void"):Token _ (TokPunct ")"):rest -> Consumed (Ok True env rest)
+  _ -> Unconsumed (Ok False env toks)
 
 parseNonEmptyParams :: Parser [Param]
 parseNonEmptyParams = do
@@ -229,22 +317,26 @@ parameterDeclarator ty0 = do
       name <- optionalIdent
       needPunct ")"
       fnTail <- eatPunct "("
-      if fnTail then skipBalanced "(" ")" else pure ()
-      pure (CPtr ty, name)
+      fnParams <- if fnTail then parameters else pure []
+      pure (if fnTail then CPtr (CFunc ty (paramTypes fnParams)) else CPtr ty, name)
     else do
       ty <- pointerStars ty0
       name <- optionalIdent
-      ty' <- arraySuffixes ty
+      fnTail <- eatPunct "("
+      fnParams <- if fnTail then parameters else pure []
+      let tyWithFunction = if fnTail then CPtr (CFunc ty (paramTypes fnParams)) else ty
+      ty' <- arraySuffixes tyWithFunction
       pure (ty', name)
 
 compound :: Parser [Stmt]
-compound = needPunct "{" >> manyUntil (eatPunct "}") stmt
+compound = needPunct "{" >> withParserScope (manyUntil (eatPunct "}") stmt)
 
 stmt :: Parser Stmt
 stmt = do
   tok <- peek
   tokIsType <- tokenStartsType tok
   case tokenKind tok of
+    TokIdent "typedef" -> advanceToken >> typedefStmt
     TokIdent "return" -> advanceToken >> parseReturn
     TokIdent "if" -> advanceToken >> parseIf
     TokIdent "while" -> advanceToken >> parseWhile
@@ -267,6 +359,9 @@ stmt = do
     _ | tokIsType -> parseDeclStmt
     TokPunct "{" -> SBlock <$> compound
     _ -> parseExprStmt
+
+typedefStmt :: Parser Stmt
+typedefStmt = typedefDecl >> pure STypedef
 
 parseExprStmt :: Parser Stmt
 parseExprStmt = do
@@ -422,6 +517,7 @@ ctype = do
     tok <- peek
     case tokenKind tok of
       TokIdent "void" -> advanceToken >> pure CVoid
+      TokIdent "_Bool" -> advanceToken >> pure CBool
       TokIdent "int" -> advanceToken >> pure CInt
       TokIdent "char" -> advanceToken >> pure CChar
       TokIdent "signed" -> advanceToken >> signedBaseType
@@ -435,7 +531,10 @@ ctype = do
       TokIdent "enum" -> enumType
       TokIdent name -> do
         advanceToken
-        pure (CNamed name)
+        known <- lookupParserType name
+        pure (case known of
+          Just ty -> ty
+          Nothing -> CNamed name)
       _ -> failAt tok "expected type"
 
 typeName :: Parser CType
@@ -454,8 +553,8 @@ optionalShortInt :: Parser CType
 optionalShortInt = do
   mtok <- peekMaybe
   case fmap tokenKind mtok of
-    Just (TokIdent "int") -> advanceToken >> pure (CNamed "signed_short")
-    _ -> pure (CNamed "signed_short")
+    Just (TokIdent "int") -> advanceToken >> pure CShort
+    _ -> pure CShort
 
 unsignedBaseType :: Parser CType
 unsignedBaseType = do
@@ -471,23 +570,23 @@ optionalUnsignedShortInt :: Parser CType
 optionalUnsignedShortInt = do
   mtok <- peekMaybe
   case fmap tokenKind mtok of
-    Just (TokIdent "int") -> advanceToken >> pure (CNamed "unsigned_short")
-    _ -> pure (CNamed "unsigned_short")
+    Just (TokIdent "int") -> advanceToken >> pure CUnsignedShort
+    _ -> pure CUnsignedShort
 
 unsignedLongTail :: Parser CType
 unsignedLongTail = do
   mtok <- peekMaybe
   case fmap tokenKind mtok of
-    Just (TokIdent "long") -> advanceToken >> optionalUnsignedLongInt
-    Just (TokIdent "int") -> advanceToken >> pure (CNamed "unsigned_long")
-    _ -> pure (CNamed "unsigned_long")
+    Just (TokIdent "long") -> advanceToken >> optionalUnsignedLongLongInt
+    Just (TokIdent "int") -> advanceToken >> pure CUnsignedLong
+    _ -> pure CUnsignedLong
 
-optionalUnsignedLongInt :: Parser CType
-optionalUnsignedLongInt = do
+optionalUnsignedLongLongInt :: Parser CType
+optionalUnsignedLongLongInt = do
   mtok <- peekMaybe
   case fmap tokenKind mtok of
-    Just (TokIdent "int") -> advanceToken >> pure (CNamed "unsigned_long")
-    _ -> pure (CNamed "unsigned_long")
+    Just (TokIdent "int") -> advanceToken >> pure CUnsignedLongLong
+    _ -> pure CUnsignedLongLong
 
 longBaseType :: Parser CType
 longBaseType = do
@@ -502,8 +601,8 @@ optionalLongLongTail :: Parser CType
 optionalLongLongTail = do
   mtok <- peekMaybe
   case fmap tokenKind mtok of
-    Just (TokIdent "int") -> advanceToken >> pure CLong
-    _ -> pure CLong
+    Just (TokIdent "int") -> advanceToken >> pure CLongLong
+    _ -> pure CLongLong
 
 aggregateType :: (String -> CType) -> (String -> [Field] -> CType) -> ([Field] -> CType) -> Parser CType
 aggregateType mkType mkNamed mkInline = do
@@ -524,14 +623,76 @@ enumType = do
   advanceToken
   name <- optionalIdent
   hasBody <- eatPunct "{"
-  if hasBody then skipBalanced "{" "}" else pure ()
+  if hasBody then parseEnumBody 0 else pure ()
   pure (CEnum name)
+
+parseEnumBody :: Int -> Parser ()
+parseEnumBody nextValue = do
+  done <- eatPunct "}"
+  if done
+    then pure ()
+    else do
+      comma <- eatPunct ","
+      if comma
+        then parseEnumBody nextValue
+        else do
+          name <- needIdent
+          value <- enumValue nextValue
+          bindParserConstant name value
+          after <- eatPunct ","
+          if after
+            then do
+              end <- eatPunct "}"
+              if end then pure () else parseEnumBody (value + 1)
+            else do
+              needPunct "}"
+
+enumValue :: Int -> Parser Int
+enumValue nextValue = do
+  hasValue <- eatPunct "="
+  if not hasValue
+    then pure nextValue
+    else do
+      toks <- takeEnumValueExpr
+      constants <- parserConstants
+      case parseConstExpr constants toks of
+        Right (value, []) -> pure value
+        Right (value, trailing) ->
+          if all ignorableEnumExprTail trailing
+          then pure value
+          else pure nextValue
+        Left _ -> pure nextValue
+
+takeEnumValueExpr :: Parser [Token]
+takeEnumValueExpr = pRaw $ \env toks ->
+  let result = takeEnumValueExprFrom 0 0 0 [] toks
+  in case result of
+    (exprToks, rest) -> Consumed (Ok exprToks env rest)
+
+takeEnumValueExprFrom :: Int -> Int -> Int -> [Token] -> [Token] -> ([Token], [Token])
+takeEnumValueExprFrom braces parens brackets acc toks = case toks of
+  [] -> (reverse acc, [])
+  tok:rest -> case tokenKind tok of
+    TokPunct "," | braces == 0 && parens == 0 && brackets == 0 -> (reverse acc, toks)
+    TokPunct "}" | braces == 0 && parens == 0 && brackets == 0 -> (reverse acc, toks)
+    TokPunct "{" -> takeEnumValueExprFrom (braces + 1) parens brackets (tok:acc) rest
+    TokPunct "}" -> takeEnumValueExprFrom (max 0 (braces - 1)) parens brackets (tok:acc) rest
+    TokPunct "(" -> takeEnumValueExprFrom braces (parens + 1) brackets (tok:acc) rest
+    TokPunct ")" -> takeEnumValueExprFrom braces (max 0 (parens - 1)) brackets (tok:acc) rest
+    TokPunct "[" -> takeEnumValueExprFrom braces parens (brackets + 1) (tok:acc) rest
+    TokPunct "]" -> takeEnumValueExprFrom braces parens (max 0 (brackets - 1)) (tok:acc) rest
+    _ -> takeEnumValueExprFrom braces parens brackets (tok:acc) rest
+
+ignorableEnumExprTail :: Token -> Bool
+ignorableEnumExprTail tok = case tokenKind tok of
+  TokPunct ")" -> True
+  _ -> False
 
 skipQualifiers :: Parser ()
 skipQualifiers = do
   tok <- peekMaybe
   case fmap tokenKind tok of
-    Just (TokIdent name) | name `elem` ["const", "volatile", "static", "extern", "register", "inline"] ->
+    Just (TokIdent name) | name `elem` storageAndTypeQualifiers ->
       advanceToken >> skipQualifiers
     Just (TokIdent name) | name `elem` ["__attribute__", "__extension__"] ->
       skipAttributes >> skipQualifiers
@@ -579,8 +740,29 @@ groupedDeclaratorSuffixes :: CType -> Parser CType
 groupedDeclaratorSuffixes ty = do
   open <- eatPunct "("
   if open
-    then skipBalanced "(" ")" >> groupedDeclaratorSuffixes ty
+    then do
+      params <- parameters
+      groupedDeclaratorSuffixes (functionSuffixType ty params)
     else arraySuffixes ty
+
+functionSuffixType :: CType -> [Param] -> CType
+functionSuffixType ty params = case ty of
+  CPtr inner -> CPtr (CFunc inner (paramTypes params))
+  _ -> CFunc ty (paramTypes params)
+
+optionalFunctionSuffix :: CType -> Parser CType
+optionalFunctionSuffix ty = do
+  open <- eatPunct "("
+  if open
+    then do
+      params <- parameters
+      pure (CFunc ty (paramTypes params))
+    else pure ty
+
+paramTypes :: [Param] -> [CType]
+paramTypes params = case params of
+  [] -> []
+  Param ty _:rest -> ty : paramTypes rest
 
 pointerStars :: CType -> Parser CType
 pointerStars ty = do
@@ -708,7 +890,12 @@ unary = do
     TokInt s -> advanceToken >> pure (EInt s)
     TokChar s -> advanceToken >> pure (EChar s)
     TokString _ -> EString <$> stringLiteral
-    TokIdent s -> advanceToken >> pure (EVar s)
+    TokIdent s -> do
+      advanceToken
+      constant <- lookupParserConstant s
+      pure (case constant of
+        Just value -> EInt (show value)
+        Nothing -> EVar s)
     TokPunct "(" -> do
       advanceToken
       isCast <- nextStartsType
@@ -735,7 +922,7 @@ sizeofParen = pRaw $ \env toks ->
   case toks of
     tok:_ | tokenStartsTypeInEnv env tok ->
       case forceConsumed (runP (typeName <* needPunct ")") env toks) of
-        Ok ty rest | not (postfixContinues rest) -> Consumed (Ok (ESizeofType ty) rest)
+        Ok ty env' rest | not (postfixContinues rest) -> Consumed (Ok (ESizeofType ty) env' rest)
         _ -> runP sizeofParenExpr env toks
     _ -> runP sizeofParenExpr env toks
 
@@ -832,18 +1019,18 @@ stringBody text = case text of
 
 startsType :: Token -> Bool
 startsType tok = case tokenKind tok of
-  TokIdent name -> name `elem` (builtinTypeNames ++ ["const", "volatile", "static", "extern", "register", "inline", "typedef"])
+  TokIdent name -> name `elem` (builtinTypeNames ++ storageAndTypeQualifiers ++ ["typedef"])
   _ -> False
 
 builtinTypeNames :: [String]
 builtinTypeNames =
-  [ "void", "int", "char", "signed", "unsigned", "short", "long", "float", "double"
-  , "struct", "union", "enum", "FILE", "FUNCTION", "size_t"
-  , "int8_t", "int16_t", "int32_t", "int64_t"
-  , "uint8_t", "uint16_t", "uint32_t", "uint64_t"
-  , "intptr_t", "uintptr_t", "ptrdiff_t", "size_t", "ssize_t", "time_t"
-  , "va_list", "__builtin_va_list", "jmp_buf"
+  [ "void", "_Bool", "int", "char", "signed", "unsigned", "short", "long", "float", "double"
+  , "struct", "union", "enum"
   ]
+
+storageAndTypeQualifiers :: [String]
+storageAndTypeQualifiers =
+  ["const", "volatile", "static", "extern", "register", "inline", "auto"]
 
 tokenStartsType :: Token -> Parser Bool
 tokenStartsType tok = case tokenKind tok of
@@ -851,22 +1038,22 @@ tokenStartsType tok = case tokenKind tok of
                 | otherwise -> isKnownTypeNameP name
   _ -> pure False
 
-tokenStartsTypeInEnv :: SymbolSet -> Token -> Bool
+tokenStartsTypeInEnv :: ParserEnv -> Token -> Bool
 tokenStartsTypeInEnv env tok = case tokenKind tok of
-  TokIdent name -> startsType tok || symbolSetMember name env
+  TokIdent name -> startsType tok || parserEnvHasType name env
   _ -> False
 
 identifierStartsDeclaration :: Parser Bool
-identifierStartsDeclaration = pRaw $ \env toks -> Unconsumed (Ok (go env toks) toks) where
+identifierStartsDeclaration = pRaw $ \env toks -> Unconsumed (Ok (go env toks) env toks) where
   go env toks = case toks of
     Token _ (TokIdent name):rest
       | startsTypeName name -> True
-      | symbolSetMember name env -> typedefDeclaratorFollows rest
+      | parserEnvHasType name env -> typedefDeclaratorFollows rest
       | otherwise -> False
     _ -> False
 
   startsTypeName name =
-    name `elem` (builtinTypeNames ++ ["const", "volatile", "static", "extern", "register", "inline", "typedef"])
+    name `elem` (builtinTypeNames ++ storageAndTypeQualifiers ++ ["typedef"])
 
   typedefDeclaratorFollows toks = case dropLeadingQualifiers toks of
     Token _ (TokPunct "*"):_ -> True
@@ -874,34 +1061,28 @@ identifierStartsDeclaration = pRaw $ \env toks -> Unconsumed (Ok (go env toks) t
     _ -> False
 
   dropLeadingQualifiers toks = case toks of
-    Token _ (TokIdent name):rest | name `elem` ["const", "volatile", "static", "extern", "register", "inline"] ->
+    Token _ (TokIdent name):rest | name `elem` storageAndTypeQualifiers ->
       dropLeadingQualifiers rest
     _ -> toks
 
 isKnownTypeNameP :: String -> Parser Bool
 isKnownTypeNameP name = do
-  env <- pEnv
-  pure (symbolSetMember name env)
+  known <- lookupParserType name
+  pure (case known of
+    Just _ -> True
+    Nothing -> False)
+
+parserEnvHasType :: String -> ParserEnv -> Bool
+parserEnvHasType name env = case env of
+  ParserEnv types _ -> case scopeMapLookup name types of
+    Just _ -> True
+    Nothing -> False
 
 manyP :: Parser a -> Parser [a]
 manyP = pMany
 
 manyUntil :: Parser Bool -> Parser a -> Parser [a]
 manyUntil = pManyUntil
-
-skipUntilTopLevelSemi :: Parser ()
-skipUntilTopLevelSemi = go (0 :: Int) (0 :: Int) (0 :: Int) where
-  go braces parens brackets = do
-    tok <- peek
-    case tokenKind tok of
-      TokPunct ";" | braces == 0 && parens == 0 && brackets == 0 -> advanceToken
-      TokPunct "{" -> advanceToken >> go (braces + 1) parens brackets
-      TokPunct "}" -> advanceToken >> go (max 0 (braces - 1)) parens brackets
-      TokPunct "(" -> advanceToken >> go braces (parens + 1) brackets
-      TokPunct ")" -> advanceToken >> go braces (max 0 (parens - 1)) brackets
-      TokPunct "[" -> advanceToken >> go braces parens (brackets + 1)
-      TokPunct "]" -> advanceToken >> go braces parens (max 0 (brackets - 1))
-      _ -> advanceToken >> go braces parens brackets
 
 skipBalanced :: String -> String -> Parser ()
 skipBalanced open close = go (1 :: Int) where
@@ -926,9 +1107,9 @@ ifM test yes no = do
   if b then yes else no
 
 eatPunct :: String -> Parser Bool
-eatPunct s = pRaw $ \_env toks -> case toks of
-  Token _ (TokPunct p):rest | p == s -> Consumed (Ok True rest)
-  _ -> Unconsumed (Ok False toks)
+eatPunct s = pRaw $ \env toks -> case toks of
+  Token _ (TokPunct p):rest | p == s -> Consumed (Ok True env rest)
+  _ -> Unconsumed (Ok False env toks)
 
 needPunct :: String -> Parser ()
 needPunct s = do
@@ -936,9 +1117,9 @@ needPunct s = do
   if ok then pure () else peek >>= \tok -> failAt tok ("expected " ++ show s)
 
 eatIdent :: String -> Parser Bool
-eatIdent s = pRaw $ \_env toks -> case toks of
-  Token _ (TokIdent p):rest | p == s -> Consumed (Ok True rest)
-  _ -> Unconsumed (Ok False toks)
+eatIdent s = pRaw $ \env toks -> case toks of
+  Token _ (TokIdent p):rest | p == s -> Consumed (Ok True env rest)
+  _ -> Unconsumed (Ok False env toks)
 
 needIdent :: Parser String
 needIdent = do
@@ -972,9 +1153,9 @@ peekMaybe :: Parser (Maybe Token)
 peekMaybe = pPeekMaybe
 
 peekSecondPunct :: String -> Parser Bool
-peekSecondPunct punct = pRaw $ \_env toks -> case toks of
-  _:Token _ (TokPunct p):_ | p == punct -> Unconsumed (Ok True toks)
-  _ -> Unconsumed (Ok False toks)
+peekSecondPunct punct = pRaw $ \env toks -> case toks of
+  _:Token _ (TokPunct p):_ | p == punct -> Unconsumed (Ok True env toks)
+  _ -> Unconsumed (Ok False env toks)
 
 nextStartsType :: Parser Bool
 nextStartsType = do

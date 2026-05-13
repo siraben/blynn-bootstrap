@@ -10,7 +10,6 @@ hcc:src/Hcc/ScopeMap.hs
 hcc:src/Hcc/ParseLite.hs
 hcc:src/Hcc/ConstExpr.hs
 hcc:src/Hcc/Lexer.hs
-hcc:src/Hcc/ParserScan.hs
 hcc:src/Hcc/Parser.hs
 hcc:src/Hcc/TypesIr.hs
 hcc:src/Hcc/CompileM.hs
