@@ -984,7 +984,7 @@ nextStartsType = do
     Nothing -> pure False
 
 advanceToken :: Parser ()
-advanceToken = pTake unexpectedEof >> pure ()
+advanceToken = pSkip unexpectedEof
 
 failAt :: Token -> String -> Parser a
 failAt tok msg = pFail (parseErrorAt tok msg)

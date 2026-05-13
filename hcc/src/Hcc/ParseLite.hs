@@ -9,8 +9,7 @@ module ParseLite
   , pFail
   , pPeekMaybe
   , pTake
-  , pSatisfy
-  , pExpect
+  , pSkip
   , pTry
   , pOptional
   , pMany
@@ -40,10 +39,15 @@ instance Functor (P env tok err) where
 
 instance Applicative (P env tok err) where
   pure x = P $ \_env toks -> Unconsumed (Ok x toks)
-  pf <*> px = do
-    f <- pf
-    x <- px
-    pure (f x)
+  pf <*> px = P $ \env toks -> case runP pf env toks of
+    Unconsumed reply -> case reply of
+      Error err -> Unconsumed (Error err)
+      Ok f rest -> case runP px env rest of
+        Unconsumed replyX -> Unconsumed (applyReply f replyX)
+        Consumed replyX -> Consumed (applyReply f replyX)
+    Consumed reply -> Consumed (case reply of
+      Error err -> Error err
+      Ok f rest -> applyReply f (forceConsumed (runP px env rest)))
 
 instance Monad (P env tok err) where
   return = pure
@@ -59,6 +63,11 @@ forceConsumed :: Consumed a -> a
 forceConsumed consumed = case consumed of
   Unconsumed x -> x
   Consumed x -> x
+
+applyReply :: (a -> b) -> Reply tok err a -> Reply tok err b
+applyReply f reply = case reply of
+  Ok x rest -> Ok (f x) rest
+  Error err -> Error err
 
 parseRest :: P env tok err a -> env -> [tok] -> Either err (a, [tok])
 parseRest p env toks = case forceConsumed (runP p env toks) of
@@ -82,17 +91,10 @@ pTake eofErr = P $ \_env toks -> case toks of
   [] -> Unconsumed (Error eofErr)
   tok:rest -> Consumed (Ok tok rest)
 
-pSatisfy :: (tok -> Bool) -> err -> P env tok err (Maybe tok)
-pSatisfy predicate _err = P $ \_env toks -> case toks of
-  tok:rest | predicate tok -> Consumed (Ok (Just tok) rest)
-  _ -> Unconsumed (Ok Nothing toks)
-
-pExpect :: (tok -> Maybe a) -> err -> P env tok err a
-pExpect match err = do
-  tok <- pTake err
-  case match tok of
-    Just x -> pure x
-    Nothing -> pFail err
+pSkip :: err -> P env tok err ()
+pSkip eofErr = P $ \_env toks -> case toks of
+  [] -> Unconsumed (Error eofErr)
+  _tok:rest -> Consumed (Ok () rest)
 
 pTry :: P env tok err a -> P env tok err a
 pTry p = P $ \env toks -> case runP p env toks of
