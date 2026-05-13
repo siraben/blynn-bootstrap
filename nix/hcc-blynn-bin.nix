@@ -33,14 +33,11 @@ mkDerivation (
 
       ulimit -s unlimited
 
-      mkdir -p cbits test
+      mkdir -p cbits
       cp ${src}/cbits/hcc_runtime.c cbits/hcc_runtime.c
       cp ${src}/cbits/hcc_runtime_m2.c cbits/hcc_runtime_m2.c
       cp ${src}/cbits/hcc_m1.c cbits/hcc_m1.c
       cp ${src}/cbits/hcc_m1_arch_*.c cbits/
-      cp ${../tests/hcc/pp-smoke.c} test/pp-smoke.c
-      cp ${../tests/hcc/parse-smoke.c} test/parse-smoke.c
-      cp ${../tests/hcc/scalar-immediate-smoke.c} test/scalar-immediate-smoke.c
 
       ${nixLib.shellHelpers { name = "hcc-blynn-bin"; }}
 
@@ -61,20 +58,14 @@ mkDerivation (
       log_step "DONE  compile generated C backend"
       log_step "compiled hcpp and hcc1"
 
-      run_step_shell "hcpp test/pp-smoke.c > pp-smoke.i" "./hcpp test/pp-smoke.c > pp-smoke.i"
-      log_file pp-smoke.i
-      run_step "hcc1 --check pp-smoke.i" ./hcc1 --check pp-smoke.i
-      run_step_shell "hcpp test/parse-smoke.c > parse-smoke.i" "./hcpp test/parse-smoke.c > parse-smoke.i"
-      log_file parse-smoke.i
-      run_step "hcc1 --check parse-smoke.i" ./hcc1 --check parse-smoke.i
-      run_step "hcc1 --m1-ir -o smoke.hccir parse-smoke.i" ./hcc1 --m1-ir -o smoke.hccir parse-smoke.i
-      log_file smoke.hccir
-      run_step "hcc-m1 smoke.hccir smoke.M1" ./hcc-m1 smoke.hccir smoke.M1
-      log_file smoke.M1
-      run_step_shell "hcpp test/scalar-immediate-smoke.c > scalar-immediate-smoke.i" "./hcpp test/scalar-immediate-smoke.c > scalar-immediate-smoke.i"
-      log_file scalar-immediate-smoke.i
-      run_step "hcc1 --m1-ir -o scalar-immediate-smoke.hccir scalar-immediate-smoke.i" ./hcc1 --m1-ir -o scalar-immediate-smoke.hccir scalar-immediate-smoke.i
-      log_file scalar-immediate-smoke.hccir
+      (
+        export HCPP=./hcpp
+        export HCC1=./hcc1
+        export HCC_M1=./hcc-m1
+        export TESTS_DIR=${../tests/hcc}
+        export LOG_PREFIX=hcc-blynn-bin-smoke
+        . ${../scripts/hcc-compiler-smoke.sh}
+      )
 
       runHook postBuild
     '';
