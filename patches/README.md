@@ -33,9 +33,9 @@ The GNU Mes libc reference is generated in `flake.nix` from the pinned GNU Mes
 tree plus nixpkgs' minimal-bootstrap Mes source list, rather than carried as a
 large generated patch.
 
-Repo-owned bootstrap support files live under `nix/support/`; they are copied
-into unpacked source trees during the build instead of embedded in upstream
-patch files.
+Repo-owned bootstrap support files live under `hcc/support/` and
+`nix/support/`; they are copied into unpacked source trees during the build
+instead of embedded in upstream patch files.
 
 Bootstrap driver scripts are intentionally not carried as upstream patches.
 The portable, repo-owned entry points live in `scripts/`.
