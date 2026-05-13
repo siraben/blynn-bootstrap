@@ -2,19 +2,6 @@ diff --git a/libtcc.c b/libtcc.c
 index 64c772d..cb5d284 100644
 --- a/libtcc.c
 +++ b/libtcc.c
-@@ -849,7 +849,11 @@ LIBTCCAPI void tcc_define_symbol(TCCState *s1, const char *sym, const char *valu
-         eq = strchr(sym, 0);
-     if (NULL == value)
-         value = *eq ? eq + 1 : "1";
--    cstr_printf(&s1->cmdline_defs, "#define %.*s %s\n", (int)(eq-sym), sym, value);
-+    cstr_cat(&s1->cmdline_defs, "#define ", -1);
-+    cstr_cat(&s1->cmdline_defs, sym, eq - sym);
-+    cstr_cat(&s1->cmdline_defs, " ", 1);
-+    cstr_cat(&s1->cmdline_defs, value, -1);
-+    cstr_cat(&s1->cmdline_defs, "\n", 1);
- }
- 
- /* undefine a preprocessor symbol */
 @@ -876,6 +876,9 @@ LIBTCCAPI TCCState *tcc_new(void)
      s->warn_implicit_function_declaration = 1;
      s->warn_discarded_qualifiers = 1;

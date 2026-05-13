@@ -100,12 +100,12 @@ unsigned long strtoul(char* nptr, char** endptr, int base)
     return parse_unsigned(nptr, endptr, base);
 }
 
-unsigned long strtoull(char* nptr, char** endptr, int base)
+unsigned long long strtoull(char* nptr, char** endptr, int base)
 {
     return parse_unsigned(nptr, endptr, base);
 }
 
-long strtoll(char* nptr, char** endptr, int base)
+long long strtoll(char* nptr, char** endptr, int base)
 {
     return strtol(nptr, endptr, base);
 }
@@ -344,7 +344,7 @@ char* strstr(char* haystack, char* needle)
     return 0;
 }
 
-static void swap_bytes(char* left, char* right, unsigned size)
+static void swap_bytes(char* left, char* right, size_t size)
 {
     char tmp;
     while (size) {
@@ -357,11 +357,11 @@ static void swap_bytes(char* left, char* right, unsigned size)
     }
 }
 
-void qsort(void* base, unsigned count, unsigned size, int (*compar)(void*, void*))
+void qsort(void* base, size_t count, size_t size, int (*compar)(const void*, const void*))
 {
     char* bytes = base;
-    unsigned i;
-    unsigned j;
+    size_t i;
+    size_t j;
     if (!base || !compar) return;
     for (i = 0; i < count; i = i + 1) {
         for (j = i + 1; j < count; j = j + 1) {
