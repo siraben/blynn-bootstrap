@@ -16,6 +16,12 @@ CASES = [
     ("address-written-scalar", 0),
     ("escaped-string-magic", 0),
     ("archive-header-layout", 0),
+    ("scoped-typedef-enum", 0),
+    ("wide-integer-types", 0),
+    ("function-pointer-call-type", 0),
+    ("case-cmp-ternary", 0),
+    ("pointer-to-pointer-callback", 0),
+    ("bootstrap-qsort-pointer", 0),
 ]
 
 
