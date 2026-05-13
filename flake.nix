@@ -1005,6 +1005,12 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           mesTests = ./tests/mescc;
         };
 
+        hccFuzzRegressionsFor = pname: hcc: pkgs.callPackage ./nix/hcc-fuzz-regressions.nix {
+          stdenvNoCC = pkgs.stdenvNoCC;
+          inherit pname hcc;
+          tests = ./tests;
+        };
+
         hcc-m1-smoke = hccM1SmokeFor "hcc-m1-smoke" hccBy.m2.precisely.m2 "amd64";
         hcc-m1-smoke-i386 = hccM1SmokeFor "hcc-m1-smoke-i386" hccBy.m2.precisely.m2 "i386";
         hcc-m1-smoke-aarch64 = hccM1SmokeFor "hcc-m1-smoke-aarch64" hccBy.m2.precisely.m2 "aarch64";
@@ -1014,6 +1020,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
 
         hcc-mescc-tests = hccMesccTestsFor "hcc-mescc-tests" hccBy.m2.precisely.m2 "amd64";
         hcc-mescc-tests-native = hccMesccTestsFor "hcc-mescc-tests-host-ghc-native" hccBy.host.ghc.native nativeM1Target;
+        hcc-fuzz-regressions-native = hccFuzzRegressionsFor "hcc-fuzz-regressions-host-ghc-native" hccBy.host.ghc.native;
 
         precisely-dialect-tests = pkgs.callPackage ./nix/precisely-dialect-tests.nix {
           stdenv = pkgs.stdenv;
@@ -1068,6 +1075,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             host.ghc.native.smoke.m1-i386 = hcc-m1-smoke-native-i386;
             host.ghc.native.smoke.m1-aarch64 = hcc-m1-smoke-native-aarch64;
             host.ghc.native.mescc = hcc-mescc-tests-native;
+            host.ghc.native.fuzz-regressions = hcc-fuzz-regressions-native;
             precisely.dialect = precisely-dialect-tests;
             tinyccM1.native-vs-faithful = tinyccM1CompareNativeFaithful;
           };
