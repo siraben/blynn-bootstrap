@@ -124,5 +124,6 @@ jobs:
         with:
           name: siraben
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          skipPush: ${{ github.event_name == 'pull_request' }}
       - name: Build ${{ matrix.attr }}
         run: nix build --print-build-logs ".#${{ matrix.attr }}"
