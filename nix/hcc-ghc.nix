@@ -68,12 +68,13 @@ stdenv.mkDerivation (
       ghc ${ghcFlags} ${ghcCFlags} \
         -isrc -isrc/Hcc src/MainCc1.hs cbits/hcc_runtime.c -outputdir build/hcc1 -o hcc1
       cc ${cFlags} cbits/hcc_m1.c -o hcc-m1
-      ./hcpp ${../tests/hcc/pp-smoke.c} > pp-smoke.i
-      ./hcc1 --check pp-smoke.i
-      ./hcpp ${../tests/hcc/parse-smoke.c} > parse-smoke.i
-      ./hcc1 --check parse-smoke.i
-      ./hcc1 --m1-ir -o smoke.hccir parse-smoke.i
-      ./hcc-m1 smoke.hccir smoke.M1
+      (
+        export HCPP=./hcpp
+        export HCC1=./hcc1
+        export HCC_M1=./hcc-m1
+        export TESTS_DIR=${../tests/hcc}
+        . ${../scripts/hcc-compiler-smoke.sh}
+      )
       runHook postBuild
     '';
 
