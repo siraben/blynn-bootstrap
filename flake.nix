@@ -595,7 +595,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
         hccBlynnObjsFromPrecisely = pname: precisely:
           pkgs.callPackage ./nix/hcc-blynn-objs.nix {
             stdenvNoCC = rawStdenvNoCC;
-            inherit pname precisely;
+            inherit pname precisely minimalBootstrap;
             sourceBundle = hccBlynnSources;
             shareName = pname;
           };

@@ -1,7 +1,6 @@
 {
-  coreutils,
   lib,
-  runtimeShell,
+  minimalBootstrap,
   stdenvNoCC,
   pname,
   precisely,
@@ -19,11 +18,21 @@ stdenvNoCC.mkDerivation (
   }
   // nixLib.scriptOnly
   // {
+    nativeBuildInputs = [
+      minimalBootstrap.stage0-posix.mescc-tools
+    ];
+
+    M2_ARCH = minimalBootstrap.stage0-posix.m2libcArch;
+    M2_OS = minimalBootstrap.stage0-posix.m2libcOS;
+    M2LIBC_PATH = "${minimalBootstrap.stage0-posix.src}/M2libc";
 
     buildPhase = ''
       runHook preBuild
 
       ${nixLib.shellHelpers { name = "hcc-blynn-objs"; }}
+      . ${../scripts/lib/bootstrap.sh}
+
+      compile_m2 ${../hcc/support/materialize-object-script.c} materialize-object-script
 
       mkdir -p source generated
       cp ${sourceBundle}/share/hcc-blynn-sources/hcc-common-full.hs source/hcc-common-full.hs
@@ -31,8 +40,7 @@ stdenvNoCC.mkDerivation (
       BOOTSTRAP_LOG_NAME=hcc-blynn-objs \
       BOOTSTRAP_LIB=${../scripts/lib/bootstrap.sh} \
       HCC_BLYNN_SOURCES_DIR=source \
-      OBJECT_SCRIPT_SHELL=${runtimeShell} \
-      PATH=${lib.makeBinPath [ coreutils ]} \
+      MATERIALIZE_OBJECT_SCRIPT=$PWD/materialize-object-script \
       PRECISELY_UP=${precisely}/bin/precisely_up \
       OUT_DIR=generated \
         ${../scripts/hcc-blynn-objs.sh}
