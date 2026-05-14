@@ -2240,19 +2240,21 @@ static void emit_function(FILE *out, Function *fn)
   if (target_arch == TARGET_AARCH64) fprintf(out, "  PUSH_LR\n");
   else if (target_arch == TARGET_RISCV64) fprintf(out, "  rd_sp rs1_sp !-8 addi\n  rs1_sp rs2_ra sd\n");
   if (target_arch == TARGET_AMD64) {
-    fprintf(out, "  HCC_SUB_IMMEDIATE_from_rsp %%%d\n", total_slots * 8);
-    fprintf(out, "  HCC_M_RDI_RAX\n");
-    fprintf(out, "  HCC_STORE_RSP_IMMEDIATE_from_rax %%0\n");
-    fprintf(out, "  HCC_COPY_rsi_to_rax\n");
-    fprintf(out, "  HCC_STORE_RSP_IMMEDIATE_from_rax %%8\n");
-    fprintf(out, "  HCC_COPY_rdx_to_rax\n");
-    fprintf(out, "  HCC_STORE_RSP_IMMEDIATE_from_rax %%16\n");
-    fprintf(out, "  HCC_COPY_rcx_to_rax\n");
-    fprintf(out, "  HCC_STORE_RSP_IMMEDIATE_from_rax %%24\n");
-    fprintf(out, "  HCC_COPY_r8_to_rax\n");
-    fprintf(out, "  HCC_STORE_RSP_IMMEDIATE_from_rax %%32\n");
-    fprintf(out, "  HCC_COPY_r9_to_rax\n");
-    fprintf(out, "  HCC_STORE_RSP_IMMEDIATE_from_rax %%40\n");
+    fprintf(out,
+      "  HCC_SUB_IMMEDIATE_from_rsp %%%d\n"
+      "  HCC_M_RDI_RAX\n"
+      "  HCC_STORE_RSP_IMMEDIATE_from_rax %%0\n"
+      "  HCC_COPY_rsi_to_rax\n"
+      "  HCC_STORE_RSP_IMMEDIATE_from_rax %%8\n"
+      "  HCC_COPY_rdx_to_rax\n"
+      "  HCC_STORE_RSP_IMMEDIATE_from_rax %%16\n"
+      "  HCC_COPY_rcx_to_rax\n"
+      "  HCC_STORE_RSP_IMMEDIATE_from_rax %%24\n"
+      "  HCC_COPY_r8_to_rax\n"
+      "  HCC_STORE_RSP_IMMEDIATE_from_rax %%32\n"
+      "  HCC_COPY_r9_to_rax\n"
+      "  HCC_STORE_RSP_IMMEDIATE_from_rax %%40\n",
+      total_slots * 8);
   } else if (total_slots > 0) {
     if (target_arch == TARGET_I386) fprintf(out, "  sub_esp, %%%d\n", total_slots * 4);
     else if (target_arch == TARGET_AARCH64) aarch64_emit_sub_imm_reg(out, 18, total_slots * 8);
