@@ -60,13 +60,13 @@ bitNotInt :: Int -> Int
 bitNotInt value = 0 - value - 1
 
 bitAndInt :: Int -> Int -> Int
-bitAndInt lhs rhs = bitFoldInt bitAndBool lhs rhs 1 0
+bitAndInt lhs rhs = bitFoldFull bitAndBool lhs rhs
 
 bitOrInt :: Int -> Int -> Int
-bitOrInt lhs rhs = bitFoldInt bitOrBool lhs rhs 1 0
+bitOrInt lhs rhs = bitFoldFull bitOrBool lhs rhs
 
 bitXorInt :: Int -> Int -> Int
-bitXorInt lhs rhs = bitFoldInt bitXorBool lhs rhs 1 0
+bitXorInt lhs rhs = bitFoldFull bitXorBool lhs rhs
 
 bitAndBool :: Bool -> Bool -> Bool
 bitAndBool lhs rhs = lhs && rhs
@@ -77,13 +77,29 @@ bitOrBool lhs rhs = lhs || rhs
 bitXorBool :: Bool -> Bool -> Bool
 bitXorBool lhs rhs = lhs /= rhs
 
+-- bitFoldFull walks every value bit of a two's-complement Int.
+-- bitTopPositive is the largest non-sign bit we can iterate without `bit * 2`
+-- overflowing a signed 64-bit Int; bitSignContribution then folds in the
+-- sign bit so e.g. `bitAndInt (-1) (-1)` reproduces all-ones (i.e. -1) and
+-- masks against values >= 2^31 are not silently truncated.
+bitFoldFull :: (Bool -> Bool -> Bool) -> Int -> Int -> Int
+bitFoldFull op lhs rhs =
+  bitFoldInt op lhs rhs 1 0 + bitSignContribution op lhs rhs
+
+bitTopPositive :: Int
+bitTopPositive = 4611686018427387904
+
 bitFoldInt :: (Bool -> Bool -> Bool) -> Int -> Int -> Int -> Int -> Int
 bitFoldInt op lhs rhs bit acc =
-  if bit > 1073741824
+  if bit > bitTopPositive
   then acc
   else
     let acc' = if op (bitSet lhs bit) (bitSet rhs bit) then acc + bit else acc
-    in if bit == 1073741824 then acc' else bitFoldInt op lhs rhs (bit * 2) acc'
+    in if bit == bitTopPositive then acc' else bitFoldInt op lhs rhs (bit * 2) acc'
+
+bitSignContribution :: (Bool -> Bool -> Bool) -> Int -> Int -> Int
+bitSignContribution op lhs rhs =
+  if op (lhs < 0) (rhs < 0) then bitTopPositive + bitTopPositive else 0
 
 bitSet :: Int -> Int -> Bool
 bitSet value bit =
