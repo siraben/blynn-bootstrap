@@ -140,10 +140,9 @@ popIf sp frames = case frames of
   _:rest -> Right rest
 
 defineMacro :: Macros -> Span -> String -> Either PreprocessError Macros
-defineMacro macros sp text =
-  case parseMacroDefinition sp text of
-    Left err -> Left err
-    Right macro -> Right (symbolMapInsert (macroName macro) macro macros)
+defineMacro macros sp text = do
+  macro <- parseMacroDefinition sp text
+  Right (symbolMapInsert (macroName macro) macro macros)
 
 parseMacroDefinition :: Span -> String -> Either PreprocessError Macro
 parseMacroDefinition sp text = case dropSpaces text of

@@ -23,9 +23,7 @@ lexC source = go (LexState source (SrcPos 1 1) True) [] where
       | lexerIsSpace c -> go (advanceSpace c st { lsInput = cs }) acc
       | isDirectiveStart st c -> lexDirective st >>= \(tok, st') -> go st' (tok:acc)
       | startsLineComment (lsInput st) -> go (skipLineComment st) acc
-      | startsBlockComment (lsInput st) -> case skipBlockComment st of
-          Left err -> Left err
-          Right st' -> go st' acc
+      | startsBlockComment (lsInput st) -> skipBlockComment st >>= \st' -> go st' acc
       | isIdentStart c -> let (tok, st') = lexIdent st in go st' (tok:acc)
       | isDigit c -> let (tok, st') = lexNumber st in go st' (tok:acc)
       | c == '\'' -> lexQuoted '\'' TokChar st >>= \(tok, st') -> go st' (tok:acc)
