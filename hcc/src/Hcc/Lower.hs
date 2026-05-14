@@ -259,27 +259,17 @@ lowerSwitch dispatchId restId valueOp body = do
   pure (dispatchBlocks ++ bodyBlocks)
 
 lowerSwitchDispatch :: BlockId -> Operand -> BlockId -> [(Expr, BlockId)] -> CompileM [BasicBlock]
-lowerSwitchDispatch firstId valueOp defaultTarget switchCasePairs =
-  lowerSwitchDispatchFrom firstId valueOp defaultTarget switchCasePairs
-
-lowerSwitchDispatchFrom :: BlockId -> Operand -> BlockId -> [(Expr, BlockId)] -> CompileM [BasicBlock]
-lowerSwitchDispatchFrom bid valueOp defaultTarget switchCasePairs = case switchCasePairs of
+lowerSwitchDispatch bid valueOp defaultTarget switchCasePairs = case switchCasePairs of
   [] -> pure [BasicBlock bid [] (TJump defaultTarget)]
-  pair:tailCases -> case pair of
-    (caseExpr, target) -> do
-      nextId <- switchNextDispatchTarget defaultTarget tailCases
-      result <- lowerExpr caseExpr
-      case result of
-        (caseInstrs, caseOp) -> do
-          let block = BasicBlock bid caseInstrs (TBranchCmp IEq valueOp caseOp target nextId)
-          switchDispatchTail block nextId valueOp defaultTarget tailCases
-
-switchDispatchTail :: BasicBlock -> BlockId -> Operand -> BlockId -> [(Expr, BlockId)] -> CompileM [BasicBlock]
-switchDispatchTail block nextId valueOp defaultTarget tailCases = case tailCases of
-  [] -> pure [block]
-  _ -> do
-    restBlocks <- lowerSwitchDispatchFrom nextId valueOp defaultTarget tailCases
-    pure (block:restBlocks)
+  (caseExpr, target):tailCases -> do
+    nextId <- switchNextDispatchTarget defaultTarget tailCases
+    (caseInstrs, caseOp) <- lowerExpr caseExpr
+    let block = BasicBlock bid caseInstrs (TBranchCmp IEq valueOp caseOp target nextId)
+    case tailCases of
+      [] -> pure [block]
+      _ -> do
+        restBlocks <- lowerSwitchDispatch nextId valueOp defaultTarget tailCases
+        pure (block:restBlocks)
 
 lowerSwitchClauses :: BlockId -> [(SwitchClause, BlockId)] -> CompileM [BasicBlock]
 lowerSwitchClauses restId clauses = case clauses of
@@ -344,16 +334,10 @@ lowerIndirectSideEffect callee args = do
       pure (calleeInstrs ++ instrs ++ [ICallIndirect Nothing calleeOp ops])
 
 lowerExprResultsInstrs :: [([Instr], Operand)] -> [Instr]
-lowerExprResultsInstrs lowered = case lowered of
-  [] -> []
-  pair:rest -> case pair of
-    (instrs, _) -> instrs ++ lowerExprResultsInstrs rest
+lowerExprResultsInstrs = concatMap fst
 
 lowerExprResultsOps :: [([Instr], Operand)] -> [Operand]
-lowerExprResultsOps lowered = case lowered of
-  [] -> []
-  pair:rest -> case pair of
-    (_, op) -> op : lowerExprResultsOps rest
+lowerExprResultsOps = map snd
 
 lowerDecls :: [(CType, String, Maybe Expr)] -> CompileM [Instr]
 lowerDecls decls = case decls of
@@ -851,26 +835,21 @@ lowerIndirectCall callee args = do
       pure (calleeInstrs ++ instrs ++ [ICallIndirect (Just out) calleeOp ops], OTemp out)
 
 lowerLogicalAnd :: Expr -> Expr -> CompileM ([Instr], Operand)
-lowerLogicalAnd left right = do
-  leftResult <- lowerExpr left
-  rightResult <- lowerTruthExpr right
-  let leftInstrs = fst leftResult
-  let leftOp = snd leftResult
-  let rightInstrs = fst rightResult
-  let rightBool = snd rightResult
-  out <- freshTemp
-  pure ([ICond out leftInstrs leftOp rightInstrs rightBool [] (OImm 0)], OTemp out)
+lowerLogicalAnd = lowerShortCircuit True
 
 lowerLogicalOr :: Expr -> Expr -> CompileM ([Instr], Operand)
-lowerLogicalOr left right = do
-  leftResult <- lowerExpr left
-  rightResult <- lowerTruthExpr right
-  let leftInstrs = fst leftResult
-  let leftOp = snd leftResult
-  let rightInstrs = fst rightResult
-  let rightBool = snd rightResult
+lowerLogicalOr = lowerShortCircuit False
+
+lowerShortCircuit :: Bool -> Expr -> Expr -> CompileM ([Instr], Operand)
+lowerShortCircuit isAnd left right = do
+  (leftInstrs, leftOp) <- lowerExpr left
+  (rightInstrs, rightBool) <- lowerTruthExpr right
   out <- freshTemp
-  pure ([ICond out leftInstrs leftOp [] (OImm 1) rightInstrs rightBool], OTemp out)
+  let (trueIns, trueOp, falseIns, falseOp) =
+        if isAnd
+          then (rightInstrs, rightBool, [], OImm 0)
+          else ([], OImm 1, rightInstrs, rightBool)
+  pure ([ICond out leftInstrs leftOp trueIns trueOp falseIns falseOp], OTemp out)
 
 lowerTruthExpr :: Expr -> CompileM ([Instr], Operand)
 lowerTruthExpr expr = do
@@ -1187,17 +1166,25 @@ copyObjectBytes dst src offset remaining =
     else do
       word <- targetWordSize
       let width = if remaining >= word then word else if remaining >= 4 then 4 else 1
-      dstResult <- offsetAddress dst offset
-      srcResult <- offsetAddress src offset
-      let dstInstrs = fst dstResult
-      let dstAddr = snd dstResult
-      let srcInstrs = fst srcResult
-      let srcAddr = snd srcResult
+      (dstInstrs, dstAddr) <- offsetAddress dst offset
+      (srcInstrs, srcAddr) <- offsetAddress src offset
       val <- freshTemp
-      let load = if width == 8 then ILoad64 val srcAddr else if width == 4 then ILoad32 val srcAddr else ILoad8 val srcAddr
-      let store = if width == 8 then IStore64 dstAddr (OTemp val) else if width == 4 then IStore32 dstAddr (OTemp val) else IStore8 dstAddr (OTemp val)
+      let load = unsignedLoadAt width val srcAddr
+      let store = unsignedStoreAt width dstAddr (OTemp val)
       rest <- copyObjectBytes dst src (offset + width) (remaining - width)
       pure (dstInstrs ++ srcInstrs ++ [load, store] ++ rest)
+
+unsignedLoadAt :: Int -> Temp -> Operand -> Instr
+unsignedLoadAt width dst addr
+  | width == 8 = ILoad64 dst addr
+  | width == 4 = ILoad32 dst addr
+  | otherwise  = ILoad8 dst addr
+
+unsignedStoreAt :: Int -> Operand -> Operand -> Instr
+unsignedStoreAt width addr value
+  | width == 8 = IStore64 addr value
+  | width == 4 = IStore32 addr value
+  | otherwise  = IStore8 addr value
 
 offsetAddress :: Operand -> Int -> CompileM ([Instr], Operand)
 offsetAddress base offset =
