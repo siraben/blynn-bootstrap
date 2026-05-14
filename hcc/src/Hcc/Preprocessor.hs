@@ -511,8 +511,4 @@ tokenKind :: Token -> TokenKind
 tokenKind (Token _ kind) = kind
 
 dropSpaces :: String -> String
-dropSpaces = dropWhile ppIsSpace
-
-ppIsSpace :: Char -> Bool
-ppIsSpace c =
-  c == ' ' || c == '\n' || charCode c == 9 || charCode c == 13 || charCode c == 11 || charCode c == 12
+dropSpaces = dropWhile isSpaceChar
