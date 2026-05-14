@@ -13,11 +13,11 @@
 
 let
   version = "unstable-2025-12-03";
-  rev = "cb41cbfe717e4c00d7bb70035cda5ee5f0ff9341";
+  rev = "757507eb022f7af4be63dc9a72b299761181efbb";
   src = fetchgit {
     url = "https://repo.or.cz/tinycc.git";
     inherit rev;
-    hash = "sha256-LgYeX6Q80Z6VNJ7iPk46fPpEr/dEAezqvR6jQddSsxI=";
+    hash = "sha256-inHQRpif+2S7ZuY56WcLoK1mYqQveVs8SSwNQPt6rho=";
   };
 in
 stdenvNoCC.mkDerivation {

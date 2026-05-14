@@ -7,6 +7,12 @@ typedef long ssize_t;
 
 #ifdef __TINYC__
 #include <stdarg.h>
+#else
+typedef char* va_list;
+#define va_start(ap, last) ((void)((ap) = (char*)(&(last)) + sizeof(void*)))
+#define va_arg(ap, type) (type)(((long*)((ap) = ((ap) + sizeof(void*))))[-1])
+#define va_end(ap) ((void)((ap) = 0))
+#define va_copy(d, s) ((d) = (s))
 #endif
 
 void* malloc(unsigned size);
@@ -734,7 +740,6 @@ int fprintf(void* stream, char* fmt, long a, long b, long c)
 int sprintf(char* out, char* fmt, long a, long b, long c) { return hcc_vformat(out, 0xffffffff, fmt, a, b, c); }
 int snprintf(char* out, unsigned size, char* fmt, long a, long b, long c) { return hcc_vformat(out, size, fmt, a, b, c); }
 int sscanf(char* input, char* fmt) { return 0; }
-#ifdef __TINYC__
 int vsnprintf(char* out, unsigned size, char* fmt, va_list ap)
 {
     char* p = out;
@@ -828,45 +833,11 @@ int vsnprintf(char* out, unsigned size, char* fmt, va_list ap)
     if (out && size) *p = 0;
     return total;
 }
-#else
-int vsnprintf(char* out, unsigned size, char* fmt, void* ap)
-{
-    int total = 0;
-    char* p = out;
-    char* end = out;
-    if (size) end = out + size - 1;
-    while (*fmt) {
-        if (*fmt == '%' && fmt[1] && fmt[1] != '%') {
-            fmt = fmt + 1;
-            while (*fmt >= '0' && *fmt <= '9') fmt = fmt + 1;
-            if (*fmt == 'l') fmt = fmt + 1;
-        } else {
-            if (*fmt == '%' && fmt[1] == '%') fmt = fmt + 1;
-            p = hcc_append_char(p, end, &total, *fmt);
-        }
-        if (*fmt) fmt = fmt + 1;
-    }
-    if (out && size) *p = 0;
-    return total;
-}
-#endif
-#ifdef __TINYC__
 int vfprintf(void* stream, char* fmt, va_list ap) { return fputs(fmt, stream); }
 int vprintf(char* fmt, va_list ap) { return vfprintf(stdout, fmt, ap); }
 int vsprintf(char* out, char* fmt, va_list ap) { return vsnprintf(out, 0xffffffff, fmt, ap); }
 int vsscanf(char* input, char* fmt, va_list ap) { return 0; }
 int vfscanf(void* stream, char* fmt, va_list ap) { return 0; }
-#else
-int vfprintf(void* stream, char* fmt, void* ap) { return fputs(fmt, stream); }
-int vprintf(char* fmt, void* ap) { return vfprintf(stdout, fmt, ap); }
-int vsprintf(char* out, char* fmt, void* ap) { return vsnprintf(out, 0xffffffff, fmt, ap); }
-int vsscanf(char* input, char* fmt, void* ap) { return 0; }
-int vfscanf(void* stream, char* fmt, void* ap) { return 0; }
-void va_start(void* ap, void* last) {}
-void va_end(void* ap) {}
-void va_copy(void* dest, void* src) {}
-long va_arg(void* ap, long type_hint) { return 0; }
-#endif
 
 int ELF64_ST_BIND(int value) { return (value >> 4) & 15; }
 int ELF64_ST_TYPE(int value) { return value & 15; }
