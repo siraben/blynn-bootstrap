@@ -5,6 +5,7 @@ module Preprocessor
 
 import Base
 import ConstExpr
+import IfFrame
 import Lexer
 import SymbolTable
 import TextUtil
@@ -27,7 +28,8 @@ type MacroArgs = SymbolMap MacroArg
 
 data Chunk = Chunk [String] [Token]
 
-data IfFrame = IfFrame Bool Bool Bool
+-- IfFrame layout lives in `IfFrame`; we only re-export the constructor and
+-- field accessors locally to keep the preprocessor's matches readable.
 
 preprocess :: [Token] -> Either PreprocessError [Token]
 preprocess toks = go symbolMapEmpty [] (sourceFromTokens toks) id where
@@ -114,30 +116,25 @@ ignoredDirectives :: [String]
 ignoredDirectives = ["#line", "#pragma"]
 
 currentActive :: [IfFrame] -> Bool
-currentActive frames = case frames of
-  [] -> True
-  IfFrame _ _ active:_ -> active
+currentActive = ifStackActive
 
 pushIf :: [IfFrame] -> Bool -> [IfFrame]
-pushIf frames cond = IfFrame parent cond (parent && cond) : frames where
-  parent = currentActive frames
+pushIf = pushIfFrame
 
 replaceElse :: Span -> [IfFrame] -> Either PreprocessError [IfFrame]
-replaceElse sp frames = case frames of
-  [] -> Left (PreprocessError (spanStart sp) "#else without #if")
-  IfFrame parent taken _:rest ->
-    Right (IfFrame parent True (parent && not taken) : rest)
+replaceElse sp frames = case replaceElseFrame frames of
+  Nothing -> Left (PreprocessError (spanStart sp) "#else without #if")
+  Just frames' -> Right frames'
 
 replaceElif :: Span -> [IfFrame] -> Bool -> Either PreprocessError [IfFrame]
-replaceElif sp frames cond = case frames of
-  [] -> Left (PreprocessError (spanStart sp) "#elif without #if")
-  IfFrame parent taken _:rest ->
-    Right (IfFrame parent (taken || cond) (parent && not taken && cond) : rest)
+replaceElif sp frames cond = case replaceElifFrame frames cond of
+  Nothing -> Left (PreprocessError (spanStart sp) "#elif without #if")
+  Just frames' -> Right frames'
 
 popIf :: Span -> [IfFrame] -> Either PreprocessError [IfFrame]
-popIf sp frames = case frames of
-  [] -> Left (PreprocessError (spanStart sp) "#endif without #if")
-  _:rest -> Right rest
+popIf sp frames = case popIfFrame frames of
+  Nothing -> Left (PreprocessError (spanStart sp) "#endif without #if")
+  Just frames' -> Right frames'
 
 defineMacro :: Macros -> Span -> String -> Either PreprocessError Macros
 defineMacro macros sp text = do
