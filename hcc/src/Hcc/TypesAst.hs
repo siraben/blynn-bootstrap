@@ -77,6 +77,7 @@ data Stmt
 
 data Expr
   = EInt String
+  | EFloat String
   | EChar String
   | EString String
   | EVar String
@@ -117,6 +118,7 @@ renderStmtTag stmt = case stmt of
 renderExprTag :: Expr -> String
 renderExprTag expr = case expr of
   EInt _ -> "EInt"
+  EFloat _ -> "EFloat"
   EChar _ -> "EChar"
   EString _ -> "EString"
   EVar _ -> "EVar"

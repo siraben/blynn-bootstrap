@@ -80,6 +80,7 @@ run_m1_case wide-integer-types "$TESTS_DIR/m1-smoke/examples/wide-integer-types.
 run_m1_case function-pointer-call-type "$TESTS_DIR/m1-smoke/examples/function-pointer-call-type.c"
 run_m1_case bootstrap-qsort-pointer "$TESTS_DIR/m1-smoke/examples/bootstrap-qsort-pointer.c"
 run_m1_case scalar-immediate-smoke "$TESTS_DIR/scalar-immediate-smoke.c"
+run_m1_case float-literals "$TESTS_DIR/m1-smoke/examples/float-literals.c"
 
 expect_hcc1_fail unknown-identifier "unknown identifier: missing_global" "$TESTS_DIR/diagnostics/unknown-identifier.c"
 expect_hcc1_fail unknown-global-initializer "unknown constant: missing_global" "$TESTS_DIR/diagnostics/unknown-global-initializer.c"

@@ -15,6 +15,8 @@ data LexState = LexState
   , lsBol :: Bool
   }
 
+data NumberClass = NumberInt | NumberFloat
+
 lexC :: String -> Either LexError [Token]
 lexC source = go (LexState source (SrcPos 1 1) True) [] where
   go st acc = case lsInput st of
@@ -82,37 +84,67 @@ takeIdent st = go st [] where
     _ -> (reverse acc, cur)
 
 lexNumber :: LexState -> (Token, LexState)
-lexNumber st = (Token (Span start end) (TokInt text), st') where
+lexNumber st = (Token (Span start end) kind, st') where
   start = lsPos st
-  (text, st') = takeNumber st
+  (text, cls, st') = takeNumber st
   end = lsPos st'
+  kind = case cls of
+    NumberInt -> TokInt text
+    NumberFloat -> TokFloat text
 
-takeNumber :: LexState -> (String, LexState)
+takeNumber :: LexState -> (String, NumberClass, LexState)
 takeNumber st = case lsInput st of
-  '0':'x':rest -> takeRadixNumber isHexDigit "0x" rest st
-  '0':'X':rest -> takeRadixNumber isHexDigit "0X" rest st
+  '0':'x':rest -> takeHexNumber "0x" rest st
+  '0':'X':rest -> takeHexNumber "0X" rest st
   _ -> takeDecimalNumber st
 
-takeRadixNumber :: (Char -> Bool) -> String -> String -> LexState -> (String, LexState)
-takeRadixNumber isDigitInRadix prefix rest st =
+takeHexNumber :: String -> String -> LexState -> (String, NumberClass, LexState)
+takeHexNumber prefix rest st =
   let st0 = advanceMany prefix st { lsInput = rest }
-      (digits, st1) = takeWhileState isDigitInRadix st0
-      (suffix, st2) = takeWhileState isIntSuffix st1
-  in (prefix ++ digits ++ suffix, st2)
+      (digits, st1) = takeWhileState isHexDigit st0
+      (fraction, st2) = takeHexFraction st1
+      (exponentText, st3) = takeExponent "pP" st2
+      (suffix, st4) =
+        if null fraction && null exponentText
+          then takeWhileState isIntSuffix st3
+          else takeWhileState isFloatSuffix st3
+      cls = if null fraction && null exponentText then NumberInt else NumberFloat
+  in (prefix ++ digits ++ fraction ++ exponentText ++ suffix, cls, st4)
 
-takeDecimalNumber :: LexState -> (String, LexState)
+takeHexFraction :: LexState -> (String, LexState)
+takeHexFraction st = case lsInput st of
+  '.':'.':_ -> ("", st)
+  '.':rest ->
+    let st0 = advance '.' st { lsInput = rest }
+        (digits, st1) = takeWhileState isHexDigit st0
+    in ('.':digits, st1)
+  _ -> ("", st)
+
+takeDecimalNumber :: LexState -> (String, NumberClass, LexState)
 takeDecimalNumber st =
   let (digits, st1) = takeWhileState isDigit st
       (fraction, st2) = takeFraction st1
-      (exponentText, st3) = takeExponent st2
+      (exponentText, st3) = takeExponent "eE" st2
       (suffix, st4) = takeWhileState isNumberSuffix st3
-  in (digits ++ fraction ++ exponentText ++ suffix, st4)
+      cls =
+        if null fraction && null exponentText && not (hasFloatSuffix suffix)
+          then NumberInt
+          else NumberFloat
+  in (digits ++ fraction ++ exponentText ++ suffix, cls, st4)
 
 isIntSuffix :: Char -> Bool
 isIntSuffix c = elem c "uUlL"
 
 isNumberSuffix :: Char -> Bool
 isNumberSuffix c = elem c "uUlLfF"
+
+isFloatSuffix :: Char -> Bool
+isFloatSuffix c = elem c "fFlL"
+
+hasFloatSuffix :: String -> Bool
+hasFloatSuffix text = case text of
+  [] -> False
+  c:rest -> c == 'f' || c == 'F' || hasFloatSuffix rest
 
 takeFraction :: LexState -> (String, LexState)
 takeFraction st = case lsInput st of
@@ -123,9 +155,9 @@ takeFraction st = case lsInput st of
     in ('.':digits, st1)
   _ -> ("", st)
 
-takeExponent :: LexState -> (String, LexState)
-takeExponent st = case lsInput st of
-  c:rest | c == 'e' || c == 'E' ->
+takeExponent :: String -> LexState -> (String, LexState)
+takeExponent markers st = case lsInput st of
+  c:rest | elem c markers ->
     let st0 = advance c st { lsInput = rest }
         (signText, st1) = takeExponentSign st0
         (digits, st2) = takeWhileState isDigit st1

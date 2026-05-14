@@ -559,6 +559,8 @@ lowerExpr :: Expr -> CompileM ([Instr], Operand)
 lowerExpr expr = case expr of
   EInt text ->
     pure ([], intConstOperand text)
+  EFloat text ->
+    pure ([], floatConstOperand text)
   EChar text ->
     pure ([], OImm (charValue text))
   EString text -> do
@@ -1178,6 +1180,7 @@ scaledIndex index size =
 exprType :: Expr -> CompileM (Maybe CType)
 exprType expr = case expr of
   EInt _ -> pure (Just CInt)
+  EFloat text -> pure (Just (floatLiteralType text))
   EChar _ -> pure (Just CChar)
   EString _ -> pure (Just (CPtr CChar))
   ESizeofType _ -> pure (Just CInt)
@@ -1485,24 +1488,61 @@ usualArithmeticType :: Expr -> Expr -> CompileM CType
 usualArithmeticType left right = do
   leftTy <- promotedExprType left
   rightTy <- promotedExprType right
-  leftSize <- typeSize leftTy
-  rightSize <- typeSize rightTy
-  let size = max leftSize rightSize
-  let unsigned = isUnsignedType leftTy || isUnsignedType rightTy
-  pure (case (size >= 8, unsigned) of
-    (True, True) -> CUnsignedLongLong
-    (True, False) -> CLongLong
-    (False, True) -> CUnsigned
-    (False, False) -> CInt)
+  if isFloatingType leftTy || isFloatingType rightTy
+    then pure (usualFloatingType leftTy rightTy)
+    else do
+      leftSize <- typeSize leftTy
+      rightSize <- typeSize rightTy
+      let size = max leftSize rightSize
+      let unsigned = isUnsignedType leftTy || isUnsignedType rightTy
+      pure (case (size >= 8, unsigned) of
+        (True, True) -> CUnsignedLongLong
+        (True, False) -> CLongLong
+        (False, True) -> CUnsigned
+        (False, False) -> CInt)
+
+isFloatingType :: CType -> Bool
+isFloatingType ty = case ty of
+  CFloat -> True
+  CDouble -> True
+  CLongDouble -> True
+  _ -> False
+
+usualFloatingType :: CType -> CType -> CType
+usualFloatingType leftTy rightTy =
+  if isLongDoubleType leftTy || isLongDoubleType rightTy
+    then CLongDouble
+    else if isDoubleType leftTy || isDoubleType rightTy
+      then CDouble
+      else CFloat
+
+isLongDoubleType :: CType -> Bool
+isLongDoubleType ty = case ty of
+  CLongDouble -> True
+  _ -> False
+
+isDoubleType :: CType -> Bool
+isDoubleType ty = case ty of
+  CDouble -> True
+  _ -> False
 
 promotedExprType :: Expr -> CompileM CType
 promotedExprType expr = case expr of
   EInt text ->
     if intLiteralIsUnsigned text then pure CUnsigned else pure CInt
+  EFloat text ->
+    pure (floatLiteralType text)
   _ -> do
     mty <- exprType expr
     ty <- requireMaybeType ("expression has unknown type: " ++ renderExprTag expr) mty
     promoteIntegerType ty
+
+floatLiteralType :: String -> CType
+floatLiteralType text =
+  case floatLiteralSize text of
+    4 -> CFloat
+    16 -> CLongDouble
+    _ -> CDouble
 
 storeInstr :: CType -> Operand -> Operand -> CompileM Instr
 storeInstr ty addr value = do
@@ -1676,6 +1716,7 @@ globalDataExpr ty expr = case expr of
   EInitList exprs -> globalInitListData ty exprs
   EString text -> globalStringData ty text
   EInt text -> scalarData ty (parseInt text)
+  EFloat text -> scalarFloatData ty text
   EChar text -> scalarData ty (charValue text)
   ECast _ value -> globalDataValue ty (Just value)
   EUnary "&" value -> globalAddressExprData ty value
@@ -1830,6 +1871,11 @@ scalarData ty value = do
   size <- typeSize ty
   pure (bytesData (intBytes size value))
 
+scalarFloatData :: CType -> String -> CompileM [DataValue]
+scalarFloatData ty text = do
+  size <- typeSize ty
+  pure (bytesData (floatLiteralBytes size text))
+
 padDataTarget :: Int -> [DataValue] -> CompileM [DataValue]
 padDataTarget size values = do
   used <- dataSizeTarget values
@@ -1871,6 +1917,7 @@ globalAddressData name = do
 constExprValue :: Expr -> CompileM Int
 constExprValue expr = case expr of
   EInt text -> pure (parseInt text)
+  EFloat _ -> pure 0
   EChar text -> pure (charValue text)
   ESizeofType ty -> typeSize ty
   ESizeofExpr value -> do

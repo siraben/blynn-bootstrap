@@ -264,6 +264,7 @@ sameTokenKind :: TokenKind -> TokenKind -> Bool
 sameTokenKind left right = case left of
   TokIdent a -> case right of { TokIdent b -> a == b; _ -> False }
   TokInt a -> case right of { TokInt b -> a == b; _ -> False }
+  TokFloat a -> case right of { TokFloat b -> a == b; _ -> False }
   TokChar a -> case right of { TokChar b -> a == b; _ -> False }
   TokString a -> case right of { TokString b -> a == b; _ -> False }
   TokPunct a -> case right of { TokPunct b -> a == b; _ -> False }

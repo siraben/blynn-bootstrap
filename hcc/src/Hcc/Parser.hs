@@ -864,6 +864,7 @@ unary = do
     TokIdent "sizeof" ->
       advanceToken >> parseSizeof
     TokInt s -> advanceToken >> pure (EInt s)
+    TokFloat s -> advanceToken >> pure (EFloat s)
     TokChar s -> advanceToken >> pure (EChar s)
     TokString _ -> EString <$> stringLiteral
     TokIdent s -> do

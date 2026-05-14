@@ -72,6 +72,7 @@ parsePrimary = do
           env <- pEnv
           pure (maybe 0 id (lookup name env))
         TokInt value -> pure (parseInt value)
+        TokFloat _ -> pure 0
         TokChar value -> pure (charValue value)
         _ -> pFail "unsupported token in constant expression"
 

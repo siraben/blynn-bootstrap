@@ -9,6 +9,10 @@ module Literal
   , intLiteralIsUnsigned
   , parseInt
   , stripIntSuffix
+  , floatLiteralBytes
+  , floatLiteralSize
+  , stripFloatSuffix
+  , naturalLiteralBytes
   , intBytes
   , takeInts
   , charValue
@@ -114,6 +118,36 @@ isIntSuffix :: Char -> Bool
 isIntSuffix c =
   c == 'u' || c == 'U' || c == 'l' || c == 'L'
 
+floatLiteralSize :: String -> Int
+floatLiteralSize text =
+  if endsWithFloatSuffix "fF" text
+    then 4
+    else if endsWithFloatSuffix "lL" text
+      then 16
+      else 8
+
+floatLiteralBytes :: Int -> String -> [Int]
+floatLiteralBytes size text =
+  takeInts size (floatLiteralByteWord text)
+
+floatLiteralByteWord :: String -> [Int]
+floatLiteralByteWord text = case stripFloatSuffix text of
+  '0':'x':rest -> readBaseBytes 16 rest
+  '0':'X':rest -> readBaseBytes 16 rest
+  rest -> decimalLiteralBytes rest
+
+stripFloatSuffix :: String -> String
+stripFloatSuffix text = reverse (dropWhile isFloatLiteralSuffix (reverse text))
+
+isFloatLiteralSuffix :: Char -> Bool
+isFloatLiteralSuffix c =
+  c == 'f' || c == 'F' || c == 'l' || c == 'L'
+
+endsWithFloatSuffix :: String -> String -> Bool
+endsWithFloatSuffix suffixes text = case reverse text of
+  c:_ -> elem c suffixes
+  [] -> False
+
 readDecimalPrefix :: String -> Int
 readDecimalPrefix text = readDecimalPrefixFrom 0 text
 
@@ -143,6 +177,63 @@ readHexFrom :: Int -> String -> Int
 readHexFrom n xs = case xs of
   [] -> n
   c:rest -> readHexFrom (n * 16 + hexDigit c) rest
+
+naturalLiteralBytes :: String -> [Int]
+naturalLiteralBytes text = case text of
+  '0':'x':xs -> readBaseBytes 16 xs
+  '0':'X':xs -> readBaseBytes 16 xs
+  '0':xs -> readBaseBytes 8 xs
+  _ -> decimalLiteralBytes text
+
+decimalLiteralBytes :: String -> [Int]
+decimalLiteralBytes text = readBaseBytes 10 text
+
+readBaseBytes :: Int -> String -> [Int]
+readBaseBytes base text = readBaseBytesFrom base zeroByteWord text
+
+readBaseBytesFrom :: Int -> [Int] -> String -> [Int]
+readBaseBytesFrom base bytes text = case text of
+  [] -> bytes
+  c:rest ->
+    if digitValidForBase base c
+      then readBaseBytesFrom base (byteWordMulAdd base (digitValue c) bytes) rest
+      else bytes
+
+digitValidForBase :: Int -> Char -> Bool
+digitValidForBase base c = digitValue c < base
+
+digitValue :: Char -> Int
+digitValue c
+  | c >= '0' && c <= '9' = decimalDigit c
+  | c >= 'a' && c <= 'f' = 10 + fromEnum c - fromEnum 'a'
+  | c >= 'A' && c <= 'F' = 10 + fromEnum c - fromEnum 'A'
+  | otherwise = 99
+
+zeroByteWord :: [Int]
+zeroByteWord = [0,0,0,0,0,0,0,0]
+
+byteWordMulAdd :: Int -> Int -> [Int] -> [Int]
+byteWordMulAdd base digit bytes = takeInts 8 (byteWordAddSmall digit (byteWordMulSmall base bytes))
+
+byteWordMulSmall :: Int -> [Int] -> [Int]
+byteWordMulSmall factor bytes = byteWordMulSmallCarry factor 0 bytes
+
+byteWordMulSmallCarry :: Int -> Int -> [Int] -> [Int]
+byteWordMulSmallCarry factor carry bytes = case bytes of
+  [] -> []
+  byte:rest ->
+    let total = byte * factor + carry
+    in (total `mod` 256) : byteWordMulSmallCarry factor (total `div` 256) rest
+
+byteWordAddSmall :: Int -> [Int] -> [Int]
+byteWordAddSmall addend bytes = byteWordAddSmallCarry addend bytes
+
+byteWordAddSmallCarry :: Int -> [Int] -> [Int]
+byteWordAddSmallCarry carry bytes = case bytes of
+  [] -> []
+  byte:rest ->
+    let total = byte + carry
+    in (total `mod` 256) : byteWordAddSmallCarry (total `div` 256) rest
 
 intBytes :: Int -> Int -> [Int]
 intBytes size value = takeInts size (intBytesFrom value)
