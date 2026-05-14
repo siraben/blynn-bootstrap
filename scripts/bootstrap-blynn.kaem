@@ -1,0 +1,84 @@
+#!/usr/bin/env sh
+
+set -ex
+
+SCRIPT_DIR=${SCRIPT_DIR:-scripts}
+BOOTSTRAP_OUT=${OUT_DIR:-build}
+ARCH=${ARCH:-amd64}
+OPERATING_SYSTEM=${OPERATING_SYSTEM:-Linux}
+M2_ARCH=${ARCH}
+M2_OS=${OPERATING_SYSTEM}
+export SCRIPT_DIR BOOTSTRAP_OUT ARCH OPERATING_SYSTEM M2_ARCH M2_OS
+
+UPSTREAM=${BOOTSTRAP_OUT}/upstreams
+TOOLS=${BOOTSTRAP_OUT}/bootstrap-tools
+MES_LIBC=${BOOTSTRAP_OUT}/mes-libc
+BLYNN_ROOT=${BOOTSTRAP_OUT}/blynn-root
+BLYNN_PRECISELY=${BOOTSTRAP_OUT}/blynn-precisely
+HCC_SOURCES=${BOOTSTRAP_OUT}/hcc-blynn-sources
+HCC_C=${BOOTSTRAP_OUT}/hcc-blynn-c
+HCC_BIN=${BOOTSTRAP_OUT}/hcc-blynn-bin
+TINYCC=${BOOTSTRAP_OUT}/tinycc-boot-hcc
+export UPSTREAM TOOLS MES_LIBC BLYNN_ROOT BLYNN_PRECISELY HCC_SOURCES HCC_C HCC_BIN TINYCC
+
+ORIANSJ_BLYNN_DIR=${ORIANSJ_BLYNN_DIR:-upstream/oriansj-blynn-compiler}
+BLYNN_DIR=${BLYNN_DIR:-upstream/blynn-compiler}
+OUT_DIR=${UPSTREAM}
+export ORIANSJ_BLYNN_DIR BLYNN_DIR OUT_DIR
+sh ${SCRIPT_DIR}/prepare-upstreams.sh
+
+OUT_DIR=${TOOLS}
+export OUT_DIR
+sh ${SCRIPT_DIR}/bootstrap-tools.sh
+
+PATH=${TOOLS}/bin:${PATH}
+STAGE0_M2LIBC=${TOOLS}/artifact/stage0-posix/M2libc
+M2LIBC_PATH=${STAGE0_M2LIBC}
+export STAGE0_M2LIBC M2LIBC_PATH
+export PATH
+
+GNU_MES_DIR=${UPSTREAM}/gnu-mes
+OUT_DIR=${MES_LIBC}
+export GNU_MES_DIR OUT_DIR
+sh ${SCRIPT_DIR}/prepare-mes-libc.sh
+
+ORIANSJ_BLYNN_DIR=${UPSTREAM}/oriansj-blynn-compiler
+OUT_DIR=${BLYNN_ROOT}
+export ORIANSJ_BLYNN_DIR OUT_DIR
+sh ${SCRIPT_DIR}/bootstrap-blynn-root.sh
+
+BLYNN_DIR=${UPSTREAM}/blynn-compiler
+METHODICALLY=${BLYNN_ROOT}/bin/methodically
+OUT_DIR=${BLYNN_PRECISELY}
+export BLYNN_DIR METHODICALLY OUT_DIR
+sh ${SCRIPT_DIR}/bootstrap-blynn-precisely.sh
+
+BLYNN_DIR=${UPSTREAM}/blynn-compiler
+OUT_DIR=${HCC_SOURCES}
+export BLYNN_DIR OUT_DIR
+sh ${SCRIPT_DIR}/hcc-blynn-sources.sh
+
+PRECISELY_UP=${BLYNN_PRECISELY}/bin/precisely_up
+HCC_BLYNN_SOURCES_DIR=${HCC_SOURCES}
+OUT_DIR=${HCC_C}
+export PRECISELY_UP HCC_BLYNN_SOURCES_DIR OUT_DIR
+sh ${SCRIPT_DIR}/hcc-blynn-c.sh
+
+M2LIBC_PATH=${STAGE0_M2LIBC}
+HCC_BLYNN_C_DIR=${HCC_C}
+OUT_DIR=${HCC_BIN}
+export M2LIBC_PATH HCC_BLYNN_C_DIR OUT_DIR
+sh ${SCRIPT_DIR}/hcc-blynn-bin.sh
+
+TINYCC_DIR=${UPSTREAM}/janneke-tinycc
+HCC_BIN_DIR=${HCC_BIN}
+MES_LIBC_DIR=${MES_LIBC}
+M2LIBC_PATH=${STAGE0_M2LIBC}
+OUT_DIR=${TINYCC}
+export TINYCC_DIR HCC_BIN_DIR MES_LIBC_DIR M2LIBC_PATH OUT_DIR
+sh ${SCRIPT_DIR}/tinycc-boot-hcc.sh
+
+if test -f ${BOOTSTRAP_OUT}/after.kaem
+then
+sh ${BOOTSTRAP_OUT}/after.kaem
+fi

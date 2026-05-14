@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env sh
 
 set -eu
 
@@ -20,16 +20,18 @@ require_cmd rm
 
 src_dir=${ORIANSJ_BLYNN_DIR:-${1:-build/upstreams/oriansj-blynn-compiler}}
 out_dir=${OUT_DIR:-build/blynn-root}
+m2libc_dir=${M2LIBC_PATH:-$src_dir/M2libc}
 
 src_dir=$(abspath "$src_dir")
 out_dir=$(abspath "$out_dir")
+m2libc_dir=$(abspath "$m2libc_dir")
 bin_dir=$out_dir/bin
 gen_dir=$out_dir/generated
 share_dir=$out_dir/share/blynn
 work_dir=$out_dir/work
 
 [ -d "$src_dir" ] || die "missing OriansJ Blynn source: $src_dir"
-[ -d "$src_dir/M2libc" ] || die "missing M2libc under $src_dir"
+[ -d "$m2libc_dir" ] || die "missing M2libc: $m2libc_dir"
 
 mkdir -p "$bin_dir" "$gen_dir" "$share_dir" "$work_dir"
 
@@ -41,6 +43,11 @@ link_source() {
 link_tree() {
   rm -f "$work_dir/$1"
   ln -s "$src_dir/$1" "$work_dir/$1"
+}
+
+link_external_tree() {
+  rm -f "$work_dir/$1"
+  ln -s "$2" "$work_dir/$1"
 }
 
 run_vm_raw() {
@@ -71,7 +78,7 @@ compile_stage_c() {
 }
 
 msg "compile pack_blobs"
-link_tree M2libc
+link_external_tree M2libc "$m2libc_dir"
 link_source gcc_req.h
 link_source pack_blobs.c
 (
