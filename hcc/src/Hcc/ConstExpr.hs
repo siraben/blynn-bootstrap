@@ -10,14 +10,10 @@ import TypesToken
 
 type ConstParser a = P [(String, Int)] Token String a
 
-type CValue = (Int, Bool)
-
 parseConstExpr :: [(String, Int)] -> [Token] -> Either String (Int, [Token])
-parseConstExpr env toks = case parseRest (expression 0) env toks of
-  Left err -> Left err
-  Right (value, rest) -> Right (fst value, rest)
+parseConstExpr env toks = parseRest (expression 0) env toks
 
-expression :: Int -> ConstParser CValue
+expression :: Int -> ConstParser Int
 expression minPrec = do
   lhs <- parseUnary
   climb lhs
@@ -26,155 +22,67 @@ expression minPrec = do
       mtok <- pPeekMaybe
       case mtok of
         Just tok -> case constTokenKind tok of
-          TokPunct "?" | minPrec <= 2 -> do
+          TokPunct op | Just prec <- binop op, prec >= minPrec -> do
             advance
-            yes <- expression 0
-            constNeedPunct ":" "expected ':' in constant expression"
-            no <- expression 2
-            climb (if fst lhs /= 0 then yes else no)
-          TokPunct op | Just (prec, assoc) <- binop op, prec >= minPrec -> do
-            advance
-            rhs <- expression (if rightAssoc assoc then prec else prec + 1)
+            rhs <- expression (prec + 1)
             value <- applyOp op lhs rhs
             climb value
           _ -> pure lhs
         Nothing -> pure lhs
 
-data Assoc = LeftAssoc | RightAssoc
-
-rightAssoc :: Assoc -> Bool
-rightAssoc assoc = case assoc of
-  RightAssoc -> True
-  LeftAssoc -> False
-
-binop :: String -> Maybe (Int, Assoc)
+binop :: String -> Maybe Int
 binop op = case op of
-  "||" -> Just (3, LeftAssoc)
-  "&&" -> Just (4, LeftAssoc)
-  "|" -> Just (5, LeftAssoc)
-  "^" -> Just (6, LeftAssoc)
-  "&" -> Just (7, LeftAssoc)
-  "==" -> Just (8, LeftAssoc)
-  "!=" -> Just (8, LeftAssoc)
-  "<" -> Just (9, LeftAssoc)
-  "<=" -> Just (9, LeftAssoc)
-  ">" -> Just (9, LeftAssoc)
-  ">=" -> Just (9, LeftAssoc)
-  "<<" -> Just (10, LeftAssoc)
-  ">>" -> Just (10, LeftAssoc)
-  "+" -> Just (11, LeftAssoc)
-  "-" -> Just (11, LeftAssoc)
-  "*" -> Just (12, LeftAssoc)
-  "/" -> Just (12, LeftAssoc)
-  "%" -> Just (12, LeftAssoc)
+  "||" -> Just 3
+  "&&" -> Just 4
+  "|" -> Just 5
+  "^" -> Just 6
+  "&" -> Just 7
+  "==" -> Just 8
+  "!=" -> Just 8
+  "<" -> Just 9
+  "<=" -> Just 9
+  ">" -> Just 9
+  ">=" -> Just 9
+  "<<" -> Just 10
+  ">>" -> Just 10
+  "+" -> Just 11
+  "-" -> Just 11
+  "*" -> Just 12
   _ -> Nothing
 
-applyOp :: String -> CValue -> CValue -> ConstParser CValue
-applyOp op lv rv = case op of
-  "+" -> pure (a + b, u)
-  "-" -> pure (a - b, u)
-  "*" -> pure (a * b, u)
-  "/" -> if b == 0
-    then pFail "division by zero in constant expression"
-    else if u
-      then pure (unsignedDiv a b, True)
-      else pure (a `div` b, False)
-  "%" -> if b == 0
-    then pFail "modulo by zero in constant expression"
-    else if u
-      then pure (unsignedMod a b, True)
-      else pure (a `mod` b, False)
-  "<<" -> pure (shiftLeftInt a (max 0 b), u)
-  ">>" -> if u
-    then pure (unsignedShiftRight a (max 0 b), True)
-    else pure (shiftRightInt a (max 0 b), False)
-  "<" -> pure (truth (compareLt u a b), False)
-  "<=" -> pure (truth (compareLe u a b), False)
-  ">" -> pure (truth (compareLt u b a), False)
-  ">=" -> pure (truth (compareLe u b a), False)
-  "==" -> pure (truth (a == b), False)
-  "!=" -> pure (truth (a /= b), False)
-  "&" -> pure (bitAndInt a b, u)
-  "^" -> pure (bitXorInt a b, u)
-  "|" -> pure (bitOrInt a b, u)
-  "&&" -> pure (truth (a /= 0 && b /= 0), False)
-  "||" -> pure (truth (a /= 0 || b /= 0), False)
+applyOp :: String -> Int -> Int -> ConstParser Int
+applyOp op a b = case op of
+  "+" -> pure (a + b)
+  "-" -> pure (a - b)
+  "*" -> pure (a * b)
+  "<<" -> pure (shiftLeftInt a (max 0 b))
+  ">>" -> pure (shiftRightInt a (max 0 b))
+  "<" -> pure (truth (a < b))
+  "<=" -> pure (truth (a <= b))
+  ">" -> pure (truth (a > b))
+  ">=" -> pure (truth (a >= b))
+  "==" -> pure (truth (a == b))
+  "!=" -> pure (truth (a /= b))
+  "&" -> pure (bitAndInt a b)
+  "^" -> pure (bitXorInt a b)
+  "|" -> pure (bitOrInt a b)
+  "&&" -> pure (truth (a /= 0 && b /= 0))
+  "||" -> pure (truth (a /= 0 || b /= 0))
   _ -> pFail ("unhandled operator in constant expression: " ++ op)
-  where
-    a = fst lv
-    b = fst rv
-    u = snd lv || snd rv
 
-compareLt :: Bool -> Int -> Int -> Bool
-compareLt unsigned a b =
-  if unsigned
-    then unsignedLt a b
-    else a < b
-
-compareLe :: Bool -> Int -> Int -> Bool
-compareLe unsigned a b = compareLt unsigned a b || a == b
-
-unsignedLt :: Int -> Int -> Bool
-unsignedLt a b =
-  if a < 0
-    then if b < 0 then a < b else False
-    else if b < 0 then True else a < b
-
-unsignedDiv :: Int -> Int -> Int
-unsignedDiv a b =
-  if a >= 0 && b > 0
-    then a `div` b
-    else unsignedQuotRemQuot a b
-
-unsignedMod :: Int -> Int -> Int
-unsignedMod a b =
-  if a >= 0 && b > 0
-    then a `mod` b
-    else a - unsignedQuotRemQuot a b * b
-
-unsignedQuotRemQuot :: Int -> Int -> Int
-unsignedQuotRemQuot a b = unsignedLongDivStep 63 a b 0 0
-
-unsignedLongDivStep :: Int -> Int -> Int -> Int -> Int -> Int
-unsignedLongDivStep bit a b rem' quot' =
-  if bit < 0
-    then quot'
-    else
-      let aBit = unsignedShiftRight a bit `mod` 2
-          rem2 = shiftLeftInt rem' 1 + aBit
-      in if unsignedLt rem2 b
-           then unsignedLongDivStep (bit - 1) a b rem2 quot'
-           else unsignedLongDivStep (bit - 1) a b (rem2 - b) (quot' + pow2 bit)
-
-unsignedShiftRight :: Int -> Int -> Int
-unsignedShiftRight a count =
-  if count <= 0 then a
-  else if a >= 0
-    then shiftRightInt a count
-    else shiftRightInt ((a `div` 2) + pow2 63) (count - 1)
-
-parseUnary :: ConstParser CValue
+parseUnary :: ConstParser Int
 parseUnary = do
   mtok <- pPeekMaybe
   case mtok of
     Just tok -> case constTokenKind tok of
-      TokPunct "!" -> do
-        advance
-        inner <- parseUnary
-        pure (truth (fst inner == 0), False)
+      TokPunct "!" -> advance >> ((truth . (== 0)) <$> parseUnary)
       TokPunct "+" -> advance >> parseUnary
-      TokPunct "-" -> do
-        advance
-        inner <- parseUnary
-        pure (negate (fst inner), snd inner)
-      TokPunct "~" -> do
-        advance
-        inner <- parseUnary
-        pure (bitNotInt (fst inner), snd inner)
+      TokPunct "-" -> advance >> (negate <$> parseUnary)
+      TokPunct "~" -> advance >> (bitNotInt <$> parseUnary)
       _ -> parsePrimary
     Nothing -> pFail "empty constant expression"
 
-parsePrimary :: ConstParser CValue
+parsePrimary :: ConstParser Int
 parsePrimary = do
   paren <- constEatPunct "("
   if paren
@@ -188,22 +96,22 @@ parsePrimary = do
         TokIdent "defined" -> parseDefinedOperator
         TokIdent name -> do
           env <- pEnv
-          pure (maybe 0 id (lookup name env), False)
-        TokInt value -> pure (parseInt value, intLiteralIsUnsigned value)
-        TokChar value -> pure (charValue value, False)
+          pure (maybe 0 id (lookup name env))
+        TokInt value -> pure (parseInt value)
+        TokChar value -> pure (charValue value)
         _ -> pFail "unsupported token in constant expression"
 
-parseDefinedOperator :: ConstParser CValue
+parseDefinedOperator :: ConstParser Int
 parseDefinedOperator = do
   paren <- constEatPunct "("
   if paren
     then do
       name <- constNeedIdent "bad defined operator in #if expression"
       constNeedPunct ")" "bad defined operator in #if expression"
-      pure (truth (name /= ""), False)
+      pure (truth (name /= ""))
     else do
       name <- constNeedIdent "bad defined operator in #if expression"
-      pure (truth (name /= ""), False)
+      pure (truth (name /= ""))
 
 advance :: ConstParser ()
 advance = pSkip "unexpected end of constant expression"
