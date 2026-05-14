@@ -5,6 +5,7 @@ module Parser
 
 import Base
 import ConstExpr
+import Literal (stringBytes)
 import Operators
 import ParseLite
 import ScopeMap
@@ -989,17 +990,35 @@ needString = do
     TokString s -> advanceToken >> pure s
     _ -> failAt tok "expected string literal"
 
+-- C11 5.1.1.2 phase 6: adjacent string literals are concatenated as
+-- already-translated multibyte sequences (after phase-5 escape decoding).
+-- We decode each literal to bytes here and re-encode using `\xNN` escapes so
+-- that escapes from one literal cannot extend into another (e.g.,
+-- `"\1" "2"` must yield bytes 0x01, 0x32, not the octal `\12`).
 joinStrings :: [String] -> String
-joinStrings strings = "\"" ++ concatMap stringBody strings ++ "\""
+joinStrings strings =
+  let bodyBytes = concatMap literalContentBytes strings
+  in "\"" ++ concatMap hexEscape bodyBytes ++ "\""
 
-stringBody :: String -> String
-stringBody text = case text of
-  '"':rest -> reverse (dropQuote (reverse rest))
-  _ -> text
-  where
-    dropQuote xs = case xs of
-      '"':ys -> ys
-      _ -> xs
+-- stringBytes appends a trailing NUL terminator; strip it so concatenation
+-- doesn't inject embedded NULs between literals.
+literalContentBytes :: String -> [Int]
+literalContentBytes text =
+  let bytes = stringBytes text
+  in case reverse bytes of
+    0:rest -> reverse rest
+    _ -> bytes
+
+hexEscape :: Int -> String
+hexEscape value = "\\x" ++ hexPair value
+
+hexPair :: Int -> String
+hexPair value = [hexDigitChar (value `div` 16 `mod` 16), hexDigitChar (value `mod` 16)]
+
+hexDigitChar :: Int -> Char
+hexDigitChar value
+  | value < 10 = toEnum (fromEnum '0' + value)
+  | otherwise = toEnum (fromEnum 'a' + value - 10)
 
 startsType :: Token -> Bool
 startsType tok = case tokenKind tok of
