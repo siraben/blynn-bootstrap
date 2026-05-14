@@ -19,12 +19,35 @@ module Literal
   , decimalDigit
   , hexDigit
   , boolToInt
+  , evalConstBinOp
   ) where
 
 import Base
 
 boolToInt :: Bool -> Int
 boolToInt value = if value then 1 else 0
+
+evalConstBinOp :: String -> Int -> Int -> Maybe Int
+evalConstBinOp op a b = case op of
+  "+" -> Just (a + b)
+  "-" -> Just (a - b)
+  "*" -> Just (a * b)
+  "/" -> if b == 0 then Nothing else Just (a `div` b)
+  "%" -> if b == 0 then Nothing else Just (a `mod` b)
+  "<<" -> Just (shiftLeftInt a (max 0 b))
+  ">>" -> Just (shiftRightInt a (max 0 b))
+  "&" -> Just (bitAndInt a b)
+  "^" -> Just (bitXorInt a b)
+  "|" -> Just (bitOrInt a b)
+  "==" -> Just (boolToInt (a == b))
+  "!=" -> Just (boolToInt (a /= b))
+  "<" -> Just (boolToInt (a < b))
+  "<=" -> Just (boolToInt (a <= b))
+  ">" -> Just (boolToInt (a > b))
+  ">=" -> Just (boolToInt (a >= b))
+  "&&" -> Just (boolToInt (a /= 0 && b /= 0))
+  "||" -> Just (boolToInt (a /= 0 || b /= 0))
+  _ -> Nothing
 
 pow2 :: Int -> Int
 pow2 n = if n <= 0 then 1 else 2 * pow2 (n - 1)

@@ -9,26 +9,7 @@ import Literal
 import TypesIr
 
 constBinOp :: String -> Int -> Int -> Int
-constBinOp op a b = case op of
-  "+" -> a + b
-  "-" -> a - b
-  "*" -> a * b
-  "/" -> if b == 0 then 0 else a `div` b
-  "%" -> if b == 0 then 0 else a `mod` b
-  "<<" -> a * pow2 b
-  ">>" -> a `div` pow2 b
-  "|" -> bitOrInt a b
-  "&" -> bitAndInt a b
-  "^" -> bitXorInt a b
-  "==" -> boolToInt (a == b)
-  "!=" -> boolToInt (a /= b)
-  "<" -> boolToInt (a < b)
-  "<=" -> boolToInt (a <= b)
-  ">" -> boolToInt (a > b)
-  ">=" -> boolToInt (a >= b)
-  "&&" -> boolToInt (a /= 0 && b /= 0)
-  "||" -> boolToInt (a /= 0 || b /= 0)
-  _ -> 0
+constBinOp op a b = maybe 0 id (evalConstBinOp op a b)
 
 intConstOperand :: String -> Operand
 intConstOperand text = case parseIntBytes text of

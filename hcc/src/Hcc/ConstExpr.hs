@@ -37,30 +37,12 @@ expression minPrec = do
         Nothing -> pure lhs
 
 applyOp :: String -> Int -> Int -> ConstParser Int
-applyOp op lhs rhs = case op of
-  "+" -> pure (lhs + rhs)
-  "-" -> pure (lhs - rhs)
-  "*" -> pure (lhs * rhs)
-  "/" -> if rhs == 0
-    then pFail "division by zero in constant expression"
-    else pure (lhs `div` rhs)
-  "%" -> if rhs == 0
-    then pFail "modulo by zero in constant expression"
-    else pure (lhs `mod` rhs)
-  "<<" -> pure (shiftLeftInt lhs (max 0 rhs))
-  ">>" -> pure (shiftRightInt lhs (max 0 rhs))
-  "<" -> pure (boolToInt (lhs < rhs))
-  "<=" -> pure (boolToInt (lhs <= rhs))
-  ">" -> pure (boolToInt (lhs > rhs))
-  ">=" -> pure (boolToInt (lhs >= rhs))
-  "==" -> pure (boolToInt (lhs == rhs))
-  "!=" -> pure (boolToInt (lhs /= rhs))
-  "&" -> pure (bitAndInt lhs rhs)
-  "^" -> pure (bitXorInt lhs rhs)
-  "|" -> pure (bitOrInt lhs rhs)
-  "&&" -> pure (boolToInt (lhs /= 0 && rhs /= 0))
-  "||" -> pure (boolToInt (lhs /= 0 || rhs /= 0))
-  _ -> pFail ("unhandled operator in constant expression: " ++ op)
+applyOp op lhs rhs = case evalConstBinOp op lhs rhs of
+  Just value -> pure value
+  Nothing
+    | op == "/" -> pFail "division by zero in constant expression"
+    | op == "%" -> pFail "modulo by zero in constant expression"
+    | otherwise -> pFail ("unhandled operator in constant expression: " ++ op)
 
 parseUnary :: ConstParser Int
 parseUnary = do
