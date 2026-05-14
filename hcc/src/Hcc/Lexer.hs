@@ -27,7 +27,7 @@ lexC source = go (LexState source (SrcPos 1 1) True) [] where
       | startsLineComment (lsInput st) -> go (skipLineComment st) acc
       | startsBlockComment (lsInput st) -> skipBlockComment st >>= \st' -> go st' acc
       | isIdentStart c -> let (tok, st') = lexIdent st in go st' (tok:acc)
-      | isDigit c -> let (tok, st') = lexNumber st in go st' (tok:acc)
+      | isDigit c -> lexNumber st >>= \(tok, st') -> go st' (tok:acc)
       | c == '\'' -> lexQuoted '\'' TokChar st >>= \(tok, st') -> go st' (tok:acc)
       | c == '"' -> lexQuoted '"' TokString st >>= \(tok, st') -> go st' (tok:acc)
       | otherwise -> case lexPunct st of
@@ -63,13 +63,19 @@ startsBlockComment s = case s of
 skipLineComment :: LexState -> LexState
 skipLineComment st = snd (takeUntilNewline st)
 
+-- C11 5.1.1.2 phase 3: each comment is replaced by one space character, so a
+-- block comment must not flip the line-start flag that #-directive recognition
+-- depends on.
 skipBlockComment :: LexState -> Either LexError LexState
-skipBlockComment st = go (advanceMany "/*" st { lsInput = drop 2 (lsInput st) }) where
-  start = lsPos st
-  go cur = case lsInput cur of
-    [] -> Left (LexError start "unterminated block comment")
-    '*':'/':cs -> Right (advanceMany "*/" cur { lsInput = cs })
-    c:cs -> go (advance c cur { lsInput = cs })
+skipBlockComment st = case go (advanceMany "/*" st { lsInput = drop 2 (lsInput st) }) of
+  Left err -> Left err
+  Right st' -> Right st' { lsBol = lsBol st }
+  where
+    start = lsPos st
+    go cur = case lsInput cur of
+      [] -> Left (LexError start "unterminated block comment")
+      '*':'/':cs -> Right (advanceMany "*/" cur { lsInput = cs })
+      c:cs -> go (advance c cur { lsInput = cs })
 
 lexIdent :: LexState -> (Token, LexState)
 lexIdent st = (Token (Span start end) (TokIdent text), st') where
@@ -83,22 +89,21 @@ takeIdent st = go st [] where
     c:cs | isIdentChar c -> go (advance c cur { lsInput = cs }) (c:acc)
     _ -> (reverse acc, cur)
 
-lexNumber :: LexState -> (Token, LexState)
-lexNumber st = (Token (Span start end) kind, st') where
-  start = lsPos st
-  (text, cls, st') = takeNumber st
-  end = lsPos st'
-  kind = case cls of
-    NumberInt -> TokInt text
-    NumberFloat -> TokFloat text
+lexNumber :: LexState -> Either LexError (Token, LexState)
+lexNumber st = case takeNumber st of
+  Left err -> Left err
+  Right (text, cls, st') -> Right (Token (Span (lsPos st) (lsPos st')) (kind cls text), st')
+  where
+    kind NumberInt = TokInt
+    kind NumberFloat = TokFloat
 
-takeNumber :: LexState -> (String, NumberClass, LexState)
+takeNumber :: LexState -> Either LexError (String, NumberClass, LexState)
 takeNumber st = case lsInput st of
   '0':'x':rest -> takeHexNumber "0x" rest st
   '0':'X':rest -> takeHexNumber "0X" rest st
-  _ -> takeDecimalNumber st
+  _ -> Right (takeDecimalNumber st)
 
-takeHexNumber :: String -> String -> LexState -> (String, NumberClass, LexState)
+takeHexNumber :: String -> String -> LexState -> Either LexError (String, NumberClass, LexState)
 takeHexNumber prefix rest st =
   let st0 = advanceMany prefix st { lsInput = rest }
       (digits, st1) = takeWhileState isHexDigit st0
@@ -109,7 +114,9 @@ takeHexNumber prefix rest st =
           then takeWhileState isIntSuffix st3
           else takeWhileState isFloatSuffix st3
       cls = if null fraction && null exponentText then NumberInt else NumberFloat
-  in (prefix ++ digits ++ fraction ++ exponentText ++ suffix, cls, st4)
+  in if null digits && null fraction
+     then Left (LexError (lsPos st) ("hexadecimal constant requires at least one digit: " ++ prefix ++ suffix))
+     else Right (prefix ++ digits ++ fraction ++ exponentText ++ suffix, cls, st4)
 
 takeHexFraction :: LexState -> (String, LexState)
 takeHexFraction st = case lsInput st of
