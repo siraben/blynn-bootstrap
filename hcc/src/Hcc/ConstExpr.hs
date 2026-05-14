@@ -49,17 +49,17 @@ applyOp op lhs rhs = case op of
     else pure (lhs `mod` rhs)
   "<<" -> pure (shiftLeftInt lhs (max 0 rhs))
   ">>" -> pure (shiftRightInt lhs (max 0 rhs))
-  "<" -> pure (truth (lhs < rhs))
-  "<=" -> pure (truth (lhs <= rhs))
-  ">" -> pure (truth (lhs > rhs))
-  ">=" -> pure (truth (lhs >= rhs))
-  "==" -> pure (truth (lhs == rhs))
-  "!=" -> pure (truth (lhs /= rhs))
+  "<" -> pure (boolToInt (lhs < rhs))
+  "<=" -> pure (boolToInt (lhs <= rhs))
+  ">" -> pure (boolToInt (lhs > rhs))
+  ">=" -> pure (boolToInt (lhs >= rhs))
+  "==" -> pure (boolToInt (lhs == rhs))
+  "!=" -> pure (boolToInt (lhs /= rhs))
   "&" -> pure (bitAndInt lhs rhs)
   "^" -> pure (bitXorInt lhs rhs)
   "|" -> pure (bitOrInt lhs rhs)
-  "&&" -> pure (truth (lhs /= 0 && rhs /= 0))
-  "||" -> pure (truth (lhs /= 0 || rhs /= 0))
+  "&&" -> pure (boolToInt (lhs /= 0 && rhs /= 0))
+  "||" -> pure (boolToInt (lhs /= 0 || rhs /= 0))
   _ -> pFail ("unhandled operator in constant expression: " ++ op)
 
 parseUnary :: ConstParser Int
@@ -67,7 +67,7 @@ parseUnary = do
   mtok <- pPeekMaybe
   case mtok of
     Just tok -> case constTokenKind tok of
-      TokPunct "!" -> advance >> ((truth . (== 0)) <$> parseUnary)
+      TokPunct "!" -> advance >> ((boolToInt . (== 0)) <$> parseUnary)
       TokPunct "+" -> advance >> parseUnary
       TokPunct "-" -> advance >> (negate <$> parseUnary)
       TokPunct "~" -> advance >> (bitNotInt <$> parseUnary)
@@ -100,10 +100,10 @@ parseDefinedOperator = do
     then do
       name <- constNeedIdent "bad defined operator in #if expression"
       constNeedPunct ")" "bad defined operator in #if expression"
-      pure (truth (name /= ""))
+      pure (boolToInt (name /= ""))
     else do
       name <- constNeedIdent "bad defined operator in #if expression"
-      pure (truth (name /= ""))
+      pure (boolToInt (name /= ""))
 
 advance :: ConstParser ()
 advance = pSkip "unexpected end of constant expression"
@@ -124,9 +124,6 @@ constNeedIdent err = do
   case constTokenKind tok of
     TokIdent name -> pure name
     _ -> pFail err
-
-truth :: Bool -> Int
-truth value = if value then 1 else 0
 
 constTokenKind :: Token -> TokenKind
 constTokenKind (Token _ kind) = kind

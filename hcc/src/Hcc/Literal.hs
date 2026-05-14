@@ -18,9 +18,13 @@ module Literal
   , isHexDigit
   , decimalDigit
   , hexDigit
+  , boolToInt
   ) where
 
 import Base
+
+boolToInt :: Bool -> Int
+boolToInt value = if value then 1 else 0
 
 pow2 :: Int -> Int
 pow2 n = if n <= 0 then 1 else 2 * pow2 (n - 1)
