@@ -93,6 +93,9 @@ registerImplicitCallsExpr locals expr = case expr of
   EAssign left right -> do
     registerImplicitCallsExpr locals left
     registerImplicitCallsExpr locals right
+  ECompoundAssign _ left right -> do
+    registerImplicitCallsExpr locals left
+    registerImplicitCallsExpr locals right
   _ -> pure ()
 
 registerImplicitCallsExprs :: [String] -> [Expr] -> CompileM ()

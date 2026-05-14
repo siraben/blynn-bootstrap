@@ -310,6 +310,10 @@ lowerSideEffect expr = case expr of
     lowerIndirectSideEffect callee args
   EAssign lhs rhs ->
     lowerAssignmentInstrs lhs rhs
+  ECompoundAssign op lhs rhs -> do
+    result <- lowerCompoundAssignment op lhs rhs
+    case result of
+      (instrs, _) -> pure instrs
   EPostfix "--" target ->
     lowerIncDecInstrs False ISub target
   EPostfix "++" target ->
@@ -679,6 +683,8 @@ lowerExpr expr = case expr of
     lowerIndirectCall callee args
   EAssign lhs rhs ->
     lowerAssignment lhs rhs
+  ECompoundAssign op lhs rhs ->
+    lowerCompoundAssignment op lhs rhs
   EPostfix "--" target ->
     lowerIncDec False ISub target
   EPostfix "++" target ->
@@ -946,6 +952,61 @@ lowerAssignment lhs rhs = do
   (coerceInstrs, coerceOp) <- coerceScalar targetTy rhsOp
   writeInstrs <- writeLValue lvalue coerceOp
   pure (lhsInstrs ++ rhsInstrs ++ coerceInstrs ++ writeInstrs, coerceOp)
+
+-- C11 6.5.16.2: the lvalue is evaluated only once. We compute the address,
+-- read the current value, perform the binary op, store the result back, and
+-- yield the new value.
+lowerCompoundAssignment :: String -> Expr -> Expr -> CompileM ([Instr], Operand)
+lowerCompoundAssignment op lhs rhs = do
+  lhsResult <- lowerLValue lhs
+  let lhsInstrs = fst lhsResult
+  let lvalue = snd lhsResult
+  readResult <- readLValue lvalue
+  let readInstrs = fst readResult
+  let currentOp = snd readResult
+  targetTy <- lValueType lvalue
+  rhsResult <- lowerExpr rhs
+  let rhsInstrs = fst rhsResult
+  let rhsOp = snd rhsResult
+  opResult <- compoundBinOp op targetTy currentOp rhs rhsOp
+  let opInstrs = fst opResult
+  let resultOp = snd opResult
+  coerceResult <- coerceScalar targetTy resultOp
+  let coerceInstrs = fst coerceResult
+  let coerceOp = snd coerceResult
+  writeInstrs <- writeLValue lvalue coerceOp
+  pure ( lhsInstrs ++ readInstrs ++ rhsInstrs ++ opInstrs ++ coerceInstrs ++ writeInstrs
+       , coerceOp)
+
+-- compoundBinOp performs the binary op given the already-loaded lhs operand,
+-- the rhs expression (for type inspection), and the lowered rhs operand. It
+-- handles pointer scaling for += / -= on pointer lvalues.
+compoundBinOp :: String -> CType -> Operand -> Expr -> Operand -> CompileM ([Instr], Operand)
+compoundBinOp op targetTy lhsOp rhsExpr rhsOp = case targetTy of
+  CPtr elemTy | op == "+" || op == "-" ->
+    pointerCompoundOffset (if op == "+" then IAdd else ISub) lhsOp rhsOp elemTy
+  _ -> do
+    iop <- case op of
+      "/" -> pure (if isUnsignedType targetTy then IUDiv else IDiv)
+      "%" -> pure (if isUnsignedType targetTy then IUMod else IMod)
+      ">>" -> shiftRightOp rhsExpr
+      _ -> case lowerBinOp op of
+        Just o -> pure o
+        Nothing -> throwC ("unsupported compound assignment operator: " ++ op)
+    out <- freshTemp
+    pure ([IBin out iop lhsOp rhsOp], OTemp out)
+
+pointerCompoundOffset :: BinOp -> Operand -> Operand -> CType -> CompileM ([Instr], Operand)
+pointerCompoundOffset op base offset elemTy = do
+  size <- typeSize elemTy
+  if size == 1
+    then do
+      out <- freshTemp
+      pure ([IBin out op base offset], OTemp out)
+    else do
+      scaled <- freshTemp
+      out <- freshTemp
+      pure ([IBin scaled IMul offset (OImm size), IBin out op base (OTemp scaled)], OTemp out)
 
 lowerIncDec :: Bool -> BinOp -> Expr -> CompileM ([Instr], Operand)
 lowerIncDec prefix op target = do
@@ -1337,6 +1398,7 @@ exprType expr = case expr of
       (Just ty, Just _) -> Just ty
       _ -> Nothing)
   EAssign lhs _ -> exprType lhs
+  ECompoundAssign _ lhs _ -> exprType lhs
   EPostfix _ value -> exprType value
   EUnary "++" value -> exprType value
   EUnary "--" value -> exprType value
