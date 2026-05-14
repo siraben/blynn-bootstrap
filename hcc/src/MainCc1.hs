@@ -5,7 +5,9 @@ import DriverCommon
 import HccSystem
 import M1Ir
 import Parser
+import TokenIr
 import TypesAst
+import TypesToken
 
 main :: IO ()
 main = do
@@ -27,7 +29,7 @@ checkFiles files = mapM_ checkFile files
 checkFile :: String -> IO ()
 checkFile path = do
   source <- hccReadFile path
-  case lexPlainSource source >>= mapParseError . parseProgram of
+  case decodeOrLex source >>= mapParseError . parseProgram of
     Left msg -> die (path ++ ":" ++ msg)
     Right _ -> pure ()
 
@@ -39,8 +41,8 @@ compileM1Ir args = do
       let trace = hccTraceIf (asmTrace opts)
       trace ("read " ++ asmInput opts)
       source <- hccReadFile (asmInput opts)
-      trace "lex"
-      case lexPlainSource source of
+      trace "decode"
+      case decodeOrLex source of
         Left msg -> die (asmInput opts ++ ":" ++ msg)
         Right toks -> do
           trace "parse"
@@ -76,6 +78,14 @@ traceLine trace msg = trace msg >> pure ()
 mapParseError :: Either ParseError a -> Either String a
 mapParseError (Left (ParseError pos msg)) = Left (showPos pos ++ ": " ++ msg)
 mapParseError (Right ast) = Right ast
+
+decodeOrLex :: String -> Either String [Token]
+decodeOrLex source =
+  if isTokenIr source
+    then case decodeTokens source of
+      Just toks -> Right toks
+      Nothing -> Left "invalid HCC token IR"
+    else lexPlainSource source
 
 hccTrace :: String -> IO ()
 hccTrace msg = hccPutErrLine ("hcc1: " ++ msg)

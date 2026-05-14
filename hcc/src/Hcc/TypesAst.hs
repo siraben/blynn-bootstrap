@@ -121,7 +121,7 @@ renderExprTag expr = case expr of
   EFloat _ -> "EFloat"
   EChar _ -> "EChar"
   EString _ -> "EString"
-  EVar _ -> "EVar"
+  EVar name -> "EVar " ++ name
   ECall _ _ -> "ECall"
   EIndex _ _ -> "EIndex"
   EMember _ _ -> "EMember"

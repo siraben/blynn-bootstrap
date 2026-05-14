@@ -5,7 +5,7 @@ import DriverCommon
 import HccSystem
 import IncludeExpand
 import Preprocessor
-import TypesToken
+import TokenIr
 
 main :: IO ()
 main = do
@@ -27,14 +27,8 @@ preprocessFile args = case assemblyArgs ("-S":args) of
     let sourceWithDefines = renderDefines (asmDefines opts) ++ source
     case lexPlainSource sourceWithDefines >>= mapPreprocessError . preprocess of
       Left msg -> die (asmInput opts ++ ":" ++ msg)
-      Right toks -> hccPutStr (renderTokens toks)
+      Right toks -> hccPutStr (encodeTokens toks)
 
 mapPreprocessError :: Either PreprocessError a -> Either String a
 mapPreprocessError (Left (PreprocessError pos msg)) = Left (showPos pos ++ ": " ++ msg)
 mapPreprocessError (Right toks) = Right toks
-
-renderTokens :: [Token] -> String
-renderTokens toks = foldr renderToken "\n" toks
-
-renderToken :: Token -> String -> String
-renderToken (Token _ kind) rest = tokenText kind ++ ' ' : rest
