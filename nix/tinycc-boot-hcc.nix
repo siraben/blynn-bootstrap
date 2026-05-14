@@ -7,6 +7,7 @@
   minimalBootstrap,
   mesLibc,
   m2libc,
+  patchTool ? null,
   pname ? "tinycc-boot-hcc",
   enableTrace ? false,
   m1ArtifactsOnly ? false,
@@ -78,7 +79,7 @@ stdenvNoCC.mkDerivation {
   nativeBuildInputs = [
     hcc
     minimalBootstrap.stage0-posix.mescc-tools
-  ];
+  ] ++ lib.optional (patchTool != null) patchTool;
 
   M2_ARCH = minimalBootstrap.stage0-posix.m2libcArch;
   M2_OS = minimalBootstrap.stage0-posix.m2libcOS;
@@ -416,7 +417,20 @@ stdenvNoCC.mkDerivation {
     cp final-libs/libc.a final-libs/libgetopt.a final-libs/libtcc1.a $out/lib/
     mkdir -p $out/include
     cp -R ${mesLibc}/include/. $out/include/
-    chmod -R u+w $out/include
+    make_writable_tree() {
+      chmod 755 "$1"
+      if [ -d "$1" ]; then
+        for entry in "$1"/* "$1"/.[!.]* "$1"/..?*; do
+          [ -e "$entry" ] || continue
+          if [ -d "$entry" ]; then
+            make_writable_tree "$entry"
+          else
+            chmod 644 "$entry"
+          fi
+        done
+      fi
+    }
+    make_writable_tree $out/include
     cp -R include/. $out/include/
     fi
     runHook postInstall
