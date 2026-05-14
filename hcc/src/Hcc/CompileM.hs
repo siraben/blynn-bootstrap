@@ -31,6 +31,8 @@ module CompileM
   , targetWordSize
   , currentFunctionName
   , withCurrentFunction
+  , currentReturnType
+  , withCurrentReturnType
   , withFunctionScope
   , withVarScope
   , withLoopTargets
@@ -67,6 +69,7 @@ data CompileState = CompileState
   , csContinueTargets :: [BlockId]
   , csTargetBits :: Int
   , csCurrentFunction :: Maybe String
+  , csCurrentReturnType :: Maybe CType
   }
 
 data CompileM a = CompileM
@@ -112,6 +115,7 @@ initialCompileState = CompileState
   , csContinueTargets = []
   , csTargetBits = 64
   , csCurrentFunction = Nothing
+  , csCurrentReturnType = Nothing
   }
 
 initialCompileStateForTarget :: String -> Int -> CompileState
@@ -249,6 +253,15 @@ withCurrentFunction name action = CompileM $ \st ->
   case unCompileM action st { csCurrentFunction = Just name } of
     Left err -> Left err
     Right (x, st') -> Right (x, st' { csCurrentFunction = csCurrentFunction st })
+
+currentReturnType :: CompileM (Maybe CType)
+currentReturnType = CompileM $ \st -> Right (csCurrentReturnType st, st)
+
+withCurrentReturnType :: CType -> CompileM a -> CompileM a
+withCurrentReturnType ty action = CompileM $ \st ->
+  case unCompileM action st { csCurrentReturnType = Just ty } of
+    Left err -> Left err
+    Right (x, st') -> Right (x, st' { csCurrentReturnType = csCurrentReturnType st })
 
 withFunctionScope :: CompileM a -> CompileM a
 withFunctionScope action = CompileM $ \st ->

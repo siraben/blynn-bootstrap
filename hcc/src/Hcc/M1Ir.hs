@@ -39,8 +39,8 @@ buildM1IrModuleWithDataPrefixTarget prefix target ast = case ast of
 lowerTopDeclsIr :: CompileState -> [TopDecl] -> Either CodegenError (CompileState, [TopItemIr])
 lowerTopDeclsIr st decls = case decls of
   [] -> Right (st, [])
-  Function _ name params body:rest ->
-    case mapCompileRun (unCompileM (registerImplicitCalls (paramDeclNamesIr params) body >> lowerFunction name params body) st) of
+  Function retTy name params body:rest ->
+    case mapCompileRun (unCompileM (registerImplicitCalls (paramDeclNamesIr params) body >> lowerFunction retTy name params body) st) of
       Left err -> Left err
       Right (fn, st') ->
         case pendingDataItemsIr st' of
