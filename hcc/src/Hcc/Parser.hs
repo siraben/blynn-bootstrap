@@ -117,7 +117,51 @@ topDecl = do
   emptyDecl <- eatPunct ";"
   if emptyDecl
     then pure (TypeDecl [])
-    else topDeclNonEmpty
+    else do
+      staticAssert <- eatIdent "_Static_assert"
+      if staticAssert
+        then parseStaticAssert
+        else topDeclNonEmpty
+
+parseStaticAssert :: Parser TopDecl
+parseStaticAssert = do
+  needPunct "("
+  toks <- pRaw $ \env tokens -> case takeStaticAssertExpr 0 [] tokens of
+    Just (taken, rest) -> Consumed (Ok taken env rest)
+    Nothing -> Unconsumed (Ok [] env tokens)
+  constants <- parserConstants
+  case parseConstExpr constants toks of
+    Right (value, []) ->
+      if value == 0
+        then peek >>= \tok -> failAt tok "_Static_assert failed"
+        else do
+          skipOptionalStaticAssertMessage
+          needPunct ")"
+          needPunct ";"
+          pure (TypeDecl [])
+    Right (_, tok:_) -> failAt tok "unexpected tokens in _Static_assert expression"
+    Left msg -> peek >>= \tok -> failAt tok ("invalid _Static_assert expression: " ++ msg)
+
+takeStaticAssertExpr :: Int -> [Token] -> [Token] -> Maybe ([Token], [Token])
+takeStaticAssertExpr depth acc toks = case toks of
+  [] -> Nothing
+  tok:rest -> case tokenKind tok of
+    TokPunct "(" -> takeStaticAssertExpr (depth + 1) (tok:acc) rest
+    TokPunct ")" | depth == 0 -> Just (reverse acc, toks)
+    TokPunct ")" -> takeStaticAssertExpr (depth - 1) (tok:acc) rest
+    TokPunct "," | depth == 0 -> Just (reverse acc, toks)
+    _ -> takeStaticAssertExpr depth (tok:acc) rest
+
+skipOptionalStaticAssertMessage :: Parser ()
+skipOptionalStaticAssertMessage = do
+  hasComma <- eatPunct ","
+  if hasComma
+    then do
+      tok <- peek
+      case tokenKind tok of
+        TokString _ -> advanceToken
+        _ -> failAt tok "expected string literal in _Static_assert"
+    else pure ()
 
 topDeclNonEmpty :: Parser TopDecl
 topDeclNonEmpty = do
@@ -695,6 +739,8 @@ skipQualifiers :: Parser ()
 skipQualifiers = do
   tok <- peekMaybe
   case fmap tokenKind tok of
+    Just (TokIdent name) | name `elem` unsupportedQualifiers ->
+      peek >>= \t -> failAt t (name ++ " is not supported")
     Just (TokIdent name) | name `elem` storageAndTypeQualifiers ->
       advanceToken >> skipQualifiers
     Just (TokIdent name) | name `elem` ["__attribute__", "__extension__"] ->
@@ -1017,7 +1063,13 @@ builtinTypeNames =
 
 storageAndTypeQualifiers :: [String]
 storageAndTypeQualifiers =
-  ["const", "volatile", "static", "extern", "register", "inline", "auto"]
+  [ "const", "volatile", "static", "extern", "register", "inline", "auto"
+  , "restrict", "_Noreturn", "_Atomic"
+  ]
+
+unsupportedQualifiers :: [String]
+unsupportedQualifiers =
+  ["_Thread_local", "__thread", "_Alignas", "_Generic"]
 
 tokenStartsType :: Token -> Parser Bool
 tokenStartsType tok = case tokenKind tok of
