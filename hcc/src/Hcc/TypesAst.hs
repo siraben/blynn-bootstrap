@@ -93,6 +93,7 @@ data Expr
   | EBinary String Expr Expr
   | ECond Expr Expr Expr
   | EAssign Expr Expr
+  | ECompoundAssign String Expr Expr
   | EInitList [Expr]
 
 renderStmtTag :: Stmt -> String
@@ -134,4 +135,5 @@ renderExprTag expr = case expr of
   EBinary _ _ _ -> "EBinary"
   ECond _ _ _ -> "ECond"
   EAssign _ _ -> "EAssign"
+  ECompoundAssign _ _ _ -> "ECompoundAssign"
   EInitList _ -> "EInitList"
