@@ -124,17 +124,18 @@ assemblyArgs args = finish (go args Nothing Nothing [] [] 64)
       case parseTargetBits targetName of
         Just bits -> go xs out input includes defines bits
         Nothing -> Left ("hcc: unsupported target: " ++ targetName)
-    go (flag:xs) out input includes defines target
-      | "-I" `prefixOf` flag && length flag > 2 =
-          go xs out input (drop 2 flag:includes) defines target
-      | "-D" `prefixOf` flag && length flag > 2 =
-          go xs out input includes (parseDefine (drop 2 flag):defines) target
-      | ignoredAssemblyFlag flag =
-          go xs out input includes defines target
-      | take 1 flag == "-" =
-          Left ("hcc: unsupported option: " ++ flag)
-      | otherwise =
-          go xs out (Just flag) includes defines target
+    go (flag:xs) out input includes defines target = case flag of
+      '-':'I':path@(_:_) ->
+        go xs out input (path:includes) defines target
+      '-':'D':def@(_:_) ->
+        go xs out input includes (parseDefine def:defines) target
+      _
+        | ignoredAssemblyFlag flag ->
+            go xs out input includes defines target
+        | take 1 flag == "-" ->
+            Left ("hcc: unsupported option: " ++ flag)
+        | otherwise ->
+            go xs out (Just flag) includes defines target
 
 parseTargetBits :: String -> Maybe Int
 parseTargetBits target = case target of
