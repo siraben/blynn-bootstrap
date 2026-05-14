@@ -27,10 +27,10 @@
 -#define va_arg(v,l)     __builtin_va_arg(v,l)
 -#define va_copy(d,s)    __builtin_va_copy(d,s)
 +#if defined(__TINYC__) && defined(__x86_64__) && defined(__HCC_TCC_VA_LIST)
-+void __va_start(void *ap, void *fp);
-+void *__va_arg(void *ap, int arg_type, int size, int align);
-+#define va_start(ap, last) __va_start(ap, __builtin_frame_address(0))
-+#define va_arg(ap, type) (*(type *)(__va_arg(ap, __builtin_va_arg_types(type), sizeof(type), __alignof__(type))))
++void __hcc_va_start(void *ap, void *fp);
++void *__hcc_va_arg(void *ap, int arg_type, int size, int align);
++#define va_start(ap, last) __hcc_va_start(ap, __builtin_frame_address(0))
++#define va_arg(ap, type) (*(type *)(__hcc_va_arg(ap, __builtin_va_arg_types(type), sizeof(type), __alignof__(type))))
 +#define va_copy(dest, src) (*(dest) = *(src))
 +#define va_end(ap)
 +#else

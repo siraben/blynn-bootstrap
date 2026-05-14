@@ -754,6 +754,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
         # and host GHC compiles HCC directly.
         hccBy = rec {
           host.ghc.native = hccHostGhcNative;
+          host.microhs.native = hccHostMicrohsNative;
 
           ghc.precisely.gcc = hccFromPrecisely {
             pname = "hcc-ghc-precisely-gcc";
@@ -829,6 +830,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
 
         tinyccBy = {
           host.ghc.native = tinyccFromHcc "tinycc-boot-hcc-host-ghc-native" hccBy.host.ghc.native;
+          host.microhs.native = tinyccFromHcc "tinycc-boot-hcc-host-microhs-native" hccBy.host.microhs.native;
           riscv64.host.ghc.native =
             tinyccFromHccForTarget "tinycc-boot-hcc-host-ghc-native-riscv64" hccBy.host.ghc.native "riscv64";
           ghc.precisely.gcc = tinyccFromHcc "tinycc-boot-hcc-ghc-precisely-gcc" hccBy.ghc.precisely.gcc;
@@ -902,10 +904,10 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
               bash = final.bash_2_05;
               tinycc = final.tinycc-mes;
               gnused = final.gnused-mes;
-              hccTinyccVaList = true;
             };
             tinycc-musl-intermediate = lib.recurseIntoAttrs (final.callPackage ./nix/minimal-bootstrap/tinycc-musl.nix {
               stdenvNoCC = pkgs.stdenvNoCC;
+              fetchgit = pkgs.fetchgit;
               bash = final.bash_2_05;
               tinycc = final.tinycc-mes;
               musl = final.musl-tcc-intermediate;
@@ -918,9 +920,24 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             };
             tinycc-musl = lib.recurseIntoAttrs (final.callPackage ./nix/minimal-bootstrap/tinycc-musl.nix {
               stdenvNoCC = pkgs.stdenvNoCC;
+              fetchgit = pkgs.fetchgit;
               bash = final.bash_2_05;
               tinycc = final.tinycc-musl-intermediate;
               musl = final.musl-tcc;
+            });
+            musl-tcc-dynamic = final.callPackage ./nix/minimal-bootstrap/musl-tcc.nix {
+              bash = final.bash_2_05;
+              tinycc = final.tinycc-musl;
+              gnused = final.gnused-mes;
+              enableShared = true;
+            };
+            tinycc-musl-dynamic = lib.recurseIntoAttrs (final.callPackage ./nix/minimal-bootstrap/tinycc-musl.nix {
+              stdenvNoCC = pkgs.stdenvNoCC;
+              fetchgit = pkgs.fetchgit;
+              bash = final.bash_2_05;
+              tinycc = final.tinycc-musl;
+              musl = final.musl-tcc-dynamic;
+              staticByDefault = false;
             });
           });
 
@@ -964,6 +981,59 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           host.ghc.native = minimalBootstrapBy.host.ghc.native.tinycc-musl;
           m2.precisely.m2 = minimalBootstrapBy.m2.precisely.m2.tinycc-musl;
           m2.precisely.gccm2 = minimalBootstrapBy.m2.precisely.gccm2.tinycc-musl;
+        };
+
+        tinyccMuslDynamicBy = {
+          host.ghc.native = minimalBootstrapBy.host.ghc.native.tinycc-musl-dynamic;
+        };
+
+        hugsRunhugsMuslFromTinycc = pname: tinyccMusl:
+          pkgs.callPackage ./nix/hugs-runhugs-tcc-musl.nix {
+            stdenvNoCC = pkgs.stdenvNoCC;
+            inherit pname tinyccMusl;
+          };
+
+        hugsRunhugsMuslDynamicBy = {
+          host.ghc.native =
+            hugsRunhugsMuslFromTinycc "hugs98-runhugs-host-ghc-native-tcc-musl-dynamic" tinyccMuslDynamicBy.host.ghc.native;
+        };
+
+        microhsNixpkgsPatchDir = pkgs.path + "/pkgs/development/compilers/microhs/patches";
+        microhsPatches = [
+          (microhsNixpkgsPatchDir + "/hugs.patch")
+          (microhsNixpkgsPatchDir + "/hugs-viewpatterns.patch")
+          (microhsNixpkgsPatchDir + "/link-math.patch")
+        ];
+
+        microhsHugsBootFromHugs = pname: hugs:
+          pkgs.callPackage ./nix/microhs-hugs-boot.nix {
+            inherit pname hugs;
+            patches = microhsPatches;
+          };
+
+        microhsHugsBootBy = {
+          host.ghc.native =
+            microhsHugsBootFromHugs "microhs-hugs-boot-host-ghc-native-tcc-musl-dynamic" hugsRunhugsMuslDynamicBy.host.ghc.native;
+        };
+
+        microhsStage1FromBoot = pname: microhsBoot:
+          pkgs.callPackage ./nix/microhs-stage1.nix {
+            inherit pname microhsBoot;
+            patches = microhsPatches ++ [
+              (microhsNixpkgsPatchDir + "/simple-unicode.patch")
+            ];
+          };
+
+        microhsStage1By = {
+          host.ghc.native =
+            microhsStage1FromBoot "microhs-stage1-host-ghc-native-tcc-musl-dynamic" microhsHugsBootBy.host.ghc.native;
+        };
+
+        hccHostMicrohsNative = pkgs.callPackage ./nix/hcc-microhs.nix {
+          stdenv = pkgs.stdenv;
+          pname = "hcc-host-microhs-native";
+          microhs = microhsStage1By.host.ghc.native;
+          src = hccSrc;
         };
 
         gnuHelloFromBootstrap = pname: bootstrap:
@@ -1086,7 +1156,17 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             m1 = tinyccM1By;
           };
 
+          hugs = {
+            runhugsMuslDynamic = hugsRunhugsMuslDynamicBy;
+          };
+
+          microhs = {
+            hugsBoot = microhsHugsBootBy;
+            stage1 = microhsStage1By;
+          };
+
           tinyccMusl = tinyccMuslBy;
+          tinyccMuslDynamic = tinyccMuslDynamicBy;
 
           gcc46 = gcc46By;
           gcc46Cxx = gcc46CxxBy;

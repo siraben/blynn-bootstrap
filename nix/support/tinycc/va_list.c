@@ -15,7 +15,7 @@ typedef struct {
     char *reg_save_area;
 } __va_list_struct;
 
-void __va_start(__va_list_struct *ap, void *fp)
+void __hcc_va_start(__va_list_struct *ap, void *fp)
 {
     memset(ap, 0, sizeof(__va_list_struct));
     *ap = *(__va_list_struct *)((char *)fp - 16);
@@ -23,9 +23,9 @@ void __va_start(__va_list_struct *ap, void *fp)
     ap->reg_save_area = (char *)fp - 176 - 16;
 }
 
-void *__va_arg(__va_list_struct *ap,
-               int arg_type,
-               int size, int align)
+void *__hcc_va_arg(__va_list_struct *ap,
+                   int arg_type,
+                   int size, int align)
 {
     size = (size + 7) & ~7;
     align = (align + 7) & ~7;
