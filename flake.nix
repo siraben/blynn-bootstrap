@@ -589,10 +589,18 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           blynnSrc = blynnUpstreamSrc;
         };
 
-        hccBlynnCFromPrecisely = pname: precisely:
-          pkgs.callPackage ./nix/hcc-blynn-c.nix {
+        hccBlynnObjsFromPrecisely = pname: precisely:
+          pkgs.callPackage ./nix/hcc-blynn-objs.nix {
             stdenvNoCC = rawStdenvNoCC;
             inherit pname precisely;
+            sourceBundle = hccBlynnSources;
+            shareName = pname;
+          };
+
+        hccBlynnCFromPrecisely = pname: precisely: commonObjects:
+          pkgs.callPackage ./nix/hcc-blynn-c.nix {
+            stdenvNoCC = rawStdenvNoCC;
+            inherit pname precisely commonObjects;
             sourceBundle = hccBlynnSources;
             shareName = pname;
           };
@@ -604,9 +612,15 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
         };
 
         hccBlynnCBy = {
-          ghc.precisely = hccBlynnCFromPrecisely "hcc-blynn-c-ghc-precisely" preciselyBy.ghc.debug;
-          gcc.precisely = hccBlynnCFromPrecisely "hcc-blynn-c-gcc-precisely" preciselyBy.gcc.host;
-          m2.precisely = hccBlynnCFromPrecisely "hcc-blynn-c-m2-precisely" preciselyBy.m2.stage0;
+          ghc.precisely = hccBlynnCFromPrecisely "hcc-blynn-c-ghc-precisely" preciselyBy.ghc.debug hccBlynnObjsBy.ghc.precisely;
+          gcc.precisely = hccBlynnCFromPrecisely "hcc-blynn-c-gcc-precisely" preciselyBy.gcc.host hccBlynnObjsBy.gcc.precisely;
+          m2.precisely = hccBlynnCFromPrecisely "hcc-blynn-c-m2-precisely" preciselyBy.m2.stage0 hccBlynnObjsBy.m2.precisely;
+        };
+
+        hccBlynnObjsBy = {
+          ghc.precisely = hccBlynnObjsFromPrecisely "hcc-blynn-objs-ghc-precisely" preciselyBy.ghc.debug;
+          gcc.precisely = hccBlynnObjsFromPrecisely "hcc-blynn-objs-gcc-precisely" preciselyBy.gcc.host;
+          m2.precisely = hccBlynnObjsFromPrecisely "hcc-blynn-objs-m2-precisely" preciselyBy.m2.stage0;
         };
 
         hccFromPrecisely = {
@@ -1060,6 +1074,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             profile.host.ghc.native = hccProfileHostGhcNative;
             blynn = {
               sources = hccBlynnSources;
+              objs = hccBlynnObjsBy;
               c = hccBlynnCBy;
             };
           };

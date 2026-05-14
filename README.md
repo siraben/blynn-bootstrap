@@ -73,7 +73,10 @@ scripts/prepare-upstreams.sh
 scripts/bootstrap-blynn-root.sh
 METHODICALLY=$PWD/build/blynn-root/bin/methodically scripts/bootstrap-blynn-precisely.sh
 scripts/hcc-blynn-sources.sh
-PRECISELY_UP=$PWD/build/blynn-precisely/bin/precisely_up scripts/hcc-blynn-c.sh
+PRECISELY_UP=$PWD/build/blynn-precisely/bin/precisely_up scripts/hcc-blynn-objs.sh
+PRECISELY_UP=$PWD/build/blynn-precisely/bin/precisely_up \
+  HCC_BLYNN_OBJECTS_DIR=$PWD/build/hcc-blynn-objs \
+  scripts/hcc-blynn-c.sh
 ```
 
 If you are preparing the TinyCC source used by the HCC bootstrap outside Nix,
@@ -94,7 +97,9 @@ The default outputs are:
   `precisely_up`
 - `build/hcc-blynn-sources`: single-stream Blynn inputs assembled from
   `hcc/hcpp.modules` and `hcc/hcc1.modules`
-- `build/hcc-blynn-c`: C generated from those HCC Blynn inputs
+- `build/hcc-blynn-objs`: serialized Blynn object IR for shared HCC modules
+- `build/hcc-blynn-c`: C generated from those HCC Blynn inputs and cached
+  shared object IR
 
 Use `M2_ARCH` and `M2_OS` to select the M2libc target, matching the stage0
 tooling convention used by nixpkgs' minimal-bootstrap. For example:
