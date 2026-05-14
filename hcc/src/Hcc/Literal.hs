@@ -77,11 +77,6 @@ bitOrBool lhs rhs = lhs || rhs
 bitXorBool :: Bool -> Bool -> Bool
 bitXorBool lhs rhs = lhs /= rhs
 
--- bitFoldFull walks every value bit of a two's-complement Int.
--- bitTopPositive is the largest non-sign bit we can iterate without `bit * 2`
--- overflowing a signed 64-bit Int; bitSignContribution then folds in the
--- sign bit so e.g. `bitAndInt (-1) (-1)` reproduces all-ones (i.e. -1) and
--- masks against values >= 2^31 are not silently truncated.
 bitFoldFull :: (Bool -> Bool -> Bool) -> Int -> Int -> Int
 bitFoldFull op lhs rhs =
   bitFoldInt op lhs rhs 1 0 + bitSignContribution op lhs rhs

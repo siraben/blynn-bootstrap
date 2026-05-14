@@ -22,12 +22,9 @@ import LowerSwitchHelpers
 import TypesLower
 import LowerTypeInfo
 
-lowerFunction :: CType -> String -> [Param] -> [Stmt] -> CompileM FunctionIr
-lowerFunction retTy name params body =
-  withErrorContext ("function " ++ name)
-    (withFunctionScope
-      (withCurrentFunction name
-        (withCurrentReturnType retTy (lowerFunctionBody name params body))))
+lowerFunction :: String -> [Param] -> [Stmt] -> CompileM FunctionIr
+lowerFunction name params body =
+  withErrorContext ("function " ++ name) (withFunctionScope (withCurrentFunction name (lowerFunctionBody name params body)))
 
 lowerFunctionBody :: String -> [Param] -> [Stmt] -> CompileM FunctionIr
 lowerFunctionBody name params body = do
@@ -37,8 +34,6 @@ lowerFunctionBody name params body = do
   blocks <- lowerStatementsFrom bid paramInstrs body defaultTerm
   pure (FunctionIr name blocks)
 
--- The implicit "fell off the end" terminator. void returns nothing; other
--- functions get a zero of the declared type so callers see a defined value.
 defaultReturnTerm :: CompileM Terminator
 defaultReturnTerm = do
   mty <- currentReturnType
@@ -46,9 +41,6 @@ defaultReturnTerm = do
     Just CVoid -> pure (TRet Nothing)
     _ -> pure (TRet (Just (OImm 0)))
 
--- Coerce a return-value operand to the current function's declared return
--- type, so `char f(){return 257;}` truncates to 1 in the caller's view per
--- C11 6.8.6.4p3.
 coerceReturnOperand :: Operand -> CompileM ([Instr], Operand)
 coerceReturnOperand op = do
   mty <- currentReturnType
@@ -390,10 +382,6 @@ lowerAggregateDeclTemplate ty temp initExpr label = do
 
 lowerAggregateDeclRuntime :: CType -> Temp -> Maybe Expr -> CompileM [Instr]
 lowerAggregateDeclRuntime ty temp initExpr = case initExpr of
-  -- C11 6.7.9p21: members not provided in the initializer list must be
-  -- initialized as if they had static storage duration (i.e., zero). The
-  -- IAlloca slot is uninitialized, so zero the whole object before
-  -- overlaying the supplied field writes.
   Just (EInitList _) -> do
     zeroInstrs <- zeroObject (OTemp temp) ty
     writeInstrs <- lowerAggregateInitWrites (OTemp temp) ty initExpr
@@ -953,9 +941,6 @@ lowerAssignment lhs rhs = do
   writeInstrs <- writeLValue lvalue coerceOp
   pure (lhsInstrs ++ rhsInstrs ++ coerceInstrs ++ writeInstrs, coerceOp)
 
--- C11 6.5.16.2: the lvalue is evaluated only once. We compute the address,
--- read the current value, perform the binary op, store the result back, and
--- yield the new value.
 lowerCompoundAssignment :: String -> Expr -> Expr -> CompileM ([Instr], Operand)
 lowerCompoundAssignment op lhs rhs = do
   lhsResult <- lowerLValue lhs
@@ -978,9 +963,6 @@ lowerCompoundAssignment op lhs rhs = do
   pure ( lhsInstrs ++ readInstrs ++ rhsInstrs ++ opInstrs ++ coerceInstrs ++ writeInstrs
        , coerceOp)
 
--- compoundBinOp performs the binary op given the already-loaded lhs operand,
--- the rhs expression (for type inspection), and the lowered rhs operand. It
--- handles pointer scaling for += / -= on pointer lvalues.
 compoundBinOp :: String -> CType -> Operand -> Expr -> Operand -> CompileM ([Instr], Operand)
 compoundBinOp op targetTy lhsOp rhsExpr rhsOp = case targetTy of
   CPtr elemTy | op == "+" || op == "-" ->
@@ -1608,20 +1590,28 @@ promoteIntegerType ty = do
 
 usualArithmeticType :: Expr -> Expr -> CompileM CType
 usualArithmeticType left right = do
-  leftTy <- promotedExprType left
-  rightTy <- promotedExprType right
-  if isFloatingType leftTy || isFloatingType rightTy
-    then pure (usualFloatingType leftTy rightTy)
+  leftTy0 <- promotedExprType left
+  rightTy0 <- promotedExprType right
+  if isFloatingType leftTy0 || isFloatingType rightTy0
+    then pure (usualFloatingType leftTy0 rightTy0)
     else do
-      leftSize <- typeSize leftTy
-      rightSize <- typeSize rightTy
-      let size = max leftSize rightSize
-      let unsigned = isUnsignedType leftTy || isUnsignedType rightTy
-      pure (case (size >= 8, unsigned) of
-        (True, True) -> CUnsignedLongLong
-        (True, False) -> CLongLong
-        (False, True) -> CUnsigned
-        (False, False) -> CInt)
+      leftTy <- canonicalIntegerType leftTy0
+      rightTy <- canonicalIntegerType rightTy0
+      if integerKindId leftTy == integerKindId rightTy
+        then pure leftTy
+        else if isUnsignedType leftTy == isUnsignedType rightTy
+          then pure (higherRankType leftTy rightTy)
+          else do
+            let (signedTy, unsignedTy) =
+                  if isUnsignedType leftTy then (rightTy, leftTy) else (leftTy, rightTy)
+            if integerRank unsignedTy >= integerRank signedTy
+              then pure unsignedTy
+              else do
+                signedSize <- typeSize signedTy
+                unsignedSize <- typeSize unsignedTy
+                if signedSize > unsignedSize
+                  then pure signedTy
+                  else pure (correspondingUnsigned signedTy)
 
 isFloatingType :: CType -> Bool
 isFloatingType ty = case ty of
@@ -1647,6 +1637,59 @@ isDoubleType :: CType -> Bool
 isDoubleType ty = case ty of
   CDouble -> True
   _ -> False
+
+canonicalIntegerType :: CType -> CompileM CType
+canonicalIntegerType ty = do
+  integer <- isIntegerTypeM ty
+  if not integer
+    then pure ty
+    else case ty of
+      CInt -> pure ty
+      CUnsigned -> pure ty
+      CLong -> pure ty
+      CUnsignedLong -> pure ty
+      CLongLong -> pure ty
+      CUnsignedLongLong -> pure ty
+      _ -> do
+        size <- typeSize ty
+        word <- targetWordSize
+        pure (canonicalIntegerBySize size word (isUnsignedType ty))
+
+canonicalIntegerBySize :: Int -> Int -> Bool -> CType
+canonicalIntegerBySize size word unsigned
+  | size <= 4 = if unsigned then CUnsigned else CInt
+  | size == word = if unsigned then CUnsignedLong else CLong
+  | otherwise = if unsigned then CUnsignedLongLong else CLongLong
+
+integerRank :: CType -> Int
+integerRank ty = case ty of
+  CInt -> 1
+  CUnsigned -> 1
+  CLong -> 2
+  CUnsignedLong -> 2
+  CLongLong -> 3
+  CUnsignedLongLong -> 3
+  _ -> 1
+
+integerKindId :: CType -> Int
+integerKindId ty = case ty of
+  CInt -> 0
+  CUnsigned -> 1
+  CLong -> 2
+  CUnsignedLong -> 3
+  CLongLong -> 4
+  CUnsignedLongLong -> 5
+  _ -> -1
+
+higherRankType :: CType -> CType -> CType
+higherRankType a b = if integerRank a >= integerRank b then a else b
+
+correspondingUnsigned :: CType -> CType
+correspondingUnsigned ty = case ty of
+  CInt -> CUnsigned
+  CLong -> CUnsignedLong
+  CLongLong -> CUnsignedLongLong
+  _ -> ty
 
 promotedExprType :: Expr -> CompileM CType
 promotedExprType expr = case expr of
