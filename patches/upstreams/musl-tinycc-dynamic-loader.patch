@@ -1,0 +1,77 @@
+--- arch/x86_64/crt_arch.h
++++ arch/x86_64/crt_arch.h
+@@ -7,7 +7,11 @@
+ "	mov %rsp,%rdi \n"
+ ".weak _DYNAMIC \n"
+ ".hidden _DYNAMIC \n"
++#ifndef __TINYC__
+ "	lea _DYNAMIC(%rip),%rsi \n"
++#else
++"	xor %rsi,%rsi \n"
++#endif
+ "	andq $-16,%rsp \n"
+ "	call " START "_c \n"
+ );
+--- ldso/dlstart.c
++++ ldso/dlstart.c
+@@ -49,6 +49,23 @@
+ #endif
+ 
+ 	for (i=0; i<DYN_CNT; i++) dyn[i] = 0;
++#if !DL_FDPIC
++	/* TinyCC turns the early _DYNAMIC reference in x86_64 ldso startup
++	 * into a PLT relocation, but this code executes before relocations
++	 * are applied. If startup passed a null dynamic vector, recover it
++	 * from the loader's program headers before reading dynv. */
++	if (!dynv) {
++		base = aux[AT_BASE];
++		if (!base) base = aux[AT_PHDR] & -4096;
++		Ehdr *eh = (void *)base;
++		Phdr *ph = (void *)(base + eh->e_phoff);
++		size_t phnum = eh->e_phnum;
++		size_t phent = eh->e_phentsize;
++		while (phnum-- && ph->p_type != PT_DYNAMIC)
++			ph = (void *)((size_t)ph + phent);
++		dynv = (void *)(base + ph->p_vaddr);
++	}
++#endif
+	for (i=0; dynv[i]; i+=2) if (dynv[i]<DYN_CNT)
+		dyn[dynv[i]] = dynv[i+1];
+ 
+@@ -138,12 +153,34 @@
+ 		}
+ 	}
+ 
++	const Sym *syms = (void *)(base+dyn[DT_SYMTAB]);
++
+ 	rel = (void *)(base+dyn[DT_RELA]);
+ 	rel_size = dyn[DT_RELASZ];
+ 	for (; rel_size; rel+=3, rel_size-=3*sizeof(size_t)) {
+-		if (!IS_RELATIVE(rel[1], 0)) continue;
+ 		size_t *rel_addr = (void *)(base + rel[0]);
+-		*rel_addr = base + rel[2];
++		if (IS_RELATIVE(rel[1], 0)) {
++			*rel_addr = base + rel[2];
++			continue;
++		}
++		if ((R_TYPE(rel[1]) == REL_GOT || R_TYPE(rel[1]) == REL_PLT
++		    || R_TYPE(rel[1]) == REL_SYMBOLIC)
++		    && R_SYM(rel[1]) && syms[R_SYM(rel[1])].st_shndx) {
++			*rel_addr = base + syms[R_SYM(rel[1])].st_value + rel[2];
++			continue;
++		}
+ 	}
+ 
++	rel = (void *)(base+dyn[DT_JMPREL]);
++	rel_size = dyn[DT_PLTRELSZ];
++	for (; rel_size; rel+=3, rel_size-=3*sizeof(size_t)) {
++		size_t *rel_addr = (void *)(base + rel[0]);
++		if ((R_TYPE(rel[1]) == REL_PLT || R_TYPE(rel[1]) == REL_GOT
++		    || R_TYPE(rel[1]) == REL_SYMBOLIC)
++		    && R_SYM(rel[1]) && syms[R_SYM(rel[1])].st_shndx) {
++			*rel_addr = base + syms[R_SYM(rel[1])].st_value + rel[2];
++			continue;
++		}
++	}
++
+ 	rel = (void *)(base+dyn[DT_RELR]);

@@ -786,6 +786,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
         # and host GHC compiles HCC directly.
         hccBy = rec {
           host.ghc.native = hccHostGhcNative;
+          host.microhs.native = hccHostMicrohsNative;
 
           ghc.precisely.gcc = hccFromPrecisely {
             pname = "hcc-ghc-precisely-gcc";
@@ -954,6 +955,20 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
               tinycc = final.tinycc-musl-intermediate;
               musl = final.musl-tcc;
             });
+            musl-tcc-dynamic = final.callPackage ./nix/minimal-bootstrap/musl-tcc.nix {
+              bash = final.bash_2_05;
+              tinycc = final.tinycc-musl;
+              gnused = final.gnused-mes;
+              enableShared = true;
+            };
+            tinycc-musl-dynamic = lib.recurseIntoAttrs (final.callPackage ./nix/minimal-bootstrap/tinycc-musl.nix {
+              stdenvNoCC = pkgs.stdenvNoCC;
+              fetchgit = pkgs.fetchgit;
+              bash = final.bash_2_05;
+              tinycc = final.tinycc-musl;
+              musl = final.musl-tcc-dynamic;
+              staticByDefault = false;
+            });
           });
 
         minimalBootstrapBy = {
@@ -996,6 +1011,52 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           host.ghc.native = minimalBootstrapBy.host.ghc.native.tinycc-musl;
           m2.precisely.m2 = minimalBootstrapBy.m2.precisely.m2.tinycc-musl;
           m2.precisely.gccm2 = minimalBootstrapBy.m2.precisely.gccm2.tinycc-musl;
+        };
+
+        hugsRunhugsMuslFromTinycc = pname: tinyccMusl:
+          pkgs.callPackage ./nix/hugs-runhugs-tcc-musl.nix {
+            stdenvNoCC = pkgs.stdenvNoCC;
+            inherit pname tinyccMusl;
+          };
+
+        hugsRunhugsMuslDynamic =
+          hugsRunhugsMuslFromTinycc "hugs98-runhugs-host-ghc-native-tcc-musl-dynamic"
+            minimalBootstrapBy.host.ghc.native.tinycc-musl-dynamic;
+
+        microhsNixpkgsPatchDir = pkgs.path + "/pkgs/development/compilers/microhs/patches";
+        microhsPatches = [
+          (microhsNixpkgsPatchDir + "/hugs.patch")
+          (microhsNixpkgsPatchDir + "/hugs-viewpatterns.patch")
+          (microhsNixpkgsPatchDir + "/link-math.patch")
+        ];
+
+        microhsHugsBootFromHugs = pname: hugs:
+          pkgs.callPackage ./nix/microhs-hugs-boot.nix {
+            inherit pname hugs;
+            patches = microhsPatches;
+          };
+
+        microhsHugsBoot =
+          microhsHugsBootFromHugs "microhs-hugs-boot-host-ghc-native-tcc-musl-dynamic"
+            hugsRunhugsMuslDynamic;
+
+        microhsStage1FromBoot = pname: microhsBoot:
+          pkgs.callPackage ./nix/microhs-stage1.nix {
+            inherit pname microhsBoot;
+            patches = microhsPatches ++ [
+              (microhsNixpkgsPatchDir + "/simple-unicode.patch")
+            ];
+          };
+
+        microhsStage1 =
+          microhsStage1FromBoot "microhs-stage1-host-ghc-native-tcc-musl-dynamic"
+            microhsHugsBoot;
+
+        hccHostMicrohsNative = pkgs.callPackage ./nix/hcc-microhs.nix {
+          stdenv = pkgs.stdenv;
+          pname = "hcc-host-microhs-native";
+          microhs = microhsStage1;
+          src = hccSrc;
         };
 
         gnuHelloFromBootstrap = pname: bootstrap:
