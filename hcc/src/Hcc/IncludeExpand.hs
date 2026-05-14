@@ -5,6 +5,7 @@ module IncludeExpand
 import Base
 import DriverCommon
 import HccSystem
+import IfFrame
 import SymbolTable
 import TextUtil
 
@@ -102,37 +103,22 @@ stripIncludeDelims raw = case raw of
   _ -> Nothing
 
 
-data IncludeFrame = IncludeFrame
-  { includeParentActive :: Bool
-  , includeBranchTaken :: Bool
-  , includeFrameActive :: Bool
-  }
+-- The textual include pass shares the IfFrame state machine with the token
+-- preprocessor; mismatches between the two skipping policies have produced
+-- divergence in the past. Empty-stack #elif/#else here silently no-op
+-- because a top-level out-of-balance directive is reported later by the
+-- preprocessor with a real source position.
+includeActive :: [IfFrame] -> Bool
+includeActive = ifStackActive
 
-includeActive :: [IncludeFrame] -> Bool
-includeActive frames = case frames of
-  [] -> True
-  frame:_ -> includeFrameActive frame
+pushIncludeFrame :: [IfFrame] -> Bool -> [IfFrame]
+pushIncludeFrame = pushIfFrame
 
-pushIncludeFrame :: [IncludeFrame] -> Bool -> [IncludeFrame]
-pushIncludeFrame frames cond =
-  let parent = includeActive frames
-      active = parent && cond
-  in IncludeFrame parent active active : frames
+replaceIncludeElif :: [IfFrame] -> Bool -> [IfFrame]
+replaceIncludeElif frames cond = maybe frames id (replaceElifFrame frames cond)
 
-replaceIncludeElif :: [IncludeFrame] -> Bool -> [IncludeFrame]
-replaceIncludeElif frames cond = case frames of
-  [] -> []
-  frame:rest ->
-    let active = includeParentActive frame && not (includeBranchTaken frame) && cond
-        taken = includeBranchTaken frame || active
-    in frame { includeBranchTaken = taken, includeFrameActive = active } : rest
-
-replaceIncludeElse :: [IncludeFrame] -> [IncludeFrame]
-replaceIncludeElse frames = case frames of
-  [] -> []
-  frame:rest ->
-    let active = includeParentActive frame && not (includeBranchTaken frame)
-    in frame { includeBranchTaken = True, includeFrameActive = active } : rest
+replaceIncludeElse :: [IfFrame] -> [IfFrame]
+replaceIncludeElse frames = maybe frames id (replaceElseFrame frames)
 
 directiveRest :: String -> String -> String
 directiveRest directive line = case dropWhile isSpaceChar line of
