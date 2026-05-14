@@ -9,7 +9,7 @@ by the bootstrap.
   - source compatibility delta for the party -> precisely chain
 - `upstreams/tinycc-mescc-source.patch`
   - upstream: `https://repo.or.cz/tinycc.git` at
-    `cb41cbfe717e4c00d7bb70035cda5ee5f0ff9341`
+    `757507eb022f7af4be63dc9a72b299761181efbb`
   - the same TinyCC source edits used by nixpkgs minimal-bootstrap's MesCC
     TinyCC path; applied by `nix/tinycc-boot-hcc.nix` and by the portable
     `scripts/prepare-upstreams.sh` path when a TinyCC checkout is provided
@@ -22,7 +22,7 @@ by the bootstrap.
     handled by the existing support-object path
 - `upstreams/tinycc-musl-hcc-bootstrap.patch`
   - upstream: `https://repo.or.cz/tinycc.git` at
-    `cb41cbfe717e4c00d7bb70035cda5ee5f0ff9341`
+    `757507eb022f7af4be63dc9a72b299761181efbb`
   - minimal source fixes for the HCC-built TinyCC musl path
 - `upstreams/musl-hcc-tinycc-va-list.patch`
   - upstream: `https://git.musl-libc.org/cgit/musl` at

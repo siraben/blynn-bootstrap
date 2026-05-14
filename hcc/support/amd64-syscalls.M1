@@ -39,6 +39,8 @@ DEFINE HCC_SYS_COPY_rdi_to_rax 4889F8
 	SYSCALL
 	RETURN
 
+## Variadic args live in slots 0..5 of every frame; stubs only exist so
+## legacy __builtin_va_* refs link harmlessly.
 :FUNCTION___builtin_va_start
 	RETURN
 
