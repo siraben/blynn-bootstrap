@@ -64,7 +64,9 @@ enum {
   BK_UGE = 18,
   BK_AND = 19,
   BK_OR = 20,
-  BK_XOR = 21
+  BK_XOR = 21,
+  BK_UDIV = 22,
+  BK_UMOD = 23
 };
 
 enum {
@@ -1244,6 +1246,8 @@ static void emit_header(FILE *out)
   fprintf(out, "DEFINE HCC_STORE_CHAR 8803\n");
   fprintf(out, "DEFINE HCC_LOAD_SIGNED_CHAR 480FBE00\n");
   fprintf(out, "DEFINE HCC_XOR_rbx_rax_into_rax 4831D8\n");
+  fprintf(out, "DEFINE HCC_XOR_rdx_rdx 4831D2\n");
+  fprintf(out, "DEFINE HCC_UDIV_rax_by_rbx_into_rax 48F7F3\n");
   fprintf(out, "DEFINE HCC_CALL_rax FFD0\n");
   fprintf(out, "\n");
 }
@@ -1490,6 +1494,8 @@ static void emit_binop(FILE *out, int op)
       case BK_MUL: fprintf(out, "  imul_ebx\n"); break;
       case BK_DIV: fprintf(out, "  xchg_ebx,eax\n  cdq\n  idiv_ebx\n"); break;
       case BK_MOD: fprintf(out, "  xchg_ebx,eax\n  cdq\n  idiv_ebx\n  mov_eax,edx\n"); break;
+      case BK_UDIV: fprintf(out, "  xchg_ebx,eax\n  xor_edx,edx\n  div_ebx\n"); break;
+      case BK_UMOD: fprintf(out, "  xchg_ebx,eax\n  xor_edx,edx\n  div_ebx\n  mov_eax,edx\n"); break;
       case BK_SHL: fprintf(out, "  mov_ecx,eax\n  mov_eax,ebx\n  shl_eax,cl\n"); break;
       case BK_SHR: fprintf(out, "  mov_ecx,eax\n  mov_eax,ebx\n  shr_eax,cl\n"); break;
       case BK_SAR: fprintf(out, "  mov_ecx,eax\n  mov_eax,ebx\n  sar_eax,cl\n"); break;
@@ -1523,6 +1529,8 @@ static void emit_binop(FILE *out, int op)
     case BK_MUL: fprintf(out, "  MULTIPLY_rax_by_rbx_into_rax\n"); break;
     case BK_DIV: fprintf(out, "  XCHG_rax_rbx\n  CQTO\n  DIVIDES_rax_by_rbx_into_rax\n"); break;
     case BK_MOD: fprintf(out, "  XCHG_rax_rbx\n  CQTO\n  MODULUSS_rax_from_rbx_into_rbx\n  MOVE_rdx_to_rax\n"); break;
+    case BK_UDIV: fprintf(out, "  XCHG_rax_rbx\n  HCC_XOR_rdx_rdx\n  HCC_UDIV_rax_by_rbx_into_rax\n"); break;
+    case BK_UMOD: fprintf(out, "  XCHG_rax_rbx\n  HCC_XOR_rdx_rdx\n  HCC_UDIV_rax_by_rbx_into_rax\n  MOVE_rdx_to_rax\n"); break;
     case BK_SHL: fprintf(out, "  COPY_rax_to_rcx\n  MOVE_rbx_to_rax\n  HCC_SHL_rax_cl\n"); break;
     case BK_SHR: fprintf(out, "  COPY_rax_to_rcx\n  MOVE_rbx_to_rax\n  HCC_SHR_rax_cl\n"); break;
     case BK_SAR: fprintf(out, "  COPY_rax_to_rcx\n  MOVE_rbx_to_rax\n  HCC_SAR_rax_cl\n"); break;

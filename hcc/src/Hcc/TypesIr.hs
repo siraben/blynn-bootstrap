@@ -32,6 +32,8 @@ data BinOp
   | IMul
   | IDiv
   | IMod
+  | IUDiv
+  | IUMod
   | IShl
   | IShr
   | ISar

@@ -156,6 +156,7 @@ static void aarch64_emit_header(FILE *out)
   fprintf(out, "DEFINE SDIV_X0_X1_X0 200cc09a\n");
   fprintf(out, "DEFINE SDIV_X2_X1_X0 220cc09a\n");
   fprintf(out, "DEFINE UDIV_X0_X1_X0 2008c09a\n");
+  fprintf(out, "DEFINE UDIV_X2_X1_X0 2208c09a\n");
   fprintf(out, "DEFINE MSUB_X0_X0_X2_X1 0084029b\n");
   fprintf(out, "DEFINE LSHIFT_X0_X1_X0 2020c09a\n");
   fprintf(out, "DEFINE LOGICAL_RSHIFT_X0_X1_X0 2024c09a\n");
@@ -215,6 +216,8 @@ static void aarch64_emit_binop(FILE *out, int op)
     case BK_AND: fprintf(out, "  AND_X0_X1_X0\n"); break;
     case BK_OR: fprintf(out, "  OR_X0_X1_X0\n"); break;
     case BK_XOR: fprintf(out, "  XOR_X0_X1_X0\n"); break;
+    case BK_UDIV: fprintf(out, "  UDIV_X0_X1_X0\n"); break;
+    case BK_UMOD: fprintf(out, "  UDIV_X2_X1_X0\n  MSUB_X0_X0_X2_X1\n"); break;
   }
 }
 
