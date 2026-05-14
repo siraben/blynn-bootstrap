@@ -1,0 +1,12 @@
+blynn:inn/BasePrecisely.hs
+blynn:inn/System.hs
+hcc:src/Hcc/TextUtil.hs
+hcc:src/Hcc/Literal.hs
+hcc:src/Hcc/TypesToken.hs
+hcc:src/Hcc/SymbolTable.hs
+hcc:src/Hcc/ParseLite.hs
+hcc:src/Hcc/Operators.hs
+hcc:src/Hcc/ConstExpr.hs
+hcc:src/Hcc/Lexer.hs
+hcc:src/Hcc/HccSystem.hs
+hcc:src/Hcc/DriverCommon.hs
