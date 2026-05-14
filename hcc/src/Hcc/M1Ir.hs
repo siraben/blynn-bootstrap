@@ -315,6 +315,8 @@ binOpCode op = case op of
   IAnd -> 19
   IOr -> 20
   IXor -> 21
+  IUDiv -> 22
+  IUMod -> 23
 
 optimizeFunctionIr :: FunctionIr -> FunctionIr
 optimizeFunctionIr fn = case fn of
@@ -362,6 +364,8 @@ simplifyBin temp op a b = case op of
   IULe -> if sameOperand a b then IConst temp 1 else IBin temp op a b
   IUGt -> if sameOperand a b then IConst temp 0 else IBin temp op a b
   IUGe -> if sameOperand a b then IConst temp 1 else IBin temp op a b
+  IUDiv -> if isOneOperand b then ICopy temp a else IBin temp op a b
+  IUMod -> if isOneOperand b || sameOperand a b then IConst temp 0 else IBin temp op a b
   IAnd -> if isZeroOperand a || isZeroOperand b then IConst temp 0 else if sameOperand a b then ICopy temp a else IBin temp op a b
   IOr -> if isZeroOperand a then ICopy temp b else if isZeroOperand b || sameOperand a b then ICopy temp a else IBin temp op a b
   IXor -> if isZeroOperand a then ICopy temp b else if isZeroOperand b then ICopy temp a else if sameOperand a b then IConst temp 0 else IBin temp op a b

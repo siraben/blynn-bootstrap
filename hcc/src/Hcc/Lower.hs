@@ -747,12 +747,19 @@ lowerBinaryExpr :: String -> Expr -> Expr -> CompileM ([Instr], Operand)
 lowerBinaryExpr op a b =
   if isComparisonOpString op
     then lowerComparisonExpr op a b
-    else case lowerBinOp op of
-      Just iop -> do
-        if op == "<<"
-          then lowerShiftExpr op a b
-          else lowerPlainBin iop a b
-      Nothing -> throwC ("unsupported binary operator in lowering: " ++ op)
+    else if op == "/" || op == "%"
+      then do
+        commonTy <- usualArithmeticType a b
+        let iop = if isUnsignedType commonTy
+              then if op == "/" then IUDiv else IUMod
+              else if op == "/" then IDiv else IMod
+        lowerPlainBin iop a b
+      else case lowerBinOp op of
+        Just iop -> do
+          if op == "<<"
+            then lowerShiftExpr op a b
+            else lowerPlainBin iop a b
+        Nothing -> throwC ("unsupported binary operator in lowering: " ++ op)
 
 isComparisonOpString :: String -> Bool
 isComparisonOpString op =
