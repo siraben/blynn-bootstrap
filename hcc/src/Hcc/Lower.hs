@@ -386,8 +386,14 @@ lowerAggregateDeclTemplate ty temp initExpr label = do
 
 lowerAggregateDeclRuntime :: CType -> Temp -> Maybe Expr -> CompileM [Instr]
 lowerAggregateDeclRuntime ty temp initExpr = case initExpr of
-  Just (EInitList _) ->
-    lowerAggregateInitWrites (OTemp temp) ty initExpr
+  -- C11 6.7.9p21: members not provided in the initializer list must be
+  -- initialized as if they had static storage duration (i.e., zero). The
+  -- IAlloca slot is uninitialized, so zero the whole object before
+  -- overlaying the supplied field writes.
+  Just (EInitList _) -> do
+    zeroInstrs <- zeroObject (OTemp temp) ty
+    writeInstrs <- lowerAggregateInitWrites (OTemp temp) ty initExpr
+    pure (zeroInstrs ++ writeInstrs)
   Just expr -> do
     (exprInstrs, op) <- lowerExpr expr
     copyInstrs <- copyObject (OTemp temp) op ty
@@ -1077,6 +1083,25 @@ copyObject :: Operand -> Operand -> CType -> CompileM [Instr]
 copyObject dst src ty = do
   size <- typeSize ty
   copyObjectBytes dst src 0 size
+
+zeroObject :: Operand -> CType -> CompileM [Instr]
+zeroObject dst ty = do
+  size <- typeSize ty
+  zeroObjectBytes dst 0 size
+
+zeroObjectBytes :: Operand -> Int -> Int -> CompileM [Instr]
+zeroObjectBytes dst offset remaining =
+  if remaining <= 0
+    then pure []
+    else do
+      word <- targetWordSize
+      let width = if remaining >= word then word else if remaining >= 4 then 4 else 1
+      dstResult <- offsetAddress dst offset
+      let dstInstrs = fst dstResult
+      let dstAddr = snd dstResult
+      let store = if width == 8 then IStore64 dstAddr (OImm 0) else if width == 4 then IStore32 dstAddr (OImm 0) else IStore8 dstAddr (OImm 0)
+      rest <- zeroObjectBytes dst (offset + width) (remaining - width)
+      pure (dstInstrs ++ [store] ++ rest)
 
 copyObjectBytes :: Operand -> Operand -> Int -> Int -> CompileM [Instr]
 copyObjectBytes dst src offset remaining =
