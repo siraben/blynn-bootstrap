@@ -4,6 +4,8 @@ hcc:src/Hcc/TextUtil.hs
 hcc:src/Hcc/Literal.hs
 hcc:src/Hcc/TypesToken.hs
 hcc:src/Hcc/SymbolTable.hs
+hcc:src/Hcc/IntTable.hs
+hcc:src/Hcc/TokenIr.hs
 hcc:src/Hcc/ParseLite.hs
 hcc:src/Hcc/Operators.hs
 hcc:src/Hcc/ConstExpr.hs

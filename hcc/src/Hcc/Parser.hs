@@ -8,17 +8,18 @@ import ConstExpr
 import Operators
 import ParseLite
 import ScopeMap
+import SymbolTable
 import TypesAst
 import TypesToken
 
 data ParseError = ParseError SrcPos String
 
-data ParserEnv = ParserEnv (ScopeMap CType) [(String, Int)]
+data ParserEnv = ParserEnv (ScopeMap CType) (SymbolMap Int)
 
 type Parser a = P ParserEnv Token ParseError a
 
 initialParserEnv :: ParserEnv
-initialParserEnv = ParserEnv (builtinTypeEnv builtinTypeAliases) []
+initialParserEnv = ParserEnv (builtinTypeEnv builtinTypeAliases) symbolMapEmpty
 
 builtinTypeEnv :: [(String, CType)] -> ScopeMap CType
 builtinTypeEnv aliases = case aliases of
@@ -65,16 +66,16 @@ lookupParserConstant :: String -> Parser (Maybe Int)
 lookupParserConstant name = do
   env <- pEnv
   pure (case env of
-    ParserEnv _ constants -> lookup name constants)
+    ParserEnv _ constants -> symbolMapLookup name constants)
 
 bindParserConstant :: String -> Int -> Parser ()
 bindParserConstant name value = do
   env <- pEnv
   case env of
     ParserEnv types constants ->
-      pSetEnv (ParserEnv types ((name, value):constants))
+      pSetEnv (ParserEnv types (symbolMapInsert name value constants))
 
-parserConstants :: Parser [(String, Int)]
+parserConstants :: Parser (SymbolMap Int)
 parserConstants = do
   env <- pEnv
   pure (case env of
@@ -173,7 +174,7 @@ leadingExternQualifier :: Parser Bool
 leadingExternQualifier = pRaw $ \env toks -> Unconsumed (Ok (go toks) env toks) where
   go ts = case ts of
     Token _ (TokIdent "extern"):_ -> True
-    Token _ (TokIdent name):rest | name `elem` storageAndTypeQualifiers -> go rest
+    Token _ (TokIdent name):rest | isStorageAndTypeQualifier name -> go rest
     _ -> False
 
 typedefDecl :: Parser TopDecl
@@ -693,7 +694,7 @@ skipQualifiers :: Parser ()
 skipQualifiers = do
   tok <- peekMaybe
   case fmap tokenKind tok of
-    Just (TokIdent name) | name `elem` storageAndTypeQualifiers ->
+    Just (TokIdent name) | isStorageAndTypeQualifier name ->
       advanceToken >> skipQualifiers
     Just (TokIdent name) | name `elem` ["__attribute__", "__extension__"] ->
       skipAttributes >> skipQualifiers
@@ -996,18 +997,40 @@ stringBody text = case text of
 
 startsType :: Token -> Bool
 startsType tok = case tokenKind tok of
-  TokIdent name -> name `elem` (builtinTypeNames ++ storageAndTypeQualifiers ++ ["typedef"])
+  TokIdent name -> startsTypeName name
   _ -> False
 
-builtinTypeNames :: [String]
-builtinTypeNames =
-  [ "void", "_Bool", "int", "char", "signed", "unsigned", "short", "long", "float", "double"
-  , "struct", "union", "enum"
-  ]
+startsTypeName :: String -> Bool
+startsTypeName name =
+  isBuiltinTypeName name || isStorageAndTypeQualifier name || name == "typedef"
 
-storageAndTypeQualifiers :: [String]
-storageAndTypeQualifiers =
-  ["const", "volatile", "static", "extern", "register", "inline", "auto"]
+isBuiltinTypeName :: String -> Bool
+isBuiltinTypeName name = case name of
+  "void" -> True
+  "_Bool" -> True
+  "int" -> True
+  "char" -> True
+  "signed" -> True
+  "unsigned" -> True
+  "short" -> True
+  "long" -> True
+  "float" -> True
+  "double" -> True
+  "struct" -> True
+  "union" -> True
+  "enum" -> True
+  _ -> False
+
+isStorageAndTypeQualifier :: String -> Bool
+isStorageAndTypeQualifier name = case name of
+  "const" -> True
+  "volatile" -> True
+  "static" -> True
+  "extern" -> True
+  "register" -> True
+  "inline" -> True
+  "auto" -> True
+  _ -> False
 
 tokenStartsType :: Token -> Parser Bool
 tokenStartsType tok = case tokenKind tok of
@@ -1029,16 +1052,13 @@ identifierStartsDeclaration = pRaw $ \env toks -> Unconsumed (Ok (go env toks) e
       | otherwise -> False
     _ -> False
 
-  startsTypeName name =
-    name `elem` (builtinTypeNames ++ storageAndTypeQualifiers ++ ["typedef"])
-
   typedefDeclaratorFollows toks = case dropLeadingQualifiers toks of
     Token _ (TokPunct "*"):_ -> True
     Token _ (TokIdent _):_ -> True
     _ -> False
 
   dropLeadingQualifiers toks = case toks of
-    Token _ (TokIdent name):rest | name `elem` storageAndTypeQualifiers ->
+    Token _ (TokIdent name):rest | isStorageAndTypeQualifier name ->
       dropLeadingQualifiers rest
     _ -> toks
 

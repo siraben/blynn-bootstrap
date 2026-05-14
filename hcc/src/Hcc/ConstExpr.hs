@@ -6,11 +6,12 @@ import Base
 import Literal
 import Operators
 import ParseLite
+import SymbolTable
 import TypesToken
 
-type ConstParser a = P [(String, Int)] Token String a
+type ConstParser a = P (SymbolMap Int) Token String a
 
-parseConstExpr :: [(String, Int)] -> [Token] -> Either String (Int, [Token])
+parseConstExpr :: SymbolMap Int -> [Token] -> Either String (Int, [Token])
 parseConstExpr env toks = parseRest (expression 0) env toks
 
 expression :: Int -> ConstParser Int
@@ -70,7 +71,7 @@ parsePrimary = do
         TokIdent "defined" -> parseDefinedOperator
         TokIdent name -> do
           env <- pEnv
-          pure (maybe 0 id (lookup name env))
+          pure (maybe 0 id (symbolMapLookup name env))
         TokInt value -> pure (parseInt value)
         TokFloat _ -> pure 0
         TokChar value -> pure (charValue value)
