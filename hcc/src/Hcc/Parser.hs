@@ -918,19 +918,22 @@ postfixContinues toks = case toks of
   Token _ (TokPunct p):_ -> p `elem` ["(", "[", ".", "->", "++", "--"]
   _ -> False
 
+-- Compound assignment is a single AST node so the lvalue is evaluated once.
+-- `*p++ += 2` must post-increment `p` exactly once even though the operand
+-- name appears twice in the source.
 assignNode :: String -> Expr -> Expr -> Expr
 assignNode op lhs rhs = case op of
   "=" -> EAssign lhs rhs
-  "+=" -> EAssign lhs (EBinary "+" lhs rhs)
-  "-=" -> EAssign lhs (EBinary "-" lhs rhs)
-  "*=" -> EAssign lhs (EBinary "*" lhs rhs)
-  "/=" -> EAssign lhs (EBinary "/" lhs rhs)
-  "%=" -> EAssign lhs (EBinary "%" lhs rhs)
-  "<<=" -> EAssign lhs (EBinary "<<" lhs rhs)
-  ">>=" -> EAssign lhs (EBinary ">>" lhs rhs)
-  "&=" -> EAssign lhs (EBinary "&" lhs rhs)
-  "^=" -> EAssign lhs (EBinary "^" lhs rhs)
-  "|=" -> EAssign lhs (EBinary "|" lhs rhs)
+  "+=" -> ECompoundAssign "+" lhs rhs
+  "-=" -> ECompoundAssign "-" lhs rhs
+  "*=" -> ECompoundAssign "*" lhs rhs
+  "/=" -> ECompoundAssign "/" lhs rhs
+  "%=" -> ECompoundAssign "%" lhs rhs
+  "<<=" -> ECompoundAssign "<<" lhs rhs
+  ">>=" -> ECompoundAssign ">>" lhs rhs
+  "&=" -> ECompoundAssign "&" lhs rhs
+  "^=" -> ECompoundAssign "^" lhs rhs
+  "|=" -> ECompoundAssign "|" lhs rhs
   _ -> EBinary op lhs rhs
 
 postfix :: Expr -> Parser Expr
