@@ -787,25 +787,33 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           };
         };
 
-        tinyccFromHcc = pname: hcc: pkgs.callPackage ./nix/tinycc-boot-hcc.nix {
+        tinyccFromHccForTarget = pname: hcc: target: pkgs.callPackage ./nix/tinycc-boot-hcc.nix {
           stdenvNoCC = pkgs.stdenvNoCC;
-          inherit pname hcc minimalBootstrap;
+          inherit pname hcc minimalBootstrap target;
+          binutils = if target == "riscv64" then pkgs.pkgsCross.riscv64.buildPackages.binutils else pkgs.binutils;
+          qemu = pkgs.qemu;
           mesLibc = mesLibcSrc;
           m2libc = m2libcSrc;
-          target = nativeM1Target;
         };
 
-        tinyccM1FromHcc = pname: hcc: pkgs.callPackage ./nix/tinycc-boot-hcc.nix {
+        tinyccFromHcc = pname: hcc: tinyccFromHccForTarget pname hcc nativeM1Target;
+
+        tinyccM1FromHccForTarget = pname: hcc: target: pkgs.callPackage ./nix/tinycc-boot-hcc.nix {
           stdenvNoCC = pkgs.stdenvNoCC;
-          inherit pname hcc minimalBootstrap;
+          inherit pname hcc minimalBootstrap target;
+          binutils = if target == "riscv64" then pkgs.pkgsCross.riscv64.buildPackages.binutils else pkgs.binutils;
+          qemu = pkgs.qemu;
           mesLibc = mesLibcSrc;
           m2libc = m2libcSrc;
-          target = nativeM1Target;
           m1ArtifactsOnly = true;
         };
 
+        tinyccM1FromHcc = pname: hcc: tinyccM1FromHccForTarget pname hcc nativeM1Target;
+
         tinyccBy = {
           host.ghc.native = tinyccFromHcc "tinycc-boot-hcc-host-ghc-native" hccBy.host.ghc.native;
+          riscv64.host.ghc.native =
+            tinyccFromHccForTarget "tinycc-boot-hcc-host-ghc-native-riscv64" hccBy.host.ghc.native "riscv64";
           ghc.precisely.gcc = tinyccFromHcc "tinycc-boot-hcc-ghc-precisely-gcc" hccBy.ghc.precisely.gcc;
           gcc.precisely.gcc = tinyccFromHcc "tinycc-boot-hcc-gcc-precisely-gcc" hccBy.gcc.precisely.gcc;
           gcc.precisely.tcc = tinyccFromHcc "tinycc-boot-hcc-gcc-precisely-tcc" hccBy.gcc.precisely.tcc;
@@ -816,6 +824,8 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
 
         tinyccM1By = {
           host.ghc.native = tinyccM1FromHcc "tinycc-m1-hcc-host-ghc-native" hccBy.host.ghc.native;
+          riscv64.host.ghc.native =
+            tinyccM1FromHccForTarget "tinycc-m1-hcc-host-ghc-native-riscv64" hccBy.host.ghc.native "riscv64";
           m2.precisely.gcc = tinyccM1FromHcc "tinycc-m1-hcc-m2-precisely-gcc" hccBy.m2.precisely.gcc;
           m2.precisely.m2 = tinyccM1FromHcc "tinycc-m1-hcc-m2-precisely-m2" hccBy.m2.precisely.m2;
         };
@@ -1008,9 +1018,11 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
         hcc-m1-smoke = hccM1SmokeFor "hcc-m1-smoke" hccBy.m2.precisely.m2 "amd64";
         hcc-m1-smoke-i386 = hccM1SmokeFor "hcc-m1-smoke-i386" hccBy.m2.precisely.m2 "i386";
         hcc-m1-smoke-aarch64 = hccM1SmokeFor "hcc-m1-smoke-aarch64" hccBy.m2.precisely.m2 "aarch64";
+        hcc-m1-smoke-riscv64 = hccM1SmokeFor "hcc-m1-smoke-riscv64" hccBy.m2.precisely.m2 "riscv64";
         hcc-m1-smoke-native = hccM1SmokeFor "hcc-m1-smoke-host-ghc-native" hccBy.host.ghc.native nativeM1Target;
         hcc-m1-smoke-native-aarch64 = hccM1SmokeFor "hcc-m1-smoke-host-ghc-native-aarch64" hccBy.host.ghc.native "aarch64";
         hcc-m1-smoke-native-i386 = hccM1SmokeFor "hcc-m1-smoke-host-ghc-native-i386" hccBy.host.ghc.native "i386";
+        hcc-m1-smoke-native-riscv64 = hccM1SmokeFor "hcc-m1-smoke-host-ghc-native-riscv64" hccBy.host.ghc.native "riscv64";
 
         hcc-mescc-tests = hccMesccTestsFor "hcc-mescc-tests" hccBy.m2.precisely.m2 "amd64";
         hcc-mescc-tests-native = hccMesccTestsFor "hcc-mescc-tests-host-ghc-native" hccBy.host.ghc.native nativeM1Target;
@@ -1072,12 +1084,15 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             smoke.m1 = hcc-m1-smoke;
             smoke.m1-i386 = hcc-m1-smoke-i386;
             smoke.m1-aarch64 = hcc-m1-smoke-aarch64;
+            smoke.m1-riscv64 = hcc-m1-smoke-riscv64;
             mescc = hcc-mescc-tests;
             host.ghc.native.smoke.m1 = hcc-m1-smoke-native;
             host.ghc.native.smoke.m1-i386 = hcc-m1-smoke-native-i386;
             host.ghc.native.smoke.m1-aarch64 = hcc-m1-smoke-native-aarch64;
+            host.ghc.native.smoke.m1-riscv64 = hcc-m1-smoke-native-riscv64;
             host.ghc.native.mescc = hcc-mescc-tests-native;
             hcc.tinycc-tests2-stat = hcc-tinycc-tests2-stat;
+            host.ghc.native.tinycc-riscv64 = tinyccBy.riscv64.host.ghc.native;
             precisely.dialect = precisely-dialect-tests;
             tinyccM1.native-vs-faithful = tinyccM1CompareNativeFaithful;
           };

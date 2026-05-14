@@ -25,6 +25,16 @@ void* stdin = (void*)0;
 void* stdout = (void*)1;
 void* stderr = (void*)2;
 
+int asm_parse_regvar(int t)
+{
+    return -1;
+}
+
+int sigaction(int signum, void* act, void* oldact) { return 0; }
+int sigaddset(void* set, int signum) { return 0; }
+int sigemptyset(void* set) { return 0; }
+int sigprocmask(int how, void* set, void* oldset) { return 0; }
+
 struct timeval {
     long tv_sec;
     long tv_usec;
@@ -391,6 +401,7 @@ void* fopen(char* path, char* mode)
         flags = 0;
     }
     fd = open(path, flags, 0600);
+    while (fd >= 0 && fd < 3) fd = open(path, flags, 0600);
     if (fd < 0) return 0;
     return (void*)(long)fd;
 }
