@@ -20,18 +20,15 @@ constBinOp op a b = case op of
   "|" -> bitOrInt a b
   "&" -> bitAndInt a b
   "^" -> bitXorInt a b
-  "==" -> truthInt (a == b)
-  "!=" -> truthInt (a /= b)
-  "<" -> truthInt (a < b)
-  "<=" -> truthInt (a <= b)
-  ">" -> truthInt (a > b)
-  ">=" -> truthInt (a >= b)
-  "&&" -> truthInt (a /= 0 && b /= 0)
-  "||" -> truthInt (a /= 0 || b /= 0)
+  "==" -> boolToInt (a == b)
+  "!=" -> boolToInt (a /= b)
+  "<" -> boolToInt (a < b)
+  "<=" -> boolToInt (a <= b)
+  ">" -> boolToInt (a > b)
+  ">=" -> boolToInt (a >= b)
+  "&&" -> boolToInt (a /= 0 && b /= 0)
+  "||" -> boolToInt (a /= 0 || b /= 0)
   _ -> 0
-
-truthInt :: Bool -> Int
-truthInt value = if value then 1 else 0
 
 intConstOperand :: String -> Operand
 intConstOperand text = case parseIntBytes text of
