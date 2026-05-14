@@ -1182,7 +1182,7 @@ exprType :: Expr -> CompileM (Maybe CType)
 exprType expr = case expr of
   EInt _ -> pure (Just CInt)
   EFloat text -> pure (Just (floatLiteralType text))
-  EChar _ -> pure (Just CChar)
+  EChar _ -> pure (Just CInt)
   EString _ -> pure (Just (CPtr CChar))
   ESizeofType _ -> pure (Just CInt)
   ESizeofExpr _ -> pure (Just CInt)
