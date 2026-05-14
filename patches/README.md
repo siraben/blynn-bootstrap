@@ -13,6 +13,13 @@ by the bootstrap.
   - the same TinyCC source edits used by nixpkgs minimal-bootstrap's MesCC
     TinyCC path; applied by `nix/tinycc-boot-hcc.nix` and by the portable
     `scripts/prepare-upstreams.sh` path when a TinyCC checkout is provided
+- `upstreams/tinycc-riscv64-hcc-bootstrap.patch`
+  - upstream: `https://repo.or.cz/tinycc.git` at
+    `cb41cbfe717e4c00d7bb70035cda5ee5f0ff9341`
+  - source-level compatibility for hcc's TinyCC RISC-V64 bootstrap path:
+    Mes libc prototype shims, a ucontext backtrace stub, and disabling the
+    integrated TinyCC RISC-V assembler while bootstrap support assembly is
+    handled by the existing support-object path
 - `upstreams/tinycc-musl-hcc-bootstrap.patch`
   - upstream: `https://repo.or.cz/tinycc.git` at
     `cb41cbfe717e4c00d7bb70035cda5ee5f0ff9341`

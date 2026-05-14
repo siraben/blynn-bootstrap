@@ -1,0 +1,82 @@
+diff --git a/tcc.h b/tcc.h
+--- a/tcc.h
++++ b/tcc.h
+@@ -38,7 +38,14 @@
+ #include <fcntl.h>
+ #include <setjmp.h>
+ #include <time.h>
+
++#ifdef TCC_MES_LIBC
++extern int vsnprintf(char *out, unsigned size, char *fmt, va_list ap);
++extern int vfprintf(void *stream, char *fmt, va_list ap);
++extern long ldexpl(long value, int exp);
++extern void *freopen(char *path, char *mode, void *stream);
++#endif
++
+ #ifndef _WIN32
+ # include <unistd.h>
+ # include <sys/time.h>
+@@ -394,7 +401,11 @@
+ #elif defined(TCC_TARGET_RISCV64)
+ # include "riscv64-gen.c"
+ # include "riscv64-link.c"
++# ifndef TCC_RISCV64_NO_ASM
+ # include "riscv64-asm.c"
++# else
++# undef CONFIG_TCC_ASM
++# endif
+ #else
+ #error unknown target
+ #endif
+diff --git a/libtcc.c b/libtcc.c
+--- a/libtcc.c
++++ b/libtcc.c
+@@ -52,7 +52,11 @@
+ #elif defined(TCC_TARGET_RISCV64)
+ #include "riscv64-gen.c"
+ #include "riscv64-link.c"
++#ifndef TCC_RISCV64_NO_ASM
+ #include "riscv64-asm.c"
++#else
++#undef CONFIG_TCC_ASM
++#endif
+ #else
+ #error unknown target
+ #endif
+diff --git a/tccrun.c b/tccrun.c
+--- a/tccrun.c
++++ b/tccrun.c
+@@ -1302,7 +1302,7 @@
+     rc->ip = uc->sc_sepc;
+     rc->fp = uc->sc_s[0];
+ #elif defined(__riscv)
+-    rc->ip = uc->uc_mcontext.__gregs[REG_PC];
+-    rc->fp = uc->uc_mcontext.__gregs[REG_S0];
++    rc->ip = 0;
++    rc->fp = 0;
+ #endif
+ }
+diff --git a/riscv64-gen.c b/riscv64-gen.c
+--- a/riscv64-gen.c
++++ b/riscv64-gen.c
+@@ -774,6 +774,12 @@
+
+ void tcc_run_start(int (*prog_main)(int, char **, char **), int cnt, char **var)
+ {
++#ifdef TCC_RISCV64_NO_ASM
++    (void)prog_main;
++    (void)cnt;
++    (void)var;
++    return;
++#else
+ #ifdef __riscv
+     void *sp;
+
+@@ -784,6 +790,7 @@
+     memcpy(sp, var, cnt * sizeof(char *));
+     __asm__("jalr %0" : : "r" (prog_main));
+ #endif
++#endif
+ }
+
+ static int func_sub_sp_offset, num_va_regs, func_va_list_ofs;
