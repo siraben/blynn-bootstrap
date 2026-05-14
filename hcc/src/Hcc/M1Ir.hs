@@ -209,22 +209,22 @@ emitInstrIr write instr = case instr of
   IAlloca temp size -> write ("2 " ++ tempText temp ++ " " ++ show size)
   IConst temp value -> write ("3 " ++ tempText temp ++ " " ++ show value)
   IConstBytes temp bytes -> write ("4 " ++ tempText temp ++ " B" ++ intListFields bytes)
-  ICopy temp op -> write ("5 " ++ tempText temp ++ " " ++ operandIrFields op)
+  ICopy temp op -> emitTempOp write 5 temp op
   IAddrOf temp source -> write ("6 " ++ tempText temp ++ " " ++ tempText source)
-  ILoad64 temp op -> write ("7 " ++ tempText temp ++ " " ++ operandIrFields op)
-  ILoad32 temp op -> write ("8 " ++ tempText temp ++ " " ++ operandIrFields op)
-  ILoadS32 temp op -> write ("9 " ++ tempText temp ++ " " ++ operandIrFields op)
-  ILoad16 temp op -> write ("10 " ++ tempText temp ++ " " ++ operandIrFields op)
-  ILoadS16 temp op -> write ("11 " ++ tempText temp ++ " " ++ operandIrFields op)
-  ILoad8 temp op -> write ("12 " ++ tempText temp ++ " " ++ operandIrFields op)
-  ILoadS8 temp op -> write ("13 " ++ tempText temp ++ " " ++ operandIrFields op)
-  IStore64 addr value -> write ("14 " ++ operandIrFields addr ++ " " ++ operandIrFields value)
-  IStore32 addr value -> write ("15 " ++ operandIrFields addr ++ " " ++ operandIrFields value)
-  IStore16 addr value -> write ("16 " ++ operandIrFields addr ++ " " ++ operandIrFields value)
-  IStore8 addr value -> write ("17 " ++ operandIrFields addr ++ " " ++ operandIrFields value)
-  ISExt temp size op -> write ("22 " ++ tempText temp ++ " " ++ show size ++ " " ++ operandIrFields op)
-  IZExt temp size op -> write ("23 " ++ tempText temp ++ " " ++ show size ++ " " ++ operandIrFields op)
-  ITrunc temp size op -> write ("24 " ++ tempText temp ++ " " ++ show size ++ " " ++ operandIrFields op)
+  ILoad64 temp op -> emitTempOp write 7 temp op
+  ILoad32 temp op -> emitTempOp write 8 temp op
+  ILoadS32 temp op -> emitTempOp write 9 temp op
+  ILoad16 temp op -> emitTempOp write 10 temp op
+  ILoadS16 temp op -> emitTempOp write 11 temp op
+  ILoad8 temp op -> emitTempOp write 12 temp op
+  ILoadS8 temp op -> emitTempOp write 13 temp op
+  IStore64 addr value -> emitOpOp write 14 addr value
+  IStore32 addr value -> emitOpOp write 15 addr value
+  IStore16 addr value -> emitOpOp write 16 addr value
+  IStore8 addr value -> emitOpOp write 17 addr value
+  ISExt temp size op -> emitExt write 22 temp size op
+  IZExt temp size op -> emitExt write 23 temp size op
+  ITrunc temp size op -> emitExt write 24 temp size op
   IBin temp op left right -> write ("18 " ++ tempText temp ++ " " ++ show (binOpCode op) ++ " " ++ operandIrFields left ++ " " ++ operandIrFields right)
   ICall result name args -> write ("19 " ++ maybeTempText result ++ " " ++ name ++ " " ++ operandsIrFields args)
   ICallIndirect result callee args -> write ("20 " ++ maybeTempText result ++ " " ++ operandIrFields callee ++ " " ++ operandsIrFields args)
@@ -243,6 +243,18 @@ emitInstrIr write instr = case instr of
     write "]"
     write ("O " ++ operandIrFields falseOp)
     write "Q"
+
+emitTempOp :: (String -> IO ()) -> Int -> Temp -> Operand -> IO ()
+emitTempOp write code temp op =
+  write (show code ++ " " ++ tempText temp ++ " " ++ operandIrFields op)
+
+emitOpOp :: (String -> IO ()) -> Int -> Operand -> Operand -> IO ()
+emitOpOp write code a b =
+  write (show code ++ " " ++ operandIrFields a ++ " " ++ operandIrFields b)
+
+emitExt :: (String -> IO ()) -> Int -> Temp -> Int -> Operand -> IO ()
+emitExt write code temp size op =
+  write (show code ++ " " ++ tempText temp ++ " " ++ show size ++ " " ++ operandIrFields op)
 
 terminatorIrLine :: Terminator -> String
 terminatorIrLine term = case term of
