@@ -33,6 +33,11 @@ jobs:
             runner: ubuntu-latest
             timeout: 120
             attr: tests.host.ghc.native.smoke.m1
+          - suite: riscv qemu
+            arch: riscv64
+            runner: ubuntu-latest
+            timeout: 120
+            attr: tests.host.ghc.native.smoke.m1-riscv64
           - suite: fast native
             arch: amd64
             runner: ubuntu-latest
@@ -43,6 +48,11 @@ jobs:
             runner: ubuntu-latest
             timeout: 120
             attr: tinycc.host.ghc.native
+          - suite: riscv qemu
+            arch: riscv64
+            runner: ubuntu-latest
+            timeout: 360
+            attr: tests.host.ghc.native.tinycc-riscv64
           - suite: non-blocking stats
             arch: amd64
             runner: ubuntu-latest
@@ -114,6 +124,11 @@ jobs:
             runner: ubuntu-latest
             timeout: 720
             attr: tinycc.m2.precisely.m2
+          - suite: boss stage0 path
+            arch: riscv64
+            runner: ubuntu-latest
+            timeout: 720
+            attr: tests.smoke.m1-riscv64
           - suite: boss stage0 path
             arch: aarch64
             runner: ubuntu-24.04-arm
