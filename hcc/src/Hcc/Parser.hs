@@ -657,12 +657,16 @@ enumValue nextValue = do
       toks <- takeEnumValueExpr
       constants <- parserConstants
       case parseConstExpr constants toks of
-        Right (value, []) -> pure value
-        Right (value, trailing) ->
-          if all ignorableEnumExprTail trailing
-          then pure value
-          else pure nextValue
-        Left _ -> pure nextValue
+        Right (value, trailing) | all ignorableEnumExprTail trailing -> pure value
+        Right (_, trailing) ->
+          peek >>= \tok -> failAt tok ("unexpected tokens in enum initializer: " ++ describeTrailing trailing)
+        Left msg ->
+          peek >>= \tok -> failAt tok ("invalid enum initializer: " ++ msg)
+
+describeTrailing :: [Token] -> String
+describeTrailing toks = case toks of
+  [] -> "(none)"
+  Token _ kind:_ -> tokenText kind
 
 takeEnumValueExpr :: Parser [Token]
 takeEnumValueExpr = pRaw $ \env toks ->

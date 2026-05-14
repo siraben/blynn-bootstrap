@@ -60,11 +60,18 @@ readSourceWithIncludes includeDirs defines path = do
         pure (keep, guards, maybe macros (`symbolSetInsert` macros) (directiveArgument "define" line), frames)
       Just "undef" | active ->
         pure (keep, guards, maybe macros (`symbolSetDelete` macros) (directiveArgument "undef" line), frames)
-      _ -> case includeName line of
-        Just name | active -> do
+      _ -> case includeRequest line of
+        Just (form, name) | active -> do
           found <- findInclude currentDir name
           case found of
-            Nothing -> pure (keep, guards, macros, frames)
+            Nothing -> case form of
+              -- "foo.h": local includes must resolve; a typo here would
+              -- silently miscompile, so fail loudly.
+              QuoteInclude -> die ("hcpp: cannot find include file " ++ show name)
+                              >> pure (keep, guards, macros, frames)
+              -- <foo.h>: system headers are routinely stubbed at link time
+              -- in the bootstrap chain; keep the historical silent skip.
+              SystemInclude -> pure (keep, guards, macros, frames)
             Just file ->
               if file `elem` stack
               then pure (id, guards, macros, frames)
@@ -80,17 +87,20 @@ readSourceWithIncludes includeDirs defines path = do
       [] -> Nothing
       file:_ -> Just file)
 
-includeName :: String -> Maybe String
-includeName line = case words line of
+data IncludeForm = QuoteInclude | SystemInclude
+
+includeRequest :: String -> Maybe (IncludeForm, String)
+includeRequest line = case words line of
   "#include":raw:_ -> stripIncludeDelims raw
   "#":"include":raw:_ -> stripIncludeDelims raw
   _ -> Nothing
 
-stripIncludeDelims :: String -> Maybe String
+stripIncludeDelims :: String -> Maybe (IncludeForm, String)
 stripIncludeDelims raw = case raw of
-  '"':rest -> Just (takeWhile (/= '"') rest)
-  '<':rest -> Just (takeWhile (/= '>') rest)
+  '"':rest -> Just (QuoteInclude, takeWhile (/= '"') rest)
+  '<':rest -> Just (SystemInclude, takeWhile (/= '>') rest)
   _ -> Nothing
+
 
 data IncludeFrame = IncludeFrame
   { includeParentActive :: Bool
