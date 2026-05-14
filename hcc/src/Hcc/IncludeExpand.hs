@@ -157,14 +157,14 @@ evalIncludeIf macros text =
         'd':'e':'f':'i':'n':'e':'d':rest -> evalDefined rest
         '(' : rest | lastMaybe rest == Just ')' -> evalIncludeIf macros (init rest)
         _ | all isDigitChar atom -> readDecimal atom /= 0
-          | all isMacroNameChar atom -> symbolSetMember atom macros
+          | all isIdentChar atom -> symbolSetMember atom macros
           | otherwise -> False
 
     evalDefined raw =
       let rest = trim raw
       in case rest of
-        '(' : xs -> symbolSetMember (takeWhile isMacroNameChar xs) macros
-        _ -> symbolSetMember (takeWhile isMacroNameChar rest) macros
+        '(' : xs -> symbolSetMember (takeWhile isIdentChar xs) macros
+        _ -> symbolSetMember (takeWhile isIdentChar rest) macros
 
 splitTopLevel :: String -> String -> [String]
 splitTopLevel sep text = go 0 text "" where
@@ -182,10 +182,6 @@ lastMaybe xs = case xs of
   [] -> Nothing
   [x] -> Just x
   _:rest -> lastMaybe rest
-
-isMacroNameChar :: Char -> Bool
-isMacroNameChar c =
-  (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_'
 
 readDecimal :: String -> Int
 readDecimal text = go 0 text where
