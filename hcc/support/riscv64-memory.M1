@@ -1,0 +1,54 @@
+## hcc RISC-V bump allocator for bootstrap links.
+
+:FUNCTION_malloc
+	rd_sp rs1_sp !-16 addi
+	rs1_sp rs2_a0 sd
+	rd_t0 ~hcc_support_brk auipc
+	rd_t0 rs1_t0 !hcc_support_brk addi
+	rd_t1 rs1_t0 ld
+	rs1_t1 @HCC_MEM_MALLOC_READY bnez
+	rd_a0 rs1_x0 !0 addi
+	rd_a7 !214 addi
+	ecall
+	rd_t0 ~hcc_support_brk auipc
+	rd_t0 rs1_t0 !hcc_support_brk addi
+	rs1_t0 rs2_a0 sd
+	rd_t1 rs1_a0 mv
+:HCC_MEM_MALLOC_READY
+	rd_t0 rs1_sp !8 addi
+	rs1_t0 rs2_t1 sd
+	rd_a0 rs1_sp ld
+	rd_a0 rs1_t1 rs2_a0 add
+	rd_a7 !214 addi
+	ecall
+	rd_t0 ~hcc_support_brk auipc
+	rd_t0 rs1_t0 !hcc_support_brk addi
+	rs1_t0 rs2_a0 sd
+	rd_t0 rs1_sp !8 addi
+	rd_a0 rs1_t0 ld
+	rd_sp rs1_sp !16 addi
+	ret
+
+:FUNCTION_calloc
+	rd_a0 rs1_a0 rs2_a1 mul
+	rd_sp rs1_sp !-8 addi
+	rs1_sp rs2_a0 sd
+	rd_t0 ~FUNCTION_malloc auipc
+	rd_t0 rs1_t0 !FUNCTION_malloc addi
+	rd_ra rs1_t0 !0 jalr
+	rd_a2 rs1_sp ld
+	rd_sp rs1_sp !8 addi
+	rd_a1 rs1_x0 !0 addi
+	rd_t0 ~FUNCTION_memset auipc
+	rd_t0 rs1_t0 !FUNCTION_memset addi
+	rd_ra rs1_t0 !0 jalr
+	ret
+
+:FUNCTION_free
+	ret
+
+:hcc_support_brk
+	'00' '00' '00' '00' '00' '00' '00' '00'
+
+:__FUNCTION__
+	'68' '63' '63' '00'

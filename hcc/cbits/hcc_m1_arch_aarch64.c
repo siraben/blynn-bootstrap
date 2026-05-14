@@ -74,6 +74,14 @@ static void aarch64_emit_load_label(FILE *out, int reg, const char *label)
   fprintf(out, "  &%s '00' '00' '00' '00'\n", label);
 }
 
+static void aarch64_emit_load_label_parts(FILE *out, int reg, const char *prefix, const char *fn_name, int id)
+{
+  aarch64_emit_load_literal_prefix(out, reg);
+  fprintf(out, "  &");
+  emit_named_ref(out, prefix, fn_name, id);
+  fprintf(out, " '00' '00' '00' '00'\n");
+}
+
 static void aarch64_emit_load_store(FILE *out, int is_load, int size, int is_signed, int base, int offset)
 {
   int op2;
@@ -228,24 +236,21 @@ static const char *aarch64_skip_name_for_binop(int op)
   return "SKIP_INST_NE";
 }
 
-static void aarch64_emit_jump(FILE *out, const char *fn_name, int target)
+static void aarch64_emit_jump_label_parts(FILE *out, const char *prefix, const char *fn_name, int id)
 {
-  aarch64_emit_load_literal_prefix(out, 16);
-  fprintf(out, "  &HCC_BLOCK_%s_%d '00' '00' '00' '00'\n", fn_name, target);
+  aarch64_emit_load_label_parts(out, 16, prefix, fn_name, id);
   fprintf(out, "  BR_X16\n");
 }
 
 static void aarch64_emit_compare_jump(FILE *out, const char *fn_name, int op, int target)
 {
-  aarch64_emit_load_literal_prefix(out, 16);
-  fprintf(out, "  &HCC_BLOCK_%s_%d '00' '00' '00' '00'\n", fn_name, target);
+  aarch64_emit_load_label_parts(out, 16, "HCC_BLOCK", fn_name, target);
   fprintf(out, "  %s\n  BR_X16\n", aarch64_skip_name_for_binop(invert_binop(op)));
 }
 
-static void aarch64_emit_truth_jump(FILE *out, const char *fn_name, int jump_if_true, int target)
+static void aarch64_emit_truth_jump_label_parts(FILE *out, const char *prefix, const char *fn_name, int id, int jump_if_true)
 {
-  aarch64_emit_load_literal_prefix(out, 16);
-  fprintf(out, "  &HCC_BLOCK_%s_%d '00' '00' '00' '00'\n", fn_name, target);
+  aarch64_emit_load_label_parts(out, 16, prefix, fn_name, id);
   if (jump_if_true) fprintf(out, "  HCC_CBZ_X0_PAST_BR\n");
   else fprintf(out, "  HCC_CBNZ_X0_PAST_BR\n");
   fprintf(out, "  BR_X16\n");
