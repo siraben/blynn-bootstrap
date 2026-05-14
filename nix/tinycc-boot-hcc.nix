@@ -8,6 +8,7 @@
   qemu,
   mesLibc,
   m2libc,
+  patchTool ? null,
   pname ? "tinycc-boot-hcc",
   enableTrace ? false,
   m1ArtifactsOnly ? false,
@@ -103,7 +104,8 @@ stdenvNoCC.mkDerivation {
   nativeBuildInputs = [
     hcc
     minimalBootstrap.stage0-posix.mescc-tools
-  ] ++ lib.optional targetCfg.needsQemu qemu;
+  ] ++ lib.optional targetCfg.needsQemu qemu
+    ++ lib.optional (patchTool != null) patchTool;
 
   M2_ARCH = minimalBootstrap.stage0-posix.m2libcArch;
   M2_OS = minimalBootstrap.stage0-posix.m2libcOS;
