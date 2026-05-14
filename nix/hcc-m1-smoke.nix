@@ -14,8 +14,11 @@
 let
   nixLib = import ./lib.nix { inherit lib; };
   needsAarch64Runner = target == "aarch64" && stdenv.hostPlatform.system != "aarch64-linux";
+  needsRiscv64Runner = target == "riscv64";
+  needsRunner = needsAarch64Runner || needsRiscv64Runner;
   runnerArgs =
-    lib.optionalString needsAarch64Runner "--runner ${qemu}/bin/qemu-aarch64";
+    lib.optionalString needsAarch64Runner "--runner ${qemu}/bin/qemu-aarch64"
+    + lib.optionalString needsRiscv64Runner "--runner ${qemu}/bin/qemu-riscv64";
 in
 stdenvNoCC.mkDerivation (
   {
@@ -29,7 +32,7 @@ stdenvNoCC.mkDerivation (
       hcc
       minimalBootstrap.stage0-posix.mescc-tools
       python3
-    ] ++ lib.optional needsAarch64Runner qemu;
+    ] ++ lib.optional needsRunner qemu;
 
     buildPhase = ''
       runHook preBuild

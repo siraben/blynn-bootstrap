@@ -52,8 +52,22 @@ TARGETS = {
         "libc_core": "libc-core.M1",
         "elf": "ELF-aarch64.hex2",
         "base": "0x00600000",
+        "runner": [],
+    },
+    "riscv64": {
+        "hcc_target": "riscv64",
+        "m1_arch": "riscv64",
+        "m2_dir": "riscv64",
+        "defs": "riscv64_defs.M1",
+        "libc_core": "libc-core.M1",
+        "elf": "ELF-riscv64.hex2",
+        "base": "0x00600000",
+        "runner": ["qemu-riscv64"],
     },
 }
+
+for target in TARGETS.values():
+    target.setdefault("runner", [])
 
 
 def run(argv):
@@ -130,7 +144,8 @@ def main():
             log(f"DONE  {name}")
             continue
         log(f"{name}: execute, expect exit {expected}")
-        result = subprocess.run(args.runner + [str(exe.resolve())])
+        runner = args.runner or target["runner"]
+        result = subprocess.run(runner + [str(exe.resolve())])
         if result.returncode != expected:
             raise SystemExit(f"{name}: got exit {result.returncode}, expected {expected}")
         log(f"DONE  {name}")

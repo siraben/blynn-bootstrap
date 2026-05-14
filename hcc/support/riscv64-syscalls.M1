@@ -1,0 +1,68 @@
+## Final syscall definitions for hcc RISC-V output.
+
+:FUNCTION_read
+	rd_a7 !63 addi
+	ecall
+	ret
+
+:FUNCTION_write
+	rd_a7 !64 addi
+	ecall
+	ret
+
+:FUNCTION_open
+	rd_a3 rs1_a2 mv
+	rd_a2 rs1_a1 mv
+	rd_a1 rs1_a0 mv
+	rd_a0 rs1_x0 !-100 addi
+	rd_a7 !56 addi
+	ecall
+	ret
+
+:FUNCTION_close
+	rd_a7 !57 addi
+	ecall
+	ret
+
+:FUNCTION_lseek
+	rd_a7 !62 addi
+	ecall
+	ret
+
+:FUNCTION_access
+	rd_a2 rs1_a1 mv
+	rd_a1 rs1_a0 mv
+	rd_a0 rs1_x0 !-100 addi
+	rd_a3 rs1_x0 !0 addi
+	rd_a7 !48 addi
+	ecall
+	ret
+
+:FUNCTION_brk
+	rd_a7 !214 addi
+	ecall
+	ret
+
+:FUNCTION_getcwd
+	rd_a7 !17 addi
+	ecall
+	ret
+
+:FUNCTION___assert_fail
+	rd_a0 rs1_x0 !1 addi
+	rd_a7 !93 addi
+	ecall
+	ret
+
+:FUNCTION___builtin_va_start
+	ret
+
+:FUNCTION___builtin_va_arg
+	rd_a0 rs1_x0 !0 addi
+	ret
+
+:FUNCTION___builtin_va_copy
+	ret
+
+:FUNCTION___builtin_va_end
+	ret
