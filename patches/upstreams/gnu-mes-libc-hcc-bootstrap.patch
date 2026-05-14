@@ -1,0 +1,213 @@
+diff --git a/include/linux/x86_64/syscall.h b/include/linux/x86_64/syscall.h
+index 5044485..281373d 100644
+--- a/include/linux/x86_64/syscall.h
++++ b/include/linux/x86_64/syscall.h
+@@ -79,7 +79,7 @@
+ #define SYS_lstat     0x06
+ #define SYS_setitimer 0x26
+ #define SYS_fstat     0x05
+-#define SYS_nanosleep 0x33
++#define SYS_nanosleep 0x23
+ #define SYS_getdents64 0xd9
+ 
+ // bash
+diff --git a/lib/linux/ioctl3.c b/lib/linux/ioctl3.c
+index 7990b8b..6cc637c 100644
+--- a/lib/linux/ioctl3.c
++++ b/lib/linux/ioctl3.c
+@@ -23,7 +23,7 @@
+ #include <mes/lib.h>
+ 
+ int
+-ioctl3 (int filedes, size_t command, long data)
++ioctl3 (int filedes, unsigned long command, long data)
+ {
+   long long_filedes = cast_int_to_long (filedes);
+   int r = _sys_call3 (SYS_ioctl, long_filedes, command, data);
+diff --git a/lib/linux/link.c b/lib/linux/link.c
+index b89b181..4bd6779 100644
+--- a/lib/linux/link.c
++++ b/lib/linux/link.c
+@@ -29,7 +29,7 @@ link (char const *old_name, char const *new_name)
+ #if defined (SYS_link)
+   return _sys_call2 (SYS_link, (long) old_name, (long) new_name);
+ #elif defined (SYS_linkat)
+-  return _sys_call4 (SYS_linkat, AT_FDCWD, (long) old_name, AT_FDCWD, (long) new_name);
++  return _sys_call5 (SYS_linkat, AT_FDCWD, (long) old_name, AT_FDCWD, (long) new_name, 0);
+ #else
+ #error No usable link syscall
+ #endif
+diff --git a/lib/linux/x86_64-mes-gcc/_exit.c b/lib/linux/x86_64-mes-gcc/_exit.c
+index 917bf80..a29771b 100644
+--- a/lib/linux/x86_64-mes-gcc/_exit.c
++++ b/lib/linux/x86_64-mes-gcc/_exit.c
+@@ -31,7 +31,7 @@ _exit (int code)
+        "mov     %0,%%rdi\n\t"
+        "syscall \n\t"
+        : // no outputs "=" (r)
+-       : "rm" (code)
++       : "rm" (code) : "rax", "rdi"
+        );
+   // not reached
+   _exit (0);
+diff --git a/lib/mes/ntoab.c b/lib/mes/ntoab.c
+index d2ddf0f..3520d6d 100644
+--- a/lib/mes/ntoab.c
++++ b/lib/mes/ntoab.c
+@@ -37,8 +37,8 @@
+ // FIXME: M2-Planet 1.10.0 crashes on this...
+ // #if __M2__ || (!defined (__MESC__and__arm__) && !defined (__TINYC__and__arm__and__BOOTSTRAP))
+ #if __M2__ || __not__MESC__arm__and__not__TINYC__arm__BOOTSTRAP
+-size_t
+-__mesabi_uldiv (size_t a, size_t b, size_t *remainder)
++unsigned long
++__mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)
+ {
+   remainder[0] = a % b;
+   return a / b;
+@@ -57,9 +57,9 @@ ntoab (long x, unsigned base, int signed_p)
+   assert_msg (base >= 8, "base >= 8");
+ 
+   int sign_p = 0;
+-  size_t i;
+-  size_t u;
+-  size_t b = base;
++  unsigned long i;
++  unsigned long u;
++  unsigned long b = base;
+   if (signed_p != 0 && x < 0)
+     {
+       sign_p = 1;
+diff --git a/lib/stdio/vfprintf.c b/lib/stdio/vfprintf.c
+index 0b2c30a..7e1ba34 100644
+--- a/lib/stdio/vfprintf.c
++++ b/lib/stdio/vfprintf.c
+@@ -29,6 +29,7 @@ vfprintf (FILE * f, char const *format, va_list ap)
+   int fd = (long) f;
+   char const *p = format;
+   int count = 0;
++  int has_l = 0;
+   while (*p)
+     if (*p != '%')
+       {
+@@ -83,7 +84,15 @@ vfprintf (FILE * f, char const *format, va_list ap)
+               }
+           }
+         if (c == 'l')
+-          c = *++p;
++          {
++            has_l = 1;
++            c = *++p;
++          }
++        if (c == 'l')
++          {
++            has_l = 1;
++            c = *++p;
++          }
+         if (c == 'l')
+           {
+             eputs ("vfprintf: skipping second: l\n");
+@@ -111,7 +120,16 @@ vfprintf (FILE * f, char const *format, va_list ap)
+           case 'x':
+           case 'X':
+             {
+-              long d = va_arg (ap, long);
++              long d;
++              if (has_l)
++                {
++                  has_l = 0;
++                  d = va_arg (ap, long);
++                }
++              else if (c != 'd' && c != 'i')
++                d = (long) (va_arg (ap, unsigned int));
++              else
++                d = (long) (va_arg (ap, int));
+               int base = c == 'o' ? 8 : c == 'x' || c == 'X' ? 16 : 10;
+               char *s = ntoab (d, base, c != 'u' && c != 'x' && c != 'X');
+               if (c == 'X')
+@@ -193,7 +211,7 @@ vfprintf (FILE * f, char const *format, va_list ap)
+           case 'g':
+           case 'G':
+             {
+-              double d = va_arg8 (ap, double);
++              double d = va_arg (ap, double);
+               char *s = dtoab (d, 10, 1);
+               if (c == 'E' || c == 'G')
+                 strupr (s);
+diff --git a/lib/stdio/vsnprintf.c b/lib/stdio/vsnprintf.c
+index 9a8d796..3c1dff6 100644
+--- a/lib/stdio/vsnprintf.c
++++ b/lib/stdio/vsnprintf.c
+@@ -28,6 +28,7 @@ vsnprintf (char *str, size_t size, char const *format, va_list ap)
+ {
+   char const *p = format;
+   int count = 0;
++  int has_l = 0;
+   char c;
+   while (*p)
+     if (*p != '%')
+@@ -85,9 +86,20 @@ vsnprintf (char *str, size_t size, char const *format, va_list ap)
+               }
+           }
+         if (c == 'l')
+-          c = *++p;
++          {
++            has_l = 1;
++            c = *++p;
++          }
+         if (c == 'l')
+-          c = *++p;
++          {
++            has_l = 1;
++            c = *++p;
++          }
++        if (c == 'l')
++          {
++            has_l = 1;
++            c = *++p;
++          }
+         if (c == 'l')
+           {
+             eputs ("vsnprintf: skipping second: l\n");
+@@ -117,7 +129,16 @@ vsnprintf (char *str, size_t size, char const *format, va_list ap)
+           case 'x':
+           case 'X':
+             {
+-              long d = va_arg (ap, long);
++              long d;
++              if (has_l)
++                {
++                  has_l = 0;
++                  d = va_arg (ap, long);
++                }
++              else if (c != 'd' && c != 'i')
++                d = (long) (va_arg (ap, unsigned int));
++              else
++                d = (long) (va_arg (ap, int));
+               int base = c == 'o' ? 8 : c == 'x' || c == 'X' ? 16 : 10;
+               char *s = ntoab (d, base, c != 'u' && c != 'x' && c != 'X');
+               if (c == 'X')
+@@ -209,7 +230,7 @@ vsnprintf (char *str, size_t size, char const *format, va_list ap)
+           case 'g':
+           case 'G':
+             {
+-              double d = va_arg8 (ap, double);
++              double d = va_arg (ap, double);
+               char *s = dtoab (d, 10, 1);
+               if (c == 'E' || c == 'G')
+                 strupr (s);
+diff --git a/lib/string/strpbrk.c b/lib/string/strpbrk.c
+index 57583ee..14000c4 100644
+--- a/lib/string/strpbrk.c
++++ b/lib/string/strpbrk.c
+@@ -26,8 +26,8 @@ strpbrk (char const *string, char const *stopset)
+   char *p = (char *) string;
+   while (*p)
+     if (strchr (stopset, *p))
+-      break;
++      return p;
+     else
+       p++;
+-  return p;
++  return 0;
+ }
