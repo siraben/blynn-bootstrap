@@ -89,29 +89,20 @@ registerTopDeclShallowState st decl = case decl of
   EnumConstants constants ->
     unCompileM (registerConstants constants) st
   TypeDecl types ->
-    unCompileM (registerTypesAggregatesIr types) st
+    unCompileM (registerTypesAggregates types) st
   _ -> Right ((), st)
 
 registerFunctionDecl :: CType -> String -> [Param] -> CompileM ()
 registerFunctionDecl ty name params = do
   registerTypeAggregates ty
-  registerParamAggregates params
+  registerTypesAggregates (paramTypes params)
   bindGlobal name ty
   bindFunctionType name ty params
 
-registerParamAggregates :: [Param] -> CompileM ()
-registerParamAggregates params = case params of
-  [] -> pure ()
-  Param ty _:rest -> do
-    registerTypeAggregates ty
-    registerParamAggregates rest
-
-registerTypesAggregatesIr :: [CType] -> CompileM ()
-registerTypesAggregatesIr types = case types of
-  [] -> pure ()
-  ty:rest -> do
-    registerTypeAggregates ty
-    registerTypesAggregatesIr rest
+paramTypes :: [Param] -> [CType]
+paramTypes params = case params of
+  [] -> []
+  Param ty _:rest -> ty : paramTypes rest
 
 registerGlobalsIr :: CompileState -> [(CType, String, Maybe Expr)] -> Either CodegenError (CompileState, [TopItemIr])
 registerGlobalsIr st globals = case globals of

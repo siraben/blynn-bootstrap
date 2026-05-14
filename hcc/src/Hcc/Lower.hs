@@ -1,5 +1,6 @@
 module Lower
   ( registerTypeAggregates
+  , registerTypesAggregates
   , registerExternGlobals
   , registerConstants
   , registerFieldAggregates
