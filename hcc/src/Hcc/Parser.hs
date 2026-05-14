@@ -659,15 +659,12 @@ enumValue nextValue = do
       constants <- parserConstants
       case parseConstExpr constants toks of
         Right (value, trailing) | all ignorableEnumExprTail trailing -> pure value
-        Right (_, trailing) ->
-          peek >>= \tok -> failAt tok ("unexpected tokens in enum initializer: " ++ describeTrailing trailing)
+        Right (_, tok:_) ->
+          failAt tok ("unexpected tokens in enum initializer: " ++ tokenText (tokenKind tok))
+        Right (_, []) ->
+          peek >>= \tok -> failAt tok "unexpected tokens in enum initializer"
         Left msg ->
           peek >>= \tok -> failAt tok ("invalid enum initializer: " ++ msg)
-
-describeTrailing :: [Token] -> String
-describeTrailing toks = case toks of
-  [] -> "(none)"
-  Token _ kind:_ -> tokenText kind
 
 takeEnumValueExpr :: Parser [Token]
 takeEnumValueExpr = pRaw $ \env toks ->
@@ -764,11 +761,6 @@ optionalFunctionSuffix ty = do
       params <- parameters
       pure (CFunc ty (paramTypes params))
     else pure ty
-
-paramTypes :: [Param] -> [CType]
-paramTypes params = case params of
-  [] -> []
-  Param ty _:rest -> ty : paramTypes rest
 
 pointerStars :: CType -> Parser CType
 pointerStars ty = do
@@ -919,9 +911,6 @@ postfixContinues toks = case toks of
   Token _ (TokPunct p):_ -> p `elem` ["(", "[", ".", "->", "++", "--"]
   _ -> False
 
--- Compound assignment is a single AST node so the lvalue is evaluated once.
--- `*p++ += 2` must post-increment `p` exactly once even though the operand
--- name appears twice in the source.
 assignNode :: String -> Expr -> Expr -> Expr
 assignNode op lhs rhs = case op of
   "=" -> EAssign lhs rhs
@@ -990,24 +979,19 @@ needString = do
     TokString s -> advanceToken >> pure s
     _ -> failAt tok "expected string literal"
 
--- C11 5.1.1.2 phase 6: adjacent string literals are concatenated as
--- already-translated multibyte sequences (after phase-5 escape decoding).
--- We decode each literal to bytes here and re-encode using `\xNN` escapes so
--- that escapes from one literal cannot extend into another (e.g.,
--- `"\1" "2"` must yield bytes 0x01, 0x32, not the octal `\12`).
 joinStrings :: [String] -> String
 joinStrings strings =
   let bodyBytes = concatMap literalContentBytes strings
   in "\"" ++ concatMap hexEscape bodyBytes ++ "\""
 
--- stringBytes appends a trailing NUL terminator; strip it so concatenation
--- doesn't inject embedded NULs between literals.
 literalContentBytes :: String -> [Int]
-literalContentBytes text =
-  let bytes = stringBytes text
-  in case reverse bytes of
-    0:rest -> reverse rest
-    _ -> bytes
+literalContentBytes text = dropLast (stringBytes text)
+
+dropLast :: [a] -> [a]
+dropLast xs = case xs of
+  [] -> []
+  [_] -> []
+  x:rest -> x : dropLast rest
 
 hexEscape :: Int -> String
 hexEscape value = "\\x" ++ hexPair value

@@ -32,7 +32,6 @@ module CompileM
   , currentFunctionName
   , withCurrentFunction
   , currentReturnType
-  , withCurrentReturnType
   , withFunctionScope
   , withVarScope
   , withLoopTargets
@@ -43,6 +42,7 @@ module CompileM
   ) where
 
 import Base
+import TextUtil
 import TypesAst
 import TypesIr
 import ScopeMap
@@ -69,7 +69,6 @@ data CompileState = CompileState
   , csContinueTargets :: [BlockId]
   , csTargetBits :: Int
   , csCurrentFunction :: Maybe String
-  , csCurrentReturnType :: Maybe CType
   }
 
 data CompileM a = CompileM
@@ -115,7 +114,6 @@ initialCompileState = CompileState
   , csContinueTargets = []
   , csTargetBits = 64
   , csCurrentFunction = Nothing
-  , csCurrentReturnType = Nothing
   }
 
 initialCompileStateForTarget :: String -> Int -> CompileState
@@ -177,21 +175,11 @@ bindGlobal name ty = do
   rejectReservedSymbol "global" name
   CompileM $ \st -> Right ((), st { csGlobals = symbolMapInsert name ty (csGlobals st) })
 
--- The M1 backend mangles function names as `FUNCTION_<name>` and synthesised
--- data labels as `HCC_DATA_<n>`; a C identifier in either namespace would
--- collide silently with a function or data label. Reject those here.
 rejectReservedSymbol :: String -> String -> CompileM ()
 rejectReservedSymbol kind name =
-  if hasPrefix "FUNCTION_" name || hasPrefix "HCC_DATA_" name
+  if "FUNCTION_" `prefixOf` name || "HCC_DATA_" `prefixOf` name
     then throwC (kind ++ " name " ++ show name ++ " uses a reserved HCC label prefix")
     else pure ()
-
-hasPrefix :: String -> String -> Bool
-hasPrefix prefix text = case prefix of
-  [] -> True
-  p:ps -> case text of
-    c:cs -> p == c && hasPrefix ps cs
-    [] -> False
 
 bindConstant :: String -> Int -> CompileM ()
 bindConstant name value = CompileM $ \st ->
@@ -209,10 +197,6 @@ bindFunctionType name retTy params = do
     { csFunctions = symbolSetInsert name (csFunctions st)
     , csFunctionTypes = symbolMapInsert name (CFunc retTy (paramTypes params)) (csFunctionTypes st)
     })
-  where
-    paramTypes xs = case xs of
-      [] -> []
-      Param ty _:rest -> ty : paramTypes rest
 
 lookupVarMaybe :: String -> CompileM (Maybe Temp)
 lookupVarMaybe name = CompileM $ \st -> Right (fmap fst (scopeMapLookup name (csVars st)), st)
@@ -274,13 +258,15 @@ withCurrentFunction name action = CompileM $ \st ->
     Right (x, st') -> Right (x, st' { csCurrentFunction = csCurrentFunction st })
 
 currentReturnType :: CompileM (Maybe CType)
-currentReturnType = CompileM $ \st -> Right (csCurrentReturnType st, st)
-
-withCurrentReturnType :: CType -> CompileM a -> CompileM a
-withCurrentReturnType ty action = CompileM $ \st ->
-  case unCompileM action st { csCurrentReturnType = Just ty } of
-    Left err -> Left err
-    Right (x, st') -> Right (x, st' { csCurrentReturnType = csCurrentReturnType st })
+currentReturnType = do
+  mname <- currentFunctionName
+  case mname of
+    Nothing -> pure Nothing
+    Just name -> do
+      mty <- lookupFunctionType name
+      case mty of
+        Just (CFunc retTy _) -> pure (Just retTy)
+        _ -> pure Nothing
 
 withFunctionScope :: CompileM a -> CompileM a
 withFunctionScope action = CompileM $ \st ->

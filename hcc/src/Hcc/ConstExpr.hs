@@ -10,10 +10,6 @@ import TypesToken
 
 type ConstParser a = P [(String, Int)] Token String a
 
--- Values carry a "this operand is unsigned" flag so that comparisons, shifts,
--- and division can pick the correct semantics. Per C11 6.10.1p4 the usual
--- arithmetic conversions apply, so if either operand of a binary op is
--- unsigned, the result is unsigned.
 type CValue = (Int, Bool)
 
 parseConstExpr :: [(String, Int)] -> [Token] -> Either String (Int, [Token])
@@ -109,9 +105,6 @@ applyOp op lv rv = case op of
     b = fst rv
     u = snd lv || snd rv
 
--- C11 6.10.1p4 + 6.3.1.8: relational operators on operands of differing
--- signedness take the unsigned conversion. Treat the Int value as a 64-bit
--- two's-complement word and pick the comparison accordingly.
 compareLt :: Bool -> Int -> Int -> Bool
 compareLt unsigned a b =
   if unsigned
@@ -127,9 +120,6 @@ unsignedLt a b =
     then if b < 0 then a < b else False
     else if b < 0 then True else a < b
 
--- Unsigned division reduces to signed division when both operands are
--- non-negative. When either has bit 63 set we fall back to a slow loop so
--- the result matches uintmax_t arithmetic; #if rarely needs this path.
 unsignedDiv :: Int -> Int -> Int
 unsignedDiv a b =
   if a >= 0 && b > 0
@@ -143,19 +133,25 @@ unsignedMod a b =
     else a - unsignedQuotRemQuot a b * b
 
 unsignedQuotRemQuot :: Int -> Int -> Int
-unsignedQuotRemQuot a b =
-  if unsignedLt a b
-    then 0
-    else 1 + unsignedQuotRemQuot (a - b) b
+unsignedQuotRemQuot a b = unsignedLongDivStep 63 a b 0 0
+
+unsignedLongDivStep :: Int -> Int -> Int -> Int -> Int -> Int
+unsignedLongDivStep bit a b rem' quot' =
+  if bit < 0
+    then quot'
+    else
+      let aBit = unsignedShiftRight a bit `mod` 2
+          rem2 = shiftLeftInt rem' 1 + aBit
+      in if unsignedLt rem2 b
+           then unsignedLongDivStep (bit - 1) a b rem2 quot'
+           else unsignedLongDivStep (bit - 1) a b (rem2 - b) (quot' + pow2 bit)
 
 unsignedShiftRight :: Int -> Int -> Int
 unsignedShiftRight a count =
-  if a >= 0
+  if count <= 0 then a
+  else if a >= 0
     then shiftRightInt a count
-    else
-      -- Logical shift: move the sign bit into a normal bit position before
-      -- the loop-based shiftRightInt sees it.
-      shiftRightInt (a `div` 2 + 4611686018427387904) (max 0 (count - 1))
+    else shiftRightInt ((a `div` 2) + pow2 63) (count - 1)
 
 parseUnary :: ConstParser CValue
 parseUnary = do

@@ -39,8 +39,8 @@ buildM1IrModuleWithDataPrefixTarget prefix target ast = case ast of
 lowerTopDeclsIr :: CompileState -> [TopDecl] -> Either CodegenError (CompileState, [TopItemIr])
 lowerTopDeclsIr st decls = case decls of
   [] -> Right (st, [])
-  Function retTy name params body:rest ->
-    case mapCompileRun (unCompileM (registerImplicitCalls (paramDeclNamesIr params) body >> lowerFunction retTy name params body) st) of
+  Function _ name params body:rest ->
+    case mapCompileRun (unCompileM (registerImplicitCalls (paramDeclNamesIr params) body >> lowerFunction name params body) st) of
       Left err -> Left err
       Right (fn, st') ->
         case pendingDataItemsIr st' of
@@ -98,11 +98,6 @@ registerFunctionDecl ty name params = do
   registerTypesAggregates (paramTypes params)
   bindGlobal name ty
   bindFunctionType name ty params
-
-paramTypes :: [Param] -> [CType]
-paramTypes params = case params of
-  [] -> []
-  Param ty _:rest -> ty : paramTypes rest
 
 registerGlobalsIr :: CompileState -> [(CType, String, Maybe Expr)] -> Either CodegenError (CompileState, [TopItemIr])
 registerGlobalsIr st globals = case globals of

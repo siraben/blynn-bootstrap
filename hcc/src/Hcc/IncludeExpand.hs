@@ -42,19 +42,19 @@ readSourceWithIncludes includeDirs defines path = do
       pure (expanded . tailText, guards'', macros'')
 
   expandLine currentDir stack guards macros frames line =
-    let active = includeActive frames
+    let active = ifStackActive frames
         keep = (line++) . ('\n':)
     in case directiveNameFromLine line of
       Just "ifdef" ->
-        pure (keep, guards, macros, pushIncludeFrame frames (maybe False (`symbolSetMember` macros) (directiveArgument "ifdef" line)))
+        pure (keep, guards, macros, pushIfFrame frames (maybe False (`symbolSetMember` macros) (directiveArgument "ifdef" line)))
       Just "ifndef" ->
-        pure (keep, guards, macros, pushIncludeFrame frames (maybe False (not . (`symbolSetMember` macros)) (directiveArgument "ifndef" line)))
+        pure (keep, guards, macros, pushIfFrame frames (maybe False (not . (`symbolSetMember` macros)) (directiveArgument "ifndef" line)))
       Just "if" ->
-        pure (keep, guards, macros, pushIncludeFrame frames (evalIncludeIf macros (directiveRest "if" line)))
+        pure (keep, guards, macros, pushIfFrame frames (evalIncludeIf macros (directiveRest "if" line)))
       Just "elif" ->
-        pure (keep, guards, macros, replaceIncludeElif frames (evalIncludeIf macros (directiveRest "elif" line)))
+        pure (keep, guards, macros, maybe frames id (replaceElifFrame frames (evalIncludeIf macros (directiveRest "elif" line))))
       Just "else" ->
-        pure (keep, guards, macros, replaceIncludeElse frames)
+        pure (keep, guards, macros, maybe frames id (replaceElseFrame frames))
       Just "endif" ->
         pure (keep, guards, macros, case frames of { [] -> []; _:xs -> xs })
       Just "define" | active ->
@@ -66,12 +66,8 @@ readSourceWithIncludes includeDirs defines path = do
           found <- findInclude currentDir name
           case found of
             Nothing -> case form of
-              -- "foo.h": local includes must resolve; a typo here would
-              -- silently miscompile, so fail loudly.
               QuoteInclude -> die ("hcpp: cannot find include file " ++ show name)
                               >> pure (keep, guards, macros, frames)
-              -- <foo.h>: system headers are routinely stubbed at link time
-              -- in the bootstrap chain; keep the historical silent skip.
               SystemInclude -> pure (keep, guards, macros, frames)
             Just file ->
               if file `elem` stack
@@ -102,23 +98,6 @@ stripIncludeDelims raw = case raw of
   '<':rest -> Just (SystemInclude, takeWhile (/= '>') rest)
   _ -> Nothing
 
-
--- The textual include pass shares the IfFrame state machine with the token
--- preprocessor; mismatches between the two skipping policies have produced
--- divergence in the past. Empty-stack #elif/#else here silently no-op
--- because a top-level out-of-balance directive is reported later by the
--- preprocessor with a real source position.
-includeActive :: [IfFrame] -> Bool
-includeActive = ifStackActive
-
-pushIncludeFrame :: [IfFrame] -> Bool -> [IfFrame]
-pushIncludeFrame = pushIfFrame
-
-replaceIncludeElif :: [IfFrame] -> Bool -> [IfFrame]
-replaceIncludeElif frames cond = maybe frames id (replaceElifFrame frames cond)
-
-replaceIncludeElse :: [IfFrame] -> [IfFrame]
-replaceIncludeElse frames = maybe frames id (replaceElseFrame frames)
 
 directiveRest :: String -> String -> String
 directiveRest directive line = case dropWhile isSpaceChar line of
