@@ -5,6 +5,7 @@ hcc:src/Hcc/Literal.hs
 hcc:src/Hcc/TypesToken.hs
 hcc:src/Hcc/SymbolTable.hs
 hcc:src/Hcc/ParseLite.hs
+hcc:src/Hcc/Operators.hs
 hcc:src/Hcc/ConstExpr.hs
 hcc:src/Hcc/Lexer.hs
 hcc:src/Hcc/Preprocessor.hs

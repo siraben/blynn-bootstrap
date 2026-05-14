@@ -5,9 +5,10 @@ module Parser
 
 import Base
 import ConstExpr
-import TypesAst
+import Operators
 import ParseLite
 import ScopeMap
+import TypesAst
 import TypesToken
 
 data ParseError = ParseError SrcPos String
@@ -836,46 +837,21 @@ expression minPrec = do
           _ -> pure lhs
         Nothing -> pure lhs
 
-data Assoc = LeftAssoc | RightAssoc
-
-rightAssoc :: Assoc -> Bool
-rightAssoc assoc = case assoc of
-  RightAssoc -> True
-  LeftAssoc -> False
-
 binop :: String -> Maybe (Int, Assoc)
 binop op = case op of
-  "," -> Just (0, LeftAssoc)
-  "=" -> Just (1, RightAssoc)
-  "+=" -> Just (1, RightAssoc)
-  "-=" -> Just (1, RightAssoc)
-  "*=" -> Just (1, RightAssoc)
-  "/=" -> Just (1, RightAssoc)
-  "%=" -> Just (1, RightAssoc)
+  ","   -> Just (0, LeftAssoc)
+  "="   -> Just (1, RightAssoc)
+  "+="  -> Just (1, RightAssoc)
+  "-="  -> Just (1, RightAssoc)
+  "*="  -> Just (1, RightAssoc)
+  "/="  -> Just (1, RightAssoc)
+  "%="  -> Just (1, RightAssoc)
   "<<=" -> Just (1, RightAssoc)
   ">>=" -> Just (1, RightAssoc)
-  "&=" -> Just (1, RightAssoc)
-  "^=" -> Just (1, RightAssoc)
-  "|=" -> Just (1, RightAssoc)
-  "||" -> Just (3, LeftAssoc)
-  "&&" -> Just (4, LeftAssoc)
-  "|" -> Just (5, LeftAssoc)
-  "^" -> Just (6, LeftAssoc)
-  "&" -> Just (7, LeftAssoc)
-  "==" -> Just (8, LeftAssoc)
-  "!=" -> Just (8, LeftAssoc)
-  "<" -> Just (9, LeftAssoc)
-  "<=" -> Just (9, LeftAssoc)
-  ">" -> Just (9, LeftAssoc)
-  ">=" -> Just (9, LeftAssoc)
-  "<<" -> Just (10, LeftAssoc)
-  ">>" -> Just (10, LeftAssoc)
-  "+" -> Just (11, LeftAssoc)
-  "-" -> Just (11, LeftAssoc)
-  "*" -> Just (12, LeftAssoc)
-  "/" -> Just (12, LeftAssoc)
-  "%" -> Just (12, LeftAssoc)
-  _ -> Nothing
+  "&="  -> Just (1, RightAssoc)
+  "^="  -> Just (1, RightAssoc)
+  "|="  -> Just (1, RightAssoc)
+  _     -> binopArith op
 
 unary :: Parser Expr
 unary = do
