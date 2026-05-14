@@ -63,9 +63,6 @@ startsBlockComment s = case s of
 skipLineComment :: LexState -> LexState
 skipLineComment st = snd (takeUntilNewline st)
 
--- C11 5.1.1.2 phase 3: each comment is replaced by one space character, so a
--- block comment must not flip the line-start flag that #-directive recognition
--- depends on.
 skipBlockComment :: LexState -> Either LexError LexState
 skipBlockComment st = case go (advanceMany "/*" st { lsInput = drop 2 (lsInput st) }) of
   Left err -> Left err

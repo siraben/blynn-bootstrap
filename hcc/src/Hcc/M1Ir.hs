@@ -98,11 +98,6 @@ registerFunctionDecl ty name params = do
   bindGlobal name ty
   bindFunctionType name ty params
 
-paramTypes :: [Param] -> [CType]
-paramTypes params = case params of
-  [] -> []
-  Param ty _:rest -> ty : paramTypes rest
-
 registerGlobalsIr :: CompileState -> [(CType, String, Maybe Expr)] -> Either CodegenError (CompileState, [TopItemIr])
 registerGlobalsIr st globals = case globals of
   [] -> Right (st, [])
