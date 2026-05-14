@@ -7,6 +7,7 @@ import Base
 import TypesAst
 import CompileM
 import IntTable
+import SymbolTable
 import TypesIr
 import Lower
 import LowerBootstrap
@@ -19,8 +20,12 @@ emitM1IrWithDataPrefixTarget write prefix target ast =
   case buildM1IrModuleWithDataPrefixTarget prefix target ast of
     Left err -> pure (Left err)
     Right ir -> do
-      write "HCCIR 1"
-      emitModuleIr write (optimizeModuleIr ir)
+      let optimized = optimizeModuleIr ir
+          (symbols, symbolMap) = collectModuleSymbols optimized
+      write "HCCIR 3"
+      emitSymbolsIr write symbols
+      write "M"
+      emitModuleIr symbolMap write optimized
       pure (Right ())
 
 buildM1IrModuleWithDataPrefixTarget :: String -> Int -> Program -> Either CodegenError ModuleIr
@@ -136,45 +141,186 @@ paramDeclNamesIr params = case params of
   [] -> []
   Param _ name:rest -> name : paramDeclNamesIr rest
 
-emitModuleIr :: (String -> IO ()) -> ModuleIr -> IO ()
-emitModuleIr write ir = case ir of
-  ModuleIr items -> emitTopItemsIr write items
+data SymbolState = SymbolState (SymbolMap Int) [String] Int
 
-emitTopItemsIr :: (String -> IO ()) -> [TopItemIr] -> IO ()
-emitTopItemsIr write items = case items of
+collectModuleSymbols :: ModuleIr -> ([String], SymbolMap Int)
+collectModuleSymbols ir = case ir of
+  ModuleIr items -> finishSymbolState (collectTopItemsSymbols items initialSymbolState)
+
+initialSymbolState :: SymbolState
+initialSymbolState = SymbolState symbolMapEmpty [] 0
+
+finishSymbolState :: SymbolState -> ([String], SymbolMap Int)
+finishSymbolState st = case st of
+  SymbolState byName symbols _ -> (reverse symbols, byName)
+
+bindSymbol :: String -> SymbolState -> SymbolState
+bindSymbol name st = case st of
+  SymbolState byName symbols next ->
+    case symbolMapLookup name byName of
+      Just _ -> st
+      Nothing -> SymbolState (symbolMapInsert name next byName) (name:symbols) (next + 1)
+
+collectTopItemsSymbols :: [TopItemIr] -> SymbolState -> SymbolState
+collectTopItemsSymbols items st = case items of
+  [] -> st
+  item:rest -> collectTopItemsSymbols rest (collectTopItemSymbols item st)
+
+collectTopItemSymbols :: TopItemIr -> SymbolState -> SymbolState
+collectTopItemSymbols item st = case item of
+  TopData dataItem -> collectDataItemSymbols dataItem st
+  TopFunction fn -> collectFunctionSymbols fn st
+
+collectDataItemSymbols :: DataItem -> SymbolState -> SymbolState
+collectDataItemSymbols item st = case item of
+  DataItem label values -> collectDataValuesSymbols values (bindSymbol label st)
+
+collectDataValuesSymbols :: [DataValue] -> SymbolState -> SymbolState
+collectDataValuesSymbols values st = case values of
+  [] -> st
+  DAddress label:rest -> collectDataValuesSymbols rest (bindSymbol label st)
+  _:rest -> collectDataValuesSymbols rest st
+
+collectFunctionSymbols :: FunctionIr -> SymbolState -> SymbolState
+collectFunctionSymbols fn st = case fn of
+  FunctionIr name blocks -> collectBlocksSymbols blocks (bindSymbol name st)
+
+collectBlocksSymbols :: [BasicBlock] -> SymbolState -> SymbolState
+collectBlocksSymbols blocks st = case blocks of
+  [] -> st
+  block:rest -> collectBlocksSymbols rest (collectBlockSymbols block st)
+
+collectBlockSymbols :: BasicBlock -> SymbolState -> SymbolState
+collectBlockSymbols block st = case block of
+  BasicBlock _ instrs term -> collectTermSymbols term (collectInstrsSymbols instrs st)
+
+collectTermSymbols :: Terminator -> SymbolState -> SymbolState
+collectTermSymbols term st = case term of
+  TRet maybeOp -> collectMaybeOperandSymbol maybeOp st
+  TJump _ -> st
+  TBranch op _ _ -> collectOperandSymbol op st
+  TBranchCmp _ a b _ _ -> collectOperandSymbol b (collectOperandSymbol a st)
+
+collectInstrsSymbols :: [Instr] -> SymbolState -> SymbolState
+collectInstrsSymbols instrs st = case instrs of
+  [] -> st
+  instr:rest -> collectInstrsSymbols rest (collectInstrSymbols instr st)
+
+collectInstrSymbols :: Instr -> SymbolState -> SymbolState
+collectInstrSymbols instr st = case instr of
+  IConstBytes _ _ -> st
+  ICopy _ op -> collectOperandSymbol op st
+  ILoad64 _ op -> collectOperandSymbol op st
+  ILoad32 _ op -> collectOperandSymbol op st
+  ILoadS32 _ op -> collectOperandSymbol op st
+  ILoad16 _ op -> collectOperandSymbol op st
+  ILoadS16 _ op -> collectOperandSymbol op st
+  ILoad8 _ op -> collectOperandSymbol op st
+  ILoadS8 _ op -> collectOperandSymbol op st
+  IStore64 a b -> collectOperandSymbol b (collectOperandSymbol a st)
+  IStore32 a b -> collectOperandSymbol b (collectOperandSymbol a st)
+  IStore16 a b -> collectOperandSymbol b (collectOperandSymbol a st)
+  IStore8 a b -> collectOperandSymbol b (collectOperandSymbol a st)
+  ISExt _ _ op -> collectOperandSymbol op st
+  IZExt _ _ op -> collectOperandSymbol op st
+  ITrunc _ _ op -> collectOperandSymbol op st
+  IBin _ _ a b -> collectOperandSymbol b (collectOperandSymbol a st)
+  ICond _ condInstrs condOp trueInstrs trueOp falseInstrs falseOp ->
+    collectOperandSymbol falseOp
+      (collectInstrsSymbols falseInstrs
+        (collectOperandSymbol trueOp
+          (collectInstrsSymbols trueInstrs
+            (collectOperandSymbol condOp
+              (collectInstrsSymbols condInstrs st)))))
+  ICall _ name args -> collectOperandsSymbols args (bindSymbol name st)
+  ICallIndirect _ callee args -> collectOperandsSymbols args (collectOperandSymbol callee st)
+  _ -> st
+
+collectMaybeOperandSymbol :: Maybe Operand -> SymbolState -> SymbolState
+collectMaybeOperandSymbol maybeOp st = case maybeOp of
+  Nothing -> st
+  Just op -> collectOperandSymbol op st
+
+collectOperandsSymbols :: [Operand] -> SymbolState -> SymbolState
+collectOperandsSymbols ops st = case ops of
+  [] -> st
+  op:rest -> collectOperandsSymbols rest (collectOperandSymbol op st)
+
+collectOperandSymbol :: Operand -> SymbolState -> SymbolState
+collectOperandSymbol op st = case op of
+  OImmBytes _ -> st
+  OGlobal name -> bindSymbol name st
+  OFunction name -> bindSymbol name st
+  _ -> st
+
+emitSymbolsIr :: (String -> IO ()) -> [String] -> IO ()
+emitSymbolsIr write symbols = go 0 symbols where
+  go _ [] = pure ()
+  go index (symbol:rest) = do
+    write ("S " ++ numText index ++ " " ++ symbol)
+    go (index + 1) rest
+
+symbolRef :: SymbolMap Int -> String -> String
+symbolRef symbols name = case symbolMapLookup name symbols of
+  Just index -> "@" ++ numText index
+  Nothing -> error ("missing HCC IR symbol: " ++ name)
+
+emitModuleIr :: SymbolMap Int -> (String -> IO ()) -> ModuleIr -> IO ()
+emitModuleIr symbols write ir = case ir of
+  ModuleIr items -> emitTopItemsIr symbols write items
+
+emitTopItemsIr :: SymbolMap Int -> (String -> IO ()) -> [TopItemIr] -> IO ()
+emitTopItemsIr symbols write items = case items of
   [] -> pure ()
   item:rest -> do
-    emitTopItemIr write item
-    emitTopItemsIr write rest
+    emitTopItemIr symbols write item
+    emitTopItemsIr symbols write rest
 
-emitTopItemIr :: (String -> IO ()) -> TopItemIr -> IO ()
-emitTopItemIr write item = case item of
-  TopData dataItem -> emitDataItemIr write dataItem
-  TopFunction fn -> emitFunctionIr write fn
+emitTopItemIr :: SymbolMap Int -> (String -> IO ()) -> TopItemIr -> IO ()
+emitTopItemIr symbols write item = case item of
+  TopData dataItem -> emitDataItemIr symbols write dataItem
+  TopFunction fn -> emitFunctionIr symbols write fn
 
-emitDataItemIr :: (String -> IO ()) -> DataItem -> IO ()
-emitDataItemIr write item = case item of
-  DataItem label values -> do
-    write ("D " ++ label)
-    emitDataValuesIr write values
-    write "E"
+emitDataItemIr :: SymbolMap Int -> (String -> IO ()) -> DataItem -> IO ()
+emitDataItemIr symbols write item = case item of
+  DataItem label values ->
+    case singleDataValuesIr symbols values of
+      Just fields -> write ("D " ++ symbolRef symbols label ++ " " ++ fields)
+      Nothing -> do
+        write ("D " ++ symbolRef symbols label)
+        emitDataValuesIr symbols write values
+        write "E"
 
-emitDataValuesIr :: (String -> IO ()) -> [DataValue] -> IO ()
-emitDataValuesIr write values = case values of
+singleDataValuesIr :: SymbolMap Int -> [DataValue] -> Maybe String
+singleDataValuesIr symbols values = case values of
+  [] -> Nothing
+  [DAddress label] -> Just ("a " ++ symbolRef symbols label)
+  DByte 0:_ ->
+    case zeroRun values of
+      (count, []) -> Just ("z " ++ numText count)
+      _ -> Nothing
+  DByte _:_ ->
+    case byteRun 256 values of
+      (bytes, []) -> Just ("x " ++ hexBytes bytes)
+      _ -> Nothing
+  _ -> Nothing
+
+emitDataValuesIr :: SymbolMap Int -> (String -> IO ()) -> [DataValue] -> IO ()
+emitDataValuesIr symbols write values = case values of
   [] -> pure ()
   DByte 0:_ ->
     case zeroRun values of
       (count, rest) -> do
-        write ("z " ++ show count)
-        emitDataValuesIr write rest
-  value:rest -> do
-    write (dataValueIrLine value)
-    emitDataValuesIr write rest
-
-dataValueIrLine :: DataValue -> String
-dataValueIrLine value = case value of
-  DByte byte -> "b " ++ show byte
-  DAddress label -> "a " ++ label
+        write ("z " ++ numText count)
+        emitDataValuesIr symbols write rest
+  DByte _:_ ->
+    case byteRun 256 values of
+      (bytes, rest) -> do
+        write ("x " ++ hexBytes bytes)
+        emitDataValuesIr symbols write rest
+  DAddress label:rest -> do
+    write ("a " ++ symbolRef symbols label)
+    emitDataValuesIr symbols write rest
 
 zeroRun :: [DataValue] -> (Int, [DataValue])
 zeroRun values = case values of
@@ -183,110 +329,149 @@ zeroRun values = case values of
       (count, tailValues) -> (count + 1, tailValues)
   _ -> (0, values)
 
-emitFunctionIr :: (String -> IO ()) -> FunctionIr -> IO ()
-emitFunctionIr write fn = case fn of
+byteRun :: Int -> [DataValue] -> ([Int], [DataValue])
+byteRun limit values =
+  if limit <= 0
+    then ([], values)
+    else case values of
+      DByte byte:rest | byte /= 0 ->
+        case byteRun (limit - 1) rest of
+          (bytes, tailValues) -> (byte:bytes, tailValues)
+      _ -> ([], values)
+
+hexBytes :: [Int] -> String
+hexBytes bytes = case bytes of
+  [] -> ""
+  byte:rest -> hexByte byte ++ hexBytes rest
+
+hexByte :: Int -> String
+hexByte byte =
+  [hexDigit (byte `div` 16), hexDigit (byte `mod` 16)]
+
+hexDigit :: Int -> Char
+hexDigit n =
+  if n < 10
+    then toEnum (fromEnum '0' + n)
+    else toEnum (fromEnum 'a' + n - 10)
+
+emitFunctionIr :: SymbolMap Int -> (String -> IO ()) -> FunctionIr -> IO ()
+emitFunctionIr symbols write fn = case fn of
   FunctionIr name blocks -> do
-    write ("F " ++ name)
-    emitBlocksIr write blocks
+    write ("F " ++ symbolRef symbols name)
+    emitBlocksIr symbols write blocks
     write "E"
 
-emitBlocksIr :: (String -> IO ()) -> [BasicBlock] -> IO ()
-emitBlocksIr write blocks = mapM_ (emitBlockIr write) blocks
+emitBlocksIr :: SymbolMap Int -> (String -> IO ()) -> [BasicBlock] -> IO ()
+emitBlocksIr symbols write blocks = mapM_ (emitBlockIr symbols write) blocks
 
-emitBlockIr :: (String -> IO ()) -> BasicBlock -> IO ()
-emitBlockIr write block = case block of
+emitBlockIr :: SymbolMap Int -> (String -> IO ()) -> BasicBlock -> IO ()
+emitBlockIr symbols write block = case block of
   BasicBlock bid instrs term -> do
     write ("L " ++ blockIdText bid)
-    emitInstrsIr write instrs
-    write (terminatorIrLine term)
+    emitInstrsIr symbols write instrs
+    write (terminatorIrLine symbols term)
 
-emitInstrsIr :: (String -> IO ()) -> [Instr] -> IO ()
-emitInstrsIr write instrs = mapM_ (emitInstrIr write) instrs
+emitInstrsIr :: SymbolMap Int -> (String -> IO ()) -> [Instr] -> IO ()
+emitInstrsIr symbols write instrs = mapM_ (emitInstrIr symbols write) instrs
 
-emitInstrIr :: (String -> IO ()) -> Instr -> IO ()
-emitInstrIr write instr = case instr of
-  IParam temp index -> write ("1 " ++ tempText temp ++ " " ++ show index)
-  IAlloca temp size -> write ("2 " ++ tempText temp ++ " " ++ show size)
-  IConst temp value -> write ("3 " ++ tempText temp ++ " " ++ show value)
+emitInstrIr :: SymbolMap Int -> (String -> IO ()) -> Instr -> IO ()
+emitInstrIr symbols write instr = case instr of
+  IParam temp index -> write ("1 " ++ tempText temp ++ " " ++ numText index)
+  IAlloca temp size -> write ("2 " ++ tempText temp ++ " " ++ numText size)
+  IConst temp value -> write ("3 " ++ tempText temp ++ " " ++ numText value)
   IConstBytes temp bytes -> write ("4 " ++ tempText temp ++ " B" ++ intListFields bytes)
-  ICopy temp op -> emitTempOp write 5 temp op
+  ICopy temp op -> emitTempOp symbols write 5 temp op
   IAddrOf temp source -> write ("6 " ++ tempText temp ++ " " ++ tempText source)
-  ILoad64 temp op -> emitTempOp write 7 temp op
-  ILoad32 temp op -> emitTempOp write 8 temp op
-  ILoadS32 temp op -> emitTempOp write 9 temp op
-  ILoad16 temp op -> emitTempOp write 10 temp op
-  ILoadS16 temp op -> emitTempOp write 11 temp op
-  ILoad8 temp op -> emitTempOp write 12 temp op
-  ILoadS8 temp op -> emitTempOp write 13 temp op
-  IStore64 addr value -> emitOpOp write 14 addr value
-  IStore32 addr value -> emitOpOp write 15 addr value
-  IStore16 addr value -> emitOpOp write 16 addr value
-  IStore8 addr value -> emitOpOp write 17 addr value
-  ISExt temp size op -> emitExt write 22 temp size op
-  IZExt temp size op -> emitExt write 23 temp size op
-  ITrunc temp size op -> emitExt write 24 temp size op
-  IBin temp op left right -> write ("18 " ++ tempText temp ++ " " ++ show (binOpCode op) ++ " " ++ operandIrFields left ++ " " ++ operandIrFields right)
-  ICall result name args -> write ("19 " ++ maybeTempText result ++ " " ++ name ++ " " ++ operandsIrFields args)
-  ICallIndirect result callee args -> write ("20 " ++ maybeTempText result ++ " " ++ operandIrFields callee ++ " " ++ operandsIrFields args)
+  ILoad64 temp op -> emitTempOp symbols write 7 temp op
+  ILoad32 temp op -> emitTempOp symbols write 8 temp op
+  ILoadS32 temp op -> emitTempOp symbols write 9 temp op
+  ILoad16 temp op -> emitTempOp symbols write 10 temp op
+  ILoadS16 temp op -> emitTempOp symbols write 11 temp op
+  ILoad8 temp op -> emitTempOp symbols write 12 temp op
+  ILoadS8 temp op -> emitTempOp symbols write 13 temp op
+  IStore64 addr value -> emitOpOp symbols write 14 addr value
+  IStore32 addr value -> emitOpOp symbols write 15 addr value
+  IStore16 addr value -> emitOpOp symbols write 16 addr value
+  IStore8 addr value -> emitOpOp symbols write 17 addr value
+  ISExt temp size op -> emitExt symbols write 22 temp size op
+  IZExt temp size op -> emitExt symbols write 23 temp size op
+  ITrunc temp size op -> emitExt symbols write 24 temp size op
+  IBin temp op left right -> emitBinIr symbols write temp op left right
+  ICall result name args -> write ("j " ++ maybeTempText result ++ " " ++ symbolRef symbols name ++ " " ++ operandsIrFields symbols args)
+  ICallIndirect result callee args -> write ("k " ++ maybeTempText result ++ " " ++ operandIrFields symbols callee ++ " " ++ operandsIrFields symbols args)
   ICond temp condInstrs condOp trueInstrs trueOp falseInstrs falseOp -> do
-    write ("21 " ++ tempText temp)
+    write ("l " ++ tempText temp)
     write "["
-    emitInstrsIr write condInstrs
+    emitInstrsIr symbols write condInstrs
     write "]"
-    write ("O " ++ operandIrFields condOp)
+    write ("O " ++ operandIrFields symbols condOp)
     write "["
-    emitInstrsIr write trueInstrs
+    emitInstrsIr symbols write trueInstrs
     write "]"
-    write ("O " ++ operandIrFields trueOp)
+    write ("O " ++ operandIrFields symbols trueOp)
     write "["
-    emitInstrsIr write falseInstrs
+    emitInstrsIr symbols write falseInstrs
     write "]"
-    write ("O " ++ operandIrFields falseOp)
+    write ("O " ++ operandIrFields symbols falseOp)
     write "Q"
 
-emitTempOp :: (String -> IO ()) -> Int -> Temp -> Operand -> IO ()
-emitTempOp write code temp op =
-  write (show code ++ " " ++ tempText temp ++ " " ++ operandIrFields op)
+emitTempOp :: SymbolMap Int -> (String -> IO ()) -> Int -> Temp -> Operand -> IO ()
+emitTempOp symbols write code temp op =
+  write (numText code ++ " " ++ tempText temp ++ " " ++ operandIrFields symbols op)
 
-emitOpOp :: (String -> IO ()) -> Int -> Operand -> Operand -> IO ()
-emitOpOp write code a b =
-  write (show code ++ " " ++ operandIrFields a ++ " " ++ operandIrFields b)
+emitOpOp :: SymbolMap Int -> (String -> IO ()) -> Int -> Operand -> Operand -> IO ()
+emitOpOp symbols write code a b =
+  write (numText code ++ " " ++ operandIrFields symbols a ++ " " ++ operandIrFields symbols b)
 
-emitExt :: (String -> IO ()) -> Int -> Temp -> Int -> Operand -> IO ()
-emitExt write code temp size op =
-  write (show code ++ " " ++ tempText temp ++ " " ++ show size ++ " " ++ operandIrFields op)
+emitExt :: SymbolMap Int -> (String -> IO ()) -> Int -> Temp -> Int -> Operand -> IO ()
+emitExt symbols write code temp size op =
+  write (numText code ++ " " ++ tempText temp ++ " " ++ numText size ++ " " ++ operandIrFields symbols op)
 
-terminatorIrLine :: Terminator -> String
-terminatorIrLine term = case term of
+emitBinIr :: SymbolMap Int -> (String -> IO ()) -> Temp -> BinOp -> Operand -> Operand -> IO ()
+emitBinIr symbols write temp op left right =
+  case binOpShortOpcode op of
+    Just opcode -> write (opcode ++ " " ++ tempText temp ++ " " ++ operandIrFields symbols left ++ " " ++ operandIrFields symbols right)
+    Nothing -> write ("i " ++ tempText temp ++ " " ++ numText (binOpCode op) ++ " " ++ operandIrFields symbols left ++ " " ++ operandIrFields symbols right)
+
+binOpShortOpcode :: BinOp -> Maybe String
+binOpShortOpcode op = case op of
+  IAdd -> Just "+"
+  ISub -> Just "-"
+  IAnd -> Just "&"
+  IOr -> Just "|"
+  _ -> Nothing
+
+terminatorIrLine :: SymbolMap Int -> Terminator -> String
+terminatorIrLine symbols term = case term of
   TRet Nothing -> "R"
-  TRet (Just op) -> "R " ++ operandIrFields op
+  TRet (Just op) -> "R " ++ operandIrFields symbols op
   TJump bid -> "J " ++ blockIdText bid
-  TBranch op yes no -> "B " ++ operandIrFields op ++ " " ++ blockIdText yes ++ " " ++ blockIdText no
-  TBranchCmp op a b yes no -> "C " ++ show (binOpCode op) ++ " " ++ operandIrFields a ++ " " ++ operandIrFields b ++ " " ++ blockIdText yes ++ " " ++ blockIdText no
+  TBranch op yes no -> "B " ++ operandIrFields symbols op ++ " " ++ blockIdText yes ++ " " ++ blockIdText no
+  TBranchCmp op a b yes no -> "C " ++ numText (binOpCode op) ++ " " ++ operandIrFields symbols a ++ " " ++ operandIrFields symbols b ++ " " ++ blockIdText yes ++ " " ++ blockIdText no
 
-operandsIrFields :: [Operand] -> String
-operandsIrFields ops = show (length ops) ++ operandsIrFieldsRest ops
+operandsIrFields :: SymbolMap Int -> [Operand] -> String
+operandsIrFields symbols ops = numText (length ops) ++ operandListIrFields symbols ops
 
-operandsIrFieldsRest :: [Operand] -> String
-operandsIrFieldsRest ops = case ops of
+operandListIrFields :: SymbolMap Int -> [Operand] -> String
+operandListIrFields symbols ops = case ops of
   [] -> ""
-  op:rest -> ' ' : operandIrFields op ++ operandsIrFieldsRest rest
+  op:rest -> ' ' : operandIrFields symbols op ++ operandListIrFields symbols rest
 
-operandIrFields :: Operand -> String
-operandIrFields op = case op of
+operandIrFields :: SymbolMap Int -> Operand -> String
+operandIrFields symbols op = case op of
   OTemp temp -> "T" ++ tempText temp
-  OImm value -> "I" ++ show value
+  OImm value -> "I" ++ numText value
   OImmBytes bytes -> "B" ++ intListFields bytes
-  OGlobal name -> "G" ++ name
-  OFunction name -> "F" ++ name
+  OGlobal name -> "G" ++ symbolRef symbols name
+  OFunction name -> "F" ++ symbolRef symbols name
 
 intListFields :: [Int] -> String
-intListFields values = show (length values) ++ intListFieldsRest values
+intListFields values = numText (length values) ++ intListFieldsRest values
 
 intListFieldsRest :: [Int] -> String
 intListFieldsRest values = case values of
   [] -> ""
-  value:rest -> ' ' : show value ++ intListFieldsRest rest
+  value:rest -> ' ' : numText value ++ intListFieldsRest rest
 
 maybeTempText :: Maybe Temp -> String
 maybeTempText maybeTemp = case maybeTemp of
@@ -295,11 +480,14 @@ maybeTempText maybeTemp = case maybeTemp of
 
 tempText :: Temp -> String
 tempText temp = case temp of
-  Temp n -> show n
+  Temp n -> numText n
 
 blockIdText :: BlockId -> String
 blockIdText bid = case bid of
-  BlockId n -> show n
+  BlockId n -> numText n
+
+numText :: Int -> String
+numText = show
 
 binOpCode :: BinOp -> Int
 binOpCode op = case op of
