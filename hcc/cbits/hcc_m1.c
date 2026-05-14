@@ -99,6 +99,9 @@ enum {
 static int target_arch = TARGET_AMD64;
 static char riscv64_label_namespace_buf[128];
 static const char *riscv64_label_namespace = "out";
+static char **ir_symbols;
+static int ir_symbol_len;
+static int ir_symbol_cap;
 
 static int is_label_char(int c)
 {
@@ -496,14 +499,17 @@ static long parse_long_text(char *text)
 {
   long sign = 1;
   long value = 0;
+  int seen = 0;
   if (*text == '-') {
     sign = -1;
     text = text + 1;
   }
   while (*text >= '0' && *text <= '9') {
+    seen = 1;
     value = value * 10 + (*text - '0');
     text = text + 1;
   }
+  if (!seen) die_token("bad integer token", text);
   if (*text != 0) die_token("bad integer token", text);
   return sign * value;
 }
@@ -526,6 +532,69 @@ static int str_eq(const char *a, const char *b)
 static int str_prefix_n(const char *a, const char *b, int count)
 {
   return strncmp(a, b, count) == 0;
+}
+
+static char **symbol_slot_at(char **items, int index)
+{
+  return (char **)((char *)items + sizeof(char *) * index);
+}
+
+static void ensure_symbol_cap(int index)
+{
+  int old;
+  char **slot;
+  if (index < ir_symbol_cap) return;
+  old = ir_symbol_cap;
+  if (ir_symbol_cap == 0) ir_symbol_cap = 128;
+  while (index >= ir_symbol_cap) ir_symbol_cap = ir_symbol_cap * 2;
+  ir_symbols = xrealloc(ir_symbols, sizeof(char *) * ir_symbol_cap);
+  while (old < ir_symbol_cap) {
+    slot = symbol_slot_at(ir_symbols, old);
+    *slot = 0;
+    old = old + 1;
+  }
+}
+
+static void store_ir_symbol(int index, char *name)
+{
+  char **slot;
+  if (index < 0) die("negative IR symbol index");
+  ensure_symbol_cap(index);
+  slot = symbol_slot_at(ir_symbols, index);
+  *slot = xstrdup(name);
+  if (index >= ir_symbol_len) ir_symbol_len = index + 1;
+}
+
+static char *parse_ir_symbol_ref(char *tok)
+{
+  int index;
+  char *name;
+  char **slot;
+  if (tok[0] != '@') die_token("bad IR symbol reference", tok);
+  index = (int)parse_long_text(tok + 1);
+  if (index < 0 || index >= ir_symbol_len) die_token("IR symbol reference out of range", tok);
+  slot = symbol_slot_at(ir_symbols, index);
+  name = *slot;
+  if (!name) die_token("IR symbol reference is undefined", tok);
+  return name;
+}
+
+static void read_ir_symbol_table(FILE *file)
+{
+  char *line;
+  char *cursor;
+  char *tok;
+  int index;
+  line = xrealloc(0, LINE_CAP);
+  while (read_line(file, line, LINE_CAP)) {
+    if (str_eq(line, "M")) return;
+    cursor = line;
+    tok = need_token(&cursor);
+    if (!str_eq(tok, "S")) die("expected IR symbol table entry");
+    index = parse_int_token(&cursor);
+    store_ir_symbol(index, need_token(&cursor));
+  }
+  die("unexpected eof in IR symbol table");
 }
 
 static void append_instr(InstrList *list, Instr *instr)
@@ -574,6 +643,53 @@ static void append_zero_data_values(DataItem *item, int count)
   }
 }
 
+static int hex_value(int c)
+{
+  if (c >= '0' && c <= '9') return c - '0';
+  if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+  if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+  die("bad hex byte in IR data");
+  return 0;
+}
+
+static void append_hex_data_values(DataItem *item, char *hex)
+{
+  DataValue value;
+  int hi;
+  int lo;
+  memset(&value, 0, sizeof(value));
+  value.kind = 1;
+  while (*hex != 0) {
+    if (hex[1] == 0) die("odd hex byte run in IR data");
+    hi = hex_value(hex[0]);
+    lo = hex_value(hex[1]);
+    value.byte = hi * 16 + lo;
+    append_data_value(item, &value);
+    hex = hex + 2;
+  }
+}
+
+static void parse_ir_data_value_token(DataItem *item, char *tok, char **cursor)
+{
+  DataValue value;
+  if (str_eq(tok, "z")) {
+    append_zero_data_values(item, parse_int_token(cursor));
+    return;
+  }
+  if (str_eq(tok, "x")) {
+    append_hex_data_values(item, need_token(cursor));
+    return;
+  }
+  memset(&value, 0, sizeof(value));
+  if (str_eq(tok, "a")) {
+    value.kind = 2;
+    value.label = xstrdup(parse_ir_symbol_ref(need_token(cursor)));
+  } else {
+    die("unknown IR data value");
+  }
+  append_data_value(item, &value);
+}
+
 static void expect_line(FILE *file, const char *expected)
 {
   char *line;
@@ -582,9 +698,8 @@ static void expect_line(FILE *file, const char *expected)
   if (strcmp(line, expected)) die("unexpected section marker");
 }
 
-static void parse_ir_operand(char **cursor, Operand *op)
+static void parse_ir_operand_token(char *tok, char **cursor, Operand *op)
 {
-  char *tok = need_token(cursor);
   int i;
   memset(op, 0, sizeof(Operand));
   if (tok[0] == 'T') {
@@ -604,13 +719,18 @@ static void parse_ir_operand(char **cursor, Operand *op)
     }
   } else if (tok[0] == 'G') {
     op->kind = OP_GLOBAL;
-    op->name = xstrdup(tok + 1);
+    op->name = xstrdup(parse_ir_symbol_ref(tok + 1));
   } else if (tok[0] == 'F') {
     op->kind = OP_FUNC;
-    op->name = xstrdup(tok + 1);
+    op->name = xstrdup(parse_ir_symbol_ref(tok + 1));
   } else {
     die_token("unknown IR operand kind", tok);
   }
+}
+
+static void parse_ir_operand(char **cursor, Operand *op)
+{
+  parse_ir_operand_token(need_token(cursor), cursor, op);
 }
 
 static int parse_ir_result(char **cursor)
@@ -630,16 +750,37 @@ static void parse_ir_prefixed_operand(char *line, const char *prefix, Operand *o
 
 static void parse_ir_instrs_until_end(FILE *file, InstrList *list);
 
+static int parse_short_binop(char *tok)
+{
+  if (str_eq(tok, "+")) return BK_ADD;
+  if (str_eq(tok, "-")) return BK_SUB;
+  if (str_eq(tok, "&")) return BK_AND;
+  if (str_eq(tok, "|")) return BK_OR;
+  return 0;
+}
+
+static int parse_ir_instr_opcode(char *tok)
+{
+  if (str_eq(tok, "i")) return IK_BIN;
+  if (str_eq(tok, "j")) return IK_CALL;
+  if (str_eq(tok, "k")) return IK_CALLI;
+  if (str_eq(tok, "l")) return IK_COND;
+  return (int)parse_long_text(tok);
+}
+
 static void parse_ir_instr_line(FILE *file, char *line, Instr *instr)
 {
   char *cursor = line;
   char *tok;
   char *section;
+  int short_binop;
   int i;
   memset(instr, 0, sizeof(Instr));
   instr->result = -1;
   tok = need_token(&cursor);
-  instr->kind = (int)parse_long_text(tok);
+  short_binop = parse_short_binop(tok);
+  if (short_binop) instr->kind = IK_BIN;
+  else instr->kind = parse_ir_instr_opcode(tok);
   switch (instr->kind) {
     case IK_PARAM:
     case IK_ALLOCA:
@@ -683,13 +824,14 @@ static void parse_ir_instr_line(FILE *file, char *line, Instr *instr)
       break;
     case IK_BIN:
       instr->temp = parse_int_token(&cursor);
-      instr->binop = parse_int_token(&cursor);
+      if (short_binop) instr->binop = short_binop;
+      else instr->binop = parse_int_token(&cursor);
       parse_ir_operand(&cursor, instr_a_ptr(instr));
       parse_ir_operand(&cursor, instr_b_ptr(instr));
       break;
     case IK_CALL:
       instr->result = parse_ir_result(&cursor);
-      instr->name = xstrdup(need_token(&cursor));
+      instr->name = xstrdup(parse_ir_symbol_ref(need_token(&cursor)));
       instr->argc = parse_int_token(&cursor);
       if (instr->argc > 0) instr->args = xrealloc(0, sizeof(Operand) * instr->argc);
       i = 0;
@@ -809,7 +951,7 @@ static void parse_ir_function(FILE *file, char *first_line, Function *fn)
   memset(fn, 0, sizeof(Function));
   tok = need_token(&cursor);
   if (strcmp(tok, "F")) die("expected IR function");
-  fn->name = xstrdup(need_token(&cursor));
+  fn->name = xstrdup(parse_ir_symbol_ref(need_token(&cursor)));
   line = xrealloc(0, LINE_CAP);
   while (read_line(file, line, LINE_CAP)) {
     if (str_eq(line, "E")) return;
@@ -827,28 +969,18 @@ static void parse_ir_data_item(FILE *file, char *first_line, DataItem *item)
   memset(item, 0, sizeof(DataItem));
   tok = need_token(&cursor);
   if (strcmp(tok, "D")) die_token("expected IR data item", tok);
-  item->label = xstrdup(need_token(&cursor));
+  item->label = xstrdup(parse_ir_symbol_ref(need_token(&cursor)));
+  tok = next_token(&cursor);
+  if (tok) {
+    parse_ir_data_value_token(item, tok, &cursor);
+    return;
+  }
   line = xrealloc(0, LINE_CAP);
   while (read_line(file, line, LINE_CAP)) {
-    DataValue value;
     if (str_eq(line, "E")) return;
     cursor = line;
     tok = need_token(&cursor);
-    if (str_eq(tok, "z")) {
-      append_zero_data_values(item, parse_int_token(&cursor));
-      continue;
-    }
-    memset(&value, 0, sizeof(value));
-    if (str_eq(tok, "b")) {
-      value.kind = 1;
-      value.byte = parse_int_token(&cursor);
-    } else if (str_eq(tok, "a")) {
-      value.kind = 2;
-      value.label = xstrdup(need_token(&cursor));
-    } else {
-      die("unknown IR data value");
-    }
-    append_data_value(item, &value);
+    parse_ir_data_value_token(item, tok, &cursor);
   }
   die("unexpected eof in IR data");
 }
@@ -2275,7 +2407,8 @@ int main(int argc, char **argv)
   if (!out) die("cannot open output");
   header = xrealloc(0, LINE_CAP);
   if (!read_line(in, header, LINE_CAP)) die("empty input");
-  if (!str_eq(header, "HCCIR 1")) die("bad IR input header");
+  if (!str_eq(header, "HCCIR 3")) die("bad IR input header");
+  read_ir_symbol_table(in);
   translate_ir_module(in, out);
   fclose(in);
   fclose(out);
