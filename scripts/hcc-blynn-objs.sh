@@ -16,7 +16,6 @@ case ${BOOTSTRAP_LIB:-} in
   *) . "$BOOTSTRAP_LIB" ;;
 esac
 
-require_cmd cat
 require_cmd cp
 require_cmd mkdir
 require_cmd rm
@@ -24,14 +23,14 @@ require_cmd rm
 source_dir=${HCC_BLYNN_SOURCES_DIR:-${1:-build/hcc-blynn-sources}}
 out_dir=${OUT_DIR:-${2:-build/hcc-blynn-objs}}
 precisely_up=${PRECISELY_UP:-precisely_up}
-object_script_shell=${OBJECT_SCRIPT_SHELL:-${SHELL:-sh}}
+materialize_object_script=${MATERIALIZE_OBJECT_SCRIPT:-materialize-object-script}
 
 source_dir=$(abspath "$source_dir")
 out_dir=$(abspath "$out_dir")
 
 [ -f "$source_dir/hcc-common-full.hs" ] || die "missing hcc-common-full.hs in $source_dir"
 require_cmd "$precisely_up"
-require_cmd "$object_script_shell"
+require_cmd "$materialize_object_script"
 
 mkdir -p "$out_dir/common-objects"
 cp "$source_dir/hcc-common-full.hs" "$out_dir/hcc-common-full.hs"
@@ -43,7 +42,7 @@ done
 
 msg "precisely_up hcc common source -> object IR"
 "$precisely_up" obj < "$out_dir/hcc-common-full.hs" > "$out_dir/common-objects.sh"
-(cd "$out_dir/common-objects" && "$object_script_shell" "$out_dir/common-objects.sh")
+"$materialize_object_script" "$out_dir/common-objects.sh" "$out_dir/common-objects"
 
 : > "$out_dir/common-object-input.hs"
 for obj in "$out_dir/common-objects"/*.ob; do
