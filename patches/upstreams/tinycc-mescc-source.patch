@@ -24,19 +24,6 @@ index 64c772d..cb5d284 100644
      fprintf(stderr, "# text %u, data.rw %u, data.ro %u, bss %u bytes\n",
             s1->total_output[0],
             s1->total_output[1],
-diff --git a/i386-asm.c b/i386-asm.c
-index 9f5fe40..b1f8b10 100644
---- a/i386-asm.c
-+++ b/i386-asm.c
-@@ -1596,7 +1596,7 @@ static void asm_opcode(TCCState *s1, int opcode)
- #endif
-         }
- 
--        switch(size) {
-+        if (reg >= 8) { cstr_printf(add_str, "%%r%d%c", reg, (size == 1) ? 'b' : ((size == 2) ? 'w' : ((size == 4) ? 'd' : ' '))); return; } switch(size) {
-         case -1:
-             reg = TOK_ASM_ah + reg;
-             break;
 diff --git a/tccelf.c b/tccelf.c
 index 9b71a39..a598d53 100644
 --- a/tccelf.c
@@ -62,11 +49,10 @@ index 1498059..5fa0d85 100644
              vtop->type.t &= ~VT_UNSIGNED;
              vrott(3);
              gen_opic(op);
-@@ -3096,6 +3096,6 @@ static void gen_opi_regular(int op)
- #endif
+@@ -3105,6 +3107,6 @@ static void gen_opi_regular(int op)
              type1 = vtop[-1].type;
 -            vpush_type_size(pointed_type(&vtop[-1].type), &align);
 +            vpush_type_size(pointed_type(&vtop[-1].type), &align); if (!(vtop[-1].type.t & VT_UNSIGNED)) gen_cast_s(VT_PTRDIFF_T);
+             vtop->type.t &= ~VT_UNSIGNED;
              gen_op('*');
  #ifdef CONFIG_TCC_BCHECK
-             if (tcc_state->do_bounds_check && !CONST_WANTED) {
