@@ -22,16 +22,40 @@ import LowerSwitchHelpers
 import TypesLower
 import LowerTypeInfo
 
-lowerFunction :: String -> [Param] -> [Stmt] -> CompileM FunctionIr
-lowerFunction name params body =
-  withErrorContext ("function " ++ name) (withFunctionScope (withCurrentFunction name (lowerFunctionBody name params body)))
+lowerFunction :: CType -> String -> [Param] -> [Stmt] -> CompileM FunctionIr
+lowerFunction retTy name params body =
+  withErrorContext ("function " ++ name)
+    (withFunctionScope
+      (withCurrentFunction name
+        (withCurrentReturnType retTy (lowerFunctionBody name params body))))
 
 lowerFunctionBody :: String -> [Param] -> [Stmt] -> CompileM FunctionIr
 lowerFunctionBody name params body = do
   bid <- freshBlock
   paramInstrs <- lowerParams 0 params
-  blocks <- lowerStatementsFrom bid paramInstrs body (TRet (Just (OImm 0)))
+  defaultTerm <- defaultReturnTerm
+  blocks <- lowerStatementsFrom bid paramInstrs body defaultTerm
   pure (FunctionIr name blocks)
+
+-- The implicit "fell off the end" terminator. void returns nothing; other
+-- functions get a zero of the declared type so callers see a defined value.
+defaultReturnTerm :: CompileM Terminator
+defaultReturnTerm = do
+  mty <- currentReturnType
+  case mty of
+    Just CVoid -> pure (TRet Nothing)
+    _ -> pure (TRet (Just (OImm 0)))
+
+-- Coerce a return-value operand to the current function's declared return
+-- type, so `char f(){return 257;}` truncates to 1 in the caller's view per
+-- C11 6.8.6.4p3.
+coerceReturnOperand :: Operand -> CompileM ([Instr], Operand)
+coerceReturnOperand op = do
+  mty <- currentReturnType
+  case mty of
+    Just CVoid -> pure ([], op)
+    Just ty -> coerceScalar ty op
+    Nothing -> pure ([], op)
 
 lowerStatementsFrom :: BlockId -> [Instr] -> [Stmt] -> Terminator -> CompileM [BasicBlock]
 lowerStatementsFrom bid instrs stmts defaultTerm = case stmts of
@@ -47,14 +71,17 @@ lowerStatementsFrom bid instrs stmts defaultTerm = case stmts of
           noId <- freshBlock
           condBlocks <- lowerConditionBlock bid instrs expr yesId noId
           tailBlocks <- lowerUnreachableLabels rest defaultTerm
+          (yesCoerceInstrs, yesOp) <- coerceReturnOperand (OImm 1)
+          (noCoerceInstrs, noOp) <- coerceReturnOperand (OImm 0)
           pure ( condBlocks ++
-                 [ BasicBlock yesId [] (TRet (Just (OImm 1)))
-                 , BasicBlock noId [] (TRet (Just (OImm 0)))
+                 [ BasicBlock yesId yesCoerceInstrs (TRet (Just yesOp))
+                 , BasicBlock noId noCoerceInstrs (TRet (Just noOp))
                  ] ++ tailBlocks)
         else do
           (retInstrs, op) <- lowerExpr expr
+          (coerceInstrs, retOp) <- coerceReturnOperand op
           tailBlocks <- lowerUnreachableLabels rest defaultTerm
-          pure (BasicBlock bid (instrs ++ retInstrs) (TRet (Just op)) : tailBlocks)
+          pure (BasicBlock bid (instrs ++ retInstrs ++ coerceInstrs) (TRet (Just retOp)) : tailBlocks)
   SBlock body:rest -> do
     if null rest
       then withVarScope (lowerStatementsFrom bid instrs body defaultTerm)
