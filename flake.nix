@@ -424,7 +424,9 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
               ${prev}/bin/${prevBin} < ${name}.input.hs > ${name}.c
             ''}
             ${lib.optionalString (top != null) ''
-              substituteInPlace ${name}.c --replace-fail 'enum{TOP=16777216};' 'enum{TOP=${toString top}};'
+              substituteInPlace ${name}.c \
+                --replace-fail 'enum{TOP=16777216};' 'enum{TOP=${toString top}};' \
+                --replace-fail 'enum{TOP=16777216,' 'enum{TOP=${toString top},'
             ''}
             compile_m2 ${name}.c ${name}
           '';
@@ -478,6 +480,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             name = "crossly1";
             prev = crossly_up;
             prevBin = "crossly_up";
+            top = 134217728;
             inputFiles = upstreamInput [ "Base2" "System" "AstPrecisely" "Map1" "ParserPrecisely" "KiselyovPrecisely" "Unify1" "RTSPrecisely" "TyperPrecisely" "Obj" "Charser" ] "precisely";
           };
           precisely_up = upstreamStage {
