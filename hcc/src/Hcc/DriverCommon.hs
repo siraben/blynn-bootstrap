@@ -95,6 +95,7 @@ data AsmOptions = AsmOptions
   , asmIncludeDirs :: [String]
   , asmDefines :: [(String, String)]
   , asmTargetBits :: Int
+  , asmTrace :: Bool
   }
 
 assemblyArgs :: [String] -> Either String AsmOptions
@@ -103,10 +104,14 @@ assemblyArgs args = finish (go args Nothing Nothing [] [] 64)
     finish (Left msg) = Left msg
     finish (Right (_, Nothing, _, _, _)) = Left "hcc: no input files"
     finish (Right (out, Just path, includes, defines, target)) =
-      Right (AsmOptions path (maybe (replaceExt path ".hccir") id out) (reverse includes) (reverse defines) target)
+      Right (AsmOptions path (maybe (replaceExt path ".hccir") id out) (reverse includes) (reverse defines) target ("--trace" `elem` args))
 
     go [] out input includes defines target =
       Right (out, input, includes, defines, target)
+    go ["-o"] _ _ _ _ _ = Left "hcc: option -o requires an argument"
+    go ["-I"] _ _ _ _ _ = Left "hcc: option -I requires an argument"
+    go ["-D"] _ _ _ _ _ = Left "hcc: option -D requires an argument"
+    go ["--target"] _ _ _ _ _ = Left "hcc: option --target requires an argument"
     go ("-S":xs) out input includes defines target =
       go xs out input includes defines target
     go ("-o":path:xs) _ input includes defines target =

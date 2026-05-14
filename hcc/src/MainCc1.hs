@@ -36,7 +36,7 @@ compileM1Ir args = do
   case assemblyArgs args of
     Left msg -> die msg
     Right opts -> do
-      let trace = hccTraceIf ("--trace" `elem` args)
+      let trace = hccTraceIf (asmTrace opts)
       trace ("read " ++ asmInput opts)
       source <- hccReadFile (asmInput opts)
       trace "lex"
