@@ -4,7 +4,9 @@
   pname,
   generatedC,
   src,
-  compileCommand,
+  kaem,
+  bootstrapShell,
+  scriptEnv,
   runtimeFile,
   top,
   hcppTop ? top,
@@ -33,7 +35,7 @@ mkDerivation (
 
       ulimit -s unlimited
 
-      mkdir -p cbits
+      mkdir -p cbits source generated
       cp ${src}/cbits/hcc_runtime.c cbits/hcc_runtime.c
       cp ${src}/cbits/hcc_runtime_m2.c cbits/hcc_runtime_m2.c
       cp ${src}/cbits/hcc_m1.c cbits/hcc_m1.c
@@ -48,15 +50,32 @@ mkDerivation (
       log_file hcpp-blynn.c
       log_file hcc1-blynn.c
 
-      log_step "START patch generated RTS hcpp TOP=${toString hcppTop}, hcc1 TOP=${toString hcc1Top}"
-      ${nixLib.patchGeneratedTop "hcpp-blynn.c" hcppTop}
-      ${nixLib.patchGeneratedTop "hcc1-blynn.c" hcc1Top}
-      log_step "DONE  patch generated RTS hcpp TOP=${toString hcppTop}, hcc1 TOP=${toString hcc1Top}"
+      cp hcpp-blynn.c source/hcpp-blynn.c
+      cp hcc1-blynn.c source/hcc1-blynn.c
 
-      log_step "START compile generated C backend"
-      ${compileCommand}
-      log_step "DONE  compile generated C backend"
+      cat > hcc-blynn-bin.kaem <<'EOF'
+      ${bootstrapShell}/bin/sh ${../scripts/hcc-blynn-bin.sh}
+      EOF
+      log_step "START portable hcc-blynn-bin script via kaem"
+      BOOTSTRAP_LOG_NAME=hcc-blynn-bin \
+      BOOTSTRAP_LIB=${../scripts/lib/bootstrap.sh} \
+      HCC_BLYNN_C_DIR=source \
+      HCC_DIR=${src} \
+      HCPP_TOP=${toString hcppTop} \
+      HCC1_TOP=${toString hcc1Top} \
+      OUT_DIR=generated \
+      ${scriptEnv} \
+        ${kaem}/bin/kaem --verbose --strict --file hcc-blynn-bin.kaem
+      log_step "DONE  portable hcc-blynn-bin script via kaem"
       log_step "compiled hcpp and hcc1"
+
+      chmod u+w hcpp-blynn.c hcc1-blynn.c
+      cp generated/artifact/hcpp-blynn.patched.c hcpp-blynn.c
+      cp generated/artifact/hcc1-blynn.patched.c hcc1-blynn.c
+      cp generated/bin/hcpp hcpp
+      cp generated/bin/hcc1 hcc1
+      cp generated/bin/hcc-m1 hcc-m1
+      chmod 555 hcpp hcc1 hcc-m1
 
       (
         export HCPP=./hcpp

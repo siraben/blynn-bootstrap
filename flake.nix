@@ -214,10 +214,13 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
         '';
 
         minimalBootstrap = pkgs.minimal-bootstrap;
+        minimalShell = pkgs.callPackage ./nix/minimal-shell.nix {
+          stdenvNoCC = pkgs.stdenvNoCC;
+        };
         rawDerivation = import ./nix/raw-mk-derivation.nix {
           inherit lib system;
+          bootstrapShell = minimalShell;
           inherit (pkgs)
-            bash
             coreutils
             gnused
             gnugrep
@@ -602,6 +605,8 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           stdenvNoCC = rawStdenvNoCC;
           src = hccBlynnInputSrc;
           blynnSrc = blynnUpstreamSrc;
+          kaem = minimalBootstrap.stage0-posix.kaem;
+          bootstrapShell = minimalShell;
         };
 
         hccBlynnObjsFromPrecisely = pname: precisely:
@@ -626,6 +631,8 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             stdenvNoCC = rawStdenvNoCC;
             inherit pname precisely commonObjects;
             sourceBundle = hccBlynnSources;
+            kaem = minimalBootstrap.stage0-posix.kaem;
+            bootstrapShell = minimalShell;
             shareName = pname;
           };
 
@@ -635,6 +642,8 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             inherit pname precisely commonObjects;
             inherit blynnCompiler;
             sourceBundle = hccBlynnSources;
+            kaem = minimalBootstrap.stage0-posix.kaem;
+            bootstrapShell = minimalShell;
             shareName = pname;
           };
 
@@ -666,6 +675,8 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           pkgs.callPackage ./nix/hcc-blynn-bin.nix ({
             inherit pname generatedC;
             src = hccSrc;
+            kaem = minimalBootstrap.stage0-posix.kaem;
+            bootstrapShell = minimalShell;
             shareName = pname;
           } // cBackend);
 
@@ -673,14 +684,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           gcc = {
             mkDerivation = rawStdenvCC.mkDerivation;
             runtimeFile = "cbits/hcc_runtime.c";
-            compileCommand = ''
-              echo "hcc-blynn: gcc cc hcpp-blynn.c -> hcpp"
-              $CC -O2 hcpp-blynn.c cbits/hcc_runtime.c -o hcpp
-              echo "hcc-blynn: gcc cc hcc1-blynn.c -> hcc1"
-              $CC -O2 hcc1-blynn.c cbits/hcc_runtime.c -o hcc1
-              echo "hcc-blynn: gcc cc cbits/hcc_m1.c -> hcc-m1"
-              $CC -O2 cbits/hcc_m1.c -o hcc-m1
-            '';
+            scriptEnv = ''HCC_C_BACKEND=gcc HOST_CC="$CC"'';
             top = 536870912;
             hcppTop = 134217728;
             hcc1Top = 134217728;
@@ -691,14 +695,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             mkDerivation = rawStdenvNoCC.mkDerivation;
             nativeBuildInputs = [ tcc ];
             runtimeFile = "cbits/hcc_runtime.c";
-            compileCommand = ''
-              echo "hcc-blynn: tcc hcpp-blynn.c -> hcpp"
-              ${tcc}/bin/tcc -B ${tcc}/lib -I ${tcc}/include hcpp-blynn.c cbits/hcc_runtime.c -o hcpp
-              echo "hcc-blynn: tcc hcc1-blynn.c -> hcc1"
-              ${tcc}/bin/tcc -B ${tcc}/lib -I ${tcc}/include hcc1-blynn.c cbits/hcc_runtime.c -o hcc1
-              echo "hcc-blynn: tcc cbits/hcc_m1.c -> hcc-m1"
-              ${tcc}/bin/tcc -B ${tcc}/lib -I ${tcc}/include cbits/hcc_m1.c -o hcc-m1
-            '';
+            scriptEnv = ''HCC_C_BACKEND=tcc TCC=${tcc}/bin/tcc TCC_FLAGS="-B ${tcc}/lib -I ${tcc}/include"'';
             top = 536870912;
             hcppTop = 134217728;
             hcc1Top = 134217728;
@@ -711,18 +708,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
               minimalBootstrap.stage0-posix.mescc-tools
             ];
             runtimeFile = "cbits/hcc_runtime_m2.c";
-            compileCommand = ''
-              . ${./scripts/lib/bootstrap.sh}
-              cat hcpp-blynn.c > hcpp-body.c
-              cat hcc1-blynn.c > hcc1-body.c
-              printf '%s\n' '#define HCC_RTS_USE_EXTERNAL_ALLOC 1' > hcpp-blynn.c
-              cat hcpp-body.c >> hcpp-blynn.c
-              printf '%s\n' '#define HCC_RTS_USE_EXTERNAL_ALLOC 1' > hcc1-blynn.c
-              cat hcc1-body.c >> hcc1-blynn.c
-              compile_m2 hcpp-blynn.c hcpp -f cbits/hcc_runtime_m2.c
-              compile_m2 hcc1-blynn.c hcc1 -f cbits/hcc_runtime_m2.c
-              compile_m2 cbits/hcc_m1.c hcc-m1
-            '';
+            scriptEnv = ''HCC_C_BACKEND=m2 M2LIBC_PATH=${m2libcSrc}'';
             top = 134217728;
             hcppTop = 134217728;
             hcc1Top = 134217728;
@@ -739,34 +725,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
               minimalBootstrap.stage0-posix.mescc-tools
             ];
             runtimeFile = "cbits/hcc_runtime_m2.c";
-            compileCommand = ''
-              run_gcc_m2() {
-                PATH=${minimalBootstrap.stage0-posix.mescc-tools}/bin \
-                M2LIBC_PATH=${minimalBootstrap.stage0-posix.src}/M2libc \
-                TMPDIR="''${TMPDIR:-/tmp}" \
-                "$@"
-              }
-              cat hcpp-blynn.c > hcpp-body.c
-              cat hcc1-blynn.c > hcc1-body.c
-              printf '%s\n' '#define HCC_RTS_USE_EXTERNAL_ALLOC 1' > hcpp-blynn.c
-              cat hcpp-body.c >> hcpp-blynn.c
-              printf '%s\n' '#define HCC_RTS_USE_EXTERNAL_ALLOC 1' > hcc1-blynn.c
-              cat hcc1-body.c >> hcc1-blynn.c
-              echo "hcc-blynn: GCC-built M2-Mesoplanet hcpp-blynn.c -> hcpp"
-              run_gcc_m2 ${m2MesoplanetGcc}/bin/M2-Mesoplanet --operating-system "$M2_OS" --architecture "$M2_ARCH" \
-                -f hcpp-blynn.c \
-                -f cbits/hcc_runtime_m2.c \
-                -o hcpp
-              echo "hcc-blynn: GCC-built M2-Mesoplanet hcc1-blynn.c -> hcc1"
-              run_gcc_m2 ${m2MesoplanetGcc}/bin/M2-Mesoplanet --operating-system "$M2_OS" --architecture "$M2_ARCH" \
-                -f hcc1-blynn.c \
-                -f cbits/hcc_runtime_m2.c \
-                -o hcc1
-              echo "hcc-blynn: GCC-built M2-Mesoplanet cbits/hcc_m1.c -> hcc-m1"
-              run_gcc_m2 ${m2MesoplanetGcc}/bin/M2-Mesoplanet --operating-system "$M2_OS" --architecture "$M2_ARCH" \
-                -f cbits/hcc_m1.c \
-                -o hcc-m1
-            '';
+            scriptEnv = ''HCC_C_BACKEND=m2 M2_MESOPLANET=${m2MesoplanetGcc}/bin/M2-Mesoplanet M2LIBC_PATH=${minimalBootstrap.stage0-posix.src}/M2libc PATH=${minimalBootstrap.stage0-posix.mescc-tools}/bin:$PATH'';
             top = 134217728;
             hcppTop = 134217728;
             hcc1Top = 134217728;
@@ -838,23 +797,25 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
         };
 
         tinyccFromHccForTarget = pname: hcc: target: pkgs.callPackage ./nix/tinycc-boot-hcc.nix {
-          stdenvNoCC = pkgs.stdenvNoCC;
+          stdenvNoCC = rawStdenvNoCC;
           inherit pname hcc minimalBootstrap target;
           binutils = if target == "riscv64" then pkgs.pkgsCross.riscv64.buildPackages.binutils else pkgs.binutils;
           qemu = pkgs.qemu;
           mesLibc = mesLibcSrc;
           m2libc = m2libcSrc;
+          patchTool = pkgs.patch;
         };
 
         tinyccFromHcc = pname: hcc: tinyccFromHccForTarget pname hcc nativeM1Target;
 
         tinyccM1FromHccForTarget = pname: hcc: target: pkgs.callPackage ./nix/tinycc-boot-hcc.nix {
-          stdenvNoCC = pkgs.stdenvNoCC;
+          stdenvNoCC = rawStdenvNoCC;
           inherit pname hcc minimalBootstrap target;
           binutils = if target == "riscv64" then pkgs.pkgsCross.riscv64.buildPackages.binutils else pkgs.binutils;
           qemu = pkgs.qemu;
           mesLibc = mesLibcSrc;
           m2libc = m2libcSrc;
+          patchTool = pkgs.patch;
           m1ArtifactsOnly = true;
         };
 

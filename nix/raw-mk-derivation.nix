@@ -1,7 +1,7 @@
 {
   lib,
   system,
-  bash,
+  bootstrapShell,
   coreutils,
   gnused,
   gnugrep,
@@ -34,10 +34,10 @@ let
             "${pname}-${version}"
         );
       nativeBuildInputs = args.nativeBuildInputs or [ ];
+      patches = args.patches or [ ];
       baseTools =
         if withCC then
           [
-            bash
             coreutils
             gnused
             gnugrep
@@ -54,7 +54,7 @@ let
         else
           bootstrapTools;
       path = lib.makeBinPath (baseTools ++ nativeBuildInputs);
-      shell = if withCC then "${bash}/bin/bash" else "/bin/sh";
+      shell = "${bootstrapShell}/bin/sh";
       src = args.src or null;
       sourceRoot = args.sourceRoot or "";
       envAttrs = lib.filterAttrs (_: value:
@@ -77,6 +77,7 @@ let
         "name"
         "nativeBuildInputs"
         "passthru"
+        "patches"
         "pname"
         "postPatch"
         "src"
@@ -103,6 +104,24 @@ let
 
         ${lib.optionalString (!withCC) ''
         cp() {
+          recursive=0
+          while [ "$#" -gt 0 ]; do
+            case "$1" in
+              -R|-r)
+                recursive=1
+                shift
+                ;;
+              --)
+                shift
+                break
+                ;;
+              -*)
+                echo "cp: unsupported option $1" >&2
+                exit 1
+                ;;
+              *) break ;;
+            esac
+          done
           if [ "$#" -lt 2 ]; then
             echo "cp: missing operand" >&2
             exit 1
@@ -115,14 +134,26 @@ let
             src_file="$1"
             shift
             if [ -d "$dst" ]; then
-              out_file="$dst/''${src_file##*/}"
+              case "$src_file" in
+                */.) out_file="$dst" ;;
+                *) out_file="$dst/''${src_file##*/}" ;;
+              esac
             else
               out_file="$dst"
             fi
-            if [ -e "$out_file" ]; then
-              rm "$out_file"
+            if [ -d "$src_file" ]; then
+              if [ "$recursive" != 1 ]; then
+                echo "cp: omitting directory $src_file" >&2
+                exit 1
+              fi
+              mkdir -p "$out_file"
+              copyTree "$src_file" "$out_file"
+            else
+              if [ -e "$out_file" ]; then
+                rm "$out_file"
+              fi
+              catm "$out_file" "$src_file"
             fi
-            catm "$out_file" "$src_file"
           done
         }
 
@@ -252,6 +283,9 @@ let
 
         patchPhase() {
           runHook prePatch
+          ${lib.concatMapStringsSep "\n" (patchFile: ''
+          patch -p1 < ${patchFile}
+          '') patches}
           ${args.postPatch or ""}
           runHook postPatch
         }
