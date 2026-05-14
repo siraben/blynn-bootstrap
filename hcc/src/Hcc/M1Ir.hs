@@ -314,6 +314,8 @@ binOpCode op = case op of
   IAnd -> 19
   IOr -> 20
   IXor -> 21
+  IUDiv -> 22
+  IUMod -> 23
 
 mapCompileRun :: Either CompileError a -> Either CodegenError a
 mapCompileRun result = case result of
