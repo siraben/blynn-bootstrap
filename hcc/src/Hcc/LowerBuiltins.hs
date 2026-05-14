@@ -13,26 +13,14 @@ builtinConstant name = case name of
   "NULL" -> Just 0
   "__null" -> Just 0
   "__LINE__" -> Just 0
-  "CH_EOB" -> Just 92
-  "EINTR" -> Just 4
   "char" -> Just 1
   "short" -> Just 2
   "int" -> Just 4
   "long" -> Just 8
-  "TOKSYM_TAL_LIMIT" -> Just 256
-  "TOKSTR_TAL_LIMIT" -> Just 1024
-  "TOKSYM_TAL_SIZE" -> Just (768 * 1024)
-  "TOKSTR_TAL_SIZE" -> Just (768 * 1024)
-  "TOK_ALLOC_INCR" -> Just 512
-  "TOK_IDENT" -> Just 256
-  "SYM_FIRST_ANOM" -> Just 268435456
   _ -> Nothing
 
 isIgnoredSideEffectCall :: String -> Bool
-isIgnoredSideEffectCall name = name `elem` ignoredSideEffectCalls
-
-ignoredSideEffectCalls :: [String]
-ignoredSideEffectCalls = ["asm", "oputs", "eputs"]
+isIgnoredSideEffectCall name = name `elem` ["asm", "oputs", "eputs"]
 
 isSignedNamedInteger :: String -> Bool
 isSignedNamedInteger name = name `elem` signedNamedIntegerTypes
