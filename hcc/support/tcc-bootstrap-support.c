@@ -36,10 +36,12 @@ int asm_parse_regvar(int t)
     return -1;
 }
 
+#ifndef __HCC__
 int sigaction(int signum, void* act, void* oldact) { return 0; }
 int sigaddset(void* set, int signum) { return 0; }
 int sigemptyset(void* set) { return 0; }
 int sigprocmask(int how, void* set, void* oldset) { return 0; }
+#endif
 
 struct timeval {
     long tv_sec;
@@ -121,10 +123,12 @@ unsigned long long strtoull(char* nptr, char** endptr, int base)
     return parse_unsigned(nptr, endptr, base);
 }
 
+#ifndef __HCC__
 long long strtoll(char* nptr, char** endptr, int base)
 {
     return strtol(nptr, endptr, base);
 }
+#endif
 
 int atoi(char* nptr)
 {
@@ -258,6 +262,7 @@ char* strcpy(char* dest, char* src)
     return out;
 }
 
+#ifndef __HCC__
 char* strncpy(char* dest, char* src, size_t n)
 {
     char* out = dest;
@@ -274,6 +279,7 @@ char* strncpy(char* dest, char* src, size_t n)
     }
     return out;
 }
+#endif
 
 char* strchr(char* text, int c)
 {
@@ -322,6 +328,7 @@ char* strerror(int value)
     return "mes-libc error";
 }
 
+#ifndef __HCC__
 void abort()
 {
     _exit(1);
@@ -332,6 +339,7 @@ int assert(int value)
     if (!value) abort();
     return 0;
 }
+#endif
 
 void* realloc(void* ptr, unsigned size)
 {
@@ -340,6 +348,7 @@ void* realloc(void* ptr, unsigned size)
     return next;
 }
 
+#ifndef __HCC__
 char* strstr(char* haystack, char* needle)
 {
     char* h;
@@ -359,6 +368,7 @@ char* strstr(char* haystack, char* needle)
     }
     return 0;
 }
+#endif
 
 static void swap_bytes(char* left, char* right, size_t size)
 {
@@ -412,6 +422,7 @@ void* fopen(char* path, char* mode)
     return (void*)(long)fd;
 }
 
+#ifndef __HCC__
 void* freopen(char* path, char* mode, void* stream)
 {
     void* next = fopen(path, mode);
@@ -419,6 +430,7 @@ void* freopen(char* path, char* mode, void* stream)
         close((int)(long)stream);
     return next;
 }
+#endif
 
 int fclose(void* stream)
 {
@@ -498,6 +510,7 @@ int gettimeofday(struct timeval* tv, void* tz)
     return 0;
 }
 
+#ifndef __HCC__
 int sem_init(void* sem, int shared, unsigned value)
 {
     if (sem) *(int*)sem = value;
@@ -513,6 +526,7 @@ int sem_post(void* sem)
 {
     return 0;
 }
+#endif
 
 time_t time(time_t* out)
 {
@@ -739,7 +753,9 @@ int fprintf(void* stream, char* fmt, long a, long b, long c)
 }
 int sprintf(char* out, char* fmt, long a, long b, long c) { return hcc_vformat(out, 0xffffffff, fmt, a, b, c); }
 int snprintf(char* out, unsigned size, char* fmt, long a, long b, long c) { return hcc_vformat(out, size, fmt, a, b, c); }
+#ifndef __HCC__
 int sscanf(char* input, char* fmt) { return 0; }
+#endif
 int vsnprintf(char* out, unsigned size, char* fmt, va_list ap)
 {
     char* p = out;
@@ -834,10 +850,12 @@ int vsnprintf(char* out, unsigned size, char* fmt, va_list ap)
     return total;
 }
 int vfprintf(void* stream, char* fmt, va_list ap) { return fputs(fmt, stream); }
+#ifndef __HCC__
 int vprintf(char* fmt, va_list ap) { return vfprintf(stdout, fmt, ap); }
 int vsprintf(char* out, char* fmt, va_list ap) { return vsnprintf(out, 0xffffffff, fmt, ap); }
 int vsscanf(char* input, char* fmt, va_list ap) { return 0; }
 int vfscanf(void* stream, char* fmt, va_list ap) { return 0; }
+#endif
 
 int ELF64_ST_BIND(int value) { return (value >> 4) & 15; }
 int ELF64_ST_TYPE(int value) { return value & 15; }
