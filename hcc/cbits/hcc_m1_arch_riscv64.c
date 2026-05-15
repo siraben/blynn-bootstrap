@@ -309,6 +309,8 @@ static void riscv64_emit_binop(FILE *out, int op)
     case BK_MUL: fprintf(out, "  rd_a0 rs1_a1 rs2_a0 mul\n"); break;
     case BK_DIV: fprintf(out, "  rd_a0 rs1_a1 rs2_a0 div\n"); break;
     case BK_MOD: fprintf(out, "  rd_a0 rs1_a1 rs2_a0 rem\n"); break;
+    case BK_UDIV: fprintf(out, "  rd_a0 rs1_a1 rs2_a0 divu\n"); break;
+    case BK_UMOD: fprintf(out, "  rd_a0 rs1_a1 rs2_a0 remu\n"); break;
     case BK_SHL: fprintf(out, "  rd_a0 rs1_a1 rs2_a0 sll\n"); break;
     case BK_SHR: fprintf(out, "  rd_a0 rs1_a1 rs2_a0 srl\n"); break;
     case BK_SAR: fprintf(out, "  rd_a0 rs1_a1 rs2_a0 sra\n"); break;
