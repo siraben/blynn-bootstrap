@@ -1,0 +1,41 @@
+diff --git a/inn/party2.hs b/inn/party2.hs
+--- a/inn/party2.hs
++++ b/inn/party2.hs
+@@ -31,4 +31,17 @@
++foreign import ccall "exit" exitWith :: Int -> IO ()
++
++-- Canonical decimal words, not a C expression. Bound before numeric conversion
++-- so even the seed compiler can reject overflow and octal-looking inputs.
++validTop s = not (null s) && head s /= '0'
++  && all (\c -> c >= '0' && c <= '9') s
++  && (length s > 4 || length s == 4 && s >= "1024")
++  && (length s < 9 || length s == 9 && s <= "536870912")
++
++badTop = putStrLn "TOP must be a canonical decimal word count in 1024..536870912" >> exitWith 1
++
+ main = getArgs >>= \case
++  ["top", top] -> if validTop top then interact (\s -> either id id $ untangle s >>= compileWith top libcHost []) else badTop
++  "top":_ -> badTop
+   "comb":_ -> interact $ dumpWith dumpCombs
+   "rawcomb":_ -> interact $ dumpWith dumpRawCombs
+   "lamb":_ -> interact $ dumpWith dumpLambs
+diff --git a/inn/precisely.hs b/inn/precisely.hs
+--- a/inn/precisely.hs
++++ b/inn/precisely.hs
+@@ -82,4 +82,16 @@
++foreign import ccall "exit" exitWith :: Int -> IO ()
++
++-- Keep this contract in sync with party2 (the crossly_up compiler).
++validTop s = not (null s) && head s /= '0'
++  && all (\c -> c >= '0' && c <= '9') s
++  && (length s > 4 || length s == 4 && s >= "1024")
++  && (length s < 9 || length s == 9 && s <= "536870912")
++
++badTop = putStrLn "TOP must be a canonical decimal word count in 1024..536870912" >> exitWith 1
++
+ main = getArgs >>= \case
++  ["top", top] -> if validTop top then interact (either id id . compile top libcHost []) else badTop
++  "top":_ -> badTop
+   "objdump":_ -> interact $ either id ($ "") . objDump
+   "obj":_ -> interact $ either id ($ "") . obj
+   "objc":_ -> interact $ either id (($ "") . toCsource . delete "#") . objectify

@@ -124,12 +124,6 @@ bench_micro() {
     "$style" "$count" "$(wc -c < "$m1")" "$(wc -l < "$m1")"
 }
 
-patch_top() {
-  path=$1
-  # Generated Precisely C uses enum{TOP=...}; larger programs need a larger heap.
-  sed -i 's/enum{TOP=[0-9][0-9]*}/enum{TOP=134217728}/' "$path"
-}
-
 bench_precisely_case() {
   name=$1
   main=$2
@@ -147,8 +141,7 @@ bench_precisely_case() {
 
   r=1
   while [ "$r" -le "$runs" ]; do
-    timed "precisely $name run$r" precisely_up < "$hs" > "$c"
-    patch_top "$c"
+    timed "precisely $name run$r" precisely_up top 134217728 < "$hs" > "$c"
     r=$((r + 1))
   done
 

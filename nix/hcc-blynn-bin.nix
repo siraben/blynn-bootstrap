@@ -8,9 +8,6 @@
   bootstrapShell,
   scriptEnv,
   runtimeFile,
-  top,
-  hcppTop ? top,
-  hcc1Top ? top,
   shareName ? pname,
   nativeBuildInputs ? [ ],
   m2Arch ? null,
@@ -61,8 +58,6 @@ mkDerivation (
       BOOTSTRAP_LIB=${../scripts/lib/bootstrap.sh} \
       HCC_BLYNN_C_DIR=source \
       HCC_DIR=${src} \
-      HCPP_TOP=${toString hcppTop} \
-      HCC1_TOP=${toString hcc1Top} \
       OUT_DIR=generated \
       ${scriptEnv} \
         ${kaem}/bin/kaem --verbose --strict --file hcc-blynn-bin.kaem

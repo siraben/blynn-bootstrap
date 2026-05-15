@@ -6,6 +6,8 @@
   blynnCompiler ? "${precisely}/bin/precisely_up",
   sourceBundle,
   commonObjects,
+  hcppTop ? 134217728,
+  hcc1Top ? 134217728,
   kaem,
   bootstrapShell,
   shareName ? pname,
@@ -41,6 +43,8 @@ stdenvNoCC.mkDerivation (
       HCC_BLYNN_SOURCES_DIR=source \
       HCC_BLYNN_OBJECTS_DIR=${commonObjects}/share/${commonObjects.pname} \
       BLYNN_COMPILER=${blynnCompiler} \
+      HCPP_TOP=${lib.escapeShellArg (toString hcppTop)} \
+      HCC1_TOP=${lib.escapeShellArg (toString hcc1Top)} \
       OUT_DIR=generated \
         ${kaem}/bin/kaem --verbose --strict --file hcc-blynn-c.kaem
 

@@ -20,11 +20,6 @@ rec {
   // skipPatchConfigure
   // skipFixup;
 
-  patchGeneratedTop = file: top: ''
-    substituteInPlace ${file} \
-      --replace-fail 'enum{TOP=16777216};' 'enum{TOP=${toString top}};'
-  '';
-
   shellHelpers =
     {
       name,

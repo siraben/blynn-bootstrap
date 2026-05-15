@@ -46,6 +46,10 @@ stdenv.mkDerivation {
     mv TyperPrecisely.hs Typer.hs
     mv precisely.hs Main.hs
 
+    # Use the System.Exit shim below, not libc exit: GHC must flush its own
+    # buffered diagnostics when rejecting a TOP option.
+    perl -0pi -e 's/^foreign import ccall "exit" exitWith :: Int -> IO \(\)\n//m' Main.hs
+
     export PRELUDE_IMPORT='import Prelude hiding (getChar, putChar, getContents, putStr, putStrLn, interact, liftA2, many, some)'
     perl -0pi -e 's/(module Base where\n)/$1$ENV{PRELUDE_IMPORT}\n/' Base.hs
     for f in *.hs; do
@@ -74,6 +78,7 @@ import Prelude hiding (getChar, putChar, getContents, putStr, putStrLn, interact
 import Base
 import qualified Prelude as P
 import qualified System.Environment as Env
+import qualified System.Exit as Exit
 
 putChar :: Char -> IO ()
 putChar = P.putChar
@@ -103,6 +108,10 @@ interact = P.interact
 
 getArgs :: IO [String]
 getArgs = Env.getArgs
+
+exitWith :: Int -> IO ()
+exitWith 0 = Exit.exitSuccess
+exitWith n = Exit.exitWith (Exit.ExitFailure n)
 EOF
 
     perl -0pi -e 's/\n-- Hash consing\.\ninstance \(Ord a, Ord b\) => Ord \(Either a b\) where\n.*?\nmemget /\n-- Hash consing.\nmemget /s' RTS.hs

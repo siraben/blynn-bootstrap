@@ -323,12 +323,10 @@
             ${if prevIsParty then ''
               ${prev}/bin/party /dev/null /dev/null < ${name}.input.hs > ${name}.c
             '' else ''
-              ${prev}/bin/${prevBin} < ${name}.input.hs > ${name}.c
+              ${prev}/bin/${prevBin} ${lib.optionalString (top != null) "top ${lib.escapeShellArg (toString top)}"} < ${name}.input.hs > ${name}.c
             ''}
             ${lib.optionalString (top != null) ''
-              substituteInPlace ${name}.c \
-                --replace-fail 'enum{TOP=16777216};' 'enum{TOP=${toString top}};' \
-                --replace-fail 'enum{TOP=16777216,' 'enum{TOP=${toString top},'
+              check_generated_top ${name}.c ${lib.escapeShellArg (toString top)}
             ''}
             compile_m2 ${name}.c ${name}
           '';
@@ -434,8 +432,7 @@
 
           buildPhase = ''
             runHook preBuild
-            sed -E 's/enum\{TOP=[0-9]+\};/enum{TOP=33554432};/' \
-              ${blynnShare preciselyStage "precisely_up.c"} > precisely_up.c
+            cp ${blynnShare preciselyStage "precisely_up.c"} precisely_up.c
             $CC -O2 precisely_up.c -o precisely_up
             runHook postBuild
           '';
@@ -560,19 +557,21 @@
           cBackend,
         }:
           pkgs.callPackage ./nix/hcc-blynn-bin.nix ({
-            inherit pname generatedC;
+            inherit pname;
+            generatedC = generatedC.override {
+              inherit (cBackend) hcppTop hcc1Top;
+            };
             src = hccSrc;
             kaem = minimalBootstrap.stage0-posix.kaem;
             bootstrapShell = minimalShell;
             shareName = pname;
-          } // cBackend);
+          } // builtins.removeAttrs cBackend [ "hcppTop" "hcc1Top" ]);
 
         hccCBackends = {
           gcc = {
             mkDerivation = rawStdenvCC.mkDerivation;
             runtimeFile = "cbits/hcc_runtime.c";
             scriptEnv = ''HCC_C_BACKEND=gcc HOST_CC="$CC"'';
-            top = 536870912;
             hcppTop = 134217728;
             hcc1Top = 134217728;
             description = "HCC compiled from Blynn output by the normal GCC C toolchain";
@@ -582,15 +581,7 @@
           gccLowmem = {
             mkDerivation = rawStdenvCC.mkDerivation;
             runtimeFile = "cbits/hcc_runtime.c";
-            compileCommand = ''
-              echo "hcc-blynn: gcc cc hcpp-blynn.c (low-mem GC) -> hcpp"
-              $CC -O2 -DHCC_RTS_ADAPTIVE_MAJOR_WORDS=16777216 hcpp-blynn.c cbits/hcc_runtime.c -o hcpp
-              echo "hcc-blynn: gcc cc hcc1-blynn.c (low-mem GC) -> hcc1"
-              $CC -O2 -DHCC_RTS_ADAPTIVE_MAJOR_WORDS=16777216 hcc1-blynn.c cbits/hcc_runtime.c -o hcc1
-              echo "hcc-blynn: gcc cc cbits/hcc_m1.c -> hcc-m1"
-              $CC -O2 cbits/hcc_m1.c -o hcc-m1
-            '';
-            top = 536870912;
+            scriptEnv = ''HCC_C_BACKEND=gcc HOST_CC="$CC" HOST_CFLAGS="-O2 -DHCC_RTS_ADAPTIVE_MAJOR_WORDS=16777216"'';
             hcppTop = 134217728;
             hcc1Top = 134217728;
             description = "HCC compiled from Blynn output by GCC with a low-memory adaptive-major GC threshold";
@@ -601,7 +592,6 @@
             nativeBuildInputs = [ tcc ];
             runtimeFile = "cbits/hcc_runtime.c";
             scriptEnv = ''HCC_C_BACKEND=tcc TCC=${tcc}/bin/tcc TCC_FLAGS="-B ${tcc}/lib -I ${tcc}/include"'';
-            top = 536870912;
             hcppTop = 134217728;
             hcc1Top = 134217728;
             description = "HCC compiled from Blynn output by HCC-built TinyCC";
@@ -614,7 +604,6 @@
             ];
             runtimeFile = "cbits/hcc_runtime_m2.c";
             scriptEnv = ''HCC_C_BACKEND=m2 M2LIBC_PATH=${m2libcSrc}'';
-            top = 134217728;
             hcppTop = 134217728;
             hcc1Top = 134217728;
             m2Arch = minimalBootstrap.stage0-posix.m2libcArch;
@@ -630,25 +619,7 @@
               minimalBootstrap.stage0-posix.mescc-tools
             ];
             runtimeFile = "cbits/hcc_runtime_m2.c";
-            compileCommand = ''
-              . ${./scripts/lib/bootstrap.sh}
-              cat hcpp-blynn.c > hcpp-body.c
-              cat hcc1-blynn.c > hcc1-body.c
-              {
-                printf '%s\n' '#define HCC_RTS_USE_EXTERNAL_ALLOC 1'
-                printf '%s\n' '#define HCC_RTS_ADAPTIVE_MAJOR_WORDS 33554432'
-              } > hcpp-blynn.c
-              cat hcpp-body.c >> hcpp-blynn.c
-              {
-                printf '%s\n' '#define HCC_RTS_USE_EXTERNAL_ALLOC 1'
-                printf '%s\n' '#define HCC_RTS_ADAPTIVE_MAJOR_WORDS 33554432'
-              } > hcc1-blynn.c
-              cat hcc1-body.c >> hcc1-blynn.c
-              compile_m2 hcpp-blynn.c hcpp -f cbits/hcc_runtime_m2.c
-              compile_m2 hcc1-blynn.c hcc1 -f cbits/hcc_runtime_m2.c
-              compile_m2 cbits/hcc_m1.c hcc-m1
-            '';
-            top = 67108864;
+            scriptEnv = ''HCC_C_BACKEND=m2 M2LIBC_PATH=${m2libcSrc} HCC_RTS_ADAPTIVE_MAJOR_WORDS=33554432'';
             hcppTop = 67108864;
             hcc1Top = 67108864;
             m2Arch = minimalBootstrap.stage0-posix.m2libcArch;
@@ -665,7 +636,6 @@
             ];
             runtimeFile = "cbits/hcc_runtime_m2.c";
             scriptEnv = ''HCC_C_BACKEND=m2 M2_MESOPLANET=${m2MesoplanetGcc}/bin/M2-Mesoplanet M2LIBC_PATH=${minimalBootstrap.stage0-posix.src}/M2libc PATH=${minimalBootstrap.stage0-posix.mescc-tools}/bin:$PATH'';
-            top = 134217728;
             hcppTop = 134217728;
             hcc1Top = 134217728;
             m2Arch = minimalBootstrap.stage0-posix.m2libcArch;
@@ -1098,6 +1068,18 @@
           src = hccSrc;
           blynnSrc = blynnUpstreamSrc;
         };
+        blynn-top-tests = pkgs.callPackage ./nix/blynn-top-tests.nix {
+          crossly = blynnUpstreamStages.crossly_up;
+          crossly1 = blynnUpstreamStages.crossly1;
+          precisely = preciselyGccHost;
+          preciselySeed = blynnUpstreamStages.precisely_up;
+          preciselyDebug = preciselyGhcDebug;
+          sourceBundle = hccBlynnSources;
+          commonObjects = hccBlynnObjsBy.m2.precisely;
+          inherit minimalBootstrap hccSrc;
+          m2libc = m2libcSrc;
+          bootstrapShell = minimalShell;
+        };
         packageTree = {
           default = blynnPhaseBin;
 
@@ -1153,6 +1135,7 @@
             hcc.tinycc-tests2-stat = hcc-tinycc-tests2-stat;
             host.ghc.native.tinycc-riscv64 = tinyccBy.riscv64.host.ghc.native;
             precisely.dialect = precisely-dialect-tests;
+            precisely.top = blynn-top-tests;
             tinyccM1.native-vs-faithful = tinyccM1Compare
               "tinycc-m1-compare-native-faithful" tinyccM1By.m2.precisely.m2;
             tinyccM1.native-vs-blynn-gcc = tinyccM1Compare
@@ -1165,6 +1148,7 @@
         };
 
         checks = {
+          blynn-top = blynn-top-tests;
           hcc-golden = hcc-golden-tests;
           bootstrap-tools = pkgs.runCommand "bootstrap-tools-tests" { } ''
             mkdir -p scripts/lib data patches

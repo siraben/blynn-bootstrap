@@ -15,6 +15,28 @@ require_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"
 }
 
+# TOP is a count of 32-bit words. Never pass arbitrary C expressions to Blynn.
+validate_top() {
+  case $2 in
+    '' | 0* | *[!0-9]*) die "$1 must be a canonical decimal word count in 1024..536870912" ;;
+  esac
+  [ "${#2}" -le 9 ] && [ "$2" -ge 1024 ] && [ "$2" -le 536870912 ] ||
+    die "$1 must be a canonical decimal word count in 1024..536870912"
+}
+
+check_generated_top() {
+  _top_file=$1
+  _top_expected=$2
+  {
+    IFS= read -r _top_first || :
+    IFS= read -r _top_second || :
+  } < "$_top_file"
+  case "$_top_first:$_top_second" in
+    "typedef unsigned u;:enum{TOP=$_top_expected};" | "typedef unsigned u;:enum{TOP=$_top_expected,"*'};') ;;
+    *) die "Blynn failed to generate $_top_file with TOP=$_top_expected: $_top_first / $_top_second" ;;
+  esac
+}
+
 repo_root_from_script_dir() {
   _script_dir=$1
   (CDPATH= cd "$_script_dir/.." && pwd)
