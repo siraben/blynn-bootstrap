@@ -1,8 +1,38 @@
-diff --git a/libtcc.c b/libtcc.c
-index 64c772d..cb5d284 100644
 --- a/libtcc.c
 +++ b/libtcc.c
-@@ -876,6 +876,9 @@ LIBTCCAPI TCCState *tcc_new(void)
+@@ -36,23 +36,31 @@
+ #elif defined(TCC_TARGET_ARM)
+ #include "arm-gen.c"
+ #include "arm-link.c"
++#ifndef TCC_NO_ASM
+ #include "arm-asm.c"
++#endif
+ #elif defined(TCC_TARGET_ARM64)
+ #include "arm64-gen.c"
+ #include "arm64-link.c"
++#ifndef TCC_NO_ASM
+ #include "arm64-asm.c"
++#endif
+ #elif defined(TCC_TARGET_C67)
+ #include "c67-gen.c"
+ #include "c67-link.c"
+ #include "tcccoff.c"
+ #elif defined(TCC_TARGET_X86_64)
+ #include "x86_64-gen.c"
+ #include "x86_64-link.c"
++#ifndef TCC_NO_ASM
+ #include "i386-asm.c"
++#endif
+ #elif defined(TCC_TARGET_RISCV64)
+ #include "riscv64-gen.c"
+ #include "riscv64-link.c"
++#ifndef TCC_NO_ASM
+ #include "riscv64-asm.c"
++#endif
+ #else
+ #error unknown target
+ #endif
+@@ -884,6 +892,9 @@
      s->warn_implicit_function_declaration = 1;
      s->warn_discarded_qualifiers = 1;
      s->ms_extensions = 1;
@@ -12,7 +42,7 @@ index 64c772d..cb5d284 100644
      s->unwind_tables = 1;
 
  #ifdef CHAR_IS_UNSIGNED
-@@ -2232,9 +2235,9 @@ PUB_FUNC void tcc_print_stats(TCCState *s1, unsigned total_time)
+@@ -2204,9 +2215,9 @@ PUB_FUNC void tcc_print_stats(TCCState *s1, unsigned total_time)
      fprintf(stderr, "# %d idents, %d lines, %u bytes\n"
                      "# %0.3f s, %u lines/s, %0.1f MB/s\n",
             total_idents, total_lines, total_bytes,
@@ -24,24 +54,9 @@ index 64c772d..cb5d284 100644
      fprintf(stderr, "# text %u, data.rw %u, data.ro %u, bss %u bytes\n",
             s1->total_output[0],
             s1->total_output[1],
-diff --git a/i386-asm.c b/i386-asm.c
-index 9f5fe40..b1f8b10 100644
---- a/i386-asm.c
-+++ b/i386-asm.c
-@@ -1596,7 +1596,7 @@ static void asm_opcode(TCCState *s1, int opcode)
- #endif
-         }
- 
--        switch(size) {
-+        if (reg >= 8) { cstr_printf(add_str, "%%r%d%c", reg, (size == 1) ? 'b' : ((size == 2) ? 'w' : ((size == 4) ? 'd' : ' '))); return; } switch(size) {
-         case -1:
-             reg = TOK_ASM_ah + reg;
-             break;
-diff --git a/tccelf.c b/tccelf.c
-index 9b71a39..a598d53 100644
 --- a/tccelf.c
 +++ b/tccelf.c
-@@ -3028,7 +3028,7 @@ static int elf_output_file(TCCState *s1, const char *filename)
+@@ -3128,7 +3128,7 @@
  	}
          /* Perform relocation to GOT or PLT entries */
          if (file_type == TCC_OUTPUT_EXE && s1->static_link)
@@ -50,23 +65,77 @@ index 9b71a39..a598d53 100644
          else if (s1->got)
              fill_local_got_entries(s1);
  
-diff --git a/tccgen.c b/tccgen.c
-index 1498059..5fa0d85 100644
 --- a/tccgen.c
 +++ b/tccgen.c
-@@ -3073,6 +3073,6 @@ static void gen_opi_regular(int op)
+@@ -3082,6 +3082,7 @@
              if (op != '-')
                  goto op_err;
--            vpush_type_size(pointed_type(&vtop[-1].type), &align);
-+            vpush_type_size(pointed_type(&vtop[-1].type), &align); if (!(vtop[-1].type.t & VT_UNSIGNED)) gen_cast_s(VT_PTRDIFF_T);
+             vpush_type_size(pointed_type(&vtop[-1].type), &align);
++            if (!(vtop[-1].type.t & VT_UNSIGNED)) gen_cast_s(VT_PTRDIFF_T);
              vtop->type.t &= ~VT_UNSIGNED;
              vrott(3);
              gen_opic(op);
-@@ -3096,6 +3096,6 @@ static void gen_opi_regular(int op)
+@@ -3105,6 +3106,7 @@
  #endif
              type1 = vtop[-1].type;
--            vpush_type_size(pointed_type(&vtop[-1].type), &align);
-+            vpush_type_size(pointed_type(&vtop[-1].type), &align); if (!(vtop[-1].type.t & VT_UNSIGNED)) gen_cast_s(VT_PTRDIFF_T);
+             vpush_type_size(pointed_type(&vtop[-1].type), &align);
++            if (!(vtop[-1].type.t & VT_UNSIGNED)) gen_cast_s(VT_PTRDIFF_T);
+             vtop->type.t &= ~VT_UNSIGNED;
              gen_op('*');
  #ifdef CONFIG_TCC_BCHECK
-             if (tcc_state->do_bounds_check && !CONST_WANTED) {
+--- a/x86_64-gen.c
++++ b/x86_64-gen.c
+@@ -25,6 +25,8 @@
+ /* number of available registers */
+ #define NB_REGS         25
+ #define NB_ASM_REGS     16
++#ifndef TCC_NO_ASM
+ #define CONFIG_TCC_ASM
++#endif
+ 
+ /* a register can belong to several classes. The classes must be
+--- a/i386-gen.c
++++ b/i386-gen.c
+@@ -23,6 +23,8 @@
+ /* number of available registers */
+ #define NB_REGS         5
+ #define NB_ASM_REGS     8
++#ifndef TCC_NO_ASM
+ #define CONFIG_TCC_ASM
++#endif
+ 
+ /* a register can belong to several classes. The classes must be
+--- a/riscv64-gen.c
++++ b/riscv64-gen.c
+@@ -2,6 +2,8 @@
+ 
+ // Number of registers available to allocator:
+ #define NB_REGS 19 // x10-x17 aka a0-a7, f10-f17 aka fa0-fa7, xxx, ra, sp
++#ifndef TCC_NO_ASM
+ #define CONFIG_TCC_ASM
++#endif
+ 
+ #define TREG_R(x) (x) // x = 0..7
+ #define TREG_F(x) (x + 8) // x = 0..7
+--- a/include/stdarg.h
++++ b/include/stdarg.h
+@@ -1,11 +1,19 @@
+ #ifndef _STDARG_H
+ #define _STDARG_H
+ 
++#ifdef __HCC__
++typedef char *va_list;
++#define va_start(ap, last) ((void)((ap) = (char *)(&(last)) + sizeof(void *)))
++#define va_arg(ap, type) (type)(((long *)((ap) = ((ap) + sizeof(void *))))[-1])
++#define va_end(ap) ((void)((ap) = 0))
++#define va_copy(d, s) ((d) = (s))
++#else
+ typedef __builtin_va_list va_list;
+ #define va_start __builtin_va_start
+ #define va_arg __builtin_va_arg
+ #define va_copy __builtin_va_copy
+ #define va_end __builtin_va_end
++#endif
+ 
+ /* fix a buggy dependency on GCC in libio.h */
+ typedef va_list __gnuc_va_list;
