@@ -49,13 +49,12 @@ party_step() {
   msg "$prev -> $out.c"
   if [ "$prev" = party ]; then
     "$bin_dir/$prev" /dev/null /dev/null < "$input" > "$gen_dir/$out.c"
+  elif [ "$out" = crossly1 ]; then
+    "$bin_dir/$prev" top "${CROSSLY_TOP:-134217728}" < "$input" > "$gen_dir/$out.c"
+  elif [ "$out" = precisely_up ]; then
+    "$bin_dir/$prev" top "${PRECISELY_TOP:-33554432}" < "$input" > "$gen_dir/$out.c"
   else
     "$bin_dir/$prev" < "$input" > "$gen_dir/$out.c"
-  fi
-  if [ "$out" = precisely_up ]; then
-    tmp=$gen_dir/$out.c.tmp
-    sed "s/enum{TOP=[0-9][0-9]*};/enum{TOP=${PRECISELY_TOP:-33554432}};/" "$gen_dir/$out.c" > "$tmp"
-    mv "$tmp" "$gen_dir/$out.c"
   fi
   compile_m2 "$gen_dir/$out.c" "$bin_dir/$out"
 }

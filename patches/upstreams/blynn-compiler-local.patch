@@ -837,7 +837,7 @@ index 54de649..d5c8c16 100644
    . (if "pre-post-run" `elem` opts then ("pre_run();run();post_run();"++) else ("run();"++))
    . ("\n}\n"++)
 diff --git a/inn/RTSPrecisely.hs b/inn/RTSPrecisely.hs
-index fd2d391..fe57c42 100644
+index fd2d391..8fdb76b 100644
 --- a/inn/RTSPrecisely.hs
 +++ b/inn/RTSPrecisely.hs
 @@ -49,7 +49,7 @@ void errexit() {}
@@ -1238,7 +1238,7 @@ index fd2d391..fe57c42 100644
  }
  void vmrun() {
    u x = tagcheck(num(1));
-@@ -341,34 +626,47 @@ void vmrun() {
+@@ -341,34 +469,47 @@ void vmrun() {
  void vmgcroot() {
    gc();
    u *p = scratchpad;
@@ -1296,7 +1296,7 @@ index fd2d391..fe57c42 100644
  |]++)
    . foldr (.) id (genComb <$> comdefs)
    . ("  }\n"++)
-@@ -376,33 +677,58 @@ giantSwitch = ([r|
+@@ -376,33 +517,58 @@ giantSwitch = ([r|
  rtsInit opts
    | "warts" `elem` opts = ([r|void rts_init() {
    mem = (u*) HEAP_BASE;
@@ -1368,7 +1368,7 @@ index fd2d391..fe57c42 100644
  }
  |]++)
  
-@@ -412,9 +763,12 @@ rtsReduce opts =
+@@ -412,9 +578,12 @@ rtsReduce opts =
  |]++) else id)
    . ([r|
  void rts_reduce(u n) {
@@ -1382,7 +1382,7 @@ index fd2d391..fe57c42 100644
    . ("\n}\n"++)
  
  -- Hash consing.
-@@ -532,10 +886,10 @@ getIOType q = Left $ "main : " ++ show q
+@@ -532,10 +701,10 @@ getIOType q = Left $ "main : " ++ show q
  
  libcWarts = ([r|#define IMPORT(m,n) __attribute__((import_module(m))) __attribute__((import_name(n)));
  enum {
@@ -1396,7 +1396,7 @@ index fd2d391..fe57c42 100644
  };
  static u *root = (u*) ROOT_BASE, *vmroot, *rootend, *scratchpad, *scratchpadend;
  void errchar(int c) {}
-@@ -616,12 +970,13 @@ compile topSize libc opts s = do
+@@ -616,12 +785,13 @@ compile topSize libc opts s = do
      $ ("typedef unsigned u;\n"++)
      . ("enum{TOP="++) . (topSize++) . ("};\n"++)
      . ("enum{PROGSZ="++) . shows (length mem) . ("};\n"++)
@@ -1414,15 +1414,26 @@ index fd2d391..fe57c42 100644
      . (libc++)
      . runFun opts (toAscList ffis)
      . foldr (.) id (zipWith (\(expName, (_, ourType)) n -> ("EXPORT(f"++) . shows n . (", \""++) . (expName++) . ("\")\n"++) . genExport ourType n) (toAscList ffes) [0..])
+diff --git a/inn/party2.hs b/inn/party2.hs
+index 8d3b69f..44c4f80 100644
+--- a/inn/party2.hs
++++ b/inn/party2.hs
+@@ -35,4 +35,5 @@ main = getArgs >>= \case
+   "type":_ -> interact $ dumpWith dumpTypes
+   "wasm":opts -> interact \s -> either id id $ untangle s >>= compileWith "1<<22" libcWasm ("no-main":opts)
+   "warts":opts -> interact $ either id (warts opts) . untangle
++  "top":top:_ -> interact \s -> either id id $ untangle s >>= compileWith top libcHost []
+   _ -> interact \s -> either id id $ untangle s >>= compile
 diff --git a/inn/precisely.hs b/inn/precisely.hs
-index c364ba5..c3cdfe6 100644
+index c364ba5..428d424 100644
 --- a/inn/precisely.hs
 +++ b/inn/precisely.hs
-@@ -94,4 +94,4 @@ main = getArgs >>= \case
+@@ -94,4 +94,5 @@ main = getArgs >>= \case
    "ffis":opts -> interact $ either id (($ "\n") . shows . keys) . allFFIs
    "warts":opts -> interact $ either id (warts $ "warts":opts) . allFFIs
    "wasm":opts -> interact $ either id id . compile "1<<26" libcWasm ("no-main":opts)
 -  _ -> interact $ either id id . compile "1<<24" libcHost []
++  "top":top:_ -> interact $ either id id . compile top libcHost []
 +  _ -> interact $ either id id . compile "16777216" libcHost []
 diff --git a/party.hs b/party.hs
 index b1748f4..3345da3 100644

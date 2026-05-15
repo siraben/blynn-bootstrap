@@ -31,8 +31,7 @@ stdenv.mkDerivation {
         "${../tests/hcc/precisely-dialect}/$main" \
         > "$name.hs"
 
-      precisely_up < "$name.hs" > "$name.c"
-      ${nixLib.patchGeneratedTop ''"$name.c"'' 134217728}
+      precisely_up top 134217728 < "$name.hs" > "$name.c"
       $CC -O0 "$name.c" cbits/hcc_runtime.c -o "$name"
       "./$name" > "$name.out"
       grep -q "^$expected$" "$name.out"
@@ -50,8 +49,7 @@ stdenv.mkDerivation {
         "${../tests/hcc/precisely-dialect}/$main" \
         > "$name.hs"
 
-      precisely_up < "$name.hs" > "$name.c"
-      ${nixLib.patchGeneratedTop ''"$name.c"'' 134217728}
+      precisely_up top 134217728 < "$name.hs" > "$name.c"
       $CC -O0 "$name.c" cbits/hcc_runtime.c -o "$name"
       printf '%s' "$input" | "./$name" > "$name.out"
       grep -q "^$expected$" "$name.out"

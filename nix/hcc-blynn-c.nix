@@ -5,6 +5,8 @@
   precisely,
   sourceBundle,
   commonObjects,
+  hcppTop ? 134217728,
+  hcc1Top ? 134217728,
   shareName ? pname,
 }:
 
@@ -35,6 +37,8 @@ stdenvNoCC.mkDerivation (
       HCC_BLYNN_SOURCES_DIR=source \
       HCC_BLYNN_OBJECTS_DIR=${commonObjects}/share/${commonObjects.pname} \
       PRECISELY_UP=${precisely}/bin/precisely_up \
+      HCPP_TOP=${toString hcppTop} \
+      HCC1_TOP=${toString hcc1Top} \
       OUT_DIR=generated \
         ${../scripts/hcc-blynn-c.sh}
 

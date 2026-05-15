@@ -421,12 +421,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             ${if prevIsParty then ''
               ${prev}/bin/party /dev/null /dev/null < ${name}.input.hs > ${name}.c
             '' else ''
-              ${prev}/bin/${prevBin} < ${name}.input.hs > ${name}.c
-            ''}
-            ${lib.optionalString (top != null) ''
-              substituteInPlace ${name}.c \
-                --replace-fail 'enum{TOP=16777216};' 'enum{TOP=${toString top}};' \
-                --replace-fail 'enum{TOP=16777216,' 'enum{TOP=${toString top},'
+              ${prev}/bin/${prevBin} ${lib.optionalString (top != null) "top ${toString top}"} < ${name}.input.hs > ${name}.c
             ''}
             compile_m2 ${name}.c ${name}
           '';
@@ -532,8 +527,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
 
           buildPhase = ''
             runHook preBuild
-            sed -E 's/enum\{TOP=[0-9]+\};/enum{TOP=33554432};/' \
-              ${precisely}/share/blynn-precisely/precisely_up.c > precisely_up.c
+            cp ${precisely}/share/blynn-precisely/precisely_up.c precisely_up.c
             $CC -O2 precisely_up.c -o precisely_up
             runHook postBuild
           '';
@@ -649,9 +643,6 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
               echo "hcc-blynn: gcc cc cbits/hcc_m1.c -> hcc-m1"
               $CC -O2 cbits/hcc_m1.c -o hcc-m1
             '';
-            top = 536870912;
-            hcppTop = 134217728;
-            hcc1Top = 134217728;
             description = "HCC compiled from Blynn output by the normal GCC C toolchain";
           };
 
@@ -667,9 +658,6 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
               echo "hcc-blynn: tcc cbits/hcc_m1.c -> hcc-m1"
               ${tcc}/bin/tcc -B ${tcc}/lib -I ${tcc}/include cbits/hcc_m1.c -o hcc-m1
             '';
-            top = 536870912;
-            hcppTop = 134217728;
-            hcc1Top = 134217728;
             description = "HCC compiled from Blynn output by HCC-built TinyCC";
           };
 
@@ -691,9 +679,6 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
               compile_m2 hcc1-blynn.c hcc1 -f cbits/hcc_runtime_m2.c
               compile_m2 cbits/hcc_m1.c hcc-m1
             '';
-            top = 134217728;
-            hcppTop = 134217728;
-            hcc1Top = 134217728;
             m2Arch = minimalBootstrap.stage0-posix.m2libcArch;
             m2Os = minimalBootstrap.stage0-posix.m2libcOS;
             description = "HCC compiled from Blynn output by stage0 M2-Mesoplanet";
@@ -735,9 +720,6 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
                 -f cbits/hcc_m1.c \
                 -o hcc-m1
             '';
-            top = 134217728;
-            hcppTop = 134217728;
-            hcc1Top = 134217728;
             m2Arch = minimalBootstrap.stage0-posix.m2libcArch;
             m2Os = minimalBootstrap.stage0-posix.m2libcOS;
             description = "HCC compiled from Blynn output by a GCC-built M2-Mesoplanet";
