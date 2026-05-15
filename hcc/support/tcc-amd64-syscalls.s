@@ -1,7 +1,7 @@
+# x86_64 Linux syscall ABI: nr in %rax, args in %rdi/%rsi/%rdx/%r10/%r8/%r9, `syscall`.
+# C ABI passes the 4th arg in %rcx, so 4+-arg syscalls would need %rcx -> %r10.
+# All stubs here take <= 3 args, so the C args already sit in %rdi/%rsi/%rdx.
 .text
-
-# x86_64 Linux syscall convention: nr in %rax; args in %rdi/%rsi/%rdx/%r10/%r8/%r9.
-# Caller passes args in %rdi/%rsi/%rdx/%rcx/%r8/%r9; %rcx must be moved to %r10.
 
 .global read
 .type read, @function
