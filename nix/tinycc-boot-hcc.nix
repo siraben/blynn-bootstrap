@@ -345,6 +345,39 @@ stdenvNoCC.mkDerivation {
       $bootstrap_link_suffix \
       -o tcc-stage3
 
+    run_step "tcc-stage3 self-build stage4" ./tcc-stage3 $bootstrap_link_prefix \
+      -I . \
+      -I "$tcc_include_src" \
+      -I "$mes_include_src" \
+      -D__linux__=1 \
+      -DBOOTSTRAP=1 \
+      -DHAVE_LONG_LONG=1 \
+      -DHAVE_SETJMP=1 \
+      -DHAVE_BITFIELD=1 \
+      -DHAVE_FLOAT=1 \
+      ${tccTargetDefineArg} \
+      -Dinline= \
+      -DCONFIG_TCCDIR=\"\" \
+      -DCONFIG_SYSROOT=\"\" \
+      -DCONFIG_TCC_CRTPREFIX=\"{B}\" \
+      -DCONFIG_TCC_ELFINTERP=\"/mes/loader\" \
+      -DCONFIG_TCC_LIBPATHS=\"{B}\" \
+      -DCONFIG_TCC_SYSINCLUDEPATHS=\"$out/include\" \
+      -DTCC_LIBGCC=\"libc.a\" \
+      -DTCC_LIBTCC1=\"libtcc1.a\" \
+      -DCONFIG_TCC_LIBTCC1_MES=0 \
+      -DCONFIG_TCC_STATIC=1 \
+      -DCONFIG_USE_LIBGCC=1 \
+      -DTCC_MES_LIBC=1 \
+      -DTCC_VERSION=\"0.9.28-${version}\" \
+      -DONE_SOURCE=1 \
+      -DCONFIG_TCC_SEMLOCK=0 \
+      tcc.c \
+      $bootstrap_link_suffix \
+      -o tcc-stage4
+
+    run_step "fixpoint check tcc-stage3 == tcc-stage4" cmp tcc-stage3 tcc-stage4
+
     mkdir -p final-libs
     if [ "$target_is_aarch64" = 1 ]; then
     run_step "as final aarch64 crt1.s" assemble_aarch64_support_object final-libs/crt1.o ${support}/tcc-aarch64-crt1.s
