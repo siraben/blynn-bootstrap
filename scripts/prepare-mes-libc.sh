@@ -19,7 +19,6 @@ require_cmd rm
 src_dir=${GNU_MES_DIR:-${1:-build/upstreams/gnu-mes}}
 out_dir=${OUT_DIR:-${2:-build/mes-libc}}
 arch=${MES_LIBC_ARCH:-x86_64}
-ldexpl=${MES_LDEXPL_SOURCE:-$repo_dir/data/mes-ldexpl.c}
 setjmp=${MES_SETJMP_SOURCE:-$repo_dir/nix/sources/mes-libc/x86_64-setjmp.c}
 config_h=${MES_CONFIG_SOURCE:-$repo_dir/nix/sources/mes-libc/config.h}
 
@@ -27,7 +26,6 @@ src_dir=$(abspath "$src_dir")
 out_dir=$(abspath "$out_dir")
 
 [ -d "$src_dir" ] || die "missing patched GNU Mes source: $src_dir"
-[ -f "$ldexpl" ] || die "missing ldexpl source: $ldexpl"
 [ -f "$setjmp" ] || die "missing setjmp source: $setjmp"
 [ -f "$config_h" ] || die "missing Mes config header: $config_h"
 
@@ -54,15 +52,10 @@ mes_system=$arch-linux
 EOF
 
 : > "$out_dir/lib/libc.c"
-count=0
 (
   cd "$out_dir"
   . ./build-aux/configure-lib.sh
   for rel in $libc_gnu_SOURCES; do
-    count=$((count + 1))
-    if [ "$count" -eq 101 ]; then
-      append_file "$ldexpl" "$out_dir/lib/libc.c"
-    fi
     append_file "$out_dir/$rel" "$out_dir/lib/libc.c"
   done
 )

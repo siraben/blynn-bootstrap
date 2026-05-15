@@ -12,6 +12,18 @@ index 64c772d..cb5d284 100644
      s->unwind_tables = 1;
  
  #ifdef CHAR_IS_UNSIGNED
+diff --git a/tcc.h b/tcc.h
+index 6972515..8298d05 100644
+--- a/tcc.h
++++ b/tcc.h
+@@ -229,5 +229,6 @@ extern long double strtold (const char *__nptr, char **__endptr);
+ #if defined TCC_TARGET_PE \
+     || (defined TCC_TARGET_MACHO && defined TCC_TARGET_ARM64) \
+-    || (defined _WIN32 && !defined __GNUC__)
++    || (defined _WIN32 && !defined __GNUC__) \
++    || defined TCC_MES_LIBC
+ # define TCC_USING_DOUBLE_FOR_LDOUBLE 1
+ #endif
 diff --git a/i386-asm.c b/i386-asm.c
 index 9f5fe40..b1f8b10 100644
 --- a/i386-asm.c

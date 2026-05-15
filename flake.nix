@@ -119,12 +119,7 @@
 
           . ./build-aux/configure-lib.sh
           : > "$out/lib/libc.c"
-          count=0
           for rel in $libc_gnu_SOURCES; do
-            count=$((count + 1))
-            if [ "$count" -eq 101 ]; then
-              cat ${./data/mes-ldexpl.c} >> "$out/lib/libc.c"
-            fi
             cat "$out/$rel" >> "$out/lib/libc.c"
           done
           cp "$out/lib/linux/${mesLibcArch}-mes-gcc/crt1.c" "$out/lib/crt1.c"
