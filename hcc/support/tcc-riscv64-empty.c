@@ -1,1 +1,0 @@
-int hcc_riscv64_empty_runtime_object;

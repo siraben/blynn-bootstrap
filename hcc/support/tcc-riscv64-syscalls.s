@@ -69,13 +69,6 @@ _exit:
 	addi a7, zero, 93
 	ecall
 
-.globl mprotect
-.type mprotect, @function
-mprotect:
-	addi a7, zero, 226
-	ecall
-	ret
-
 .globl __builtin_va_start
 .type __builtin_va_start, @function
 __builtin_va_start:

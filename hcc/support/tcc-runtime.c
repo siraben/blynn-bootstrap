@@ -46,22 +46,22 @@ void __assert_fail(char* expr, char* file, unsigned line, char* function)
     _exit(1);
 }
 
-static char* hcc_amd64_brk;
-static char* hcc_amd64_malloc;
+static char* hcc_brk;
+static char* hcc_malloc;
 
 void* malloc(unsigned size)
 {
     char* out;
-    if (!hcc_amd64_brk) {
-        hcc_amd64_brk = (char*)brk(0);
-        hcc_amd64_malloc = hcc_amd64_brk;
+    if (!hcc_brk) {
+        hcc_brk = (char*)brk(0);
+        hcc_malloc = hcc_brk;
     }
-    if (hcc_amd64_brk < hcc_amd64_malloc + size) {
-        hcc_amd64_brk = (char*)brk(hcc_amd64_malloc + size);
-        if ((long)hcc_amd64_brk < 0) return 0;
+    if (hcc_brk < hcc_malloc + size) {
+        hcc_brk = (char*)brk(hcc_malloc + size);
+        if ((long)hcc_brk < 0) return 0;
     }
-    out = hcc_amd64_malloc;
-    hcc_amd64_malloc = hcc_amd64_malloc + size;
+    out = hcc_malloc;
+    hcc_malloc = hcc_malloc + size;
     return out;
 }
 
