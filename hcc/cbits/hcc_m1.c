@@ -986,6 +986,16 @@ static void alloc_def(LocArray *locs, int *next_slot, int temp)
   *next_slot = *next_slot + 1;
 }
 
+static void alloc_fixed(LocArray *locs, int temp, int slot)
+{
+  Loc *loc;
+  ensure_loc(locs, temp);
+  loc = loc_at(locs->items, temp);
+  loc->kind = LOC_STACK;
+  loc->slot = slot;
+  loc->slots = 1;
+}
+
 static void alloc_object(LocArray *locs, int *next_slot, int temp, int size)
 {
   int slots;
@@ -1010,6 +1020,9 @@ static void allocate_instrs(InstrList *list, LocArray *locs, int *next_slot)
     switch (in->kind) {
       case IK_ALLOCA: alloc_object(locs, next_slot, in->temp, in->value); break;
       case IK_PARAM:
+        if (target_arch == TARGET_AMD64 && in->value < 6) alloc_fixed(locs, in->temp, in->value);
+        else alloc_def(locs, next_slot, in->temp);
+        break;
       case IK_CONST:
       case IK_CONSTB:
       case IK_COPY:
@@ -1044,10 +1057,12 @@ static void allocate_instrs(InstrList *list, LocArray *locs, int *next_slot)
 
 static int allocate_function(Function *fn, LocArray *locs)
 {
-  int next_slot = 0;
+  int next_slot;
   int i = 0;
   locs->items = 0;
   locs->cap = 0;
+  if (target_arch == TARGET_AMD64) next_slot = 6;
+  else next_slot = 0;
   while (i < fn->len) {
     Block *block = block_at(fn->blocks, i);
     allocate_instrs(block_instrs_ptr(block), locs, &next_slot);
@@ -1956,10 +1971,7 @@ static void emit_instr(FILE *out, const char *fn_name, EmitState *state, LocArra
         fprintf(out, "  mov_eax,[esp+DWORD] %%%d\n", param_offset);
       } else if (target_arch == TARGET_AARCH64) {
         if (in->value < 8) {
-          if (in->value == 0) {
-          } else {
-            aarch64_emit_mov_reg(out, 0, in->value);
-          }
+          if (in->value != 0) aarch64_emit_mov_reg(out, 0, in->value);
         } else {
           param_offset = total_slots * 8 + 8 + (in->value - 8) * 8;
           aarch64_emit_load_store(out, 1, 8, 0, 18, param_offset);
@@ -1971,13 +1983,9 @@ static void emit_instr(FILE *out, const char *fn_name, EmitState *state, LocArra
           param_offset = total_slots * 8 + 8 + (in->value - 8) * 8;
           riscv64_emit_load_store(out, 1, 8, 0, 2, param_offset);
         }
-      } else if (in->value == 0) fprintf(out, "  HCC_M_RDI_RAX\n");
-      else if (in->value == 1) fprintf(out, "  HCC_COPY_rsi_to_rax\n");
-      else if (in->value == 2) fprintf(out, "  HCC_COPY_rdx_to_rax\n");
-      else if (in->value == 3) fprintf(out, "  HCC_COPY_rcx_to_rax\n");
-      else if (in->value == 4) fprintf(out, "  HCC_COPY_r8_to_rax\n");
-      else if (in->value == 5) fprintf(out, "  HCC_COPY_r9_to_rax\n");
-      else {
+      } else if (in->value < 6) {
+        break;
+      } else {
         param_offset = total_slots * 8 + 8 + (in->value - 6) * 8;
         fprintf(out, "  LOAD_RSP_IMMEDIATE_into_rax %%%d\n", param_offset);
       }
@@ -2183,11 +2191,12 @@ static void emit_block_ref(FILE *out, const char *fn_name, int id)
 
 static void emit_cleanup_stack(FILE *out, int total_slots)
 {
-  if (total_slots > 0) {
+  if (target_arch == TARGET_AMD64) {
+    fprintf(out, "  HCC_ADD_IMMEDIATE_to_rsp %%%d\n", total_slots * 8);
+  } else if (total_slots > 0) {
     if (target_arch == TARGET_I386) fprintf(out, "  HCC_ADD_IMMEDIATE_to_esp %%%d\n", total_slots * 4);
     else if (target_arch == TARGET_AARCH64) aarch64_emit_add_imm_reg(out, 18, 18, total_slots * 8);
     else if (target_arch == TARGET_RISCV64) riscv64_emit_add_imm_reg(out, 2, 2, total_slots * 8);
-    else fprintf(out, "  HCC_ADD_IMMEDIATE_to_rsp %%%d\n", total_slots * 8);
   }
 }
 
@@ -2231,11 +2240,24 @@ static void emit_function(FILE *out, Function *fn)
   fprintf(out, ":FUNCTION_%s\n", fn->name);
   if (target_arch == TARGET_AARCH64) fprintf(out, "  PUSH_LR\n");
   else if (target_arch == TARGET_RISCV64) fprintf(out, "  rd_sp rs1_sp !-8 addi\n  rs1_sp rs2_ra sd\n");
-  if (total_slots > 0) {
+  if (target_arch == TARGET_AMD64) {
+    fprintf(out, "  HCC_SUB_IMMEDIATE_from_rsp %%%d\n", total_slots * 8);
+    fprintf(out, "  HCC_M_RDI_RAX\n");
+    fprintf(out, "  HCC_STORE_RSP_IMMEDIATE_from_rax %%0\n");
+    fprintf(out, "  HCC_COPY_rsi_to_rax\n");
+    fprintf(out, "  HCC_STORE_RSP_IMMEDIATE_from_rax %%8\n");
+    fprintf(out, "  HCC_COPY_rdx_to_rax\n");
+    fprintf(out, "  HCC_STORE_RSP_IMMEDIATE_from_rax %%16\n");
+    fprintf(out, "  HCC_COPY_rcx_to_rax\n");
+    fprintf(out, "  HCC_STORE_RSP_IMMEDIATE_from_rax %%24\n");
+    fprintf(out, "  HCC_COPY_r8_to_rax\n");
+    fprintf(out, "  HCC_STORE_RSP_IMMEDIATE_from_rax %%32\n");
+    fprintf(out, "  HCC_COPY_r9_to_rax\n");
+    fprintf(out, "  HCC_STORE_RSP_IMMEDIATE_from_rax %%40\n");
+  } else if (total_slots > 0) {
     if (target_arch == TARGET_I386) fprintf(out, "  sub_esp, %%%d\n", total_slots * 4);
     else if (target_arch == TARGET_AARCH64) aarch64_emit_sub_imm_reg(out, 18, total_slots * 8);
     else if (target_arch == TARGET_RISCV64) riscv64_emit_add_imm_reg(out, 2, 2, -total_slots * 8);
-    else fprintf(out, "  HCC_SUB_IMMEDIATE_from_rsp %%%d\n", total_slots * 8);
   }
   i = 0;
   while (i < fn->len) {

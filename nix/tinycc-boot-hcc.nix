@@ -16,7 +16,7 @@
 
 let
   version = "unstable-2025-12-03";
-  rev = "cb41cbfe717e4c00d7bb70035cda5ee5f0ff9341";
+  rev = "757507eb022f7af4be63dc9a72b299761181efbb";
   shortRev = builtins.substring 0 7 rev;
   support = ../hcc/support;
   hccTraceArgs = lib.optionalString enableTrace "--trace ";
@@ -67,8 +67,8 @@ let
       syscalls = "amd64-syscalls.M1";
       compatArg = "-f ${support}/amd64-compat.M1";
       base = "0x00600000";
-      libtcc1ExtraBootstrap = "bootstrap-libs/alloca.o";
-      libtcc1ExtraFinal = "final-libs/alloca.o";
+      libtcc1ExtraBootstrap = "bootstrap-libs/alloca.o bootstrap-libs/va_list.o";
+      libtcc1ExtraFinal = "final-libs/alloca.o final-libs/va_list.o";
       buildArm64Lib = false;
       buildRiscv64Lib = false;
       needsQemu = false;
@@ -90,7 +90,7 @@ stdenvNoCC.mkDerivation {
   src = fetchgit {
     url = "https://repo.or.cz/tinycc.git";
     inherit rev;
-    hash = "sha256-LgYeX6Q80Z6VNJ7iPk46fPpEr/dEAezqvR6jQddSsxI=";
+    hash = "sha256-inHQRpif+2S7ZuY56WcLoK1mYqQveVs8SSwNQPt6rho=";
   };
 
   sourceRoot = "tinycc-${shortRev}";
@@ -197,6 +197,7 @@ stdenvNoCC.mkDerivation {
       -I . \
       -I \"$tcc_include_src\" \
       -I \"$mes_include_src\" \
+      -D __HCC__=1 \
       -D __linux__=1 \
       -D BOOTSTRAP=1 \
       -D HAVE_LONG_LONG=1 \
@@ -225,10 +226,10 @@ stdenvNoCC.mkDerivation {
       tcc.c > tcc-expanded.c"
     log_file tcc-expanded.c
 
-    run_step_shell "hcpp tcc-bootstrap-support.c > tcc-bootstrap-support.i" "hcpp ${support}/tcc-bootstrap-support.c > tcc-bootstrap-support.i"
+    run_step_shell "hcpp tcc-bootstrap-support.c > tcc-bootstrap-support.i" "hcpp -D __HCC__=1 ${support}/tcc-bootstrap-support.c > tcc-bootstrap-support.i"
     log_file tcc-bootstrap-support.i
     compile_m1 tcc-bootstrap-support.i tcc-bootstrap-support.M1
-    run_step_shell "hcpp tcc-final-overrides.c > tcc-final-overrides.i" "hcpp ${support}/tcc-final-overrides.c > tcc-final-overrides.i"
+    run_step_shell "hcpp tcc-final-overrides.c > tcc-final-overrides.i" "hcpp -D __HCC__=1 ${support}/tcc-final-overrides.c > tcc-final-overrides.i"
     log_file tcc-final-overrides.i
     compile_m1 tcc-final-overrides.i tcc-final-overrides.M1
     compile_m1 tcc-expanded.c tcc.M1
@@ -306,6 +307,7 @@ stdenvNoCC.mkDerivation {
     run_step "tcc bootstrap empty libtcc1.c" run_target ./tcc -c -I "$tcc_include_src" -I "$mes_include_src" ${tccTargetDefineArg} -o bootstrap-libs/libtcc1.o ${support}/tcc-riscv64-empty.c
     else
     run_step "tcc bootstrap libtcc1.c" ./tcc -c -I "$tcc_include_src" -I "$mes_include_src" ${tccTargetDefineArg} -o bootstrap-libs/libtcc1.o lib/libtcc1.c
+    run_step "tcc bootstrap va_list.c" ./tcc -c -I "$tcc_include_src" -I "$mes_include_src" ${tccTargetDefineArg} -o bootstrap-libs/va_list.o lib/va_list.c
     fi
     ${lib.optionalString (!(targetCfg.buildArm64Lib || targetCfg.buildRiscv64Lib)) ''
     run_step "tcc bootstrap alloca.S" ./tcc -c -I "$tcc_include_src" -I "$mes_include_src" ${tccTargetDefineArg} -o bootstrap-libs/alloca.o lib/alloca.S
@@ -331,7 +333,7 @@ stdenvNoCC.mkDerivation {
       bootstrap_link_suffix="bootstrap-libs/riscv64-syscalls.o bootstrap-libs/riscv64-runtime.o bootstrap-libs/tcc-bootstrap-support.o bootstrap-libs/libgetopt.o bootstrap-libs/libtcc1.o bootstrap-libs/lib-arm64.o bootstrap-libs/crtn.o"
     else
       bootstrap_link_prefix="-nostdlib bootstrap-libs/crt1.o bootstrap-libs/crti.o"
-      bootstrap_link_suffix="bootstrap-libs/libc.o bootstrap-libs/libtcc1.o bootstrap-libs/crtn.o"
+      bootstrap_link_suffix="bootstrap-libs/libc.o bootstrap-libs/libtcc1.o bootstrap-libs/va_list.o bootstrap-libs/crtn.o"
     fi
 
     run_step "tcc self-build stage2" run_target ./tcc $bootstrap_link_prefix \
@@ -428,6 +430,7 @@ stdenvNoCC.mkDerivation {
     run_step "tcc-stage3 final empty libtcc1.c" run_target ./tcc-stage3 -c -I "$tcc_include_src" -I "$mes_include_src" ${tccTargetDefineArg} -o final-libs/libtcc1.o ${support}/tcc-riscv64-empty.c
     else
     run_step "tcc-stage3 final libtcc1.c" ./tcc-stage3 -c -I "$tcc_include_src" -I "$mes_include_src" ${tccTargetDefineArg} -o final-libs/libtcc1.o lib/libtcc1.c
+    run_step "tcc-stage3 final va_list.c" ./tcc-stage3 -c -I "$tcc_include_src" -I "$mes_include_src" ${tccTargetDefineArg} -o final-libs/va_list.o lib/va_list.c
     fi
     ${lib.optionalString (!(targetCfg.buildArm64Lib || targetCfg.buildRiscv64Lib)) ''
     run_step "tcc-stage3 final alloca.S" ./tcc-stage3 -c -I "$tcc_include_src" -I "$mes_include_src" ${tccTargetDefineArg} -o final-libs/alloca.o lib/alloca.S
@@ -502,7 +505,7 @@ stdenvNoCC.mkDerivation {
       bootstrap_link_suffix="bootstrap-libs/riscv64-syscalls.o bootstrap-libs/riscv64-runtime.o bootstrap-libs/tcc-bootstrap-support.o bootstrap-libs/libgetopt.o bootstrap-libs/libtcc1.o bootstrap-libs/lib-arm64.o bootstrap-libs/crtn.o"
     else
       bootstrap_link_prefix="-nostdlib bootstrap-libs/crt1.o bootstrap-libs/crti.o"
-      bootstrap_link_suffix="bootstrap-libs/libc.o bootstrap-libs/libtcc1.o bootstrap-libs/crtn.o"
+      bootstrap_link_suffix="bootstrap-libs/libc.o bootstrap-libs/libtcc1.o bootstrap-libs/va_list.o bootstrap-libs/crtn.o"
     fi
 
     cat > include-smoke-header.h <<'EOF'
