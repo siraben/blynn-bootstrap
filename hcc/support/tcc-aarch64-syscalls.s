@@ -1,3 +1,6 @@
+# AArch64 Linux syscall ABI: nr in x8, args in x0-x5, `svc #0`.
+# Modern kernel exposes open/access only as openat/faccessat, so those stubs
+# prepend AT_FDCWD (-100) and shift the caller's args up one register.
 .text
 .global read
 .type read, %function

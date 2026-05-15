@@ -1,3 +1,7 @@
+# RISC-V64 Linux syscall ABI: nr in a7, args in a0-a5, `ecall`.
+# As on AArch64, open/access route through openat/faccessat (AT_FDCWD=-100 in a0).
+# The __builtin_va_* stubs satisfy references emitted by riscv64-gen.c; the
+# bootstrap tcc never actually invokes varargs at runtime, so no-ops suffice.
 .text
 .globl read
 .type read, @function

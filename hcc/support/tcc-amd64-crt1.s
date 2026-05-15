@@ -1,3 +1,5 @@
+# x86_64 Linux _start: kernel places argc at (%rsp), argv at 8(%rsp).
+# Call main(argc, argv), then exit(main's return) via syscall 60.
 .text
 .global _start
 .type _start, @function

@@ -1,3 +1,7 @@
+# AArch64 Linux _start: kernel places argc at [sp], argv at sp+8.
+# Load main's address from an inline literal (bl has +-128MB range; an indirect
+# branch through x16 avoids needing a PLT in -nostdlib links).
+# After main returns, exit(x0) via svc #0 with nr 93 in x8.
 .text
 .global _start
 .type _start, %function
