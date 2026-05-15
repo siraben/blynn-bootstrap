@@ -188,8 +188,10 @@ stdenvNoCC.mkDerivation {
     #define TCC_MES_LIBC 1
     #define TCC_VERSION "0.9.28-${version}"
     #define ONE_SOURCE 1
+    #define TCC_USING_DOUBLE_FOR_LDOUBLE 1
     ${lib.optionalString targetCfg.buildRiscv64Lib "#define TCC_RISCV64_NO_ASM 1"}
-    ${lib.optionalString targetCfg.buildArm64Lib "#define CONFIG_TCC_BACKTRACE 0"}
+    #define CONFIG_TCC_BACKTRACE 0
+    #define CONFIG_TCC_BCHECK 0
     #define CONFIG_TCC_SEMLOCK 0
     EOF
 
