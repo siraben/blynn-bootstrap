@@ -113,6 +113,9 @@ stdenvNoCC.mkDerivation {
 
     ulimit -s unlimited
 
+    cp ${support}/tcc-tccrun-stub.c tccrun.c
+    cp ${support}/tcc-tccdbg-stub.c tccdbg.c
+
     log_step() {
       printf 'tinycc-boot-hcc: %s\n' "$1"
     }
