@@ -25,21 +25,35 @@
             || lib.hasSuffix ".modules" (baseNameOf path);
         };
         upstreamPatches = ./patches/upstreams;
+        sourcePinLines =
+          lib.filter
+            (line: line != "" && !(lib.hasPrefix "#" line))
+            (lib.splitString "\n" (builtins.readFile ./data/bootstrap-sources.env));
+        sourcePins = lib.listToAttrs (map
+          (line:
+            let
+              parts = builtins.match "([^=]+)=(.*)" line;
+            in
+            {
+              name = builtins.elemAt parts 0;
+              value = builtins.elemAt parts 1;
+            })
+          sourcePinLines);
         upstreamSources = {
           oriansjBlynnCompiler = pkgs.fetchgit {
-            url = "https://github.com/OriansJ/blynn-compiler.git";
-            rev = "9e46a8da1df90032f1d270a49a6ef5d0cc909658";
+            url = sourcePins.ORIANSJ_BLYNN_COMPILER_URL;
+            rev = sourcePins.ORIANSJ_BLYNN_COMPILER_REV;
             fetchSubmodules = true;
             hash = "sha256-HV0WRV3Q/ToxK4wdGjyfTC1yLFp+hqalZuKMZLdBh2E=";
           };
           blynnCompiler = pkgs.fetchgit {
-            url = "https://github.com/blynn/compiler.git";
-            rev = "a1f1c47c9bb3ff6a45a0735ced84984396560535";
+            url = sourcePins.BLYNN_COMPILER_URL;
+            rev = sourcePins.BLYNN_COMPILER_REV;
             hash = "sha256-xDYN3Ern83a5h8liJYpFBJ9BVzD5YyOJjiHGM5Za+X8=";
           };
           gnuMes = pkgs.fetchgit {
-            url = "https://git.savannah.gnu.org/git/mes.git";
-            rev = "c331d801da386ba752f3fe92d0538102a90e988d";
+            url = sourcePins.GNU_MES_URL;
+            rev = sourcePins.GNU_MES_REV;
             hash = "sha256-iw1/MP0dwXOs9gyB7WhnvpCz59zveeoYy85wt0j+fWA=";
           };
         };
@@ -55,12 +69,6 @@
             "x86_64-linux" = "amd64";
             "i686-linux" = "i386";
           };
-        mesLibcSources =
-          (lib.importJSON "${pkgs.path}/pkgs/os-specific/linux/minimal-bootstrap/mes/sources.json").${mesLibcArch}.linux.gcc;
-        mesLibcSourceFiles =
-          map (rel: "$out/${rel}") (lib.take 100 mesLibcSources.libc_gnu_SOURCES)
-          ++ [ "${pkgs.path}/pkgs/os-specific/linux/minimal-bootstrap/mes/ldexpl.c" ]
-          ++ map (rel: "$out/${rel}") (lib.drop 100 mesLibcSources.libc_gnu_SOURCES);
         patchedUpstreamSource = { name, src, patches ? [ ] }:
           pkgs.runCommand name {
             nativeBuildInputs = [ pkgs.coreutils pkgs.patch ];
@@ -84,106 +92,14 @@
         };
         m2libcSrc = "${blynnSrc}/M2libc";
         mesLibcSrc = pkgs.runCommand "gnu-mes-libc-hcc" {
-          nativeBuildInputs = [ pkgs.coreutils ];
+          nativeBuildInputs = [ pkgs.coreutils pkgs.patch ];
         } ''
           cp -R --no-preserve=mode,ownership ${upstreamSources.gnuMes} "$out"
           chmod -R u+w "$out"
+          cd "$out"
+          patch -p1 < ${./patches/upstreams/gnu-mes-libc-hcc-bootstrap.patch}
 
           mkdir -p "$out/include/arch" "$out/include/mes" "$out/lib"
-          substituteInPlace "$out/include/linux/${mesLibcArch}/syscall.h" \
-            --replace-fail '#define SYS_nanosleep 0x33' '#define SYS_nanosleep 0x23'
-          substituteInPlace "$out/lib/linux/${mesLibcArch}-mes-gcc/_exit.c" \
-            --replace-fail ': "rm" (code)' ': "rm" (code) : "rax", "rdi"'
-          substituteInPlace "$out/lib/mes/ntoab.c" \
-            --replace-fail 'size_t
-__mesabi_uldiv (size_t a, size_t b, size_t *remainder)' 'unsigned long
-__mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
-            --replace-fail '  size_t i;
-  size_t u;
-  size_t b = base;' '  unsigned long i;
-  unsigned long u;
-  unsigned long b = base;'
-          substituteInPlace "$out/lib/linux/ioctl3.c" \
-            --replace-fail 'ioctl3 (int filedes, size_t command, long data)' \
-                           'ioctl3 (int filedes, unsigned long command, long data)'
-          substituteInPlace "$out/lib/linux/link.c" \
-            --replace-fail 'return _sys_call4 (SYS_linkat, AT_FDCWD, (long) old_name, AT_FDCWD, (long) new_name);' \
-                           'return _sys_call5 (SYS_linkat, AT_FDCWD, (long) old_name, AT_FDCWD, (long) new_name, 0);'
-          substituteInPlace "$out/lib/string/strpbrk.c" \
-            --replace-fail '  while (*p)
-    if (strchr (stopset, *p))
-      break;
-    else
-      p++;
-  return p;' '  while (*p)
-    if (strchr (stopset, *p))
-      return p;
-    else
-      p++;
-  return 0;'
-          substituteInPlace "$out/lib/stdio/vfprintf.c" \
-            --replace-fail '  int count = 0;
-  while (*p)' '  int count = 0;
-  int has_l = 0;
-  while (*p)' \
-            --replace-fail "        if (c == 'l')
-          c = *++p;" "        if (c == 'l')
-          {
-            has_l = 1;
-            c = *++p;
-          }
-        if (c == 'l')
-          {
-            has_l = 1;
-            c = *++p;
-          }" \
-            --replace-fail '              long d = va_arg (ap, long);' '              long d;
-              if (has_l)
-                {
-                  has_l = 0;
-                  d = va_arg (ap, long);
-                }
-              else if (c != '"'"'d'"'"' && c != '"'"'i'"'"')
-                d = (long) (va_arg (ap, unsigned int));
-              else
-                d = (long) (va_arg (ap, int));' \
-            --replace-fail '              double d = va_arg8 (ap, double);' \
-                           '              double d = va_arg (ap, double);'
-          substituteInPlace "$out/lib/stdio/vsnprintf.c" \
-            --replace-fail '  int count = 0;
-  char c;' '  int count = 0;
-  int has_l = 0;
-  char c;' \
-            --replace-fail "        if (c == 'l')
-          c = *++p;
-        if (c == 'l')
-          c = *++p;" "        if (c == 'l')
-          {
-            has_l = 1;
-            c = *++p;
-          }
-        if (c == 'l')
-          {
-            has_l = 1;
-            c = *++p;
-          }
-        if (c == 'l')
-          {
-            has_l = 1;
-            c = *++p;
-          }" \
-            --replace-fail '              long d = va_arg (ap, long);' '              long d;
-              if (has_l)
-                {
-                  has_l = 0;
-                  d = va_arg (ap, long);
-                }
-              else if (c != '"'"'d'"'"' && c != '"'"'i'"'"')
-                d = (long) (va_arg (ap, unsigned int));
-              else
-                d = (long) (va_arg (ap, int));' \
-            --replace-fail '              double d = va_arg8 (ap, double);' \
-                           '              double d = va_arg (ap, double);'
           cp ${./nix/sources/mes-libc/x86_64-setjmp.c} "$out/lib/x86_64-mes-gcc/setjmp.c"
 
           cp "$out/include/linux/${mesLibcArch}/kernel-stat.h" "$out/include/arch/kernel-stat.h"
@@ -192,7 +108,20 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
 
           cp ${./nix/sources/mes-libc/config.h} "$out/include/mes/config.h"
 
-          cat ${lib.concatStringsSep " " mesLibcSourceFiles} > "$out/lib/libc.c"
+          printf '%s\n' \
+            compiler=gcc \
+            mes_bits=64 \
+            mes_cpu=${mesLibcArch} \
+            mes_kernel=linux \
+            mes_libc=mes \
+            mes_system=${mesLibcArch}-linux \
+            > config.sh
+
+          . ./build-aux/configure-lib.sh
+          : > "$out/lib/libc.c"
+          for rel in $libc_gnu_SOURCES; do
+            cat "$out/$rel" >> "$out/lib/libc.c"
+          done
           cp "$out/lib/linux/${mesLibcArch}-mes-gcc/crt1.c" "$out/lib/crt1.c"
           cp "$out/lib/linux/${mesLibcArch}-mes-gcc/crti.c" "$out/lib/crti.c"
           cp "$out/lib/linux/${mesLibcArch}-mes-gcc/crtn.c" "$out/lib/crtn.c"
@@ -200,10 +129,13 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
         '';
 
         minimalBootstrap = pkgs.minimal-bootstrap;
+        minimalShell = pkgs.callPackage ./nix/minimal-shell.nix {
+          stdenvNoCC = pkgs.stdenvNoCC;
+        };
         rawDerivation = import ./nix/raw-mk-derivation.nix {
           inherit lib system;
+          bootstrapShell = minimalShell;
           inherit (pkgs)
-            bash
             coreutils
             gnused
             gnugrep
@@ -587,6 +519,8 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           stdenvNoCC = rawStdenvNoCC;
           src = hccBlynnInputSrc;
           blynnSrc = blynnUpstreamSrc;
+          kaem = minimalBootstrap.stage0-posix.kaem;
+          bootstrapShell = minimalShell;
         };
 
         hccBlynnCFromPrecisely = pname: precisely:
@@ -594,6 +528,8 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             stdenvNoCC = rawStdenvNoCC;
             inherit pname precisely;
             sourceBundle = hccBlynnSources;
+            kaem = minimalBootstrap.stage0-posix.kaem;
+            bootstrapShell = minimalShell;
             shareName = pname;
           };
 
@@ -617,6 +553,8 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           pkgs.callPackage ./nix/hcc-blynn-bin.nix ({
             inherit pname generatedC;
             src = hccSrc;
+            kaem = minimalBootstrap.stage0-posix.kaem;
+            bootstrapShell = minimalShell;
             shareName = pname;
           } // cBackend);
 
@@ -624,14 +562,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           gcc = {
             mkDerivation = rawStdenvCC.mkDerivation;
             runtimeFile = "cbits/hcc_runtime.c";
-            compileCommand = ''
-              echo "hcc-blynn: gcc cc hcpp-blynn.c -> hcpp"
-              $CC -O2 hcpp-blynn.c cbits/hcc_runtime.c -o hcpp
-              echo "hcc-blynn: gcc cc hcc1-blynn.c -> hcc1"
-              $CC -O2 hcc1-blynn.c cbits/hcc_runtime.c -o hcc1
-              echo "hcc-blynn: gcc cc cbits/hcc_m1.c -> hcc-m1"
-              $CC -O2 cbits/hcc_m1.c -o hcc-m1
-            '';
+            scriptEnv = ''HCC_C_BACKEND=gcc HOST_CC="$CC"'';
             top = 536870912;
             hcppTop = 134217728;
             hcc1Top = 134217728;
@@ -642,14 +573,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             mkDerivation = rawStdenvNoCC.mkDerivation;
             nativeBuildInputs = [ tcc ];
             runtimeFile = "cbits/hcc_runtime.c";
-            compileCommand = ''
-              echo "hcc-blynn: tcc hcpp-blynn.c -> hcpp"
-              ${tcc}/bin/tcc -B ${tcc}/lib -I ${tcc}/include hcpp-blynn.c cbits/hcc_runtime.c -o hcpp
-              echo "hcc-blynn: tcc hcc1-blynn.c -> hcc1"
-              ${tcc}/bin/tcc -B ${tcc}/lib -I ${tcc}/include hcc1-blynn.c cbits/hcc_runtime.c -o hcc1
-              echo "hcc-blynn: tcc cbits/hcc_m1.c -> hcc-m1"
-              ${tcc}/bin/tcc -B ${tcc}/lib -I ${tcc}/include cbits/hcc_m1.c -o hcc-m1
-            '';
+            scriptEnv = ''HCC_C_BACKEND=tcc TCC=${tcc}/bin/tcc TCC_FLAGS="-B ${tcc}/lib -I ${tcc}/include"'';
             top = 536870912;
             hcppTop = 134217728;
             hcc1Top = 134217728;
@@ -662,18 +586,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
               minimalBootstrap.stage0-posix.mescc-tools
             ];
             runtimeFile = "cbits/hcc_runtime_m2.c";
-            compileCommand = ''
-              . ${./scripts/lib/bootstrap.sh}
-              cat hcpp-blynn.c > hcpp-body.c
-              cat hcc1-blynn.c > hcc1-body.c
-              printf '%s\n' '#define HCC_RTS_USE_EXTERNAL_ALLOC 1' > hcpp-blynn.c
-              cat hcpp-body.c >> hcpp-blynn.c
-              printf '%s\n' '#define HCC_RTS_USE_EXTERNAL_ALLOC 1' > hcc1-blynn.c
-              cat hcc1-body.c >> hcc1-blynn.c
-              compile_m2 hcpp-blynn.c hcpp -f cbits/hcc_runtime_m2.c
-              compile_m2 hcc1-blynn.c hcc1 -f cbits/hcc_runtime_m2.c
-              compile_m2 cbits/hcc_m1.c hcc-m1
-            '';
+            scriptEnv = ''HCC_C_BACKEND=m2 M2LIBC_PATH=${m2libcSrc}'';
             top = 134217728;
             hcppTop = 134217728;
             hcc1Top = 134217728;
@@ -690,34 +603,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
               minimalBootstrap.stage0-posix.mescc-tools
             ];
             runtimeFile = "cbits/hcc_runtime_m2.c";
-            compileCommand = ''
-              run_gcc_m2() {
-                PATH=${minimalBootstrap.stage0-posix.mescc-tools}/bin \
-                M2LIBC_PATH=${minimalBootstrap.stage0-posix.src}/M2libc \
-                TMPDIR="''${TMPDIR:-/tmp}" \
-                "$@"
-              }
-              cat hcpp-blynn.c > hcpp-body.c
-              cat hcc1-blynn.c > hcc1-body.c
-              printf '%s\n' '#define HCC_RTS_USE_EXTERNAL_ALLOC 1' > hcpp-blynn.c
-              cat hcpp-body.c >> hcpp-blynn.c
-              printf '%s\n' '#define HCC_RTS_USE_EXTERNAL_ALLOC 1' > hcc1-blynn.c
-              cat hcc1-body.c >> hcc1-blynn.c
-              echo "hcc-blynn: GCC-built M2-Mesoplanet hcpp-blynn.c -> hcpp"
-              run_gcc_m2 ${m2MesoplanetGcc}/bin/M2-Mesoplanet --operating-system "$M2_OS" --architecture "$M2_ARCH" \
-                -f hcpp-blynn.c \
-                -f cbits/hcc_runtime_m2.c \
-                -o hcpp
-              echo "hcc-blynn: GCC-built M2-Mesoplanet hcc1-blynn.c -> hcc1"
-              run_gcc_m2 ${m2MesoplanetGcc}/bin/M2-Mesoplanet --operating-system "$M2_OS" --architecture "$M2_ARCH" \
-                -f hcc1-blynn.c \
-                -f cbits/hcc_runtime_m2.c \
-                -o hcc1
-              echo "hcc-blynn: GCC-built M2-Mesoplanet cbits/hcc_m1.c -> hcc-m1"
-              run_gcc_m2 ${m2MesoplanetGcc}/bin/M2-Mesoplanet --operating-system "$M2_OS" --architecture "$M2_ARCH" \
-                -f cbits/hcc_m1.c \
-                -o hcc-m1
-            '';
+            scriptEnv = ''HCC_C_BACKEND=m2 M2_MESOPLANET=${m2MesoplanetGcc}/bin/M2-Mesoplanet M2LIBC_PATH=${minimalBootstrap.stage0-posix.src}/M2libc PATH=${minimalBootstrap.stage0-posix.mescc-tools}/bin:$PATH'';
             top = 134217728;
             hcppTop = 134217728;
             hcc1Top = 134217728;
@@ -785,21 +671,51 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
               description = "HCC compiled by the stage0-built Blynn precisely and a GCC-built M2-Mesoplanet";
             };
           };
+
+          stats.gcc.precisely.gcc.copying = hccGccPreciselyGccStatsCopying;
+          stats.gcc.precisely.gcc.generational = hccGccPreciselyGccStatsGenerational;
+        };
+
+        hccGccPreciselyGccStatsWith = {
+          pname,
+          extraCFlags,
+          description,
+        }: hccFromPrecisely {
+          inherit pname;
+          generatedC = hccBlynnCBy.gcc.precisely;
+          cBackend = hccCBackends.gcc // {
+            scriptEnv = ''HCC_C_BACKEND=gcc HOST_CC="$CC" HOST_CFLAGS="-O0 -DHCC_RTS_STATS ${extraCFlags}"'';
+            inherit description;
+          };
+        };
+
+        hccGccPreciselyGccStatsCopying = hccGccPreciselyGccStatsWith {
+          pname = "hcc-gcc-precisely-gcc-stats-copying";
+          extraCFlags = "";
+          description = "Stats-enabled semispace HCC compiled by the GCC-built Blynn precisely compiler and GCC";
+        };
+
+        hccGccPreciselyGccStatsGenerational = hccGccPreciselyGccStatsWith {
+          pname = "hcc-gcc-precisely-gcc-stats-generational";
+          extraCFlags = "-DHCC_RTS_GENERATIONAL -DHCC_RTS_NURSERY_WORDS=67108864";
+          description = "Stats-enabled generational HCC compiled by the GCC-built Blynn precisely compiler and GCC";
         };
 
         tinyccFromHcc = pname: hcc: pkgs.callPackage ./nix/tinycc-boot-hcc.nix {
-          stdenvNoCC = pkgs.stdenvNoCC;
+          stdenvNoCC = rawStdenvNoCC;
           inherit pname hcc minimalBootstrap;
           mesLibc = mesLibcSrc;
           m2libc = m2libcSrc;
+          patchTool = pkgs.patch;
           target = nativeM1Target;
         };
 
         tinyccM1FromHcc = pname: hcc: pkgs.callPackage ./nix/tinycc-boot-hcc.nix {
-          stdenvNoCC = pkgs.stdenvNoCC;
+          stdenvNoCC = rawStdenvNoCC;
           inherit pname hcc minimalBootstrap;
           mesLibc = mesLibcSrc;
           m2libc = m2libcSrc;
+          patchTool = pkgs.patch;
           target = nativeM1Target;
           m1ArtifactsOnly = true;
         };
@@ -957,6 +873,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
         };
 
         bootstrapBy = {
+          shell = minimalShell;
           host.ghc.native = {
             minimal = minimalBootstrapBy.host.ghc.native;
             tinycc.mes = minimalBootstrapBy.host.ghc.native.tinycc-mes;

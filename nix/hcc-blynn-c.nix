@@ -4,6 +4,8 @@
   pname,
   precisely,
   sourceBundle,
+  kaem,
+  bootstrapShell,
   shareName ? pname,
 }:
 
@@ -27,12 +29,15 @@ stdenvNoCC.mkDerivation (
       cp ${sourceBundle}/share/hcc-blynn-sources/hcpp-full.hs source/hcpp-full.hs
       cp ${sourceBundle}/share/hcc-blynn-sources/hcc1-full.hs source/hcc1-full.hs
 
+      cat > hcc-blynn-c.kaem <<'EOF'
+      ${bootstrapShell}/bin/sh ${../scripts/hcc-blynn-c.sh}
+      EOF
       BOOTSTRAP_LOG_NAME=hcc-blynn-c \
       BOOTSTRAP_LIB=${../scripts/lib/bootstrap.sh} \
       HCC_BLYNN_SOURCES_DIR=source \
       PRECISELY_UP=${precisely}/bin/precisely_up \
       OUT_DIR=generated \
-        ${../scripts/hcc-blynn-c.sh}
+        ${kaem}/bin/kaem --verbose --strict --file hcc-blynn-c.kaem
 
       cp generated/hcpp-full.hs hcpp-full.hs
       cp generated/hcc1-full.hs hcc1-full.hs
