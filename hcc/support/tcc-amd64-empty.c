@@ -1,1 +1,0 @@
-int hcc_amd64_empty_runtime_object;

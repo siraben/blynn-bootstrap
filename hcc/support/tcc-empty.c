@@ -1,0 +1,1 @@
+int hcc_empty_runtime_object;
