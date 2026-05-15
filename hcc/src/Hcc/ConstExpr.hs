@@ -4,7 +4,6 @@ module ConstExpr
 
 import Base
 import Literal
-import Operators
 import ParseLite
 import TypesToken
 
@@ -57,17 +56,17 @@ applyOp op a b = case op of
   "*" -> pure (a * b)
   "<<" -> pure (shiftLeftInt a (max 0 b))
   ">>" -> pure (shiftRightInt a (max 0 b))
-  "<" -> pure (truth (a < b))
-  "<=" -> pure (truth (a <= b))
-  ">" -> pure (truth (a > b))
-  ">=" -> pure (truth (a >= b))
-  "==" -> pure (truth (a == b))
-  "!=" -> pure (truth (a /= b))
+  "<" -> pure (boolToInt (a < b))
+  "<=" -> pure (boolToInt (a <= b))
+  ">" -> pure (boolToInt (a > b))
+  ">=" -> pure (boolToInt (a >= b))
+  "==" -> pure (boolToInt (a == b))
+  "!=" -> pure (boolToInt (a /= b))
   "&" -> pure (bitAndInt a b)
   "^" -> pure (bitXorInt a b)
   "|" -> pure (bitOrInt a b)
-  "&&" -> pure (truth (a /= 0 && b /= 0))
-  "||" -> pure (truth (a /= 0 || b /= 0))
+  "&&" -> pure (boolToInt (a /= 0 && b /= 0))
+  "||" -> pure (boolToInt (a /= 0 || b /= 0))
   _ -> pFail ("unhandled operator in constant expression: " ++ op)
 
 parseUnary :: ConstParser Int
@@ -75,7 +74,7 @@ parseUnary = do
   mtok <- pPeekMaybe
   case mtok of
     Just tok -> case constTokenKind tok of
-      TokPunct "!" -> advance >> ((truth . (== 0)) <$> parseUnary)
+      TokPunct "!" -> advance >> ((boolToInt . (== 0)) <$> parseUnary)
       TokPunct "+" -> advance >> parseUnary
       TokPunct "-" -> advance >> (negate <$> parseUnary)
       TokPunct "~" -> advance >> (bitNotInt <$> parseUnary)
@@ -108,10 +107,10 @@ parseDefinedOperator = do
     then do
       name <- constNeedIdent "bad defined operator in #if expression"
       constNeedPunct ")" "bad defined operator in #if expression"
-      pure (truth (name /= ""))
+      pure (boolToInt (name /= ""))
     else do
       name <- constNeedIdent "bad defined operator in #if expression"
-      pure (truth (name /= ""))
+      pure (boolToInt (name /= ""))
 
 advance :: ConstParser ()
 advance = pSkip "unexpected end of constant expression"
