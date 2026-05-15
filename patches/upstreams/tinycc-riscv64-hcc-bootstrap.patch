@@ -56,27 +56,3 @@ diff --git a/tccrun.c b/tccrun.c
 +    rc->fp = 0;
  #endif
  }
-diff --git a/riscv64-gen.c b/riscv64-gen.c
---- a/riscv64-gen.c
-+++ b/riscv64-gen.c
-@@ -774,6 +774,12 @@
-
- void tcc_run_start(int (*prog_main)(int, char **, char **), int cnt, char **var)
- {
-+#ifdef TCC_RISCV64_NO_ASM
-+    (void)prog_main;
-+    (void)cnt;
-+    (void)var;
-+    return;
-+#else
- #ifdef __riscv
-     void *sp;
-
-@@ -784,6 +790,7 @@
-     memcpy(sp, var, cnt * sizeof(char *));
-     __asm__("jalr %0" : : "r" (prog_main));
- #endif
-+#endif
- }
-
- static int func_sub_sp_offset, num_va_regs, func_va_list_ofs;
