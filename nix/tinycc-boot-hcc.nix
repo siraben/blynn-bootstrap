@@ -67,7 +67,7 @@ let
       syscalls = "amd64-syscalls.M1";
       compatArg = "-f ${support}/amd64-compat.M1";
       base = "0x00600000";
-      libtcc1ExtraBootstrap = "bootstrap-libs/alloca.o bootstrap-libs/va_list.o";
+      libtcc1ExtraBootstrap = "bootstrap-libs/va_list.o";
       libtcc1ExtraFinal = "final-libs/alloca.o final-libs/va_list.o";
       buildArm64Lib = false;
       buildRiscv64Lib = false;
@@ -311,9 +311,6 @@ stdenvNoCC.mkDerivation {
     run_step "tcc bootstrap libtcc1.c" ./tcc -c -I "$tcc_include_src" -I "$mes_include_src" ${tccTargetDefineArg} -o bootstrap-libs/libtcc1.o lib/libtcc1.c
     run_step "tcc bootstrap va_list.c" ./tcc -c -I "$tcc_include_src" -I "$mes_include_src" ${tccTargetDefineArg} -o bootstrap-libs/va_list.o lib/va_list.c
     fi
-    ${lib.optionalString (!(targetCfg.buildArm64Lib || targetCfg.buildRiscv64Lib)) ''
-    run_step "tcc bootstrap alloca.S" ./tcc -c -I "$tcc_include_src" -I "$mes_include_src" ${tccTargetDefineArg} -o bootstrap-libs/alloca.o lib/alloca.S
-    ''}
     ${lib.optionalString (targetCfg.buildArm64Lib || targetCfg.buildRiscv64Lib) ''
     run_step "tcc bootstrap lib-arm64.c" ${if targetCfg.buildRiscv64Lib then "run_target " else ""}./tcc -c -I "$tcc_include_src" -I "$mes_include_src" ${tccTargetDefineArg} -o bootstrap-libs/lib-arm64.o lib/lib-arm64.c
     ''}
