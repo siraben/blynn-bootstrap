@@ -1,6 +1,38 @@
 --- a/libtcc.c
 +++ b/libtcc.c
-@@ -884,6 +884,9 @@
+@@ -36,23 +36,31 @@
+ #elif defined(TCC_TARGET_ARM)
+ #include "arm-gen.c"
+ #include "arm-link.c"
++#ifndef TCC_NO_ASM
+ #include "arm-asm.c"
++#endif
+ #elif defined(TCC_TARGET_ARM64)
+ #include "arm64-gen.c"
+ #include "arm64-link.c"
++#ifndef TCC_NO_ASM
+ #include "arm64-asm.c"
++#endif
+ #elif defined(TCC_TARGET_C67)
+ #include "c67-gen.c"
+ #include "c67-link.c"
+ #include "tcccoff.c"
+ #elif defined(TCC_TARGET_X86_64)
+ #include "x86_64-gen.c"
+ #include "x86_64-link.c"
++#ifndef TCC_NO_ASM
+ #include "i386-asm.c"
++#endif
+ #elif defined(TCC_TARGET_RISCV64)
+ #include "riscv64-gen.c"
+ #include "riscv64-link.c"
++#ifndef TCC_NO_ASM
+ #include "riscv64-asm.c"
++#endif
+ #else
+ #error unknown target
+ #endif
+@@ -884,6 +892,9 @@
      s->warn_implicit_function_declaration = 1;
      s->warn_discarded_qualifiers = 1;
      s->ms_extensions = 1;
@@ -39,12 +71,46 @@
              vtop->type.t &= ~VT_UNSIGNED;
              gen_op('*');
  #ifdef CONFIG_TCC_BCHECK
+--- a/x86_64-gen.c
++++ b/x86_64-gen.c
+@@ -25,6 +25,8 @@
+ /* number of available registers */
+ #define NB_REGS         25
+ #define NB_ASM_REGS     16
++#ifndef TCC_NO_ASM
+ #define CONFIG_TCC_ASM
++#endif
+ 
+ /* a register can belong to several classes. The classes must be
+--- a/i386-gen.c
++++ b/i386-gen.c
+@@ -23,6 +23,8 @@
+ /* number of available registers */
+ #define NB_REGS         5
+ #define NB_ASM_REGS     8
++#ifndef TCC_NO_ASM
+ #define CONFIG_TCC_ASM
++#endif
+ 
+ /* a register can belong to several classes. The classes must be
+--- a/riscv64-gen.c
++++ b/riscv64-gen.c
+@@ -2,6 +2,8 @@
+ 
+ // Number of registers available to allocator:
+ #define NB_REGS 19 // x10-x17 aka a0-a7, f10-f17 aka fa0-fa7, xxx, ra, sp
++#ifndef TCC_NO_ASM
+ #define CONFIG_TCC_ASM
++#endif
+ 
+ #define TREG_R(x) (x) // x = 0..7
+ #define TREG_F(x) (x + 8) // x = 0..7
 --- a/include/stdarg.h
 +++ b/include/stdarg.h
 @@ -1,11 +1,19 @@
  #ifndef _STDARG_H
  #define _STDARG_H
-
+ 
 +#ifdef __HCC__
 +typedef char *va_list;
 +#define va_start(ap, last) ((void)((ap) = (char *)(&(last)) + sizeof(void *)))
