@@ -12,6 +12,12 @@ nix build .#tinycc.m2.precisely.m2
   mandatory seed-answer checks. The shell tests use fixtures, not real
   seed builds; they also check missing answers, corrupted output, a missing
   hasher, and invalid local source overrides.
+- `checks.blynn-top` (also `tests.precisely.top`) exercises the actual
+  `crossly_up`, `crossly1`, seed/GCC Precisely, and GHC debug compilers: default
+  and non-default TOP enums, invalid-option failures, and seed-M2 compilation
+  and execution of generated probes. It runs portable HCC C generation with
+  distinct HCPP/HCC1 sizes, checks that only the TOP line changes, rejects late
+  binary-stage overrides, and smoke-tests the differently sized M2-built HCC.
 - `tests.smoke.m1` compiles and executes C fixtures with M2-built HCC.
   Architecture-suffixed targets cover i386, AArch64, and RISC-V; cross-target
   execution uses QEMU. `tests.mescc` runs the selected MesCC scaffold cases.

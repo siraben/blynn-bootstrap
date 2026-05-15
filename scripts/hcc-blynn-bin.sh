@@ -24,8 +24,6 @@ source_dir=${HCC_BLYNN_C_DIR:-${1:-build/hcc-blynn-c}}
 hcc_dir=${HCC_DIR:-${2:-hcc}}
 out_dir=${OUT_DIR:-${3:-build/hcc-blynn-bin}}
 backend=${HCC_C_BACKEND:-m2}
-hcpp_top=${HCPP_TOP:-134217728}
-hcc1_top=${HCC1_TOP:-134217728}
 host_cc=${HOST_CC:-${CC:-cc}}
 host_cflags=${HOST_CFLAGS:--O2}
 tcc=${TCC:-tcc}
@@ -44,6 +42,16 @@ artifact_dir=$out_dir/artifact
 [ -f "$hcc_dir/cbits/hcc_m1.c" ] || die "missing hcc-m1 C source under $hcc_dir"
 [ -f "$hcc_dir/cbits/hcc_m1_arch_aarch64.c" ] || die "missing hcc-m1 AArch64 source under $hcc_dir"
 
+# Heap sizing belongs to C generation. Do not silently accept a late override.
+if [ "${HCPP_TOP+x}" ]; then
+  validate_top HCPP_TOP "$HCPP_TOP"
+  check_generated_top "$source_dir/hcpp-blynn.c" "$HCPP_TOP"
+fi
+if [ "${HCC1_TOP+x}" ]; then
+  validate_top HCC1_TOP "$HCC1_TOP"
+  check_generated_top "$source_dir/hcc1-blynn.c" "$HCC1_TOP"
+fi
+
 mkdir -p "$bin_dir" "$artifact_dir/cbits"
 cp "$source_dir/hcpp-blynn.c" "$artifact_dir/hcpp-blynn.c"
 cp "$source_dir/hcc1-blynn.c" "$artifact_dir/hcc1-blynn.c"
@@ -61,35 +69,16 @@ if [ -n "${M2LIBC_PATH:-}" ]; then
   cp "$m2libc/bootstrappable.c" "$artifact_dir/M2libc/bootstrappable.c"
 fi
 
-patch_top() {
-  src=$1
-  dst=$2
-  top=$3
-  marker='enum{TOP='
-  found=0
-
-  : > "$dst"
-  while IFS= read -r line || [ -n "$line" ]; do
-    case $line in
-      *"$marker"*"};"*)
-        prefix=${line%%"$marker"*}
-        rest=${line#*"$marker"}
-        suffix=${rest#*"};"}
-        printf '%s%s%s\n' "$prefix" "enum{TOP=$top};" "$suffix" >> "$dst"
-        found=1
-        ;;
-      *) printf '%s\n' "$line" >> "$dst" ;;
-    esac
-  done < "$src"
-  [ "$found" = 1 ] || die "TOP definition not found in $src"
-}
-
 prepare_m2_source() {
   file=$1
   tmp=$file.body
   found=0
   cp "$file" "$tmp"
   printf '%s\n' '#define HCC_RTS_USE_EXTERNAL_ALLOC 1' > "$file"
+  if [ -n "${HCC_RTS_ADAPTIVE_MAJOR_WORDS:-}" ]; then
+    validate_top HCC_RTS_ADAPTIVE_MAJOR_WORDS "$HCC_RTS_ADAPTIVE_MAJOR_WORDS"
+    printf '#define HCC_RTS_ADAPTIVE_MAJOR_WORDS %s\n' "$HCC_RTS_ADAPTIVE_MAJOR_WORDS" >> "$file"
+  fi
   while IFS= read -r line || [ -n "$line" ]; do
     case $line in
       "static inline u isAddr(u n) { return n>=128; }")
@@ -107,8 +96,8 @@ prepare_m2_source() {
   cd "$artifact_dir"
   hcpp_c=hcpp-blynn.patched.c
   hcc1_c=hcc1-blynn.patched.c
-  patch_top hcpp-blynn.c "$hcpp_c" "$hcpp_top"
-  patch_top hcc1-blynn.c "$hcc1_c" "$hcc1_top"
+  cp hcpp-blynn.c "$hcpp_c"
+  cp hcc1-blynn.c "$hcc1_c"
 
   case $backend in
     m2)

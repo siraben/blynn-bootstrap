@@ -13,8 +13,6 @@ script_dir=$(CDPATH= cd "$script_dir" && pwd)
 
 require_cmd chmod
 require_cmd mkdir
-require_cmd mv
-require_cmd sed
 require_cmd M2-Mesoplanet
 
 src_dir=${BLYNN_DIR:-${1:-build/upstreams/blynn-compiler}}
@@ -27,6 +25,10 @@ methodically=$(abspath "$methodically")
 bin_dir=$out_dir/bin
 gen_dir=$out_dir/generated
 inn_dir=$src_dir/inn
+crossly_top=${CROSSLY_TOP-134217728}
+precisely_top=${PRECISELY_TOP-33554432}
+validate_top CROSSLY_TOP "$crossly_top"
+validate_top PRECISELY_TOP "$precisely_top"
 
 [ -d "$src_dir" ] || die "missing Blynn compiler source: $src_dir"
 [ -x "$methodically" ] || die "missing methodically binary: $methodically"
@@ -49,13 +51,14 @@ party_step() {
   msg "$prev -> $out.c"
   if [ "$prev" = party ]; then
     "$bin_dir/$prev" /dev/null /dev/null < "$input" > "$gen_dir/$out.c"
+  elif [ "$out" = crossly1 ]; then
+    "$bin_dir/$prev" top "$crossly_top" < "$input" > "$gen_dir/$out.c"
+    check_generated_top "$gen_dir/$out.c" "$crossly_top"
+  elif [ "$out" = precisely_up ]; then
+    "$bin_dir/$prev" top "$precisely_top" < "$input" > "$gen_dir/$out.c"
+    check_generated_top "$gen_dir/$out.c" "$precisely_top"
   else
     "$bin_dir/$prev" < "$input" > "$gen_dir/$out.c"
-  fi
-  if [ "$out" = precisely_up ]; then
-    tmp=$gen_dir/$out.c.tmp
-    sed "s/enum{TOP=[0-9][0-9]*};/enum{TOP=${PRECISELY_TOP:-33554432}};/" "$gen_dir/$out.c" > "$tmp"
-    mv "$tmp" "$gen_dir/$out.c"
   fi
   compile_m2 "$gen_dir/$out.c" "$bin_dir/$out"
 }
