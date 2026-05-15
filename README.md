@@ -125,6 +125,22 @@ the self-built compiler, headers, and libraries. `OUT_DIR` changes the
 output root. An optional `OUT_DIR/after.kaem` is run with `sh` after the
 last stage.
 
+### Blynn heap configuration
+
+Blynn's `top WORDS` option emits a decimal TOP enum directly from source;
+no stage rewrites generated TOP definitions. `WORDS` must be canonical decimal
+in `1024..536870912` (no signs, leading zeros, or C expressions); the program
+still needs enough heap to run. TOP counts 32-bit words per arena, not bytes.
+
+The portable compiler ladder uses `CROSSLY_TOP=134217728` for `crossly1` and
+`PRECISELY_TOP=33554432` for `precisely_up`. Like Nix, it uses `crossly1` to
+generate HCC. Set `HCPP_TOP` and `HCC1_TOP` **at C generation time** (both default
+to `134217728`). A later binary-stage override must match the generated C or
+fails. In Nix, `hcc.blynn.c.m2.precisely.override { hcppTop = ...; hcc1Top = ...; }`
+configures generation; backend-specific sizes are also passed to this stage.
+The M2 low-memory backend retains `67108864` words for both programs and its
+separate `33554432`-word adaptive-major GC threshold.
+
 ## Layout
 
 - `hcc/`: compiler, runtime, and target support sources.
