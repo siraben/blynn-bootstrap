@@ -1,28 +1,3 @@
---- i386-asm.c
-+++ i386-asm.c
-@@ -1596,6 +1596,11 @@ ST_FUNC void subst_asm_operand(CString *add_str,
- #endif
-         }
- 
-+        if (reg >= 8) {
-+            cstr_printf(add_str, "%%r%d%c", reg, (size == 1) ? 'b' : ((size == 2) ? 'w' : ((size == 4) ? 'd' : ' ')));
-+            return;
-+        }
-+
-         switch(size) {
-         case -1:
-             reg = TOK_ASM_ah + reg;
---- tccgen.c
-+++ tccgen.c
-@@ -3097,6 +3097,8 @@ static void gen_opic(int op)
- #endif
-             type1 = vtop[-1].type;
-             vpush_type_size(pointed_type(&vtop[-1].type), &align);
-+            if (!(vtop[-1].type.t & VT_UNSIGNED))
-+                gen_cast_s(VT_PTRDIFF_T);
-             gen_op('*');
- #ifdef CONFIG_TCC_BCHECK
-             if (tcc_state->do_bounds_check && !CONST_WANTED) {
 --- tccelf.c
 +++ tccelf.c
 @@ -2111,6 +2111,10 @@ static int set_sec_sizes(TCCState *s1)

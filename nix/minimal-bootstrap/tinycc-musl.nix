@@ -60,7 +60,7 @@ let
         # support. With an HCC-built bootstrap compiler, the musl stdarg shim is
         # good enough to build the first tcc, but the self-rebuilt tcc needs the
         # TinyCC declarations to avoid generating a broken compiler.
-        ln -s ${musl}/lib/libtcc1.a ./libtcc1.a
+        ln -s ${tinycc.libs}/lib/libtcc1.a ./libtcc1.a
 
         tcc \
           -B ${tinycc.libs}/lib \
@@ -94,7 +94,8 @@ let
 
         rm -f libtcc1.a
         tcc -c -D HAVE_CONFIG_H=1 lib/libtcc1.c
-        tcc -ar cr libtcc1.a libtcc1.o
+        tcc -c -D HAVE_CONFIG_H=1 lib/va_list.c
+        tcc -ar cr libtcc1.a libtcc1.o va_list.o
 
         ./tcc-musl \
           -v \
@@ -123,7 +124,8 @@ let
         rm -f libtcc1.a
         ./tcc-musl -c -D HAVE_CONFIG_H=1 lib/libtcc1.c
         ./tcc-musl -c -D HAVE_CONFIG_H=1 lib/alloca.S
-        ./tcc-musl -ar cr libtcc1.a libtcc1.o alloca.o
+        ./tcc-musl -c -D HAVE_CONFIG_H=1 lib/va_list.c
+        ./tcc-musl -ar cr libtcc1.a libtcc1.o alloca.o va_list.o
 
         runHook postBuild
       '';
