@@ -283,9 +283,9 @@ lowerSideEffect expr = case expr of
   EAssign lhs rhs ->
     lowerAssignmentInstrs lhs rhs
   EPostfix "--" target ->
-    lowerIncDecInstrs False ISub target
+    lowerIncDecSideEffect ISub target
   EPostfix "++" target ->
-    lowerIncDecInstrs False IAdd target
+    lowerIncDecSideEffect IAdd target
   _ -> do
     (instrs, _) <- lowerExpr expr
     pure instrs
@@ -295,10 +295,14 @@ lowerAssignmentInstrs lhs rhs = do
   (instrs, _) <- lowerAssignment lhs rhs
   pure instrs
 
-lowerIncDecInstrs :: Bool -> BinOp -> Expr -> CompileM [Instr]
-lowerIncDecInstrs prefix op target = do
-  (instrs, _) <- lowerIncDec prefix op target
-  pure instrs
+lowerIncDecSideEffect :: BinOp -> Expr -> CompileM [Instr]
+lowerIncDecSideEffect op target = do
+  (lvInstrs, lvalue) <- lowerLValue target
+  (readInstrs, current) <- readLValue lvalue
+  out <- freshTemp
+  step <- incDecStep target
+  writeInstrs <- writeLValue lvalue (OTemp out)
+  pure (lvInstrs ++ readInstrs ++ [IBin out op current (OImm step)] ++ writeInstrs)
 
 lowerDirectSideEffect :: String -> [Expr] -> CompileM [Instr]
 lowerDirectSideEffect name args = do
@@ -848,9 +852,21 @@ lowerPointerOffset op ptr offset elemTy = do
   (ptrInstrs, po) <- lowerExpr ptr
   (oi, oo) <- lowerExpr offset
   size <- typeSize elemTy
-  scaled <- freshTemp
+  scaledResult <- scaledOffset oo size
+  let scaledInstrs = fst scaledResult
+  let scaledOp = snd scaledResult
   out <- freshTemp
-  pure (ptrInstrs ++ oi ++ [IBin scaled IMul oo (OImm size), IBin out op po (OTemp scaled)], OTemp out)
+  pure (ptrInstrs ++ oi ++ scaledInstrs ++ [IBin out op po scaledOp], OTemp out)
+
+scaledOffset :: Operand -> Int -> CompileM ([Instr], Operand)
+scaledOffset offset size =
+  if size == 1
+    then pure ([], offset)
+    else case offset of
+      OImm value -> pure ([], OImm (value * size))
+      _ -> do
+        scaled <- freshTemp
+        pure ([IBin scaled IMul offset (OImm size)], OTemp scaled)
 
 lowerPlainBin :: BinOp -> Expr -> Expr -> CompileM ([Instr], Operand)
 lowerPlainBin op a b = do
@@ -910,12 +926,17 @@ lowerIncDec :: Bool -> BinOp -> Expr -> CompileM ([Instr], Operand)
 lowerIncDec prefix op target = do
   (lvInstrs, lvalue) <- lowerLValue target
   (readInstrs, current) <- readLValue lvalue
-  old <- freshTemp
   out <- freshTemp
   step <- incDecStep target
-  writeInstrs <- writeLValue lvalue (OTemp out)
-  let opInstrs = [IBin old IAdd current (OImm 0), IBin out op (OTemp old) (OImm step)]
-  pure (lvInstrs ++ readInstrs ++ opInstrs ++ writeInstrs, if prefix then OTemp out else OTemp old)
+  if prefix
+    then do
+      writeInstrs <- writeLValue lvalue (OTemp out)
+      pure (lvInstrs ++ readInstrs ++ [IBin out op current (OImm step)] ++ writeInstrs, OTemp out)
+    else do
+      old <- freshTemp
+      writeInstrs <- writeLValue lvalue (OTemp out)
+      let opInstrs = [IBin old IAdd current (OImm 0), IBin out op (OTemp old) (OImm step)]
+      pure (lvInstrs ++ readInstrs ++ opInstrs ++ writeInstrs, OTemp old)
 
 incDecStep :: Expr -> CompileM Int
 incDecStep target = do
@@ -1145,15 +1166,15 @@ lowerLValue target = case target of
     (baseInstrs, baseOp) <- lowerExpr base
     baseTy <- exprType base
     (fieldTy, offset) <- memberInfo baseTy field
-    addr <- freshTemp
-    pure (baseInstrs ++ [IBin addr IAdd baseOp (OImm offset)], LAddress (OTemp addr) fieldTy)
+    (addrInstrs, addrOp) <- offsetAddress baseOp offset
+    pure (baseInstrs ++ addrInstrs, LAddress addrOp fieldTy)
   EMember base field -> do
     (baseInstrs, baseAddr) <- lowerLValueAddress base
     baseTy <- exprType base
     knownBaseTy <- requireMaybeType "member base has unknown type" baseTy
     (fieldTy, offset) <- memberInfo (Just (CPtr knownBaseTy)) field
-    addr <- freshTemp
-    pure (baseInstrs ++ [IBin addr IAdd baseAddr (OImm offset)], LAddress (OTemp addr) fieldTy)
+    (addrInstrs, addrOp) <- offsetAddress baseAddr offset
+    pure (baseInstrs ++ addrInstrs, LAddress addrOp fieldTy)
   _ -> throwC ("unsupported lvalue: " ++ renderExprTag target)
 
 requireMaybeType :: String -> Maybe CType -> CompileM CType
