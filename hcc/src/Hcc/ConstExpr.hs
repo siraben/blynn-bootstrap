@@ -4,7 +4,6 @@ module ConstExpr
 
 import Base
 import Literal
-import Operators
 import ParseLite
 import TypesToken
 
@@ -22,27 +21,53 @@ expression minPrec = do
       mtok <- pPeekMaybe
       case mtok of
         Just tok -> case constTokenKind tok of
-          TokPunct "?" | minPrec <= 2 -> do
+          TokPunct op | Just prec <- binop op, prec >= minPrec -> do
             advance
-            yes <- expression 0
-            constNeedPunct ":" "expected ':' in constant expression"
-            no <- expression 2
-            climb (if lhs /= 0 then yes else no)
-          TokPunct op | Just (prec, assoc) <- binopArith op, prec >= minPrec -> do
-            advance
-            rhs <- expression (if rightAssoc assoc then prec else prec + 1)
+            rhs <- expression (prec + 1)
             value <- applyOp op lhs rhs
             climb value
           _ -> pure lhs
         Nothing -> pure lhs
 
+binop :: String -> Maybe Int
+binop op = case op of
+  "||" -> Just 3
+  "&&" -> Just 4
+  "|" -> Just 5
+  "^" -> Just 6
+  "&" -> Just 7
+  "==" -> Just 8
+  "!=" -> Just 8
+  "<" -> Just 9
+  "<=" -> Just 9
+  ">" -> Just 9
+  ">=" -> Just 9
+  "<<" -> Just 10
+  ">>" -> Just 10
+  "+" -> Just 11
+  "-" -> Just 11
+  "*" -> Just 12
+  _ -> Nothing
+
 applyOp :: String -> Int -> Int -> ConstParser Int
-applyOp op lhs rhs = case evalConstBinOp op lhs rhs of
-  Just value -> pure value
-  Nothing
-    | op == "/" -> pFail "division by zero in constant expression"
-    | op == "%" -> pFail "modulo by zero in constant expression"
-    | otherwise -> pFail ("unhandled operator in constant expression: " ++ op)
+applyOp op a b = case op of
+  "+" -> pure (a + b)
+  "-" -> pure (a - b)
+  "*" -> pure (a * b)
+  "<<" -> pure (shiftLeftInt a (max 0 b))
+  ">>" -> pure (shiftRightInt a (max 0 b))
+  "<" -> pure (boolToInt (a < b))
+  "<=" -> pure (boolToInt (a <= b))
+  ">" -> pure (boolToInt (a > b))
+  ">=" -> pure (boolToInt (a >= b))
+  "==" -> pure (boolToInt (a == b))
+  "!=" -> pure (boolToInt (a /= b))
+  "&" -> pure (bitAndInt a b)
+  "^" -> pure (bitXorInt a b)
+  "|" -> pure (bitOrInt a b)
+  "&&" -> pure (boolToInt (a /= 0 && b /= 0))
+  "||" -> pure (boolToInt (a /= 0 || b /= 0))
+  _ -> pFail ("unhandled operator in constant expression: " ++ op)
 
 parseUnary :: ConstParser Int
 parseUnary = do
@@ -72,7 +97,6 @@ parsePrimary = do
           env <- pEnv
           pure (maybe 0 id (lookup name env))
         TokInt value -> pure (parseInt value)
-        TokFloat _ -> pure 0
         TokChar value -> pure (charValue value)
         _ -> pFail "unsupported token in constant expression"
 

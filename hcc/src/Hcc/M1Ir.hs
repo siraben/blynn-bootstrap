@@ -89,29 +89,15 @@ registerTopDeclShallowState st decl = case decl of
   EnumConstants constants ->
     unCompileM (registerConstants constants) st
   TypeDecl types ->
-    unCompileM (registerTypesAggregatesIr types) st
+    unCompileM (registerTypesAggregates types) st
   _ -> Right ((), st)
 
 registerFunctionDecl :: CType -> String -> [Param] -> CompileM ()
 registerFunctionDecl ty name params = do
   registerTypeAggregates ty
-  registerParamAggregates params
+  registerTypesAggregates (paramTypes params)
   bindGlobal name ty
   bindFunctionType name ty params
-
-registerParamAggregates :: [Param] -> CompileM ()
-registerParamAggregates params = case params of
-  [] -> pure ()
-  Param ty _:rest -> do
-    registerTypeAggregates ty
-    registerParamAggregates rest
-
-registerTypesAggregatesIr :: [CType] -> CompileM ()
-registerTypesAggregatesIr types = case types of
-  [] -> pure ()
-  ty:rest -> do
-    registerTypeAggregates ty
-    registerTypesAggregatesIr rest
 
 registerGlobalsIr :: CompileState -> [(CType, String, Maybe Expr)] -> Either CodegenError (CompileState, [TopItemIr])
 registerGlobalsIr st globals = case globals of
@@ -324,6 +310,8 @@ binOpCode op = case op of
   IAnd -> 19
   IOr -> 20
   IXor -> 21
+  IUDiv -> 22
+  IUMod -> 23
 
 optimizeFunctionIr :: FunctionIr -> FunctionIr
 optimizeFunctionIr fn = case fn of
@@ -371,6 +359,8 @@ simplifyBin temp op a b = case op of
   IULe -> if sameOperand a b then IConst temp 1 else IBin temp op a b
   IUGt -> if sameOperand a b then IConst temp 0 else IBin temp op a b
   IUGe -> if sameOperand a b then IConst temp 1 else IBin temp op a b
+  IUDiv -> if isOneOperand b then ICopy temp a else IBin temp op a b
+  IUMod -> if isOneOperand b || sameOperand a b then IConst temp 0 else IBin temp op a b
   IAnd -> if isZeroOperand a || isZeroOperand b then IConst temp 0 else if sameOperand a b then ICopy temp a else IBin temp op a b
   IOr -> if isZeroOperand a then ICopy temp b else if isZeroOperand b || sameOperand a b then ICopy temp a else IBin temp op a b
   IXor -> if isZeroOperand a then ICopy temp b else if isZeroOperand b then ICopy temp a else if sameOperand a b then IConst temp 0 else IBin temp op a b

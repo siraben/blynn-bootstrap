@@ -5,6 +5,7 @@ module Parser
 
 import Base
 import ConstExpr
+import Literal (stringBytes)
 import Operators
 import ParseLite
 import ScopeMap
@@ -116,7 +117,51 @@ topDecl = do
   emptyDecl <- eatPunct ";"
   if emptyDecl
     then pure (TypeDecl [])
-    else topDeclNonEmpty
+    else do
+      staticAssert <- eatIdent "_Static_assert"
+      if staticAssert
+        then parseStaticAssert
+        else topDeclNonEmpty
+
+parseStaticAssert :: Parser TopDecl
+parseStaticAssert = do
+  needPunct "("
+  toks <- pRaw $ \env tokens -> case takeStaticAssertExpr 0 [] tokens of
+    Just (taken, rest) -> Consumed (Ok taken env rest)
+    Nothing -> Unconsumed (Ok [] env tokens)
+  constants <- parserConstants
+  case parseConstExpr constants toks of
+    Right (value, []) ->
+      if value == 0
+        then peek >>= \tok -> failAt tok "_Static_assert failed"
+        else do
+          skipOptionalStaticAssertMessage
+          needPunct ")"
+          needPunct ";"
+          pure (TypeDecl [])
+    Right (_, tok:_) -> failAt tok "unexpected tokens in _Static_assert expression"
+    Left msg -> peek >>= \tok -> failAt tok ("invalid _Static_assert expression: " ++ msg)
+
+takeStaticAssertExpr :: Int -> [Token] -> [Token] -> Maybe ([Token], [Token])
+takeStaticAssertExpr depth acc toks = case toks of
+  [] -> Nothing
+  tok:rest -> case tokenKind tok of
+    TokPunct "(" -> takeStaticAssertExpr (depth + 1) (tok:acc) rest
+    TokPunct ")" | depth == 0 -> Just (reverse acc, toks)
+    TokPunct ")" -> takeStaticAssertExpr (depth - 1) (tok:acc) rest
+    TokPunct "," | depth == 0 -> Just (reverse acc, toks)
+    _ -> takeStaticAssertExpr depth (tok:acc) rest
+
+skipOptionalStaticAssertMessage :: Parser ()
+skipOptionalStaticAssertMessage = do
+  hasComma <- eatPunct ","
+  if hasComma
+    then do
+      tok <- peek
+      case tokenKind tok of
+        TokString _ -> advanceToken
+        _ -> failAt tok "expected string literal in _Static_assert"
+    else pure ()
 
 topDeclNonEmpty :: Parser TopDecl
 topDeclNonEmpty = do
@@ -657,12 +702,13 @@ enumValue nextValue = do
       toks <- takeEnumValueExpr
       constants <- parserConstants
       case parseConstExpr constants toks of
-        Right (value, []) -> pure value
-        Right (value, trailing) ->
-          if all ignorableEnumExprTail trailing
-          then pure value
-          else pure nextValue
-        Left _ -> pure nextValue
+        Right (value, trailing) | all ignorableEnumExprTail trailing -> pure value
+        Right (_, tok:_) ->
+          failAt tok ("unexpected tokens in enum initializer: " ++ tokenText (tokenKind tok))
+        Right (_, []) ->
+          peek >>= \tok -> failAt tok "unexpected tokens in enum initializer"
+        Left msg ->
+          peek >>= \tok -> failAt tok ("invalid enum initializer: " ++ msg)
 
 takeEnumValueExpr :: Parser [Token]
 takeEnumValueExpr = pRaw $ \env toks ->
@@ -693,6 +739,8 @@ skipQualifiers :: Parser ()
 skipQualifiers = do
   tok <- peekMaybe
   case fmap tokenKind tok of
+    Just (TokIdent name) | name `elem` unsupportedQualifiers ->
+      peek >>= \t -> failAt t (name ++ " is not supported")
     Just (TokIdent name) | name `elem` storageAndTypeQualifiers ->
       advanceToken >> skipQualifiers
     Just (TokIdent name) | name `elem` ["__attribute__", "__extension__"] ->
@@ -759,11 +807,6 @@ optionalFunctionSuffix ty = do
       params <- parameters
       pure (CFunc ty (paramTypes params))
     else pure ty
-
-paramTypes :: [Param] -> [CType]
-paramTypes params = case params of
-  [] -> []
-  Param ty _:rest -> ty : paramTypes rest
 
 pointerStars :: CType -> Parser CType
 pointerStars ty = do
@@ -917,16 +960,16 @@ postfixContinues toks = case toks of
 assignNode :: String -> Expr -> Expr -> Expr
 assignNode op lhs rhs = case op of
   "=" -> EAssign lhs rhs
-  "+=" -> EAssign lhs (EBinary "+" lhs rhs)
-  "-=" -> EAssign lhs (EBinary "-" lhs rhs)
-  "*=" -> EAssign lhs (EBinary "*" lhs rhs)
-  "/=" -> EAssign lhs (EBinary "/" lhs rhs)
-  "%=" -> EAssign lhs (EBinary "%" lhs rhs)
-  "<<=" -> EAssign lhs (EBinary "<<" lhs rhs)
-  ">>=" -> EAssign lhs (EBinary ">>" lhs rhs)
-  "&=" -> EAssign lhs (EBinary "&" lhs rhs)
-  "^=" -> EAssign lhs (EBinary "^" lhs rhs)
-  "|=" -> EAssign lhs (EBinary "|" lhs rhs)
+  "+=" -> ECompoundAssign "+" lhs rhs
+  "-=" -> ECompoundAssign "-" lhs rhs
+  "*=" -> ECompoundAssign "*" lhs rhs
+  "/=" -> ECompoundAssign "/" lhs rhs
+  "%=" -> ECompoundAssign "%" lhs rhs
+  "<<=" -> ECompoundAssign "<<" lhs rhs
+  ">>=" -> ECompoundAssign ">>" lhs rhs
+  "&=" -> ECompoundAssign "&" lhs rhs
+  "^=" -> ECompoundAssign "^" lhs rhs
+  "|=" -> ECompoundAssign "|" lhs rhs
   _ -> EBinary op lhs rhs
 
 postfix :: Expr -> Parser Expr
@@ -983,16 +1026,29 @@ needString = do
     _ -> failAt tok "expected string literal"
 
 joinStrings :: [String] -> String
-joinStrings strings = "\"" ++ concatMap stringBody strings ++ "\""
+joinStrings strings =
+  let bodyBytes = concatMap literalContentBytes strings
+  in "\"" ++ concatMap hexEscape bodyBytes ++ "\""
 
-stringBody :: String -> String
-stringBody text = case text of
-  '"':rest -> reverse (dropQuote (reverse rest))
-  _ -> text
-  where
-    dropQuote xs = case xs of
-      '"':ys -> ys
-      _ -> xs
+literalContentBytes :: String -> [Int]
+literalContentBytes text = dropLast (stringBytes text)
+
+dropLast :: [a] -> [a]
+dropLast xs = case xs of
+  [] -> []
+  [_] -> []
+  x:rest -> x : dropLast rest
+
+hexEscape :: Int -> String
+hexEscape value = "\\x" ++ hexPair value
+
+hexPair :: Int -> String
+hexPair value = [hexDigitChar (value `div` 16 `mod` 16), hexDigitChar (value `mod` 16)]
+
+hexDigitChar :: Int -> Char
+hexDigitChar value
+  | value < 10 = toEnum (fromEnum '0' + value)
+  | otherwise = toEnum (fromEnum 'a' + value - 10)
 
 startsType :: Token -> Bool
 startsType tok = case tokenKind tok of
@@ -1007,7 +1063,13 @@ builtinTypeNames =
 
 storageAndTypeQualifiers :: [String]
 storageAndTypeQualifiers =
-  ["const", "volatile", "static", "extern", "register", "inline", "auto"]
+  [ "const", "volatile", "static", "extern", "register", "inline", "auto"
+  , "restrict", "_Noreturn", "_Atomic"
+  ]
+
+unsupportedQualifiers :: [String]
+unsupportedQualifiers =
+  ["_Thread_local", "__thread", "_Alignas", "_Generic"]
 
 tokenStartsType :: Token -> Parser Bool
 tokenStartsType tok = case tokenKind tok of

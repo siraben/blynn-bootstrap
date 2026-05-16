@@ -1,5 +1,6 @@
 module Lower
   ( registerTypeAggregates
+  , registerTypesAggregates
   , registerExternGlobals
   , registerConstants
   , registerFieldAggregates
@@ -29,8 +30,24 @@ lowerFunctionBody :: String -> [Param] -> [Stmt] -> CompileM FunctionIr
 lowerFunctionBody name params body = do
   bid <- freshBlock
   paramInstrs <- lowerParams 0 params
-  blocks <- lowerStatementsFrom bid paramInstrs body (TRet (Just (OImm 0)))
+  defaultTerm <- defaultReturnTerm
+  blocks <- lowerStatementsFrom bid paramInstrs body defaultTerm
   pure (FunctionIr name blocks)
+
+defaultReturnTerm :: CompileM Terminator
+defaultReturnTerm = do
+  mty <- currentReturnType
+  case mty of
+    Just CVoid -> pure (TRet Nothing)
+    _ -> pure (TRet (Just (OImm 0)))
+
+coerceReturnOperand :: Operand -> CompileM ([Instr], Operand)
+coerceReturnOperand op = do
+  mty <- currentReturnType
+  case mty of
+    Just CVoid -> pure ([], op)
+    Just ty -> coerceScalar ty op
+    Nothing -> pure ([], op)
 
 lowerStatementsFrom :: BlockId -> [Instr] -> [Stmt] -> Terminator -> CompileM [BasicBlock]
 lowerStatementsFrom bid instrs stmts defaultTerm = case stmts of
@@ -46,14 +63,17 @@ lowerStatementsFrom bid instrs stmts defaultTerm = case stmts of
           noId <- freshBlock
           condBlocks <- lowerConditionBlock bid instrs expr yesId noId
           tailBlocks <- lowerUnreachableLabels rest defaultTerm
+          (yesCoerceInstrs, yesOp) <- coerceReturnOperand (OImm 1)
+          (noCoerceInstrs, noOp) <- coerceReturnOperand (OImm 0)
           pure ( condBlocks ++
-                 [ BasicBlock yesId [] (TRet (Just (OImm 1)))
-                 , BasicBlock noId [] (TRet (Just (OImm 0)))
+                 [ BasicBlock yesId yesCoerceInstrs (TRet (Just yesOp))
+                 , BasicBlock noId noCoerceInstrs (TRet (Just noOp))
                  ] ++ tailBlocks)
         else do
           (retInstrs, op) <- lowerExpr expr
+          (coerceInstrs, retOp) <- coerceReturnOperand op
           tailBlocks <- lowerUnreachableLabels rest defaultTerm
-          pure (BasicBlock bid (instrs ++ retInstrs) (TRet (Just op)) : tailBlocks)
+          pure (BasicBlock bid (instrs ++ retInstrs ++ coerceInstrs) (TRet (Just retOp)) : tailBlocks)
   SBlock body:rest -> do
     if null rest
       then withVarScope (lowerStatementsFrom bid instrs body defaultTerm)
@@ -282,6 +302,10 @@ lowerSideEffect expr = case expr of
     lowerIndirectSideEffect callee args
   EAssign lhs rhs ->
     lowerAssignmentInstrs lhs rhs
+  ECompoundAssign op lhs rhs -> do
+    result <- lowerCompoundAssignment op lhs rhs
+    case result of
+      (instrs, _) -> pure instrs
   EPostfix "--" target ->
     lowerIncDecInstrs False ISub target
   EPostfix "++" target ->
@@ -358,8 +382,10 @@ lowerAggregateDeclTemplate ty temp initExpr label = do
 
 lowerAggregateDeclRuntime :: CType -> Temp -> Maybe Expr -> CompileM [Instr]
 lowerAggregateDeclRuntime ty temp initExpr = case initExpr of
-  Just (EInitList _) ->
-    lowerAggregateInitWrites (OTemp temp) ty initExpr
+  Just (EInitList _) -> do
+    zeroInstrs <- zeroObject (OTemp temp) ty
+    writeInstrs <- lowerAggregateInitWrites (OTemp temp) ty initExpr
+    pure (zeroInstrs ++ writeInstrs)
   Just expr -> do
     (exprInstrs, op) <- lowerExpr expr
     copyInstrs <- copyObject (OTemp temp) op ty
@@ -645,6 +671,8 @@ lowerExpr expr = case expr of
     lowerIndirectCall callee args
   EAssign lhs rhs ->
     lowerAssignment lhs rhs
+  ECompoundAssign op lhs rhs ->
+    lowerCompoundAssignment op lhs rhs
   EPostfix "--" target ->
     lowerIncDec False ISub target
   EPostfix "++" target ->
@@ -713,12 +741,19 @@ lowerBinaryExpr :: String -> Expr -> Expr -> CompileM ([Instr], Operand)
 lowerBinaryExpr op a b =
   if isComparisonOpString op
     then lowerComparisonExpr op a b
-    else case lowerBinOp op of
-      Just iop -> do
-        if op == "<<"
-          then lowerShiftExpr op a b
-          else lowerPlainBin iop a b
-      Nothing -> throwC ("unsupported binary operator in lowering: " ++ op)
+    else if op == "/" || op == "%"
+      then do
+        commonTy <- usualArithmeticType a b
+        let iop = if isUnsignedType commonTy
+              then if op == "/" then IUDiv else IUMod
+              else if op == "/" then IDiv else IMod
+        lowerPlainBin iop a b
+      else case lowerBinOp op of
+        Just iop -> do
+          if op == "<<"
+            then lowerShiftExpr op a b
+            else lowerPlainBin iop a b
+        Nothing -> throwC ("unsupported binary operator in lowering: " ++ op)
 
 isComparisonOpString :: String -> Bool
 isComparisonOpString op =
@@ -906,6 +941,55 @@ lowerAssignment lhs rhs = do
   writeInstrs <- writeLValue lvalue coerceOp
   pure (lhsInstrs ++ rhsInstrs ++ coerceInstrs ++ writeInstrs, coerceOp)
 
+lowerCompoundAssignment :: String -> Expr -> Expr -> CompileM ([Instr], Operand)
+lowerCompoundAssignment op lhs rhs = do
+  lhsResult <- lowerLValue lhs
+  let lhsInstrs = fst lhsResult
+  let lvalue = snd lhsResult
+  readResult <- readLValue lvalue
+  let readInstrs = fst readResult
+  let currentOp = snd readResult
+  targetTy <- lValueType lvalue
+  rhsResult <- lowerExpr rhs
+  let rhsInstrs = fst rhsResult
+  let rhsOp = snd rhsResult
+  opResult <- compoundBinOp op targetTy currentOp rhs rhsOp
+  let opInstrs = fst opResult
+  let resultOp = snd opResult
+  coerceResult <- coerceScalar targetTy resultOp
+  let coerceInstrs = fst coerceResult
+  let coerceOp = snd coerceResult
+  writeInstrs <- writeLValue lvalue coerceOp
+  pure ( lhsInstrs ++ readInstrs ++ rhsInstrs ++ opInstrs ++ coerceInstrs ++ writeInstrs
+       , coerceOp)
+
+compoundBinOp :: String -> CType -> Operand -> Expr -> Operand -> CompileM ([Instr], Operand)
+compoundBinOp op targetTy lhsOp rhsExpr rhsOp = case targetTy of
+  CPtr elemTy | op == "+" || op == "-" ->
+    pointerCompoundOffset (if op == "+" then IAdd else ISub) lhsOp rhsOp elemTy
+  _ -> do
+    iop <- case op of
+      "/" -> pure (if isUnsignedType targetTy then IUDiv else IDiv)
+      "%" -> pure (if isUnsignedType targetTy then IUMod else IMod)
+      ">>" -> shiftRightOp rhsExpr
+      _ -> case lowerBinOp op of
+        Just o -> pure o
+        Nothing -> throwC ("unsupported compound assignment operator: " ++ op)
+    out <- freshTemp
+    pure ([IBin out iop lhsOp rhsOp], OTemp out)
+
+pointerCompoundOffset :: BinOp -> Operand -> Operand -> CType -> CompileM ([Instr], Operand)
+pointerCompoundOffset op base offset elemTy = do
+  size <- typeSize elemTy
+  if size == 1
+    then do
+      out <- freshTemp
+      pure ([IBin out op base offset], OTemp out)
+    else do
+      scaled <- freshTemp
+      out <- freshTemp
+      pure ([IBin scaled IMul offset (OImm size), IBin out op base (OTemp scaled)], OTemp out)
+
 lowerIncDec :: Bool -> BinOp -> Expr -> CompileM ([Instr], Operand)
 lowerIncDec prefix op target = do
   (lvInstrs, lvalue) <- lowerLValue target
@@ -1050,6 +1134,25 @@ copyObject dst src ty = do
   size <- typeSize ty
   copyObjectBytes dst src 0 size
 
+zeroObject :: Operand -> CType -> CompileM [Instr]
+zeroObject dst ty = do
+  size <- typeSize ty
+  zeroObjectBytes dst 0 size
+
+zeroObjectBytes :: Operand -> Int -> Int -> CompileM [Instr]
+zeroObjectBytes dst offset remaining =
+  if remaining <= 0
+    then pure []
+    else do
+      word <- targetWordSize
+      let width = if remaining >= word then word else if remaining >= 4 then 4 else 1
+      dstResult <- offsetAddress dst offset
+      let dstInstrs = fst dstResult
+      let dstAddr = snd dstResult
+      let store = if width == 8 then IStore64 dstAddr (OImm 0) else if width == 4 then IStore32 dstAddr (OImm 0) else IStore8 dstAddr (OImm 0)
+      rest <- zeroObjectBytes dst (offset + width) (remaining - width)
+      pure (dstInstrs ++ [store] ++ rest)
+
 copyObjectBytes :: Operand -> Operand -> Int -> Int -> CompileM [Instr]
 copyObjectBytes dst src offset remaining =
   if remaining <= 0
@@ -1181,7 +1284,7 @@ exprType :: Expr -> CompileM (Maybe CType)
 exprType expr = case expr of
   EInt _ -> pure (Just CInt)
   EFloat text -> pure (Just (floatLiteralType text))
-  EChar _ -> pure (Just CChar)
+  EChar _ -> pure (Just CInt)
   EString _ -> pure (Just (CPtr CChar))
   ESizeofType _ -> pure (Just CInt)
   ESizeofExpr _ -> pure (Just CInt)
@@ -1277,6 +1380,7 @@ exprType expr = case expr of
       (Just ty, Just _) -> Just ty
       _ -> Nothing)
   EAssign lhs _ -> exprType lhs
+  ECompoundAssign _ lhs _ -> exprType lhs
   EPostfix _ value -> exprType value
   EUnary "++" value -> exprType value
   EUnary "--" value -> exprType value
@@ -1486,20 +1590,28 @@ promoteIntegerType ty = do
 
 usualArithmeticType :: Expr -> Expr -> CompileM CType
 usualArithmeticType left right = do
-  leftTy <- promotedExprType left
-  rightTy <- promotedExprType right
-  if isFloatingType leftTy || isFloatingType rightTy
-    then pure (usualFloatingType leftTy rightTy)
+  leftTy0 <- promotedExprType left
+  rightTy0 <- promotedExprType right
+  if isFloatingType leftTy0 || isFloatingType rightTy0
+    then pure (usualFloatingType leftTy0 rightTy0)
     else do
-      leftSize <- typeSize leftTy
-      rightSize <- typeSize rightTy
-      let size = max leftSize rightSize
-      let unsigned = isUnsignedType leftTy || isUnsignedType rightTy
-      pure (case (size >= 8, unsigned) of
-        (True, True) -> CUnsignedLongLong
-        (True, False) -> CLongLong
-        (False, True) -> CUnsigned
-        (False, False) -> CInt)
+      leftTy <- canonicalIntegerType leftTy0
+      rightTy <- canonicalIntegerType rightTy0
+      if integerKindId leftTy == integerKindId rightTy
+        then pure leftTy
+        else if isUnsignedType leftTy == isUnsignedType rightTy
+          then pure (higherRankType leftTy rightTy)
+          else do
+            let (signedTy, unsignedTy) =
+                  if isUnsignedType leftTy then (rightTy, leftTy) else (leftTy, rightTy)
+            if integerRank unsignedTy >= integerRank signedTy
+              then pure unsignedTy
+              else do
+                signedSize <- typeSize signedTy
+                unsignedSize <- typeSize unsignedTy
+                if signedSize > unsignedSize
+                  then pure signedTy
+                  else pure (correspondingUnsigned signedTy)
 
 isFloatingType :: CType -> Bool
 isFloatingType ty = case ty of
@@ -1525,6 +1637,59 @@ isDoubleType :: CType -> Bool
 isDoubleType ty = case ty of
   CDouble -> True
   _ -> False
+
+canonicalIntegerType :: CType -> CompileM CType
+canonicalIntegerType ty = do
+  integer <- isIntegerTypeM ty
+  if not integer
+    then pure ty
+    else case ty of
+      CInt -> pure ty
+      CUnsigned -> pure ty
+      CLong -> pure ty
+      CUnsignedLong -> pure ty
+      CLongLong -> pure ty
+      CUnsignedLongLong -> pure ty
+      _ -> do
+        size <- typeSize ty
+        word <- targetWordSize
+        pure (canonicalIntegerBySize size word (isUnsignedType ty))
+
+canonicalIntegerBySize :: Int -> Int -> Bool -> CType
+canonicalIntegerBySize size word unsigned
+  | size <= 4 = if unsigned then CUnsigned else CInt
+  | size == word = if unsigned then CUnsignedLong else CLong
+  | otherwise = if unsigned then CUnsignedLongLong else CLongLong
+
+integerRank :: CType -> Int
+integerRank ty = case ty of
+  CInt -> 1
+  CUnsigned -> 1
+  CLong -> 2
+  CUnsignedLong -> 2
+  CLongLong -> 3
+  CUnsignedLongLong -> 3
+  _ -> 1
+
+integerKindId :: CType -> Int
+integerKindId ty = case ty of
+  CInt -> 0
+  CUnsigned -> 1
+  CLong -> 2
+  CUnsignedLong -> 3
+  CLongLong -> 4
+  CUnsignedLongLong -> 5
+  _ -> -1
+
+higherRankType :: CType -> CType -> CType
+higherRankType a b = if integerRank a >= integerRank b then a else b
+
+correspondingUnsigned :: CType -> CType
+correspondingUnsigned ty = case ty of
+  CInt -> CUnsigned
+  CLong -> CUnsignedLong
+  CLongLong -> CUnsignedLongLong
+  _ -> ty
 
 promotedExprType :: Expr -> CompileM CType
 promotedExprType expr = case expr of

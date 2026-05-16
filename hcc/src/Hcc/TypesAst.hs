@@ -6,6 +6,7 @@ module TypesAst
   , CType(..)
   , Stmt(..)
   , Expr(..)
+  , paramTypes
   , renderStmtTag
   , renderExprTag
   ) where
@@ -93,7 +94,13 @@ data Expr
   | EBinary String Expr Expr
   | ECond Expr Expr Expr
   | EAssign Expr Expr
+  | ECompoundAssign String Expr Expr
   | EInitList [Expr]
+
+paramTypes :: [Param] -> [CType]
+paramTypes params = case params of
+  [] -> []
+  Param ty _:rest -> ty : paramTypes rest
 
 renderStmtTag :: Stmt -> String
 renderStmtTag stmt = case stmt of
@@ -134,4 +141,5 @@ renderExprTag expr = case expr of
   EBinary _ _ _ -> "EBinary"
   ECond _ _ _ -> "ECond"
   EAssign _ _ -> "EAssign"
+  ECompoundAssign _ _ _ -> "ECompoundAssign"
   EInitList _ -> "EInitList"

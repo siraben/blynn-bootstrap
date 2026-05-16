@@ -5,6 +5,7 @@ module IncludeExpand
 import Base
 import DriverCommon
 import HccSystem
+import IfFrame
 import SymbolTable
 import TextUtil
 
@@ -41,30 +42,33 @@ readSourceWithIncludes includeDirs defines path = do
       pure (expanded . tailText, guards'', macros'')
 
   expandLine currentDir stack guards macros frames line =
-    let active = includeActive frames
+    let active = ifStackActive frames
         keep = (line++) . ('\n':)
     in case directiveNameFromLine line of
       Just "ifdef" ->
-        pure (keep, guards, macros, pushIncludeFrame frames (maybe False (`symbolSetMember` macros) (directiveArgument "ifdef" line)))
+        pure (keep, guards, macros, pushIfFrame frames (maybe False (`symbolSetMember` macros) (directiveArgument "ifdef" line)))
       Just "ifndef" ->
-        pure (keep, guards, macros, pushIncludeFrame frames (maybe False (not . (`symbolSetMember` macros)) (directiveArgument "ifndef" line)))
+        pure (keep, guards, macros, pushIfFrame frames (maybe False (not . (`symbolSetMember` macros)) (directiveArgument "ifndef" line)))
       Just "if" ->
-        pure (keep, guards, macros, pushIncludeFrame frames (evalIncludeIf macros (directiveRest "if" line)))
+        pure (keep, guards, macros, pushIfFrame frames (evalIncludeIf macros (directiveRest "if" line)))
       Just "elif" ->
-        pure (keep, guards, macros, replaceIncludeElif frames (evalIncludeIf macros (directiveRest "elif" line)))
+        pure (keep, guards, macros, maybe frames id (replaceElifFrame frames (evalIncludeIf macros (directiveRest "elif" line))))
       Just "else" ->
-        pure (keep, guards, macros, replaceIncludeElse frames)
+        pure (keep, guards, macros, maybe frames id (replaceElseFrame frames))
       Just "endif" ->
         pure (keep, guards, macros, case frames of { [] -> []; _:xs -> xs })
       Just "define" | active ->
         pure (keep, guards, maybe macros (`symbolSetInsert` macros) (directiveArgument "define" line), frames)
       Just "undef" | active ->
         pure (keep, guards, maybe macros (`symbolSetDelete` macros) (directiveArgument "undef" line), frames)
-      _ -> case includeName line of
-        Just name | active -> do
+      _ -> case includeRequest line of
+        Just (form, name) | active -> do
           found <- findInclude currentDir name
           case found of
-            Nothing -> pure (keep, guards, macros, frames)
+            Nothing -> case form of
+              QuoteInclude -> die ("hcpp: cannot find include file " ++ show name)
+                              >> pure (keep, guards, macros, frames)
+              SystemInclude -> pure (keep, guards, macros, frames)
             Just file ->
               if file `elem` stack
               then pure (id, guards, macros, frames)
@@ -80,49 +84,20 @@ readSourceWithIncludes includeDirs defines path = do
       [] -> Nothing
       file:_ -> Just file)
 
-includeName :: String -> Maybe String
-includeName line = case words line of
+data IncludeForm = QuoteInclude | SystemInclude
+
+includeRequest :: String -> Maybe (IncludeForm, String)
+includeRequest line = case words line of
   "#include":raw:_ -> stripIncludeDelims raw
   "#":"include":raw:_ -> stripIncludeDelims raw
   _ -> Nothing
 
-stripIncludeDelims :: String -> Maybe String
+stripIncludeDelims :: String -> Maybe (IncludeForm, String)
 stripIncludeDelims raw = case raw of
-  '"':rest -> Just (takeWhile (/= '"') rest)
-  '<':rest -> Just (takeWhile (/= '>') rest)
+  '"':rest -> Just (QuoteInclude, takeWhile (/= '"') rest)
+  '<':rest -> Just (SystemInclude, takeWhile (/= '>') rest)
   _ -> Nothing
 
-data IncludeFrame = IncludeFrame
-  { includeParentActive :: Bool
-  , includeBranchTaken :: Bool
-  , includeFrameActive :: Bool
-  }
-
-includeActive :: [IncludeFrame] -> Bool
-includeActive frames = case frames of
-  [] -> True
-  frame:_ -> includeFrameActive frame
-
-pushIncludeFrame :: [IncludeFrame] -> Bool -> [IncludeFrame]
-pushIncludeFrame frames cond =
-  let parent = includeActive frames
-      active = parent && cond
-  in IncludeFrame parent active active : frames
-
-replaceIncludeElif :: [IncludeFrame] -> Bool -> [IncludeFrame]
-replaceIncludeElif frames cond = case frames of
-  [] -> []
-  frame:rest ->
-    let active = includeParentActive frame && not (includeBranchTaken frame) && cond
-        taken = includeBranchTaken frame || active
-    in frame { includeBranchTaken = taken, includeFrameActive = active } : rest
-
-replaceIncludeElse :: [IncludeFrame] -> [IncludeFrame]
-replaceIncludeElse frames = case frames of
-  [] -> []
-  frame:rest ->
-    let active = includeParentActive frame && not (includeBranchTaken frame)
-    in frame { includeBranchTaken = True, includeFrameActive = active } : rest
 
 directiveRest :: String -> String -> String
 directiveRest directive line = case dropWhile isSpaceChar line of

@@ -5,6 +5,7 @@ module Preprocessor
 
 import Base
 import ConstExpr
+import IfFrame
 import Lexer
 import SymbolTable
 import TextUtil
@@ -27,8 +28,6 @@ type MacroArgs = SymbolMap MacroArg
 
 data Chunk = Chunk [String] [Token]
 
-data IfFrame = IfFrame Bool Bool Bool
-
 preprocess :: [Token] -> Either PreprocessError [Token]
 preprocess toks = go symbolMapEmpty [] (sourceFromTokens toks) id where
   go macros frames rest acc = case rest of
@@ -43,7 +42,7 @@ preprocess toks = go symbolMapEmpty [] (sourceFromTokens toks) id where
         else Left (PreprocessError (SrcPos 1 1) "unterminated conditional directive")
       Just (_, Token sp (TokDirective text), xs) -> handleDirective macros frames sp text xs acc
       Just _ ->
-        if currentActive frames
+        if ifStackActive frames
         then do
           (expanded, rest') <- expandNextSource macros False [] rest
           go macros frames rest' (acc . tokens expanded)
@@ -51,11 +50,11 @@ preprocess toks = go symbolMapEmpty [] (sourceFromTokens toks) id where
 
   handleDirective macros frames sp text xs acc = case parseDirective text of
     Directive "define" rest ->
-      if currentActive frames
+      if ifStackActive frames
       then defineMacro macros sp rest >>= \macros' -> go macros' frames xs acc
       else go macros frames xs acc
     Directive "undef" rest ->
-      if currentActive frames
+      if ifStackActive frames
       then case directiveName rest of
         Just name -> go (undefObject name macros) frames xs acc
         Nothing -> Left (PreprocessError (spanStart sp) "#undef without macro name")
@@ -64,14 +63,14 @@ preprocess toks = go symbolMapEmpty [] (sourceFromTokens toks) id where
       go macros frames xs acc
     Directive "ifdef" rest ->
       case directiveName rest of
-        Just name -> go macros (pushIf frames (isDefined name macros)) xs acc
+        Just name -> go macros (pushIfFrame frames (isDefined name macros)) xs acc
         Nothing -> Left (PreprocessError (spanStart sp) "#ifdef without macro name")
     Directive "ifndef" rest ->
       case directiveName rest of
-        Just name -> go macros (pushIf frames (not (isDefined name macros))) xs acc
+        Just name -> go macros (pushIfFrame frames (not (isDefined name macros))) xs acc
         Nothing -> Left (PreprocessError (spanStart sp) "#ifndef without macro name")
     Directive "if" rest ->
-      evalIf macros rest >>= \cond -> go macros (pushIf frames cond) xs acc
+      evalIf macros rest >>= \cond -> go macros (pushIfFrame frames cond) xs acc
     Directive "elif" rest ->
       evalIf macros rest >>= \cond -> replaceElif sp frames cond >>= \frames' -> go macros frames' xs acc
     Directive "else" _ ->
@@ -82,7 +81,7 @@ preprocess toks = go symbolMapEmpty [] (sourceFromTokens toks) id where
     Directive name _ | ("#" ++ name) `elem` ignoredDirectives -> go macros frames xs acc
     Directive name _ | all isDigitChar name -> go macros frames xs acc
     Directive name _ ->
-      if currentActive frames
+      if ifStackActive frames
       then Left (PreprocessError (spanStart sp) ("unsupported directive: #" ++ name))
       else go macros frames xs acc
 
@@ -113,31 +112,20 @@ directiveName text = case dropSpaces text of
 ignoredDirectives :: [String]
 ignoredDirectives = ["#line", "#pragma"]
 
-currentActive :: [IfFrame] -> Bool
-currentActive frames = case frames of
-  [] -> True
-  IfFrame _ _ active:_ -> active
-
-pushIf :: [IfFrame] -> Bool -> [IfFrame]
-pushIf frames cond = IfFrame parent cond (parent && cond) : frames where
-  parent = currentActive frames
-
 replaceElse :: Span -> [IfFrame] -> Either PreprocessError [IfFrame]
-replaceElse sp frames = case frames of
-  [] -> Left (PreprocessError (spanStart sp) "#else without #if")
-  IfFrame parent taken _:rest ->
-    Right (IfFrame parent True (parent && not taken) : rest)
+replaceElse sp frames = case replaceElseFrame frames of
+  Nothing -> Left (PreprocessError (spanStart sp) "#else without #if")
+  Just frames' -> Right frames'
 
 replaceElif :: Span -> [IfFrame] -> Bool -> Either PreprocessError [IfFrame]
-replaceElif sp frames cond = case frames of
-  [] -> Left (PreprocessError (spanStart sp) "#elif without #if")
-  IfFrame parent taken _:rest ->
-    Right (IfFrame parent (taken || cond) (parent && not taken && cond) : rest)
+replaceElif sp frames cond = case replaceElifFrame frames cond of
+  Nothing -> Left (PreprocessError (spanStart sp) "#elif without #if")
+  Just frames' -> Right frames'
 
 popIf :: Span -> [IfFrame] -> Either PreprocessError [IfFrame]
-popIf sp frames = case frames of
-  [] -> Left (PreprocessError (spanStart sp) "#endif without #if")
-  _:rest -> Right rest
+popIf sp frames = case popIfFrame frames of
+  Nothing -> Left (PreprocessError (spanStart sp) "#endif without #if")
+  Just frames' -> Right frames'
 
 defineMacro :: Macros -> Span -> String -> Either PreprocessError Macros
 defineMacro macros sp text = do
