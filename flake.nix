@@ -42,6 +42,12 @@
             rev = "c331d801da386ba752f3fe92d0538102a90e988d";
             hash = "sha256-iw1/MP0dwXOs9gyB7WhnvpCz59zveeoYy85wt0j+fWA=";
           };
+          m2PlanetGrammar = pkgs.fetchgit {
+            url = "https://github.com/siraben/M2-Planet.git";
+            rev = "ad19a2d9954f5861b9f55b0306e5c4577100ddfa";
+            fetchSubmodules = true;
+            hash = "sha256-Jfxjv70HX8ISLGoy+Y2+PD56Zo1u5qSAtS1an1Ecom4=";
+          };
         };
         mesLibcArch =
           lib.attrByPath [ system ] (throw "unsupported Mes libc bootstrap platform: ${system}") {
@@ -74,13 +80,21 @@
         blynnSrc = patchedUpstreamSource {
           name = "oriansj-blynn-compiler-hcc";
           src = upstreamSources.oriansjBlynnCompiler;
+          patches = [
+            (upstreamPatches + "/oriansj-blynn-compiler-m2-grammar.patch")
+          ];
         };
         blynnUpstreamSrc = patchedUpstreamSource {
           name = "blynn-compiler-hcc";
           src = upstreamSources.blynnCompiler;
           patches = [
-            (upstreamPatches + "/blynn-compiler-local.patch")
+            (upstreamPatches + "/blynn-compiler-m2-grammar.patch")
           ];
+        };
+        m2PlanetGrammarSrc = patchedUpstreamSource {
+          name = "M2-Planet-grammar-hcc";
+          src = upstreamSources.m2PlanetGrammar;
+          patches = [ ];
         };
         m2libcSrc = "${blynnSrc}/M2libc";
         mesLibcSrc = pkgs.runCommand "gnu-mes-libc-hcc" {
@@ -224,6 +238,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
         stageRun = args: pkgs.callPackage ./nix/blynn-stage-run.nix ({
           inherit minimalBootstrap;
           stdenvNoCC = rawStdenvNoCC;
+          m2Mesoplanet = m2MesoplanetGcc;
         } // args);
 
         blynnFile = rel: "${blynnSrc}/${rel}";
@@ -563,7 +578,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
 
         m2MesoplanetGcc = pkgs.callPackage ./nix/gcc-m2-mesoplanet.nix {
           stdenv = pkgs.stdenv;
-          inherit minimalBootstrap;
+          src = m2PlanetGrammarSrc;
         };
 
         hccHostGhcNative = pkgs.callPackage ./nix/hcc-ghc.nix {
@@ -664,11 +679,13 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           m2 = {
             mkDerivation = rawStdenvNoCC.mkDerivation;
             nativeBuildInputs = [
+              m2MesoplanetGcc
               minimalBootstrap.stage0-posix.mescc-tools
             ];
             runtimeFile = "cbits/hcc_runtime_m2.c";
             compileCommand = ''
               . ${./scripts/lib/bootstrap.sh}
+              export M2_MESOPLANET=${m2MesoplanetGcc}/bin/M2-Mesoplanet
               cat hcpp-blynn.c > hcpp-body.c
               cat hcc1-blynn.c > hcc1-body.c
               printf '%s\n' '#define HCC_RTS_USE_EXTERNAL_ALLOC 1' > hcpp-blynn.c

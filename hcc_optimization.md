@@ -538,7 +538,7 @@ client max RSS: 44,688 KiB
 
 Target dialect:
 
-- This repo's current Blynn target should be upstream `precisely_up`, built from the pinned `blynn/compiler` fetch plus `nix/patches/upstreams/blynn-compiler-local.patch`.
+- This repo's current Blynn target should be upstream `precisely_up`, built from the pinned `blynn/compiler` fetch plus the minimized M2 grammar patches in `patches/upstreams/`.
 - That is the last stage of the packaged upstream `party -> multiparty -> party1 -> party2 -> crossly_up -> crossly1 -> precisely_up` chain, not the older single-file `effectively` subset.
 - `precisely_up` is materially larger than the early stages: upstream `ParserPrecisely.hs` recognizes modules, imports, `qualified`, classes/instances, `data`, `deriving`, records, `type`, `do`, `case`, `\case`, guards, and FFI syntax.
 
