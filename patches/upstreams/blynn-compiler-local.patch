@@ -1425,16 +1425,15 @@ index 8d3b69f..44c4f80 100644
 +  "top":top:_ -> interact \s -> either id id $ untangle s >>= compileWith top libcHost []
    _ -> interact \s -> either id id $ untangle s >>= compile
 diff --git a/inn/precisely.hs b/inn/precisely.hs
-index c364ba5..428d424 100644
+index c364ba5..1f64a34 100644
 --- a/inn/precisely.hs
 +++ b/inn/precisely.hs
 @@ -94,4 +94,5 @@ main = getArgs >>= \case
    "ffis":opts -> interact $ either id (($ "\n") . shows . keys) . allFFIs
    "warts":opts -> interact $ either id (warts $ "warts":opts) . allFFIs
    "wasm":opts -> interact $ either id id . compile "1<<26" libcWasm ("no-main":opts)
--  _ -> interact $ either id id . compile "1<<24" libcHost []
 +  "top":top:_ -> interact $ either id id . compile top libcHost []
-+  _ -> interact $ either id id . compile "16777216" libcHost []
+   _ -> interact $ either id id . compile "1<<24" libcHost []
 diff --git a/party.hs b/party.hs
 index b1748f4..3345da3 100644
 --- a/party.hs
