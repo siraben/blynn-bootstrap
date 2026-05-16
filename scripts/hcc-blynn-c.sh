@@ -54,7 +54,12 @@ compile_with_common_objects() {
   append_file "$tail" "$object_input"
 
   msg "precisely_up $name common object IR + source -> ${output##*/}"
-  "$precisely_up" < "$object_input" > "$output"
+  case $name in
+    hcpp) top=${HCPP_TOP:-134217728} ;;
+    hcc1) top=${HCC1_TOP:-134217728} ;;
+    *) top=${BLYNN_TOP:-134217728} ;;
+  esac
+  "$precisely_up" top "$top" < "$object_input" > "$output"
 }
 
 compile_with_common_objects hcpp "$out_dir/hcpp-tail.hs" "$out_dir/hcpp-blynn.c"

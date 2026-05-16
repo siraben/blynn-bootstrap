@@ -6,9 +6,6 @@
   src,
   compileCommand,
   runtimeFile,
-  top,
-  hcppTop ? top,
-  hcc1Top ? top,
   shareName ? pname,
   nativeBuildInputs ? [ ],
   m2Arch ? null,
@@ -47,11 +44,6 @@ mkDerivation (
       cp ${generatedC}/share/${generatedC.pname}/hcc1-full.hs hcc1-full.hs
       log_file hcpp-blynn.c
       log_file hcc1-blynn.c
-
-      log_step "START patch generated RTS hcpp TOP=${toString hcppTop}, hcc1 TOP=${toString hcc1Top}"
-      ${nixLib.patchGeneratedTop "hcpp-blynn.c" hcppTop}
-      ${nixLib.patchGeneratedTop "hcc1-blynn.c" hcc1Top}
-      log_step "DONE  patch generated RTS hcpp TOP=${toString hcppTop}, hcc1 TOP=${toString hcc1Top}"
 
       log_step "START compile generated C backend"
       ${compileCommand}
