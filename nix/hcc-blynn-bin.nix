@@ -72,9 +72,22 @@ mkDerivation (
 
     installPhase = ''
       runHook preInstall
-      install -Dm555 hcpp $out/bin/hcpp
-      install -Dm555 hcc1 $out/bin/hcc1
-      install -Dm555 hcc-m1 $out/bin/hcc-m1
+      install -Dm555 hcpp $out/libexec/${shareName}/hcpp
+      install -Dm555 hcc1 $out/libexec/${shareName}/hcc1
+      install -Dm555 hcc-m1 $out/libexec/${shareName}/hcc-m1
+      install_stack_wrapper() {
+        name="$1"
+        mkdir -p "$out/bin"
+        printf '%s\n' \
+          '#!/bin/sh' \
+          'ulimit -s unlimited 2>/dev/null || true' \
+          "exec \"$out/libexec/${shareName}/$name\" \"\$@\"" \
+          > "$out/bin/$name"
+        chmod 555 "$out/bin/$name"
+      }
+      install_stack_wrapper hcpp
+      install_stack_wrapper hcc1
+      install_stack_wrapper hcc-m1
       install -Dm644 hcpp-blynn.c $out/share/${shareName}/hcpp-blynn.c
       install -Dm644 hcc1-blynn.c $out/share/${shareName}/hcc1-blynn.c
       install -Dm644 hcpp-full.hs $out/share/${shareName}/hcpp-full.hs
