@@ -3,7 +3,6 @@ module LowerBuiltins
   , isIgnoredSideEffectCall
   , isSignedNamedInteger
   , namedIntegerSize
-  , signedNamedIntegerTypes
   ) where
 
 import Base
@@ -20,81 +19,65 @@ builtinConstant name = case name of
   _ -> Nothing
 
 isIgnoredSideEffectCall :: String -> Bool
-isIgnoredSideEffectCall name = name `elem` ["asm", "oputs", "eputs"]
+isIgnoredSideEffectCall name = case name of
+  "asm" -> True
+  "oputs" -> True
+  "eputs" -> True
+  _ -> False
 
 isSignedNamedInteger :: String -> Bool
-isSignedNamedInteger name = name `elem` signedNamedIntegerTypes
+isSignedNamedInteger name = case name of
+  "signed_short" -> True
+  "int8_t" -> True
+  "int16_t" -> True
+  "int32_t" -> True
+  "int64_t" -> True
+  "ssize_t" -> True
+  "time_t" -> True
+  "ptrdiff_t" -> True
+  "intptr_t" -> True
+  "Elf32_Sword" -> True
+  "Elf64_Sword" -> True
+  "Elf32_Sxword" -> True
+  "Elf64_Sxword" -> True
+  _ -> False
 
 namedIntegerSize :: String -> Maybe Int
-namedIntegerSize name
-  | name `elem` namedIntegerSize1 = Just 1
-  | name `elem` namedIntegerSize2 = Just 2
-  | name `elem` namedIntegerSize4 = Just 4
-  | name `elem` namedIntegerSize8 = Just 8
-  | otherwise = Nothing
-
-namedIntegerSize1 :: [String]
-namedIntegerSize1 = ["int8_t", "uint8_t"]
-
-namedIntegerSize2 :: [String]
-namedIntegerSize2 =
-  [ "signed_short"
-  , "unsigned_short"
-  , "int16_t"
-  , "uint16_t"
-  , "Elf32_Half"
-  , "Elf64_Half"
-  , "Elf32_Section"
-  , "Elf64_Section"
-  , "Elf32_Versym"
-  , "Elf64_Versym"
-  ]
-
-namedIntegerSize4 :: [String]
-namedIntegerSize4 =
-  [ "int32_t"
-  , "uint32_t"
-  , "Elf32_Word"
-  , "Elf64_Word"
-  , "Elf32_Sword"
-  , "Elf64_Sword"
-  , "Elf32_Addr"
-  , "Elf32_Off"
-  ]
-
-namedIntegerSize8 :: [String]
-namedIntegerSize8 =
-  [ "unsigned_long"
-  , "int64_t"
-  , "uint64_t"
-  , "size_t"
-  , "ssize_t"
-  , "time_t"
-  , "ptrdiff_t"
-  , "intptr_t"
-  , "uintptr_t"
-  , "addr_t"
-  , "Elf32_Xword"
-  , "Elf32_Sxword"
-  , "Elf64_Xword"
-  , "Elf64_Sxword"
-  , "Elf64_Addr"
-  , "Elf64_Off"
-  ]
-
-signedNamedIntegerTypes :: [String]
-signedNamedIntegerTypes =
-  [ "signed_short"
-  , "int8_t"
-  , "int16_t"
-  , "int32_t"
-  , "int64_t"
-  , "ssize_t"
-  , "time_t"
-  , "ptrdiff_t"
-  , "intptr_t"
-  , "Elf32_Sword"
-  , "Elf64_Sword"
-  , "Elf32_Sxword"
-  , "Elf64_Sxword"
-  ]
+namedIntegerSize name = case name of
+  "int8_t" -> Just 1
+  "uint8_t" -> Just 1
+  "signed_short" -> Just 2
+  "unsigned_short" -> Just 2
+  "int16_t" -> Just 2
+  "uint16_t" -> Just 2
+  "Elf32_Half" -> Just 2
+  "Elf64_Half" -> Just 2
+  "Elf32_Section" -> Just 2
+  "Elf64_Section" -> Just 2
+  "Elf32_Versym" -> Just 2
+  "Elf64_Versym" -> Just 2
+  "int32_t" -> Just 4
+  "uint32_t" -> Just 4
+  "Elf32_Word" -> Just 4
+  "Elf64_Word" -> Just 4
+  "Elf32_Sword" -> Just 4
+  "Elf64_Sword" -> Just 4
+  "Elf32_Addr" -> Just 4
+  "Elf32_Off" -> Just 4
+  "unsigned_long" -> Just 8
+  "int64_t" -> Just 8
+  "uint64_t" -> Just 8
+  "size_t" -> Just 8
+  "ssize_t" -> Just 8
+  "time_t" -> Just 8
+  "ptrdiff_t" -> Just 8
+  "intptr_t" -> Just 8
+  "uintptr_t" -> Just 8
+  "addr_t" -> Just 8
+  "Elf32_Xword" -> Just 8
+  "Elf32_Sxword" -> Just 8
+  "Elf64_Xword" -> Just 8
+  "Elf64_Sxword" -> Just 8
+  "Elf64_Addr" -> Just 8
+  "Elf64_Off" -> Just 8
+  _ -> Nothing
