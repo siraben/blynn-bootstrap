@@ -3,10 +3,17 @@
 This directory records the local deltas against the external source trees used
 by the bootstrap.
 
-- `upstreams/blynn-compiler-local.patch`
+- `upstreams/oriansj-blynn-compiler-m2-grammar.patch`
+  - upstream: `https://github.com/OriansJ/blynn-compiler.git`
+    at `9e46a8da1df90032f1d270a49a6ef5d0cc909658`
+  - removes old non-standard M2 pointer-arithmetic workarounds from the
+    generated RTS, sequences two undefined nested `app(...)` calls, and lets
+    `methodically` parse `foreign import ccall` declarations
+- `upstreams/blynn-compiler-m2-grammar.patch`
   - upstream: `https://github.com/blynn/compiler.git`
     at `a1f1c47c9bb3ff6a45a0735ced84984396560535`
-  - source compatibility delta for the party -> precisely chain
+  - adds the small `party_shims.c` file needed when M2 links the generated
+    `party.c`
 - `upstreams/tinycc-mescc-source.patch`
   - upstream: `https://repo.or.cz/tinycc.git` at
     `cb41cbfe717e4c00d7bb70035cda5ee5f0ff9341`

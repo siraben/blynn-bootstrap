@@ -44,9 +44,9 @@
           };
           m2PlanetGrammar = pkgs.fetchgit {
             url = "https://github.com/siraben/M2-Planet.git";
-            rev = "9d1a90e4be6441182382fc53033dd0c3111ea83d";
+            rev = "ad19a2d9954f5861b9f55b0306e5c4577100ddfa";
             fetchSubmodules = true;
-            hash = "sha256-cL7T5iElBhYGrShElkNF80p8SqT2ZaAooqjW5Yww8Yc=";
+            hash = "sha256-Jfxjv70HX8ISLGoy+Y2+PD56Zo1u5qSAtS1an1Ecom4=";
           };
         };
         mesLibcArch =
@@ -80,13 +80,21 @@
         blynnSrc = patchedUpstreamSource {
           name = "oriansj-blynn-compiler-hcc";
           src = upstreamSources.oriansjBlynnCompiler;
+          patches = [
+            (upstreamPatches + "/oriansj-blynn-compiler-m2-grammar.patch")
+          ];
         };
         blynnUpstreamSrc = patchedUpstreamSource {
           name = "blynn-compiler-hcc";
           src = upstreamSources.blynnCompiler;
           patches = [
-            (upstreamPatches + "/blynn-compiler-local.patch")
+            (upstreamPatches + "/blynn-compiler-m2-grammar.patch")
           ];
+        };
+        m2PlanetGrammarSrc = patchedUpstreamSource {
+          name = "M2-Planet-grammar-hcc";
+          src = upstreamSources.m2PlanetGrammar;
+          patches = [ ];
         };
         m2libcSrc = "${blynnSrc}/M2libc";
         mesLibcSrc = pkgs.runCommand "gnu-mes-libc-hcc" {
@@ -230,6 +238,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
         stageRun = args: pkgs.callPackage ./nix/blynn-stage-run.nix ({
           inherit minimalBootstrap;
           stdenvNoCC = rawStdenvNoCC;
+          m2Mesoplanet = m2MesoplanetGcc;
         } // args);
 
         blynnFile = rel: "${blynnSrc}/${rel}";
@@ -569,7 +578,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
 
         m2MesoplanetGcc = pkgs.callPackage ./nix/gcc-m2-mesoplanet.nix {
           stdenv = pkgs.stdenv;
-          src = upstreamSources.m2PlanetGrammar;
+          src = m2PlanetGrammarSrc;
         };
 
         hccHostGhcNative = pkgs.callPackage ./nix/hcc-ghc.nix {
