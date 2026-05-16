@@ -1993,6 +1993,6 @@ isUnsignedType ty = case ty of
   CPtr _ -> True
   CArray _ _ -> True
   CNamed name -> case namedIntegerSize name of
-    Just _ -> not (name `elem` signedNamedIntegerTypes)
+    Just _ -> not (isSignedNamedInteger name)
     Nothing -> False
   _ -> False
