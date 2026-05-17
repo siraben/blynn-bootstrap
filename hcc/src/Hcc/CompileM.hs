@@ -31,6 +31,7 @@ module CompileM
   , targetWordSize
   , currentFunctionName
   , withCurrentFunction
+  , currentReturnType
   , withFunctionScope
   , withVarScope
   , withLoopTargets
@@ -249,6 +250,17 @@ withCurrentFunction name action = CompileM $ \st ->
   case unCompileM action st { csCurrentFunction = Just name } of
     Left err -> Left err
     Right (x, st') -> Right (x, st' { csCurrentFunction = csCurrentFunction st })
+
+currentReturnType :: CompileM (Maybe CType)
+currentReturnType = do
+  mname <- currentFunctionName
+  case mname of
+    Nothing -> pure Nothing
+    Just name -> do
+      mty <- lookupFunctionType name
+      case mty of
+        Just (CFunc retTy _) -> pure (Just retTy)
+        _ -> pure Nothing
 
 withFunctionScope :: CompileM a -> CompileM a
 withFunctionScope action = CompileM $ \st ->
