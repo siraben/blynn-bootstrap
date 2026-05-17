@@ -906,6 +906,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             };
             tinycc-musl-intermediate = lib.recurseIntoAttrs (final.callPackage ./nix/minimal-bootstrap/tinycc-musl.nix {
               stdenvNoCC = pkgs.stdenvNoCC;
+              fetchgit = pkgs.fetchgit;
               bash = final.bash_2_05;
               tinycc = final.tinycc-mes;
               musl = final.musl-tcc-intermediate;
@@ -918,6 +919,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             };
             tinycc-musl = lib.recurseIntoAttrs (final.callPackage ./nix/minimal-bootstrap/tinycc-musl.nix {
               stdenvNoCC = pkgs.stdenvNoCC;
+              fetchgit = pkgs.fetchgit;
               bash = final.bash_2_05;
               tinycc = final.tinycc-musl-intermediate;
               musl = final.musl-tcc;
@@ -1059,8 +1061,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           src = hccSrc;
           blynnSrc = blynnUpstreamSrc;
         };
-      in {
-        packages = {
+        packageTree = {
           default = preciselyBy.m2.stage0;
 
           blynn = {
@@ -1115,6 +1116,12 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             tinyccM1.native-vs-faithful = tinyccM1CompareNativeFaithful;
           };
         };
+      in {
+        packages = {
+          default = packageTree.default;
+        };
+
+        legacyPackages = packageTree;
 
         apps.blynn-precisely-gcc = {
           type = "app";
