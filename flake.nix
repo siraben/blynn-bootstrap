@@ -600,10 +600,28 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             shareName = pname;
           };
 
+        hccBlynnObjsFromCompiler = pname: precisely: blynnCompiler:
+          pkgs.callPackage ./nix/hcc-blynn-objs.nix {
+            stdenvNoCC = rawStdenvNoCC;
+            inherit pname precisely minimalBootstrap;
+            inherit blynnCompiler;
+            sourceBundle = hccBlynnSources;
+            shareName = pname;
+          };
+
         hccBlynnCFromPrecisely = pname: precisely: commonObjects:
           pkgs.callPackage ./nix/hcc-blynn-c.nix {
             stdenvNoCC = rawStdenvNoCC;
             inherit pname precisely commonObjects;
+            sourceBundle = hccBlynnSources;
+            shareName = pname;
+          };
+
+        hccBlynnCFromCompiler = pname: precisely: blynnCompiler: commonObjects:
+          pkgs.callPackage ./nix/hcc-blynn-c.nix {
+            stdenvNoCC = rawStdenvNoCC;
+            inherit pname precisely commonObjects;
+            inherit blynnCompiler;
             sourceBundle = hccBlynnSources;
             shareName = pname;
           };
@@ -614,16 +632,18 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           ghc.debug = preciselyGhcDebug;
         };
 
+        hccM2BlynnCompiler = "${blynnUpstreamStages.crossly1}/bin/crossly1";
+
         hccBlynnCBy = {
           ghc.precisely = hccBlynnCFromPrecisely "hcc-blynn-c-ghc-precisely" preciselyBy.ghc.debug hccBlynnObjsBy.ghc.precisely;
           gcc.precisely = hccBlynnCFromPrecisely "hcc-blynn-c-gcc-precisely" preciselyBy.gcc.host hccBlynnObjsBy.gcc.precisely;
-          m2.precisely = hccBlynnCFromPrecisely "hcc-blynn-c-m2-precisely" preciselyBy.m2.stage0 hccBlynnObjsBy.m2.precisely;
+          m2.precisely = hccBlynnCFromCompiler "hcc-blynn-c-m2-precisely" preciselyBy.m2.stage0 hccM2BlynnCompiler hccBlynnObjsBy.m2.precisely;
         };
 
         hccBlynnObjsBy = {
           ghc.precisely = hccBlynnObjsFromPrecisely "hcc-blynn-objs-ghc-precisely" preciselyBy.ghc.debug;
           gcc.precisely = hccBlynnObjsFromPrecisely "hcc-blynn-objs-gcc-precisely" preciselyBy.gcc.host;
-          m2.precisely = hccBlynnObjsFromPrecisely "hcc-blynn-objs-m2-precisely" preciselyBy.m2.stage0;
+          m2.precisely = hccBlynnObjsFromCompiler "hcc-blynn-objs-m2-precisely" preciselyBy.m2.stage0 hccM2BlynnCompiler;
         };
 
         hccFromPrecisely = {
