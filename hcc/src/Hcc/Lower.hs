@@ -29,8 +29,24 @@ lowerFunctionBody :: String -> [Param] -> [Stmt] -> CompileM FunctionIr
 lowerFunctionBody name params body = do
   bid <- freshBlock
   paramInstrs <- lowerParams 0 params
-  blocks <- lowerStatementsFrom bid paramInstrs body (TRet (Just (OImm 0)))
+  defaultTerm <- defaultReturnTerm
+  blocks <- lowerStatementsFrom bid paramInstrs body defaultTerm
   pure (FunctionIr name blocks)
+
+defaultReturnTerm :: CompileM Terminator
+defaultReturnTerm = do
+  mty <- currentReturnType
+  case mty of
+    Just CVoid -> pure (TRet Nothing)
+    _ -> pure (TRet (Just (OImm 0)))
+
+coerceReturnOperand :: Operand -> CompileM ([Instr], Operand)
+coerceReturnOperand op = do
+  mty <- currentReturnType
+  case mty of
+    Just CVoid -> pure ([], op)
+    Just ty -> coerceScalar ty op
+    Nothing -> pure ([], op)
 
 lowerStatementsFrom :: BlockId -> [Instr] -> [Stmt] -> Terminator -> CompileM [BasicBlock]
 lowerStatementsFrom bid instrs stmts defaultTerm = case stmts of
@@ -45,15 +61,18 @@ lowerStatementsFrom bid instrs stmts defaultTerm = case stmts of
           yesId <- freshBlock
           noId <- freshBlock
           condBlocks <- lowerConditionBlock bid instrs expr yesId noId
+          (yesInstrs, yesOp) <- coerceReturnOperand (OImm 1)
+          (noInstrs, noOp) <- coerceReturnOperand (OImm 0)
           tailBlocks <- lowerUnreachableLabels rest defaultTerm
           pure ( condBlocks ++
-                 [ BasicBlock yesId [] (TRet (Just (OImm 1)))
-                 , BasicBlock noId [] (TRet (Just (OImm 0)))
+                 [ BasicBlock yesId yesInstrs (TRet (Just yesOp))
+                 , BasicBlock noId noInstrs (TRet (Just noOp))
                  ] ++ tailBlocks)
         else do
           (retInstrs, op) <- lowerExpr expr
+          (coerceInstrs, retOp) <- coerceReturnOperand op
           tailBlocks <- lowerUnreachableLabels rest defaultTerm
-          pure (BasicBlock bid (instrs ++ retInstrs) (TRet (Just op)) : tailBlocks)
+          pure (BasicBlock bid (instrs ++ retInstrs ++ coerceInstrs) (TRet (Just retOp)) : tailBlocks)
   SBlock body:rest -> do
     if null rest
       then withVarScope (lowerStatementsFrom bid instrs body defaultTerm)

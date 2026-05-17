@@ -1,3 +1,12 @@
+/*
+ * TinyCC is built once by HCC before a normal libc is available.  This file
+ * supplies the small libc/runtime surface that upstream TinyCC touches during
+ * that seed build.  The numeric helpers below are intentionally narrow: they
+ * give TinyCC's own floating parser correct integer-valued double inputs, so
+ * bad constants are not baked into the later self-rebuilt TinyCC or the musl
+ * build it drives.
+ */
+
 typedef unsigned long size_t;
 typedef unsigned long uint64_t;
 typedef unsigned int uint32_t;
@@ -125,37 +134,75 @@ int atoi(char* nptr)
     return strtol(nptr, 0, 10);
 }
 
-long strtod(char* nptr, char** endptr)
+union hcc_double_bits {
+    unsigned long u;
+    double d;
+};
+
+/* Reinterpret an IEEE-754 bit pattern as a double without calling libc. */
+static double hcc_double_from_bits(unsigned long bits)
 {
-    return strtol(nptr, endptr, 10);
+    union hcc_double_bits out;
+    out.u = bits;
+    return out.d;
 }
 
-long strtof(char* nptr, char** endptr)
+/* Build a double from an integer mantissa and base-2 exponent without libm. */
+static double hcc_double_from_scaled_uint64(unsigned long mantissa, int exp2)
 {
-    return strtod(nptr, endptr);
-}
+    unsigned long hidden = 0x10000000000000UL;
+    unsigned long overflow = 0x20000000000000UL;
+    unsigned long fraction;
+    int exponent;
 
-long strtold(char* nptr, char** endptr)
-{
-    return strtod(nptr, endptr);
-}
-
-long ldexp(long value, int exp)
-{
-    while (exp > 0) {
-        value = value * 2;
-        exp = exp - 1;
+    if (mantissa == 0) return hcc_double_from_bits(0);
+    while (mantissa >= overflow) {
+        mantissa = (mantissa + 1) >> 1;
+        exp2 = exp2 + 1;
     }
-    while (exp < 0) {
-        value = value / 2;
-        exp = exp + 1;
+    while (mantissa < hidden) {
+        mantissa = mantissa << 1;
+        exp2 = exp2 - 1;
     }
-    return value;
+
+    exponent = exp2 + 52;
+    if (exponent <= -1023) return hcc_double_from_bits(0);
+    if (exponent >= 1024) return hcc_double_from_bits(0x7ff0000000000000UL);
+
+    fraction = mantissa - hidden;
+    return hcc_double_from_bits((((unsigned long)(exponent + 1023)) << 52) | fraction);
 }
 
-long ldexpl(long value, int exp)
+/* Parse the decimal integer constants TinyCC requests through libc strtod. */
+double strtod(char* nptr, char** endptr)
 {
-    return ldexp(value, exp);
+    long value = strtol(nptr, endptr, 10);
+    if (value < 0) return -hcc_double_from_scaled_uint64((unsigned long)(0 - value), 0);
+    return hcc_double_from_scaled_uint64((unsigned long)value, 0);
+}
+
+/* strtof shares the limited strtod implementation and narrows the result. */
+float strtof(char* nptr, char** endptr)
+{
+    return (float)strtod(nptr, endptr);
+}
+
+/* Bootstrap limitation: this is not a general target-ABI strtold. */
+long double strtold(char* nptr, char** endptr)
+{
+    return (long double)strtod(nptr, endptr);
+}
+
+/* Scale integer-valued doubles by powers of two for TinyCC float parsing. */
+double ldexp(double value, int exp)
+{
+    return hcc_double_from_scaled_uint64((unsigned long)value, exp);
+}
+
+/* Bootstrap limitation: ldexpl reuses the double scaling helper. */
+long double ldexpl(long double value, int exp)
+{
+    return (long double)hcc_double_from_scaled_uint64((unsigned long)value, exp);
 }
 
 int memcmp(void* s1, void* s2, size_t size)

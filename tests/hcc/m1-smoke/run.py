@@ -18,6 +18,7 @@ CASES = [
     ("archive-header-layout", 0),
     ("scoped-typedef-enum", 0),
     ("wide-integer-types", 0),
+    ("return-coercion", 0),
     ("function-pointer-call-type", 0),
     ("case-cmp-ternary", 0),
     ("pointer-to-pointer-callback", 0),

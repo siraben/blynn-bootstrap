@@ -11,6 +11,8 @@ int main() {
   if (sizeof(long long) != 8) return 3;
   if (sizeof(unsigned long long) != 8) return 4;
   if (sizeof(_Bool) != 1) return 5;
+  if (sizeof(long double) < sizeof(double)) return 12;
+  if (sizeof(long double) != 16) return 13;
   if (us != 65535) return 6;
   if (ss != -1) return 7;
   if (ul != 7) return 8;
