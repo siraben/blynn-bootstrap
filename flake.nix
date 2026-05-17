@@ -58,9 +58,22 @@
         mesLibcSources =
           (lib.importJSON "${pkgs.path}/pkgs/os-specific/linux/minimal-bootstrap/mes/sources.json").${mesLibcArch}.linux.gcc;
         mesLibcSourceFiles =
-          map (rel: "$out/${rel}") (lib.take 100 mesLibcSources.libc_gnu_SOURCES)
-          ++ [ "${pkgs.path}/pkgs/os-specific/linux/minimal-bootstrap/mes/ldexpl.c" ]
-          ++ map (rel: "$out/${rel}") (lib.drop 100 mesLibcSources.libc_gnu_SOURCES);
+          let
+            libcSources = builtins.filter (rel:
+              !(builtins.elem rel [
+                "lib/mes/abtod.c"
+                "lib/stdlib/strtod.c"
+                "lib/stdlib/strtof.c"
+                "lib/stdlib/strtold.c"
+                "lib/stub/ldexp.c"
+              ])) mesLibcSources.libc_gnu_SOURCES;
+          in
+          map (rel: "$out/${rel}") (lib.take 100 libcSources)
+          ++ [
+            "${./nix/sources/mes-libc/strtod.c}"
+            "${./nix/sources/mes-libc/ldexp-ldexpl.c}"
+          ]
+          ++ map (rel: "$out/${rel}") (lib.drop 100 libcSources);
         patchedUpstreamSource = { name, src, patches ? [ ] }:
           pkgs.runCommand name {
             nativeBuildInputs = [ pkgs.coreutils pkgs.patch ];
@@ -902,7 +915,6 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
               bash = final.bash_2_05;
               tinycc = final.tinycc-mes;
               gnused = final.gnused-mes;
-              hccTinyccVaList = true;
             };
             tinycc-musl-intermediate = lib.recurseIntoAttrs (final.callPackage ./nix/minimal-bootstrap/tinycc-musl.nix {
               stdenvNoCC = pkgs.stdenvNoCC;
@@ -910,7 +922,6 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
               bash = final.bash_2_05;
               tinycc = final.tinycc-mes;
               musl = final.musl-tcc-intermediate;
-              hccTinyccVaList = true;
             });
             musl-tcc = final.callPackage ./nix/minimal-bootstrap/musl-tcc.nix {
               bash = final.bash_2_05;

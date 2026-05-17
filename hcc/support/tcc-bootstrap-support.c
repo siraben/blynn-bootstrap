@@ -125,37 +125,68 @@ int atoi(char* nptr)
     return strtol(nptr, 0, 10);
 }
 
-long strtod(char* nptr, char** endptr)
+union hcc_double_bits {
+    unsigned long u;
+    double d;
+};
+
+static double hcc_double_from_bits(unsigned long bits)
 {
-    return strtol(nptr, endptr, 10);
+    union hcc_double_bits out;
+    out.u = bits;
+    return out.d;
 }
 
-long strtof(char* nptr, char** endptr)
+static double hcc_double_from_scaled_uint64(unsigned long mantissa, int exp2)
 {
-    return strtod(nptr, endptr);
-}
+    unsigned long hidden = 0x10000000000000UL;
+    unsigned long overflow = 0x20000000000000UL;
+    unsigned long fraction;
+    int exponent;
 
-long strtold(char* nptr, char** endptr)
-{
-    return strtod(nptr, endptr);
-}
-
-long ldexp(long value, int exp)
-{
-    while (exp > 0) {
-        value = value * 2;
-        exp = exp - 1;
+    if (mantissa == 0) return hcc_double_from_bits(0);
+    while (mantissa >= overflow) {
+        mantissa = (mantissa + 1) >> 1;
+        exp2 = exp2 + 1;
     }
-    while (exp < 0) {
-        value = value / 2;
-        exp = exp + 1;
+    while (mantissa < hidden) {
+        mantissa = mantissa << 1;
+        exp2 = exp2 - 1;
     }
-    return value;
+
+    exponent = exp2 + 52;
+    if (exponent <= -1023) return hcc_double_from_bits(0);
+    if (exponent >= 1024) return hcc_double_from_bits(0x7ff0000000000000UL);
+
+    fraction = mantissa - hidden;
+    return hcc_double_from_bits((((unsigned long)(exponent + 1023)) << 52) | fraction);
 }
 
-long ldexpl(long value, int exp)
+double strtod(char* nptr, char** endptr)
 {
-    return ldexp(value, exp);
+    long value = strtol(nptr, endptr, 10);
+    if (value < 0) return -hcc_double_from_scaled_uint64((unsigned long)(0 - value), 0);
+    return hcc_double_from_scaled_uint64((unsigned long)value, 0);
+}
+
+float strtof(char* nptr, char** endptr)
+{
+    return (float)strtod(nptr, endptr);
+}
+
+long double strtold(char* nptr, char** endptr)
+{
+    return (long double)strtod(nptr, endptr);
+}
+
+double ldexp(double value, int exp)
+{
+    return hcc_double_from_scaled_uint64((unsigned long)value, exp);
+}
+
+long double ldexpl(long double value, int exp)
+{
+    return (long double)hcc_double_from_scaled_uint64((unsigned long)value, exp);
 }
 
 int memcmp(void* s1, void* s2, size_t size)

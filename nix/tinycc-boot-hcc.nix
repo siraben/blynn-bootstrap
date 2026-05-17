@@ -536,6 +536,13 @@ stdenvNoCC.mkDerivation {
     run_target ./tcc $check_include_flags -c float-const-smoke.c -o float-const-smoke.o
     test -s float-const-smoke.o
 
+    cat > hex-float-smoke.c <<'EOF'
+    struct hcc_hex_float_smoke { double value; };
+    const struct hcc_hex_float_smoke hcc_hex_float_const = { 0x1.7154765200000p+0 };
+    EOF
+    run_target ./tcc-stage3 $check_include_flags -c hex-float-smoke.c -o hex-float-smoke.o
+    ${binutils}/bin/objdump -s hex-float-smoke.o | grep -i '00002065 4715f73f'
+
     printf '%s\n' 'int f(void){return 17;} int main(void){return f();}' > internal-call-smoke.c
     run_target ./tcc $bootstrap_link_prefix \
       $check_include_flags \
