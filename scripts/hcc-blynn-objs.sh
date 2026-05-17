@@ -22,14 +22,14 @@ require_cmd rm
 
 source_dir=${HCC_BLYNN_SOURCES_DIR:-${1:-build/hcc-blynn-sources}}
 out_dir=${OUT_DIR:-${2:-build/hcc-blynn-objs}}
-precisely_up=${PRECISELY_UP:-precisely_up}
+blynn_compiler=${BLYNN_COMPILER:-${PRECISELY_UP:-precisely_up}}
 materialize_object_script=${MATERIALIZE_OBJECT_SCRIPT:-materialize-object-script}
 
 source_dir=$(abspath "$source_dir")
 out_dir=$(abspath "$out_dir")
 
 [ -f "$source_dir/hcc-common-full.hs" ] || die "missing hcc-common-full.hs in $source_dir"
-require_cmd "$precisely_up"
+require_cmd "$blynn_compiler"
 require_cmd "$materialize_object_script"
 
 mkdir -p "$out_dir/common-objects"
@@ -40,8 +40,8 @@ done
 [ -f "$out_dir/common-objects.sh" ] && rm "$out_dir/common-objects.sh"
 [ -f "$out_dir/common-object-input.hs" ] && rm "$out_dir/common-object-input.hs"
 
-msg "precisely_up hcc common source -> object IR"
-"$precisely_up" obj < "$out_dir/hcc-common-full.hs" > "$out_dir/common-objects.sh"
+msg "Blynn compiler hcc common source -> object IR"
+"$blynn_compiler" obj < "$out_dir/hcc-common-full.hs" > "$out_dir/common-objects.sh"
 "$materialize_object_script" "$out_dir/common-objects.sh" "$out_dir/common-objects"
 
 : > "$out_dir/common-object-input.hs"

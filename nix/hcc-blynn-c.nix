@@ -3,6 +3,7 @@
   stdenvNoCC,
   pname,
   precisely,
+  blynnCompiler ? "${precisely}/bin/precisely_up",
   sourceBundle,
   commonObjects,
   shareName ? pname,
@@ -34,7 +35,7 @@ stdenvNoCC.mkDerivation (
       BOOTSTRAP_LIB=${../scripts/lib/bootstrap.sh} \
       HCC_BLYNN_SOURCES_DIR=source \
       HCC_BLYNN_OBJECTS_DIR=${commonObjects}/share/${commonObjects.pname} \
-      PRECISELY_UP=${precisely}/bin/precisely_up \
+      BLYNN_COMPILER=${blynnCompiler} \
       OUT_DIR=generated \
         ${../scripts/hcc-blynn-c.sh}
 

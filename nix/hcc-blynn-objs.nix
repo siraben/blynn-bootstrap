@@ -4,6 +4,7 @@
   stdenvNoCC,
   pname,
   precisely,
+  blynnCompiler ? "${precisely}/bin/precisely_up",
   sourceBundle,
   shareName ? pname,
 }:
@@ -41,7 +42,7 @@ stdenvNoCC.mkDerivation (
       BOOTSTRAP_LIB=${../scripts/lib/bootstrap.sh} \
       HCC_BLYNN_SOURCES_DIR=source \
       MATERIALIZE_OBJECT_SCRIPT=$PWD/materialize-object-script \
-      PRECISELY_UP=${precisely}/bin/precisely_up \
+      BLYNN_COMPILER=${blynnCompiler} \
       OUT_DIR=generated \
         ${../scripts/hcc-blynn-objs.sh}
 
