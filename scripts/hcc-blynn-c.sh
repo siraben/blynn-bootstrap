@@ -21,7 +21,7 @@ require_cmd mkdir
 
 source_dir=${HCC_BLYNN_SOURCES_DIR:-${1:-build/hcc-blynn-sources}}
 out_dir=${OUT_DIR:-${2:-build/hcc-blynn-c}}
-precisely_up=${PRECISELY_UP:-precisely_up}
+blynn_compiler=${BLYNN_COMPILER:-${PRECISELY_UP:-precisely_up}}
 objects_dir=${HCC_BLYNN_OBJECTS_DIR:-${3:-}}
 
 source_dir=$(abspath "$source_dir")
@@ -33,7 +33,7 @@ objects_dir=$(abspath "$objects_dir")
 [ -f "$source_dir/hcc1-full.hs" ] || die "missing hcc1-full.hs in $source_dir"
 [ -f "$source_dir/hcpp-tail.hs" ] || die "missing hcpp-tail.hs in $source_dir"
 [ -f "$source_dir/hcc1-tail.hs" ] || die "missing hcc1-tail.hs in $source_dir"
-require_cmd "$precisely_up"
+require_cmd "$blynn_compiler"
 [ -f "$objects_dir/common-object-input.hs" ] || die "missing common-object-input.hs in $objects_dir"
 
 mkdir -p "$out_dir"
@@ -53,8 +53,8 @@ compile_with_common_objects() {
   append_file "$objects_dir/common-object-input.hs" "$object_input"
   append_file "$tail" "$object_input"
 
-  msg "precisely_up $name common object IR + source -> ${output##*/}"
-  "$precisely_up" < "$object_input" > "$output"
+  msg "Blynn compiler $name common object IR + source -> ${output##*/}"
+  "$blynn_compiler" < "$object_input" > "$output"
 }
 
 compile_with_common_objects hcpp "$out_dir/hcpp-tail.hs" "$out_dir/hcpp-blynn.c"
