@@ -6,7 +6,6 @@
   tinycc,
   musl,
   buildPlatform,
-  hccTinyccVaList ? false,
 }:
 let
   pname = "tinycc-musl";
@@ -57,11 +56,6 @@ let
         set +x
 
         touch config.h
-        hcc_va_list_flags="${lib.optionalString hccTinyccVaList "-D__HCC_TCC_VA_LIST"}"
-        if [ -n "$hcc_va_list_flags" ]; then
-          cp ${../support/tinycc/va_list.c} lib/va_list.c
-        fi
-
         # The source tree's include/stdarg.h is part of TinyCC's x86_64 va_arg
         # support. With an HCC-built bootstrap compiler, the musl stdarg shim is
         # good enough to build the first tcc, but the self-rebuilt tcc needs the
@@ -78,7 +72,6 @@ let
         tcc -v \
           -static \
           -o tcc-musl \
-          $hcc_va_list_flags \
           -D TCC_TARGET_${tccTarget}=1 \
           -D CONFIG_TCCDIR=\"\" \
           -D CONFIG_TCC_CRTPREFIX=\"{B}\" \
@@ -101,12 +94,7 @@ let
 
         rm -f libtcc1.a
         tcc -c -D HAVE_CONFIG_H=1 lib/libtcc1.c
-        if [ -n "$hcc_va_list_flags" ]; then
-          tcc -c -D HAVE_CONFIG_H=1 -D TCC_TARGET_${tccTarget}=1 lib/va_list.c
-          tcc -ar cr libtcc1.a libtcc1.o va_list.o
-        else
-          tcc -ar cr libtcc1.a libtcc1.o
-        fi
+        tcc -ar cr libtcc1.a libtcc1.o
 
         ./tcc-musl \
           -v \
@@ -135,12 +123,7 @@ let
         rm -f libtcc1.a
         ./tcc-musl -c -D HAVE_CONFIG_H=1 lib/libtcc1.c
         ./tcc-musl -c -D HAVE_CONFIG_H=1 lib/alloca.S
-        if [ -n "$hcc_va_list_flags" ]; then
-          tcc -c -D HAVE_CONFIG_H=1 -D TCC_TARGET_${tccTarget}=1 lib/va_list.c
-          ./tcc-musl -ar cr libtcc1.a libtcc1.o alloca.o va_list.o
-        else
-          ./tcc-musl -ar cr libtcc1.a libtcc1.o alloca.o
-        fi
+        ./tcc-musl -ar cr libtcc1.a libtcc1.o alloca.o
 
         runHook postBuild
       '';

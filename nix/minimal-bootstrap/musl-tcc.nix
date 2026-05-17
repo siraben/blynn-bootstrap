@@ -11,7 +11,6 @@
   gnugrep,
   gnutar,
   gzip,
-  hccTinyccVaList ? false,
 }:
 
 let
@@ -39,8 +38,7 @@ let
     })
     ../../patches/upstreams/musl-runtime-shell-path.patch
     ../../patches/upstreams/musl-tinycc-no-plt.patch
-  ]
-  ++ lib.optional hccTinyccVaList ../../patches/upstreams/musl-hcc-tinycc-va-list.patch;
+  ];
 in
 bash.runCommand "${pname}-${version}"
   {
@@ -83,7 +81,7 @@ bash.runCommand "${pname}-${version}"
       CC=tcc
 
     # Parallel TinyCC builds have been unstable in this bootstrap path.
-    make AR="tcc -ar" RANLIB=true CFLAGS="-DSYSCALL_NO_TLS ${lib.optionalString hccTinyccVaList "-D__HCC_TCC_VA_LIST"}"
+    make AR="tcc -ar" RANLIB=true CFLAGS="-DSYSCALL_NO_TLS"
 
     make install
     cp ${tinycc.libs}/lib/libtcc1.a $out/lib
