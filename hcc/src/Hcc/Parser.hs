@@ -8,17 +8,18 @@ import ConstExpr
 import Operators
 import ParseLite
 import ScopeMap
+import SymbolTable
 import TypesAst
 import TypesToken
 
 data ParseError = ParseError SrcPos String
 
-data ParserEnv = ParserEnv (ScopeMap CType) [(String, Int)]
+data ParserEnv = ParserEnv (ScopeMap CType) [(String, Int)] (SymbolMap Int)
 
 type Parser a = P ParserEnv Token ParseError a
 
 initialParserEnv :: ParserEnv
-initialParserEnv = ParserEnv (builtinTypeEnv builtinTypeAliases) []
+initialParserEnv = ParserEnv (builtinTypeEnv builtinTypeAliases) [] symbolMapEmpty
 
 builtinTypeEnv :: [(String, CType)] -> ScopeMap CType
 builtinTypeEnv aliases = case aliases of
@@ -52,42 +53,42 @@ lookupParserType :: String -> Parser (Maybe CType)
 lookupParserType name = do
   env <- pEnv
   pure (case env of
-    ParserEnv types _ -> scopeMapLookup name types)
+    ParserEnv types _ _ -> scopeMapLookup name types)
 
 bindParserType :: String -> CType -> Parser ()
 bindParserType name ty = do
   env <- pEnv
   case env of
-    ParserEnv types constants ->
-      pSetEnv (ParserEnv (scopeMapInsert name ty types) constants)
+    ParserEnv types constants constantMap ->
+      pSetEnv (ParserEnv (scopeMapInsert name ty types) constants constantMap)
 
 lookupParserConstant :: String -> Parser (Maybe Int)
 lookupParserConstant name = do
   env <- pEnv
   pure (case env of
-    ParserEnv _ constants -> lookup name constants)
+    ParserEnv _ _ constantMap -> symbolMapLookup name constantMap)
 
 bindParserConstant :: String -> Int -> Parser ()
 bindParserConstant name value = do
   env <- pEnv
   case env of
-    ParserEnv types constants ->
-      pSetEnv (ParserEnv types ((name, value):constants))
+    ParserEnv types constants constantMap ->
+      pSetEnv (ParserEnv types ((name, value):constants) (symbolMapInsert name value constantMap))
 
 parserConstants :: Parser [(String, Int)]
 parserConstants = do
   env <- pEnv
   pure (case env of
-    ParserEnv _ constants -> constants)
+    ParserEnv _ constants _ -> constants)
 
 enterParserScope :: ParserEnv -> ParserEnv
 enterParserScope env = case env of
-  ParserEnv types constants -> ParserEnv (scopeMapEnter types) constants
+  ParserEnv types constants constantMap -> ParserEnv (scopeMapEnter types) constants constantMap
 
 leaveParserScope :: ParserEnv -> ParserEnv -> ParserEnv
 leaveParserScope outer inner = case outer of
-  ParserEnv _ outerConstants -> case inner of
-    ParserEnv innerTypes _ -> ParserEnv (scopeMapLeave innerTypes) outerConstants
+  ParserEnv _ outerConstants outerConstantMap -> case inner of
+    ParserEnv innerTypes _ _ -> ParserEnv (scopeMapLeave innerTypes) outerConstants outerConstantMap
 
 withParserScope :: Parser a -> Parser a
 withParserScope = pLocalEnv enterParserScope leaveParserScope
@@ -1051,7 +1052,7 @@ isKnownTypeNameP name = do
 
 parserEnvHasType :: String -> ParserEnv -> Bool
 parserEnvHasType name env = case env of
-  ParserEnv types _ -> case scopeMapLookup name types of
+  ParserEnv types _ _ -> case scopeMapLookup name types of
     Just _ -> True
     Nothing -> False
 
