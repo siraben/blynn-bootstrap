@@ -15,6 +15,42 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  eval:
+    name: eval (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31.5.2
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Check flake
+        run: nix flake check --print-build-logs
+      - name: Evaluate README build targets
+        if: matrix.arch == 'amd64'
+        run: |
+          set -eu
+          for attr in \
+            tinycc.m2.precisely.m2 \
+            gcc46.m2.precisely.m2 \
+            gccLatest.m2.precisely.m2 \
+            tinycc.m2.precisely.gccm2 \
+            gcc46.m2.precisely.gccm2 \
+            gccLatest.m2.precisely.gccm2
+          do
+            nix eval --raw ".#${attr}.drvPath"
+            printf '\n'
+          done
+
   build:
     name: ${{ matrix.suite }} (${{ matrix.arch }}, ${{ matrix.attr }})
     runs-on: ${{ matrix.runner }}
