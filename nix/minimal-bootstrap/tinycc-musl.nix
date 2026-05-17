@@ -7,9 +7,10 @@
   musl,
   buildPlatform,
   hccTinyccVaList ? false,
+  staticByDefault ? true,
 }:
 let
-  pname = "tinycc-musl";
+  pname = if staticByDefault then "tinycc-musl" else "tinycc-musl-dynamic";
   version = "unstable-2025-12-03";
   rev = "cb41cbfe717e4c00d7bb70035cda5ee5f0ff9341";
 
@@ -25,6 +26,11 @@ let
       x86_64-linux = "X86_64";
     }
     .${buildPlatform.system};
+  elfInterp =
+    if staticByDefault then
+      "/musl/loader"
+    else
+      "${musl}/lib/libc.so";
 
   patches = [
     ../../patches/upstreams/tinycc-musl-hcc-bootstrap.patch
@@ -58,6 +64,7 @@ let
 
         touch config.h
         hcc_va_list_flags="${lib.optionalString hccTinyccVaList "-D__HCC_TCC_VA_LIST"}"
+        static_output_flags="${lib.optionalString staticByDefault "-D CONFIG_TCC_STATIC=1 -D CONFIG_USE_LIBGCC=1 -D TCC_LIBGCC=\\\"libc.a\\\""}"
         if [ -n "$hcc_va_list_flags" ]; then
           cp ${../support/tinycc/va_list.c} lib/va_list.c
         fi
@@ -82,13 +89,11 @@ let
           -D TCC_TARGET_${tccTarget}=1 \
           -D CONFIG_TCCDIR=\"\" \
           -D CONFIG_TCC_CRTPREFIX=\"{B}\" \
-          -D CONFIG_TCC_ELFINTERP=\"/musl/loader\" \
+          -D CONFIG_TCC_ELFINTERP=\"${elfInterp}\" \
           -D CONFIG_TCC_LIBPATHS=\"{B}\" \
           -D CONFIG_TCC_SYSINCLUDEPATHS=\"${musl}/include\" \
-          -D TCC_LIBGCC=\"libc.a\" \
           -D TCC_LIBTCC1=\"libtcc1.a\" \
-          -D CONFIG_TCC_STATIC=1 \
-          -D CONFIG_USE_LIBGCC=1 \
+          $static_output_flags \
           -D TCC_VERSION=\"0.9.27\" \
           -D ONE_SOURCE=1 \
           -D TCC_MUSL=1 \
@@ -115,13 +120,11 @@ let
           -D TCC_TARGET_${tccTarget}=1 \
           -D CONFIG_TCCDIR=\"\" \
           -D CONFIG_TCC_CRTPREFIX=\"{B}\" \
-          -D CONFIG_TCC_ELFINTERP=\"/musl/loader\" \
+          -D CONFIG_TCC_ELFINTERP=\"${elfInterp}\" \
           -D CONFIG_TCC_LIBPATHS=\"{B}\" \
           -D CONFIG_TCC_SYSINCLUDEPATHS=\"${musl}/include\" \
-          -D TCC_LIBGCC=\"libc.a\" \
           -D TCC_LIBTCC1=\"libtcc1.a\" \
-          -D CONFIG_TCC_STATIC=1 \
-          -D CONFIG_USE_LIBGCC=1 \
+          $static_output_flags \
           -D TCC_VERSION=\"0.9.27\" \
           -D ONE_SOURCE=1 \
           -D TCC_MUSL=1 \
@@ -156,7 +159,7 @@ for arg in "\$@"; do
     exec "$out/libexec/tcc" "\$@"
   fi
 done
-exec "$out/libexec/tcc" -static "\$@"
+exec "$out/libexec/tcc" ${lib.optionalString staticByDefault "-static"} "\$@"
 EOF
         chmod 555 $out/bin/tcc
         install -Dm444 libtcc1.a $out/lib/libtcc1.a
@@ -177,7 +180,7 @@ in
           return 0;
         }
         EOF
-        ${result}/bin/tcc -v -static -B${musl}/lib -o test test.c
+        ${result}/bin/tcc -v ${lib.optionalString staticByDefault "-static"} -B${musl}/lib -o test test.c
         ./test
         mkdir $out
       '';
