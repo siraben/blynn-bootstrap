@@ -6,6 +6,7 @@
   buildScript,
   installScript,
   nativeBuildInputs ? [ ],
+  m2Mesoplanet ? null,
   version ? "0-unstable-2026-05-06",
   description ? "Blynn bootstrap stage",
 }:
@@ -23,6 +24,7 @@ stdenvNoCC.mkDerivation (
     nativeBuildInputs = [
       minimalBootstrap.stage0-posix.mescc-tools
     ]
+    ++ lib.optional (m2Mesoplanet != null) m2Mesoplanet
     ++ nativeBuildInputs;
 
     M2_ARCH = minimalBootstrap.stage0-posix.m2libcArch;
@@ -37,6 +39,9 @@ stdenvNoCC.mkDerivation (
       cd build
       mkdir -p tmp
       export TMPDIR="$PWD/tmp"
+      ${lib.optionalString (m2Mesoplanet != null) ''
+        export M2_MESOPLANET=${m2Mesoplanet}/bin/M2-Mesoplanet
+      ''}
 
       . ${../scripts/lib/bootstrap.sh}
 

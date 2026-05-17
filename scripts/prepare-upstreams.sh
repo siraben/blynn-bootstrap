@@ -61,13 +61,16 @@ patch_upstream() {
 copy_upstream \
   oriansj-blynn-compiler \
   "$oriansj_src"
+patch_upstream \
+  "$out_dir/oriansj-blynn-compiler" \
+  "$repo_dir/patches/upstreams/oriansj-blynn-compiler-m2-grammar.patch"
 
 copy_upstream \
   blynn-compiler \
   "$blynn_src"
 patch_upstream \
   "$out_dir/blynn-compiler" \
-  "$repo_dir/patches/upstreams/blynn-compiler-local.patch"
+  "$repo_dir/patches/upstreams/blynn-compiler-m2-grammar.patch"
 
 if [ -n "$tinycc_src" ]; then
   copy_upstream \
