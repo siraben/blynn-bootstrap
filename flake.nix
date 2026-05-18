@@ -647,6 +647,8 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             . ${./scripts/lib/bootstrap.sh}
             cp ${mzvmSrc}/mzvm-seed.c mzvm-seed.c
             compile_m2 mzvm-seed.c mzvm-seed
+            printf '%s\n' '#define MZVM_HEAP_LIMIT 16' '#include "mzvm-seed.c"' > mzvm-seed-gc.c
+            compile_m2 mzvm-seed-gc.c mzvm-seed-gc
             printf '%b' '\115\132\102\103\001\000\000\000\060\000\000\000\003\000\000\000\000\000\000\000' > ok.mzbc
             printf '%b' '\001\117\000\000\000\016\001\000\000\000\001\000\000\000' >> ok.mzbc
             printf '%b' '\001\113\000\000\000\016\001\000\000\000\001\000\000\000' >> ok.mzbc
@@ -674,13 +676,29 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             ./mzvm-seed signed.mzbc > actual.txt
             IFS= read -r actual < actual.txt
             test "$actual" = OK
+            i=0
+            printf '%b' '\115\132\102\103\001\000\000\000\273\001\000\000\003\000\000\000\000\000\000\000' > gc.mzbc
+            while [ "$i" -lt 20 ]; do
+              printf '%b' '\001\001\000\000\000\002\001\002\000\000\000\017\000\000\000\000\002\000\000\000' >> gc.mzbc
+              i=$((i + 1))
+            done
+            printf '%b' '\001\117\000\000\000\016\001\000\000\000\001\000\000\000' >> gc.mzbc
+            printf '%b' '\001\113\000\000\000\016\001\000\000\000\001\000\000\000' >> gc.mzbc
+            printf '%b' '\001\012\000\000\000\016\001\000\000\000\001\000\000\000' >> gc.mzbc
+            printf '%b' '\000' >> gc.mzbc
+            ./mzvm-seed-gc gc.mzbc > actual.txt
+            IFS= read -r actual < actual.txt
+            test "$actual" = OK
           '';
           installScript = ''
             install -Dm755 mzvm-seed "$out/bin/mzvm-seed"
+            install -Dm755 mzvm-seed-gc "$out/bin/mzvm-seed-gc"
             install -Dm644 mzvm-seed.c "$out/share/mzvm/mzvm-seed.c"
+            install -Dm644 mzvm-seed-gc.c "$out/share/mzvm/mzvm-seed-gc.c"
             install -Dm644 ok.mzbc "$out/share/mzvm/tests/ok.mzbc"
             install -Dm644 block.mzbc "$out/share/mzvm/tests/block.mzbc"
             install -Dm644 signed.mzbc "$out/share/mzvm/tests/signed.mzbc"
+            install -Dm644 gc.mzbc "$out/share/mzvm/tests/gc.mzbc"
           '';
         };
 
@@ -701,9 +719,15 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           ${mzvmSeedM2}/bin/mzvm-seed signed.mzbc > seed-signed.txt
           cmp host-signed.txt seed-signed.txt
           cmp expected.txt host-signed.txt
+          sh ${./scripts/mzvm-write-gc-bytecode.sh} gc.mzbc
+          ${mzvmHost}/bin/mzvm gc.mzbc > host-gc.txt
+          ${mzvmSeedM2}/bin/mzvm-seed-gc gc.mzbc > seed-gc.txt
+          cmp host-gc.txt seed-gc.txt
+          cmp expected.txt host-gc.txt
           install -Dm644 host.txt "$out/ok-output.txt"
           install -Dm644 host-block.txt "$out/block-output.txt"
           install -Dm644 host-signed.txt "$out/signed-output.txt"
+          install -Dm644 host-gc.txt "$out/gc-output.txt"
         '';
 
         mlcFixtures = [
