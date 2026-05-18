@@ -41,7 +41,9 @@ enum {
   OP_MAKEBLOCK_DYN = 28,
   OP_CLOSURE = 29,
   OP_APPLY = 30,
-  OP_RETURN_FRAME = 31
+  OP_RETURN_FRAME = 31,
+  OP_FUNCTION = 32,
+  OP_CLOSURE_N = 33
 };
 
 typedef long value_t;
@@ -369,23 +371,51 @@ static void run(void)
         i = i + 1;
       }
       acc = (value_t)block;
+    } else if (op == OP_FUNCTION) {
+      long target = read_u32();
+      value_t *block;
+      if (target < 0 || target >= code_len) die("function target out of range");
+      block = alloc_block(2, 1);
+      block[2] = val_int(target);
+      acc = (value_t)block;
+    } else if (op == OP_CLOSURE_N) {
+      long target = read_u32();
+      long count = read_u32();
+      value_t *block;
+      long i;
+      if (target < 0 || target >= code_len) die("closure target out of range");
+      if (count < 0 || count > sp) die("closure capture out of range");
+      block = alloc_block(1, count + 1);
+      block[2] = val_int(target);
+      i = 0;
+      while (i < count) {
+        block[3 + i] = stack_acc(i);
+        i = i + 1;
+      }
+      acc = (value_t)block;
     } else if (op == OP_APPLY) {
       value_t arg = acc;
       value_t *closure = block_val(stack_pop());
+      long tag = closure[0];
       long size = closure[1];
       long target;
       long i;
       if (size < 1) die("bad closure");
       target = int_val(closure[2]);
       if (target < 0 || target >= code_len) die("closure target out of range");
-      i = size - 1;
-      while (i > 0) {
-        stack_push(closure[2 + i]);
-        i = i - 1;
+      if (tag == 2) {
+        acc = arg;
+        return_push(pc);
+      } else {
+        i = size - 1;
+        while (i > 0) {
+          stack_push(closure[2 + i]);
+          i = i - 1;
+        }
+        stack_push(arg);
+        return_push(pc);
+        return_push(size);
       }
-      stack_push(arg);
-      return_push(pc);
-      return_push(size);
       pc = target;
     } else if (op == OP_RETURN_FRAME) {
       long frame = return_pop();

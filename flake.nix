@@ -844,6 +844,12 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             ${mzvmSeedM2}/bin/mzvm-seed closure-capture.mzbc > closure-capture.out
             printf 'let f = fun x -> write_byte x in let emit = 79 in let input = 75 in let target = 10 in let _ = f emit in let _ = f input in f target' | ${mlcInterpSeedM2}/bin/mlc-interp-seed 02-ml0-compiler.ml > closure-lookahead.mzbc
             ${mzvmSeedM2}/bin/mzvm-seed closure-lookahead.mzbc > closure-lookahead.out
+            printf 'let rec k x = x in let rec apply f = fun x -> f x in write_byte (apply k 79)' | ${mlcInterpSeedM2}/bin/mlc-interp-seed 02-ml0-compiler.ml > function-value.mzbc
+            ${mzvmSeedM2}/bin/mzvm-seed function-value.mzbc > function-value.out
+            printf 'let x = 79 in let rec f y = write_byte (x + y) in f 0' | ${mlcInterpSeedM2}/bin/mlc-interp-seed 02-ml0-compiler.ml > letrec-capture.mzbc
+            ${mzvmSeedM2}/bin/mzvm-seed letrec-capture.mzbc > letrec-capture.out
+            printf 'let rec f ch = if ch = 79 then write_byte ch else write_byte 88 in f 79' | ${mlcInterpSeedM2}/bin/mlc-interp-seed 02-ml0-compiler.ml > single-eq.mzbc
+            ${mzvmSeedM2}/bin/mzvm-seed single-eq.mzbc > single-eq.out
             for name in ok arithmetic conditional comparison let-binding sequence negative identifiers keyword-prefix-infix string string-value length exit tuple bytes array dynamic-create dynamic-index function function-tuple function-nested function-string; do
               ${mlcInterpSeedM2}/bin/mlc-interp-seed 02-ml0-compiler.ml < ${./tests/mlc}/$name.ml > $name.mzbc
               ${mzvmSeedM2}/bin/mzvm-seed $name.mzbc > $name.out
@@ -902,6 +908,9 @@ OK"
             test "$(cat closure.out)" = O
             test "$(cat closure-capture.out)" = O
             test "$(cat closure-lookahead.out)" = "OK"
+            test "$(cat function-value.out)" = O
+            test "$(cat letrec-capture.out)" = O
+            test "$(cat single-eq.out)" = O
             test "$(cat sequence.out)" = OK
             test "$(cat negative.out)" = OK
             test "$(cat identifiers.out)" = O
@@ -954,6 +963,12 @@ OK"
             install -Dm644 closure-capture.out "$out/share/mlc/stages/closure-capture.out"
             install -Dm644 closure-lookahead.mzbc "$out/share/mlc/stages/closure-lookahead.mzbc"
             install -Dm644 closure-lookahead.out "$out/share/mlc/stages/closure-lookahead.out"
+            install -Dm644 function-value.mzbc "$out/share/mlc/stages/function-value.mzbc"
+            install -Dm644 function-value.out "$out/share/mlc/stages/function-value.out"
+            install -Dm644 letrec-capture.mzbc "$out/share/mlc/stages/letrec-capture.mzbc"
+            install -Dm644 letrec-capture.out "$out/share/mlc/stages/letrec-capture.out"
+            install -Dm644 single-eq.mzbc "$out/share/mlc/stages/single-eq.mzbc"
+            install -Dm644 single-eq.out "$out/share/mlc/stages/single-eq.out"
             install -Dm644 string-value.mzbc "$out/share/mlc/stages/string-value.mzbc"
             install -Dm644 length.mzbc "$out/share/mlc/stages/length.mzbc"
             install -Dm644 keyword-prefix-infix.mzbc "$out/share/mlc/stages/keyword-prefix-infix.mzbc"

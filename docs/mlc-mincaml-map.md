@@ -122,12 +122,13 @@ real MinCaml-shaped passes are ported into `mlc.ml`.
 `02-ml0-compiler.ml` is the staged ML compiler path. In addition to the seed
 fixture subset, it now emits first-class unary closures for anonymous
 `fun x -> ...` expressions. The VM represents closures as heap blocks with a
-bytecode target and captured stack environment; `APPLY` pushes the captured
-values and argument before jumping, and closure bodies return with
-`RETURN_FRAME`. Its streaming parser carries one token of lookahead for
-expression terminators, so application parsing can distinguish identifier
-arguments from `in` / `then` / `else` without relying on first-letter
-heuristics.
+bytecode target and a bounded captured stack environment; `APPLY` pushes the
+captured values and argument before jumping, and closure bodies return with
+`RETURN_FRAME`. Named `let rec` functions can also be passed as first-class
+function wrappers while syntactic calls keep the direct `CALL` / `RETURN`
+path. Its streaming parser carries one token of lookahead for expression
+terminators, so application parsing can distinguish identifier arguments from
+`in` / `then` / `else` without relying on first-letter heuristics.
 
 Do not treat the current `mlc.ml` as self-hosted. It is now written in the
 seed core language and has a tiny lexer/parser/emitter path for byte literals

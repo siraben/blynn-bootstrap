@@ -39,6 +39,14 @@ let rec emit_return dummy = write_byte 24 in
 let rec emit_closure target = emit1 29 target in
 let rec emit_apply dummy = write_byte 30 in
 let rec emit_return_frame dummy = write_byte 31 in
+let rec emit_function target = emit1 32 target in
+let rec emit_closure_n target =
+  fun count ->
+  fun dummy ->
+  let _ = write_byte 33 in
+  let _ = write_u32 target in
+  write_u32 count
+in
 let rec emit_call_prim prim =
   fun dummy ->
   let _ = write_byte 14 in
@@ -156,10 +164,13 @@ let rec ident ch =
   else
     exit 1
 in
-let rec empty_env key = -1 in
+let rec empty_env key =
+  if key = (0 - 3) then 0 else -1
+in
 let rec extend_env key =
   fun old ->
   fun query ->
+  if query = (0 - 3) then old query + 1 else
   if query = key then 0 else
   let found = old query in
   if found < 0 then -1 else found + 1
@@ -245,13 +256,8 @@ let rec compile mode =
       let depth = parse_env word in
       if depth < 0 then exit 1 else
       ident_kon 5 (emit_acc depth) ch
-    else if atom_start ch then
-      compile 6 ch parse_env funcs arg_base (fun arg_len -> fun arg_emit -> fun ch ->
-      ident_kon (arg_len + 5) (emit2 arg_emit (emit_call target)) ch)
     else
-      let depth = parse_env word in
-      if depth < 0 then exit 1 else
-      ident_kon 5 (emit_acc depth) ch
+      ident_kon 5 (emit_function target) ch
   in
   let rec compile_arg_or_stop ch =
     fun parse_env ->
@@ -284,6 +290,43 @@ let rec compile mode =
       fun left_emit ->
       fun ch ->
       let ch = skip_space ch in
+      if ch = 46 then
+        let next = read_byte in
+        if next = 91 then
+          compile 2 read_byte (shift_env env) funcs (base + left_len + 1) (fun index_len -> fun index_emit -> fun ch ->
+          let ch = expect 93 (skip_space ch) in
+          let ch = skip_space ch in
+          if ch = 60 then
+            let ch = expect 45 read_byte in
+            compile 1 ch (shift_env (shift_env env)) funcs (base + left_len + 1 + index_len + 1) (fun value_len -> fun value_emit -> fun ch ->
+            kon
+              (left_len + 1 + index_len + 1 + value_len + 1)
+              (emit3 left_emit emit_push (emit3 index_emit emit_push (emit2 value_emit emit_setfield_dyn)))
+              ch)
+          else
+            tail
+              (left_len + 1 + index_len + 1)
+              (emit3 left_emit emit_push (emit2 index_emit emit_getfield_dyn))
+              ch)
+        else if next = 40 then
+          compile 2 read_byte (shift_env env) funcs (base + left_len + 1) (fun index_len -> fun index_emit -> fun ch ->
+          let ch = expect 41 (skip_space ch) in
+          let ch = skip_space ch in
+          if ch = 60 then
+            let ch = expect 45 read_byte in
+            compile 1 ch (shift_env (shift_env env)) funcs (base + left_len + 1 + index_len + 1) (fun value_len -> fun value_emit -> fun ch ->
+            kon
+              (left_len + 1 + index_len + 1 + value_len + 1)
+              (emit3 left_emit emit_push (emit3 index_emit emit_push (emit2 value_emit emit_setfield_dyn)))
+              ch)
+          else
+            tail
+              (left_len + 1 + index_len + 1)
+              (emit3 left_emit emit_push (emit2 index_emit emit_getfield_dyn))
+              ch)
+        else
+          exit 1
+      else
       compile_arg_or_stop ch (shift_env env) (base + left_len + 1)
         (fun arg_len -> fun arg_emit -> fun ch ->
         tail (left_len + 1 + arg_len + 1) (emit3 left_emit emit_push (emit2 arg_emit emit_apply)) ch)
@@ -301,7 +344,8 @@ let rec compile mode =
         compile 5 read_byte (shift_env env) funcs (base + left_len + 1) (fun right_len -> fun right_emit -> fun ch ->
         tail (left_len + 1 + right_len + 1) (emit3 left_emit emit_push (emit2 right_emit (emit0 8))) ch)
       else if ch = 61 then
-        let ch = expect 61 read_byte in
+        let next = read_byte in
+        let ch = if next = 61 then read_byte else next in
         compile 3 ch (shift_env env) funcs (base + left_len + 1) (fun right_len -> fun right_emit -> fun ch ->
         kon (left_len + 1 + right_len + 1) (emit3 left_emit emit_push (emit2 right_emit (emit0 9))) ch)
       else if ch = 33 then
@@ -327,7 +371,9 @@ let rec compile mode =
       else
         kon left_len left_emit ch)
     in
-    if target < 0 then
+    if word = (0 - 8492138437707000683) then
+      tail 14 (emit2 (emit_const 0) (emit_call_prim 0)) ch
+    else if target < 0 then
       let depth = env word in
       if depth < 0 then exit 1 else
       tail 5 (emit_acc depth) ch
@@ -336,9 +382,7 @@ let rec compile mode =
         (fun arg_len -> fun arg_emit -> fun ch ->
         tail (arg_len + 5) (emit2 arg_emit (emit_call target)) ch)
         (fun ch ->
-        let depth = env word in
-        if depth < 0 then exit 1 else
-        tail 5 (emit_acc depth) ch)
+        tail 5 (emit_function target) ch)
   in
   if mode = 0 then
     compile 1 ch env funcs base (fun len -> fun emit -> fun ch ->
@@ -380,7 +424,7 @@ let rec compile mode =
         let ch = expect 61 (skip_space ch) in
         let target = base + 5 in
         let rec_funcs = extend_func fname target funcs in
-        compile 0 ch (extend_env param empty_env) rec_funcs (target + 1) (fun fn_body_len -> fun fn_body_emit -> fun ch ->
+        compile 0 ch (extend_env param env) rec_funcs (target + 1) (fun fn_body_len -> fun fn_body_emit -> fun ch ->
         let fn_len = fn_body_len + 7 in
         let ch = expect_in ch in
         compile 0 ch env rec_funcs (base + 5 + fn_len) (fun body_len -> fun body_emit -> fun ch ->
@@ -419,8 +463,8 @@ let rec compile mode =
         let target = base + 5 in
         compile 0 ch (extend_env param env) funcs target (fun body_len -> fun body_emit -> fun ch ->
         kon
-          (5 + body_len + 1 + 5)
-          (emit3 (emit1 11 (body_len + 1)) (emit2 body_emit emit_return_frame) (emit_closure target))
+          (5 + body_len + 1 + 9)
+          (emit3 (emit1 11 (body_len + 1)) (emit2 body_emit emit_return_frame) (emit_closure_n target (env (0 - 3))))
           ch))
       else
         finish_ident word ch)
@@ -450,13 +494,23 @@ let rec compile mode =
         kon (expr_len + 9) (emit2 expr_emit emit_call_exit) ch)
       else
         finish_ident word ch)
+    else if 97 <= ch then
+      if ch <= 122 then
+        ident ch (fun word -> fun ch ->
+        finish_ident word ch)
+      else
+        compile 2 ch env funcs base kon
+    else if ch = 95 then
+      ident ch (fun word -> fun ch ->
+      finish_ident word ch)
     else
       compile 2 ch env funcs base kon
   else if mode = 2 then
     compile 3 ch env funcs base (fun left_len -> fun left_emit -> fun ch ->
     let ch = skip_space ch in
     if ch = 61 then
-      let ch = expect 61 read_byte in
+      let next = read_byte in
+      let ch = if next = 61 then read_byte else next in
       compile 3 ch (shift_env env) funcs (base + left_len + 1) (fun right_len -> fun right_emit -> fun ch ->
       kon (left_len + 1 + right_len + 1) (emit3 left_emit emit_push (emit2 right_emit (emit0 9))) ch)
     else if ch = 33 then
@@ -563,8 +617,7 @@ let rec compile mode =
     let ch = skip_space ch in
     if ch = 40 then
       let ch = skip_space read_byte in
-      let parser = if ch = 105 then 0 else 2 in
-      compile parser ch env funcs base (fun len -> fun emit -> fun ch ->
+      compile 0 ch env funcs base (fun len -> fun emit -> fun ch ->
       let ch = skip_space ch in
       if ch = 44 then
         compile 0 read_byte (shift_env env) funcs (base + len + 1) (fun right_len -> fun right_emit -> fun ch ->

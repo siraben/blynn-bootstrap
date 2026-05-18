@@ -68,6 +68,8 @@ Opcodes are one byte. Immediate operands are little-endian 32-bit words.
 29  CLOSURE target:u32
 30  APPLY
 31  RETURN_FRAME
+32  FUNCTION target:u32
+33  CLOSURE_N target:u32 captures:u32
 ```
 
 Branches are relative to the program counter after the branch operand has
@@ -79,12 +81,20 @@ earlier in the stream. `RETURN` pops that return address. This is the current
 seed path for unary `let rec` functions.
 
 `CLOSURE` creates a closure block whose first field is the absolute bytecode
-target and whose remaining fields are the current stack values, copied from
-nearest to farthest lexical depth. `APPLY` expects the closure on the stack
-and the argument in the accumulator; it pushes captured values followed by the
-argument, saves the return program counter and dynamic frame size, and jumps
-to the closure target. Generated closure bodies use `RETURN_FRAME` to drop
-their argument and captured values before returning.
+target and whose remaining fields are the whole current stack, copied from
+nearest to farthest lexical depth. `CLOSURE_N` is the bounded form used by the
+staged compiler: it captures only the requested number of nearest stack slots.
+`APPLY` expects the closure on the stack and the argument in the accumulator;
+for closure blocks it pushes captured values followed by the argument, saves
+the return program counter and dynamic frame size, and jumps to the closure
+target. Generated closure bodies use `RETURN_FRAME` to drop their argument and
+captured values before returning.
+
+`FUNCTION` creates a first-class wrapper for direct `let rec` function code.
+When `APPLY` sees a function wrapper, it leaves the argument in the accumulator
+and jumps using the direct `CALL` / `RETURN` calling convention. This lets
+staged compilers pass named functions such as environments and continuations
+without forcing every syntactic call through a heap closure.
 
 `MAKEBLOCK` consumes fields from the stack plus the accumulator in source
 order: earlier fields have already been pushed, and the accumulator is the

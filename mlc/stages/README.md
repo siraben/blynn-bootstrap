@@ -24,6 +24,10 @@ Current stages:
   `exit`, pair tuples, pair destructuring, dynamic string/bytes indexing, and
   dynamic array/bytes writes, `Array.create`, and direct unary `let rec`
   functions, plus anonymous unary `fun` closures with captured environments.
+  Closures now record a bounded lexical capture count, named `let rec`
+  functions can be passed as function values, local `let rec` bodies can close
+  over outer variables, and expression equality accepts both ML-style `=` and
+  the earlier `==`.
   Application parsing uses one token of lookahead so identifiers such as
   `emit`, `input`, and `target` can be parsed as arguments while `else`, `in`,
   and `then` still terminate the surrounding expression.
@@ -43,7 +47,9 @@ Planned stages:
 - Promote the next compiler only once it can compile its own source and the
   following compiler source. `02-ml0-compiler.ml` is not yet there because it
   uses the first tree-walking language to bootstrap a parity-oriented compiler;
-  it does now compile the current next compiler source, `mlc/mlc.ml`.
+  it does now compile the current next compiler source, `mlc/mlc.ml`. The C
+  root can emit bytecode for `02-ml0-compiler.ml` itself, but that emitted
+  compiler is not yet a passing runnable fixed point.
 - Later parser stages increase the ML0 dialect until it can compile the next
   compiler source, then itself.
 - `02-patterns.ml` adds ADT and pattern-match lowering in ML, not in C.
