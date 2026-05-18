@@ -1,56 +1,56 @@
 let rec is_space ch =
-  if ch == 32 then 1 else
-  if ch == 10 then 1 else
-  if ch == 9 then 1 else
+  if ch == ' ' then 1 else
+  if ch == '\n' then 1 else
+  if ch == '\t' then 1 else
   if ch == 13 then 1 else 0
 in
 let rec skip_block_comment state =
   let (src, pos) = state in
-  if (src.[pos] == 42) * (src.[pos + 1] == 47) then pos + 2 else skip_block_comment (src, pos + 1)
+  if (src.[pos] == '*') * (src.[pos + 1] == '/') then pos + 2 else skip_block_comment (src, pos + 1)
 in
 let rec skip_line_comment state =
   let (src, pos) = state in
-  if src.[pos] == 10 then pos + 1 else
+  if src.[pos] == '\n' then pos + 1 else
   if src.[pos] == 0 then pos else skip_line_comment (src, pos + 1)
 in
 let rec skip_line state =
   let (src, pos) = state in
-  if src.[pos] == 10 then pos + 1 else
+  if src.[pos] == '\n' then pos + 1 else
   if src.[pos] == 0 then pos else skip_line (src, pos + 1)
 in
 let rec skip_space state =
   let (src, pos) = state in
   if is_space (src.[pos]) then skip_space (src, pos + 1) else
-  if src.[pos] == 35 then skip_space (src, skip_line (src, pos + 1)) else
-  if src.[pos] == 47 then
-    if src.[pos + 1] == 42 then skip_space (src, skip_block_comment (src, pos + 2)) else
-    if src.[pos + 1] == 47 then skip_space (src, skip_line_comment (src, pos + 2)) else pos
+  if src.[pos] == '#' then skip_space (src, skip_line (src, pos + 1)) else
+  if src.[pos] == '/' then
+    if src.[pos + 1] == '*' then skip_space (src, skip_block_comment (src, pos + 2)) else
+    if src.[pos + 1] == '/' then skip_space (src, skip_line_comment (src, pos + 2)) else pos
   else
     pos
 in
 let rec is_digit ch =
-  if ch < 48 then 0 else if ch < 58 then 1 else 0
+  if ch < '0' then 0 else if ch < ':' then 1 else 0
 in
 let rec is_hex_digit ch =
   if is_digit ch then 1 else
-  if ch < 65 then 0 else
-  if ch < 71 then 1 else
-  if ch < 97 then 0 else
-  if ch < 103 then 1 else 0
+  if ch < 'A' then 0 else
+  if ch < 'G' then 1 else
+  if ch < 'a' then 0 else
+  if ch < 'g' then 1 else 0
 in
 let rec is_octal_digit ch =
-  if ch < 48 then 0 else if ch < 56 then 1 else 0
+  if ch < '0' then 0 else if ch < '8' then 1 else 0
 in
 let rec hex_value ch =
-  if is_digit ch then ch - 48 else
-  if ch < 97 then (ch - 65) + 10 else (ch - 97) + 10
+  if is_digit ch then ch - '0' else
+  if ch < 'a' then (ch - 'A') + 10 else (ch - 'a') + 10
 in
 let rec is_alpha ch =
-  if ch == 95 then 1 else
-  if ch < 65 then 0 else
-  if ch < 91 then 1 else
-  if ch < 97 then 0 else
-  if ch < 123 then 1 else 0
+  if ch == '_' then 1 else
+  if ch < 'A' then 0 else
+  if ch < '[' then 1 else
+  if ch < 'a' then 0 else
+  if ch < '{' then 1 else 0
 in
 let rec is_ident ch =
   if is_alpha ch then 1 else is_digit ch
@@ -72,117 +72,18 @@ let rec parse_ident state =
 in
 let rec is_string_at_loop state =
   let (want, pair) = state in
-  let (src, pair2) = pair in
-  let (pos, index) = pair2 in
-  if index == String.length want then 1 else
-  if src.[pos + index] == want.[index] then is_string_at_loop (want, (src, (pos, index + 1))) else 0
+  let (len, pair2) = pair in
+  let (src, pair3) = pair2 in
+  let (pos, index) = pair3 in
+  if index == len then 1 else
+  if src.[pos + index] == want.[index] then is_string_at_loop (want, (len, (src, (pos, index + 1)))) else 0
 in
 let rec is_string_at state =
   let (want, pair) = state in
-  let (src, pos0) = pair in
+  let (len, pair2) = pair in
+  let (src, pos0) = pair2 in
   let pos = skip_space (src, pos0) in
-  is_string_at_loop (want, (src, (pos, 0)))
-in
-let rec expect_int state =
-  let (src, pos0) = state in
-  let pos = skip_space (src, pos0) in
-  if (src.[pos] == 99) * (src.[pos + 1] == 104) * (src.[pos + 2] == 97) * (src.[pos + 3] == 114) then pos + 4 else
-  if (src.[pos] == 118) * (src.[pos + 1] == 111) * (src.[pos + 2] == 105) * (src.[pos + 3] == 100) then pos + 4 else
-  if (src.[pos] == 99) * (src.[pos + 1] == 111) * (src.[pos + 2] == 110) * (src.[pos + 3] == 115) * (src.[pos + 4] == 116) then expect_int (src, pos + 5) else
-  if (src.[pos] == 115) * (src.[pos + 1] == 116) * (src.[pos + 2] == 114) * (src.[pos + 3] == 117) * (src.[pos + 4] == 99) * (src.[pos + 5] == 116) then
-    let ident = parse_ident (src, pos + 6) in
-    let (_name, name_end) = ident in
-    name_end
-  else
-  if (src.[pos] == 105) * (src.[pos + 1] == 110) * (src.[pos + 2] == 116) then pos + 3 else
-  if (src.[pos] == 108) * (src.[pos + 1] == 111) * (src.[pos + 2] == 110) * (src.[pos + 3] == 103) then pos + 4 else
-  if (src.[pos] == 67) * (src.[pos + 1] == 111) * (src.[pos + 2] == 109) * (src.[pos + 3] == 112) * (src.[pos + 4] == 97) * (src.[pos + 5] == 114) * (src.[pos + 6] == 101) then pos + 7 else
-  if (src.[pos] == 66) * (src.[pos + 1] == 111) * (src.[pos + 2] == 120) then pos + 3 else
-  if (src.[pos] == 117) * (src.[pos + 1] == 110) * (src.[pos + 2] == 115) * (src.[pos + 3] == 105) * (src.[pos + 4] == 103) * (src.[pos + 5] == 110) * (src.[pos + 6] == 101) * (src.[pos + 7] == 100) then
-    let p1 = skip_space (src, pos + 8) in
-    if (src.[p1] == 99) * (src.[p1 + 1] == 104) * (src.[p1 + 2] == 97) * (src.[p1 + 3] == 114) then p1 + 4 else pos + 8
-  else
-  if (src.[pos] == 117) * (src.[pos + 1] == 105) * (src.[pos + 2] == 110) * (src.[pos + 3] == 116) * (src.[pos + 4] == 54) * (src.[pos + 5] == 52) * (src.[pos + 6] == 95) * (src.[pos + 7] == 116) then pos + 8 else exit 1
-in
-let rec expect_local_type state =
-  let (src, pos0) = state in
-  let pos = skip_space (src, pos0) in
-  if (src.[pos] == 105) * (src.[pos + 1] == 110) * (src.[pos + 2] == 116) then pos + 3 else
-  if (src.[pos] == 99) * (src.[pos + 1] == 104) * (src.[pos + 2] == 97) * (src.[pos + 3] == 114) then pos + 4 else
-  if (src.[pos] == 115) * (src.[pos + 1] == 105) * (src.[pos + 2] == 103) * (src.[pos + 3] == 110) * (src.[pos + 4] == 101) * (src.[pos + 5] == 100) then
-    let p1 = skip_space (src, pos + 6) in
-    if (src.[p1] == 99) * (src.[p1 + 1] == 104) * (src.[p1 + 2] == 97) * (src.[p1 + 3] == 114) then p1 + 4 else
-    if (src.[p1] == 115) * (src.[p1 + 1] == 104) * (src.[p1 + 2] == 111) * (src.[p1 + 3] == 114) * (src.[p1 + 4] == 116) then p1 + 5 else exit 1
-  else if (src.[pos] == 117) * (src.[pos + 1] == 110) * (src.[pos + 2] == 115) * (src.[pos + 3] == 105) * (src.[pos + 4] == 103) * (src.[pos + 5] == 110) * (src.[pos + 6] == 101) * (src.[pos + 7] == 100) then
-    let p1 = skip_space (src, pos + 8) in
-    if (src.[p1] == 99) * (src.[p1 + 1] == 104) * (src.[p1 + 2] == 97) * (src.[p1 + 3] == 114) then p1 + 4 else
-    if (src.[p1] == 115) * (src.[p1 + 1] == 104) * (src.[p1 + 2] == 111) * (src.[p1 + 3] == 114) * (src.[p1 + 4] == 116) then p1 + 5 else
-    if (src.[p1] == 108) * (src.[p1 + 1] == 111) * (src.[p1 + 2] == 110) * (src.[p1 + 3] == 103) then
-      let p2 = skip_space (src, p1 + 4) in
-      if (src.[p2] == 108) * (src.[p2 + 1] == 111) * (src.[p2 + 2] == 110) * (src.[p2 + 3] == 103) then p2 + 4 else p1 + 4
-    else pos + 8
-  else if (src.[pos] == 108) * (src.[pos + 1] == 111) * (src.[pos + 2] == 110) * (src.[pos + 3] == 103) then
-    let p1 = skip_space (src, pos + 4) in
-    if (src.[p1] == 108) * (src.[p1 + 1] == 111) * (src.[p1 + 2] == 110) * (src.[p1 + 3] == 103) then p1 + 4 else pos + 4
-  else if (src.[pos] == 95) * (src.[pos + 1] == 66) * (src.[pos + 2] == 111) * (src.[pos + 3] == 111) * (src.[pos + 4] == 108) then pos + 5 else
-  if (src.[pos] == 111) * (src.[pos + 1] == 117) * (src.[pos + 2] == 116) * (src.[pos + 3] == 101) * (src.[pos + 4] == 114) * (src.[pos + 5] == 95) * (src.[pos + 6] == 116) then pos + 7
-  else exit 1
-in
-let rec is_local_type_at state =
-  let (src, pos0) = state in
-  let pos = skip_space (src, pos0) in
-  ((src.[pos] == 105) * (src.[pos + 1] == 110) * (src.[pos + 2] == 116)) +
-  ((src.[pos] == 99) * (src.[pos + 1] == 104) * (src.[pos + 2] == 97) * (src.[pos + 3] == 114)) +
-  ((src.[pos] == 115) * (src.[pos + 1] == 105) * (src.[pos + 2] == 103) * (src.[pos + 3] == 110) * (src.[pos + 4] == 101) * (src.[pos + 5] == 100)) +
-  ((src.[pos] == 117) * (src.[pos + 1] == 110) * (src.[pos + 2] == 115) * (src.[pos + 3] == 105) * (src.[pos + 4] == 103) * (src.[pos + 5] == 110) * (src.[pos + 6] == 101) * (src.[pos + 7] == 100)) +
-  ((src.[pos] == 108) * (src.[pos + 1] == 111) * (src.[pos + 2] == 110) * (src.[pos + 3] == 103)) +
-  ((src.[pos] == 95) * (src.[pos + 1] == 66) * (src.[pos + 2] == 111) * (src.[pos + 3] == 111) * (src.[pos + 4] == 108)) +
-  ((src.[pos] == 111) * (src.[pos + 1] == 117) * (src.[pos + 2] == 116) * (src.[pos + 3] == 101) * (src.[pos + 4] == 114) * (src.[pos + 5] == 95) * (src.[pos + 6] == 116))
-in
-let rec expect_type state =
-  let (src, pos0) = state in
-  let pos = skip_space (src, pos0) in
-  if (src.[pos] == 115) * (src.[pos + 1] == 116) * (src.[pos + 2] == 97) * (src.[pos + 3] == 116) * (src.[pos + 4] == 105) * (src.[pos + 5] == 99) then expect_type (src, pos + 6) else
-  if (src.[pos] == 105) * (src.[pos + 1] == 110) * (src.[pos + 2] == 116) then pos + 3 else
-  if (src.[pos] == 99) * (src.[pos + 1] == 104) * (src.[pos + 2] == 97) * (src.[pos + 3] == 114) then pos + 4 else
-  if (src.[pos] == 118) * (src.[pos + 1] == 111) * (src.[pos + 2] == 105) * (src.[pos + 3] == 100) then pos + 4 else
-  if (src.[pos] == 95) * (src.[pos + 1] == 66) * (src.[pos + 2] == 111) * (src.[pos + 3] == 111) * (src.[pos + 4] == 108) then pos + 5 else
-  if (src.[pos] == 117) * (src.[pos + 1] == 110) * (src.[pos + 2] == 115) * (src.[pos + 3] == 105) * (src.[pos + 4] == 103) * (src.[pos + 5] == 110) * (src.[pos + 6] == 101) * (src.[pos + 7] == 100) then
-    let p1 = skip_space (src, pos + 8) in
-    if (src.[p1] == 99) * (src.[p1 + 1] == 104) * (src.[p1 + 2] == 97) * (src.[p1 + 3] == 114) then p1 + 4 else pos + 8
-  else exit 1
-in
-let rec is_return_at state =
-  let (src, pos0) = state in
-  is_string_at ("return", (src, pos0))
-in
-let rec is_if_at state =
-  let (src, pos0) = state in
-  is_string_at ("if", (src, pos0))
-in
-let rec is_typedef_at state =
-  let (src, pos0) = state in
-  is_string_at ("typedef", (src, pos0))
-in
-let rec is_enum_at state =
-  let (src, pos0) = state in
-  is_string_at ("enum", (src, pos0))
-in
-let rec is_struct_at state =
-  let (src, pos0) = state in
-  is_string_at ("struct", (src, pos0))
-in
-let rec is_else_at state =
-  let (src, pos0) = state in
-  is_string_at ("else", (src, pos0))
-in
-let rec is_goto_at state =
-  let (src, pos0) = state in
-  is_string_at ("goto", (src, pos0))
-in
-let rec is_while_at state =
-  let (src, pos0) = state in
-  is_string_at ("while", (src, pos0))
+  is_string_at_loop (want, (len, (src, (pos, 0))))
 in
 let rec expect_char state =
   let (src, pair) = state in
@@ -195,16 +96,18 @@ let rec expect_ch state =
 in
 let rec expect_string_loop state =
   let (want, pair) = state in
-  let (src, pair2) = pair in
-  let (pos, index) = pair2 in
-  if index == String.length want then pos else
-    let next = expect_char (src, (pos, want.[index])) in
-    expect_string_loop (want, (src, (next, index + 1)))
+  let (len, pair2) = pair in
+  let (src, pair3) = pair2 in
+  let (pos, index) = pair3 in
+  if index == len then pos + index else
+  if src.[pos + index] == want.[index] then expect_string_loop (want, (len, (src, (pos, index + 1)))) else exit 1
 in
 let rec expect_string state =
   let (want, pair) = state in
-  let (src, pos0) = pair in
-  expect_string_loop (want, (src, (pos0, 0)))
+  let (len, pair2) = pair in
+  let (src, pos0) = pair2 in
+  let pos = skip_space (src, pos0) in
+  expect_string_loop (want, (len, (src, (pos, 0))))
 in
 let rec parse_expect_char state =
   let (ch, pair) = state in
@@ -213,8 +116,9 @@ let rec parse_expect_char state =
 in
 let rec parse_expect_string state =
   let (want, pair) = state in
-  let (src, pos) = pair in
-  (want, expect_string (want, (src, pos)))
+  let (len, pair2) = pair in
+  let (src, pos) = pair2 in
+  (want, expect_string (want, (len, (src, pos))))
 in
 let rec bind_expect_char state =
   let (parsed, pair) = state in
@@ -225,16 +129,139 @@ in
 let rec bind_expect_string state =
   let (parsed, pair) = state in
   let (_value, pos) = parsed in
-  let (src, want) = pair in
-  parse_expect_string (want, (src, pos))
+  let (src, pair2) = pair in
+  let (want, len) = pair2 in
+  parse_expect_string (want, (len, (src, pos)))
+in
+let rec bind_expect_char_keep state =
+  let (parsed, pair) = state in
+  let (value, pos) = parsed in
+  let (src, ch) = pair in
+  (value, expect_char (src, (pos, ch)))
+in
+let rec bind_parse_ident state =
+  let (parsed, src) = state in
+  let (_value, pos) = parsed in
+  parse_ident (src, pos)
+in
+let rec bind_skip_pointer_keep state =
+  let (parsed, src) = state in
+  let (value, pos0) = parsed in
+  let pos = skip_space (src, pos0) in
+  if src.[pos] == '*' then (value, skip_space (src, pos + 1)) else parsed
+in
+let rec expect_int state =
+  let (src, pos0) = state in
+  let pos = skip_space (src, pos0) in
+  if is_string_at ("char", (4, (src, pos))) then expect_string ("char", (4, (src, pos))) else
+  if is_string_at ("void", (4, (src, pos))) then expect_string ("void", (4, (src, pos))) else
+  if is_string_at ("const", (5, (src, pos))) then expect_int (src, expect_string ("const", (5, (src, pos)))) else
+  if is_string_at ("struct", (6, (src, pos))) then
+    let ident = parse_ident (src, expect_string ("struct", (6, (src, pos)))) in
+    let (_name, name_end) = ident in
+    name_end
+  else
+  if is_string_at ("int", (3, (src, pos))) then expect_string ("int", (3, (src, pos))) else
+  if is_string_at ("long", (4, (src, pos))) then expect_string ("long", (4, (src, pos))) else
+  if is_string_at ("Compare", (7, (src, pos))) then expect_string ("Compare", (7, (src, pos))) else
+  if is_string_at ("Box", (3, (src, pos))) then expect_string ("Box", (3, (src, pos))) else
+  if is_string_at ("unsigned", (8, (src, pos))) then
+    let p1 = expect_string ("unsigned", (8, (src, pos))) in
+    if is_string_at ("char", (4, (src, p1))) then expect_string ("char", (4, (src, p1))) else p1
+  else
+  if is_string_at ("uint64_t", (8, (src, pos))) then expect_string ("uint64_t", (8, (src, pos))) else exit 1
+in
+let rec expect_local_type state =
+  let (src, pos0) = state in
+  let pos = skip_space (src, pos0) in
+  if is_string_at ("int", (3, (src, pos))) then expect_string ("int", (3, (src, pos))) else
+  if is_string_at ("char", (4, (src, pos))) then expect_string ("char", (4, (src, pos))) else
+  if is_string_at ("signed", (6, (src, pos))) then
+    let p1 = expect_string ("signed", (6, (src, pos))) in
+    if is_string_at ("char", (4, (src, p1))) then expect_string ("char", (4, (src, p1))) else
+    if is_string_at ("short", (5, (src, p1))) then expect_string ("short", (5, (src, p1))) else exit 1
+  else if is_string_at ("unsigned", (8, (src, pos))) then
+    let p1 = expect_string ("unsigned", (8, (src, pos))) in
+    if is_string_at ("char", (4, (src, p1))) then expect_string ("char", (4, (src, p1))) else
+    if is_string_at ("short", (5, (src, p1))) then expect_string ("short", (5, (src, p1))) else
+    if is_string_at ("long", (4, (src, p1))) then
+      let p2 = expect_string ("long", (4, (src, p1))) in
+      if is_string_at ("long", (4, (src, p2))) then expect_string ("long", (4, (src, p2))) else p2
+    else pos + 8
+  else if is_string_at ("long", (4, (src, pos))) then
+    let p1 = expect_string ("long", (4, (src, pos))) in
+    if is_string_at ("long", (4, (src, p1))) then expect_string ("long", (4, (src, p1))) else p1
+  else if is_string_at ("_Bool", (5, (src, pos))) then expect_string ("_Bool", (5, (src, pos))) else
+  if is_string_at ("outer_t", (7, (src, pos))) then expect_string ("outer_t", (7, (src, pos)))
+  else exit 1
+in
+let rec is_local_type_at state =
+  let (src, pos0) = state in
+  let pos = skip_space (src, pos0) in
+  (is_string_at ("int", (3, (src, pos)))) +
+  (is_string_at ("char", (4, (src, pos)))) +
+  (is_string_at ("signed", (6, (src, pos)))) +
+  (is_string_at ("unsigned", (8, (src, pos)))) +
+  (is_string_at ("long", (4, (src, pos)))) +
+  (is_string_at ("_Bool", (5, (src, pos)))) +
+  (is_string_at ("outer_t", (7, (src, pos))))
+in
+let rec expect_type state =
+  let (src, pos0) = state in
+  let pos = skip_space (src, pos0) in
+  if is_string_at ("static", (6, (src, pos))) then expect_type (src, expect_string ("static", (6, (src, pos)))) else
+  if is_string_at ("int", (3, (src, pos))) then expect_string ("int", (3, (src, pos))) else
+  if is_string_at ("char", (4, (src, pos))) then expect_string ("char", (4, (src, pos))) else
+  if is_string_at ("void", (4, (src, pos))) then expect_string ("void", (4, (src, pos))) else
+  if is_string_at ("_Bool", (5, (src, pos))) then expect_string ("_Bool", (5, (src, pos))) else
+  if is_string_at ("unsigned", (8, (src, pos))) then
+    let p1 = expect_string ("unsigned", (8, (src, pos))) in
+    if is_string_at ("char", (4, (src, p1))) then expect_string ("char", (4, (src, p1))) else p1
+  else exit 1
+in
+let rec parse_type_token state =
+  let (src, pos) = state in
+  (0, expect_type (src, pos))
+in
+let rec is_return_at state =
+  let (src, pos0) = state in
+  is_string_at ("return", (6, (src, pos0)))
+in
+let rec is_if_at state =
+  let (src, pos0) = state in
+  is_string_at ("if", (2, (src, pos0)))
+in
+let rec is_typedef_at state =
+  let (src, pos0) = state in
+  is_string_at ("typedef", (7, (src, pos0)))
+in
+let rec is_enum_at state =
+  let (src, pos0) = state in
+  is_string_at ("enum", (4, (src, pos0)))
+in
+let rec is_struct_at state =
+  let (src, pos0) = state in
+  is_string_at ("struct", (6, (src, pos0)))
+in
+let rec is_else_at state =
+  let (src, pos0) = state in
+  is_string_at ("else", (4, (src, pos0)))
+in
+let rec is_goto_at state =
+  let (src, pos0) = state in
+  is_string_at ("goto", (4, (src, pos0)))
+in
+let rec is_while_at state =
+  let (src, pos0) = state in
+  is_string_at ("while", (5, (src, pos0)))
 in
 let rec expect_main state =
   let (src, pos0) = state in
-  expect_string ("main", (src, pos0))
+  expect_string ("main", (4, (src, pos0)))
 in
 let rec expect_return state =
   let (src, pos0) = state in
-  expect_string ("return", (src, pos0))
+  expect_string ("return", (6, (src, pos0)))
 in
 let rec parse_number_loop state =
   let (src, pair) = state in
@@ -389,13 +416,16 @@ let rec parse_sizeof_type state =
   else
     exit 1
 in
+let rec bind_parse_sizeof_type state =
+  let (parsed, src) = state in
+  let (_value, pos) = parsed in
+  parse_sizeof_type (src, pos)
+in
 let rec parse_sizeof_value state =
   let (src, pos0) = state in
-  let p0 = expect_ch (src, (pos0 + 6, 40)) in
-  let parsed = parse_sizeof_type (src, p0) in
-  let (size, type_end) = parsed in
-  let p1 = expect_ch (src, (type_end, 41)) in
-  (size, p1)
+  let open_paren = parse_expect_char ('(', (src, pos0 + 6)) in
+  let parsed = bind_parse_sizeof_type (open_paren, src) in
+  bind_expect_char_keep (parsed, (src, ')'))
 in
 let rec expect_char_cast state =
   let (src, pos0) = state in
@@ -814,42 +844,65 @@ let rec parse_func_return state =
 in
 let rec parse_params state =
   let (src, pos0) = state in
-  let p0 = expect_ch (src, (pos0, 40)) in
+  let open_paren = parse_expect_char ('(', (src, pos0)) in
+  let (_open_ch, p0) = open_paren in
   let p1 = skip_space (src, p0) in
-  if src.[p1] == 41 then (0 - 1, p1 + 1) else
-  if (src.[p1] == 118) * (src.[p1 + 1] == 111) * (src.[p1 + 2] == 105) * (src.[p1 + 3] == 100) then
-    let p1_next = skip_space (src, p1 + 4) in
-    if src.[p1_next] == 41 then (0 - 1, p1_next + 1) else
+  if src.[p1] == ')' then (0 - 1, p1 + 1) else
+  if is_string_at ("void", (4, (src, p1))) then
+    let void_parsed = parse_expect_string ("void", (4, (src, p1))) in
+    let (_void_kw, p1_void) = void_parsed in
+    let p1_next = skip_space (src, p1_void) in
+    if src.[p1_next] == ')' then (0 - 1, p1_next + 1) else
       let p2_next = if src.[p1_next] == 42 then skip_space (src, p1_next + 1) else p1_next in
       let param = parse_ident (src, p2_next) in
       let (param_name, param_end) = param in
       let p3 =
         let param_next = skip_space (src, param_end) in
-        if src.[param_next] == 44 then
+        if src.[param_next] == ',' then
           (skip_to_close_paren (src, param_next + 1)) + 1
         else
-          expect_ch (src, (param_end, 41))
+          expect_char (src, (param_end, ')'))
       in
       (param_name, p3)
   else
-    let p2 =
-      if (src.[p1] == 99) * (src.[p1 + 1] == 104) * (src.[p1 + 2] == 97) * (src.[p1 + 3] == 114) then p1 + 4 else
-        expect_int (src, p1)
+    let type_parsed =
+      if is_string_at ("char", (4, (src, p1))) then parse_expect_string ("char", (4, (src, p1))) else
+        (0, expect_int (src, p1))
     in
-    let p2_space = skip_space (src, p2) in
-    let p2_next0 = if src.[p2_space] == 42 then skip_space (src, p2_space + 1) else p2_space in
-    let p2_next = if src.[p2_next0] == 42 then skip_space (src, p2_next0 + 1) else p2_next0 in
-    if src.[p2_next] == 41 then (0 - 1, p2_next + 1) else
+    let type_after_ptr0 = bind_skip_pointer_keep (type_parsed, src) in
+    let type_after_ptr = bind_skip_pointer_keep (type_after_ptr0, src) in
+    let (_type_value, p2_next) = type_after_ptr in
+    if src.[p2_next] == ')' then (0 - 1, p2_next + 1) else
       let param = parse_ident (src, p2_next) in
       let (param_name, param_end) = param in
       let p3 =
         let param_next = skip_space (src, param_end) in
-        if src.[param_next] == 44 then
+        if src.[param_next] == ',' then
           (skip_to_close_paren (src, param_next + 1)) + 1
         else
-          expect_ch (src, (param_end, 41))
+          expect_char (src, (param_end, ')'))
       in
       (param_name, p3)
+in
+let rec bind_parse_params_after_ident state =
+  let (parsed, src) = state in
+  let (name, pos) = parsed in
+  let params = parse_params (src, pos) in
+  let (param, params_end) = params in
+  ((name, param), params_end)
+in
+let rec skip_decl_statement state =
+  let (src, pos) = state in
+  if src.[pos] == ';' then pos + 1 else skip_decl_statement (src, pos + 1)
+in
+let rec parse_function_header state =
+  let (src, pos) = state in
+  let typed = parse_type_token (src, pos) in
+  let after_pointer = bind_skip_pointer_keep (typed, src) in
+  let named = bind_parse_ident (after_pointer, src) in
+  let (name, name_end) = named in
+  let name_next = skip_space (src, name_end) in
+  if src.[name_next] == '(' then bind_parse_params_after_ident (named, src) else ((0 - 1, 0), skip_decl_statement (src, pos))
 in
 let rec skip_call_statement state =
   let (src, pos0) = state in
@@ -1227,15 +1280,10 @@ let rec parse_program_loop state =
   if is_typedef_at (src, pos) then parse_program_loop (src, (skip_struct_declaration (src, pos), funcs)) else
   if is_enum_at (src, pos) then parse_program_loop (src, (skip_statement (src, pos), funcs)) else
   if is_struct_at (src, pos) then parse_program_loop (src, (skip_struct_declaration (src, pos), funcs)) else
-    let p0 = expect_type (src, pos) in
-    let p0_next = skip_space (src, p0) in
-    let name_pos = if src.[p0_next] == 42 then skip_space (src, p0_next + 1) else p0 in
-    let name_parsed = parse_ident (src, name_pos) in
-    let (name, name_end) = name_parsed in
-    let name_next = skip_space (src, name_end) in
-    if src.[name_next] == 40 then
-    let params = parse_params (src, name_end) in
-    let (param, p1) = params in
+    let header = parse_function_header (src, pos) in
+    let (name_and_param, p1) = header in
+    let (name, param) = name_and_param in
+    if name < 0 then parse_program_loop (src, (p1, funcs)) else
     let p1_next = skip_space (src, p1) in
     if src.[p1_next] == 59 then
       parse_program_loop (src, (p1_next + 1, funcs))
@@ -1283,8 +1331,6 @@ let rec parse_program_loop state =
         in
         let p4 = expect_ch (src, (p3, 125)) in
         parse_program_loop (src, (p4, extend_func (name, (kind, (coerced, funcs)))))
-    else
-      parse_program_loop (src, (skip_statement (src, pos), funcs))
 in
 let rec parse_program src =
   parse_program_loop (src, (0, empty_funcs 0))
