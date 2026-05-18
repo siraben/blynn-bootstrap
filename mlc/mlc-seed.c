@@ -413,6 +413,44 @@ static void parse_write(void)
   emit_call_write_byte();
 }
 
+static int parse_string_char(void)
+{
+  int c;
+  if (pos >= src_len) die("unterminated string");
+  c = src[pos];
+  pos = pos + 1;
+  if (c == '\\') {
+    if (pos >= src_len) die("unterminated string escape");
+    c = src[pos];
+    pos = pos + 1;
+    if (c == 'n') return 10;
+    if (c == 't') return 9;
+    if (c == '\\') return 92;
+    if (c == '"') return 34;
+    die("unsupported string escape");
+  }
+  if (c == '"') return -1;
+  return c;
+}
+
+static void parse_write_string(void)
+{
+  int c;
+  int wrote = 0;
+  if (!take_keyword("write_string")) die("expected write_string");
+  skip_space();
+  if (pos >= src_len || src[pos] != '"') die("expected string");
+  pos = pos + 1;
+  c = parse_string_char();
+  while (c >= 0) {
+    emit_const(c);
+    emit_call_write_byte();
+    wrote = 1;
+    c = parse_string_char();
+  }
+  if (!wrote) emit_const(0);
+}
+
 static long measure_expr(long start, long *end_out)
 {
   FILE *saved_file = out_file;
@@ -608,6 +646,7 @@ static void parse_expr(void)
   if (keyword_at("let")) parse_let();
   else if (keyword_at("match")) parse_match();
   else if (keyword_at("if")) parse_if();
+  else if (keyword_at("write_string")) parse_write_string();
   else if (keyword_at("write_byte")) parse_write();
   else parse_cmp();
 }
