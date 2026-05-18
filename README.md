@@ -70,6 +70,7 @@ nix build .#tests.mzvm.host-vs-seed
 nix build .#mlc-interp-seed.host
 nix build .#mlc-interp-seed.m2
 nix build .#tests.mlc.interp-seed.host-vs-m2
+nix build .#mlc-stage-00-core
 nix build .#mlc-seed.host
 nix build .#mlc-seed.m2
 nix build .#tests.mlc.seed.host-vs-m2

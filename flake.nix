@@ -782,6 +782,24 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           install -Dm644 ${mlcInterpSeedHost}/share/mlc/stages/00-core.out "$out/00-core.out"
         '';
 
+        mlcStage00Core = stageRun {
+          pname = "mlc-stage-00-core";
+          nativeBuildInputs = [
+            mlcInterpSeedM2
+          ];
+          description = "First named MLC core-language bootstrap stage";
+          buildScript = ''
+            cp ${mlcSrc}/stages/00-core.ml 00-core.ml
+            actual="$(${mlcInterpSeedM2}/bin/mlc-interp-seed 00-core.ml)"
+            test "$actual" = OOK
+            ${mlcInterpSeedM2}/bin/mlc-interp-seed 00-core.ml > 00-core.out
+          '';
+          installScript = ''
+            install -Dm644 00-core.ml "$out/share/mlc/stages/00-core.ml"
+            install -Dm644 00-core.out "$out/share/mlc/stages/00-core.out"
+          '';
+        };
+
         mlcSeedHost = pkgs.stdenv.mkDerivation {
           pname = "mlc-seed-host";
           version = "0-unstable-2026-05-06";
@@ -1712,6 +1730,7 @@ DEFINE SYSCALL 0F05
           mlc = {
             interp-seed.host = mlcInterpSeedHost;
             interp-seed.m2 = mlcInterpSeedM2;
+            stage.core00 = mlcStage00Core;
             seed.host = mlcSeedHost;
             seed.m2 = mlcSeedM2;
             byte.seed = mlcByteSeed;
@@ -1719,6 +1738,7 @@ DEFINE SYSCALL 0F05
           };
           mlc-interp-seed.host = mlcInterpSeedHost;
           mlc-interp-seed.m2 = mlcInterpSeedM2;
+          mlc-stage-00-core = mlcStage00Core;
           mlc-seed.host = mlcSeedHost;
           mlc-seed.m2 = mlcSeedM2;
 
@@ -1772,6 +1792,7 @@ DEFINE SYSCALL 0F05
             tinyccM1.native-vs-faithful = tinyccM1CompareNativeFaithful;
             mzvm.host-vs-seed = mzvmHostVsSeed;
             mlc.interp-seed.host-vs-m2 = mlcInterpSeedHostVsM2;
+            mlc.stage.core00 = mlcStage00Core;
             mlc.seed.host-vs-m2 = mlcSeedHostVsM2;
             mlc.byte.seed = mlcByteSeed;
             mlc.byte.committed = mlcByteCommitted;
@@ -1790,6 +1811,7 @@ DEFINE SYSCALL 0F05
           mzvm-host-vs-seed = mzvmHostVsSeed;
           mlc-interp-seed-m2 = mlcInterpSeedM2;
           mlc-interp-seed-host-vs-m2 = mlcInterpSeedHostVsM2;
+          mlc-stage-00-core = mlcStage00Core;
           mlc-seed-m2 = mlcSeedM2;
           mlc-seed-host-vs-m2 = mlcSeedHostVsM2;
           mlc-byte-seed = mlcByteSeed;
