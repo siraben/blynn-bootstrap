@@ -1395,12 +1395,19 @@ OK"
             printf 'let rec out ch = write_byte ch in out 79' | ${mzvmSeedM2}/bin/mzvm-seed mlc.byte > compiled-final-call.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-final-call.mzbc)"
             test "$actual" = O
+            printf 'let rec id x = x in write_byte (id 40 + 39)' | ${mzvmSeedM2}/bin/mzvm-seed mlc.byte > compiled-call-precedence.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-call-precedence.mzbc)"
+            test "$actual" = O
             ${mzvmSeedM2}/bin/mzvm-seed mlc.byte < ${./tests/mlc/read-byte.ml} > compiled-read-byte.mzbc
             actual="$(printf O | ${mzvmSeedM2}/bin/mzvm-seed compiled-read-byte.mzbc)"
             test "$actual" = OK
             printf 'let bytes = Bytes.create 3 in let zero = 0 in let _ = bytes.[zero] <- 79 in let _ = bytes.(zero + 1) <- 75 in let _ = bytes.[2] <- 10 in let _ = write_byte bytes.[0] in let _ = write_byte bytes.(1) in write_byte bytes.[2]' | ${mzvmSeedM2}/bin/mzvm-seed mlc.byte > compiled-dynamic-bytes.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-dynamic-bytes.mzbc)"
             test "$actual" = OK
+            ${mzvmSeedM2}/bin/mzvm-seed mlc.byte < ${mlcSrc}/mlc.ml > compiled-selfhost.mzbc
+            printf 'write_byte (40+39)' | ${mzvmSeedM2}/bin/mzvm-seed compiled-selfhost.mzbc > compiled-selfhost-smoke.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-selfhost-smoke.mzbc)"
+            test "$actual" = O
           '';
           installScript = ''
             install -Dm644 mlc.byte "$out/share/mlc/mlc.byte"
@@ -1437,8 +1444,11 @@ OK"
             install -Dm644 compiled-adt-tuple-payload.mzbc "$out/share/mlc/compiled-adt-tuple-payload.mzbc"
             install -Dm644 compiled-adt-recursion.mzbc "$out/share/mlc/compiled-adt-recursion.mzbc"
             install -Dm644 compiled-final-call.mzbc "$out/share/mlc/compiled-final-call.mzbc"
+            install -Dm644 compiled-call-precedence.mzbc "$out/share/mlc/compiled-call-precedence.mzbc"
             install -Dm644 compiled-read-byte.mzbc "$out/share/mlc/compiled-read-byte.mzbc"
             install -Dm644 compiled-dynamic-bytes.mzbc "$out/share/mlc/compiled-dynamic-bytes.mzbc"
+            install -Dm644 compiled-selfhost.mzbc "$out/share/mlc/compiled-selfhost.mzbc"
+            install -Dm644 compiled-selfhost-smoke.mzbc "$out/share/mlc/compiled-selfhost-smoke.mzbc"
           '';
         };
 

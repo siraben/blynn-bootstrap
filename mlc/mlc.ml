@@ -1,5 +1,5 @@
 let rec byte n =
-  n - (n / 256) * 256
+  n - ((n / 256) * 256)
 in
 let rec emit_u32 n =
   let _ = write_byte (byte n) in
@@ -209,7 +209,7 @@ let rec parse_number_loop state =
   let (src, pair) = state in
   let (acc, pos) = pair in
   let ch = src.[pos] in
-  if is_digit ch then parse_number_loop (src, (acc * 10 + ch - 48, pos + 1))
+  if is_digit ch then parse_number_loop (src, (((acc * 10) + ch) - 48, pos + 1))
   else (acc, pos)
 in
 let rec parse_number input =
@@ -220,13 +220,13 @@ let rec parse_number input =
   else exit 1
 in
 let rec ident_hash n =
-  n - (n / 1000000007) * 1000000007
+  n - ((n / 1000000007) * 1000000007)
 in
 let rec parse_ident_loop state =
   let (src, pair) = state in
   let (acc, pos) = pair in
   let ch = src.[pos] in
-  if is_ident ch then parse_ident_loop (src, (ident_hash (acc * 131 + ch), pos + 1))
+  if is_ident ch then parse_ident_loop (src, (ident_hash ((acc * 131) + ch), pos + 1))
   else (acc, pos)
 in
 let rec parse_ident input =
@@ -241,16 +241,15 @@ let rec parse_char input =
   let ch = src.[pos + 1] in
   (ch, pos + 3)
 in
-let empty_ctors = (0 - 1, (0, (0, 0))) in
 let rec pack_ctor state =
   let (tag, has_arg) = state in
-  tag * 2 + has_arg
+  (tag * 2) + has_arg
 in
 let rec ctor_tag packed =
   packed / 2
 in
 let rec ctor_has_arg packed =
-  packed - (packed / 2) * 2
+  packed - ((packed / 2) * 2)
 in
 let rec extend_ctor state =
   let (name, pair) = state in
@@ -268,7 +267,6 @@ let rec lookup_ctor state =
   let packed = find_ctor state in
   if packed < 0 then exit 1 else packed
 in
-let empty_funcs = (0 - 1, (0, (0, 0))) in
 let rec extend_func state =
   let (name, pair) = state in
   let (param, pair2) = pair in
@@ -926,11 +924,101 @@ let rec compile_expr input =
     let depth = find_env (env, name) in
     let found_func = if depth < 0 then find_func (funcs, name) else 0 in
     if found_func == 1 then
-      let arg = compile_expr (src, (name_end, (env, (ctors, (funcs, emit))))) in
+      let arg_pos = skip_space (src, name_end) in
+      let arg =
+        if src.[arg_pos] == 40 then
+          let inner = compile_expr (src, (arg_pos + 1, (env, (ctors, (funcs, emit))))) in
+          let (inner_len, inner_end0) = inner in
+          let inner_end = skip_space (src, inner_end0) in
+          if src.[inner_end] == 44 then
+            let push_len = emit_push emit in
+            let right = compile_expr (src, (inner_end + 1, (shift_env env, (ctors, (funcs, emit))))) in
+            let (right_len, right_end0) = right in
+            let right_end = skip_space (src, right_end0) in
+            if src.[right_end] == 41 then
+              let block_len = emit_makeblock (emit, (0, 2)) in
+              (inner_len + push_len + right_len + block_len, right_end + 1)
+            else
+              exit 1
+          else if src.[inner_end] == 41 then (inner_len, inner_end + 1) else exit 1
+        else
+          compile_atom (src, (arg_pos, (env, (ctors, emit))))
+      in
       let (arg_len, arg_end) = arg in
       let target = func_body_start (funcs, name) in
       let call_len = emit_call (emit, target) in
-      (arg_len + call_len, arg_end)
+      let left_len = arg_len + call_len in
+      let next = skip_space (src, arg_end) in
+      if src.[next] == 43 then
+        let push_len = emit_push (emit) in
+        let right = compile_expr (src, (next + 1, (shift_env (env), (ctors, (funcs, emit))))) in
+        let (right_len, done_pos) = right in
+        let add_len = emit_add (emit) in
+        (left_len + push_len + right_len + add_len, done_pos)
+      else if src.[next] == 45 then
+        let push_len = emit_push (emit) in
+        let right = compile_expr (src, (next + 1, (shift_env (env), (ctors, (funcs, emit))))) in
+        let (right_len, done_pos) = right in
+        let sub_len = emit_sub (emit) in
+        (left_len + push_len + right_len + sub_len, done_pos)
+      else if src.[next] == 42 then
+        let push_len = emit_push (emit) in
+        let right = compile_expr (src, (next + 1, (shift_env (env), (ctors, (funcs, emit))))) in
+        let (right_len, done_pos) = right in
+        let mul_len = emit_mul (emit) in
+        (left_len + push_len + right_len + mul_len, done_pos)
+      else if src.[next] == 47 then
+        let push_len = emit_push (emit) in
+        let right = compile_expr (src, (next + 1, (shift_env (env), (ctors, (funcs, emit))))) in
+        let (right_len, done_pos) = right in
+        let div_len = emit_div (emit) in
+        (left_len + push_len + right_len + div_len, done_pos)
+      else if src.[next] == 60 then
+        if src.[next + 1] == 61 then
+          let push_len = emit_push (emit) in
+          let right = compile_expr (src, (next + 2, (shift_env (env), (ctors, (funcs, emit))))) in
+          let (right_len, done_pos) = right in
+          let le_len = emit_le (emit) in
+          (left_len + push_len + right_len + le_len, done_pos)
+        else
+          let push_len = emit_push (emit) in
+          let right = compile_expr (src, (next + 1, (shift_env (env), (ctors, (funcs, emit))))) in
+          let (right_len, done_pos) = right in
+          let lt_len = emit_lt (emit) in
+          (left_len + push_len + right_len + lt_len, done_pos)
+      else if src.[next] == 62 then
+        if src.[next + 1] == 61 then
+          let push_len = emit_push (emit) in
+          let right = compile_expr (src, (next + 2, (shift_env (env), (ctors, (funcs, emit))))) in
+          let (right_len, done_pos) = right in
+          let ge_len = emit_ge (emit) in
+          (left_len + push_len + right_len + ge_len, done_pos)
+        else
+          let push_len = emit_push (emit) in
+          let right = compile_expr (src, (next + 1, (shift_env (env), (ctors, (funcs, emit))))) in
+          let (right_len, done_pos) = right in
+          let gt_len = emit_gt (emit) in
+          (left_len + push_len + right_len + gt_len, done_pos)
+      else if src.[next] == 33 then
+        if src.[next + 1] == 61 then
+          let push_len = emit_push (emit) in
+          let right = compile_expr (src, (next + 2, (shift_env (env), (ctors, (funcs, emit))))) in
+          let (right_len, done_pos) = right in
+          let ne_len = emit_ne (emit) in
+          (left_len + push_len + right_len + ne_len, done_pos)
+        else
+          exit 1
+      else if src.[next] == 61 then
+        if src.[next + 1] == 61 then
+          let push_len = emit_push (emit) in
+          let right = compile_expr (src, (next + 2, (shift_env (env), (ctors, (funcs, emit))))) in
+          let (right_len, done_pos) = right in
+          let eq_len = emit_eq (emit) in
+          (left_len + push_len + right_len + eq_len, done_pos)
+        else
+          exit 1
+      else
+        (left_len, arg_end)
     else
     let ctor = if depth < 0 then find_ctor (ctors, name) else 0 - 1 in
     if ctor >= 0 then
@@ -1248,7 +1336,7 @@ in
 let rec emit_string_program input =
   let (src, pos) = input in
   let len = parse_string_len (src, (pos, 0)) in
-  let _ = emit_header (len * 14 + 1) in
+  let _ = emit_header ((len * 14) + 1) in
   emit_string_loop (src, pos)
 in
 let rec compile_write_byte input =
@@ -1375,12 +1463,14 @@ let rec compile_byte_code input =
 let rec emit_byte_source input =
   let (src, start_pos) = input in
   let empty_env = (0 - 1, (0, 0)) in
-  let parsed_types = parse_type_decls (src, (start_pos, empty_ctors)) in
+  let start_ctors = (0 - 1, (0, (0, 0))) in
+  let start_funcs = (0 - 1, (0, (0, 0))) in
+  let parsed_types = parse_type_decls (src, (start_pos, start_ctors)) in
   let (body_pos, ctors) = parsed_types in
-  let measured = compile_byte_code (src, (body_pos, (empty_env, (ctors, (empty_funcs, (0, 0)))))) in
+  let measured = compile_byte_code (src, (body_pos, (empty_env, (ctors, (start_funcs, (0, 0)))))) in
   let (code_len, done_pos) = measured in
   let _ = emit_header (code_len + 1) in
-  let _ = compile_byte_code (src, (body_pos, (empty_env, (ctors, (empty_funcs, (0, 1)))))) in
+  let _ = compile_byte_code (src, (body_pos, (empty_env, (ctors, (start_funcs, (0, 1)))))) in
   write_byte 0
 in
 let rec compile_program src =
