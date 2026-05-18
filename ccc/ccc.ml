@@ -323,6 +323,30 @@ let rec parse_main_prefix state =
     else
       parse_main_prefix (src, (skip_statement (src, pos), (funcs, env)))
 in
+let rec parse_condition_value state =
+  let (src, pair) = state in
+  let (pos0, pair2) = pair in
+  let (funcs, env) = pair2 in
+  let left = parse_expr_value (src, (pos0, (funcs, env))) in
+  let (left_value, left_end) = left in
+  let next = skip_space (src, left_end) in
+  if src.[next] == 61 then
+    if src.[next + 1] == 61 then
+      let right = parse_expr_value (src, (next + 2, (funcs, env))) in
+      let (right_value, right_end) = right in
+      if left_value == right_value then (1, right_end) else (0, right_end)
+    else
+      exit 1
+  else if src.[next] == 33 then
+    if src.[next + 1] == 61 then
+      let right = parse_expr_value (src, (next + 2, (funcs, env))) in
+      let (right_value, right_end) = right in
+      if left_value == right_value then (0, right_end) else (1, right_end)
+    else
+      exit 1
+  else
+    (left_value, left_end)
+in
 let rec parse_return_value state =
   let (src, pair) = state in
   let (pos0, pair2) = pair in
@@ -341,7 +365,7 @@ let rec parse_main_body state =
   if is_return_at (src, pos) then parse_return_value (src, (pos, (funcs, env))) else
   if is_if_at (src, pos) then
     let p0 = expect_ch (src, (pos + 2, 40)) in
-    let cond = parse_expr_value (src, (p0, (funcs, env))) in
+    let cond = parse_condition_value (src, (p0, (funcs, env))) in
     let (cond_value, cond_end) = cond in
     let p1 = expect_ch (src, (cond_end, 41)) in
     let branch = parse_return_value (src, (p1, (funcs, env))) in
