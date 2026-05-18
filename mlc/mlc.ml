@@ -57,6 +57,10 @@ let rec emit_add emit =
   let _ = emit_byte_if (emit, 5) in
   1
 in
+let rec emit_eq emit =
+  let _ = emit_byte_if (emit, 9) in
+  1
+in
 let rec emit_lt emit =
   let _ = emit_byte_if (emit, 10) in
   1
@@ -193,6 +197,15 @@ let rec compile_simple_expr input =
     let (right_len, done_pos) = right in
     let lt_len = emit_lt emit in
     (left_len + push_len + right_len + lt_len, done_pos)
+  else if src.[next] == 61 then
+    if src.[next + 1] == 61 then
+      let push_len = emit_push emit in
+      let right = compile_simple_expr (src, (next + 2, (shift_env env, emit))) in
+      let (right_len, done_pos) = right in
+      let eq_len = emit_eq emit in
+      (left_len + push_len + right_len + eq_len, done_pos)
+    else
+      exit 1
   else
     left
 in
@@ -248,6 +261,15 @@ let rec compile_expr input =
     let (right_len, done_pos) = right in
     let lt_len = emit_lt emit in
     (left_len + push_len + right_len + lt_len, done_pos)
+  else if src.[next] == 61 then
+    if src.[next + 1] == 61 then
+      let push_len = emit_push emit in
+      let right = compile_expr (src, (next + 2, (shift_env env, emit))) in
+      let (right_len, done_pos) = right in
+      let eq_len = emit_eq emit in
+      (left_len + push_len + right_len + eq_len, done_pos)
+    else
+      exit 1
   else
     left
 in
