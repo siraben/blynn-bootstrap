@@ -1,0 +1,2 @@
+write_byte 'O';
+write_string "\075\010"

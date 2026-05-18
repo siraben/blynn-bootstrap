@@ -224,6 +224,10 @@ the same first language, parses a tiny but complete ML0 source dialect, lowers
 it to VM bytecode, and emits a `.mzbc` artifact. From there we increase the
 compiler dialect by stages until it can compile the current compiler source,
 then the full `ccc`.
+Every promoted compiler stage must eventually satisfy the handoff invariant:
+it compiles its own source and the next compiler source. Smoke stages may exist
+to grow the dialect, but they are not treated as self-hosting stages until that
+check passes.
 
 The first real parser/compiler for ADTs and `match` lives in `mlc.ml` itself:
 `mlc.ml` parses the full mini-OCaml source language, represents constructors

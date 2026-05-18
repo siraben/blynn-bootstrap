@@ -831,14 +831,34 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           buildScript = ''
             cp ${mlcSrc}/stages/02-ml0-compiler.ml 02-ml0-compiler.ml
             cp ${mlcSrc}/stages/03-ok.ml0 03-ok.ml0
+            cp ${mlcSrc}/stages/03-char-string.ml0 03-char-string.ml0
             ${mlcInterpSeedM2}/bin/mlc-interp-seed 02-ml0-compiler.ml < 03-ok.ml0 > 03-ok.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-ok.mzbc)"
             test "$actual" = OK
+            ${mlcInterpSeedM2}/bin/mlc-interp-seed 02-ml0-compiler.ml < 03-char-string.ml0 > 03-char-string.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-char-string.mzbc)"
+            test "$actual" = OK
+            for name in ok arithmetic conditional comparison let-binding sequence negative identifiers string; do
+              ${mlcInterpSeedM2}/bin/mlc-interp-seed 02-ml0-compiler.ml < ${./tests/mlc}/$name.ml > $name.mzbc
+              ${mzvmSeedM2}/bin/mzvm-seed $name.mzbc > $name.out
+            done
+            test "$(cat ok.out)" = OK
+            test "$(cat arithmetic.out)" = H-
+            test "$(cat conditional.out)" = OK
+            test "$(cat comparison.out)" = "OK
+OK"
+            test "$(cat let-binding.out)" = OK
+            test "$(cat sequence.out)" = OK
+            test "$(cat negative.out)" = OK
+            test "$(cat identifiers.out)" = O
+            test "$(cat string.out)" = "O	K"
           '';
           installScript = ''
             install -Dm644 02-ml0-compiler.ml "$out/share/mlc/stages/02-ml0-compiler.ml"
             install -Dm644 03-ok.ml0 "$out/share/mlc/stages/03-ok.ml0"
+            install -Dm644 03-char-string.ml0 "$out/share/mlc/stages/03-char-string.ml0"
             install -Dm644 03-ok.mzbc "$out/share/mlc/stages/03-ok.mzbc"
+            install -Dm644 03-char-string.mzbc "$out/share/mlc/stages/03-char-string.mzbc"
           '';
         };
 

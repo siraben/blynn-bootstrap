@@ -11,7 +11,7 @@ plan requirement.
 |------|-------------|------------------|--------|
 | 1 | `mzvm-seed.m2` | `mzvm/mzvm-seed.c`; flake target `mzvm-seed.m2`; builds with M2-Planet and runs generated `OK` and block `.mzbc` fixtures with the semispace-copying VM | complete for the current VM smoke |
 | 2 | `mzvm.host` | `mzvm/mzvm.c`; flake target `mzvm.host`; `tests.mzvm.host-vs-seed` compares host and seed output; host check also builds with `MZVM_HEAP_LIMIT=16` and runs a GC-forcing bytecode fixture | complete for the current VM smoke |
-| 3 | `mlc-interp-seed.m2` | `mlc/mlc-interp-seed.c`; stage sources under `mlc/stages`; flake targets `mlc-interp-seed.host`, `mlc-interp-seed.m2`, `mlc-stage-00-core`, `mlc-stage-01-parenthetical`, `mlc-stage-02-ml0-compiler`, and `tests.mlc.interp-seed.host-vs-m2`; host and M2 interpreters produce identical output for the first named core stage; `01-parenthetical.ml` parses `02-ok.mzp`, emits `.mzbc`, and hands off to `mzvm-seed`; `02-ml0-compiler.ml` parses `03-ok.ml0`, emits `.mzbc`, and hands off to `mzvm-seed` | partial: tree-walking C root and first ML-to-VM compiler stage exist, but later full-language stages are not implemented |
+| 3 | `mlc-interp-seed.m2` | `mlc/mlc-interp-seed.c`; stage sources under `mlc/stages`; flake targets `mlc-interp-seed.host`, `mlc-interp-seed.m2`, `mlc-stage-00-core`, `mlc-stage-01-parenthetical`, `mlc-stage-02-ml0-compiler`, and `tests.mlc.interp-seed.host-vs-m2`; host and M2 interpreters produce identical output for the first named core stage; `01-parenthetical.ml` parses `02-ok.mzp`, emits `.mzbc`, and hands off to `mzvm-seed`; `02-ml0-compiler.ml` compiles a real C-seed fixture subset plus char/string literal smoke sources to `.mzbc` and hands off to `mzvm-seed` | partial: tree-walking C root and first parity-oriented ML-to-VM compiler stage exist, but the compiler cannot yet compile its own source and the next compiler source |
 | 3b | transitional `mlc-seed.m2` | `mlc/mlc-seed.c`; core fixtures under `tests/mlc`; flake targets `mlc-seed.host`, `mlc-seed.m2`, and `tests.mlc.seed.host-vs-m2`; host and M2 seed compilers emit byte-identical `.mzbc` for the seed-core fixture corpus and `mzvm-seed` runs those fixtures | transitional: direct C bytecode compiler remains for smoke coverage while the staged interpreter path grows |
 | 4 | committed `mlc.byte` | `mlc/mlc.byte`; flake targets `mlc.byte.seed` and `tests.mlc.byte.committed`; the committed bytecode matches M2-seed output for the current core-language `mlc/mlc.ml` lexer/parser/emitter spine, which runs under `mzvm-seed` | partial: tiny compiler-shaped bytecode only, not self-hosted |
 | 5 | `mlc.byte.selfhost` | none | missing |
@@ -32,9 +32,11 @@ plan requirement.
 
 1. Grow the named `mlc/stages` path from `mlc-interp-seed.c`, keeping the C
    root a tree-walking interpreter for a tiny core ML.
-2. Move ADT declarations, pattern parsing, and pattern compilation into
+2. Promote a compiler stage only when it can compile its own source and the
+   next stage source.
+3. Move ADT declarations, pattern parsing, and pattern compilation into
    `mlc.ml` instead of strengthening the C seed further.
-3. Split tests into seed-core fixtures and, once `mlc.byte` can compile them,
+4. Split tests into seed-core fixtures and, once `mlc.byte` can compile them,
    full-language ADT/pattern fixtures.
-4. Only after the core seed can compile `mlc.ml`, commit `mlc.byte` and add the
+5. Only after the core seed can compile `mlc.ml`, commit `mlc.byte` and add the
    self-host byte equality target.
