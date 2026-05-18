@@ -692,6 +692,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           "adt"
           "identifiers"
           "string"
+          "exit"
         ];
         mlcInputFixtures = [
           "read-byte"
@@ -730,6 +731,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             printf 'OK\n' > adt.expected
             printf 'O\n' > identifiers.expected
             printf 'O\tK\n' > string.expected
+            printf 'OK\n' > exit.expected
             printf 'OK\n' > read-byte.expected
             for name in ${lib.concatStringsSep " " mlcFixtures}; do
               cmp $name.expected $name.out
@@ -773,6 +775,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             cp ${./tests/mlc/adt.ml} adt.ml
             cp ${./tests/mlc/identifiers.ml} identifiers.ml
             cp ${./tests/mlc/string.ml} string.ml
+            cp ${./tests/mlc/exit.ml} exit.ml
             cp ${./tests/mlc/read-byte.ml} read-byte.ml
             compile_m2 mlc-seed.c mlc-seed
             ./mlc-seed ok.ml ok.mzbc
@@ -799,6 +802,9 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             ./mlc-seed string.ml string.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed string.mzbc)"
             test "$actual" = "O	K"
+            ./mlc-seed exit.ml exit.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed exit.mzbc)"
+            test "$actual" = OK
             ./mlc-seed read-byte.ml read-byte.mzbc
             printf 'O' > input.txt
             actual="$(${mzvmSeedM2}/bin/mzvm-seed read-byte.mzbc < input.txt)"
@@ -815,6 +821,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             install -Dm644 adt.mzbc "$out/share/mlc/tests/adt.mzbc"
             install -Dm644 identifiers.mzbc "$out/share/mlc/tests/identifiers.mzbc"
             install -Dm644 string.mzbc "$out/share/mlc/tests/string.mzbc"
+            install -Dm644 exit.mzbc "$out/share/mlc/tests/exit.mzbc"
             install -Dm644 read-byte.mzbc "$out/share/mlc/tests/read-byte.mzbc"
           '';
         };

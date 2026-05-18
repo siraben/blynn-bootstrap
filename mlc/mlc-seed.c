@@ -270,6 +270,13 @@ static void emit_call_read_byte(void)
   emit_u32(0);
 }
 
+static void emit_call_exit(void)
+{
+  emit_byte(OP_C_CALL);
+  emit_u32(1);
+  emit_u32(2);
+}
+
 static void emit_pop(long count)
 {
   emit_byte(OP_POP);
@@ -422,6 +429,13 @@ static void parse_write(void)
   if (!take_keyword("write_byte")) die("expected write_byte");
   parse_cmp();
   emit_call_write_byte();
+}
+
+static void parse_exit(void)
+{
+  if (!take_keyword("exit")) die("expected exit");
+  parse_cmp();
+  emit_call_exit();
 }
 
 static int parse_string_char(void)
@@ -657,6 +671,7 @@ static void parse_expr(void)
   if (keyword_at("let")) parse_let();
   else if (keyword_at("match")) parse_match();
   else if (keyword_at("if")) parse_if();
+  else if (keyword_at("exit")) parse_exit();
   else if (keyword_at("write_string")) parse_write_string();
   else if (keyword_at("write_byte")) parse_write();
   else parse_cmp();

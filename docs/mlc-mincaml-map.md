@@ -84,7 +84,7 @@ Deleted MinCaml stages:
 
 The checked-in `mlc-seed.c` is deliberately smaller than this map. It is now a
 tiny recursive-descent compiler for `let` bindings, `if ... then ... else
-...`, `read_byte`, `write_byte`, integer literals, comparisons,
+...`, `read_byte`, `write_byte`, `exit`, integer literals, comparisons,
 parenthesized arithmetic, `+ - * /`, nested OCaml block comments,
 multi-character local identifiers, simple top-level ADT declarations of the
 form `type t = A | B of int`, constructor allocation from those declarations,
