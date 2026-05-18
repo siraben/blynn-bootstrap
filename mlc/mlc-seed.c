@@ -496,6 +496,17 @@ static void parse_atom(void)
     }
     if (pos != init_end) die("internal array parse mismatch");
     emit_makeblock(0, size);
+  } else if (keyword_at("Bytes.create")) {
+    take_keyword("Bytes.create");
+    size = parse_int_literal();
+    if (size < 0) die("negative bytes size");
+    emit_const(0);
+    i = 1;
+    while (i < size) {
+      emit_push();
+      i = i + 1;
+    }
+    emit_makeblock(0, size);
   } else if (pos < src_len && src[pos] >= 'A' && src[pos] <= 'Z') {
     take_ident_span(&name_start, &name_len);
     ctor = lookup_constructor(name_start, name_len);
@@ -515,10 +526,17 @@ static void parse_atom(void)
     if (var_index < 0) die("unknown variable");
     emit_acc(var_index);
     if (take_char('.')) {
-      expect_char('(');
-      index = parse_int_literal();
-      if (index < 0) die("negative array index");
-      expect_char(')');
+      if (take_char('(')) {
+        index = parse_int_literal();
+        if (index < 0) die("negative array index");
+        expect_char(')');
+      } else if (take_char('[')) {
+        index = parse_int_literal();
+        if (index < 0) die("negative bytes index");
+        expect_char(']');
+      } else {
+        die("expected field index");
+      }
       emit_getfield(index);
     }
   } else {
@@ -984,13 +1002,18 @@ static int parse_array_set(void)
     pos = saved_pos;
     return 0;
   }
-  if (!take_char('(')) {
+  if (take_char('(')) {
+    index = parse_int_literal();
+    if (index < 0) die("negative array index");
+    expect_char(')');
+  } else if (take_char('[')) {
+    index = parse_int_literal();
+    if (index < 0) die("negative bytes index");
+    expect_char(']');
+  } else {
     pos = saved_pos;
     return 0;
   }
-  index = parse_int_literal();
-  if (index < 0) die("negative array index");
-  expect_char(')');
   if (!take_char('<')) {
     pos = saved_pos;
     return 0;

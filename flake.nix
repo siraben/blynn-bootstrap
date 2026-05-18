@@ -695,6 +695,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           "negative"
           "let-binding"
           "array"
+          "bytes"
           "function"
           "match"
           "adt"
@@ -742,6 +743,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             printf 'OK\n' > negative.expected
             printf 'OK\n' > let-binding.expected
             printf 'OK\n' > array.expected
+            printf 'OK\n' > bytes.expected
             printf 'OK\n' > function.expected
             printf 'OK\n' > match.expected
             printf 'OK\n' > adt.expected
@@ -794,6 +796,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             cp ${./tests/mlc/negative.ml} negative.ml
             cp ${./tests/mlc/let-binding.ml} let-binding.ml
             cp ${./tests/mlc/array.ml} array.ml
+            cp ${./tests/mlc/bytes.ml} bytes.ml
             cp ${./tests/mlc/function.ml} function.ml
             cp ${./tests/mlc/match.ml} match.ml
             cp ${./tests/mlc/adt.ml} adt.ml
@@ -827,6 +830,9 @@ OK"
             test "$actual" = OK
             ./mlc-seed array.ml array.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed array.mzbc)"
+            test "$actual" = OK
+            ./mlc-seed bytes.ml bytes.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed bytes.mzbc)"
             test "$actual" = OK
             ./mlc-seed function.ml function.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed function.mzbc)"
@@ -873,6 +879,7 @@ OK"
             install -Dm644 negative.mzbc "$out/share/mlc/tests/negative.mzbc"
             install -Dm644 let-binding.mzbc "$out/share/mlc/tests/let-binding.mzbc"
             install -Dm644 array.mzbc "$out/share/mlc/tests/array.mzbc"
+            install -Dm644 bytes.mzbc "$out/share/mlc/tests/bytes.mzbc"
             install -Dm644 function.mzbc "$out/share/mlc/tests/function.mzbc"
             install -Dm644 match.mzbc "$out/share/mlc/tests/match.mzbc"
             install -Dm644 adt.mzbc "$out/share/mlc/tests/adt.mzbc"
