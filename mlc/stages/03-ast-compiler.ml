@@ -447,7 +447,15 @@ let rec parse_expr_prec state =
       else
         let peeked = p_peek (src, pos) in
         let (ch, atom_pos) = peeked in
-        if ch == '(' then
+        if ch == '-' then
+          let rhs = parse_expr_prec (src, (atom_pos + 1, (allow_seq, (4, (0, EInt 0))))) in
+          let (rhs_ast, rhs_end) = rhs in
+          (EMore (ESub (EInt 0, rhs_ast)), rhs_end)
+        else if ch == '!' then
+          let rhs = parse_expr_prec (src, (atom_pos + 1, (allow_seq, (4, (0, EInt 0))))) in
+          let (rhs_ast, rhs_end) = rhs in
+          (EMore (EMore2 (EEq (rhs_ast, EBool 0))), rhs_end)
+        else if ch == '(' then
           let inner_pos = skip_space (src, atom_pos + 1) in
           if src.[inner_pos] == ')' then
             p_return (inner_pos + 1, unit_expr 0)

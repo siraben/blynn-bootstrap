@@ -1550,6 +1550,9 @@ OK"
             printf 'write_byte (158 / 2)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-div.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-div.mzbc)"
             test "$actual" = O
+            printf 'write_byte (-1 + 80); write_byte (if !false then 79 else 88)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-unary.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-unary.mzbc)"
+            test "$actual" = OO
             printf "write_byte (if 1 == 1 then 'O' else 'X')" | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-if.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-if.mzbc)"
             test "$actual" = O
@@ -1586,6 +1589,9 @@ OK"
             if printf 'write_byte (true - 1)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-arithmetic-type-error.mzbc; then
               exit 1
             fi
+            if printf 'write_byte (!1)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-unary-type-error.mzbc; then
+              exit 1
+            fi
             if printf 'write_byte (if true < false then 79 else 88)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-comparison-type-error.mzbc; then
               exit 1
             fi
@@ -1608,6 +1614,7 @@ OK"
             install -Dm644 03-sub.mzbc "$out/share/mlc/stages/03-sub.mzbc"
             install -Dm644 03-mul.mzbc "$out/share/mlc/stages/03-mul.mzbc"
             install -Dm644 03-div.mzbc "$out/share/mlc/stages/03-div.mzbc"
+            install -Dm644 03-unary.mzbc "$out/share/mlc/stages/03-unary.mzbc"
             install -Dm644 03-if.mzbc "$out/share/mlc/stages/03-if.mzbc"
             install -Dm644 03-if-bool.mzbc "$out/share/mlc/stages/03-if-bool.mzbc"
             install -Dm644 03-comparison.mzbc "$out/share/mlc/stages/03-comparison.mzbc"

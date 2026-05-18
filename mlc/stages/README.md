@@ -89,10 +89,10 @@ Current stages:
   as arbitrary expressions whose final type must be `unit`, so the top-level
   no longer has a special `write_byte` wrapper. The flake gate checks direct
   bytes, `read_byte`, literal `write_string`, char literals, `()`,
-  precedence-aware integer `+` / `-` / `*` / `/`, integer comparisons,
-  sequencing, bool literals, conditionals whose guards must type as `bool`,
-  `let`, top-level `let`, pair construction, pair destructuring, full-input
-  consumption, and static type errors.
+  precedence-aware integer `+` / `-` / `*` / `/`, unary integer `-`, boolean
+  `!`, integer comparisons, sequencing, bool literals, conditionals whose
+  guards must type as `bool`, `let`, top-level `let`, pair construction, pair
+  destructuring, full-input consumption, and static type errors.
 
 Planned stages:
 
