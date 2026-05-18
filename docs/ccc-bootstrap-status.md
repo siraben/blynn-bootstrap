@@ -11,7 +11,7 @@ plan requirement.
 |------|-------------|------------------|--------|
 | 1 | `mzvm-seed.m2` | `mzvm/mzvm-seed.c`; flake target `mzvm-seed.m2`; builds with M2-Planet and runs generated `OK` and block `.mzbc` fixtures with the semispace-copying VM | complete for the current VM smoke |
 | 2 | `mzvm.host` | `mzvm/mzvm.c`; flake target `mzvm.host`; `tests.mzvm.host-vs-seed` compares host and seed output; host check also builds with `MZVM_HEAP_LIMIT=16` and runs a GC-forcing bytecode fixture | complete for the current VM smoke |
-| 3 | `mlc-seed.m2` | `mlc/mlc-seed.c`; `tests/mlc/*.ml`; flake targets `mlc-seed.host`, `mlc-seed.m2`, and `tests.mlc.seed.host-vs-m2`; host and M2 seed compilers emit byte-identical `.mzbc` for the fixture corpus and `mzvm-seed` runs all fixtures | partial: small expression compiler, sequencing, `read_byte`/`write_byte`/`exit`, multi-character local bindings, direct unary `let rec` calls including one `and` partner, two-element tuples, runtime-sized arrays/bytes with dynamic indexing, declared unary/nullary ADTs, constructor matches up to three arms with final fallback, and literal string values/output |
+| 3 | `mlc-seed.m2` | `mlc/mlc-seed.c`; `tests/mlc/*.ml`; flake targets `mlc-seed.host`, `mlc-seed.m2`, and `tests.mlc.seed.host-vs-m2`; host and M2 seed compilers emit byte-identical `.mzbc` for the fixture corpus and `mzvm-seed` runs all fixtures | partial: current seed supports the small core plus transitional ADT/match parsing; target is to reduce the C seed back to core ML and move the first real ADT/pattern parser/compiler into `mlc.ml` |
 | 4 | committed `mlc.byte` | `mlc/mlc.byte`; flake targets `mlc.byte.seed` and `tests.mlc.byte.committed`; the committed bytecode matches M2-seed output for the current `mlc/mlc.ml` lexer/parser/AST/emitter spine, which runs under `mzvm-seed` | partial: tiny compiler-shaped bytecode only, not self-hosted |
 | 5 | `mlc.byte.selfhost` | none | missing |
 | 6 | `ccc.byte` | `ccc/ccc.ml`; `ccc/ccc.byte`; flake targets `ccc.byte.seed` and `tests.ccc.byte.committed`; current artifact is a seed-compiled smoke bytecode that emits deterministic M1 text under `mzvm-seed` | partial: committed smoke bytecode only |
@@ -29,12 +29,11 @@ plan requirement.
 
 ## Next Required Work
 
-1. Replace the placeholder `mlc/mlc.ml` with a real MinCaml-shaped compiler
-   spine: lexer, parser, AST, ADT/pattern nodes, and bytecode emitter for a
-   small expression subset.
-2. Grow `mlc-seed.c` from the current `write_byte` fixture compiler into a
-   mechanical seed compiler for that same subset.
-3. Add golden `.ml` fixtures that compare `mlc-seed` bytecode with host-built
-   expectations before committing any `mlc.byte` artifact.
-4. Only after `mlc-seed` can compile `mlc.ml`, commit `mlc.byte` and add the
+1. Keep `mlc-seed.c` to a tiny core ML: variables, literals, lambdas or direct
+   functions, application, conditionals, `let`, tuples, arrays/bytes, and I/O.
+2. Move ADT declarations, pattern parsing, and pattern compilation into
+   `mlc.ml` instead of strengthening the C seed further.
+3. Split tests into seed-core fixtures and, once `mlc.byte` can compile them,
+   full-language ADT/pattern fixtures.
+4. Only after the core seed can compile `mlc.ml`, commit `mlc.byte` and add the
    self-host byte equality target.

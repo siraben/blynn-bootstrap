@@ -200,15 +200,26 @@ Bytecode emission for ZINC needs no register allocator — the stack is the
 register file — which is the largest single saving versus MinCaml's
 hardware-asm pipeline.
 
-`mlc-seed.c` is a hand port of `mlc.ml` to a tiny subset of C. To keep this
-sane:
+`mlc-seed.c` should stay much weaker than the full source language. It is not
+the first real implementation of pattern matching. It is a small compiler for a
+core ML bootstrap language oriented around variables, literals, lambdas or
+direct functions, application, `if`, `let` / `let rec`, tuples, arrays/bytes,
+and primitive I/O. It should not grow a full ADT declaration parser or pattern
+compiler.
 
-- We constrain `mlc.ml` to a sub-subset (`mlc-bootstrap.ml`) that uses only
-  what `mlc-seed` implements. The full `mlc.ml` can use richer mini-OCaml
-  once the seed has stood up the chain.
-- Translation is mechanical and a unit-test corpus (small `.ml` programs
-  with golden bytecode) must agree between `mlc-seed` and `mlc.byte` at
-  every commit.
+The first real parser/compiler for ADTs and `match` lives in `mlc.ml` itself:
+`mlc.ml` parses the full mini-OCaml source language, represents constructors
+and patterns as real AST nodes, lowers pattern matching to the core language,
+then emits `.mzbc`. The C seed only needs enough core-language support to build
+that first `mlc.byte`.
+
+To keep this sane:
+
+- We constrain the seed-compiled part of `mlc.ml` to the core subset above.
+- Full source programs, including later `ccc.ml`, use proper constructors and
+  `match`; they are accepted by `mlc.byte`, not by the C seed.
+- A unit-test corpus should cover both layers: seed-core fixtures for
+  `mlc-seed.c`, and full-language fixtures for `mlc.byte` once it exists.
 
 ---
 

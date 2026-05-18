@@ -73,6 +73,18 @@ mzbc-emit
 main
 ```
 
+Bootstrap split:
+
+- `mlc-seed.c` compiles only a small core ML. Keep it oriented around
+  variables, literals, lambdas or direct functions, application, `if`,
+  `let` / `let rec`, tuples, arrays/bytes, and primitive I/O.
+- `mlc-seed.c` should not be the real ADT or pattern-matching compiler.
+  Pattern syntax, constructor declarations, exhaustiveness/refutability
+  handling, and decision-tree lowering belong in `mlc.ml`.
+- Full mini-OCaml remains a real source language with ADTs and `match`.
+  Those features are parsed and lowered by `mlc.byte` after the first
+  bootstrap compiler exists.
+
 Deleted MinCaml stages:
 
 - `virtual`: replaced by direct bytecode selection
@@ -82,16 +94,18 @@ Deleted MinCaml stages:
 
 ## Current Bootstrap Slice
 
-The checked-in `mlc-seed.c` is deliberately smaller than this map. It is now a
+The checked-in `mlc-seed.c` is deliberately smaller than this map, though the
+current transition has overgrown ADT and `match` support that should move back
+out of the C seed. It is now a
 tiny recursive-descent compiler for `let` bindings, `if ... then ... else
 ...`, sequencing with `;`, `read_byte`, `write_byte`, `exit`, integer literals, integer comparisons,
 parenthesized arithmetic, `+ - * /`, nested OCaml block comments,
 multi-character local identifiers, two-element tuple construction and
 destructuring, direct unary `let rec` calls with one `and` partner, runtime-sized `Array.create`,
 `Bytes.create`, `Bytes.length` / `String.length`, string literals as immutable byte blocks and direct call arguments, `a.(i)` / `b.[i]` reads and
-`a.(i) <- v` / `b.[i] <- v` writes, simple top-level ADT declarations of the form
-`type t = A | B of int`, constructor allocation from those declarations, and
-constructor `match` expressions up to three arms with a final fallback arm.
+`a.(i) <- v` / `b.[i] <- v` writes, plus transitional top-level ADT declarations
+and constructor `match` expressions. That ADT/match support is useful as a
+reference but is no longer the intended long-term C seed surface.
 It also has a temporary
 `write_string "..."` form, including three-digit byte escapes, that lowers
 literal bytes to repeated `write_byte` calls. It exists to pin the M2 path,
@@ -101,6 +115,5 @@ MinCaml-shaped passes are ported into `mlc.ml`.
 
 Do not treat the current `mlc.ml` as self-hosted. It now has a tiny
 lexer/parser/AST/emitter path for byte literals and one infix addition. The
-next meaningful step is to replace that slice with the lexer/parser/type AST
-spine, including ADT and pattern nodes, then grow the seed compiler and fixture
-corpus until `mlc-seed` can reproduce a committed `mlc.byte`.
+next meaningful step is to keep `mlc-seed.c` to the core subset and grow
+`mlc.ml` into the first real parser/lowerer for ADTs and patterns.
