@@ -71,7 +71,8 @@ let rec expect_int state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
   if (src.[pos] == 105) * (src.[pos + 1] == 110) * (src.[pos + 2] == 116) then pos + 3 else
-  if (src.[pos] == 108) * (src.[pos + 1] == 111) * (src.[pos + 2] == 110) * (src.[pos + 3] == 103) then pos + 4 else exit 1
+  if (src.[pos] == 108) * (src.[pos + 1] == 111) * (src.[pos + 2] == 110) * (src.[pos + 3] == 103) then pos + 4 else
+  if (src.[pos] == 117) * (src.[pos + 1] == 105) * (src.[pos + 2] == 110) * (src.[pos + 3] == 116) * (src.[pos + 4] == 54) * (src.[pos + 5] == 52) * (src.[pos + 6] == 95) * (src.[pos + 7] == 116) then pos + 8 else exit 1
 in
 let rec expect_local_type state =
   let (src, pos0) = state in
@@ -111,6 +112,7 @@ in
 let rec expect_type state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
+  if (src.[pos] == 115) * (src.[pos + 1] == 116) * (src.[pos + 2] == 97) * (src.[pos + 3] == 116) * (src.[pos + 4] == 105) * (src.[pos + 5] == 99) then expect_type (src, pos + 6) else
   if (src.[pos] == 105) * (src.[pos + 1] == 110) * (src.[pos + 2] == 116) then pos + 3 else
   if (src.[pos] == 118) * (src.[pos + 1] == 111) * (src.[pos + 2] == 105) * (src.[pos + 3] == 100) then pos + 4 else
   if (src.[pos] == 95) * (src.[pos + 1] == 66) * (src.[pos + 2] == 111) * (src.[pos + 3] == 111) * (src.[pos + 4] == 108) then pos + 5 else
@@ -341,7 +343,9 @@ let rec apply_func state =
     if kind == 1 then arg else
     if kind == 2 then if arg == 0 then 1 else 0 else
       let (arg1, arg2) = arg in
-      arg1 + arg2
+      if kind == 3 then arg1 + arg2 else
+      if arg1 < arg2 then 0 - 1 else
+      if arg1 > arg2 then 1 else 0
   else
   if head < 0 then exit 1 else apply_func (tail, (name, arg))
 in
@@ -958,6 +962,8 @@ let rec parse_program_loop state =
         code
       else if (name == 253601173) + (name == 221753487) then
         parse_program_loop (src, ((skip_to_close_brace (src, p2)) + 1, extend_func (name, (0, (0, funcs)))))
+      else if (name == 402468489) + (name == 402468487) then
+        parse_program_loop (src, ((skip_to_close_brace (src, p2)) + 1, extend_func (name, (4, (0, funcs)))))
       else
         let ret = parse_func_return (src, (p2, param)) in
         let (func_value, p3) = ret in
