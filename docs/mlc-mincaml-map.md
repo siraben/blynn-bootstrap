@@ -89,7 +89,8 @@ parenthesized arithmetic, `+ - * /`, nested OCaml block comments,
 multi-character local identifiers, two-element tuple construction and
 destructuring, simple top-level ADT declarations of the form
 `type t = A | B of int`, constructor allocation from those declarations, and
-two-arm constructor `match` expressions. It also has a temporary
+two-arm constructor `match` expressions with a second-arm wildcard fallback.
+It also has a temporary
 `write_string "..."` form that lowers literal bytes to repeated `write_byte`
 calls. It exists to pin the M2 path, bytecode writer, expression codegen,
 local stack environment, pattern lowering shape, and the VM representation of

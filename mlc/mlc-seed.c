@@ -553,6 +553,13 @@ static void parse_pattern(long *tag_out, long *arity_out, long *binder_start_out
   long name_len;
   long ctor;
   take_ident_span(&name_start, &name_len);
+  if (span_is_char(name_start, name_len, '_')) {
+    *tag_out = -1;
+    *arity_out = 0;
+    *binder_start_out = 0;
+    *binder_len_out = 0;
+    return;
+  }
   ctor = lookup_constructor(name_start, name_len);
   if (ctor < 0) die("unknown pattern constructor");
   *tag_out = ctor_tag[ctor];
@@ -605,6 +612,7 @@ static void parse_match(void)
   parse_expr();
   expect_keyword("with");
   parse_pattern(&arm1_tag, &arm1_arity, &arm1_binder_start, &arm1_binder_len);
+  if (arm1_tag < 0) die("wildcard first match arm is unsupported");
   expect_arrow();
   arm1_start = pos;
   bind_pattern_var(arm1_arity, arm1_binder_start, arm1_binder_len);
@@ -613,7 +621,7 @@ static void parse_match(void)
   pos = arm1_end;
   expect_char('|');
   parse_pattern(&arm2_tag, &arm2_arity, &arm2_binder_start, &arm2_binder_len);
-  if (arm1_tag == arm2_tag) die("duplicate match arm");
+  if (arm2_tag >= 0 && arm1_tag == arm2_tag) die("duplicate match arm");
   expect_arrow();
   arm2_start = pos;
   bind_pattern_var(arm2_arity, arm2_binder_start, arm2_binder_len);

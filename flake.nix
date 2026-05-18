@@ -694,6 +694,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           "string"
           "exit"
           "tuple"
+          "wildcard-match"
         ];
         mlcInputFixtures = [
           "read-byte"
@@ -734,6 +735,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             printf 'O\tK\n' > string.expected
             printf 'OK\n' > exit.expected
             printf 'OK\n' > tuple.expected
+            printf 'OK\n' > wildcard-match.expected
             printf 'OK\n' > read-byte.expected
             for name in ${lib.concatStringsSep " " mlcFixtures}; do
               cmp $name.expected $name.out
@@ -779,6 +781,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             cp ${./tests/mlc/string.ml} string.ml
             cp ${./tests/mlc/exit.ml} exit.ml
             cp ${./tests/mlc/tuple.ml} tuple.ml
+            cp ${./tests/mlc/wildcard-match.ml} wildcard-match.ml
             cp ${./tests/mlc/read-byte.ml} read-byte.ml
             compile_m2 mlc-seed.c mlc-seed
             ./mlc-seed ok.ml ok.mzbc
@@ -811,6 +814,9 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             ./mlc-seed tuple.ml tuple.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed tuple.mzbc)"
             test "$actual" = OK
+            ./mlc-seed wildcard-match.ml wildcard-match.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed wildcard-match.mzbc)"
+            test "$actual" = OK
             ./mlc-seed read-byte.ml read-byte.mzbc
             printf 'O' > input.txt
             actual="$(${mzvmSeedM2}/bin/mzvm-seed read-byte.mzbc < input.txt)"
@@ -829,6 +835,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             install -Dm644 string.mzbc "$out/share/mlc/tests/string.mzbc"
             install -Dm644 exit.mzbc "$out/share/mlc/tests/exit.mzbc"
             install -Dm644 tuple.mzbc "$out/share/mlc/tests/tuple.mzbc"
+            install -Dm644 wildcard-match.mzbc "$out/share/mlc/tests/wildcard-match.mzbc"
             install -Dm644 read-byte.mzbc "$out/share/mlc/tests/read-byte.mzbc"
           '';
         };
