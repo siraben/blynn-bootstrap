@@ -862,7 +862,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             ${mzvmSeedM2}/bin/mzvm-seed closure.mzbc > closure.out
             printf 'let f = fun x -> let f2 = fun y -> write_byte (x + y) in f2 39 in f 40' | ${mlcInterpSeedM2}/bin/mlc-interp-seed 02-ml0-compiler.ml > closure-capture.mzbc
             ${mzvmSeedM2}/bin/mzvm-seed closure-capture.mzbc > closure-capture.out
-            printf 'let f = fun x -> write_byte x in let emit = 79 in let input = 75 in let target = 10 in let _ = f emit in let _ = f input in f target' | ${mlcInterpSeedM2}/bin/mlc-interp-seed 02-ml0-compiler.ml > closure-lookahead.mzbc
+            printf 'let f = fun x -> write_byte x in let elsewhere = 79 in let thenable = 75 in let input = 10 in let _ = f elsewhere in let _ = f thenable in f input' | ${mlcInterpSeedM2}/bin/mlc-interp-seed 02-ml0-compiler.ml > closure-lookahead.mzbc
             ${mzvmSeedM2}/bin/mzvm-seed closure-lookahead.mzbc > closure-lookahead.out
             printf 'let rec k x = x in let rec apply f = fun x -> f x in write_byte (apply k 79)' | ${mlcInterpSeedM2}/bin/mlc-interp-seed 02-ml0-compiler.ml > function-value.mzbc
             ${mzvmSeedM2}/bin/mzvm-seed function-value.mzbc > function-value.out
