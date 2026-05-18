@@ -808,11 +808,11 @@ let rec compile_expr input =
 	    let case1_has_arg = ctor_has_arg case1_ctor in
 	    let case1_tuple = if case1_has_arg == 1 then if src.[case1_pat_end] == 40 then 1 else 0 else 0 in
 	    let case1_binder = if case1_has_arg == 1 then if case1_tuple == 1 then parse_ident (src, case1_pat_end + 1) else parse_ident (src, case1_pat_end) else (0 - 1, case1_pat_end) in
-	    let (case1_bind, case1_bind_end0) = case1_binder in
-	    let case1_bind_end = skip_space (src, case1_bind_end0) in
-	    let case1_bind2 =
-	      if case1_tuple == 1 then
-	        if src.[case1_bind_end] == 44 then parse_ident (src, case1_bind_end + 1) else exit 1
+		    let (case1_bind, case1_bind_end0) = case1_binder in
+		    let case1_bind_end = skip_space (src, case1_bind_end0) in
+		    let case1_bind2 =
+		      if case1_tuple == 1 then
+		        if src.[case1_bind_end] == 44 then parse_ident (src, case1_bind_end + 1) else exit 1
 	      else
 	        (0 - 1, case1_bind_end)
 	    in
@@ -826,7 +826,15 @@ let rec compile_expr input =
 	    let case1_body_start = expect_arrow (src, case1_arrow) in
 	    let case1_env =
 	      if case1_tuple == 1 then
-	        (case1_bind_right, (0, (case1_bind, (1, shift_env (shift_env (shift_env case_env))))))
+	        let case1_base_env = shift_env (shift_env (shift_env case_env)) in
+	        let case1_left_wild = case1_bind == 95 in
+	        let case1_right_wild = case1_bind_right == 95 in
+	        if case1_left_wild == 1 then
+	          if case1_right_wild == 1 then case1_base_env else (case1_bind_right, (0, case1_base_env))
+	        else if case1_right_wild == 1 then
+	          (case1_bind, (1, case1_base_env))
+	        else
+	          (case1_bind_right, (0, (case1_bind, (1, case1_base_env))))
 	      else if case1_has_arg == 1 then extend_env (case1_bind, case_env) else case_env
 	    in
     let case1_body0 = compile_expr (src, (case1_body_start, (case1_env, (ctors, (funcs, 0))))) in
@@ -843,11 +851,11 @@ let rec compile_expr input =
 	    let case2_has_arg = if case2_is_wild == 1 then 0 else ctor_has_arg case2_ctor in
 	    let case2_tuple = if case2_has_arg == 1 then if src.[case2_pat_end] == 40 then 1 else 0 else 0 in
 	    let case2_binder = if case2_has_arg == 1 then if case2_tuple == 1 then parse_ident (src, case2_pat_end + 1) else parse_ident (src, case2_pat_end) else (0 - 1, case2_pat_end) in
-	    let (case2_bind, case2_bind_end0) = case2_binder in
-	    let case2_bind_end = skip_space (src, case2_bind_end0) in
-	    let case2_bind2 =
-	      if case2_tuple == 1 then
-	        if src.[case2_bind_end] == 44 then parse_ident (src, case2_bind_end + 1) else exit 1
+		    let (case2_bind, case2_bind_end0) = case2_binder in
+		    let case2_bind_end = skip_space (src, case2_bind_end0) in
+		    let case2_bind2 =
+		      if case2_tuple == 1 then
+		        if src.[case2_bind_end] == 44 then parse_ident (src, case2_bind_end + 1) else exit 1
 	      else
 	        (0 - 1, case2_bind_end)
 	    in
@@ -861,7 +869,15 @@ let rec compile_expr input =
 	    let case2_body_start = expect_arrow (src, case2_arrow) in
 	    let case2_env =
 	      if case2_tuple == 1 then
-	        (case2_bind_right, (0, (case2_bind, (1, shift_env (shift_env (shift_env case_env))))))
+	        let case2_base_env = shift_env (shift_env (shift_env case_env)) in
+	        let case2_left_wild = case2_bind == 95 in
+	        let case2_right_wild = case2_bind_right == 95 in
+	        if case2_left_wild == 1 then
+	          if case2_right_wild == 1 then case2_base_env else (case2_bind_right, (0, case2_base_env))
+	        else if case2_right_wild == 1 then
+	          (case2_bind, (1, case2_base_env))
+	        else
+	          (case2_bind_right, (0, (case2_bind, (1, case2_base_env))))
 	      else if case2_has_arg == 1 then extend_env (case2_bind, case_env) else case_env
 	    in
     let case2_body0 = compile_expr (src, (case2_body_start, (case2_env, (ctors, (funcs, 0))))) in
@@ -879,11 +895,11 @@ let rec compile_expr input =
 	    let case3_has_arg = if case3_is_wild == 1 then 0 else ctor_has_arg case3_ctor in
 	    let case3_tuple = if case3_has_arg == 1 then if src.[case3_pat_end] == 40 then 1 else 0 else 0 in
 	    let case3_binder = if case3_has_arg == 1 then if case3_tuple == 1 then parse_ident (src, case3_pat_end + 1) else parse_ident (src, case3_pat_end) else (0 - 1, case3_pat_end) in
-	    let (case3_bind, case3_bind_end0) = case3_binder in
-	    let case3_bind_end = skip_space (src, case3_bind_end0) in
-	    let case3_bind2 =
-	      if case3_tuple == 1 then
-	        if src.[case3_bind_end] == 44 then parse_ident (src, case3_bind_end + 1) else exit 1
+		    let (case3_bind, case3_bind_end0) = case3_binder in
+		    let case3_bind_end = skip_space (src, case3_bind_end0) in
+		    let case3_bind2 =
+		      if case3_tuple == 1 then
+		        if src.[case3_bind_end] == 44 then parse_ident (src, case3_bind_end + 1) else exit 1
 	      else
 	        (0 - 1, case3_bind_end)
 	    in
@@ -897,7 +913,15 @@ let rec compile_expr input =
 	    let case3_body_start = if has_case3 == 1 then expect_arrow (src, case3_arrow) else case2_body_end in
 	    let case3_env =
 	      if case3_tuple == 1 then
-	        (case3_bind_right, (0, (case3_bind, (1, shift_env (shift_env (shift_env case_env))))))
+	        let case3_base_env = shift_env (shift_env (shift_env case_env)) in
+	        let case3_left_wild = case3_bind == 95 in
+	        let case3_right_wild = case3_bind_right == 95 in
+	        if case3_left_wild == 1 then
+	          if case3_right_wild == 1 then case3_base_env else (case3_bind_right, (0, case3_base_env))
+	        else if case3_right_wild == 1 then
+	          (case3_bind, (1, case3_base_env))
+	        else
+	          (case3_bind_right, (0, (case3_bind, (1, case3_base_env))))
 	      else if case3_has_arg == 1 then extend_env (case3_bind, case_env) else case_env
 	    in
     let case3_body0 =

@@ -51,10 +51,10 @@ Current stages:
   lookahead for expression-level terminators and keyword-prefix identifiers, and
   lowers the first
   constructor/wildcard `match` forms, including tuple payload construction,
-  direct tuple payload patterns in `adt-pattern-tuple.ml`, destructuring in
-  `adt-tuple-payload.ml`, and recursive ADT traversal in `adt-recursion.ml`,
-  to VM block allocation, tag tests, field extraction, direct calls, and
-  branches.
+  direct tuple payload patterns in `adt-pattern-tuple.ml`, tuple payload
+  wildcards in `adt-pattern-tuple-wildcard.ml`, destructuring in
+  `adt-tuple-payload.ml`, and recursive ADT traversal in `adt-recursion.ml`, to
+  VM block allocation, tag tests, field extraction, direct calls, and branches.
 
 Planned stages:
 
@@ -69,7 +69,8 @@ Planned stages:
 - Later parser stages increase the ML0 dialect until it can compile the next
   compiler source, then itself.
 - Later pattern stages extend the current `mlc.ml` ADT/match/direct-function
-  slice from constructor, wildcard, and direct tuple payload patterns to
-  nested, recursive, and general decision-tree patterns in ML, not in C.
+  slice from constructor, wildcard, direct tuple payload, and tuple-wildcard
+  patterns to nested, recursive, and general decision-tree patterns in ML, not
+  in C.
 - `03-bytecode.ml` emits MZBC and replaces the transitional direct C bytecode
   compiler for normal bootstrap use.
