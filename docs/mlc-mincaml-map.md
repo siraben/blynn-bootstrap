@@ -113,7 +113,8 @@ bytecode writer, expression codegen, local stack environment, pattern lowering
 shape, and the VM representation of constructors before the real
 MinCaml-shaped passes are ported into `mlc.ml`.
 
-Do not treat the current `mlc.ml` as self-hosted. It now has a tiny
-lexer/parser/AST/emitter path for byte literals and one infix addition. The
-next meaningful step is to keep `mlc-seed.c` to the core subset and grow
-`mlc.ml` into the first real parser/lowerer for ADTs and patterns.
+Do not treat the current `mlc.ml` as self-hosted. It is now written in the
+seed core language and has a tiny lexer/parser/emitter path for byte literals
+and one infix addition. The next meaningful step is to keep `mlc-seed.c` to the
+core subset and grow `mlc.ml` into the first real parser/lowerer for ADTs and
+patterns.

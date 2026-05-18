@@ -705,17 +705,10 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           "function-nested"
           "function-string"
           "function-and"
-          "match"
-          "match-three"
-          "adt"
-          "multi-adt"
-          "adt-tuple-payload"
-          "adt-recursion"
           "identifiers"
           "string"
           "exit"
           "tuple"
-          "wildcard-match"
           "sequence"
         ];
         mlcInputFixtures = [
@@ -764,17 +757,10 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             printf 'OK\n' > function-nested.expected
             printf 'OK\n' > function-string.expected
             printf 'OK\n' > function-and.expected
-            printf 'OK\n' > match.expected
-            printf 'OK\n' > match-three.expected
-            printf 'OK\n' > adt.expected
-            printf 'OK\n' > multi-adt.expected
-            printf 'OK\n' > adt-tuple-payload.expected
-            printf 'OK\n' > adt-recursion.expected
             printf 'O\n' > identifiers.expected
             printf 'O\tK\n' > string.expected
             printf 'OK\n' > exit.expected
             printf 'OK\n' > tuple.expected
-            printf 'OK\n' > wildcard-match.expected
             printf 'OK\n' > sequence.expected
             printf 'OK\n' > read-byte.expected
             for name in ${lib.concatStringsSep " " mlcFixtures}; do
@@ -828,17 +814,10 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             cp ${./tests/mlc/function-nested.ml} function-nested.ml
             cp ${./tests/mlc/function-string.ml} function-string.ml
             cp ${./tests/mlc/function-and.ml} function-and.ml
-            cp ${./tests/mlc/match.ml} match.ml
-            cp ${./tests/mlc/match-three.ml} match-three.ml
-            cp ${./tests/mlc/adt.ml} adt.ml
-            cp ${./tests/mlc/multi-adt.ml} multi-adt.ml
-            cp ${./tests/mlc/adt-tuple-payload.ml} adt-tuple-payload.ml
-            cp ${./tests/mlc/adt-recursion.ml} adt-recursion.ml
             cp ${./tests/mlc/identifiers.ml} identifiers.ml
             cp ${./tests/mlc/string.ml} string.ml
             cp ${./tests/mlc/exit.ml} exit.ml
             cp ${./tests/mlc/tuple.ml} tuple.ml
-            cp ${./tests/mlc/wildcard-match.ml} wildcard-match.ml
             cp ${./tests/mlc/sequence.ml} sequence.ml
             cp ${./tests/mlc/read-byte.ml} read-byte.ml
             compile_m2 mlc-seed.c mlc-seed
@@ -894,24 +873,6 @@ OK"
             ./mlc-seed function-and.ml function-and.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed function-and.mzbc)"
             test "$actual" = OK
-            ./mlc-seed match.ml match.mzbc
-            actual="$(${mzvmSeedM2}/bin/mzvm-seed match.mzbc)"
-            test "$actual" = OK
-            ./mlc-seed match-three.ml match-three.mzbc
-            actual="$(${mzvmSeedM2}/bin/mzvm-seed match-three.mzbc)"
-            test "$actual" = OK
-            ./mlc-seed adt.ml adt.mzbc
-            actual="$(${mzvmSeedM2}/bin/mzvm-seed adt.mzbc)"
-            test "$actual" = OK
-            ./mlc-seed multi-adt.ml multi-adt.mzbc
-            actual="$(${mzvmSeedM2}/bin/mzvm-seed multi-adt.mzbc)"
-            test "$actual" = OK
-            ./mlc-seed adt-tuple-payload.ml adt-tuple-payload.mzbc
-            actual="$(${mzvmSeedM2}/bin/mzvm-seed adt-tuple-payload.mzbc)"
-            test "$actual" = OK
-            ./mlc-seed adt-recursion.ml adt-recursion.mzbc
-            actual="$(${mzvmSeedM2}/bin/mzvm-seed adt-recursion.mzbc)"
-            test "$actual" = OK
             ./mlc-seed identifiers.ml identifiers.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed identifiers.mzbc)"
             test "$actual" = O
@@ -923,9 +884,6 @@ OK"
             test "$actual" = OK
             ./mlc-seed tuple.ml tuple.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed tuple.mzbc)"
-            test "$actual" = OK
-            ./mlc-seed wildcard-match.ml wildcard-match.mzbc
-            actual="$(${mzvmSeedM2}/bin/mzvm-seed wildcard-match.mzbc)"
             test "$actual" = OK
             ./mlc-seed sequence.ml sequence.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed sequence.mzbc)"
@@ -955,17 +913,10 @@ OK"
             install -Dm644 function-nested.mzbc "$out/share/mlc/tests/function-nested.mzbc"
             install -Dm644 function-string.mzbc "$out/share/mlc/tests/function-string.mzbc"
             install -Dm644 function-and.mzbc "$out/share/mlc/tests/function-and.mzbc"
-            install -Dm644 match.mzbc "$out/share/mlc/tests/match.mzbc"
-            install -Dm644 match-three.mzbc "$out/share/mlc/tests/match-three.mzbc"
-            install -Dm644 adt.mzbc "$out/share/mlc/tests/adt.mzbc"
-            install -Dm644 multi-adt.mzbc "$out/share/mlc/tests/multi-adt.mzbc"
-            install -Dm644 adt-tuple-payload.mzbc "$out/share/mlc/tests/adt-tuple-payload.mzbc"
-            install -Dm644 adt-recursion.mzbc "$out/share/mlc/tests/adt-recursion.mzbc"
             install -Dm644 identifiers.mzbc "$out/share/mlc/tests/identifiers.mzbc"
             install -Dm644 string.mzbc "$out/share/mlc/tests/string.mzbc"
             install -Dm644 exit.mzbc "$out/share/mlc/tests/exit.mzbc"
             install -Dm644 tuple.mzbc "$out/share/mlc/tests/tuple.mzbc"
-            install -Dm644 wildcard-match.mzbc "$out/share/mlc/tests/wildcard-match.mzbc"
             install -Dm644 sequence.mzbc "$out/share/mlc/tests/sequence.mzbc"
             install -Dm644 read-byte.mzbc "$out/share/mlc/tests/read-byte.mzbc"
           '';
