@@ -73,6 +73,11 @@ jobs:
             arch: amd64
             runner: ubuntu-latest
             timeout: 120
+            attr: tests.mlc.seed.host-vs-m2
+          - suite: fast native
+            arch: amd64
+            runner: ubuntu-latest
+            timeout: 120
             attr: tests.precisely.dialect
           - suite: fast native
             arch: amd64

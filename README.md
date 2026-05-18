@@ -63,7 +63,9 @@ CCC bring-up targets:
 nix build .#mzvm.host
 nix build .#mzvm-seed.m2
 nix build .#tests.mzvm.host-vs-seed
+nix build .#mlc-seed.host
 nix build .#mlc-seed.m2
+nix build .#tests.mlc.seed.host-vs-m2
 ```
 
 For faster iteration, use the GCC-built M2-Planet debug path:

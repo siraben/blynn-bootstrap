@@ -682,6 +682,61 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           install -Dm644 host-block.txt "$out/block-output.txt"
         '';
 
+        mlcFixtures = [
+          "ok"
+          "arithmetic"
+          "conditional"
+          "match"
+        ];
+
+        mlcSeedHost = pkgs.stdenv.mkDerivation {
+          pname = "mlc-seed-host";
+          version = "0-unstable-2026-05-06";
+          src = mlcSrc;
+
+          dontConfigure = true;
+          dontUpdateAutotoolsGnuConfigScripts = true;
+
+          buildPhase = ''
+            runHook preBuild
+            $CC -O2 -Wall -Wextra mlc-seed.c -o mlc-seed
+            runHook postBuild
+          '';
+
+          doCheck = true;
+          checkPhase = ''
+            runHook preCheck
+            for name in ${lib.concatStringsSep " " mlcFixtures}; do
+              ./mlc-seed ${./tests/mlc}/$name.ml $name.mzbc
+              ${mzvmHost}/bin/mzvm $name.mzbc > $name.out
+            done
+            printf 'OK\n' > ok.expected
+            printf 'H-\n' > arithmetic.expected
+            printf 'OK\n' > conditional.expected
+            printf 'OK\n' > match.expected
+            for name in ${lib.concatStringsSep " " mlcFixtures}; do
+              cmp $name.expected $name.out
+            done
+            runHook postCheck
+          '';
+
+          installPhase = ''
+            runHook preInstall
+            install -Dm755 mlc-seed "$out/bin/mlc-seed"
+            install -Dm644 mlc-seed.c "$out/share/mlc/mlc-seed.c"
+            for name in ${lib.concatStringsSep " " mlcFixtures}; do
+              install -Dm644 $name.mzbc "$out/share/mlc/tests/$name.mzbc"
+            done
+            runHook postInstall
+          '';
+
+          meta = with pkgs.lib; {
+            description = "Host-built seed mini-OCaml compiler for CCC bootstrap bytecode";
+            license = licenses.gpl3Only;
+            platforms = platforms.linux;
+          };
+        };
+
         mlcSeedM2 = stageRun {
           pname = "mlc-seed-m2";
           nativeBuildInputs = [
@@ -718,6 +773,13 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             install -Dm644 match.mzbc "$out/share/mlc/tests/match.mzbc"
           '';
         };
+
+        mlcSeedHostVsM2 = pkgs.runCommand "mlc-seed-host-vs-m2" { } ''
+          for name in ${lib.concatStringsSep " " mlcFixtures}; do
+            cmp ${mlcSeedHost}/share/mlc/tests/$name.mzbc ${mlcSeedM2}/share/mlc/tests/$name.mzbc
+          done
+          install -Dm644 ${mlcSeedHost}/share/mlc/tests/ok.mzbc "$out/ok.mzbc"
+        '';
 
         hccHostGhcNative = pkgs.callPackage ./nix/hcc-ghc.nix {
           stdenv = pkgs.stdenv;
@@ -1348,8 +1410,10 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           mzvm-seed.m2 = mzvmSeedM2;
 
           mlc = {
+            seed.host = mlcSeedHost;
             seed.m2 = mlcSeedM2;
           };
+          mlc-seed.host = mlcSeedHost;
           mlc-seed.m2 = mlcSeedM2;
 
           hcc = hccBy // {
@@ -1393,6 +1457,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             precisely.dialect = precisely-dialect-tests;
             tinyccM1.native-vs-faithful = tinyccM1CompareNativeFaithful;
             mzvm.host-vs-seed = mzvmHostVsSeed;
+            mlc.seed.host-vs-m2 = mlcSeedHostVsM2;
           };
         };
       in {
@@ -1403,6 +1468,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
         checks = {
           mzvm-host-vs-seed = mzvmHostVsSeed;
           mlc-seed-m2 = mlcSeedM2;
+          mlc-seed-host-vs-m2 = mlcSeedHostVsM2;
         };
 
         legacyPackages = packageTree;
