@@ -3,8 +3,8 @@
 
 enum {
   MAX_NODES = 8192,
-  MAX_ENVS = 131072,
-  MAX_CLOSURES = 65536,
+  INITIAL_ENVS = 65536,
+  INITIAL_CLOSURES = 32768,
 
   N_INT = 1,
   N_VAR = 2,
@@ -47,16 +47,18 @@ static long name2_start[MAX_NODES];
 static long name2_len[MAX_NODES];
 
 static long env_count;
-static long env_name_start[MAX_ENVS];
-static long env_name_len[MAX_ENVS];
-static long env_value[MAX_ENVS];
-static long env_next[MAX_ENVS];
+static long env_cap;
+static long *env_name_start;
+static long *env_name_len;
+static long *env_value;
+static long *env_next;
 
 static long closure_count;
-static long closure_param_start[MAX_CLOSURES];
-static long closure_param_len[MAX_CLOSURES];
-static long closure_body[MAX_CLOSURES];
-static long closure_env[MAX_CLOSURES];
+static long closure_cap;
+static long *closure_param_start;
+static long *closure_param_len;
+static long *closure_body;
+static long *closure_env;
 
 static void die(const char *msg)
 {
@@ -548,10 +550,30 @@ static int same_name(long a_start, long a_len, long b_start, long b_len)
   return 1;
 }
 
+static long *grow_long_array(long *old, long new_cap)
+{
+  long *next = (long *)realloc(old, sizeof(long) * new_cap);
+  if (!next) die("out of memory");
+  return next;
+}
+
+static void ensure_env_capacity(void)
+{
+  long new_cap;
+  if (env_count + 1 < env_cap) return;
+  if (env_cap == 0) new_cap = INITIAL_ENVS;
+  else new_cap = env_cap * 2;
+  env_name_start = grow_long_array(env_name_start, new_cap);
+  env_name_len = grow_long_array(env_name_len, new_cap);
+  env_value = grow_long_array(env_value, new_cap);
+  env_next = grow_long_array(env_next, new_cap);
+  env_cap = new_cap;
+}
+
 static long push_env(long start, long len, long value, long next)
 {
+  ensure_env_capacity();
   env_count = env_count + 1;
-  if (env_count >= MAX_ENVS) die("environment overflow");
   env_name_start[env_count] = start;
   env_name_len[env_count] = len;
   env_value[env_count] = value;
@@ -596,10 +618,23 @@ static int string_next_char(long *offset, long end)
   return c;
 }
 
+static void ensure_closure_capacity(void)
+{
+  long new_cap;
+  if (closure_count + 1 < closure_cap) return;
+  if (closure_cap == 0) new_cap = INITIAL_CLOSURES;
+  else new_cap = closure_cap * 2;
+  closure_param_start = grow_long_array(closure_param_start, new_cap);
+  closure_param_len = grow_long_array(closure_param_len, new_cap);
+  closure_body = grow_long_array(closure_body, new_cap);
+  closure_env = grow_long_array(closure_env, new_cap);
+  closure_cap = new_cap;
+}
+
 static long make_closure(long start, long len, long body, long env)
 {
+  ensure_closure_capacity();
   closure_count = closure_count + 1;
-  if (closure_count >= MAX_CLOSURES) die("closure overflow");
   closure_param_start[closure_count] = start;
   closure_param_len[closure_count] = len;
   closure_body[closure_count] = body;
