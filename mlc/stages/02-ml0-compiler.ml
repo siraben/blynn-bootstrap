@@ -34,11 +34,14 @@ let rec emit_pop1 dummy =
   write_u32 1
 in
 let rec emit_acc n = emit1 4 n in
-let rec emit_call_write_byte dummy =
+let rec emit_call_prim prim =
+  fun dummy ->
   let _ = write_byte 14 in
   let _ = write_u32 1 in
-  write_u32 1
+  write_u32 prim
 in
+let rec emit_call_write_byte dummy = emit_call_prim 1 dummy in
+let rec emit_call_exit dummy = emit_call_prim 2 dummy in
 let rec emit_makeblock size =
   fun dummy ->
   let _ = write_byte 15 in
@@ -49,6 +52,7 @@ let rec emit_makeblock_dyn dummy =
   let _ = write_byte 28 in
   write_u32 0
 in
+let rec emit_getfield_dyn dummy = write_byte 25 in
 let rec is_space ch =
   if ch = 32 then 1 else
   if ch = 9 then 1 else
@@ -236,6 +240,12 @@ let rec compile mode =
         string_out 0 (fun dummy -> 0) ch
       else
         exit 1
+    else if ch = 101 then
+      let ch = expect 120 read_byte in
+      let ch = expect 105 ch in
+      let ch = expect 116 ch in
+      compile 2 ch env (fun expr_len -> fun expr_emit -> fun ch ->
+      kon (expr_len + 9) (emit2 expr_emit emit_call_exit) ch)
     else
       compile 2 ch env kon
   else if mode = 2 then
@@ -300,6 +310,34 @@ let rec compile mode =
     in
     tail left_len left_emit ch)
   else if mode = 5 then
+    compile 6 ch env (fun left_len -> fun left_emit -> fun ch ->
+    let rec tail left_len =
+      fun left_emit ->
+      fun ch ->
+      let ch = skip_space ch in
+      if ch = 46 then
+        let next = read_byte in
+        if next = 91 then
+          compile 2 read_byte env (fun index_len -> fun index_emit -> fun ch ->
+          let ch = expect 93 (skip_space ch) in
+          tail
+            (left_len + 1 + index_len + 1)
+            (emit3 left_emit emit_push (emit2 index_emit emit_getfield_dyn))
+            ch)
+        else if next = 40 then
+          compile 2 read_byte env (fun index_len -> fun index_emit -> fun ch ->
+          let ch = expect 41 (skip_space ch) in
+          tail
+            (left_len + 1 + index_len + 1)
+            (emit3 left_emit emit_push (emit2 index_emit emit_getfield_dyn))
+            ch)
+        else
+          exit 1
+      else
+        kon left_len left_emit ch
+    in
+    tail left_len left_emit ch)
+  else if mode = 6 then
     let ch = skip_space ch in
     if ch = 40 then
       compile 0 read_byte env (fun len -> fun emit -> fun ch ->
@@ -318,6 +356,16 @@ let rec compile mode =
     else if is_digit ch then
       number ch (fun n -> fun ch ->
       kon 5 (emit_const n) ch)
+    else if ch = 114 then
+      let ch = expect 101 read_byte in
+      let ch = expect 97 ch in
+      let ch = expect 100 ch in
+      let ch = expect 95 ch in
+      let ch = expect 98 ch in
+      let ch = expect 121 ch in
+      let ch = expect 116 ch in
+      let ch = expect 101 ch in
+      kon 14 (emit2 (emit_const 0) (emit_call_prim 0)) ch
     else if ch = 66 then
       let ch = expect 121 read_byte in
       let ch = expect 116 ch in
