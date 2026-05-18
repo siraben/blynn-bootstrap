@@ -161,6 +161,11 @@ let rec is_enum_at state =
   let pos = skip_space (src, pos0) in
   (src.[pos] == 101) * (src.[pos + 1] == 110) * (src.[pos + 2] == 117) * (src.[pos + 3] == 109)
 in
+let rec is_struct_at state =
+  let (src, pos0) = state in
+  let pos = skip_space (src, pos0) in
+  (src.[pos] == 115) * (src.[pos + 1] == 116) * (src.[pos + 2] == 114) * (src.[pos + 3] == 117) * (src.[pos + 4] == 99) * (src.[pos + 5] == 116)
+in
 let rec is_else_at state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
@@ -580,6 +585,14 @@ let rec skip_balanced_block state =
     if depth == 0 then pos else skip_balanced_block (src, (pos + 1, depth - 1))
   else
     skip_balanced_block (src, (pos + 1, depth))
+in
+let rec skip_struct_declaration state =
+  let (src, pos) = state in
+  if src.[pos] == 123 then
+    let close = skip_balanced_block (src, (pos + 1, 0)) in
+    expect_ch (src, (close + 1, 59))
+  else if src.[pos] == 59 then pos + 1 else
+    skip_struct_declaration (src, pos + 1)
 in
 let rec parse_func_return state =
   let (src, pair) = state in
@@ -1025,6 +1038,7 @@ let rec parse_program_loop state =
   if src.[pos] == 0 then exit 1 else
   if is_typedef_at (src, pos) then parse_program_loop (src, (skip_statement (src, pos), funcs)) else
   if is_enum_at (src, pos) then parse_program_loop (src, (skip_statement (src, pos), funcs)) else
+  if is_struct_at (src, pos) then parse_program_loop (src, (skip_struct_declaration (src, pos), funcs)) else
     let p0 = expect_type (src, pos) in
     let name_parsed = parse_ident (src, p0) in
     let (name, name_end) = name_parsed in
@@ -1046,6 +1060,8 @@ let rec parse_program_loop state =
         parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (0, (0, funcs)))))
       else if name == 155589584 then
         parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (0, (0, funcs)))))
+      else if name == 187939072 then
+        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (0, (3, funcs)))))
       else if (name == 402468489) + (name == 402468487) then
         parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (4, (0, funcs)))))
       else

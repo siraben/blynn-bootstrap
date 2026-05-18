@@ -1543,6 +1543,7 @@ DEFINE SYSCALL 0F05
             check_return ${./tests/hcc/m1-smoke/examples/case-cmp-ternary.c} 0
             check_return ${./tests/hcc/m1-smoke/examples/address-written-scalar.c} 0
             check_return ${./tests/hcc/m1-smoke/examples/escaped-string-magic.c} 0
+            check_return ${./tests/hcc/m1-smoke/examples/local-aggregate.c} 3
             printf 'int main(){return 42;}' > return-42.c
             check_return return-42.c 42
           '';
@@ -1664,6 +1665,7 @@ DEFINE SYSCALL 0F05
           build_and_run ${./tests/hcc/m1-smoke/examples/case-cmp-ternary.c} 0 hcc-case-cmp-ternary
           build_and_run ${./tests/hcc/m1-smoke/examples/address-written-scalar.c} 0 hcc-address-written-scalar
           build_and_run ${./tests/hcc/m1-smoke/examples/escaped-string-magic.c} 0 hcc-escaped-string-magic
+          build_and_run ${./tests/hcc/m1-smoke/examples/local-aggregate.c} 3 hcc-local-aggregate
         '';
 
         hccHostGhcNative = pkgs.callPackage ./nix/hcc-ghc.nix {
