@@ -174,6 +174,10 @@ let rec emit_setfield_dyn emit =
   let _ = emit_byte_if (emit, 26) in
   1
 in
+let rec emit_blocksize emit =
+  let _ = emit_byte_if (emit, 27) in
+  1
+in
 let rec emit_gettag emit =
   let _ = emit_byte_if (emit, 18) in
   1
@@ -245,7 +249,15 @@ in
 let rec parse_char input =
   let (src, pos) = input in
   let ch = src.[pos + 1] in
-  (ch, pos + 3)
+  if ch == '\\' then
+    let esc = src.[pos + 2] in
+    let value =
+      if esc == 'n' then '\n' else
+      if esc == 't' then '\t' else esc
+    in
+    (value, pos + 4)
+  else
+    (ch, pos + 3)
 in
 let rec pack_ctor state =
   let (tag, has_arg) = state in
@@ -382,6 +394,24 @@ let rec is_bytes_create_at input =
   if (src.[pos] == 66) * (src.[pos + 1] == 121) * (src.[pos + 2] == 116) * (src.[pos + 3] == 101) then
     if (src.[pos + 4] == 115) * (src.[pos + 5] == 46) * (src.[pos + 6] == 99) * (src.[pos + 7] == 114) then
       (src.[pos + 8] == 101) * (src.[pos + 9] == 97) * (src.[pos + 10] == 116) * (src.[pos + 11] == 101) * (1 - (is_ident (src.[pos + 12])))
+    else 0
+  else 0
+in
+let rec is_bytes_length_at input =
+  let (src, pos0) = input in
+  let pos = skip_space (src, pos0) in
+  if (src.[pos] == 66) * (src.[pos + 1] == 121) * (src.[pos + 2] == 116) * (src.[pos + 3] == 101) then
+    if (src.[pos + 4] == 115) * (src.[pos + 5] == 46) * (src.[pos + 6] == 108) * (src.[pos + 7] == 101) then
+      (src.[pos + 8] == 110) * (src.[pos + 9] == 103) * (src.[pos + 10] == 116) * (src.[pos + 11] == 104) * (1 - (is_ident (src.[pos + 12])))
+    else 0
+  else 0
+in
+let rec is_string_length_at input =
+  let (src, pos0) = input in
+  let pos = skip_space (src, pos0) in
+  if (src.[pos] == 83) * (src.[pos + 1] == 116) * (src.[pos + 2] == 114) * (src.[pos + 3] == 105) then
+    if (src.[pos + 4] == 110) * (src.[pos + 5] == 103) * (src.[pos + 6] == 46) * (src.[pos + 7] == 108) then
+      (src.[pos + 8] == 101) * (src.[pos + 9] == 110) * (src.[pos + 10] == 103) * (src.[pos + 11] == 116) * (src.[pos + 12] == 104) * (1 - (is_ident (src.[pos + 13])))
     else 0
   else 0
 in
@@ -927,6 +957,36 @@ let rec compile_atom input =
   if is_if_at (src, pos) then compile_if (src, (pos, (env, (ctors, emit))))
   else compile_simple_atom (src, (pos, (env, (ctors, emit))))
 in
+let rec string_literal_len state =
+  let (src, pair) = state in
+  let (pos, count) = pair in
+  if src.[pos] == 34 then count else string_literal_len (src, (pos + 1, count + 1))
+in
+let rec compile_string_tail state =
+  let (src, pair) = state in
+  let (pos, emit) = pair in
+  if src.[pos] == 34 then (0, pos) else
+    let push_len = emit_push emit in
+    let const_len = emit_const (emit, src.[pos]) in
+    let rest = compile_string_tail (src, (pos + 1, emit)) in
+    let (rest_len, done_pos) = rest in
+    (push_len + const_len + rest_len, done_pos)
+in
+let rec compile_string_literal state =
+  let (src, pair) = state in
+  let (pos, emit) = pair in
+  let len = string_literal_len (src, (pos + 1, 0)) in
+  if len == 0 then
+    let const_len = emit_const (emit, 0) in
+    let block_len = emit_makeblock (emit, (0, 0)) in
+    (const_len + block_len, pos + 2)
+  else
+    let first_len = emit_const (emit, src.[pos + 1]) in
+    let tail = compile_string_tail (src, (pos + 2, emit)) in
+    let (tail_len, done_pos) = tail in
+    let block_len = emit_makeblock (emit, (0, len)) in
+    (first_len + tail_len + block_len, done_pos + 1)
+in
 let rec compile_arg_expr input =
   let (src, pair) = input in
   let (pos0, pair2) = pair in
@@ -984,7 +1044,19 @@ let rec compile_expr input =
   let (ctors, pair4) = pair3 in
   let (funcs, emit) = pair4 in
   let pos = skip_space (src, pos0) in
-  if src.[pos] == 123 then
+  if src.[pos] == 34 then
+    compile_string_literal (src, (pos, emit))
+  else if is_string_length_at (src, pos) then
+    let expr = compile_arg_expr (src, (pos + 13, (env, (ctors, (funcs, emit))))) in
+    let (expr_len, done_pos) = expr in
+    let size_len = emit_blocksize emit in
+    (expr_len + size_len, done_pos)
+  else if is_bytes_length_at (src, pos) then
+    let expr = compile_arg_expr (src, (pos + 12, (env, (ctors, (funcs, emit))))) in
+    let (expr_len, done_pos) = expr in
+    let size_len = emit_blocksize emit in
+    (expr_len + size_len, done_pos)
+  else if src.[pos] == 123 then
     let field1 = parse_ident (src, pos + 1) in
     let (field1_name, field1_end) = field1 in
     let field1_index = lookup_field (ctors, field1_name) in

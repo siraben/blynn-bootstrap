@@ -139,19 +139,6 @@ let rec expect_type state =
     if (src.[p1] == 99) * (src.[p1 + 1] == 104) * (src.[p1 + 2] == 97) * (src.[p1 + 3] == 114) then p1 + 4 else pos + 8
   else exit 1
 in
-let rec expect_main state =
-  let (src, pos0) = state in
-  let pos = skip_space (src, pos0) in
-  if (src.[pos] == 109) * (src.[pos + 1] == 97) * (src.[pos + 2] == 105) * (src.[pos + 3] == 110) then pos + 4 else exit 1
-in
-let rec expect_return state =
-  let (src, pos0) = state in
-  let pos = skip_space (src, pos0) in
-  if (src.[pos] == 114) * (src.[pos + 1] == 101) * (src.[pos + 2] == 116) * (src.[pos + 3] == 117) then
-    if (src.[pos + 4] == 114) * (src.[pos + 5] == 110) then pos + 6 else exit 1
-  else
-    exit 1
-in
 let rec is_return_at state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
@@ -192,11 +179,57 @@ let rec is_while_at state =
   let pos = skip_space (src, pos0) in
   (src.[pos] == 119) * (src.[pos + 1] == 104) * (src.[pos + 2] == 105) * (src.[pos + 3] == 108) * (src.[pos + 4] == 101)
 in
-let rec expect_ch state =
+let rec expect_char state =
   let (src, pair) = state in
   let (pos0, ch) = pair in
   let pos = skip_space (src, pos0) in
   if src.[pos] == ch then pos + 1 else exit 1
+in
+let rec expect_ch state =
+  expect_char state
+in
+let rec expect_string_loop state =
+  let (want, pair) = state in
+  let (src, pair2) = pair in
+  let (pos, index) = pair2 in
+  if index == String.length want then pos else
+    let next = expect_char (src, (pos, want.[index])) in
+    expect_string_loop (want, (src, (next, index + 1)))
+in
+let rec expect_string state =
+  let (want, pair) = state in
+  let (src, pos0) = pair in
+  expect_string_loop (want, (src, (pos0, 0)))
+in
+let rec parse_expect_char state =
+  let (ch, pair) = state in
+  let (src, pos) = pair in
+  (ch, expect_char (src, (pos, ch)))
+in
+let rec parse_expect_string state =
+  let (want, pair) = state in
+  let (src, pos) = pair in
+  (want, expect_string (want, (src, pos)))
+in
+let rec bind_expect_char state =
+  let (parsed, pair) = state in
+  let (_value, pos) = parsed in
+  let (src, ch) = pair in
+  parse_expect_char (ch, (src, pos))
+in
+let rec bind_expect_string state =
+  let (parsed, pair) = state in
+  let (_value, pos) = parsed in
+  let (src, want) = pair in
+  parse_expect_string (want, (src, pos))
+in
+let rec expect_main state =
+  let (src, pos0) = state in
+  expect_string ("main", (src, pos0))
+in
+let rec expect_return state =
+  let (src, pos0) = state in
+  expect_string ("return", (src, pos0))
 in
 let rec parse_number_loop state =
   let (src, pair) = state in
@@ -403,6 +436,15 @@ let rec apply_func state =
     if kind == 0 then value else
     if kind == 1 then arg else
     if kind == 2 then if arg == 0 then 1 else 0 else
+    if kind == 5 then
+      let (value1, rest1) = value in
+      let (value2, rest2) = rest1 in
+      let (value3, value4) = rest2 in
+      if arg == value1 then 1 else
+      if arg == value2 then 1 else
+      if arg == value3 then 1 else
+      if arg == value4 then 1 else 0
+    else
       let (arg1, arg2) = arg in
       if kind == 3 then arg1 + arg2 else
       if arg1 < arg2 then 0 - 1 else
@@ -662,6 +704,49 @@ let rec skip_struct_declaration state =
   else if src.[pos] == 59 then pos + 1 else
     skip_struct_declaration (src, pos + 1)
 in
+let rec parse_param_eq_const state =
+  let (src, pair) = state in
+  let (pos0, param) = pair in
+  let ident = parse_ident (src, pos0) in
+  let (name, name_end) = ident in
+  let eq_pos = skip_space (src, name_end) in
+  if name == param then
+    if (src.[eq_pos] == '=') * (src.[eq_pos + 1] == '=') then
+      let eq1 = parse_expect_char ('=', (src, eq_pos)) in
+      let eq2 = bind_expect_char (eq1, (src, '=')) in
+      let (_eq_ch2, eq2_end) = eq2 in
+      let value_pos = skip_space (src, eq2_end) in
+      if src.[value_pos] == '\'' then parse_char_value (src, value_pos) else parse_number (src, value_pos)
+    else
+      exit 1
+  else
+    exit 1
+in
+let rec parse_param_eq_chain state =
+  let (src, pair) = state in
+  let (pos0, param) = pair in
+  let first = parse_param_eq_const (src, (pos0, param)) in
+  let (value1, end1) = first in
+  let or1 = skip_space (src, end1) in
+  if (src.[or1] == '|') * (src.[or1 + 1] == '|') then
+    let second = parse_param_eq_const (src, (or1 + 2, param)) in
+    let (value2, end2) = second in
+    let or2 = skip_space (src, end2) in
+    if (src.[or2] == '|') * (src.[or2 + 1] == '|') then
+      let third = parse_param_eq_const (src, (or2 + 2, param)) in
+      let (value3, end3) = third in
+      let or3 = skip_space (src, end3) in
+      if (src.[or3] == '|') * (src.[or3 + 1] == '|') then
+        let fourth = parse_param_eq_const (src, (or3 + 2, param)) in
+        let (value4, end4) = fourth in
+        (((value1, (value2, (value3, value4))), end4))
+      else
+        (((value1, (value2, (value3, 0 - 1000000))), end3))
+    else
+      (((value1, (value2, (0 - 1000000, 0 - 1000000))), end2))
+  else
+    (((value1, (0 - 1000000, (0 - 1000000, 0 - 1000000))), end1))
+in
 let rec parse_func_return state =
   let (src, pair) = state in
   let (pos0, param) = pair in
@@ -691,14 +776,28 @@ let rec parse_func_return state =
     let ident = parse_ident (src, p1) in
     let (name, name_end) = ident in
     let after_name = skip_space (src, name_end) in
-    if src.[after_name] == 43 then
+    if name == param then
+      if (src.[after_name] == 61) * (src.[after_name + 1] == 61) then
+        let parsed = parse_param_eq_chain (src, (p1, param)) in
+        let (values, values_end) = parsed in
+        let p2 = expect_ch (src, (values_end, 59)) in
+        ((5, values), p2)
+      else if src.[after_name] == 43 then
+        let ident2 = parse_ident (src, after_name + 1) in
+        let (name2, name2_end) = ident2 in
+        let p2 = expect_ch (src, (name2_end, 59)) in
+        if name2 == param then exit 1 else ((3, 0), p2)
+      else
+        let p2 = expect_ch (src, (name_end, 59)) in
+        ((1, 0), p2)
+    else if src.[after_name] == 43 then
       let ident2 = parse_ident (src, after_name + 1) in
       let (name2, name2_end) = ident2 in
       let p2 = expect_ch (src, (name2_end, 59)) in
-      if name == param then if name2 == param then exit 1 else ((3, 0), p2) else ((3, 0), p2)
+      ((3, 0), p2)
     else
       let p2 = expect_ch (src, (name_end, 59)) in
-      if name == param then ((1, 0), p2) else exit 1
+      exit 1
   else if is_alpha (src.[start]) then
     let label = parse_ident (src, start) in
     let (label_name, label_end) = label in

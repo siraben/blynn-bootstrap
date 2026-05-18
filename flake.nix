@@ -1574,6 +1574,7 @@ DEFINE SYSCALL 0F05
             check_return ${./tests/hcc/m1-smoke/examples/pointer-to-pointer-callback.c} 0
             check_return ${./tests/hcc/m1-smoke/examples/bootstrap-qsort-pointer.c} 0
             check_return ${./tests/hcc/m1-smoke/examples/sizeof-member-array-bound.c} 0
+            check_return ${./tests/hcc/scalar-immediate-smoke.c} 0
             printf 'int main(){return 42;}' > return-42.c
             check_return return-42.c 42
           '';
@@ -1703,6 +1704,7 @@ DEFINE SYSCALL 0F05
           build_and_run ${./tests/hcc/m1-smoke/examples/pointer-to-pointer-callback.c} 0 hcc-pointer-to-pointer-callback
           build_and_run ${./tests/hcc/m1-smoke/examples/bootstrap-qsort-pointer.c} 0 hcc-bootstrap-qsort-pointer
           build_and_run ${./tests/hcc/m1-smoke/examples/sizeof-member-array-bound.c} 0 hcc-sizeof-member-array-bound
+          build_and_run ${./tests/hcc/scalar-immediate-smoke.c} 0 hcc-scalar-immediate-smoke
         '';
 
         hccHostGhcNative = pkgs.callPackage ./nix/hcc-ghc.nix {

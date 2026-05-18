@@ -7,11 +7,11 @@
 #endif
 
 #ifndef MZVM_STACK_CAP
-#define MZVM_STACK_CAP 1048576
+#define MZVM_STACK_CAP 2097152
 #endif
 
 #ifndef MZVM_STACK_CHUNK_COUNT
-#define MZVM_STACK_CHUNK_COUNT 32
+#define MZVM_STACK_CHUNK_COUNT 64
 #endif
 
 enum {

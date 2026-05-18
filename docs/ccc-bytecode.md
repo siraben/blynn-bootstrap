@@ -31,7 +31,7 @@ Heap allocation uses two fixed semispaces, defaulting to 2,097,152 value
 words each in the seed VM. Allocation is bump-pointer within
 the active semispace; when it fills, `mzvm` performs a Cheney-style copying
 collection from the VM roots (`acc` and stack) into the reserve semispace.
-The seed stack defaults to 1,048,576 value slots so continuation-heavy staged
+The seed stack defaults to 2,097,152 value slots so continuation-heavy staged
 compiler runs can compile their own source before later tail-call and
 environment optimizations reduce stack pressure.
 

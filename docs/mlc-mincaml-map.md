@@ -148,8 +148,9 @@ through the same `parse_bind` path as later parser combinators.
 Treat the current `mlc.ml` as fixed-point self-hosted for the committed
 compiler artifact, but not as the final full MinCaml-style compiler yet. It is
 written in the seed core language and has a staged one-lookahead
-lexer/parser/emitter path for byte literals, local `let`, integer expressions,
-nested conditionals, `read_byte`, `Bytes.create`, dynamic byte indexing and
+lexer/parser/emitter path for byte literals, escaped char literals, immutable
+string byte blocks, `String.length` / `Bytes.length`, local `let`, integer
+expressions, nested conditionals, `read_byte`, `Bytes.create`, dynamic byte indexing and
 writes, imperative `Cell.create` / `Cell.get` / `Cell.set`, two-field record
 declarations/literals/field reads, declaration-style top-level `let` /
 `let rec`, arbitrary final direct calls, bounded keyword lookahead with capped
