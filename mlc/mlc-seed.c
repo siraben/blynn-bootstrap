@@ -712,7 +712,7 @@ static void parse_let(void)
   }
 }
 
-static void parse_expr(void)
+static void parse_nonseq_expr(void)
 {
   if (keyword_at("let")) parse_let();
   else if (keyword_at("match")) parse_match();
@@ -721,6 +721,12 @@ static void parse_expr(void)
   else if (keyword_at("write_string")) parse_write_string();
   else if (keyword_at("write_byte")) parse_write();
   else parse_cmp();
+}
+
+static void parse_expr(void)
+{
+  parse_nonseq_expr();
+  if (take_char(';')) parse_expr();
 }
 
 static void parse_type_decls(void)
