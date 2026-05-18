@@ -434,58 +434,31 @@ let rec compile_write_byte input =
   let call_len = emit_call_write_byte emit in
   (expr_len + call_len, done_pos)
 in
-let rec compile_let_write_byte input =
-  let (src, pair) = input in
-  let (pos, pair2) = pair in
-  let (env, emit) = pair2 in
-  let binding = parse_ident (src, pos + 3) in
-  let (name, name_end) = binding in
-  let eq_pos = skip_space (src, name_end) in
-  if src.[eq_pos] == 61 then
-    let rhs = compile_expr (src, (eq_pos + 1, (env, emit))) in
-    let (rhs_len, rhs_end) = rhs in
-    let in_pos = skip_space (src, rhs_end) in
-    if src.[in_pos] == 105 then
-      let body_pos = skip_space (src, in_pos + 2) in
-      let push_len = emit_push emit in
-      let next_env = extend_env (name, env) in
-      let body =
-        if src.[body_pos] == 108 then
-          let binding2 = parse_ident (src, body_pos + 3) in
-          let (name2, name2_end) = binding2 in
-          let eq2_pos = skip_space (src, name2_end) in
-          if src.[eq2_pos] == 61 then
-            let rhs2 = compile_expr (src, (eq2_pos + 1, (next_env, emit))) in
-            let (rhs2_len, rhs2_end) = rhs2 in
-            let in2_pos = skip_space (src, rhs2_end) in
-            if src.[in2_pos] == 105 then
-              let body2_pos = skip_space (src, in2_pos + 2) in
-              let push2_len = emit_push emit in
-              let body2 = compile_write_byte (src, (body2_pos, (extend_env (name2, next_env), emit))) in
-              let (body2_len, body2_end) = body2 in
-              let pop2_len = emit_pop1 emit in
-              (rhs2_len + push2_len + body2_len + pop2_len, body2_end)
-            else
-              exit 1
-          else
-            exit 1
-        else
-          compile_write_byte (src, (body_pos, (next_env, emit)))
-      in
-      let (body_len, body_end) = body in
-      let pop_len = emit_pop1 emit in
-      (rhs_len + push_len + body_len + pop_len, body_end)
-    else
-      exit 1
-  else
-    exit 1
-in
 let rec compile_byte_code input =
   let (src, pair) = input in
   let (pos0, pair2) = pair in
   let (env, emit) = pair2 in
   let pos = skip_space (src, pos0) in
-  if src.[pos] == 108 then compile_let_write_byte (src, (pos, (env, emit)))
+  if src.[pos] == 108 then
+    let binding = parse_ident (src, pos + 3) in
+    let (name, name_end) = binding in
+    let eq_pos = skip_space (src, name_end) in
+    if src.[eq_pos] == 61 then
+      let rhs = compile_expr (src, (eq_pos + 1, (env, emit))) in
+      let (rhs_len, rhs_end) = rhs in
+      let in_pos = skip_space (src, rhs_end) in
+      if src.[in_pos] == 105 then
+        let body_pos = skip_space (src, in_pos + 2) in
+        let push_len = emit_push emit in
+        let next_env = extend_env (name, env) in
+        let body = compile_byte_code (src, (body_pos, (next_env, emit))) in
+        let (body_len, body_end) = body in
+        let pop_len = emit_pop1 emit in
+        (rhs_len + push_len + body_len + pop_len, body_end)
+      else
+        exit 1
+    else
+      exit 1
   else
     compile_write_byte (src, (pos, (env, emit)))
 in
