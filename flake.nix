@@ -1547,6 +1547,9 @@ OK"
             printf "write_byte (if true then 'O' else 'X')" | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-if-bool.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-if-bool.mzbc)"
             test "$actual" = O
+            printf 'write_byte (if 40 != 39 then 79 else 88); write_byte (if 39 < 40 then 79 else 88); write_byte (if 40 <= 40 then 79 else 88); write_byte (if 40 > 39 then 79 else 88); write_byte (if 40 >= 40 then 79 else 88)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-comparison.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-comparison.mzbc)"
+            test "$actual" = OOOOO
             printf 'write_byte (let x = 40 in x + 39)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-let.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-let.mzbc)"
             test "$actual" = O
@@ -1574,6 +1577,9 @@ OK"
             if printf 'write_byte (true - 1)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-arithmetic-type-error.mzbc; then
               exit 1
             fi
+            if printf 'write_byte (if true < false then 79 else 88)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-comparison-type-error.mzbc; then
+              exit 1
+            fi
             if printf 'let (x, y) = 79 in write_byte x' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-pair-type-error.mzbc; then
               exit 1
             fi
@@ -1592,6 +1598,7 @@ OK"
             install -Dm644 03-div.mzbc "$out/share/mlc/stages/03-div.mzbc"
             install -Dm644 03-if.mzbc "$out/share/mlc/stages/03-if.mzbc"
             install -Dm644 03-if-bool.mzbc "$out/share/mlc/stages/03-if-bool.mzbc"
+            install -Dm644 03-comparison.mzbc "$out/share/mlc/stages/03-comparison.mzbc"
             install -Dm644 03-let.mzbc "$out/share/mlc/stages/03-let.mzbc"
             install -Dm644 03-top-let.mzbc "$out/share/mlc/stages/03-top-let.mzbc"
             install -Dm644 03-pair-let.mzbc "$out/share/mlc/stages/03-pair-let.mzbc"

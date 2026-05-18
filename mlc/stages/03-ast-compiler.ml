@@ -2,8 +2,9 @@ type ty = TyInt | TyUnit | TyBool | TyPair of ty
 type expr = EInt of int | EVar of int | EBool of int | EMore of expr_more
 type expr_more = EWriteByte of expr | EAdd of expr | ESub of expr | EMore2 of expr_more2
 type expr_more2 = EMul of expr | EDiv of expr | EEq of expr | EMore3 of expr_more3
-type expr_more3 = EIf of expr | ELet of expr | EPair of expr | EMore4 of expr_more4
-type expr_more4 = ELetPair of expr | ESeq of expr
+type expr_more3 = ENe of expr | ELt of expr | ELe of expr | EMore4 of expr_more4
+type expr_more4 = EGt of expr | EGe of expr | EIf of expr | EMore5 of expr_more5
+type expr_more5 = ELet of expr | EPair of expr | ELetPair of expr | ESeq of expr
 type parse_reply = ParseOk of int | ParseErr
 
 let rec byte n =
@@ -78,6 +79,26 @@ let rec emit_div emit =
 in
 let rec emit_eq emit =
   let _ = emit_byte_if (emit, 9) in
+  1
+in
+let rec emit_lt emit =
+  let _ = emit_byte_if (emit, 10) in
+  1
+in
+let rec emit_ne emit =
+  let _ = emit_byte_if (emit, 19) in
+  1
+in
+let rec emit_le emit =
+  let _ = emit_byte_if (emit, 20) in
+  1
+in
+let rec emit_gt emit =
+  let _ = emit_byte_if (emit, 21) in
+  1
+in
+let rec emit_ge emit =
+  let _ = emit_byte_if (emit, 22) in
   1
 in
 let rec emit_branch state =
@@ -285,7 +306,7 @@ let rec parse_expr_flag state =
       let else_pos = need_else (src, yes_end) in
       let no = parse_expr_flag (src, (else_pos, 1)) in
       let (no_ast, no_end) = no in
-      (EMore (EMore2 (EMore3 (EIf (cond_ast, (yes_ast, no_ast))))), no_end)
+      (EMore (EMore2 (EMore3 (EMore4 (EIf (cond_ast, (yes_ast, no_ast)))))), no_end)
     else if is_let_at (src, pos) then
       let bind_pos = skip_space (src, pos + 3) in
       if src.[bind_pos] == '(' then
@@ -301,7 +322,7 @@ let rec parse_expr_flag state =
         let body_pos = need_in (src, rhs_end) in
         let body = parse_expr_flag (src, (body_pos, 1)) in
         let (body_ast, body_end) = body in
-        (EMore (EMore2 (EMore3 (EMore4 (ELetPair (name1_hash, (name2_hash, (rhs_ast, body_ast))))))), body_end)
+        (EMore (EMore2 (EMore3 (EMore4 (EMore5 (ELetPair (name1_hash, (name2_hash, (rhs_ast, body_ast)))))))), body_end)
       else
         let ident = parse_ident (src, bind_pos) in
         let (name, name_end) = ident in
@@ -311,7 +332,7 @@ let rec parse_expr_flag state =
         let body_pos = need_in (src, rhs_end) in
         let body = parse_expr_flag (src, (body_pos, 1)) in
         let (body_ast, body_end) = body in
-        (EMore (EMore2 (EMore3 (ELet (name, (rhs_ast, body_ast))))), body_end)
+        (EMore (EMore2 (EMore3 (EMore4 (EMore5 (ELet (name, (rhs_ast, body_ast))))))), body_end)
     else if is_write_byte_at (src, pos) then
       let expr_pos = need_write_byte (src, pos) in
       let expr = parse_expr_flag (src, (expr_pos, 0)) in
@@ -327,7 +348,7 @@ let rec parse_expr_flag state =
         if src.[after_first] == ',' then
           let right = parse_expr_flag (src, (after_first + 1, 1)) in
           let (right_ast, right_end) = right in
-          p_return (p_need_char (src, (right_end, ')')), EMore (EMore2 (EMore3 (EPair (ast, right_ast)))))
+          p_return (p_need_char (src, (right_end, ')')), EMore (EMore2 (EMore3 (EMore4 (EMore5 (EPair (ast, right_ast)))))))
         else
           p_return (p_need_char (src, (expr_end, ')')), ast)
       else if is_true_at (src, atom_pos) then
@@ -365,11 +386,33 @@ let rec parse_expr_flag state =
     let right = parse_expr_flag (src, (next + 2, allow_seq)) in
     let (right_ast, right_end) = right in
     (EMore (EMore2 (EEq (left_ast, right_ast))), right_end)
+  else if (src.[next] == '!') * (src.[next + 1] == '=') then
+    let right = parse_expr_flag (src, (next + 2, allow_seq)) in
+    let (right_ast, right_end) = right in
+    (EMore (EMore2 (EMore3 (ENe (left_ast, right_ast)))), right_end)
+  else if src.[next] == '<' then
+    if src.[next + 1] == '=' then
+      let right = parse_expr_flag (src, (next + 2, allow_seq)) in
+      let (right_ast, right_end) = right in
+      (EMore (EMore2 (EMore3 (ELe (left_ast, right_ast)))), right_end)
+    else
+      let right = parse_expr_flag (src, (next + 1, allow_seq)) in
+      let (right_ast, right_end) = right in
+      (EMore (EMore2 (EMore3 (ELt (left_ast, right_ast)))), right_end)
+  else if src.[next] == '>' then
+    if src.[next + 1] == '=' then
+      let right = parse_expr_flag (src, (next + 2, allow_seq)) in
+      let (right_ast, right_end) = right in
+      (EMore (EMore2 (EMore3 (EMore4 (EGe (left_ast, right_ast))))), right_end)
+    else
+      let right = parse_expr_flag (src, (next + 1, allow_seq)) in
+      let (right_ast, right_end) = right in
+      (EMore (EMore2 (EMore3 (EMore4 (EGt (left_ast, right_ast))))), right_end)
   else if allow_seq == 1 then
     if src.[next] == ';' then
       let right = parse_expr_flag (src, (next + 1, 1)) in
       let (right_ast, right_end) = right in
-      (EMore (EMore2 (EMore3 (EMore4 (ESeq (left_ast, right_ast))))), right_end)
+      (EMore (EMore2 (EMore3 (EMore4 (EMore5 (ESeq (left_ast, right_ast)))))), right_end)
     else
       left
   else
@@ -454,39 +497,66 @@ let rec infer state =
               TyBool
           | EMore3 more3 ->
               match more3 with
-                EIf parts ->
-                  let (cond, branches) = parts in
-                  let (yes, no) = branches in
-                  let _ = need_ty (infer (env, cond), TyBool) in
-                  let yes_ty = infer (env, yes) in
-                  let _ = need_ty (infer (env, no), yes_ty) in
-                  yes_ty
-              | ELet parts ->
-                  let (name, body_pair) = parts in
-                  let (rhs, body) = body_pair in
-                  let rhs_ty = infer (env, rhs) in
-                  infer (extend_tenv (name, (rhs_ty, env)), body)
-              | EPair parts ->
-                  let (left, right) = parts in
-                  TyPair (infer (env, left), infer (env, right))
+                ENe pair2 ->
+                  let (left, right) = pair2 in
+                  let left_ty = infer (env, left) in
+                  let _ = need_ty (infer (env, right), left_ty) in
+                  TyBool
+              | ELt pair ->
+                  let (left, right) = pair in
+                  let _ = need_ty (infer (env, left), TyInt) in
+                  let _ = need_ty (infer (env, right), TyInt) in
+                  TyBool
+              | ELe pair ->
+                  let (left, right) = pair in
+                  let _ = need_ty (infer (env, left), TyInt) in
+                  let _ = need_ty (infer (env, right), TyInt) in
+                  TyBool
               | EMore4 more4 ->
                   match more4 with
-                    ELetPair parts ->
-                      let (name1, rest1) = parts in
-                      let (name2, rest2) = rest1 in
-                      let (rhs, body) = rest2 in
-                      let rhs_ty = infer (env, rhs) in
-                      match rhs_ty with
-                        TyPair pair_ty ->
-                          let (left_ty, right_ty) = pair_ty in
-                          infer (extend_tenv (name2, (right_ty, extend_tenv (name1, (left_ty, env)))), body)
-                      | TyInt -> exit 1
-                      | TyUnit -> exit 1
-                      | TyBool -> exit 1
-                  | ESeq parts ->
-                      let (left, right) = parts in
-                      let _ = need_ty (infer (env, left), TyUnit) in
-                      infer (env, right)
+                    EGt pair ->
+                      let (left, right) = pair in
+                      let _ = need_ty (infer (env, left), TyInt) in
+                      let _ = need_ty (infer (env, right), TyInt) in
+                      TyBool
+                  | EGe pair ->
+                      let (left, right) = pair in
+                      let _ = need_ty (infer (env, left), TyInt) in
+                      let _ = need_ty (infer (env, right), TyInt) in
+                      TyBool
+                  | EIf parts ->
+                      let (cond, branches) = parts in
+                      let (yes, no) = branches in
+                      let _ = need_ty (infer (env, cond), TyBool) in
+                      let yes_ty = infer (env, yes) in
+                      let _ = need_ty (infer (env, no), yes_ty) in
+                      yes_ty
+                  | EMore5 more5 ->
+                      match more5 with
+                        ELet parts ->
+                          let (name, body_pair) = parts in
+                          let (rhs, body) = body_pair in
+                          let rhs_ty = infer (env, rhs) in
+                          infer (extend_tenv (name, (rhs_ty, env)), body)
+                      | EPair parts ->
+                          let (left, right) = parts in
+                          TyPair (infer (env, left), infer (env, right))
+                      | ELetPair parts ->
+                          let (name1, rest1) = parts in
+                          let (name2, rest2) = rest1 in
+                          let (rhs, body) = rest2 in
+                          let rhs_ty = infer (env, rhs) in
+                          match rhs_ty with
+                            TyPair pair_ty ->
+                              let (left_ty, right_ty) = pair_ty in
+                              infer (extend_tenv (name2, (right_ty, extend_tenv (name1, (left_ty, env)))), body)
+                          | TyInt -> exit 1
+                          | TyUnit -> exit 1
+                          | TyBool -> exit 1
+                      | ESeq parts ->
+                          let (left, right) = parts in
+                          let _ = need_ty (infer (env, left), TyUnit) in
+                          infer (env, right)
 in
 let rec empty_env unit =
   let _ = unit in
@@ -560,56 +630,93 @@ let rec emit_expr state =
               left_len + push_len + right_len + eq_len
           | EMore3 more3 ->
               match more3 with
-                EIf parts ->
-                  let (cond, branches) = parts in
-                  let (yes, no) = branches in
-                  let cond_len = emit_expr (cond, (env, 0)) in
-                  let yes_len = emit_expr (yes, (env, 0)) in
-                  let no_len = emit_expr (no, (env, 0)) in
-                  let _ = if emit == 1 then emit_expr (cond, (env, 1)) else 0 in
-                  let _ = emit_branch_if_not (emit, yes_len + 5) in
-                  let _ = if emit == 1 then emit_expr (yes, (env, 1)) else 0 in
-                  let _ = emit_branch (emit, no_len) in
-                  let _ = if emit == 1 then emit_expr (no, (env, 1)) else 0 in
-                  cond_len + 5 + yes_len + 5 + no_len
-              | ELet parts ->
-                  let (name, body_pair) = parts in
-                  let (rhs, body) = body_pair in
-                  let rhs_len = emit_expr (rhs, (env, emit)) in
-                  let push_len = emit_push emit in
-                  let body_len = emit_expr (body, (extend_env (name, env), emit)) in
-                  let pop_len = emit_pop1 emit in
-                  rhs_len + push_len + body_len + pop_len
-              | EPair parts ->
-                  let (left, right) = parts in
+                ENe pair2 ->
+                  let (left, right) = pair2 in
                   let left_len = emit_expr (left, (env, emit)) in
                   let push_len = emit_push emit in
                   let right_len = emit_expr (right, (shift_env env, emit)) in
-                  let pair_len = emit_makeblock_pair emit in
-                  left_len + push_len + right_len + pair_len
+                  let ne_len = emit_ne emit in
+                  left_len + push_len + right_len + ne_len
+              | ELt pair2 ->
+                  let (left, right) = pair2 in
+                  let left_len = emit_expr (left, (env, emit)) in
+                  let push_len = emit_push emit in
+                  let right_len = emit_expr (right, (shift_env env, emit)) in
+                  let lt_len = emit_lt emit in
+                  left_len + push_len + right_len + lt_len
+              | ELe pair2 ->
+                  let (left, right) = pair2 in
+                  let left_len = emit_expr (left, (env, emit)) in
+                  let push_len = emit_push emit in
+                  let right_len = emit_expr (right, (shift_env env, emit)) in
+                  let le_len = emit_le emit in
+                  left_len + push_len + right_len + le_len
               | EMore4 more4 ->
                   match more4 with
-                    ELetPair parts ->
-                      let (name1, rest1) = parts in
-                      let (name2, rest2) = rest1 in
-                      let (rhs, body) = rest2 in
-                      let rhs_len = emit_expr (rhs, (env, emit)) in
-                      let save_pair = emit_push emit in
-                      let acc_pair0 = emit_acc (emit, 0) in
-                      let get_left = emit_getfield (emit, 0) in
-                      let push_left = emit_push emit in
-                      let acc_pair1 = emit_acc (emit, 1) in
-                      let get_right = emit_getfield (emit, 1) in
-                      let push_right = emit_push emit in
-                      let body_env = extend_env (name2, extend_env (name1, shift_env env)) in
-                      let body_len = emit_expr (body, (body_env, emit)) in
-                      let pop_len = emit_pop (emit, 3) in
-                      rhs_len + save_pair + acc_pair0 + get_left + push_left + acc_pair1 + get_right + push_right + body_len + pop_len
-                  | ESeq parts ->
-                      let (left, right) = parts in
+                    EGt pair2 ->
+                      let (left, right) = pair2 in
                       let left_len = emit_expr (left, (env, emit)) in
-                      let right_len = emit_expr (right, (env, emit)) in
-                      left_len + right_len
+                      let push_len = emit_push emit in
+                      let right_len = emit_expr (right, (shift_env env, emit)) in
+                      let gt_len = emit_gt emit in
+                      left_len + push_len + right_len + gt_len
+                  | EGe pair2 ->
+                      let (left, right) = pair2 in
+                      let left_len = emit_expr (left, (env, emit)) in
+                      let push_len = emit_push emit in
+                      let right_len = emit_expr (right, (shift_env env, emit)) in
+                      let ge_len = emit_ge emit in
+                      left_len + push_len + right_len + ge_len
+                  | EIf parts ->
+                      let (cond, branches) = parts in
+                      let (yes, no) = branches in
+                      let cond_len = emit_expr (cond, (env, 0)) in
+                      let yes_len = emit_expr (yes, (env, 0)) in
+                      let no_len = emit_expr (no, (env, 0)) in
+                      let _ = if emit == 1 then emit_expr (cond, (env, 1)) else 0 in
+                      let _ = emit_branch_if_not (emit, yes_len + 5) in
+                      let _ = if emit == 1 then emit_expr (yes, (env, 1)) else 0 in
+                      let _ = emit_branch (emit, no_len) in
+                      let _ = if emit == 1 then emit_expr (no, (env, 1)) else 0 in
+                      cond_len + 5 + yes_len + 5 + no_len
+                  | EMore5 more5 ->
+                      match more5 with
+                        ELet parts ->
+                          let (name, body_pair) = parts in
+                          let (rhs, body) = body_pair in
+                          let rhs_len = emit_expr (rhs, (env, emit)) in
+                          let push_len = emit_push emit in
+                          let body_len = emit_expr (body, (extend_env (name, env), emit)) in
+                          let pop_len = emit_pop1 emit in
+                          rhs_len + push_len + body_len + pop_len
+                      | EPair parts ->
+                          let (left, right) = parts in
+                          let left_len = emit_expr (left, (env, emit)) in
+                          let push_len = emit_push emit in
+                          let right_len = emit_expr (right, (shift_env env, emit)) in
+                          let pair_len = emit_makeblock_pair emit in
+                          left_len + push_len + right_len + pair_len
+                      | ELetPair parts ->
+                          let (name1, rest1) = parts in
+                          let (name2, rest2) = rest1 in
+                          let (rhs, body) = rest2 in
+                          let rhs_len = emit_expr (rhs, (env, emit)) in
+                          let save_pair = emit_push emit in
+                          let acc_pair0 = emit_acc (emit, 0) in
+                          let get_left = emit_getfield (emit, 0) in
+                          let push_left = emit_push emit in
+                          let acc_pair1 = emit_acc (emit, 1) in
+                          let get_right = emit_getfield (emit, 1) in
+                          let push_right = emit_push emit in
+                          let body_env = extend_env (name2, extend_env (name1, shift_env env)) in
+                          let body_len = emit_expr (body, (body_env, emit)) in
+                          let pop_len = emit_pop (emit, 3) in
+                          rhs_len + save_pair + acc_pair0 + get_left + push_left + acc_pair1 + get_right + push_right + body_len + pop_len
+                      | ESeq parts ->
+                          let (left, right) = parts in
+                          let left_len = emit_expr (left, (env, emit)) in
+                          let right_len = emit_expr (right, (env, emit)) in
+                          left_len + right_len
 in
 let rec emit_program src =
   let parsed = parse_program (src, 0) in
