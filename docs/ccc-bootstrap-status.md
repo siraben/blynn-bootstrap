@@ -16,7 +16,7 @@ plan requirement.
 | 5 | `mlc.byte.selfhost` | none | missing |
 | 6 | `ccc.byte` | `ccc/ccc.ml`; `ccc/ccc.byte`; flake targets `ccc.byte.seed` and `tests.ccc.byte.committed`; current artifact is a seed-compiled smoke bytecode that emits deterministic M1 text under `mzvm-seed` | partial: committed smoke bytecode only |
 | 7 | `tcc.m1` via CCC | flake target `tcc.m1.ccc.seed` runs committed `ccc.byte` and installs `share/ccc/tcc.M1` | partial: smoke M1 text only |
-| 8 | `tcc.bin` via CCC | none | missing |
+| 8 | `tcc.bin` via CCC | flake target `tcc.bin.ccc.seed` assembles `tcc.m1.ccc.seed` with stage0 `M1`, links it with `hex2`, installs `bin/tcc`, and runs the executable expecting exit status 0 | partial: smoke executable only, not TinyCC |
 | 9 | `gcc46.m2.ccc.m2` | none | missing |
 | 10 | `gccLatest.m2.ccc.m2` | none | missing |
 

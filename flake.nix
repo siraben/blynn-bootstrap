@@ -850,6 +850,27 @@ DEFINE SYSCALL 0F05
           install -Dm644 tcc.M1 "$out/share/ccc/tcc.M1"
         '';
 
+        tccBinCccSeed = pkgs.runCommand "tcc-bin-ccc-seed" {
+          nativeBuildInputs = [ minimalBootstrap.stage0-posix.mescc-tools ];
+        } ''
+          cp ${tccM1CccSeed}/share/ccc/tcc.M1 tcc.M1
+          M1 --architecture amd64 --little-endian \
+            -f ${minimalBootstrap.stage0-posix.src}/M2libc/amd64/amd64_defs.M1 \
+            -f tcc.M1 \
+            --output tcc.hex2
+          printf ':ELF_end\n' > tcc-end.hex2
+          hex2 --architecture amd64 --little-endian --base-address 0x00600000 \
+            --file ${minimalBootstrap.stage0-posix.src}/M2libc/amd64/ELF-amd64.hex2 \
+            --file tcc.hex2 \
+            --file tcc-end.hex2 \
+            --output tcc
+          chmod 555 tcc
+          ./tcc
+          install -Dm555 tcc "$out/bin/tcc"
+          install -Dm644 tcc.M1 "$out/share/ccc/tcc.M1"
+          install -Dm644 tcc.hex2 "$out/share/ccc/tcc.hex2"
+        '';
+
         hccHostGhcNative = pkgs.callPackage ./nix/hcc-ghc.nix {
           stdenv = pkgs.stdenv;
           pname = "hcc-host-ghc-native";
@@ -1493,6 +1514,7 @@ DEFINE SYSCALL 0F05
           };
 
           tcc.m1.ccc.seed = tccM1CccSeed;
+          tcc.bin.ccc.seed = tccBinCccSeed;
 
           hcc = hccBy // {
             profile.host.ghc.native = hccProfileHostGhcNative;
@@ -1541,6 +1563,7 @@ DEFINE SYSCALL 0F05
             ccc.byte.seed = cccByteSeed;
             ccc.byte.committed = cccByteCommitted;
             tcc.m1.ccc.seed = tccM1CccSeed;
+            tcc.bin.ccc.seed = tccBinCccSeed;
           };
         };
       in {
@@ -1557,6 +1580,7 @@ DEFINE SYSCALL 0F05
           ccc-byte-seed = cccByteSeed;
           ccc-byte-committed = cccByteCommitted;
           tcc-m1-ccc-seed = tccM1CccSeed;
+          tcc-bin-ccc-seed = tccBinCccSeed;
         };
 
         legacyPackages = packageTree;
