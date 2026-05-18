@@ -1291,11 +1291,13 @@ OK"
         mlcByteSeed = stageRun {
           pname = "mlc-byte-seed";
           nativeBuildInputs = [
+            pkgs.diffutils
             mzvmSeedM2
           ];
-          description = "Current mlc.ml compiled to MZBC by the staged ML0 compiler";
+          description = "Current mlc.ml compiled to fixed-point MZBC by the staged ML0 compiler";
           buildScript = ''
-            cp ${mlcStage02Ml0Compiler}/share/mlc/stages/mlc-stage-from-02-self.mzbc mlc.byte
+            cp ${mlcStage02Ml0Compiler}/share/mlc/stages/mlc-stage-from-02-self.mzbc mlc.bootstrap.byte
+            ${mzvmSeedM2}/bin/mzvm-seed mlc.bootstrap.byte < ${mlcSrc}/mlc.ml > mlc.byte
             printf 'write_byte (40+39)' | ${mzvmSeedM2}/bin/mzvm-seed mlc.byte > compiled.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled.mzbc)"
             test "$actual" = O
@@ -1405,11 +1407,13 @@ OK"
             actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-dynamic-bytes.mzbc)"
             test "$actual" = OK
             ${mzvmSeedM2}/bin/mzvm-seed mlc.byte < ${mlcSrc}/mlc.ml > compiled-selfhost.mzbc
+            cmp mlc.byte compiled-selfhost.mzbc
             printf 'write_byte (40+39)' | ${mzvmSeedM2}/bin/mzvm-seed compiled-selfhost.mzbc > compiled-selfhost-smoke.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-selfhost-smoke.mzbc)"
             test "$actual" = O
           '';
           installScript = ''
+            install -Dm644 mlc.bootstrap.byte "$out/share/mlc/mlc.bootstrap.byte"
             install -Dm644 mlc.byte "$out/share/mlc/mlc.byte"
             install -Dm644 compiled.mzbc "$out/share/mlc/compiled.mzbc"
             install -Dm644 compiled-char.mzbc "$out/share/mlc/compiled-char.mzbc"
@@ -1455,6 +1459,12 @@ OK"
         mlcByteCommitted = pkgs.runCommand "mlc-byte-committed" { } ''
           cmp ${./mlc/mlc.byte} ${mlcByteSeed}/share/mlc/mlc.byte
           install -Dm644 ${./mlc/mlc.byte} "$out/share/mlc/mlc.byte"
+        '';
+
+        mlcByteSelfhost = pkgs.runCommand "mlc-byte-selfhost" { } ''
+          cmp ${mlcByteSeed}/share/mlc/mlc.byte ${mlcByteSeed}/share/mlc/compiled-selfhost.mzbc
+          install -Dm644 ${mlcByteSeed}/share/mlc/mlc.byte "$out/share/mlc/mlc.byte"
+          install -Dm644 ${mlcByteSeed}/share/mlc/compiled-selfhost.mzbc "$out/share/mlc/compiled-selfhost.mzbc"
         '';
 
         cccByteSeed = stageRun {
@@ -2154,6 +2164,7 @@ DEFINE SYSCALL 0F05
             seed.m2 = mlcSeedM2;
             byte.seed = mlcByteSeed;
             byte.committed = mlcByteCommitted;
+            byte.selfhost = mlcByteSelfhost;
           };
           mlc-interp-seed.host = mlcInterpSeedHost;
           mlc-interp-seed.m2 = mlcInterpSeedM2;
@@ -2219,6 +2230,7 @@ DEFINE SYSCALL 0F05
             mlc.seed.host-vs-m2 = mlcSeedHostVsM2;
             mlc.byte.seed = mlcByteSeed;
             mlc.byte.committed = mlcByteCommitted;
+            mlc.byte.selfhost = mlcByteSelfhost;
             ccc.byte.seed = cccByteSeed;
             ccc.byte.committed = cccByteCommitted;
             tcc.m1.ccc.seed = tccM1CccSeed;
@@ -2241,6 +2253,7 @@ DEFINE SYSCALL 0F05
           mlc-seed-host-vs-m2 = mlcSeedHostVsM2;
           mlc-byte-seed = mlcByteSeed;
           mlc-byte-committed = mlcByteCommitted;
+          mlc-byte-selfhost = mlcByteSelfhost;
           ccc-byte-seed = cccByteSeed;
           ccc-byte-committed = cccByteCommitted;
           tcc-m1-ccc-seed = tccM1CccSeed;

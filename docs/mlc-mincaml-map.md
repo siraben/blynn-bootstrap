@@ -132,14 +132,15 @@ terminators, so application parsing can distinguish identifier arguments from
 hashes are kept within the VM's signed 32-bit immediate range so the same
 parser logic runs under both the C tree-walking root and self-compiled MZBC.
 
-Treat the current `mlc.ml` as having a first self-host handoff smoke, not as a
-fixed point yet. It is written in the seed core language and has a staged
-one-lookahead lexer/parser/emitter path for byte literals, local `let`, integer
-expressions, nested conditionals, `read_byte`, `Bytes.create`, dynamic byte
-indexing and writes, arbitrary final direct calls, bounded keyword lookahead
-with capped identifier hashes, and the first ADT/pattern slice. The
-`mlc.byte.seed` target compiles `mlc/mlc.ml` with committed `mlc.byte`, then
-uses the generated compiler on a byte-output smoke.
+Treat the current `mlc.ml` as fixed-point self-hosted for the committed
+compiler artifact, but not as the final full MinCaml-style compiler yet. It is
+written in the seed core language and has a staged one-lookahead
+lexer/parser/emitter path for byte literals, local `let`, integer expressions,
+nested conditionals, `read_byte`, `Bytes.create`, dynamic byte indexing and
+writes, arbitrary final direct calls, bounded keyword lookahead with capped
+identifier hashes, and the first ADT/pattern slice. The `mlc.byte.selfhost`
+target compiles `mlc/mlc.ml` with committed `mlc.byte` and compares the result
+byte-for-byte with the committed compiler artifact.
 Leading `type` declarations build a constructor environment, constructor and
 tuple payload expressions allocate VM blocks, tuple destructuring extracts
 fields, and simple constructor/wildcard `match` forms lower to tag tests and

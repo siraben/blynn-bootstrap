@@ -62,9 +62,9 @@ Planned stages:
   uses the first tree-walking language to bootstrap a parity-oriented compiler;
   it does now compile the current next compiler source, `mlc/mlc.ml`, and the
   C root can emit bytecode for `02-ml0-compiler.ml` itself. That emitted
-  compiler compiles both its own source and `mlc/mlc.ml`; the fixed-point
-  byte-equality check is still reserved for the eventual committed
-  `mlc.byte`.
+  compiler compiles both its own source and `mlc/mlc.ml`; the committed
+  `mlc.byte` is now checked by the `mlc.byte.selfhost` fixed-point
+  byte-equality target.
 - Later parser stages increase the ML0 dialect until it can compile the next
   compiler source, then itself.
 - Later pattern stages extend the current `mlc.ml` ADT/match/direct-function
