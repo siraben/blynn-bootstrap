@@ -591,115 +591,14 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           inherit minimalBootstrap;
         };
 
-        mzvmHost = pkgs.stdenv.mkDerivation {
-          pname = "mzvm-host";
-          version = "0-unstable-2026-05-06";
-          src = mzvmSrc;
-
-          dontConfigure = true;
-          dontUpdateAutotoolsGnuConfigScripts = true;
-
-          buildPhase = ''
-            runHook preBuild
-            $CC -O2 -Wall -Wextra mzvm.c -o mzvm
-            runHook postBuild
-          '';
-
-          doCheck = true;
-          checkPhase = ''
-            runHook preCheck
-            sh ${./scripts/mzvm-write-ok-bytecode.sh} ok.mzbc
-            ./mzvm ok.mzbc > actual.txt
-            printf 'OK\n' > expected.txt
-            cmp expected.txt actual.txt
-            $CC -O2 -Wall -Wextra -DMZVM_HEAP_LIMIT=16 mzvm.c -o mzvm-gc
-            sh ${./scripts/mzvm-write-gc-bytecode.sh} gc.mzbc
-            ./mzvm-gc gc.mzbc > gc-actual.txt
-            cmp expected.txt gc-actual.txt
-            sh ${./scripts/mzvm-write-signed-bytecode.sh} signed.mzbc
-            ./mzvm signed.mzbc > signed-actual.txt
-            cmp expected.txt signed-actual.txt
-            runHook postCheck
-          '';
-
-          installPhase = ''
-            runHook preInstall
-            install -Dm755 mzvm "$out/bin/mzvm"
-            install -Dm644 mzvm.c "$out/share/mzvm/mzvm.c"
-            install -Dm644 mzvm-seed.c "$out/share/mzvm/mzvm-seed.c"
-            runHook postInstall
-          '';
-
-          meta = with pkgs.lib; {
-            description = "Host-built development ZINC-style VM for CCC bootstrap bytecode";
-            license = licenses.gpl3Only;
-            platforms = platforms.linux;
-          };
+        mzvmHost = pkgs.callPackage ./nix/mzvm-host.nix {
+          inherit mzvmSrc;
+          scriptsRoot = ./scripts;
         };
 
-        mzvmSeedM2 = stageRun {
-          pname = "mzvm-seed-m2";
-          nativeBuildInputs = [
-            minimalBootstrap.stage0-posix.mescc-tools
-          ];
-          description = "M2-Planet-built seed ZINC-style VM for CCC bootstrap bytecode";
-          buildScript = ''
-            . ${./scripts/lib/bootstrap.sh}
-            cp ${mzvmSrc}/mzvm-seed.c mzvm-seed.c
-            compile_m2 mzvm-seed.c mzvm-seed
-            printf '%s\n' '#define MZVM_HEAP_LIMIT 16' '#include "mzvm-seed.c"' > mzvm-seed-gc.c
-            compile_m2 mzvm-seed-gc.c mzvm-seed-gc
-            printf '%b' '\115\132\102\103\001\000\000\000\060\000\000\000\003\000\000\000\000\000\000\000' > ok.mzbc
-            printf '%b' '\001\117\000\000\000\016\001\000\000\000\001\000\000\000' >> ok.mzbc
-            printf '%b' '\001\113\000\000\000\016\001\000\000\000\001\000\000\000' >> ok.mzbc
-            printf '%b' '\001\012\000\000\000\016\001\000\000\000\001\000\000\000' >> ok.mzbc
-            printf '%b' '\001\000\000\000\000\000' >> ok.mzbc
-            ./mzvm-seed ok.mzbc > actual.txt
-            IFS= read -r actual < actual.txt
-            test "$actual" = OK
-            printf '%b' '\115\132\102\103\001\000\000\000\143\000\000\000\003\000\000\000\000\000\000\000' > block.mzbc
-            printf '%b' '\001\117\000\000\000\017\001\000\000\000\001\000\000\000\022\002\001\001\000\000\000\011\015\053\000\000\000' >> block.mzbc
-            printf '%b' '\001\117\000\000\000\016\001\000\000\000\001\000\000\000' >> block.mzbc
-            printf '%b' '\001\113\000\000\000\016\001\000\000\000\001\000\000\000' >> block.mzbc
-            printf '%b' '\001\012\000\000\000\016\001\000\000\000\001\000\000\000\000' >> block.mzbc
-            printf '%b' '\001\130\000\000\000\016\001\000\000\000\001\000\000\000' >> block.mzbc
-            printf '%b' '\001\012\000\000\000\016\001\000\000\000\001\000\000\000\000' >> block.mzbc
-            ./mzvm-seed block.mzbc > actual.txt
-            IFS= read -r actual < actual.txt
-            test "$actual" = OK
-            printf '%b' '\115\132\102\103\001\000\000\000\106\000\000\000\003\000\000\000\000\000\000\000' > signed.mzbc
-            printf '%b' '\001\377\377\377\377\002\001\000\000\000\000\012\015\012\000\000\000' >> signed.mzbc
-            printf '%b' '\001\117\000\000\000\013\005\000\000\000\001\130\000\000\000' >> signed.mzbc
-            printf '%b' '\016\001\000\000\000\001\000\000\000' >> signed.mzbc
-            printf '%b' '\001\113\000\000\000\016\001\000\000\000\001\000\000\000' >> signed.mzbc
-            printf '%b' '\001\012\000\000\000\016\001\000\000\000\001\000\000\000\000' >> signed.mzbc
-            ./mzvm-seed signed.mzbc > actual.txt
-            IFS= read -r actual < actual.txt
-            test "$actual" = OK
-            i=0
-            printf '%b' '\115\132\102\103\001\000\000\000\273\001\000\000\003\000\000\000\000\000\000\000' > gc.mzbc
-            while [ "$i" -lt 20 ]; do
-              printf '%b' '\001\001\000\000\000\002\001\002\000\000\000\017\000\000\000\000\002\000\000\000' >> gc.mzbc
-              i=$((i + 1))
-            done
-            printf '%b' '\001\117\000\000\000\016\001\000\000\000\001\000\000\000' >> gc.mzbc
-            printf '%b' '\001\113\000\000\000\016\001\000\000\000\001\000\000\000' >> gc.mzbc
-            printf '%b' '\001\012\000\000\000\016\001\000\000\000\001\000\000\000' >> gc.mzbc
-            printf '%b' '\000' >> gc.mzbc
-            ./mzvm-seed-gc gc.mzbc > actual.txt
-            IFS= read -r actual < actual.txt
-            test "$actual" = OK
-          '';
-          installScript = ''
-            install -Dm755 mzvm-seed "$out/bin/mzvm-seed"
-            install -Dm755 mzvm-seed-gc "$out/bin/mzvm-seed-gc"
-            install -Dm644 mzvm-seed.c "$out/share/mzvm/mzvm-seed.c"
-            install -Dm644 mzvm-seed-gc.c "$out/share/mzvm/mzvm-seed-gc.c"
-            install -Dm644 ok.mzbc "$out/share/mzvm/tests/ok.mzbc"
-            install -Dm644 block.mzbc "$out/share/mzvm/tests/block.mzbc"
-            install -Dm644 signed.mzbc "$out/share/mzvm/tests/signed.mzbc"
-            install -Dm644 gc.mzbc "$out/share/mzvm/tests/gc.mzbc"
-          '';
+        mzvmSeedM2 = pkgs.callPackage ./nix/mzvm-seed-m2.nix {
+          inherit stageRun minimalBootstrap mzvmSrc;
+          scriptsRoot = ./scripts;
         };
 
         mzvmHostVsSeed = pkgs.runCommand "mzvm-host-vs-seed" { } ''
