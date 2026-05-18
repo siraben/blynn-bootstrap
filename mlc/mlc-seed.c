@@ -818,7 +818,6 @@ static void parse_match(void)
   long arm2_len;
   long branch_stack_depth;
   if (!take_keyword("match")) die("expected match");
-  if (ctor_count != 2) die("only two-constructor matches are supported");
   parse_expr();
   expect_keyword("with");
   parse_pattern(&arm1_tag, &arm1_arity, &arm1_binder_start, &arm1_binder_len);
