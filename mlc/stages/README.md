@@ -27,9 +27,10 @@ Current stages:
 - `03-ok.ml0` and `03-char-string.ml0` are small ML0 sources accepted by
   `02-ml0-compiler.ml`.
 - `mlc/mlc.ml` is also compiled by `02-ml0-compiler.ml` in the current gate;
-  the emitted bytecode runs under `mzvm-seed` as a tiny compiler, accepts
-  `write_byte (40+39)`, `write_byte 'O'`, and `write_string "OK"`, emits
-  `.mzbc`, and those emitted bytecode files print the expected bytes.
+  the emitted bytecode runs under `mzvm-seed` as a tiny compiler, emits real
+  bytecode for constants, chars, a top-level `let`, variable lookup, and `+`,
+  and accepts `write_byte (40+39)`, `write_byte 'O'`, `write_string "OK"`,
+  and `let x = 40 in write_byte (x + 39)`.
 
 Planned stages:
 

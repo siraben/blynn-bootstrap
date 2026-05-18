@@ -851,6 +851,8 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             ${mzvmSeedM2}/bin/mzvm-seed mlc-stage-char.mzbc > mlc-stage-char.out
             printf 'write_string "OK"' | ${mzvmSeedM2}/bin/mzvm-seed mlc-stage.mzbc > mlc-stage-string.mzbc
             ${mzvmSeedM2}/bin/mzvm-seed mlc-stage-string.mzbc > mlc-stage-string.out
+            printf 'let x = 40 in write_byte (x + 39)' | ${mzvmSeedM2}/bin/mzvm-seed mlc-stage.mzbc > mlc-stage-let.mzbc
+            ${mzvmSeedM2}/bin/mzvm-seed mlc-stage-let.mzbc > mlc-stage-let.out
             test "$(cat ok.out)" = OK
             test "$(cat arithmetic.out)" = H-
             test "$(cat conditional.out)" = OK
@@ -878,6 +880,7 @@ OK"
             test "$(cat mlc-stage.out)" = O
             test "$(cat mlc-stage-char.out)" = O
             test "$(cat mlc-stage-string.out)" = OK
+            test "$(cat mlc-stage-let.out)" = O
           '';
           installScript = ''
             install -Dm644 02-ml0-compiler.ml "$out/share/mlc/stages/02-ml0-compiler.ml"
@@ -906,6 +909,8 @@ OK"
             install -Dm644 mlc-stage-char.out "$out/share/mlc/stages/mlc-stage-char.out"
             install -Dm644 mlc-stage-string.mzbc "$out/share/mlc/stages/mlc-stage-string.mzbc"
             install -Dm644 mlc-stage-string.out "$out/share/mlc/stages/mlc-stage-string.out"
+            install -Dm644 mlc-stage-let.mzbc "$out/share/mlc/stages/mlc-stage-let.mzbc"
+            install -Dm644 mlc-stage-let.out "$out/share/mlc/stages/mlc-stage-let.out"
           '';
         };
 
@@ -1145,12 +1150,16 @@ OK"
             printf 'write_string "OK"' | ${mzvmSeedM2}/bin/mzvm-seed mlc.byte > compiled-string.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-string.mzbc)"
             test "$actual" = OK
+            printf 'let x = 40 in write_byte (x + 39)' | ${mzvmSeedM2}/bin/mzvm-seed mlc.byte > compiled-let.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-let.mzbc)"
+            test "$actual" = O
           '';
           installScript = ''
             install -Dm644 mlc.byte "$out/share/mlc/mlc.byte"
             install -Dm644 compiled.mzbc "$out/share/mlc/compiled.mzbc"
             install -Dm644 compiled-char.mzbc "$out/share/mlc/compiled-char.mzbc"
             install -Dm644 compiled-string.mzbc "$out/share/mlc/compiled-string.mzbc"
+            install -Dm644 compiled-let.mzbc "$out/share/mlc/compiled-let.mzbc"
           '';
         };
 
