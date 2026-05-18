@@ -5,7 +5,7 @@ type expr_more2 = EMul of expr | EDiv of expr | EEq of expr | EMore3 of expr_mor
 type expr_more3 = ENe of expr | ELt of expr | ELe of expr | EMore4 of expr_more4
 type expr_more4 = EGt of expr | EGe of expr | EIf of expr | EMore5 of expr_more5
 type expr_more5 = ELet of expr | EPair of expr | ELetPair of expr | EMore6 of expr_more6
-type expr_more6 = ESeq of expr | EReadByte
+type expr_more6 = ESeq of expr | EReadByte | EUnit
 type parse_reply = ParseOk of int | ParseErr
 
 let rec byte n =
@@ -249,6 +249,10 @@ let rec is_write_byte_at state =
   let (src, pos0) = state in
   p_keyword_at (src, (pos0, "write_byte"))
 in
+let rec is_write_string_at state =
+  let (src, pos0) = state in
+  p_keyword_at (src, (pos0, "write_string"))
+in
 let rec is_read_byte_at state =
   let (src, pos0) = state in
   p_keyword_at (src, (pos0, "read_byte"))
@@ -276,6 +280,10 @@ in
 let rec need_write_byte state =
   let (src, pos0) = state in
   p_need_keyword (src, (pos0, "write_byte"))
+in
+let rec need_write_string state =
+  let (src, pos0) = state in
+  p_need_keyword (src, (pos0, "write_string"))
 in
 let rec need_read_byte state =
   let (src, pos0) = state in
@@ -307,6 +315,48 @@ let rec parse_ident state =
   let pos = skip_space (src, pos0) in
   let ch = src.[pos] in
   if is_alpha ch then parse_ident_loop (src, (pos + 1, ch)) else exit 1
+in
+let rec unit_expr dummy =
+  let _ = dummy in
+  EMore (EMore2 (EMore3 (EMore4 (EMore5 (EMore6 EUnit)))))
+in
+let rec write_byte_expr ch =
+  EMore (EWriteByte (EInt ch))
+in
+let rec seq_expr state =
+  let (left, right) = state in
+  EMore (EMore2 (EMore3 (EMore4 (EMore5 (EMore6 (ESeq (left, right)))))))
+in
+let rec parse_string_escape state =
+  let (src, pos) = state in
+  let ch = src.[pos] in
+  if ch == 'n' then ('\n', pos + 1) else
+  if ch == 't' then ('\t', pos + 1) else
+    (ch, pos + 1)
+in
+let rec parse_string_char state =
+  let (src, pos) = state in
+  let ch = src.[pos] in
+  if ch == '\\' then parse_string_escape (src, pos + 1) else (ch, pos + 1)
+in
+let rec parse_write_string_loop state =
+  let (src, pair) = state in
+  let (pos, pair2) = pair in
+  let (has_expr, acc) = pair2 in
+  if src.[pos] == '"' then
+    if has_expr == 1 then (acc, pos + 1) else (unit_expr 0, pos + 1)
+  else
+    let parsed = parse_string_char (src, pos) in
+    let (ch, next_pos) = parsed in
+    let byte_ast = write_byte_expr ch in
+    if has_expr == 1 then parse_write_string_loop (src, (next_pos, (1, seq_expr (acc, byte_ast)))) else
+      parse_write_string_loop (src, (next_pos, (1, byte_ast)))
+in
+let rec parse_write_string state =
+  let (src, pos0) = state in
+  let str_pos0 = need_write_string (src, pos0) in
+  let str_pos = skip_space (src, str_pos0) in
+  if src.[str_pos] == '"' then parse_write_string_loop (src, (str_pos + 1, (0, unit_expr 0))) else exit 1
 in
 let rec parse_binop state =
   let (src, pair) = state in
@@ -390,21 +440,27 @@ let rec parse_expr_prec state =
         let expr = parse_expr_prec (src, (expr_pos, (0, (0, (0, EInt 0))))) in
         let (expr_ast, expr_end) = expr in
         (EMore (EWriteByte expr_ast), expr_end)
+      else if is_write_string_at (src, pos) then
+        parse_write_string (src, pos)
       else if is_read_byte_at (src, pos) then
         p_return (need_read_byte (src, pos), EMore (EMore2 (EMore3 (EMore4 (EMore5 (EMore6 EReadByte))))))
       else
         let peeked = p_peek (src, pos) in
         let (ch, atom_pos) = peeked in
         if ch == '(' then
-          let expr = parse_expr_prec (src, (atom_pos + 1, (1, (0, (0, EInt 0))))) in
-          let (ast, expr_end) = expr in
-          let after_first = skip_space (src, expr_end) in
-          if src.[after_first] == ',' then
-            let right = parse_expr_prec (src, (after_first + 1, (1, (0, (0, EInt 0))))) in
-            let (right_ast, right_end) = right in
-            p_return (p_need_char (src, (right_end, ')')), EMore (EMore2 (EMore3 (EMore4 (EMore5 (EPair (ast, right_ast)))))))
+          let inner_pos = skip_space (src, atom_pos + 1) in
+          if src.[inner_pos] == ')' then
+            p_return (inner_pos + 1, unit_expr 0)
           else
-            p_return (p_need_char (src, (expr_end, ')')), ast)
+            let expr = parse_expr_prec (src, (atom_pos + 1, (1, (0, (0, EInt 0))))) in
+            let (ast, expr_end) = expr in
+            let after_first = skip_space (src, expr_end) in
+            if src.[after_first] == ',' then
+              let right = parse_expr_prec (src, (after_first + 1, (1, (0, (0, EInt 0))))) in
+              let (right_ast, right_end) = right in
+              p_return (p_need_char (src, (right_end, ')')), EMore (EMore2 (EMore3 (EMore4 (EMore5 (EPair (ast, right_ast)))))))
+            else
+              p_return (p_need_char (src, (expr_end, ')')), ast)
         else if is_true_at (src, atom_pos) then
           p_return (atom_pos + 4, EBool 1)
         else if is_false_at (src, atom_pos) then
@@ -581,6 +637,7 @@ let rec infer state =
                               let _ = need_ty (infer (env, left), TyUnit) in
                               infer (env, right)
                           | EReadByte -> TyInt
+                          | EUnit -> TyUnit
 in
 let rec empty_env unit =
   let _ = unit in
@@ -744,6 +801,7 @@ let rec emit_expr state =
                               let right_len = emit_expr (right, (env, emit)) in
                               left_len + right_len
                           | EReadByte -> emit_call_read_byte emit
+                          | EUnit -> emit_const (emit, 0)
 in
 let rec emit_program src =
   let parsed = parse_program (src, 0) in

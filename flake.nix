@@ -1529,6 +1529,12 @@ OK"
             printf 'write_byte read_byte' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-read-byte.mzbc
             actual="$(printf O | ${mzvmSeedM2}/bin/mzvm-seed 03-read-byte.mzbc)"
             test "$actual" = O
+            printf 'write_string "OK"' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-write-string.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-write-string.mzbc)"
+            test "$actual" = OK
+            printf '(); write_byte 79' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-unit.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-unit.mzbc)"
+            test "$actual" = O
             printf "write_byte 'O'" | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-char.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-char.mzbc)"
             test "$actual" = O
@@ -1595,6 +1601,8 @@ OK"
             install -Dm644 03-ast-compiler.mzbc "$out/share/mlc/stages/03-ast-compiler.mzbc"
             install -Dm644 03-direct.mzbc "$out/share/mlc/stages/03-direct.mzbc"
             install -Dm644 03-read-byte.mzbc "$out/share/mlc/stages/03-read-byte.mzbc"
+            install -Dm644 03-write-string.mzbc "$out/share/mlc/stages/03-write-string.mzbc"
+            install -Dm644 03-unit.mzbc "$out/share/mlc/stages/03-unit.mzbc"
             install -Dm644 03-char.mzbc "$out/share/mlc/stages/03-char.mzbc"
             install -Dm644 03-add.mzbc "$out/share/mlc/stages/03-add.mzbc"
             install -Dm644 03-sub.mzbc "$out/share/mlc/stages/03-sub.mzbc"

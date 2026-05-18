@@ -127,8 +127,8 @@ for the right-hand side, rebuilding the left-hand side, and continuing the
 climb. Stage 02 continues to carry the higher-order `p_bind` transition point.
 Stage 03 also type-checks sequencing with `;`, requiring the left expression to
 have type `unit` before emitting the right expression, and its typed integer
-core now covers `read_byte`, `+`, `-`, `*`, `/`, `!=`, `<`, `<=`, `>`, and
-`>=`.
+core now covers `read_byte`, literal `write_string`, `()`, `+`, `-`, `*`,
+`/`, `!=`, `<`, `<=`, `>`, and `>=`.
 
 The older `mlc-seed.c` is deliberately smaller than the full language and is
 now transitional. It is a tiny recursive-descent compiler for `let` bindings,
