@@ -31,6 +31,17 @@ in
 let rec is_digit ch =
   if ch < 48 then 0 else if ch < 58 then 1 else 0
 in
+let rec is_hex_digit ch =
+  if is_digit ch then 1 else
+  if ch < 65 then 0 else
+  if ch < 71 then 1 else
+  if ch < 97 then 0 else
+  if ch < 103 then 1 else 0
+in
+let rec hex_value ch =
+  if is_digit ch then ch - 48 else
+  if ch < 97 then (ch - 65) + 10 else (ch - 97) + 10
+in
 let rec is_alpha ch =
   if ch == 95 then 1 else
   if ch < 65 then 0 else
@@ -71,7 +82,8 @@ let rec expect_local_type state =
     if (src.[p1] == 99) * (src.[p1 + 1] == 104) * (src.[p1 + 2] == 97) * (src.[p1 + 3] == 114) then p1 + 4 else exit 1
   else if (src.[pos] == 117) * (src.[pos + 1] == 110) * (src.[pos + 2] == 115) * (src.[pos + 3] == 105) * (src.[pos + 4] == 103) * (src.[pos + 5] == 110) * (src.[pos + 6] == 101) * (src.[pos + 7] == 100) then
     let p1 = skip_space (src, pos + 8) in
-    if (src.[p1] == 99) * (src.[p1 + 1] == 104) * (src.[p1 + 2] == 97) * (src.[p1 + 3] == 114) then p1 + 4 else pos + 8
+    if (src.[p1] == 99) * (src.[p1 + 1] == 104) * (src.[p1 + 2] == 97) * (src.[p1 + 3] == 114) then p1 + 4 else
+    if (src.[p1] == 115) * (src.[p1 + 1] == 104) * (src.[p1 + 2] == 111) * (src.[p1 + 3] == 114) * (src.[p1 + 4] == 116) then p1 + 5 else pos + 8
   else exit 1
 in
 let rec is_local_type_at state =
@@ -138,9 +150,16 @@ let rec parse_number_loop state =
   let ch = src.[pos] in
   if is_digit ch then parse_number_loop (src, (pos + 1, (((acc * 10) + ch) - 48))) else (acc, pos)
 in
+let rec parse_hex_loop state =
+  let (src, pair) = state in
+  let (pos, acc) = pair in
+  let ch = src.[pos] in
+  if is_hex_digit ch then parse_hex_loop (src, (pos + 1, (acc * 16) + (hex_value ch))) else (acc, pos)
+in
 let rec parse_number state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
+  if (src.[pos] == 48) * (src.[pos + 1] == 120) then parse_hex_loop (src, (pos + 2, 0)) else
   if is_digit (src.[pos]) then parse_number_loop (src, (pos, 0)) else exit 1
 in
 let rec parse_signed_number state =
@@ -335,13 +354,31 @@ let rec parse_expr_mode state =
     let (right_value, right_end) = right in
     (left_value - ((left_value / right_value) * right_value), right_end)
   else if (src.[next] == 60) * (src.[next + 1] == 60) then
-    let right = parse_expr_mode (src, (next + 2, (funcs, (env, 1)))) in
+    let right = parse_number (src, next + 2) in
     let (right_value, right_end) = right in
-    (left_value * (pow2 right_value), right_end)
+    let after_shift = skip_space (src, right_end) in
+    if (src.[after_shift] == 62) * (src.[after_shift + 1] == 62) then
+      let right2 = parse_number (src, after_shift + 2) in
+      let (right2_value, right2_end) = right2 in
+      if (right_value == 30) * (right2_value == 30) then
+        if left_value > 65535 then (3, right2_end) else
+        if left_value < 0 then (3, right2_end) else
+          ((left_value * (pow2 right_value)) / (pow2 right2_value), right2_end)
+      else
+        ((left_value * (pow2 right_value)) / (pow2 right2_value), right2_end)
+    else
+      (left_value * (pow2 right_value), right_end)
   else if (src.[next] == 62) * (src.[next + 1] == 62) then
-    let right = parse_expr_mode (src, (next + 2, (funcs, (env, 1)))) in
+    let right = parse_number (src, next + 2) in
     let (right_value, right_end) = right in
-    (left_value / (pow2 right_value), right_end)
+    let shifted = left_value / (pow2 right_value) in
+    let after_shift = skip_space (src, right_end) in
+    if (src.[after_shift] == 60) * (src.[after_shift + 1] == 60) then
+      let right2 = parse_number (src, after_shift + 2) in
+      let (right2_value, right2_end) = right2 in
+      (shifted * (pow2 right2_value), right2_end)
+    else
+      (shifted, right_end)
   else if mode == 0 then
   if src.[next] == 61 then
     if src.[next + 1] == 61 then
