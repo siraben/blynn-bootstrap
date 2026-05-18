@@ -14,6 +14,7 @@
         hccSrc = ./hcc;
         mzvmSrc = ./mzvm;
         mlcSrc = ./mlc;
+        cccSrc = ./ccc;
         hccHsSrc = lib.cleanSourceWith {
           src = hccSrc;
           filter = path: type:
@@ -811,6 +812,29 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           install -Dm644 ${./mlc/mlc.byte} "$out/share/mlc/mlc.byte"
         '';
 
+        cccByteSeed = stageRun {
+          pname = "ccc-byte-seed";
+          nativeBuildInputs = [
+            mlcSeedM2
+            mzvmSeedM2
+          ];
+          description = "Current ccc.ml compiled to MZBC by the M2-built seed compiler";
+          buildScript = ''
+            cp ${cccSrc}/ccc.ml ccc.ml
+            ${mlcSeedM2}/bin/mlc-seed ccc.ml ccc.byte
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed ccc.byte)"
+            test "$actual" = OK
+          '';
+          installScript = ''
+            install -Dm644 ccc.byte "$out/share/ccc/ccc.byte"
+          '';
+        };
+
+        cccByteCommitted = pkgs.runCommand "ccc-byte-committed" { } ''
+          cmp ${./ccc/ccc.byte} ${cccByteSeed}/share/ccc/ccc.byte
+          install -Dm644 ${./ccc/ccc.byte} "$out/share/ccc/ccc.byte"
+        '';
+
         hccHostGhcNative = pkgs.callPackage ./nix/hcc-ghc.nix {
           stdenv = pkgs.stdenv;
           pname = "hcc-host-ghc-native";
@@ -1448,6 +1472,11 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           mlc-seed.host = mlcSeedHost;
           mlc-seed.m2 = mlcSeedM2;
 
+          ccc = {
+            byte.seed = cccByteSeed;
+            byte.committed = cccByteCommitted;
+          };
+
           hcc = hccBy // {
             profile.host.ghc.native = hccProfileHostGhcNative;
             blynn = {
@@ -1492,6 +1521,8 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             mlc.seed.host-vs-m2 = mlcSeedHostVsM2;
             mlc.byte.seed = mlcByteSeed;
             mlc.byte.committed = mlcByteCommitted;
+            ccc.byte.seed = cccByteSeed;
+            ccc.byte.committed = cccByteCommitted;
           };
         };
       in {
@@ -1505,6 +1536,8 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           mlc-seed-host-vs-m2 = mlcSeedHostVsM2;
           mlc-byte-seed = mlcByteSeed;
           mlc-byte-committed = mlcByteCommitted;
+          ccc-byte-seed = cccByteSeed;
+          ccc-byte-committed = cccByteCommitted;
         };
 
         legacyPackages = packageTree;

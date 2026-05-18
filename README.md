@@ -68,6 +68,8 @@ nix build .#mlc-seed.m2
 nix build .#tests.mlc.seed.host-vs-m2
 nix build .#mlc.byte.seed
 nix build .#tests.mlc.byte.committed
+nix build .#ccc.byte.seed
+nix build .#tests.ccc.byte.committed
 ```
 
 For faster iteration, use the GCC-built M2-Planet debug path:
