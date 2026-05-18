@@ -65,13 +65,22 @@ let rec expect_local_type state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
   if (src.[pos] == 105) * (src.[pos + 1] == 110) * (src.[pos + 2] == 116) then pos + 3 else
-  if (src.[pos] == 99) * (src.[pos + 1] == 104) * (src.[pos + 2] == 97) * (src.[pos + 3] == 114) then pos + 4 else exit 1
+  if (src.[pos] == 99) * (src.[pos + 1] == 104) * (src.[pos + 2] == 97) * (src.[pos + 3] == 114) then pos + 4 else
+  if (src.[pos] == 115) * (src.[pos + 1] == 105) * (src.[pos + 2] == 103) * (src.[pos + 3] == 110) * (src.[pos + 4] == 101) * (src.[pos + 5] == 100) then
+    let p1 = skip_space (src, pos + 6) in
+    if (src.[p1] == 99) * (src.[p1 + 1] == 104) * (src.[p1 + 2] == 97) * (src.[p1 + 3] == 114) then p1 + 4 else exit 1
+  else if (src.[pos] == 117) * (src.[pos + 1] == 110) * (src.[pos + 2] == 115) * (src.[pos + 3] == 105) * (src.[pos + 4] == 103) * (src.[pos + 5] == 110) * (src.[pos + 6] == 101) * (src.[pos + 7] == 100) then
+    let p1 = skip_space (src, pos + 8) in
+    if (src.[p1] == 99) * (src.[p1 + 1] == 104) * (src.[p1 + 2] == 97) * (src.[p1 + 3] == 114) then p1 + 4 else pos + 8
+  else exit 1
 in
 let rec is_local_type_at state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
   ((src.[pos] == 105) * (src.[pos + 1] == 110) * (src.[pos + 2] == 116)) +
-  ((src.[pos] == 99) * (src.[pos + 1] == 104) * (src.[pos + 2] == 97) * (src.[pos + 3] == 114))
+  ((src.[pos] == 99) * (src.[pos + 1] == 104) * (src.[pos + 2] == 97) * (src.[pos + 3] == 114)) +
+  ((src.[pos] == 115) * (src.[pos + 1] == 105) * (src.[pos + 2] == 103) * (src.[pos + 3] == 110) * (src.[pos + 4] == 101) * (src.[pos + 5] == 100)) +
+  ((src.[pos] == 117) * (src.[pos + 1] == 110) * (src.[pos + 2] == 115) * (src.[pos + 3] == 105) * (src.[pos + 4] == 103) * (src.[pos + 5] == 110) * (src.[pos + 6] == 101) * (src.[pos + 7] == 100))
 in
 let rec expect_type state =
   let (src, pos0) = state in
@@ -178,6 +187,24 @@ let rec string_at state =
   if index == 1 then 101 else
   if index == 2 then 115 else 0
 in
+let rec is_unsigned_char_cast state =
+  let (src, pos0) = state in
+  let pos = skip_space (src, pos0) in
+  let p1 =
+    if (src.[pos] == 117) * (src.[pos + 1] == 110) * (src.[pos + 2] == 115) * (src.[pos + 3] == 105) * (src.[pos + 4] == 103) * (src.[pos + 5] == 110) * (src.[pos + 6] == 101) * (src.[pos + 7] == 100) then
+      skip_space (src, pos + 8)
+    else
+      0 - 1
+  in
+  if p1 < 0 then 0 else
+  (src.[p1] == 99) * (src.[p1 + 1] == 104) * (src.[p1 + 2] == 97) * (src.[p1 + 3] == 114)
+in
+let rec expect_unsigned_char_cast state =
+  let (src, pos0) = state in
+  let pos = skip_space (src, pos0) in
+  let p1 = skip_space (src, pos + 8) in
+  if (src.[p1] == 99) * (src.[p1 + 1] == 104) * (src.[p1 + 2] == 97) * (src.[p1 + 3] == 114) then p1 + 4 else exit 1
+in
 let rec empty_funcs unit =
   let _ = unit in
   (0 - 1, (0, (0, 0)))
@@ -239,10 +266,17 @@ let rec parse_expr_mode state =
       let (value, value_end) = expr in
       (0 - value, value_end)
     else if src.[pos] == 40 then
-      let expr = parse_expr_mode (src, (pos + 1, (funcs, (env, 0)))) in
-      let (value, value_end) = expr in
-      let p1 = expect_ch (src, (value_end, 41)) in
-      (value, p1)
+      if is_unsigned_char_cast (src, pos + 1) then
+        let cast_end = expect_unsigned_char_cast (src, pos + 1) in
+        let p1 = expect_ch (src, (cast_end, 41)) in
+        let expr = parse_expr_mode (src, (p1, (funcs, (env, mode)))) in
+        let (value, value_end) = expr in
+        if value < 0 then (value + 256, value_end) else (value, value_end)
+      else
+        let expr = parse_expr_mode (src, (pos + 1, (funcs, (env, 0)))) in
+        let (value, value_end) = expr in
+        let p1 = expect_ch (src, (value_end, 41)) in
+        (value, p1)
     else if src.[pos] == 34 then parse_string_value (src, pos)
     else if src.[pos] == 39 then parse_char_value (src, pos)
     else if is_digit (src.[pos]) then parse_number (src, pos) else

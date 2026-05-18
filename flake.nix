@@ -1505,6 +1505,7 @@ DEFINE SYSCALL 0F05
             check_return ${./tests/mescc/scaffold/13-if-neq.c} 0
             check_return ${./tests/mescc/scaffold/14-if-goto.c} 0
             check_return ${./tests/mescc/scaffold/15-if-not-f.c} 0
+            check_return ${./tests/mescc/scaffold/16-cast.c} 0
             check_return ${./tests/mescc/scaffold/16-if-t.c} 0
             check_return ${./tests/mescc/scaffold/17-compare-char.c} 0
             check_return ${./tests/mescc/scaffold/17-compare-assign.c} 0
