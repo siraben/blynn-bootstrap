@@ -326,7 +326,11 @@ let rec parse_expr_mode state =
       if src.[after_name] == 40 then
         let p1 = skip_space (src, after_name + 1) in
         if src.[p1] == 41 then (apply_func (funcs, (name, 0)), p1 + 1) else
-        let arg = parse_expr_mode (src, (p1, (funcs, (env, 0)))) in
+        let p1_arg = skip_space (src, p1) in
+        let arg =
+          if src.[p1_arg] == 38 then parse_expr_mode (src, (p1_arg + 1, (funcs, (env, 0)))) else
+            parse_expr_mode (src, (p1, (funcs, (env, 0))))
+        in
         let (arg_value, arg_end) = arg in
         let arg_next = skip_space (src, arg_end) in
         if src.[arg_next] == 44 then
@@ -457,6 +461,12 @@ let rec parse_func_return state =
   let p0 = expect_return (src, start) in
   let p1 = skip_space (src, p0) in
   if src.[p1] == 59 then ((0, 0), p1 + 1) else
+  if src.[p1] == 42 then
+    let ident = parse_ident (src, p1 + 1) in
+    let (name, name_end) = ident in
+    let p2 = expect_ch (src, (name_end, 59)) in
+    if name == param then ((1, 0), p2) else exit 1
+  else
   if src.[p1] == 33 then
     let ident = parse_ident (src, p1 + 1) in
     let (name, name_end) = ident in
@@ -498,9 +508,10 @@ let rec parse_params state =
     (0 - 1, p2)
   else
     let p2 = expect_int (src, p1) in
-    let p2_next = skip_space (src, p2) in
+    let p2_space = skip_space (src, p2) in
+    let p2_next = if src.[p2_space] == 42 then skip_space (src, p2_space + 1) else p2_space in
     if src.[p2_next] == 41 then (0 - 1, p2_next + 1) else
-      let param = parse_ident (src, p2) in
+      let param = parse_ident (src, p2_next) in
       let (param_name, param_end) = param in
       let p3 =
         let param_next = skip_space (src, param_end) in
@@ -628,7 +639,19 @@ let rec parse_condition_value state =
   let (src, pair) = state in
   let (pos0, pair2) = pair in
   let (funcs, env) = pair2 in
-  let left = parse_expr_value (src, (pos0, (funcs, env))) in
+  let pos = skip_space (src, pos0) in
+  let left =
+    if src.[pos] == 40 then
+      if (is_unsigned_char_cast (src, pos + 1)) + (is_char_cast (src, pos + 1)) then
+        parse_expr_value (src, (pos0, (funcs, env)))
+      else
+        let inner = parse_condition_value (src, (pos + 1, (funcs, env))) in
+        let (inner_value, inner_end) = inner in
+        let p1 = expect_ch (src, (inner_end, 41)) in
+        (inner_value, p1)
+    else
+      parse_expr_value (src, (pos0, (funcs, env)))
+  in
   let (left_value, left_end) = left in
   let next = skip_space (src, left_end) in
   if src.[next] == 61 then

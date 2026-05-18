@@ -1534,6 +1534,7 @@ DEFINE SYSCALL 0F05
             check_return ${./tests/mescc/scaffold/45-void-call.c} 0
             check_return ${./tests/mescc/scaffold/70-function-modulo.c} 0
             check_return ${./tests/hcc/m1-smoke/examples/ret13.c} 13
+            check_return ${./tests/hcc/m1-smoke/examples/short-circuit.c} 42
             check_return ${./tests/hcc/m1-smoke/examples/signed-char-cast.c} 0
             check_return ${./tests/hcc/m1-smoke/examples/return-coercion.c} 0
             printf 'int main(){return 42;}' > return-42.c
@@ -1648,6 +1649,7 @@ DEFINE SYSCALL 0F05
           build_and_run ${./tests/mescc/scaffold/45-void-call.c} 0 45-void-call
           build_and_run ${./tests/mescc/scaffold/70-function-modulo.c} 0 70-function-modulo
           build_and_run ${./tests/hcc/m1-smoke/examples/ret13.c} 13 hcc-ret13
+          build_and_run ${./tests/hcc/m1-smoke/examples/short-circuit.c} 42 hcc-short-circuit
           build_and_run ${./tests/hcc/m1-smoke/examples/signed-char-cast.c} 0 hcc-signed-char-cast
           build_and_run ${./tests/hcc/m1-smoke/examples/return-coercion.c} 0 hcc-return-coercion
         '';
