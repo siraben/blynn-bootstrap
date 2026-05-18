@@ -18,14 +18,15 @@ Keep the MinCaml constraints that make the compiler auditable:
 - impure operations
 - monomorphic type inference
 - higher-order functions through closure conversion
-- no polymorphism, data types, modules, or GC in the first bootstrap compiler
+- no polymorphism, modules, or GC in the first bootstrap compiler
 - no automatic partial application
 
 CCC-specific changes:
 
 - drop floats and all float-register machinery
 - add bytes/string primitives needed by the C compiler
-- encode variants as tagged tuples rather than adding ADTs
+- add real algebraic data types and pattern matching, compiling matches to
+  constructor tests, field extraction, and bytecode branches
 - target `.mzbc` stack bytecode, not virtual assembly plus register allocation
 
 ## Pass Checklist
@@ -35,6 +36,7 @@ The source implementation orders the compiler roughly as:
 ```text
 syntax/parser/lexer
 typing
+pattern-match lowering
 kNormal
 alpha
 beta
@@ -83,6 +85,6 @@ the first VM/compiler smoke fixture. It exists to pin the M2 path and bytecode
 writer before the real MinCaml-shaped passes are ported into `mlc.ml`.
 
 Do not treat the current `mlc.ml` as self-hosted. The next meaningful step is
-to replace the placeholder with the lexer/parser/type AST spine, then grow the
-seed compiler and fixture corpus until `mlc-seed` can reproduce a committed
-`mlc.byte`.
+to replace the placeholder with the lexer/parser/type AST spine, including
+ADT and pattern nodes, then grow the seed compiler and fixture corpus until
+`mlc-seed` can reproduce a committed `mlc.byte`.

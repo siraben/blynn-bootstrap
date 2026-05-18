@@ -30,8 +30,8 @@ plan requirement.
 ## Next Required Work
 
 1. Replace the placeholder `mlc/mlc.ml` with a real MinCaml-shaped compiler
-   spine: lexer, parser, AST, and bytecode emitter for a small expression
-   subset.
+   spine: lexer, parser, AST, ADT/pattern nodes, and bytecode emitter for a
+   small expression subset.
 2. Grow `mlc-seed.c` from the current `write_byte` fixture compiler into a
    mechanical seed compiler for that same subset.
 3. Add golden `.ml` fixtures that compare `mlc-seed` bytecode with host-built
