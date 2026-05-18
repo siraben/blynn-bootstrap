@@ -56,6 +56,7 @@ let rec emit_makeblock_dyn dummy =
 in
 let rec emit_getfield n = emit1 16 n in
 let rec emit_getfield_dyn dummy = write_byte 25 in
+let rec emit_setfield_dyn dummy = write_byte 26 in
 let rec is_space ch =
   if ch = 32 then 1 else
   if ch = 9 then 1 else
@@ -377,19 +378,37 @@ let rec compile mode =
       if ch = 46 then
         let next = read_byte in
         if next = 91 then
-          compile 2 read_byte env funcs (base + left_len + 1) (fun index_len -> fun index_emit -> fun ch ->
+          compile 2 read_byte (shift_env env) funcs (base + left_len + 1) (fun index_len -> fun index_emit -> fun ch ->
           let ch = expect 93 (skip_space ch) in
-          tail
-            (left_len + 1 + index_len + 1)
-            (emit3 left_emit emit_push (emit2 index_emit emit_getfield_dyn))
-            ch)
+          let ch = skip_space ch in
+          if ch = 60 then
+            let ch = expect 45 read_byte in
+            compile 1 ch (shift_env (shift_env env)) funcs (base + left_len + 1 + index_len + 1) (fun value_len -> fun value_emit -> fun ch ->
+            kon
+              (left_len + 1 + index_len + 1 + value_len + 1)
+              (emit3 left_emit emit_push (emit3 index_emit emit_push (emit2 value_emit emit_setfield_dyn)))
+              ch)
+          else
+            tail
+              (left_len + 1 + index_len + 1)
+              (emit3 left_emit emit_push (emit2 index_emit emit_getfield_dyn))
+              ch)
         else if next = 40 then
-          compile 2 read_byte env funcs (base + left_len + 1) (fun index_len -> fun index_emit -> fun ch ->
+          compile 2 read_byte (shift_env env) funcs (base + left_len + 1) (fun index_len -> fun index_emit -> fun ch ->
           let ch = expect 41 (skip_space ch) in
-          tail
-            (left_len + 1 + index_len + 1)
-            (emit3 left_emit emit_push (emit2 index_emit emit_getfield_dyn))
-            ch)
+          let ch = skip_space ch in
+          if ch = 60 then
+            let ch = expect 45 read_byte in
+            compile 1 ch (shift_env (shift_env env)) funcs (base + left_len + 1 + index_len + 1) (fun value_len -> fun value_emit -> fun ch ->
+            kon
+              (left_len + 1 + index_len + 1 + value_len + 1)
+              (emit3 left_emit emit_push (emit3 index_emit emit_push (emit2 value_emit emit_setfield_dyn)))
+              ch)
+          else
+            tail
+              (left_len + 1 + index_len + 1)
+              (emit3 left_emit emit_push (emit2 index_emit emit_getfield_dyn))
+              ch)
         else
           exit 1
       else
@@ -426,6 +445,24 @@ let rec compile mode =
     else if is_digit ch then
       number ch (fun n -> fun ch ->
       kon 5 (emit_const n) ch)
+    else if ch = 65 then
+      let ch = expect 114 read_byte in
+      let ch = expect 114 ch in
+      let ch = expect 97 ch in
+      let ch = expect 121 ch in
+      let ch = expect 46 ch in
+      let ch = expect 99 ch in
+      let ch = expect 114 ch in
+      let ch = expect 101 ch in
+      let ch = expect 97 ch in
+      let ch = expect 116 ch in
+      let ch = expect 101 ch in
+      compile 5 ch env funcs base (fun size_len -> fun size_emit -> fun ch ->
+      compile 5 ch env funcs (base + size_len + 1) (fun init_len -> fun init_emit -> fun ch ->
+      kon
+        (size_len + 1 + init_len + 5)
+        (emit3 size_emit emit_push (emit2 init_emit emit_makeblock_dyn))
+        ch))
     else if ch = 114 then
       let ch = expect 101 read_byte in
       let ch = expect 97 ch in

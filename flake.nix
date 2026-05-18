@@ -838,7 +838,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             ${mlcInterpSeedM2}/bin/mlc-interp-seed 02-ml0-compiler.ml < 03-char-string.ml0 > 03-char-string.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-char-string.mzbc)"
             test "$actual" = OK
-            for name in ok arithmetic conditional comparison let-binding sequence negative identifiers string string-value length exit tuple function function-tuple function-nested function-string; do
+            for name in ok arithmetic conditional comparison let-binding sequence negative identifiers string string-value length exit tuple bytes array dynamic-create dynamic-index function function-tuple function-nested function-string; do
               ${mlcInterpSeedM2}/bin/mlc-interp-seed 02-ml0-compiler.ml < ${./tests/mlc}/$name.ml > $name.mzbc
               ${mzvmSeedM2}/bin/mzvm-seed $name.mzbc > $name.out
             done
@@ -858,6 +858,10 @@ OK"
             test "$(cat length.out)" = OK
             test "$(cat exit.out)" = OK
             test "$(cat tuple.out)" = OK
+            test "$(cat bytes.out)" = OK
+            test "$(cat array.out)" = OK
+            test "$(cat dynamic-create.out)" = OK
+            test "$(cat dynamic-index.out)" = OK
             test "$(cat function.out)" = OK
             test "$(cat function-tuple.out)" = OK
             test "$(cat function-nested.out)" = OK
@@ -875,6 +879,10 @@ OK"
             install -Dm644 read-byte.mzbc "$out/share/mlc/stages/read-byte.mzbc"
             install -Dm644 exit.mzbc "$out/share/mlc/stages/exit.mzbc"
             install -Dm644 tuple.mzbc "$out/share/mlc/stages/tuple.mzbc"
+            install -Dm644 bytes.mzbc "$out/share/mlc/stages/bytes.mzbc"
+            install -Dm644 array.mzbc "$out/share/mlc/stages/array.mzbc"
+            install -Dm644 dynamic-create.mzbc "$out/share/mlc/stages/dynamic-create.mzbc"
+            install -Dm644 dynamic-index.mzbc "$out/share/mlc/stages/dynamic-index.mzbc"
             install -Dm644 function.mzbc "$out/share/mlc/stages/function.mzbc"
             install -Dm644 function-tuple.mzbc "$out/share/mlc/stages/function-tuple.mzbc"
             install -Dm644 function-nested.mzbc "$out/share/mlc/stages/function-nested.mzbc"
