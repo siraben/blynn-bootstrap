@@ -103,6 +103,14 @@ stage smoke input and is checked under both host and M2 builds.
 `mlc/stages/01-parenthetical.ml` is the first real handoff stage in the style
 of Blynn's `parenthetically`: it fully parses a tiny parenthesized MZBC
 assembly language and emits a bytecode artifact that the next VM stage can run.
+From this stage onward, source-character constants such as delimiters, keyword
+letters, whitespace, and the MZBC magic are written as char literals; raw
+numbers are reserved for bytecode opcodes, packed metadata, and arithmetic.
+The C root also exposes an early `expect_string "..." ch` parser primitive so
+handoff stages can consume fixed spellings without long chains of single-byte
+expectations. Stage 02 begins the monadic parser transition by spelling parser
+steps as `ch -> kon -> result` values and using `parse_bind` to thread the
+one-character lookahead state.
 
 The older `mlc-seed.c` is deliberately smaller than the full language and is
 now transitional. It is a tiny recursive-descent compiler for `let` bindings,
@@ -131,6 +139,11 @@ terminators, so application parsing can distinguish identifier arguments from
 `in` / `then` / `else` without relying on first-letter heuristics. Identifier
 hashes are kept within the VM's signed 32-bit immediate range so the same
 parser logic runs under both the C tree-walking root and self-compiled MZBC.
+Its tokenizer, delimiter checks, keyword spelling, and MZBC magic emission use
+char literals instead of raw ASCII integers. Stage 02 compiles
+`expect_string` calls into ordinary bytecode comparisons and `read_byte`
+steps, keeping the primitive out of the VM ABI, and its string parser now goes
+through the same `parse_bind` path as later parser combinators.
 
 Treat the current `mlc.ml` as fixed-point self-hosted for the committed
 compiler artifact, but not as the final full MinCaml-style compiler yet. It is

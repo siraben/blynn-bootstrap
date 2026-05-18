@@ -28,7 +28,8 @@ enum {
   N_READ_BYTE = 20,
   N_NEG = 21,
   N_EXIT = 22,
-  N_WRITE_STRING = 23
+  N_WRITE_STRING = 23,
+  N_EXPECT_STRING = 24
 };
 
 static char *src;
@@ -178,7 +179,7 @@ static int keyword_span(long start, long len)
     span_eq(start, len, "true") || span_eq(start, len, "false") ||
     span_eq(start, len, "exit") ||
     span_eq(start, len, "read_byte") || span_eq(start, len, "write_byte") ||
-    span_eq(start, len, "write_string");
+    span_eq(start, len, "write_string") || span_eq(start, len, "expect_string");
 }
 
 static int keyword_at(const char *word)
@@ -412,6 +413,14 @@ static long parse_prefix(void)
     parse_string_span(&string_start, &string_len);
     name_start[node] = string_start;
     name_len[node] = string_len;
+    return node;
+  }
+  if (take_keyword("expect_string")) {
+    node = new_node(N_EXPECT_STRING);
+    parse_string_span(&string_start, &string_len);
+    name_start[node] = string_start;
+    name_len[node] = string_len;
+    left[node] = parse_prefix();
     return node;
   }
   if (take_keyword("exit")) {
@@ -705,6 +714,18 @@ static long eval(long node, long env)
       fputc((int)(c & 255), stdout);
     }
     return val_int(0);
+  }
+  if (k == N_EXPECT_STRING) {
+    a = int_val(eval(left[node], env));
+    offset = name_start[node];
+    end = offset + name_len[node];
+    while (offset < end) {
+      c = string_next_char(&offset, end);
+      if (a != c) die("expect_string mismatch");
+      a = fgetc(stdin);
+      if (a == EOF) a = -1;
+    }
+    return val_int(a);
   }
   if (k == N_EXIT) {
     a = int_val(eval(left[node], env));
