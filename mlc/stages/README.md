@@ -71,6 +71,15 @@ Current stages:
   `adt-pattern-nested-tuple.ml`, and recursive ADT traversal in
   `adt-recursion.ml`, to VM block allocation, tag tests, field extraction,
   direct calls, field mutation for imperative cells, and branches.
+- `03-ast-compiler.ml` is the first successor source compiled by the committed
+  fixed-point `mlc.byte`. It keeps the accepted language intentionally small
+  while adding a real parse -> AST -> type-check -> emit boundary, with AST
+  and type nodes represented as ML variants rather than C-side tags. Its
+  parser uses the executable subset of the HCC `ParseLite` shape available to
+  this compiler (`p_peek`, `p_need_char`, `p_return`) and leaves higher-order
+  `p_bind` for the next compiler that can compile function-valued parser
+  continuations. The flake gate checks direct bytes, char literals, addition,
+  conditionals, `let`, full-input consumption, and a static branch type error.
 
 Planned stages:
 
@@ -81,7 +90,9 @@ Planned stages:
   C root can emit bytecode for `02-ml0-compiler.ml` itself. That emitted
   compiler compiles both its own source and `mlc/mlc.ml`; the committed
   `mlc.byte` is now checked by the `mlc.byte.selfhost` fixed-point
-  byte-equality target.
+  byte-equality target. `03-ast-compiler.ml` is not promoted yet; it is a
+  checked successor handoff stage that establishes the AST/type-check boundary
+  before the next self-compiling source grows the language.
 - The remaining parser/compiler growth is concentrated in `mlc.ml` and, only
   if needed, one immediate successor; the path should stay within the
   five-stage cap documented in `plan.md`.

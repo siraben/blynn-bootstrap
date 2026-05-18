@@ -1490,6 +1490,48 @@ OK"
           install -Dm644 ${mlcByteSeed}/share/mlc/compiled-selfhost.mzbc "$out/share/mlc/compiled-selfhost.mzbc"
         '';
 
+        mlcStage03AstCompiler = stageRun {
+          pname = "mlc-stage-03-ast-compiler";
+          nativeBuildInputs = [
+            mzvmSeedM2
+          ];
+          description = "AST-building and type-checking ML successor stage";
+          buildScript = ''
+            cp ${mlcSrc}/stages/03-ast-compiler.ml 03-ast-compiler.ml
+            ${mzvmSeedM2}/bin/mzvm-seed ${./mlc/mlc.byte} < 03-ast-compiler.ml > 03-ast-compiler.mzbc
+            printf 'write_byte 79' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-direct.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-direct.mzbc)"
+            test "$actual" = O
+            printf "write_byte 'O'" | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-char.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-char.mzbc)"
+            test "$actual" = O
+            printf 'write_byte (40 + 39)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-add.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-add.mzbc)"
+            test "$actual" = O
+            printf "write_byte (if 1 == 1 then 'O' else 'X')" | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-if.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-if.mzbc)"
+            test "$actual" = O
+            printf 'write_byte (let x = 40 in x + 39)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-let.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-let.mzbc)"
+            test "$actual" = O
+            if printf 'write_byte 79 garbage' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-trailing.mzbc; then
+              exit 1
+            fi
+            if printf 'write_byte (if 1 then 79 else write_byte 88)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-type-error.mzbc; then
+              exit 1
+            fi
+          '';
+          installScript = ''
+            install -Dm644 03-ast-compiler.ml "$out/share/mlc/stages/03-ast-compiler.ml"
+            install -Dm644 03-ast-compiler.mzbc "$out/share/mlc/stages/03-ast-compiler.mzbc"
+            install -Dm644 03-direct.mzbc "$out/share/mlc/stages/03-direct.mzbc"
+            install -Dm644 03-char.mzbc "$out/share/mlc/stages/03-char.mzbc"
+            install -Dm644 03-add.mzbc "$out/share/mlc/stages/03-add.mzbc"
+            install -Dm644 03-if.mzbc "$out/share/mlc/stages/03-if.mzbc"
+            install -Dm644 03-let.mzbc "$out/share/mlc/stages/03-let.mzbc"
+          '';
+        };
+
         cccByteSeed = stageRun {
           pname = "ccc-byte-seed";
           nativeBuildInputs = [
@@ -2341,6 +2383,7 @@ DEFINE SYSCALL 0F05
             stage.core00 = mlcStage00Core;
             stage.parenthetical01 = mlcStage01Parenthetical;
             stage.ml0Compiler02 = mlcStage02Ml0Compiler;
+            stage.astCompiler03 = mlcStage03AstCompiler;
             seed.host = mlcSeedHost;
             seed.m2 = mlcSeedM2;
             byte.seed = mlcByteSeed;
@@ -2352,6 +2395,7 @@ DEFINE SYSCALL 0F05
           mlc-stage-00-core = mlcStage00Core;
           mlc-stage-01-parenthetical = mlcStage01Parenthetical;
           mlc-stage-02-ml0-compiler = mlcStage02Ml0Compiler;
+          mlc-stage-03-ast-compiler = mlcStage03AstCompiler;
           mlc-seed.host = mlcSeedHost;
           mlc-seed.m2 = mlcSeedM2;
 
@@ -2408,6 +2452,7 @@ DEFINE SYSCALL 0F05
             mlc.stage.core00 = mlcStage00Core;
             mlc.stage.parenthetical01 = mlcStage01Parenthetical;
             mlc.stage.ml0Compiler02 = mlcStage02Ml0Compiler;
+            mlc.stage.astCompiler03 = mlcStage03AstCompiler;
             mlc.seed.host-vs-m2 = mlcSeedHostVsM2;
             mlc.byte.seed = mlcByteSeed;
             mlc.byte.committed = mlcByteCommitted;
@@ -2430,6 +2475,7 @@ DEFINE SYSCALL 0F05
           mlc-stage-00-core = mlcStage00Core;
           mlc-stage-01-parenthetical = mlcStage01Parenthetical;
           mlc-stage-02-ml0-compiler = mlcStage02Ml0Compiler;
+          mlc-stage-03-ast-compiler = mlcStage03AstCompiler;
           mlc-seed-m2 = mlcSeedM2;
           mlc-seed-host-vs-m2 = mlcSeedHostVsM2;
           mlc-byte-seed = mlcByteSeed;
