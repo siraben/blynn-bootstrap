@@ -436,6 +436,21 @@ let rec parse_assignment state =
   let p1 = expect_ch (src, (value_end, 59)) in
   (p1, extend_env (name, (assigned, env)))
 in
+let rec parse_aug_assignment state =
+  let (src, pair) = state in
+  let (pos0, pair2) = pair in
+  let (funcs, env) = pair2 in
+  let ident = parse_ident (src, pos0) in
+  let (name, name_end) = ident in
+  let old_value = find_env (env, name) in
+  let op = skip_space (src, name_end) in
+  let p0 = expect_ch (src, (op + 1, 61)) in
+  let value = parse_expr_value (src, (p0, (funcs, env))) in
+  let (delta, value_end) = value in
+  let next_value = if src.[op] == 43 then old_value + delta else old_value - delta in
+  let p1 = expect_ch (src, (value_end, 59)) in
+  (p1, extend_env (name, (next_value, env)))
+in
 let rec parse_postdec_statement state =
   let (src, pair) = state in
   let (pos0, env) = pair in
@@ -523,6 +538,42 @@ let rec parse_condition_value state =
   else
     (left_value, left_end)
 in
+let rec parse_condition_effect state =
+  let (src, pair) = state in
+  let (pos0, pair2) = pair in
+  let (funcs, env) = pair2 in
+  let pos = skip_space (src, pos0) in
+  if (src.[pos] == 43) * (src.[pos + 1] == 43) then
+    let ident = parse_ident (src, pos + 2) in
+    let (name, name_end) = ident in
+    let old_value = find_env (env, name) in
+    let new_value = old_value + 1 in
+    (new_value, (name_end, extend_env (name, (new_value, env))))
+  else if (src.[pos] == 45) * (src.[pos + 1] == 45) then
+    let ident = parse_ident (src, pos + 2) in
+    let (name, name_end) = ident in
+    let old_value = find_env (env, name) in
+    let new_value = old_value - 1 in
+    (new_value, (name_end, extend_env (name, (new_value, env))))
+  else if is_alpha (src.[pos]) then
+    let ident = parse_ident (src, pos) in
+    let (name, name_end) = ident in
+    let next = skip_space (src, name_end) in
+    if (src.[next] == 43) * (src.[next + 1] == 43) then
+      let old_value = find_env (env, name) in
+      (old_value, (next + 2, extend_env (name, (old_value + 1, env))))
+    else if (src.[next] == 45) * (src.[next + 1] == 45) then
+      let old_value = find_env (env, name) in
+      (old_value, (next + 2, extend_env (name, (old_value - 1, env))))
+    else
+      let cond = parse_condition_value (src, (pos0, (funcs, env))) in
+      let (cond_value, cond_end) = cond in
+      (cond_value, (cond_end, env))
+  else
+    let cond = parse_condition_value (src, (pos0, (funcs, env))) in
+    let (cond_value, cond_end) = cond in
+    (cond_value, (cond_end, env))
+in
 let rec parse_return_value state =
   let (src, pair) = state in
   let (pos0, pair2) = pair in
@@ -555,18 +606,19 @@ let rec parse_main_body state =
   else
   if is_if_at (src, pos) then
     let p0 = expect_ch (src, (pos + 2, 40)) in
-    let cond = parse_condition_value (src, (p0, (funcs, env))) in
-    let (cond_value, cond_end) = cond in
+    let cond = parse_condition_effect (src, (p0, (funcs, env))) in
+    let (cond_value, cond_pair) = cond in
+    let (cond_end, cond_env) = cond_pair in
     let p1 = expect_ch (src, (cond_end, 41)) in
     let branch_pos = skip_space (src, p1) in
     if is_return_at (src, branch_pos) then
-      let branch = parse_return_value (src, (branch_pos, (funcs, env))) in
+      let branch = parse_return_value (src, (branch_pos, (funcs, cond_env))) in
       let (branch_value, branch_end) = branch in
-      if cond_value == 0 then parse_main_body (src, (branch_end, (funcs, env))) else (branch_value, skip_to_close_brace (src, branch_end))
+      if cond_value == 0 then parse_main_body (src, (branch_end, (funcs, cond_env))) else (branch_value, skip_to_close_brace (src, branch_end))
     else
       let goto = parse_goto_statement (src, branch_pos) in
       let (label, goto_end) = goto in
-      if cond_value == 0 then parse_main_body (src, (goto_end, (funcs, env))) else parse_main_body (src, (find_label (src, (0, label)), (funcs, env)))
+      if cond_value == 0 then parse_main_body (src, (goto_end, (funcs, cond_env))) else parse_main_body (src, (find_label (src, (0, label)), (funcs, cond_env)))
   else if is_while_at (src, pos) then
     let p0 = expect_ch (src, (pos + 5, 40)) in
     let cond = parse_condition_value (src, (p0, (funcs, env))) in
@@ -591,6 +643,10 @@ let rec parse_main_body state =
     let next = skip_space (src, name_end) in
     if src.[next] == 58 then
       parse_main_body (src, (next + 1, (funcs, env)))
+    else if ((src.[next] == 43) + (src.[next] == 45)) * (src.[next + 1] == 61) then
+      let assigned = parse_aug_assignment (src, (pos, (funcs, env))) in
+      let (next_pos, next_env) = assigned in
+      parse_main_body (src, (next_pos, (funcs, next_env)))
     else if src.[next] == 61 then
       let assigned = parse_assignment (src, (pos, (funcs, env))) in
       let (next_pos, next_env) = assigned in
