@@ -70,6 +70,19 @@ let rec parse_ident state =
   let ch = src.[pos] in
   if is_alpha ch then parse_ident_loop (src, (pos + 1, ch)) else exit 1
 in
+let rec is_string_at_loop state =
+  let (want, pair) = state in
+  let (src, pair2) = pair in
+  let (pos, index) = pair2 in
+  if index == String.length want then 1 else
+  if src.[pos + index] == want.[index] then is_string_at_loop (want, (src, (pos, index + 1))) else 0
+in
+let rec is_string_at state =
+  let (want, pair) = state in
+  let (src, pos0) = pair in
+  let pos = skip_space (src, pos0) in
+  is_string_at_loop (want, (src, (pos, 0)))
+in
 let rec expect_int state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
@@ -141,43 +154,35 @@ let rec expect_type state =
 in
 let rec is_return_at state =
   let (src, pos0) = state in
-  let pos = skip_space (src, pos0) in
-  (src.[pos] == 114) * (src.[pos + 1] == 101) * (src.[pos + 2] == 116) * (src.[pos + 3] == 117) * (src.[pos + 4] == 114) * (src.[pos + 5] == 110)
+  is_string_at ("return", (src, pos0))
 in
 let rec is_if_at state =
   let (src, pos0) = state in
-  let pos = skip_space (src, pos0) in
-  (src.[pos] == 105) * (src.[pos + 1] == 102)
+  is_string_at ("if", (src, pos0))
 in
 let rec is_typedef_at state =
   let (src, pos0) = state in
-  let pos = skip_space (src, pos0) in
-  (src.[pos] == 116) * (src.[pos + 1] == 121) * (src.[pos + 2] == 112) * (src.[pos + 3] == 101) * (src.[pos + 4] == 100) * (src.[pos + 5] == 101) * (src.[pos + 6] == 102)
+  is_string_at ("typedef", (src, pos0))
 in
 let rec is_enum_at state =
   let (src, pos0) = state in
-  let pos = skip_space (src, pos0) in
-  (src.[pos] == 101) * (src.[pos + 1] == 110) * (src.[pos + 2] == 117) * (src.[pos + 3] == 109)
+  is_string_at ("enum", (src, pos0))
 in
 let rec is_struct_at state =
   let (src, pos0) = state in
-  let pos = skip_space (src, pos0) in
-  (src.[pos] == 115) * (src.[pos + 1] == 116) * (src.[pos + 2] == 114) * (src.[pos + 3] == 117) * (src.[pos + 4] == 99) * (src.[pos + 5] == 116)
+  is_string_at ("struct", (src, pos0))
 in
 let rec is_else_at state =
   let (src, pos0) = state in
-  let pos = skip_space (src, pos0) in
-  (src.[pos] == 101) * (src.[pos + 1] == 108) * (src.[pos + 2] == 115) * (src.[pos + 3] == 101)
+  is_string_at ("else", (src, pos0))
 in
 let rec is_goto_at state =
   let (src, pos0) = state in
-  let pos = skip_space (src, pos0) in
-  (src.[pos] == 103) * (src.[pos + 1] == 111) * (src.[pos + 2] == 116) * (src.[pos + 3] == 111)
+  is_string_at ("goto", (src, pos0))
 in
 let rec is_while_at state =
   let (src, pos0) = state in
-  let pos = skip_space (src, pos0) in
-  (src.[pos] == 119) * (src.[pos + 1] == 104) * (src.[pos + 2] == 105) * (src.[pos + 3] == 108) * (src.[pos + 4] == 101)
+  is_string_at ("while", (src, pos0))
 in
 let rec expect_char state =
   let (src, pair) = state in
