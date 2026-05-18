@@ -15,9 +15,9 @@ plan requirement.
 | 3b | transitional `mlc-seed.m2` | `mlc/mlc-seed.c`; core fixtures under `tests/mlc`; flake targets `mlc-seed.host`, `mlc-seed.m2`, and `tests.mlc.seed.host-vs-m2`; host and M2 seed compilers emit byte-identical `.mzbc` for the seed-core fixture corpus and `mzvm-seed` runs those fixtures | transitional: direct C bytecode compiler remains for smoke coverage while the staged interpreter path grows |
 | 4 | committed `mlc.byte` | `mlc/mlc.byte`; flake targets `mlc.byte.seed`, `mlc.byte.selfhost`, and `tests.mlc.byte.committed`; the stage-02 handoff compiler first compiles `mlc/mlc.ml` to the fixed-point `mlc.byte`; run under `mzvm-seed`, it accepts `write_byte (40+39)`, `write_byte (80 - 1)`, `write_byte (79 * 1)`, `write_byte (158 / 2)`, `write_byte 'O'`, `write_string "OK"`, `read_byte`, `Bytes.create`, dynamic `b.[i]` / `b.(i)` reads and writes, arbitrary final direct calls, recursively nested and parenthesized `let` byte-output fixtures with shadowing, one-lookahead keyword-prefix identifier checks, nested/full `if ... then ... else ...` fixtures covering the current integer comparisons, runtime direct unary `let rec` calls, and the first ADT/pattern fixtures (`adt.ml`, `match.ml`, `wildcard-match.ml`, `multi-adt.ml`, `match-three.ml`, `adt-tuple-payload.ml`, `adt-recursion.ml`, and an inline three-arm match), emits `.mzbc`, and those emitted bytecode files print the expected bytes; the `let`, `if`, constructor, direct-function, dynamic-field, byte-primitive, and `match` paths emit VM variable, arithmetic, comparison, direct call, block, dynamic block, tag, field, and branch instructions instead of just folding byte constants | partial: staged ML-produced compiler-shaped bytecode with fixed-point self-host coverage |
 | 5 | `mlc.byte.selfhost` | flake target `mlc.byte.selfhost`; `mlc.byte.seed` compiles `mlc/mlc.ml` with the fixed-point `mlc.byte`, compares the result byte-for-byte with `mlc.byte`, and runs a child-compiler smoke for `write_byte (40+39)` | complete for the current fixed-point compiler artifact |
-| 6 | `ccc.byte` | `ccc/ccc.ml`; `ccc/ccc.byte`; flake targets `ccc.byte.seed` and `tests.ccc.byte.committed`; current artifact is a seed-compiled smoke bytecode that emits deterministic M1 text under `mzvm-seed` | partial: committed smoke bytecode only |
-| 7 | `tcc.m1` via CCC | flake target `tcc.m1.ccc.seed` runs committed `ccc.byte` and installs `share/ccc/tcc.M1` | partial: smoke M1 text only |
-| 8 | `tcc.bin` via CCC | flake target `tcc.bin.ccc.seed` assembles `tcc.m1.ccc.seed` with stage0 `M1`, links it with `hex2`, installs `bin/tcc`, and runs the executable expecting exit status 0 | partial: smoke executable only, not TinyCC |
+| 6 | `ccc.byte` | `ccc/ccc.ml`; `ccc/ccc.byte`; flake targets `ccc.byte.seed` and `tests.ccc.byte.committed`; fixed-point `mlc.byte` compiles `ccc.ml` to bytecode, then `mzvm-seed` runs that bytecode on tiny C inputs `int main(){return 0;}` and `int main(){return 42;}` and compares deterministic amd64 M1 output | partial: first real C-to-M1 compiler slice, limited to `int main(){return N;}` |
+| 7 | `tcc.m1` via CCC | flake target `tcc.m1.ccc.seed` pipes `int main(){return 0;}` into committed `ccc.byte`, compares deterministic M1 text, and installs `share/ccc/tcc.M1` | partial: C-input M1 smoke only, not TinyCC |
+| 8 | `tcc.bin` via CCC | flake target `tcc.bin.ccc.seed` assembles `tcc.m1.ccc.seed` with stage0 `M1`, links it with `hex2`, installs `bin/tcc`, and runs the executable expecting exit status 0 | partial: C-input smoke executable only, not TinyCC |
 | 9 | `gcc46.m2.ccc.m2` | none | missing |
 | 10 | `gccLatest.m2.ccc.m2` | none | missing |
 
@@ -43,6 +43,6 @@ plan requirement.
    decision trees yet.
 4. Split tests into seed-core fixtures and full-language ADT/pattern fixtures
    as `mlc.byte` grows past the current smoke set.
-5. Continue from the fixed-point `mlc.byte` toward `ccc.byte`: grow the
-   remaining full-language pattern compiler and then replace the current CCC
-   smoke with a real C-to-M1 compiler slice.
+5. Continue growing `ccc.ml` from `int main(){return N;}` toward the HCC/TCC
+   bootstrap subset: declarations, calls, locals, conditionals, loops, pointer
+   arithmetic, and direct M1 emission parity tests.
