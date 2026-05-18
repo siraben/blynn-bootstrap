@@ -698,6 +698,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           "bytes"
           "string-value"
           "dynamic-index"
+          "dynamic-create"
           "length"
           "function"
           "function-tuple"
@@ -755,6 +756,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             printf 'OK\n' > bytes.expected
             printf 'OK\n' > string-value.expected
             printf 'OK\n' > dynamic-index.expected
+            printf 'OK\n' > dynamic-create.expected
             printf 'OK\n' > length.expected
             printf 'OK\n' > function.expected
             printf 'OK\n' > function-tuple.expected
@@ -817,6 +819,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             cp ${./tests/mlc/bytes.ml} bytes.ml
             cp ${./tests/mlc/string-value.ml} string-value.ml
             cp ${./tests/mlc/dynamic-index.ml} dynamic-index.ml
+            cp ${./tests/mlc/dynamic-create.ml} dynamic-create.ml
             cp ${./tests/mlc/length.ml} length.ml
             cp ${./tests/mlc/function.ml} function.ml
             cp ${./tests/mlc/function-tuple.ml} function-tuple.ml
@@ -866,6 +869,9 @@ OK"
             test "$actual" = OK
             ./mlc-seed dynamic-index.ml dynamic-index.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed dynamic-index.mzbc)"
+            test "$actual" = OK
+            ./mlc-seed dynamic-create.ml dynamic-create.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed dynamic-create.mzbc)"
             test "$actual" = OK
             ./mlc-seed length.ml length.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed length.mzbc)"
@@ -936,6 +942,7 @@ OK"
             install -Dm644 bytes.mzbc "$out/share/mlc/tests/bytes.mzbc"
             install -Dm644 string-value.mzbc "$out/share/mlc/tests/string-value.mzbc"
             install -Dm644 dynamic-index.mzbc "$out/share/mlc/tests/dynamic-index.mzbc"
+            install -Dm644 dynamic-create.mzbc "$out/share/mlc/tests/dynamic-create.mzbc"
             install -Dm644 length.mzbc "$out/share/mlc/tests/length.mzbc"
             install -Dm644 function.mzbc "$out/share/mlc/tests/function.mzbc"
             install -Dm644 function-tuple.mzbc "$out/share/mlc/tests/function-tuple.mzbc"

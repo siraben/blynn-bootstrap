@@ -64,6 +64,7 @@ Opcodes are one byte. Immediate operands are little-endian 32-bit words.
 25  GETFIELD_DYN
 26  SETFIELD_DYN
 27  BLOCKSIZE
+28  MAKEBLOCK_DYN tag:u32
 ```
 
 Branches are relative to the program counter after the branch operand has
@@ -83,6 +84,8 @@ the accumulator. `SETFIELD_DYN` consumes the value from the accumulator and
 the integer index and block from the stack.
 `BLOCKSIZE` returns the number of fields in the block currently in the
 accumulator.
+`MAKEBLOCK_DYN` consumes a runtime size from the stack, fills every field with
+the accumulator, and leaves the new block in the accumulator.
 
 ## Seed Primitive Table
 

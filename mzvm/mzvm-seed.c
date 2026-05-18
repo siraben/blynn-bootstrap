@@ -37,7 +37,8 @@ enum {
   OP_RETURN = 24,
   OP_GETFIELD_DYN = 25,
   OP_SETFIELD_DYN = 26,
-  OP_BLOCKSIZE = 27
+  OP_BLOCKSIZE = 27,
+  OP_MAKEBLOCK_DYN = 28
 };
 
 typedef long value_t;
@@ -375,6 +376,18 @@ static void run(void)
           i = i - 1;
           block[2 + i] = stack_pop();
         }
+      }
+      acc = (value_t)block;
+    } else if (op == OP_MAKEBLOCK_DYN) {
+      long tag = read_u32();
+      long size = int_val(stack_pop());
+      value_t *block;
+      long i = 0;
+      if (size < 0) die("negative block size");
+      block = alloc_block(tag, size);
+      while (i < size) {
+        block[2 + i] = acc;
+        i = i + 1;
       }
       acc = (value_t)block;
     } else if (op == OP_GETFIELD) {

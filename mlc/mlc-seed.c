@@ -28,7 +28,8 @@ enum {
   OP_RETURN = 24,
   OP_GETFIELD_DYN = 25,
   OP_SETFIELD_DYN = 26,
-  OP_BLOCKSIZE = 27
+  OP_BLOCKSIZE = 27,
+  OP_MAKEBLOCK_DYN = 28
 };
 
 static FILE *out_file;
@@ -462,6 +463,14 @@ static void emit_makeblock(long tag, long size)
   }
 }
 
+static void emit_makeblock_dyn(long tag)
+{
+  emit_byte(OP_MAKEBLOCK_DYN);
+  emit_u32(tag);
+  stack_depth = stack_depth - 1;
+  if (stack_depth < 0) die("internal stack underflow");
+}
+
 static void emit_getfield(long index)
 {
   emit_byte(OP_GETFIELD);
@@ -543,9 +552,6 @@ static void parse_atom(void)
   long name_start;
   long name_len;
   long ctor;
-  long size;
-  long init_start;
-  long init_end;
   long i;
   int ch;
   long func_target_value;
@@ -592,30 +598,16 @@ static void parse_atom(void)
     emit_makeblock(0, i);
   } else if (keyword_at("Array.create")) {
     take_keyword("Array.create");
-    size = parse_int_literal();
-    if (size < 0) die("negative array size");
-    init_start = pos;
-    measure_nonseq_expr(init_start, &init_end);
-    pos = init_start;
+    parse_atom();
+    emit_push();
     parse_nonseq_expr();
-    i = 1;
-    while (i < size) {
-      emit_push();
-      i = i + 1;
-    }
-    if (pos != init_end) die("internal array parse mismatch");
-    emit_makeblock(0, size);
+    emit_makeblock_dyn(0);
   } else if (keyword_at("Bytes.create")) {
     take_keyword("Bytes.create");
-    size = parse_int_literal();
-    if (size < 0) die("negative bytes size");
+    parse_atom();
+    emit_push();
     emit_const(0);
-    i = 1;
-    while (i < size) {
-      emit_push();
-      i = i + 1;
-    }
-    emit_makeblock(0, size);
+    emit_makeblock_dyn(0);
   } else if (pos < src_len && src[pos] >= 'A' && src[pos] <= 'Z') {
     take_ident_span(&name_start, &name_len);
     ctor = lookup_constructor(name_start, name_len);
