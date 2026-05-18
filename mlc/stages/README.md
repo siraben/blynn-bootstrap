@@ -76,11 +76,13 @@ Planned stages:
   compiler compiles both its own source and `mlc/mlc.ml`; the committed
   `mlc.byte` is now checked by the `mlc.byte.selfhost` fixed-point
   byte-equality target.
-- Later parser stages increase the ML0 dialect until it can compile the next
-  compiler source, then itself.
+- The remaining parser/compiler growth is concentrated in `mlc.ml` and, only
+  if needed, one immediate successor; the path should stay within the
+  five-stage cap documented in `plan.md`.
 - Later pattern stages extend the current `mlc.ml` ADT/match/direct-function
   slice from constructor, wildcard, direct tuple payload, tuple-wildcard, and
   nested tuple payload patterns to recursive and general decision-tree patterns
   in ML, not in C.
-- `03-bytecode.ml` emits MZBC and replaces the transitional direct C bytecode
-  compiler for normal bootstrap use.
+- `mlc.ml` emits MZBC and replaces the transitional direct C bytecode compiler
+  for normal bootstrap use as its parser/lowerer reaches the dialect needed by
+  `ccc.ml`.

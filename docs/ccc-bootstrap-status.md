@@ -38,7 +38,7 @@ plan requirement.
    the committed compiler artifact.
 3. Continue growing ADT declarations, pattern parsing, and pattern compilation
    in `mlc.ml`; the current committed bytecode covers simple constructor,
-   wildcard, multi-declaration, three-arm matches, tuple payload expressions,
+   wildcard, multi-declaration, four-arm matches, tuple payload expressions,
    direct tuple payload patterns, tuple payload wildcards, and runtime unary
    direct-function calls over recursive ADTs but not general nested decision
    trees yet.
