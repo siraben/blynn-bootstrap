@@ -107,6 +107,11 @@ let rec is_goto_at state =
   let pos = skip_space (src, pos0) in
   (src.[pos] == 103) * (src.[pos + 1] == 111) * (src.[pos + 2] == 116) * (src.[pos + 3] == 111)
 in
+let rec is_while_at state =
+  let (src, pos0) = state in
+  let pos = skip_space (src, pos0) in
+  (src.[pos] == 119) * (src.[pos + 1] == 104) * (src.[pos + 2] == 105) * (src.[pos + 3] == 108) * (src.[pos + 4] == 101)
+in
 let rec expect_ch state =
   let (src, pair) = state in
   let (pos0, ch) = pair in
@@ -385,6 +390,17 @@ let rec parse_assignment state =
   let p1 = expect_ch (src, (value_end, 59)) in
   (p1, extend_env (name, (assigned, env)))
 in
+let rec parse_postdec_statement state =
+  let (src, pair) = state in
+  let (pos0, env) = pair in
+  let ident = parse_ident (src, pos0) in
+  let (name, name_end) = ident in
+  let old_value = find_env (env, name) in
+  let p0 = expect_ch (src, (name_end, 45)) in
+  let p1 = expect_ch (src, (p0, 45)) in
+  let p2 = expect_ch (src, (p1, 59)) in
+  (p2, extend_env (name, (old_value - 1, env)))
+in
 let rec parse_main_prefix state =
   let (src, pair) = state in
   let (pos0, pair2) = pair in
@@ -473,6 +489,19 @@ let rec parse_main_body state =
       let goto = parse_goto_statement (src, branch_pos) in
       let (label, goto_end) = goto in
       if cond_value == 0 then parse_main_body (src, (goto_end, (funcs, env))) else parse_main_body (src, (find_label (src, (0, label)), (funcs, env)))
+  else if is_while_at (src, pos) then
+    let p0 = expect_ch (src, (pos + 5, 40)) in
+    let cond = parse_condition_value (src, (p0, (funcs, env))) in
+    let (cond_value, cond_end) = cond in
+    let p1 = expect_ch (src, (cond_end, 41)) in
+    let body_pos = skip_space (src, p1) in
+    if cond_value == 0 then
+      parse_main_body (src, (skip_statement (src, body_pos), (funcs, env)))
+    else
+      let body = parse_postdec_statement (src, (body_pos, env)) in
+      let (body_end, body_env) = body in
+      let _ = body_end in
+      parse_main_body (src, (pos, (funcs, body_env)))
   else if is_local_type_at (src, pos) then
     let local = parse_local_init (src, (pos, (funcs, env))) in
     let (next_pos, next_env) = local in

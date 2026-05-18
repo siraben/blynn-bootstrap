@@ -1516,6 +1516,7 @@ DEFINE SYSCALL 0F05
             check_return ${./tests/mescc/scaffold/17-compare-and.c} 0
             check_return ${./tests/mescc/scaffold/17-compare-or.c} 0
             check_return ${./tests/mescc/scaffold/18-assign-shadow.c} 0
+            check_return ${./tests/mescc/scaffold/20-while.c} 0
             check_return ${./tests/mescc/scaffold/30-exit-0.c} 0
             check_return ${./tests/mescc/scaffold/30-exit-42.c} 42
             check_return ${./tests/mescc/scaffold/33-and-or.c} 0
