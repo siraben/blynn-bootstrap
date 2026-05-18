@@ -1545,6 +1545,7 @@ DEFINE SYSCALL 0F05
             check_return ${./tests/hcc/m1-smoke/examples/escaped-string-magic.c} 0
             check_return ${./tests/hcc/m1-smoke/examples/local-aggregate.c} 3
             check_return ${./tests/hcc/m1-smoke/examples/function-pointer-call-type.c} 0
+            check_return ${./tests/hcc/m1-smoke/examples/dynamic-aggregate.c} 0
             printf 'int main(){return 42;}' > return-42.c
             check_return return-42.c 42
           '';
@@ -1668,6 +1669,7 @@ DEFINE SYSCALL 0F05
           build_and_run ${./tests/hcc/m1-smoke/examples/escaped-string-magic.c} 0 hcc-escaped-string-magic
           build_and_run ${./tests/hcc/m1-smoke/examples/local-aggregate.c} 3 hcc-local-aggregate
           build_and_run ${./tests/hcc/m1-smoke/examples/function-pointer-call-type.c} 0 hcc-function-pointer-call-type
+          build_and_run ${./tests/hcc/m1-smoke/examples/dynamic-aggregate.c} 0 hcc-dynamic-aggregate
         '';
 
         hccHostGhcNative = pkgs.callPackage ./nix/hcc-ghc.nix {

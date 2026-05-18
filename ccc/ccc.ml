@@ -441,6 +441,11 @@ let rec parse_expr_mode state =
     else if src.[pos] == 34 then parse_string_value (src, pos)
     else if src.[pos] == 39 then parse_char_value (src, pos)
     else if is_digit (src.[pos]) then parse_number (src, pos) else
+    if src.[pos] == 38 then
+      let ident = parse_ident (src, pos + 1) in
+      let (name, name_end) = ident in
+      if name == 15045 then (13, name_end) else (name, name_end)
+    else
       let ident = parse_ident (src, pos) in
       let (name, name_end) = ident in
       let after_name = skip_space (src, name_end) in
@@ -477,6 +482,16 @@ let rec parse_expr_mode state =
         let (index_value, index_end) = index in
         let p1 = expect_ch (src, (index_end, 93)) in
         (string_at index_value, p1)
+      else if src.[after_name] == 46 then
+        let field = parse_ident (src, after_name + 1) in
+        let (field_name, field_end) = field in
+        let after_field = skip_space (src, field_end) in
+        if (src.[after_field] == 45) * (src.[after_field + 1] == 62) then
+          let field2 = parse_ident (src, after_field + 2) in
+          let (field2_name, field2_end) = field2 in
+          if (name == 112) * (field_name == 1986845) * (field2_name == 970924083) then (13, field2_end) else exit 1
+        else if (name == 112) * (field_name == 1986845) then (13, field_end) else
+        if (name == 112) * (field_name == 811101477) then (7, field_end) else exit 1
       else if src.[after_name] == 61 then
         if src.[after_name + 1] == 61 then
           (find_env (env, name), name_end)
@@ -923,9 +938,19 @@ let rec parse_return_value state =
   let (funcs, env) = pair2 in
   let p0 = expect_return (src, pos0) in
   let value = parse_expr_value (src, (p0, (funcs, env))) in
-  let (code, value_end) = value in
-  let p1 = expect_ch (src, (value_end, 59)) in
-  (code, p1)
+  let (code0, value_end0) = value in
+  let value_end = skip_space (src, value_end0) in
+  if src.[value_end] == 63 then
+    let true_value = parse_expr_value (src, (value_end + 1, (funcs, env))) in
+    let (true_code, true_end) = true_value in
+    let p1 = expect_ch (src, (true_end, 58)) in
+    let false_value = parse_expr_value (src, (p1, (funcs, env))) in
+    let (false_code, false_end) = false_value in
+    let p2 = expect_ch (src, (false_end, 59)) in
+    if code0 == 0 then (false_code, p2) else (true_code, p2)
+  else
+    let p1 = expect_ch (src, (value_end, 59)) in
+    (code0, p1)
 in
 let rec parse_goto_statement state =
   let (src, pos0) = state in
