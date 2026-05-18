@@ -27,6 +27,8 @@ static char *src;
 static long src_len;
 static long pos;
 static int env_has_x;
+static long env_names[64];
+static long env_depth;
 
 static void die(const char *msg)
 {
@@ -123,6 +125,30 @@ static void expect_char(int c)
 static void expect_keyword(const char *word)
 {
   if (!take_keyword(word)) die("unexpected keyword");
+}
+
+static long take_ident1(void)
+{
+  long c;
+  skip_space();
+  if (pos >= src_len) die("expected identifier");
+  c = src[pos];
+  if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_')) die("expected identifier");
+  pos = pos + 1;
+  if (pos < src_len && is_ident_char(src[pos])) die("only one-character identifiers are supported in mlc-seed");
+  return c;
+}
+
+static long lookup_var(long name)
+{
+  long i = env_depth - 1;
+  long stack_index = 0;
+  while (i >= 0) {
+    if (env_names[i] == name) return stack_index;
+    i = i - 1;
+    stack_index = stack_index + 1;
+  }
+  return -1;
 }
 
 static long low_byte(long x)
@@ -225,6 +251,7 @@ static long parse_int_literal(void)
 
 static void parse_atom(void)
 {
+  long var_index;
   skip_space();
   if (take_char('(')) {
     parse_expr();
@@ -239,6 +266,11 @@ static void parse_atom(void)
   } else if (env_has_x && keyword_at("x")) {
     take_keyword("x");
     emit_acc(0);
+  } else if (pos < src_len && ((src[pos] >= 'a' && src[pos] <= 'z') || (src[pos] >= 'A' && src[pos] <= 'Z'))) {
+    long name = take_ident1();
+    var_index = lookup_var(name);
+    if (var_index < 0) die("unknown variable");
+    emit_acc(var_index);
   } else {
     emit_const(parse_int_literal());
   }
@@ -409,13 +441,25 @@ static void parse_match(void)
 
 static void parse_let(void)
 {
+  long name;
+  int binds = 0;
   if (!take_keyword("let")) die("expected let");
-  skip_space();
-  expect_char('_');
+  name = take_ident1();
   expect_char('=');
   parse_expr();
+  if (name != '_') {
+    if (env_depth >= 64) die("too many local bindings");
+    emit_byte(OP_PUSH);
+    env_names[env_depth] = name;
+    env_depth = env_depth + 1;
+    binds = 1;
+  }
   if (!take_keyword("in")) die("expected in");
   parse_expr();
+  if (binds) {
+    env_depth = env_depth - 1;
+    emit_pop(1);
+  }
 }
 
 static void parse_expr(void)
@@ -432,6 +476,7 @@ static long compile_len(void)
   out_file = 0;
   out_len = 0;
   pos = 0;
+  env_depth = 0;
   parse_expr();
   skip_space();
   if (pos != src_len) die("unexpected trailing input");
@@ -465,6 +510,7 @@ static void write_bytecode(const char *path)
   out_file = file;
   out_len = 0;
   pos = 0;
+  env_depth = 0;
   parse_expr();
   emit_byte(OP_HALT);
   actual_len = out_len;

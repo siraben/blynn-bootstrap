@@ -80,11 +80,12 @@ Deleted MinCaml stages:
 ## Current Bootstrap Slice
 
 The checked-in `mlc-seed.c` is deliberately smaller than this map. It is now a
-tiny recursive-descent compiler for `let _ = ... in ...`, `if ... then ...
-else ...`, `write_byte`, integer literals, comparisons, parenthesized
-arithmetic, `+ - * /`, and a narrow `None`/`Some` `match` form. It exists to
-pin the M2 path, bytecode writer, expression codegen, and constructor-tag
-layout before the real MinCaml-shaped passes are ported into `mlc.ml`.
+tiny recursive-descent compiler for `let` bindings, `if ... then ... else
+...`, `write_byte`, integer literals, comparisons, parenthesized arithmetic,
+`+ - * /`, and a narrow `None`/`Some` `match` form. It exists to pin the M2
+path, bytecode writer, expression codegen, local stack environment, and
+constructor-tag layout before the real MinCaml-shaped passes are ported into
+`mlc.ml`.
 
 Do not treat the current `mlc.ml` as self-hosted. The next meaningful step is
 to replace the placeholder with the lexer/parser/type AST spine, including
