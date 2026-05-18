@@ -199,18 +199,23 @@ let rec apply_func state =
   else
   if head < 0 then exit 1 else apply_func (tail, (name, arg))
 in
-let rec parse_expr_value state =
+let rec pow2 state =
+  let n = state in
+  if n <= 0 then 1 else 2 * (pow2 (n - 1))
+in
+let rec parse_expr_mode state =
   let (src, pair) = state in
   let (pos0, pair2) = pair in
-  let (funcs, env) = pair2 in
+  let (funcs, pair3) = pair2 in
+  let (env, mode) = pair3 in
   let pos = skip_space (src, pos0) in
   let left =
     if src.[pos] == 33 then
-      let expr = parse_expr_value (src, (pos + 1, (funcs, env))) in
+      let expr = parse_expr_mode (src, (pos + 1, (funcs, (env, mode)))) in
       let (value, value_end) = expr in
       if value == 0 then (1, value_end) else (0, value_end)
     else if src.[pos] == 45 then
-      let expr = parse_expr_value (src, (pos + 1, (funcs, env))) in
+      let expr = parse_expr_mode (src, (pos + 1, (funcs, (env, mode)))) in
       let (value, value_end) = expr in
       (0 - value, value_end)
     else if src.[pos] == 39 then parse_char_value (src, pos)
@@ -221,11 +226,11 @@ let rec parse_expr_value state =
       if src.[after_name] == 40 then
         let p1 = skip_space (src, after_name + 1) in
         if src.[p1] == 41 then (apply_func (funcs, (name, 0)), p1 + 1) else
-        let arg = parse_expr_value (src, (p1, (funcs, env))) in
+        let arg = parse_expr_mode (src, (p1, (funcs, (env, 0)))) in
         let (arg_value, arg_end) = arg in
         let arg_next = skip_space (src, arg_end) in
         if src.[arg_next] == 44 then
-          let arg2 = parse_expr_value (src, (arg_next + 1, (funcs, env))) in
+          let arg2 = parse_expr_mode (src, (arg_next + 1, (funcs, (env, 0)))) in
           let (arg2_value, arg2_end) = arg2 in
           let p2 = expect_ch (src, (arg2_end, 41)) in
           (apply_func (funcs, (name, (arg_value, arg2_value))), p2)
@@ -238,43 +243,72 @@ let rec parse_expr_value state =
   let (left_value, left_end) = left in
   let next = skip_space (src, left_end) in
   if src.[next] == 43 then
-    let right = parse_expr_value (src, (next + 1, (funcs, env))) in
+    let right = parse_expr_mode (src, (next + 1, (funcs, (env, 1)))) in
     let (right_value, right_end) = right in
     (left_value + right_value, right_end)
-  else if src.[next] == 61 then
+  else if src.[next] == 45 then
+    let right = parse_expr_mode (src, (next + 1, (funcs, (env, 1)))) in
+    let (right_value, right_end) = right in
+    (left_value - right_value, right_end)
+  else if src.[next] == 42 then
+    let right = parse_expr_mode (src, (next + 1, (funcs, (env, 1)))) in
+    let (right_value, right_end) = right in
+    (left_value * right_value, right_end)
+  else if src.[next] == 47 then
+    let right = parse_expr_mode (src, (next + 1, (funcs, (env, 1)))) in
+    let (right_value, right_end) = right in
+    (left_value / right_value, right_end)
+  else if (src.[next] == 60) * (src.[next + 1] == 60) then
+    let right = parse_expr_mode (src, (next + 2, (funcs, (env, 1)))) in
+    let (right_value, right_end) = right in
+    (left_value * (pow2 right_value), right_end)
+  else if (src.[next] == 62) * (src.[next + 1] == 62) then
+    let right = parse_expr_mode (src, (next + 2, (funcs, (env, 1)))) in
+    let (right_value, right_end) = right in
+    (left_value / (pow2 right_value), right_end)
+  else if mode == 0 then
+  if src.[next] == 61 then
     if src.[next + 1] == 61 then
-      let right = parse_expr_value (src, (next + 2, (funcs, env))) in
+      let right = parse_expr_mode (src, (next + 2, (funcs, (env, 1)))) in
       let (right_value, right_end) = right in
       if left_value == right_value then (1, right_end) else (0, right_end)
     else
       exit 1
   else if src.[next] == 33 then
     if src.[next + 1] == 61 then
-      let right = parse_expr_value (src, (next + 2, (funcs, env))) in
+      let right = parse_expr_mode (src, (next + 2, (funcs, (env, 1)))) in
       let (right_value, right_end) = right in
       if left_value == right_value then (0, right_end) else (1, right_end)
     else
       exit 1
   else if src.[next] == 60 then
     if src.[next + 1] == 61 then
-      let right = parse_expr_value (src, (next + 2, (funcs, env))) in
+      let right = parse_expr_mode (src, (next + 2, (funcs, (env, 1)))) in
       let (right_value, right_end) = right in
       if left_value <= right_value then (1, right_end) else (0, right_end)
     else
-      let right = parse_expr_value (src, (next + 1, (funcs, env))) in
+      let right = parse_expr_mode (src, (next + 1, (funcs, (env, 1)))) in
       let (right_value, right_end) = right in
       if left_value < right_value then (1, right_end) else (0, right_end)
   else if src.[next] == 62 then
     if src.[next + 1] == 61 then
-      let right = parse_expr_value (src, (next + 2, (funcs, env))) in
+      let right = parse_expr_mode (src, (next + 2, (funcs, (env, 1)))) in
       let (right_value, right_end) = right in
       if left_value >= right_value then (1, right_end) else (0, right_end)
     else
-      let right = parse_expr_value (src, (next + 1, (funcs, env))) in
+      let right = parse_expr_mode (src, (next + 1, (funcs, (env, 1)))) in
       let (right_value, right_end) = right in
       if left_value > right_value then (1, right_end) else (0, right_end)
   else
     (left_value, left_end)
+  else
+    (left_value, left_end)
+in
+let rec parse_expr_value state =
+  let (src, pair) = state in
+  let (pos0, pair2) = pair in
+  let (funcs, env) = pair2 in
+  parse_expr_mode (src, (pos0, (funcs, (env, 0))))
 in
 let rec parse_func_return state =
   let (src, pair) = state in
@@ -430,7 +464,39 @@ let rec parse_condition_value state =
   let left = parse_expr_value (src, (pos0, (funcs, env))) in
   let (left_value, left_end) = left in
   let next = skip_space (src, left_end) in
-  if (src.[next] == 38) * (src.[next + 1] == 38) then
+  if src.[next] == 61 then
+    if src.[next + 1] == 61 then
+      let right = parse_expr_value (src, (next + 2, (funcs, env))) in
+      let (right_value, right_end) = right in
+      if left_value == right_value then (1, right_end) else (0, right_end)
+    else
+      exit 1
+  else if src.[next] == 33 then
+    if src.[next + 1] == 61 then
+      let right = parse_expr_value (src, (next + 2, (funcs, env))) in
+      let (right_value, right_end) = right in
+      if left_value == right_value then (0, right_end) else (1, right_end)
+    else
+      exit 1
+  else if src.[next] == 60 then
+    if src.[next + 1] == 61 then
+      let right = parse_expr_value (src, (next + 2, (funcs, env))) in
+      let (right_value, right_end) = right in
+      if left_value <= right_value then (1, right_end) else (0, right_end)
+    else
+      let right = parse_expr_value (src, (next + 1, (funcs, env))) in
+      let (right_value, right_end) = right in
+      if left_value < right_value then (1, right_end) else (0, right_end)
+  else if src.[next] == 62 then
+    if src.[next + 1] == 61 then
+      let right = parse_expr_value (src, (next + 2, (funcs, env))) in
+      let (right_value, right_end) = right in
+      if left_value >= right_value then (1, right_end) else (0, right_end)
+    else
+      let right = parse_expr_value (src, (next + 1, (funcs, env))) in
+      let (right_value, right_end) = right in
+      if left_value > right_value then (1, right_end) else (0, right_end)
+  else if (src.[next] == 38) * (src.[next + 1] == 38) then
     let right = parse_condition_value (src, (next + 2, (funcs, env))) in
     let (right_value, right_end) = right in
     if left_value == 0 then (0, right_end) else
