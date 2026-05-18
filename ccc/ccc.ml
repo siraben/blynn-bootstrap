@@ -90,6 +90,11 @@ let rec is_if_at state =
   let pos = skip_space (src, pos0) in
   (src.[pos] == 105) * (src.[pos + 1] == 102)
 in
+let rec is_goto_at state =
+  let (src, pos0) = state in
+  let pos = skip_space (src, pos0) in
+  (src.[pos] == 103) * (src.[pos + 1] == 111) * (src.[pos + 2] == 116) * (src.[pos + 3] == 111)
+in
 let rec expect_ch state =
   let (src, pair) = state in
   let (pos0, ch) = pair in
@@ -269,6 +274,19 @@ let rec skip_to_close_brace state =
   let (src, pos) = state in
   if src.[pos] == 125 then pos else skip_to_close_brace (src, pos + 1)
 in
+let rec find_label state =
+  let (src, pair) = state in
+  let (pos0, want) = pair in
+  let pos = skip_space (src, pos0) in
+  if src.[pos] == 0 then exit 1 else
+  if is_alpha (src.[pos]) then
+    let ident = parse_ident (src, pos) in
+    let (name, name_end) = ident in
+    let name_next = skip_space (src, name_end) in
+    if (name == want) * (src.[name_next] == 58) then name_next + 1 else find_label (src, (name_end, want))
+  else
+    find_label (src, (pos + 1, want))
+in
 let rec skip_main_prefix state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
@@ -357,6 +375,17 @@ let rec parse_return_value state =
   let p1 = expect_ch (src, (value_end, 59)) in
   (code, p1)
 in
+let rec parse_goto_statement state =
+  let (src, pos0) = state in
+  let pos = skip_space (src, pos0) in
+  if is_goto_at (src, pos) then
+    let ident = parse_ident (src, pos + 4) in
+    let (label, label_end) = ident in
+    let p0 = expect_ch (src, (label_end, 59)) in
+    (label, p0)
+  else
+    exit 1
+in
 let rec parse_main_body state =
   let (src, pair) = state in
   let (pos0, pair2) = pair in
@@ -368,9 +397,15 @@ let rec parse_main_body state =
     let cond = parse_condition_value (src, (p0, (funcs, env))) in
     let (cond_value, cond_end) = cond in
     let p1 = expect_ch (src, (cond_end, 41)) in
-    let branch = parse_return_value (src, (p1, (funcs, env))) in
-    let (branch_value, branch_end) = branch in
-    if cond_value == 0 then parse_main_body (src, (branch_end, (funcs, env))) else (branch_value, skip_to_close_brace (src, branch_end))
+    let branch_pos = skip_space (src, p1) in
+    if is_return_at (src, branch_pos) then
+      let branch = parse_return_value (src, (branch_pos, (funcs, env))) in
+      let (branch_value, branch_end) = branch in
+      if cond_value == 0 then parse_main_body (src, (branch_end, (funcs, env))) else (branch_value, skip_to_close_brace (src, branch_end))
+    else
+      let goto = parse_goto_statement (src, branch_pos) in
+      let (label, goto_end) = goto in
+      if cond_value == 0 then parse_main_body (src, (goto_end, (funcs, env))) else parse_main_body (src, (find_label (src, (0, label)), (funcs, env)))
   else if (src.[pos] == 105) * (src.[pos + 1] == 110) * (src.[pos + 2] == 116) then
     let local = parse_local_init (src, (pos, (funcs, env))) in
     let (next_pos, next_env) = local in
@@ -380,7 +415,9 @@ let rec parse_main_body state =
     let (name, name_end) = ident in
     let _ = name in
     let next = skip_space (src, name_end) in
-    if src.[next] == 61 then
+    if src.[next] == 58 then
+      parse_main_body (src, (next + 1, (funcs, env)))
+    else if src.[next] == 61 then
       let assigned = parse_assignment (src, (pos, (funcs, env))) in
       let (next_pos, next_env) = assigned in
       parse_main_body (src, (next_pos, (funcs, next_env)))
