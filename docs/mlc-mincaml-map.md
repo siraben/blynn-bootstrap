@@ -99,7 +99,8 @@ bytecode writer, expression codegen, local stack environment, pattern lowering
 shape, and the VM representation of constructors before the real
 MinCaml-shaped passes are ported into `mlc.ml`.
 
-Do not treat the current `mlc.ml` as self-hosted. The next meaningful step is
-to replace the placeholder with the lexer/parser/type AST spine, including
-ADT and pattern nodes, then grow the seed compiler and fixture corpus until
-`mlc-seed` can reproduce a committed `mlc.byte`.
+Do not treat the current `mlc.ml` as self-hosted. It now has a tiny
+lexer/parser/AST/emitter path for byte literals and one infix addition. The
+next meaningful step is to replace that slice with the lexer/parser/type AST
+spine, including ADT and pattern nodes, then grow the seed compiler and fixture
+corpus until `mlc-seed` can reproduce a committed `mlc.byte`.
