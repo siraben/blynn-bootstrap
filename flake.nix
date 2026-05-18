@@ -1397,6 +1397,9 @@ OK"
             ${mzvmSeedM2}/bin/mzvm-seed mlc.byte < ${./tests/mlc/adt-pattern-tuple-wildcard.ml} > compiled-adt-pattern-tuple-wildcard.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-adt-pattern-tuple-wildcard.mzbc)"
             test "$actual" = OK
+            ${mzvmSeedM2}/bin/mzvm-seed mlc.byte < ${./tests/mlc/adt-pattern-nested-tuple.ml} > compiled-adt-pattern-nested-tuple.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-adt-pattern-nested-tuple.mzbc)"
+            test "$actual" = OK
             ${mzvmSeedM2}/bin/mzvm-seed mlc.byte < ${./tests/mlc/adt-recursion.ml} > compiled-adt-recursion.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-adt-recursion.mzbc)"
             test "$actual" = OK
