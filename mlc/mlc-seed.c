@@ -230,6 +230,18 @@ static int span_is_char(long start, long len, int c)
   return len == 1 && src[start] == c;
 }
 
+static void die_unknown_variable(long start, long len)
+{
+  long i = 0;
+  fputs("mlc-seed: unknown variable: ", stderr);
+  while (i < len) {
+    fputc(src[start + i], stderr);
+    i = i + 1;
+  }
+  fputc('\n', stderr);
+  exit(1);
+}
+
 static void add_constructor(long start, long len, long tag, long arity)
 {
   if (ctor_count >= 64) die("too many constructors");
@@ -554,7 +566,7 @@ static void parse_atom(void)
       return;
     }
     var_index = lookup_var(name_start, name_len);
-    if (var_index < 0) die("unknown variable");
+    if (var_index < 0) die_unknown_variable(name_start, name_len);
     emit_acc(var_index);
     if (take_char('.')) {
       if (take_char('(')) {
