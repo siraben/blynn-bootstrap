@@ -122,6 +122,19 @@ let rec parse_signed_number state =
   else
     parse_number (src, pos)
 in
+let rec parse_char_value state =
+  let (src, pos0) = state in
+  let pos = skip_space (src, pos0) in
+  if src.[pos] == 39 then
+    if src.[pos + 1] == 92 then
+      let esc = src.[pos + 2] in
+      let value = if esc == 97 then 7 else if esc == 98 then 8 else esc in
+      (value, pos + 4)
+    else
+      (src.[pos + 1], pos + 3)
+  else
+    exit 1
+in
 let rec empty_funcs unit =
   let _ = unit in
   (0 - 1, (0, (0, 0)))
@@ -177,6 +190,7 @@ let rec parse_expr_value state =
       let expr = parse_expr_value (src, (pos + 1, (funcs, env))) in
       let (value, value_end) = expr in
       (0 - value, value_end)
+    else if src.[pos] == 39 then parse_char_value (src, pos)
     else if is_digit (src.[pos]) then parse_number (src, pos) else
       let ident = parse_ident (src, pos) in
       let (name, name_end) = ident in
@@ -362,6 +376,24 @@ let rec parse_condition_value state =
       if left_value == right_value then (0, right_end) else (1, right_end)
     else
       exit 1
+  else if src.[next] == 60 then
+    if src.[next + 1] == 61 then
+      let right = parse_expr_value (src, (next + 2, (funcs, env))) in
+      let (right_value, right_end) = right in
+      if left_value <= right_value then (1, right_end) else (0, right_end)
+    else
+      let right = parse_expr_value (src, (next + 1, (funcs, env))) in
+      let (right_value, right_end) = right in
+      if left_value < right_value then (1, right_end) else (0, right_end)
+  else if src.[next] == 62 then
+    if src.[next + 1] == 61 then
+      let right = parse_expr_value (src, (next + 2, (funcs, env))) in
+      let (right_value, right_end) = right in
+      if left_value >= right_value then (1, right_end) else (0, right_end)
+    else
+      let right = parse_expr_value (src, (next + 1, (funcs, env))) in
+      let (right_value, right_end) = right in
+      if left_value > right_value then (1, right_end) else (0, right_end)
   else
     (left_value, left_end)
 in
