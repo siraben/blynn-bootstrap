@@ -42,11 +42,6 @@ static long env_len[64];
 static long env_level[64];
 static long env_depth;
 static long stack_depth;
-static long ctor_start[64];
-static long ctor_len[64];
-static long ctor_tag[64];
-static long ctor_arity[64];
-static long ctor_count;
 static long func_start[64];
 static long func_len[64];
 static long func_target[64];
@@ -258,16 +253,6 @@ static int span_equal(long a_start, long a_len, long b_start, long b_len)
   return 1;
 }
 
-static long lookup_constructor(long start, long len)
-{
-  long i = 0;
-  while (i < ctor_count) {
-    if (span_equal(start, len, ctor_start[i], ctor_len[i])) return i;
-    i = i + 1;
-  }
-  return -1;
-}
-
 static long lookup_func_target(long start, long len)
 {
   long i = func_count - 1;
@@ -293,17 +278,6 @@ static void die_unknown_variable(long start, long len)
   }
   fputc('\n', stderr);
   exit(1);
-}
-
-static void add_constructor(long start, long len, long tag, long arity)
-{
-  if (ctor_count >= 64) die("too many constructors");
-  if (lookup_constructor(start, len) >= 0) die("duplicate constructor");
-  ctor_start[ctor_count] = start;
-  ctor_len[ctor_count] = len;
-  ctor_tag[ctor_count] = tag;
-  ctor_arity[ctor_count] = arity;
-  ctor_count = ctor_count + 1;
 }
 
 static void add_func(long start, long len, long target)
@@ -491,11 +465,6 @@ static void emit_setfield_dyn(void)
   if (stack_depth < 0) die("internal stack underflow");
 }
 
-static void emit_gettag(void)
-{
-  emit_byte(OP_GETTAG);
-}
-
 static void emit_blocksize(void)
 {
   emit_byte(OP_BLOCKSIZE);
@@ -551,7 +520,6 @@ static void parse_atom(void)
   long var_index;
   long name_start;
   long name_len;
-  long ctor;
   long i;
   int ch;
   long func_target_value;
@@ -608,13 +576,6 @@ static void parse_atom(void)
     emit_push();
     emit_const(0);
     emit_makeblock_dyn(0);
-  } else if (pos < src_len && src[pos] >= 'A' && src[pos] <= 'Z') {
-    take_ident_span(&name_start, &name_len);
-    ctor = lookup_constructor(name_start, name_len);
-    if (ctor < 0) die("unknown constructor");
-    if (ctor_arity[ctor] == 1) parse_atom();
-    else if (ctor_arity[ctor] != 0) die("unsupported constructor arity");
-    emit_makeblock(ctor_tag[ctor], ctor_arity[ctor]);
   } else if (pos < src_len && ((src[pos] >= 'a' && src[pos] <= 'z') || (src[pos] >= 'A' && src[pos] <= 'Z'))) {
     take_ident_span(&name_start, &name_len);
     func_target_value = lookup_func_target(name_start, name_len);
@@ -896,177 +857,6 @@ static void parse_if(void)
   if (pos != else_end) die("internal if parse mismatch");
 }
 
-static void expect_arrow(void)
-{
-  expect_char('-');
-  expect_char('>');
-}
-
-static void parse_pattern(long *tag_out, long *arity_out, long *binder_start_out, long *binder_len_out)
-{
-  long name_start;
-  long name_len;
-  long ctor;
-  take_ident_span(&name_start, &name_len);
-  if (span_is_char(name_start, name_len, '_')) {
-    *tag_out = -1;
-    *arity_out = 0;
-    *binder_start_out = 0;
-    *binder_len_out = 0;
-    return;
-  }
-  ctor = lookup_constructor(name_start, name_len);
-  if (ctor < 0) die("unknown pattern constructor");
-  *tag_out = ctor_tag[ctor];
-  *arity_out = ctor_arity[ctor];
-  *binder_start_out = 0;
-  *binder_len_out = 0;
-  if (*arity_out == 1) {
-    take_ident_span(binder_start_out, binder_len_out);
-  } else if (*arity_out != 0) {
-    die("unsupported pattern constructor arity");
-  }
-}
-
-static void bind_pattern_var(long arity, long binder_start, long binder_len)
-{
-  if (arity == 1) bind_var(binder_start, binder_len);
-}
-
-static void unbind_pattern_var(long arity, long binder_start, long binder_len)
-{
-  if (arity == 1) unbind_var(binder_start, binder_len);
-}
-
-static long match_arm_overhead(long arity, int has_fallthrough_branch)
-{
-  long out = 5;
-  if (arity == 1) out = 16;
-  if (has_fallthrough_branch) out = out + 5;
-  return out;
-}
-
-static long measure_match_arm(long arity, long binder_start, long binder_len, long start, long *end_out, int has_fallthrough_branch)
-{
-  long out;
-  stack_depth = stack_depth + 1;
-  if (arity == 1) stack_depth = stack_depth + 1;
-  bind_pattern_var(arity, binder_start, binder_len);
-  out = measure_expr(start, end_out) + match_arm_overhead(arity, has_fallthrough_branch);
-  unbind_pattern_var(arity, binder_start, binder_len);
-  if (arity == 1) stack_depth = stack_depth - 1;
-  stack_depth = stack_depth - 1;
-  return out;
-}
-
-static void emit_match_test(long tag, long skip_len)
-{
-  emit_acc(0);
-  emit_gettag();
-  emit_push();
-  emit_const(tag);
-  emit_binary_op(OP_EQ);
-  emit_branchifnot(skip_len);
-}
-
-static void emit_match_arm_body(long arity, long binder_start, long binder_len)
-{
-  if (arity == 1) {
-    emit_acc(0);
-    emit_getfield(0);
-    emit_push();
-    bind_pattern_var(arity, binder_start, binder_len);
-  }
-  parse_expr();
-  unbind_pattern_var(arity, binder_start, binder_len);
-  if (arity == 1) emit_pop(2);
-  else emit_pop(1);
-}
-
-static void parse_match(void)
-{
-  long arm1_tag;
-  long arm1_arity;
-  long arm1_binder_start;
-  long arm1_binder_len;
-  long arm1_start;
-  long arm1_end;
-  long arm1_len;
-  long arm2_tag;
-  long arm2_arity;
-  long arm2_binder_start;
-  long arm2_binder_len;
-  long arm2_start;
-  long arm2_end;
-  long arm2_len;
-  long arm3_tag = -1;
-  long arm3_arity = 0;
-  long arm3_binder_start = 0;
-  long arm3_binder_len = 0;
-  long arm3_start = 0;
-  long arm3_end = 0;
-  long arm3_len = 0;
-  int has_arm3 = 0;
-  long branch_stack_depth;
-  long arm2_test_len = 18;
-  if (!take_keyword("match")) die("expected match");
-  parse_expr();
-  expect_keyword("with");
-  parse_pattern(&arm1_tag, &arm1_arity, &arm1_binder_start, &arm1_binder_len);
-  if (arm1_tag < 0) die("wildcard first match arm is unsupported");
-  expect_arrow();
-  arm1_start = pos;
-  arm1_len = measure_match_arm(arm1_arity, arm1_binder_start, arm1_binder_len, arm1_start, &arm1_end, 1);
-  pos = arm1_end;
-  expect_char('|');
-  parse_pattern(&arm2_tag, &arm2_arity, &arm2_binder_start, &arm2_binder_len);
-  if (arm2_tag >= 0 && arm1_tag == arm2_tag) die("duplicate match arm");
-  expect_arrow();
-  arm2_start = pos;
-  arm2_len = measure_match_arm(arm2_arity, arm2_binder_start, arm2_binder_len, arm2_start, &arm2_end, 0);
-  pos = arm2_end;
-  if (take_char('|')) {
-    has_arm3 = 1;
-    parse_pattern(&arm3_tag, &arm3_arity, &arm3_binder_start, &arm3_binder_len);
-    if (arm3_tag >= 0 && (arm3_tag == arm1_tag || arm3_tag == arm2_tag)) die("duplicate match arm");
-    expect_arrow();
-    arm3_start = pos;
-    arm2_len = measure_match_arm(arm2_arity, arm2_binder_start, arm2_binder_len, arm2_start, &arm2_end, 1);
-    arm3_len = measure_match_arm(arm3_arity, arm3_binder_start, arm3_binder_len, arm3_start, &arm3_end, 0);
-    pos = arm3_end;
-  }
-  pos = arm1_start;
-
-  emit_push();
-  branch_stack_depth = stack_depth;
-  emit_match_test(arm1_tag, arm1_len);
-
-  emit_match_arm_body(arm1_arity, arm1_binder_start, arm1_binder_len);
-  if (has_arm3) emit_branch(arm2_test_len + arm2_len + arm3_len);
-  else emit_branch(arm2_len);
-  stack_depth = branch_stack_depth;
-
-  expect_char('|');
-  parse_pattern(&arm2_tag, &arm2_arity, &arm2_binder_start, &arm2_binder_len);
-  expect_arrow();
-  if (has_arm3) {
-    if (arm2_tag < 0) die("wildcard middle match arm is unsupported");
-    emit_match_test(arm2_tag, arm2_len);
-  }
-  emit_match_arm_body(arm2_arity, arm2_binder_start, arm2_binder_len);
-  if (has_arm3) {
-    emit_branch(arm3_len);
-    stack_depth = branch_stack_depth;
-    expect_char('|');
-    parse_pattern(&arm3_tag, &arm3_arity, &arm3_binder_start, &arm3_binder_len);
-    expect_arrow();
-    emit_match_arm_body(arm3_arity, arm3_binder_start, arm3_binder_len);
-    if (pos != arm3_end) die("internal match parse mismatch");
-  } else {
-    if (pos != arm2_end) die("internal match parse mismatch");
-  }
-}
-
 static void parse_let(void)
 {
   long name_start;
@@ -1227,7 +1017,6 @@ static int parse_array_set(void)
 static void parse_nonseq_expr(void)
 {
   if (keyword_at("let")) parse_let();
-  else if (keyword_at("match")) parse_match();
   else if (keyword_at("if")) parse_if();
   else if (keyword_at("exit")) parse_exit();
   else if (keyword_at("write_string")) parse_write_string();
@@ -1242,37 +1031,6 @@ static void parse_expr(void)
   if (take_char(';')) parse_expr();
 }
 
-static void parse_type_decls(void)
-{
-  long type_start;
-  long type_len;
-  long ctor_name_start;
-  long ctor_name_len;
-  long field_start;
-  long field_len;
-  long tag;
-  while (keyword_at("type")) {
-    take_keyword("type");
-    take_ident_span(&type_start, &type_len);
-    if (type_start < 0 || type_len <= 0) die("empty type name");
-    expect_char('=');
-    tag = 0;
-    while (1) {
-      take_ident_span(&ctor_name_start, &ctor_name_len);
-      if (keyword_at("of")) {
-        take_keyword("of");
-        take_ident_span(&field_start, &field_len);
-        if (field_start < 0 || field_len <= 0) die("empty field type");
-        add_constructor(ctor_name_start, ctor_name_len, tag, 1);
-      } else {
-        add_constructor(ctor_name_start, ctor_name_len, tag, 0);
-      }
-      tag = tag + 1;
-      if (!take_char('|')) break;
-    }
-  }
-}
-
 static long compile_len(void)
 {
   out_file = 0;
@@ -1280,9 +1038,7 @@ static long compile_len(void)
   pos = 0;
   env_depth = 0;
   stack_depth = 0;
-  ctor_count = 0;
   func_count = 0;
-  parse_type_decls();
   parse_expr();
   skip_space();
   if (pos != src_len) die("unexpected trailing input");
@@ -1318,9 +1074,7 @@ static void write_bytecode(const char *path)
   pos = 0;
   env_depth = 0;
   stack_depth = 0;
-  ctor_count = 0;
   func_count = 0;
-  parse_type_decls();
   parse_expr();
   emit_byte(OP_HALT);
   actual_len = out_len;

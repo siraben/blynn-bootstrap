@@ -94,24 +94,19 @@ Deleted MinCaml stages:
 
 ## Current Bootstrap Slice
 
-The checked-in `mlc-seed.c` is deliberately smaller than this map, though the
-current transition has overgrown ADT and `match` support that should move back
-out of the C seed. It is now a
+The checked-in `mlc-seed.c` is deliberately smaller than this map. It is now a
 tiny recursive-descent compiler for `let` bindings, `if ... then ... else
 ...`, sequencing with `;`, `read_byte`, `write_byte`, `exit`, integer literals, integer comparisons,
 parenthesized arithmetic, `+ - * /`, nested OCaml block comments,
 multi-character local identifiers, two-element tuple construction and
 destructuring, direct unary `let rec` calls with one `and` partner, runtime-sized `Array.create`,
 `Bytes.create`, `Bytes.length` / `String.length`, string literals as immutable byte blocks and direct call arguments, `a.(i)` / `b.[i]` reads and
-`a.(i) <- v` / `b.[i] <- v` writes, plus transitional top-level ADT declarations
-and constructor `match` expressions. That ADT/match support is useful as a
-reference but is no longer the intended long-term C seed surface.
+`a.(i) <- v` / `b.[i] <- v` writes.
 It also has a temporary
 `write_string "..."` form, including three-digit byte escapes, that lowers
 literal bytes to repeated `write_byte` calls. It exists to pin the M2 path,
-bytecode writer, expression codegen, local stack environment, pattern lowering
-shape, and the VM representation of constructors before the real
-MinCaml-shaped passes are ported into `mlc.ml`.
+bytecode writer, expression codegen, and local stack environment before the
+real MinCaml-shaped passes are ported into `mlc.ml`.
 
 Do not treat the current `mlc.ml` as self-hosted. It is now written in the
 seed core language and has a tiny lexer/parser/emitter path for byte literals
