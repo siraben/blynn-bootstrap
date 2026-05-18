@@ -1,11 +1,3 @@
-(* Bootstrap compiler spine.
-
-   This file is intentionally written in the seed core language: conditionals,
-   let/let-rec, tuples, integers, strings/bytes, and direct calls. Full
-   mini-OCaml pattern matching belongs in the compiler implemented here, not in
-   the initial C seed parser.
-*)
-
 let rec is_digit ch =
   if ch < 48 then 0 else if ch > 57 then 0 else 1
 in
@@ -54,7 +46,9 @@ let rec emit expr =
   if tag == 1 then payload
   else if tag == 2 then
     let (lhs, rhs) = payload in
-    emit lhs + emit rhs
+    let left = emit lhs in
+    let right = emit rhs in
+    (left + right)
   else 88
 in
 let text = "40+39" in

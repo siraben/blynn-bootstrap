@@ -26,12 +26,15 @@ Current stages:
   functions.
 - `03-ok.ml0` and `03-char-string.ml0` are small ML0 sources accepted by
   `02-ml0-compiler.ml`.
+- `mlc/mlc.ml` is also compiled by `02-ml0-compiler.ml` in the current gate;
+  the emitted bytecode runs under `mzvm-seed` and prints `OK`.
 
 Planned stages:
 
 - Promote the next compiler only once it can compile its own source and the
   following compiler source. `02-ml0-compiler.ml` is not yet there because it
-  uses the first tree-walking language to bootstrap a parity-oriented compiler.
+  uses the first tree-walking language to bootstrap a parity-oriented compiler;
+  it does now compile the current next compiler source, `mlc/mlc.ml`.
 - Later parser stages increase the ML0 dialect until it can compile the next
   compiler source, then itself.
 - `02-patterns.ml` adds ADT and pattern-match lowering in ML, not in C.

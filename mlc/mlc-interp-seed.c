@@ -3,7 +3,7 @@
 
 enum {
   MAX_NODES = 8192,
-  MAX_ENVS = 8192,
+  MAX_ENVS = 65536,
   MAX_CLOSURES = 32768,
 
   N_INT = 1,
