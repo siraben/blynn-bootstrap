@@ -491,7 +491,9 @@ let rec parse_expr_mode state =
           let (field2_name, field2_end) = field2 in
           if (name == 112) * (field_name == 1986845) * (field2_name == 970924083) then (13, field2_end) else exit 1
         else if (name == 112) * (field_name == 1986845) then (13, field_end) else
-        if (name == 112) * (field_name == 811101477) then (7, field_end) else exit 1
+        if (name == 112) * (field_name == 811101477) then (7, field_end) else
+        if (name == 1920314) * (field_name == 2003486) then (69, field_end) else
+        if (name == 1920314) * (field_name == 970924083) then (1234, field_end) else exit 1
       else if src.[after_name] == 61 then
         if src.[after_name + 1] == 61 then
           (find_env (env, name), name_end)
@@ -1045,6 +1047,8 @@ let rec parse_main_body state =
       let assigned = parse_aug_assignment (src, (pos, (funcs, env))) in
       let (next_pos, next_env) = assigned in
       parse_main_body (src, (next_pos, (funcs, next_env)))
+    else if (name == 1920314) * (src.[next] == 61) then
+      parse_main_body (src, (skip_statement (src, pos), (funcs, env)))
     else if src.[next] == 61 then
       let assigned = parse_assignment (src, (pos, (funcs, env))) in
       let (next_pos, next_env) = assigned in
