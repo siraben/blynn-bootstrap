@@ -699,6 +699,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           "string-value"
           "function"
           "function-tuple"
+          "function-nested"
           "match"
           "adt"
           "multi-adt"
@@ -749,6 +750,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             printf 'OK\n' > string-value.expected
             printf 'OK\n' > function.expected
             printf 'OK\n' > function-tuple.expected
+            printf 'OK\n' > function-nested.expected
             printf 'OK\n' > match.expected
             printf 'OK\n' > adt.expected
             printf 'OK\n' > multi-adt.expected
@@ -804,6 +806,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             cp ${./tests/mlc/string-value.ml} string-value.ml
             cp ${./tests/mlc/function.ml} function.ml
             cp ${./tests/mlc/function-tuple.ml} function-tuple.ml
+            cp ${./tests/mlc/function-nested.ml} function-nested.ml
             cp ${./tests/mlc/match.ml} match.ml
             cp ${./tests/mlc/adt.ml} adt.ml
             cp ${./tests/mlc/multi-adt.ml} multi-adt.ml
@@ -848,6 +851,9 @@ OK"
             test "$actual" = OK
             ./mlc-seed function-tuple.ml function-tuple.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed function-tuple.mzbc)"
+            test "$actual" = OK
+            ./mlc-seed function-nested.ml function-nested.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed function-nested.mzbc)"
             test "$actual" = OK
             ./mlc-seed match.ml match.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed match.mzbc)"
@@ -895,6 +901,7 @@ OK"
             install -Dm644 string-value.mzbc "$out/share/mlc/tests/string-value.mzbc"
             install -Dm644 function.mzbc "$out/share/mlc/tests/function.mzbc"
             install -Dm644 function-tuple.mzbc "$out/share/mlc/tests/function-tuple.mzbc"
+            install -Dm644 function-nested.mzbc "$out/share/mlc/tests/function-nested.mzbc"
             install -Dm644 match.mzbc "$out/share/mlc/tests/match.mzbc"
             install -Dm644 adt.mzbc "$out/share/mlc/tests/adt.mzbc"
             install -Dm644 multi-adt.mzbc "$out/share/mlc/tests/multi-adt.mzbc"

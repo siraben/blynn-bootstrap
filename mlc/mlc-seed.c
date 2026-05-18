@@ -43,10 +43,10 @@ static long ctor_len[64];
 static long ctor_tag[64];
 static long ctor_arity[64];
 static long ctor_count;
-static long active_func_start;
-static long active_func_len;
-static long active_func_target;
-static long active_func_count;
+static long func_start[64];
+static long func_len[64];
+static long func_target[64];
+static long func_count;
 
 static void die(const char *msg)
 {
@@ -215,7 +215,11 @@ static long lookup_constructor(long start, long len)
 
 static long lookup_func_target(long start, long len)
 {
-  if (active_func_count > 0 && span_equal(start, len, active_func_start, active_func_len)) return active_func_target;
+  long i = func_count - 1;
+  while (i >= 0) {
+    if (span_equal(start, len, func_start[i], func_len[i])) return func_target[i];
+    i = i - 1;
+  }
   return -1;
 }
 
@@ -237,17 +241,17 @@ static void add_constructor(long start, long len, long tag, long arity)
 
 static void add_func(long start, long len, long target)
 {
-  if (active_func_count != 0) die("nested let rec is unsupported");
-  active_func_start = start;
-  active_func_len = len;
-  active_func_target = target;
-  active_func_count = 1;
+  if (func_count >= 64) die("too many functions");
+  func_start[func_count] = start;
+  func_len[func_count] = len;
+  func_target[func_count] = target;
+  func_count = func_count + 1;
 }
 
 static void unbind_func(void)
 {
-  if (active_func_count <= 0) die("internal function stack underflow");
-  active_func_count = 0;
+  if (func_count <= 0) die("internal function stack underflow");
+  func_count = func_count - 1;
 }
 
 static long lookup_var(long start, long len)
@@ -1105,7 +1109,7 @@ static long compile_len(void)
   env_depth = 0;
   stack_depth = 0;
   ctor_count = 0;
-  active_func_count = 0;
+  func_count = 0;
   parse_type_decls();
   parse_expr();
   skip_space();
@@ -1143,7 +1147,7 @@ static void write_bytecode(const char *path)
   env_depth = 0;
   stack_depth = 0;
   ctor_count = 0;
-  active_func_count = 0;
+  func_count = 0;
   parse_type_decls();
   parse_expr();
   emit_byte(OP_HALT);
