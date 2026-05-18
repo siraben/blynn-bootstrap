@@ -36,6 +36,9 @@ in
 let rec emit_acc n = emit1 4 n in
 let rec emit_call target = emit1 23 target in
 let rec emit_return dummy = write_byte 24 in
+let rec emit_closure target = emit1 29 target in
+let rec emit_apply dummy = write_byte 30 in
+let rec emit_return_frame dummy = write_byte 31 in
 let rec emit_call_prim prim =
   fun dummy ->
   let _ = write_byte 14 in
@@ -138,8 +141,10 @@ let rec atom_start ch =
   if ch = 40 then 1 else
   if ch = 39 then 1 else
   if ch = 34 then 1 else
-  if ch = 45 then 1 else
   if is_digit ch then 1 else
+  if ch = 101 then 0 else
+  if ch = 105 then 0 else
+  if ch = 116 then 0 else
   if is_ident ch then 1 else 0
 in
 let rec parse_escape ch =
@@ -202,7 +207,10 @@ let rec compile mode =
       fun left_emit ->
       fun ch ->
       let ch = skip_space ch in
-      if ch = 43 then
+      if atom_start ch then
+        compile 6 ch (shift_env env) funcs (base + left_len + 1) (fun arg_len -> fun arg_emit -> fun ch ->
+        tail (left_len + 1 + arg_len + 1) (emit3 left_emit emit_push (emit2 arg_emit emit_apply)) ch)
+      else if ch = 43 then
         compile 4 read_byte (shift_env env) funcs (base + left_len + 1) (fun right_len -> fun right_emit -> fun ch ->
         tail (left_len + 1 + right_len + 1) (emit3 left_emit emit_push (emit2 right_emit (emit0 5))) ch)
       else if ch = 45 then
@@ -330,6 +338,20 @@ let rec compile mode =
         (cond_len + 5 + then_len + 5 + else_len)
         (emit3 cond_emit (emit1 13 (then_len + 5)) (emit3 then_emit (emit1 11 else_len) else_emit))
         ch)))
+      else
+        finish_ident word ch)
+    else if ch = 102 then
+      ident ch (fun word -> fun ch ->
+      if word = 1765859 then
+        ident ch (fun param -> fun ch ->
+        let ch = expect 45 (skip_space ch) in
+        let ch = expect 62 ch in
+        let target = base + 5 in
+        compile 0 ch (extend_env param env) funcs target (fun body_len -> fun body_emit -> fun ch ->
+        kon
+          (5 + body_len + 1 + 5)
+          (emit3 (emit1 11 (body_len + 1)) (emit2 body_emit emit_return_frame) (emit_closure target))
+          ch))
       else
         finish_ident word ch)
     else if ch = 119 then

@@ -23,7 +23,7 @@ Current stages:
   sequencing, char constants, string literals, `write_string`, `read_byte`,
   `exit`, pair tuples, pair destructuring, dynamic string/bytes indexing, and
   dynamic array/bytes writes, `Array.create`, and direct unary `let rec`
-  functions.
+  functions, plus anonymous unary `fun` closures with captured environments.
 - `03-ok.ml0` and `03-char-string.ml0` are small ML0 sources accepted by
   `02-ml0-compiler.ml`.
 - `mlc/mlc.ml` is also compiled by `02-ml0-compiler.ml` in the current gate;

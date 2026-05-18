@@ -65,6 +65,9 @@ Opcodes are one byte. Immediate operands are little-endian 32-bit words.
 26  SETFIELD_DYN
 27  BLOCKSIZE
 28  MAKEBLOCK_DYN tag:u32
+29  CLOSURE target:u32
+30  APPLY
+31  RETURN_FRAME
 ```
 
 Branches are relative to the program counter after the branch operand has
@@ -73,8 +76,15 @@ been read.
 `CALL` encodes an absolute bytecode offset. It pushes the return program
 counter onto the VM return stack and jumps to direct function code emitted
 earlier in the stream. `RETURN` pops that return address. This is the current
-seed path for unary `let rec` functions; closure opcodes remain future ABI
-work.
+seed path for unary `let rec` functions.
+
+`CLOSURE` creates a closure block whose first field is the absolute bytecode
+target and whose remaining fields are the current stack values, copied from
+nearest to farthest lexical depth. `APPLY` expects the closure on the stack
+and the argument in the accumulator; it pushes captured values followed by the
+argument, saves the return program counter and dynamic frame size, and jumps
+to the closure target. Generated closure bodies use `RETURN_FRAME` to drop
+their argument and captured values before returning.
 
 `MAKEBLOCK` consumes fields from the stack plus the accumulator in source
 order: earlier fields have already been pushed, and the accumulator is the

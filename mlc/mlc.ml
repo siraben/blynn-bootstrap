@@ -180,7 +180,7 @@ in
 let rec shift_env env =
   let (name, rest) = env in
   let (depth, tail) = rest in
-  if name < 0 then env else (name, (depth + 1, shift_env tail))
+  if name < 0 then env else (name, (depth + 1, shift_env (tail)))
 in
 let rec lookup_env input =
   let (env, want) = input in
@@ -191,7 +191,7 @@ let rec lookup_env input =
 in
 let rec extend_env input =
   let (name, env) = input in
-  (name, (0, shift_env env))
+  (name, (0, shift_env (env)))
 in
 let rec compile_simple_atom input =
   let (src, pair) = input in
@@ -232,70 +232,70 @@ let rec compile_simple_expr input =
   let (left_len, next0) = left in
   let next = skip_space (src, next0) in
   if src.[next] == 43 then
-    let push_len = emit_push emit in
-    let right = compile_simple_expr (src, (next + 1, (shift_env env, emit))) in
+    let push_len = emit_push (emit) in
+    let right = compile_simple_expr (src, (next + 1, (shift_env (env), emit))) in
     let (right_len, done_pos) = right in
-    let add_len = emit_add emit in
+    let add_len = emit_add (emit) in
     (left_len + push_len + right_len + add_len, done_pos)
   else if src.[next] == 45 then
-    let push_len = emit_push emit in
-    let right = compile_simple_expr (src, (next + 1, (shift_env env, emit))) in
+    let push_len = emit_push (emit) in
+    let right = compile_simple_expr (src, (next + 1, (shift_env (env), emit))) in
     let (right_len, done_pos) = right in
-    let sub_len = emit_sub emit in
+    let sub_len = emit_sub (emit) in
     (left_len + push_len + right_len + sub_len, done_pos)
   else if src.[next] == 42 then
-    let push_len = emit_push emit in
-    let right = compile_simple_expr (src, (next + 1, (shift_env env, emit))) in
+    let push_len = emit_push (emit) in
+    let right = compile_simple_expr (src, (next + 1, (shift_env (env), emit))) in
     let (right_len, done_pos) = right in
-    let mul_len = emit_mul emit in
+    let mul_len = emit_mul (emit) in
     (left_len + push_len + right_len + mul_len, done_pos)
   else if src.[next] == 47 then
-    let push_len = emit_push emit in
-    let right = compile_simple_expr (src, (next + 1, (shift_env env, emit))) in
+    let push_len = emit_push (emit) in
+    let right = compile_simple_expr (src, (next + 1, (shift_env (env), emit))) in
     let (right_len, done_pos) = right in
-    let div_len = emit_div emit in
+    let div_len = emit_div (emit) in
     (left_len + push_len + right_len + div_len, done_pos)
   else if src.[next] == 60 then
     if src.[next + 1] == 61 then
-      let push_len = emit_push emit in
-      let right = compile_simple_expr (src, (next + 2, (shift_env env, emit))) in
+      let push_len = emit_push (emit) in
+      let right = compile_simple_expr (src, (next + 2, (shift_env (env), emit))) in
       let (right_len, done_pos) = right in
-      let le_len = emit_le emit in
+      let le_len = emit_le (emit) in
       (left_len + push_len + right_len + le_len, done_pos)
     else
-      let push_len = emit_push emit in
-      let right = compile_simple_expr (src, (next + 1, (shift_env env, emit))) in
+      let push_len = emit_push (emit) in
+      let right = compile_simple_expr (src, (next + 1, (shift_env (env), emit))) in
       let (right_len, done_pos) = right in
-      let lt_len = emit_lt emit in
+      let lt_len = emit_lt (emit) in
       (left_len + push_len + right_len + lt_len, done_pos)
   else if src.[next] == 62 then
     if src.[next + 1] == 61 then
-      let push_len = emit_push emit in
-      let right = compile_simple_expr (src, (next + 2, (shift_env env, emit))) in
+      let push_len = emit_push (emit) in
+      let right = compile_simple_expr (src, (next + 2, (shift_env (env), emit))) in
       let (right_len, done_pos) = right in
-      let ge_len = emit_ge emit in
+      let ge_len = emit_ge (emit) in
       (left_len + push_len + right_len + ge_len, done_pos)
     else
-      let push_len = emit_push emit in
-      let right = compile_simple_expr (src, (next + 1, (shift_env env, emit))) in
+      let push_len = emit_push (emit) in
+      let right = compile_simple_expr (src, (next + 1, (shift_env (env), emit))) in
       let (right_len, done_pos) = right in
-      let gt_len = emit_gt emit in
+      let gt_len = emit_gt (emit) in
       (left_len + push_len + right_len + gt_len, done_pos)
   else if src.[next] == 33 then
     if src.[next + 1] == 61 then
-      let push_len = emit_push emit in
-      let right = compile_simple_expr (src, (next + 2, (shift_env env, emit))) in
+      let push_len = emit_push (emit) in
+      let right = compile_simple_expr (src, (next + 2, (shift_env (env), emit))) in
       let (right_len, done_pos) = right in
-      let ne_len = emit_ne emit in
+      let ne_len = emit_ne (emit) in
       (left_len + push_len + right_len + ne_len, done_pos)
     else
       exit 1
   else if src.[next] == 61 then
     if src.[next + 1] == 61 then
-      let push_len = emit_push emit in
-      let right = compile_simple_expr (src, (next + 2, (shift_env env, emit))) in
+      let push_len = emit_push (emit) in
+      let right = compile_simple_expr (src, (next + 2, (shift_env (env), emit))) in
       let (right_len, done_pos) = right in
-      let eq_len = emit_eq emit in
+      let eq_len = emit_eq (emit) in
       (left_len + push_len + right_len + eq_len, done_pos)
     else
       exit 1
@@ -352,70 +352,70 @@ let rec compile_expr input =
   let (left_len, next0) = left in
   let next = skip_space (src, next0) in
   if src.[next] == 43 then
-    let push_len = emit_push emit in
-    let right = compile_expr (src, (next + 1, (shift_env env, emit))) in
+    let push_len = emit_push (emit) in
+    let right = compile_expr (src, (next + 1, (shift_env (env), emit))) in
     let (right_len, done_pos) = right in
-    let add_len = emit_add emit in
+    let add_len = emit_add (emit) in
     (left_len + push_len + right_len + add_len, done_pos)
   else if src.[next] == 45 then
-    let push_len = emit_push emit in
-    let right = compile_expr (src, (next + 1, (shift_env env, emit))) in
+    let push_len = emit_push (emit) in
+    let right = compile_expr (src, (next + 1, (shift_env (env), emit))) in
     let (right_len, done_pos) = right in
-    let sub_len = emit_sub emit in
+    let sub_len = emit_sub (emit) in
     (left_len + push_len + right_len + sub_len, done_pos)
   else if src.[next] == 42 then
-    let push_len = emit_push emit in
-    let right = compile_expr (src, (next + 1, (shift_env env, emit))) in
+    let push_len = emit_push (emit) in
+    let right = compile_expr (src, (next + 1, (shift_env (env), emit))) in
     let (right_len, done_pos) = right in
-    let mul_len = emit_mul emit in
+    let mul_len = emit_mul (emit) in
     (left_len + push_len + right_len + mul_len, done_pos)
   else if src.[next] == 47 then
-    let push_len = emit_push emit in
-    let right = compile_expr (src, (next + 1, (shift_env env, emit))) in
+    let push_len = emit_push (emit) in
+    let right = compile_expr (src, (next + 1, (shift_env (env), emit))) in
     let (right_len, done_pos) = right in
-    let div_len = emit_div emit in
+    let div_len = emit_div (emit) in
     (left_len + push_len + right_len + div_len, done_pos)
   else if src.[next] == 60 then
     if src.[next + 1] == 61 then
-      let push_len = emit_push emit in
-      let right = compile_expr (src, (next + 2, (shift_env env, emit))) in
+      let push_len = emit_push (emit) in
+      let right = compile_expr (src, (next + 2, (shift_env (env), emit))) in
       let (right_len, done_pos) = right in
-      let le_len = emit_le emit in
+      let le_len = emit_le (emit) in
       (left_len + push_len + right_len + le_len, done_pos)
     else
-      let push_len = emit_push emit in
-      let right = compile_expr (src, (next + 1, (shift_env env, emit))) in
+      let push_len = emit_push (emit) in
+      let right = compile_expr (src, (next + 1, (shift_env (env), emit))) in
       let (right_len, done_pos) = right in
-      let lt_len = emit_lt emit in
+      let lt_len = emit_lt (emit) in
       (left_len + push_len + right_len + lt_len, done_pos)
   else if src.[next] == 62 then
     if src.[next + 1] == 61 then
-      let push_len = emit_push emit in
-      let right = compile_expr (src, (next + 2, (shift_env env, emit))) in
+      let push_len = emit_push (emit) in
+      let right = compile_expr (src, (next + 2, (shift_env (env), emit))) in
       let (right_len, done_pos) = right in
-      let ge_len = emit_ge emit in
+      let ge_len = emit_ge (emit) in
       (left_len + push_len + right_len + ge_len, done_pos)
     else
-      let push_len = emit_push emit in
-      let right = compile_expr (src, (next + 1, (shift_env env, emit))) in
+      let push_len = emit_push (emit) in
+      let right = compile_expr (src, (next + 1, (shift_env (env), emit))) in
       let (right_len, done_pos) = right in
-      let gt_len = emit_gt emit in
+      let gt_len = emit_gt (emit) in
       (left_len + push_len + right_len + gt_len, done_pos)
   else if src.[next] == 33 then
     if src.[next + 1] == 61 then
-      let push_len = emit_push emit in
-      let right = compile_expr (src, (next + 2, (shift_env env, emit))) in
+      let push_len = emit_push (emit) in
+      let right = compile_expr (src, (next + 2, (shift_env (env), emit))) in
       let (right_len, done_pos) = right in
-      let ne_len = emit_ne emit in
+      let ne_len = emit_ne (emit) in
       (left_len + push_len + right_len + ne_len, done_pos)
     else
       exit 1
   else if src.[next] == 61 then
     if src.[next + 1] == 61 then
-      let push_len = emit_push emit in
-      let right = compile_expr (src, (next + 2, (shift_env env, emit))) in
+      let push_len = emit_push (emit) in
+      let right = compile_expr (src, (next + 2, (shift_env (env), emit))) in
       let (right_len, done_pos) = right in
-      let eq_len = emit_eq emit in
+      let eq_len = emit_eq (emit) in
       (left_len + push_len + right_len + eq_len, done_pos)
     else
       exit 1
@@ -448,7 +448,7 @@ let rec compile_write_byte input =
   let p = skip_space (src, pos + 10) in
   let expr = compile_expr (src, (p, (env, emit))) in
   let (expr_len, done_pos) = expr in
-  let call_len = emit_call_write_byte emit in
+  let call_len = emit_call_write_byte (emit) in
   (expr_len + call_len, done_pos)
 in
 let rec compile_byte_code input =
@@ -466,11 +466,11 @@ let rec compile_byte_code input =
       let in_pos = skip_space (src, rhs_end) in
       if src.[in_pos] == 105 then
         let body_pos = skip_space (src, in_pos + 2) in
-        let push_len = emit_push emit in
+        let push_len = emit_push (emit) in
         let next_env = extend_env (name, env) in
         let body = compile_byte_code (src, (body_pos, (next_env, emit))) in
         let (body_len, body_end) = body in
-        let pop_len = emit_pop1 emit in
+        let pop_len = emit_pop1 (emit) in
         (rhs_len + push_len + body_len + pop_len, body_end)
       else
         exit 1

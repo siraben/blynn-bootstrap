@@ -119,6 +119,13 @@ literal bytes to repeated `write_byte` calls. It exists to pin the M2 path,
 bytecode writer, expression codegen, and local stack environment before the
 real MinCaml-shaped passes are ported into `mlc.ml`.
 
+`02-ml0-compiler.ml` is the staged ML compiler path. In addition to the seed
+fixture subset, it now emits first-class unary closures for anonymous
+`fun x -> ...` expressions. The VM represents closures as heap blocks with a
+bytecode target and captured stack environment; `APPLY` pushes the captured
+values and argument before jumping, and closure bodies return with
+`RETURN_FRAME`.
+
 Do not treat the current `mlc.ml` as self-hosted. It is now written in the
 seed core language and has a tiny lexer/parser/emitter path for byte literals
 and one infix addition. The next meaningful step is to grow the staged ML path

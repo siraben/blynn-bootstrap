@@ -38,7 +38,10 @@ enum {
   OP_GETFIELD_DYN = 25,
   OP_SETFIELD_DYN = 26,
   OP_BLOCKSIZE = 27,
-  OP_MAKEBLOCK_DYN = 28
+  OP_MAKEBLOCK_DYN = 28,
+  OP_CLOSURE = 29,
+  OP_APPLY = 30,
+  OP_RETURN_FRAME = 31
 };
 
 typedef long value_t;
@@ -352,6 +355,41 @@ static void run(void)
       return_push(pc);
       pc = target;
     } else if (op == OP_RETURN) {
+      pc = return_pop();
+    } else if (op == OP_CLOSURE) {
+      long target = read_u32();
+      value_t *block;
+      long i;
+      if (target < 0 || target >= code_len) die("closure target out of range");
+      block = alloc_block(1, sp + 1);
+      block[2] = val_int(target);
+      i = 0;
+      while (i < sp) {
+        block[3 + i] = stack_acc(i);
+        i = i + 1;
+      }
+      acc = (value_t)block;
+    } else if (op == OP_APPLY) {
+      value_t arg = acc;
+      value_t *closure = block_val(stack_pop());
+      long size = closure[1];
+      long target;
+      long i;
+      if (size < 1) die("bad closure");
+      target = int_val(closure[2]);
+      if (target < 0 || target >= code_len) die("closure target out of range");
+      i = size - 1;
+      while (i > 0) {
+        stack_push(closure[2 + i]);
+        i = i - 1;
+      }
+      stack_push(arg);
+      return_push(pc);
+      return_push(size);
+      pc = target;
+    } else if (op == OP_RETURN_FRAME) {
+      long frame = return_pop();
+      stack_drop(frame);
       pc = return_pop();
     } else if (op == OP_BRANCH) {
       branch_relative(read_s32());
