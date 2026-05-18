@@ -93,7 +93,8 @@ let rec expect_local_type state =
   else if (src.[pos] == 108) * (src.[pos + 1] == 111) * (src.[pos + 2] == 110) * (src.[pos + 3] == 103) then
     let p1 = skip_space (src, pos + 4) in
     if (src.[p1] == 108) * (src.[p1 + 1] == 111) * (src.[p1 + 2] == 110) * (src.[p1 + 3] == 103) then p1 + 4 else pos + 4
-  else if (src.[pos] == 95) * (src.[pos + 1] == 66) * (src.[pos + 2] == 111) * (src.[pos + 3] == 111) * (src.[pos + 4] == 108) then pos + 5
+  else if (src.[pos] == 95) * (src.[pos + 1] == 66) * (src.[pos + 2] == 111) * (src.[pos + 3] == 111) * (src.[pos + 4] == 108) then pos + 5 else
+  if (src.[pos] == 111) * (src.[pos + 1] == 117) * (src.[pos + 2] == 116) * (src.[pos + 3] == 101) * (src.[pos + 4] == 114) * (src.[pos + 5] == 95) * (src.[pos + 6] == 116) then pos + 7
   else exit 1
 in
 let rec is_local_type_at state =
@@ -104,7 +105,8 @@ let rec is_local_type_at state =
   ((src.[pos] == 115) * (src.[pos + 1] == 105) * (src.[pos + 2] == 103) * (src.[pos + 3] == 110) * (src.[pos + 4] == 101) * (src.[pos + 5] == 100)) +
   ((src.[pos] == 117) * (src.[pos + 1] == 110) * (src.[pos + 2] == 115) * (src.[pos + 3] == 105) * (src.[pos + 4] == 103) * (src.[pos + 5] == 110) * (src.[pos + 6] == 101) * (src.[pos + 7] == 100)) +
   ((src.[pos] == 108) * (src.[pos + 1] == 111) * (src.[pos + 2] == 110) * (src.[pos + 3] == 103)) +
-  ((src.[pos] == 95) * (src.[pos + 1] == 66) * (src.[pos + 2] == 111) * (src.[pos + 3] == 111) * (src.[pos + 4] == 108))
+  ((src.[pos] == 95) * (src.[pos + 1] == 66) * (src.[pos + 2] == 111) * (src.[pos + 3] == 111) * (src.[pos + 4] == 108)) +
+  ((src.[pos] == 111) * (src.[pos + 1] == 117) * (src.[pos + 2] == 116) * (src.[pos + 3] == 101) * (src.[pos + 4] == 114) * (src.[pos + 5] == 95) * (src.[pos + 6] == 116))
 in
 let rec expect_type state =
   let (src, pos0) = state in
@@ -139,6 +141,16 @@ let rec is_if_at state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
   (src.[pos] == 105) * (src.[pos + 1] == 102)
+in
+let rec is_typedef_at state =
+  let (src, pos0) = state in
+  let pos = skip_space (src, pos0) in
+  (src.[pos] == 116) * (src.[pos + 1] == 121) * (src.[pos + 2] == 112) * (src.[pos + 3] == 101) * (src.[pos + 4] == 100) * (src.[pos + 5] == 101) * (src.[pos + 6] == 102)
+in
+let rec is_enum_at state =
+  let (src, pos0) = state in
+  let pos = skip_space (src, pos0) in
+  (src.[pos] == 101) * (src.[pos + 1] == 110) * (src.[pos + 2] == 117) * (src.[pos + 3] == 109)
 in
 let rec is_else_at state =
   let (src, pos0) = state in
@@ -263,6 +275,7 @@ let rec parse_sizeof_type state =
   if (src.[pos] == 115) * (src.[pos + 1] == 104) * (src.[pos + 2] == 111) * (src.[pos + 3] == 114) * (src.[pos + 4] == 116) then (2, pos + 5) else
   if (src.[pos] == 95) * (src.[pos + 1] == 66) * (src.[pos + 2] == 111) * (src.[pos + 3] == 111) * (src.[pos + 4] == 108) then (1, pos + 5) else
   if (src.[pos] == 100) * (src.[pos + 1] == 111) * (src.[pos + 2] == 117) * (src.[pos + 3] == 98) * (src.[pos + 4] == 108) * (src.[pos + 5] == 101) then (8, pos + 6) else
+  if (src.[pos] == 111) * (src.[pos + 1] == 117) * (src.[pos + 2] == 116) * (src.[pos + 3] == 101) * (src.[pos + 4] == 114) * (src.[pos + 5] == 95) * (src.[pos + 6] == 116) then (4, pos + 7) else
   if (src.[pos] == 108) * (src.[pos + 1] == 111) * (src.[pos + 2] == 110) * (src.[pos + 3] == 103) then
     let p1 = skip_space (src, pos + 4) in
     if (src.[p1] == 108) * (src.[p1 + 1] == 111) * (src.[p1 + 2] == 110) * (src.[p1 + 3] == 103) then (8, p1 + 4) else
@@ -416,7 +429,7 @@ let rec parse_expr_mode state =
           let (assigned, assigned_end) = value in
           (assigned, assigned_end)
       else
-        (find_env (env, name), name_end)
+        if name == 916977775 then (5, name_end) else (find_env (env, name), name_end)
   in
   let (left_value, left_end) = left in
   let next = skip_space (src, left_end) in
@@ -513,6 +526,15 @@ in
 let rec skip_to_close_brace state =
   let (src, pos) = state in
   if src.[pos] == 125 then pos else skip_to_close_brace (src, pos + 1)
+in
+let rec skip_balanced_block state =
+  let (src, pair) = state in
+  let (pos, depth) = pair in
+  if src.[pos] == 123 then skip_balanced_block (src, (pos + 1, depth + 1)) else
+  if src.[pos] == 125 then
+    if depth == 0 then pos else skip_balanced_block (src, (pos + 1, depth - 1))
+  else
+    skip_balanced_block (src, (pos + 1, depth))
 in
 let rec parse_func_return state =
   let (src, pair) = state in
@@ -824,7 +846,7 @@ let rec parse_main_body state =
   let pos = skip_space (src, pos0) in
   if is_return_at (src, pos) then parse_return_value (src, (pos, (funcs, env))) else
   if src.[pos] == 123 then
-    parse_main_body (src, ((skip_to_close_brace (src, pos + 1)) + 1, (funcs, env)))
+    parse_main_body (src, ((skip_balanced_block (src, (pos + 1, 0))) + 1, (funcs, env)))
   else
   if is_if_at (src, pos) then
     let p0 = expect_ch (src, (pos + 2, 40)) in
@@ -917,6 +939,8 @@ let rec parse_program_loop state =
   let (pos0, funcs) = pair in
   let pos = skip_space (src, pos0) in
   if src.[pos] == 0 then exit 1 else
+  if is_typedef_at (src, pos) then parse_program_loop (src, (skip_statement (src, pos), funcs)) else
+  if is_enum_at (src, pos) then parse_program_loop (src, (skip_statement (src, pos), funcs)) else
     let p0 = expect_type (src, pos) in
     let name_parsed = parse_ident (src, p0) in
     let (name, name_end) = name_parsed in
