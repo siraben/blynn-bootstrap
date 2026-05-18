@@ -272,6 +272,10 @@ let rec is_while_at state =
   let (src, pos0) = state in
   is_string_at ("while", (5, (src, pos0)))
 in
+let rec is_for_at state =
+  let (src, pos0) = state in
+  is_string_at ("for", (3, (src, pos0)))
+in
 let rec expect_main state =
   let (src, pos0) = state in
   expect_string ("main", (4, (src, pos0)))
@@ -1052,6 +1056,93 @@ let rec parse_postfix_update_statement state =
   let new_value = if src.[op] == 43 then old_value + 1 else old_value - 1 in
   (p2, extend_env (name, (new_value, env)))
 in
+let rec parse_assignment_expr state =
+  let (src, pair) = state in
+  let (pos0, pair2) = pair in
+  let (funcs, env) = pair2 in
+  let ident = parse_ident (src, pos0) in
+  let (name, _name_end) = ident in
+  let value = bind_parse_expr_value (bind_expect_char_keep (ident, (src, '=')), (src, (funcs, env))) in
+  let (assigned, p1) = value in
+  (p1, extend_env (name, (assigned, env)))
+in
+let rec parse_aug_assignment_expr state =
+  let (src, pair) = state in
+  let (pos0, pair2) = pair in
+  let (funcs, env) = pair2 in
+  let ident = parse_ident (src, pos0) in
+  let (name, name_end) = ident in
+  let old_value = find_env (env, name) in
+  let op = skip_space (src, name_end) in
+  let value = bind_parse_expr_value ((0, expect_ch (src, (op + 1, '='))), (src, (funcs, env))) in
+  let (delta, p1) = value in
+  let next_value = if src.[op] == 43 then old_value + delta else old_value - delta in
+  (p1, extend_env (name, (next_value, env)))
+in
+let rec parse_postfix_update_expr state =
+  let (src, pair) = state in
+  let (pos0, env) = pair in
+  let ident = parse_ident (src, pos0) in
+  let (name, name_end) = ident in
+  let old_value = find_env (env, name) in
+  let op = skip_space (src, name_end) in
+  let repeated = bind_expect_char_keep ((name, op + 1), (src, src.[op])) in
+  let (_value, p2) = repeated in
+  let new_value = if src.[op] == 43 then old_value + 1 else old_value - 1 in
+  (p2, extend_env (name, (new_value, env)))
+in
+let rec parse_for_update state =
+  let (src, pair) = state in
+  let (pos0, pair2) = pair in
+  let (funcs, env) = pair2 in
+  let pos = skip_space (src, pos0) in
+  if src.[pos] == ')' then (pos, env) else
+    let ident = parse_ident (src, pos) in
+    let (_name, name_end) = ident in
+    let next = skip_space (src, name_end) in
+    if ((src.[next] == '+') * (src.[next + 1] == '+')) + ((src.[next] == '-') * (src.[next + 1] == '-')) then
+      parse_postfix_update_expr (src, (pos, env))
+    else if ((src.[next] == '+') + (src.[next] == '-')) * (src.[next + 1] == '=') then
+      parse_aug_assignment_expr (src, (pos, (funcs, env)))
+    else if src.[next] == '=' then
+      parse_assignment_expr (src, (pos, (funcs, env)))
+    else
+      exit 1
+in
+let rec parse_for_init state =
+  let (src, pair) = state in
+  let (pos0, pair2) = pair in
+  let (funcs, env) = pair2 in
+  let pos = skip_space (src, pos0) in
+  if src.[pos] == ';' then (pos + 1, env) else
+    let assigned = parse_assignment_expr (src, (pos, (funcs, env))) in
+    let (assigned_end, assigned_env) = assigned in
+    (expect_ch (src, (assigned_end, ';')), assigned_env)
+in
+let rec parse_for_body_once state =
+  let (src, pair) = state in
+  let (pos0, pair2) = pair in
+  let (funcs, env) = pair2 in
+  let pos = skip_space (src, pos0) in
+  if is_local_type_at (src, pos) then parse_local_init (src, (pos, (funcs, env))) else
+    let ident = parse_ident (src, pos) in
+    let (name, name_end) = ident in
+    let _ = name in
+    let next = skip_space (src, name_end) in
+    if ((src.[next] == '+') + (src.[next] == '-')) * (src.[next + 1] == '=') then
+      parse_aug_assignment (src, (pos, (funcs, env)))
+    else if ((src.[next] == '+') * (src.[next + 1] == '+')) + ((src.[next] == '-') * (src.[next + 1] == '-')) then
+      parse_postfix_update_statement (src, (pos, env))
+    else if src.[next] == '=' then
+      parse_assignment (src, (pos, (funcs, env)))
+    else
+      (skip_statement (src, pos), env)
+in
+let rec skip_for_body state =
+  let (src, pos0) = state in
+  let pos = skip_space (src, pos0) in
+  if src.[pos] == '{' then (skip_balanced_block (src, (pos + 1, 0))) + 1 else skip_statement (src, pos)
+in
 let rec parse_main_prefix state =
   let (src, pair) = state in
   let (pos0, pair2) = pair in
@@ -1201,6 +1292,36 @@ let rec parse_goto_statement state =
   else
     exit 1
 in
+let rec parse_for_loop state =
+  let (src, pair) = state in
+  let (cond_pos, pair2) = pair in
+  let (update_pos, pair3) = pair2 in
+  let (body_pos, pair4) = pair3 in
+  let (funcs, env) = pair4 in
+  let cond = parse_condition_value (src, (cond_pos, (funcs, env))) in
+  let (cond_value, cond_end) = cond in
+  let _ = expect_ch (src, (cond_end, ';')) in
+  if cond_value == 0 then (skip_for_body (src, body_pos), env) else
+    let body = parse_for_body_once (src, (body_pos, (funcs, env))) in
+    let (_body_end, body_env) = body in
+    let updated = parse_for_update (src, (update_pos, (funcs, body_env))) in
+    let (_update_end, update_env) = updated in
+    parse_for_loop (src, (cond_pos, (update_pos, (body_pos, (funcs, update_env)))))
+in
+let rec parse_for_statement state =
+  let (src, pair) = state in
+  let (pos0, pair2) = pair in
+  let (funcs, env) = pair2 in
+  let opened = expect_ch (src, (pos0 + 3, '(')) in
+  let initialized = parse_for_init (src, (opened, (funcs, env))) in
+  let (cond_pos, init_env) = initialized in
+  let cond_probe = parse_condition_value (src, (cond_pos, (funcs, init_env))) in
+  let (_probe_value, cond_end) = cond_probe in
+  let update_pos = expect_ch (src, (cond_end, ';')) in
+  let close_pos = skip_to_close_paren (src, update_pos) in
+  let body_pos = skip_space (src, close_pos + 1) in
+  parse_for_loop (src, (cond_pos, (update_pos, (body_pos, (funcs, init_env)))))
+in
 let rec parse_main_body state =
   let (src, pair) = state in
   let (pos0, pair2) = pair in
@@ -1268,6 +1389,10 @@ let rec parse_main_body state =
       let (body_end, body_env) = body in
       let _ = body_end in
       parse_main_body (src, (pos, (funcs, body_env)))
+  else if is_for_at (src, pos) then
+    let loop = parse_for_statement (src, (pos, (funcs, env))) in
+    let (next_pos, next_env) = loop in
+    parse_main_body (src, (next_pos, (funcs, next_env)))
   else if is_local_type_at (src, pos) then
     let local = parse_local_init (src, (pos, (funcs, env))) in
     let (next_pos, next_env) = local in

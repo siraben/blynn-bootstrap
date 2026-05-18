@@ -99,6 +99,7 @@ runCommand "tcc-bin-ccc-seed" {
   build_and_run ${testsRoot}/mescc/scaffold/42-goto-label.c 0 42-goto-label
   build_and_run ${testsRoot}/mescc/scaffold/45-void-call.c 0 45-void-call
   build_and_run ${testsRoot}/mescc/scaffold/70-function-modulo.c 0 70-function-modulo
+  build_and_run ${testsRoot}/mescc/scaffold/80-for-loop.c 10 80-for-loop
   build_and_run ${testsRoot}/hcc/m1-smoke/examples/ret13.c 13 hcc-ret13
   build_and_run ${testsRoot}/hcc/m1-smoke/examples/short-circuit.c 42 hcc-short-circuit
   build_and_run ${testsRoot}/hcc/m1-smoke/examples/call-arg-immediate.c 42 hcc-call-arg-immediate

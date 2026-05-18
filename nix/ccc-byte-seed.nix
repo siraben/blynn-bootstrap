@@ -72,6 +72,7 @@ DEFINE SYSCALL 0F05
     check_return ${testsRoot}/mescc/scaffold/42-goto-label.c 0
     check_return ${testsRoot}/mescc/scaffold/45-void-call.c 0
     check_return ${testsRoot}/mescc/scaffold/70-function-modulo.c 0
+    check_return ${testsRoot}/mescc/scaffold/80-for-loop.c 10
     check_return ${testsRoot}/hcc/m1-smoke/examples/ret13.c 13
     check_return ${testsRoot}/hcc/m1-smoke/examples/short-circuit.c 42
     check_return ${testsRoot}/hcc/m1-smoke/examples/call-arg-immediate.c 42
