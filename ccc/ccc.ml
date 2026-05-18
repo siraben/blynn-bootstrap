@@ -73,6 +73,14 @@ in
 let rec expect_int state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
+  if (src.[pos] == 99) * (src.[pos + 1] == 104) * (src.[pos + 2] == 97) * (src.[pos + 3] == 114) then pos + 4 else
+  if (src.[pos] == 118) * (src.[pos + 1] == 111) * (src.[pos + 2] == 105) * (src.[pos + 3] == 100) then pos + 4 else
+  if (src.[pos] == 99) * (src.[pos + 1] == 111) * (src.[pos + 2] == 110) * (src.[pos + 3] == 115) * (src.[pos + 4] == 116) then expect_int (src, pos + 5) else
+  if (src.[pos] == 115) * (src.[pos + 1] == 116) * (src.[pos + 2] == 114) * (src.[pos + 3] == 117) * (src.[pos + 4] == 99) * (src.[pos + 5] == 116) then
+    let ident = parse_ident (src, pos + 6) in
+    let (_name, name_end) = ident in
+    name_end
+  else
   if (src.[pos] == 105) * (src.[pos + 1] == 110) * (src.[pos + 2] == 116) then pos + 3 else
   if (src.[pos] == 108) * (src.[pos + 1] == 111) * (src.[pos + 2] == 110) * (src.[pos + 3] == 103) then pos + 4 else
   if (src.[pos] == 67) * (src.[pos + 1] == 111) * (src.[pos + 2] == 109) * (src.[pos + 3] == 112) * (src.[pos + 4] == 97) * (src.[pos + 5] == 114) * (src.[pos + 6] == 101) then pos + 7 else
@@ -405,9 +413,18 @@ let rec pow2 state =
   let n = state in
   if n <= 0 then 1 else 2 * (pow2 (n - 1))
 in
+let rec skip_to_close_paren_loop state =
+  let (src, pair) = state in
+  let (pos, depth) = pair in
+  if src.[pos] == 40 then skip_to_close_paren_loop (src, (pos + 1, depth + 1)) else
+  if src.[pos] == 41 then
+    if depth == 0 then pos else skip_to_close_paren_loop (src, (pos + 1, depth - 1))
+  else
+    skip_to_close_paren_loop (src, (pos + 1, depth))
+in
 let rec skip_to_close_paren state =
   let (src, pos) = state in
-  if src.[pos] == 41 then pos else skip_to_close_paren (src, pos + 1)
+  skip_to_close_paren_loop (src, (pos, 0))
 in
 let rec parse_expr_mode state =
   let (src, pair) = state in
@@ -492,7 +509,15 @@ let rec parse_expr_mode state =
         let index = parse_expr_mode (src, (after_name + 1, (funcs, (env, 0)))) in
         let (index_value, index_end) = index in
         let p1 = expect_ch (src, (index_end, 93)) in
-        (string_at index_value, p1)
+        let after_index = skip_space (src, p1) in
+        if (src.[after_index] == 45) * (src.[after_index + 1] == 62) then
+          let field = parse_ident (src, after_index + 2) in
+          let (field_name, field_end) = field in
+          if (name == 185017699) * (field_name == 15507) then
+            if index_value == 0 then (37, field_end) else (99, field_end)
+          else exit 1
+        else
+          (string_at index_value, p1)
       else if src.[after_name] == 46 then
         let field = parse_ident (src, after_name + 1) in
         let (field_name, field_end) = field in
@@ -696,7 +721,8 @@ let rec parse_params state =
   else
     let p2 = expect_int (src, p1) in
     let p2_space = skip_space (src, p2) in
-    let p2_next = if src.[p2_space] == 42 then skip_space (src, p2_space + 1) else p2_space in
+    let p2_next0 = if src.[p2_space] == 42 then skip_space (src, p2_space + 1) else p2_space in
+    let p2_next = if src.[p2_next0] == 42 then skip_space (src, p2_next0 + 1) else p2_next0 in
     if src.[p2_next] == 41 then (0 - 1, p2_next + 1) else
       let param = parse_ident (src, p2_next) in
       let (param_name, param_end) = param in
@@ -1114,7 +1140,11 @@ let rec parse_program_loop state =
         parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (0, (10, funcs)))))
       else if name == 759352374 then
         parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (0, (1, funcs)))))
-      else if (name == 402468489) + (name == 402468487) then
+      else if (name == 753253611) + (name == 180611956) then
+        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (0, (0, funcs)))))
+      else if (name == 340503192) + (name == 89405656) then
+        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (0, (0, funcs)))))
+      else if ((name == 402468489) + (name == 402468487)) + (name == 281987142) then
         parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (4, (0, funcs)))))
       else
         let ret = parse_func_return (src, (p2, param)) in
