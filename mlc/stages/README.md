@@ -35,7 +35,10 @@ Current stages:
   go through the early `expect_string "..." ch` primitive, which is interpreted
   by the C root and compiled by stage 02 into ordinary bytecode checks. The
   parser helpers are moving to the monadic shape `ch -> kon -> result`, with
-  `parse_bind` threading the one-character lookahead through staged parsers.
+  Parsec-style primitive names (`p_peek`, `p_need_char`, `p_return`, `p_bind`)
+  threading the one-character lookahead through staged parsers. This mirrors
+  HCC's `ParseLite` split between lookahead, required consumption, and parser
+  sequencing while staying within the current core ML surface.
   Application parsing uses one token of lookahead so identifiers such as
   `emit`, `input`, and `target` can be parsed as arguments while `else`, `in`,
   and `then` still terminate the surrounding expression.

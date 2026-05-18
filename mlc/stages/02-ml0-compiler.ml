@@ -122,9 +122,15 @@ in
 let rec skip_space ch =
   if is_space ch then skip_space read_byte else ch
 in
-let rec expect want =
+let rec p_peek ch =
+  skip_space ch
+in
+let rec p_need_char want =
   fun ch ->
   if ch = want then read_byte else exit 1
+in
+let rec expect want =
+  p_need_char want
 in
 let rec pack_token kind =
   fun ch ->
@@ -262,16 +268,22 @@ let rec parse_char ch =
   else
     kon ch read_byte
 in
-let rec parse_return value =
+let rec p_return value =
   fun ch ->
   fun kon ->
   kon value ch
 in
-let rec parse_bind parser =
+let rec p_bind parser =
   fun next ->
   fun ch ->
   fun kon ->
   parser ch (fun value -> fun ch -> next value ch kon)
+in
+let rec parse_return value =
+  p_return value
+in
+let rec parse_bind parser =
+  p_bind parser
 in
 let rec compile_string_loop count =
   fun len ->
@@ -284,7 +296,7 @@ let rec compile_string_loop count =
     else
       kon (len + 9) (emit2 emit (emit_makeblock count)) read_byte
   else
-    parse_bind parse_char (fun value -> fun ch -> fun kon ->
+    p_bind parse_char (fun value -> fun ch -> fun kon ->
     if count = 0 then
       compile_string_loop 1 5 (emit_const value) ch kon
     else
@@ -358,7 +370,7 @@ let rec compile mode =
         let next = read_byte in
         if next = '[' then
           compile 2 read_byte (shift_env env) funcs (base + left_len + 1) (fun index_len -> fun index_emit -> fun ch ->
-          let ch = expect ']' (skip_space ch) in
+          let ch = p_need_char ']' (p_peek ch) in
           let ch = skip_space ch in
           if ch = '<' then
             let ch = expect '-' read_byte in
@@ -374,7 +386,7 @@ let rec compile mode =
               ch)
         else if next = '(' then
           compile 2 read_byte (shift_env env) funcs (base + left_len + 1) (fun index_len -> fun index_emit -> fun ch ->
-          let ch = expect ')' (skip_space ch) in
+          let ch = p_need_char ')' (p_peek ch) in
           let ch = skip_space ch in
           if ch = '<' then
             let ch = expect '-' read_byte in
@@ -471,10 +483,10 @@ let rec compile mode =
       let ch = skip_space ch in
       if ch = '(' then
         ident read_byte (fun name1 -> fun ch ->
-        let ch = expect ',' (skip_space ch) in
+        let ch = p_need_char ',' (p_peek ch) in
         ident ch (fun name2 -> fun ch ->
-        let ch = expect ')' (skip_space ch) in
-        let ch = expect '=' (skip_space ch) in
+        let ch = p_need_char ')' (p_peek ch) in
+        let ch = p_need_char '=' (p_peek ch) in
         compile 0 ch env funcs base (fun rhs_len -> fun rhs_emit -> fun ch ->
         let ch = expect_in ch in
         let body_base = base + rhs_len + 1 + 5 + 5 + 1 + 5 + 5 + 1 in
@@ -492,7 +504,7 @@ let rec compile mode =
       if name = 1969684 then
         ident ch (fun fname -> fun ch ->
         ident ch (fun param -> fun ch ->
-        let ch = expect '=' (skip_space ch) in
+        let ch = p_need_char '=' (p_peek ch) in
         let target = base + 5 in
         let close_env = unshift_env env in
         let captures = close_env (0 - 3) in
@@ -513,7 +525,7 @@ let rec compile mode =
             (emit3 (emit1 11 fn_len) (emit2 fn_body_emit emit_return_frame) body_emit)
             ch))))
       else
-        let ch = expect '=' (skip_space ch) in
+        let ch = p_need_char '=' (p_peek ch) in
         compile 0 ch env funcs base (fun rhs_len -> fun rhs_emit -> fun ch ->
         let ch = expect_in ch in
         compile 0 ch (extend_env name env) funcs (base + rhs_len + 1) (fun body_len -> fun body_emit -> fun ch ->
@@ -538,7 +550,7 @@ let rec compile mode =
       ident ch (fun word -> fun ch ->
       if word = 1765859 then
       ident ch (fun param -> fun ch ->
-      let ch = expect '-' (skip_space ch) in
+      let ch = p_need_char '-' (p_peek ch) in
       let ch = expect '>' ch in
       let target = base + 5 in
       let close_env = unshift_env env in
@@ -557,7 +569,7 @@ let rec compile mode =
         compile 2 ch env funcs base (fun expr_len -> fun expr_emit -> fun ch ->
         kon (expr_len + 9) (emit2 expr_emit emit_call_write_byte) ch)
       else if word = 37175713 then
-        let ch = expect '"' (skip_space ch) in
+        let ch = p_need_char '"' (p_peek ch) in
         let rec string_out total_len =
           fun total_emit ->
           fun ch ->
@@ -576,7 +588,7 @@ let rec compile mode =
         compile 2 ch env funcs base (fun expr_len -> fun expr_emit -> fun ch ->
         kon (expr_len + 9) (emit2 expr_emit emit_call_exit) ch)
       else if word = 431126343 then
-        let ch = expect '"' (skip_space ch) in
+        let ch = p_need_char '"' (p_peek ch) in
         let rec expect_string_loop total_len =
           fun total_emit ->
           fun ch ->
@@ -673,7 +685,7 @@ let rec compile mode =
         let next = read_byte in
         if next = '[' then
           compile 2 read_byte (shift_env env) funcs (base + left_len + 1) (fun index_len -> fun index_emit -> fun ch ->
-          let ch = expect ']' (skip_space ch) in
+          let ch = p_need_char ']' (p_peek ch) in
           let ch = skip_space ch in
           if ch = '<' then
             let ch = expect '-' read_byte in
@@ -689,7 +701,7 @@ let rec compile mode =
               ch)
         else if next = '(' then
           compile 2 read_byte (shift_env env) funcs (base + left_len + 1) (fun index_len -> fun index_emit -> fun ch ->
-          let ch = expect ')' (skip_space ch) in
+          let ch = p_need_char ')' (p_peek ch) in
           let ch = skip_space ch in
           if ch = '<' then
             let ch = expect '-' read_byte in
@@ -717,7 +729,7 @@ let rec compile mode =
       let ch = skip_space ch in
       if ch = ',' then
         compile 0 read_byte (shift_env env) funcs (base + len + 1) (fun right_len -> fun right_emit -> fun ch ->
-        let ch = expect ')' (skip_space ch) in
+        let ch = p_need_char ')' (p_peek ch) in
         kon
           (len + 1 + right_len + 9)
           (emit3 emit emit_push (emit2 right_emit (emit_makeblock 2)))
