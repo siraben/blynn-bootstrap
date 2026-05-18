@@ -1374,6 +1374,9 @@ OK"
             printf 'type letter = A | B | C\nwrite_byte (match C with A -> 88 | B -> 88 | C -> 79)' | ${mzvmSeedM2}/bin/mzvm-seed mlc.byte > compiled-match-three-direct.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-match-three-direct.mzbc)"
             test "$actual" = O
+            ${mzvmSeedM2}/bin/mzvm-seed mlc.byte < ${./tests/mlc/match-three.ml} > compiled-match-three.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-match-three.mzbc)"
+            test "$actual" = OK
           '';
           installScript = ''
             install -Dm644 mlc.byte "$out/share/mlc/mlc.byte"
@@ -1403,6 +1406,7 @@ OK"
             install -Dm644 compiled-wildcard-match.mzbc "$out/share/mlc/compiled-wildcard-match.mzbc"
             install -Dm644 compiled-multi-adt.mzbc "$out/share/mlc/compiled-multi-adt.mzbc"
             install -Dm644 compiled-match-three-direct.mzbc "$out/share/mlc/compiled-match-three-direct.mzbc"
+            install -Dm644 compiled-match-three.mzbc "$out/share/mlc/compiled-match-three.mzbc"
           '';
         };
 

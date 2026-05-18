@@ -44,9 +44,10 @@ Current stages:
   recursively nested and parenthesized top-level `let` bindings with shadowing, and true/false
   `if ... then ... else ...` byte-output fixtures, including conditions formed
   with `<`, `==`, `!=`, `<=`, `>`, and `>=`. It now also parses leading
-  `type` declarations into a constructor environment and lowers the first
-  constructor/wildcard `match` forms, including a three-arm direct match, to
-  VM block allocation, tag tests, field extraction, and branches.
+  `type` declarations into a constructor environment, records simple unary
+  `let rec` functions for direct source-level calls, and lowers the first
+  constructor/wildcard `match` forms, including `match-three.ml`, to VM block
+  allocation, tag tests, field extraction, and branches.
 
 Planned stages:
 
@@ -60,7 +61,8 @@ Planned stages:
   `mlc.byte`.
 - Later parser stages increase the ML0 dialect until it can compile the next
   compiler source, then itself.
-- Later pattern stages extend the current `mlc.ml` ADT/match slice to nested,
-  recursive, and general decision-tree patterns in ML, not in C.
+- Later pattern stages extend the current `mlc.ml` ADT/match/direct-function
+  slice to nested, recursive, and general decision-tree patterns in ML, not in
+  C.
 - `03-bytecode.ml` emits MZBC and replaces the transitional direct C bytecode
   compiler for normal bootstrap use.
