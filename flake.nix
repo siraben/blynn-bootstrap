@@ -629,34 +629,6 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           install -Dm644 host-gc.txt "$out/gc-output.txt"
         '';
 
-        mlcFixtures = [
-          "ok"
-          "arithmetic"
-          "conditional"
-          "comparison"
-          "negative"
-          "let-binding"
-          "array"
-          "bytes"
-          "string-value"
-          "dynamic-index"
-          "dynamic-create"
-          "length"
-          "function"
-          "function-tuple"
-          "function-nested"
-          "function-string"
-          "function-and"
-          "identifiers"
-          "string"
-          "exit"
-          "tuple"
-          "sequence"
-        ];
-        mlcInputFixtures = [
-          "read-byte"
-        ];
-
         mlcInterpSeedHost = pkgs.stdenv.mkDerivation {
           pname = "mlc-interp-seed-host";
           version = "0-unstable-2026-05-17";
@@ -768,222 +740,21 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           testsMlc = ./tests/mlc;
         };
 
-        mlcSeedHost = pkgs.stdenv.mkDerivation {
-          pname = "mlc-seed-host";
-          version = "0-unstable-2026-05-06";
-          src = mlcSrc;
-
-          dontConfigure = true;
-          dontUpdateAutotoolsGnuConfigScripts = true;
-
-          buildPhase = ''
-            runHook preBuild
-            $CC -O2 -Wall -Wextra mlc-seed.c -o mlc-seed
-            runHook postBuild
-          '';
-
-          doCheck = true;
-          checkPhase = ''
-            runHook preCheck
-            for name in ${lib.concatStringsSep " " mlcFixtures}; do
-              ./mlc-seed ${./tests/mlc}/$name.ml $name.mzbc
-              ${mzvmHost}/bin/mzvm $name.mzbc > $name.out
-            done
-            for name in ${lib.concatStringsSep " " mlcInputFixtures}; do
-              ./mlc-seed ${./tests/mlc}/$name.ml $name.mzbc
-            done
-            printf 'O' | ${mzvmHost}/bin/mzvm read-byte.mzbc > read-byte.out
-            printf 'OK\n' > ok.expected
-            printf 'H-\n' > arithmetic.expected
-            printf 'OK\n' > conditional.expected
-            printf 'OK\nOK\n' > comparison.expected
-            printf 'OK\n' > negative.expected
-            printf 'OK\n' > let-binding.expected
-            printf 'OK\n' > array.expected
-            printf 'OK\n' > bytes.expected
-            printf 'OK\n' > string-value.expected
-            printf 'OK\n' > dynamic-index.expected
-            printf 'OK\n' > dynamic-create.expected
-            printf 'OK\n' > length.expected
-            printf 'OK\n' > function.expected
-            printf 'OK\n' > function-tuple.expected
-            printf 'OK\n' > function-nested.expected
-            printf 'OK\n' > function-string.expected
-            printf 'OK\n' > function-and.expected
-            printf 'O\n' > identifiers.expected
-            printf 'O\tK\n' > string.expected
-            printf 'OK\n' > exit.expected
-            printf 'OK\n' > tuple.expected
-            printf 'OK\n' > sequence.expected
-            printf 'OK\n' > read-byte.expected
-            for name in ${lib.concatStringsSep " " mlcFixtures}; do
-              cmp $name.expected $name.out
-            done
-            cmp read-byte.expected read-byte.out
-            runHook postCheck
-          '';
-
-          installPhase = ''
-            runHook preInstall
-            install -Dm755 mlc-seed "$out/bin/mlc-seed"
-            install -Dm644 mlc-seed.c "$out/share/mlc/mlc-seed.c"
-            for name in ${lib.concatStringsSep " " mlcFixtures}; do
-              install -Dm644 $name.mzbc "$out/share/mlc/tests/$name.mzbc"
-            done
-            install -Dm644 read-byte.mzbc "$out/share/mlc/tests/read-byte.mzbc"
-            runHook postInstall
-          '';
-
-          meta = with pkgs.lib; {
-            description = "Host-built seed mini-OCaml compiler for CCC bootstrap bytecode";
-            license = licenses.gpl3Only;
-            platforms = platforms.linux;
-          };
+        mlcSeedHost = pkgs.callPackage ./nix/mlc-seed-host.nix {
+          inherit mlcSrc mzvmHost;
+          testsMlc = ./tests/mlc;
         };
 
-        mlcSeedM2 = stageRun {
-          pname = "mlc-seed-m2";
-          nativeBuildInputs = [
-            minimalBootstrap.stage0-posix.mescc-tools
-          ];
-          description = "M2-Planet-built seed mini-OCaml compiler for CCC bootstrap bytecode";
-          buildScript = ''
-            . ${./scripts/lib/bootstrap.sh}
-            cp ${mlcSrc}/mlc-seed.c mlc-seed.c
-            cp ${./tests/mlc/ok.ml} ok.ml
-            cp ${./tests/mlc/arithmetic.ml} arithmetic.ml
-            cp ${./tests/mlc/conditional.ml} conditional.ml
-            cp ${./tests/mlc/comparison.ml} comparison.ml
-            cp ${./tests/mlc/negative.ml} negative.ml
-            cp ${./tests/mlc/let-binding.ml} let-binding.ml
-            cp ${./tests/mlc/array.ml} array.ml
-            cp ${./tests/mlc/bytes.ml} bytes.ml
-            cp ${./tests/mlc/string-value.ml} string-value.ml
-            cp ${./tests/mlc/dynamic-index.ml} dynamic-index.ml
-            cp ${./tests/mlc/dynamic-create.ml} dynamic-create.ml
-            cp ${./tests/mlc/length.ml} length.ml
-            cp ${./tests/mlc/function.ml} function.ml
-            cp ${./tests/mlc/function-tuple.ml} function-tuple.ml
-            cp ${./tests/mlc/function-nested.ml} function-nested.ml
-            cp ${./tests/mlc/function-string.ml} function-string.ml
-            cp ${./tests/mlc/function-and.ml} function-and.ml
-            cp ${./tests/mlc/identifiers.ml} identifiers.ml
-            cp ${./tests/mlc/string.ml} string.ml
-            cp ${./tests/mlc/exit.ml} exit.ml
-            cp ${./tests/mlc/tuple.ml} tuple.ml
-            cp ${./tests/mlc/sequence.ml} sequence.ml
-            cp ${./tests/mlc/read-byte.ml} read-byte.ml
-            compile_m2 mlc-seed.c mlc-seed
-            ./mlc-seed ok.ml ok.mzbc
-            actual="$(${mzvmSeedM2}/bin/mzvm-seed ok.mzbc)"
-            test "$actual" = OK
-            ./mlc-seed arithmetic.ml arithmetic.mzbc
-            actual="$(${mzvmSeedM2}/bin/mzvm-seed arithmetic.mzbc)"
-            test "$actual" = H-
-            ./mlc-seed conditional.ml conditional.mzbc
-            actual="$(${mzvmSeedM2}/bin/mzvm-seed conditional.mzbc)"
-            test "$actual" = OK
-            ./mlc-seed comparison.ml comparison.mzbc
-            actual="$(${mzvmSeedM2}/bin/mzvm-seed comparison.mzbc)"
-            test "$actual" = "OK
-OK"
-            ./mlc-seed negative.ml negative.mzbc
-            actual="$(${mzvmSeedM2}/bin/mzvm-seed negative.mzbc)"
-            test "$actual" = OK
-            ./mlc-seed let-binding.ml let-binding.mzbc
-            actual="$(${mzvmSeedM2}/bin/mzvm-seed let-binding.mzbc)"
-            test "$actual" = OK
-            ./mlc-seed array.ml array.mzbc
-            actual="$(${mzvmSeedM2}/bin/mzvm-seed array.mzbc)"
-            test "$actual" = OK
-            ./mlc-seed bytes.ml bytes.mzbc
-            actual="$(${mzvmSeedM2}/bin/mzvm-seed bytes.mzbc)"
-            test "$actual" = OK
-            ./mlc-seed string-value.ml string-value.mzbc
-            actual="$(${mzvmSeedM2}/bin/mzvm-seed string-value.mzbc)"
-            test "$actual" = OK
-            ./mlc-seed dynamic-index.ml dynamic-index.mzbc
-            actual="$(${mzvmSeedM2}/bin/mzvm-seed dynamic-index.mzbc)"
-            test "$actual" = OK
-            ./mlc-seed dynamic-create.ml dynamic-create.mzbc
-            actual="$(${mzvmSeedM2}/bin/mzvm-seed dynamic-create.mzbc)"
-            test "$actual" = OK
-            ./mlc-seed length.ml length.mzbc
-            actual="$(${mzvmSeedM2}/bin/mzvm-seed length.mzbc)"
-            test "$actual" = OK
-            ./mlc-seed function.ml function.mzbc
-            actual="$(${mzvmSeedM2}/bin/mzvm-seed function.mzbc)"
-            test "$actual" = OK
-            ./mlc-seed function-tuple.ml function-tuple.mzbc
-            actual="$(${mzvmSeedM2}/bin/mzvm-seed function-tuple.mzbc)"
-            test "$actual" = OK
-            ./mlc-seed function-nested.ml function-nested.mzbc
-            actual="$(${mzvmSeedM2}/bin/mzvm-seed function-nested.mzbc)"
-            test "$actual" = OK
-            ./mlc-seed function-string.ml function-string.mzbc
-            actual="$(${mzvmSeedM2}/bin/mzvm-seed function-string.mzbc)"
-            test "$actual" = OK
-            ./mlc-seed function-and.ml function-and.mzbc
-            actual="$(${mzvmSeedM2}/bin/mzvm-seed function-and.mzbc)"
-            test "$actual" = OK
-            ./mlc-seed identifiers.ml identifiers.mzbc
-            actual="$(${mzvmSeedM2}/bin/mzvm-seed identifiers.mzbc)"
-            test "$actual" = O
-            ./mlc-seed string.ml string.mzbc
-            actual="$(${mzvmSeedM2}/bin/mzvm-seed string.mzbc)"
-            test "$actual" = "O	K"
-            ./mlc-seed exit.ml exit.mzbc
-            actual="$(${mzvmSeedM2}/bin/mzvm-seed exit.mzbc)"
-            test "$actual" = OK
-            ./mlc-seed tuple.ml tuple.mzbc
-            actual="$(${mzvmSeedM2}/bin/mzvm-seed tuple.mzbc)"
-            test "$actual" = OK
-            ./mlc-seed sequence.ml sequence.mzbc
-            actual="$(${mzvmSeedM2}/bin/mzvm-seed sequence.mzbc)"
-            test "$actual" = OK
-            ./mlc-seed read-byte.ml read-byte.mzbc
-            printf 'O' > input.txt
-            actual="$(${mzvmSeedM2}/bin/mzvm-seed read-byte.mzbc < input.txt)"
-            test "$actual" = OK
-          '';
-          installScript = ''
-            install -Dm755 mlc-seed "$out/bin/mlc-seed"
-            install -Dm644 mlc-seed.c "$out/share/mlc/mlc-seed.c"
-            install -Dm644 ok.mzbc "$out/share/mlc/tests/ok.mzbc"
-            install -Dm644 arithmetic.mzbc "$out/share/mlc/tests/arithmetic.mzbc"
-            install -Dm644 conditional.mzbc "$out/share/mlc/tests/conditional.mzbc"
-            install -Dm644 comparison.mzbc "$out/share/mlc/tests/comparison.mzbc"
-            install -Dm644 negative.mzbc "$out/share/mlc/tests/negative.mzbc"
-            install -Dm644 let-binding.mzbc "$out/share/mlc/tests/let-binding.mzbc"
-            install -Dm644 array.mzbc "$out/share/mlc/tests/array.mzbc"
-            install -Dm644 bytes.mzbc "$out/share/mlc/tests/bytes.mzbc"
-            install -Dm644 string-value.mzbc "$out/share/mlc/tests/string-value.mzbc"
-            install -Dm644 dynamic-index.mzbc "$out/share/mlc/tests/dynamic-index.mzbc"
-            install -Dm644 dynamic-create.mzbc "$out/share/mlc/tests/dynamic-create.mzbc"
-            install -Dm644 length.mzbc "$out/share/mlc/tests/length.mzbc"
-            install -Dm644 function.mzbc "$out/share/mlc/tests/function.mzbc"
-            install -Dm644 function-tuple.mzbc "$out/share/mlc/tests/function-tuple.mzbc"
-            install -Dm644 function-nested.mzbc "$out/share/mlc/tests/function-nested.mzbc"
-            install -Dm644 function-string.mzbc "$out/share/mlc/tests/function-string.mzbc"
-            install -Dm644 function-and.mzbc "$out/share/mlc/tests/function-and.mzbc"
-            install -Dm644 identifiers.mzbc "$out/share/mlc/tests/identifiers.mzbc"
-            install -Dm644 string.mzbc "$out/share/mlc/tests/string.mzbc"
-            install -Dm644 exit.mzbc "$out/share/mlc/tests/exit.mzbc"
-            install -Dm644 tuple.mzbc "$out/share/mlc/tests/tuple.mzbc"
-            install -Dm644 sequence.mzbc "$out/share/mlc/tests/sequence.mzbc"
-            install -Dm644 read-byte.mzbc "$out/share/mlc/tests/read-byte.mzbc"
-          '';
+        mlcSeedM2 = pkgs.callPackage ./nix/mlc-seed-m2.nix {
+          inherit stageRun minimalBootstrap mlcSrc mzvmSeedM2;
+          scriptsRoot = ./scripts;
+          testsMlc = ./tests/mlc;
         };
 
-        mlcSeedHostVsM2 = pkgs.runCommand "mlc-seed-host-vs-m2" { } ''
-          for name in ${lib.concatStringsSep " " mlcFixtures}; do
-            cmp ${mlcSeedHost}/share/mlc/tests/$name.mzbc ${mlcSeedM2}/share/mlc/tests/$name.mzbc
-          done
-          for name in ${lib.concatStringsSep " " mlcInputFixtures}; do
-            cmp ${mlcSeedHost}/share/mlc/tests/$name.mzbc ${mlcSeedM2}/share/mlc/tests/$name.mzbc
-          done
-          install -Dm644 ${mlcSeedHost}/share/mlc/tests/ok.mzbc "$out/ok.mzbc"
-        '';
+        mlcSeedHostVsM2 = pkgs.callPackage ./nix/mlc-seed-host-vs-m2.nix {
+          runCommand = pkgs.runCommand;
+          inherit mlcSeedHost mlcSeedM2;
+        };
 
         mlcByteSeed = pkgs.callPackage ./nix/mlc-byte-seed.nix {
           inherit stageRun mlcSrc mlcStage02Ml0Compiler mzvmSeedM2;
