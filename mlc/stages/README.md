@@ -51,7 +51,8 @@ Current stages:
   variable lookup, integer arithmetic, integer comparisons, nested/full
   conditionals, arbitrary final direct calls, and direct unary `let rec`
   functions. It accepts `write_byte (40+39)`, `write_byte 'O'`,
-  `write_string "OK"`, `let x = 40 in write_byte (x + 39)`, recursively nested
+  `write_string "OK"`, `Cell.create` / `Cell.get` / `Cell.set`,
+  `let x = 40 in write_byte (x + 39)`, recursively nested
   and parenthesized top-level `let` bindings with shadowing, and true/false
   `if ... then ... else ...` byte-output fixtures, including conditions formed
   with `<`, `==`, `!=`, `<=`, `>`, and `>=`. It now also parses leading
@@ -64,7 +65,7 @@ Current stages:
   `adt-tuple-payload.ml`, nested tuple payload patterns in
   `adt-pattern-nested-tuple.ml`, and recursive ADT traversal in
   `adt-recursion.ml`, to VM block allocation, tag tests, field extraction,
-  direct calls, and branches.
+  direct calls, field mutation for imperative cells, and branches.
 
 Planned stages:
 

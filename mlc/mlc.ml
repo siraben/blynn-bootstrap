@@ -160,6 +160,12 @@ let rec emit_getfield state =
   let _ = emit_u32_if (emit, index) in
   5
 in
+let rec emit_setfield state =
+  let (emit, index) = state in
+  let _ = emit_byte_if (emit, 17) in
+  let _ = emit_u32_if (emit, index) in
+  5
+in
 let rec emit_getfield_dyn emit =
   let _ = emit_byte_if (emit, 25) in
   1
@@ -369,6 +375,33 @@ let rec is_bytes_create_at input =
   if (src.[pos] == 66) * (src.[pos + 1] == 121) * (src.[pos + 2] == 116) * (src.[pos + 3] == 101) then
     if (src.[pos + 4] == 115) * (src.[pos + 5] == 46) * (src.[pos + 6] == 99) * (src.[pos + 7] == 114) then
       (src.[pos + 8] == 101) * (src.[pos + 9] == 97) * (src.[pos + 10] == 116) * (src.[pos + 11] == 101) * (1 - (is_ident (src.[pos + 12])))
+    else 0
+  else 0
+in
+let rec is_cell_create_at input =
+  let (src, pos0) = input in
+  let pos = skip_space (src, pos0) in
+  if (src.[pos] == 67) * (src.[pos + 1] == 101) * (src.[pos + 2] == 108) * (src.[pos + 3] == 108) then
+    if (src.[pos + 4] == 46) * (src.[pos + 5] == 99) * (src.[pos + 6] == 114) * (src.[pos + 7] == 101) then
+      (src.[pos + 8] == 97) * (src.[pos + 9] == 116) * (src.[pos + 10] == 101) * (1 - (is_ident (src.[pos + 11])))
+    else 0
+  else 0
+in
+let rec is_cell_get_at input =
+  let (src, pos0) = input in
+  let pos = skip_space (src, pos0) in
+  if (src.[pos] == 67) * (src.[pos + 1] == 101) * (src.[pos + 2] == 108) * (src.[pos + 3] == 108) then
+    if (src.[pos + 4] == 46) * (src.[pos + 5] == 103) * (src.[pos + 6] == 101) then
+      (src.[pos + 7] == 116) * (1 - (is_ident (src.[pos + 8])))
+    else 0
+  else 0
+in
+let rec is_cell_set_at input =
+  let (src, pos0) = input in
+  let pos = skip_space (src, pos0) in
+  if (src.[pos] == 67) * (src.[pos + 1] == 101) * (src.[pos + 2] == 108) * (src.[pos + 3] == 108) then
+    if (src.[pos + 4] == 46) * (src.[pos + 5] == 115) * (src.[pos + 6] == 101) then
+      (src.[pos + 7] == 116) * (1 - (is_ident (src.[pos + 8])))
     else 0
   else 0
 in
@@ -888,6 +921,24 @@ let rec compile_expr input =
 	    let const_len = emit_const (emit, 0) in
 	    let block_len = emit_makeblock_dyn (emit) in
 	    (expr_len + push_len + const_len + block_len, done_pos)
+	  else if is_cell_create_at (src, pos) then
+	    let expr = compile_expr (src, (pos + 11, (env, (ctors, (funcs, emit))))) in
+	    let (expr_len, done_pos) = expr in
+	    let block_len = emit_makeblock (emit, (0, 1)) in
+	    (expr_len + block_len, done_pos)
+	  else if is_cell_get_at (src, pos) then
+	    let expr = compile_expr (src, (pos + 8, (env, (ctors, (funcs, emit))))) in
+	    let (expr_len, done_pos) = expr in
+	    let field_len = emit_getfield (emit, 0) in
+	    (expr_len + field_len, done_pos)
+	  else if is_cell_set_at (src, pos) then
+	    let cell = compile_expr (src, (pos + 8, (env, (ctors, (funcs, emit))))) in
+	    let (cell_len, cell_end) = cell in
+	    let push_len = emit_push emit in
+	    let value = compile_expr (src, (cell_end, (shift_env env, (ctors, (funcs, emit))))) in
+	    let (value_len, done_pos) = value in
+	    let set_len = emit_setfield (emit, 0) in
+	    (cell_len + push_len + value_len + set_len, done_pos)
 	  else if is_if_at (src, pos) then
 	    let cond0 = compile_expr (src, (pos + 2, (env, (ctors, (funcs, 0))))) in
 	    let (cond_len, cond_end) = cond0 in

@@ -1406,6 +1406,9 @@ OK"
             ${mzvmSeedM2}/bin/mzvm-seed mlc.byte < ${./tests/mlc/adt-recursion.ml} > compiled-adt-recursion.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-adt-recursion.mzbc)"
             test "$actual" = OK
+            ${mzvmSeedM2}/bin/mzvm-seed mlc.byte < ${./tests/mlc/cell.ml} > compiled-cell.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-cell.mzbc)"
+            test "$actual" = OK
             printf 'let rec out ch = write_byte ch in out 79' | ${mzvmSeedM2}/bin/mzvm-seed mlc.byte > compiled-final-call.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-final-call.mzbc)"
             test "$actual" = O
