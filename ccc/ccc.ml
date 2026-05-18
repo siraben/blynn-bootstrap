@@ -306,20 +306,22 @@ let rec parse_params state =
   let p1 = skip_space (src, p0) in
   if src.[p1] == 41 then (0 - 1, p1 + 1) else
     let p2 = expect_int (src, p1) in
-    let param = parse_ident (src, p2) in
-    let (param_name, param_end) = param in
-    let p3 =
-      let param_next = skip_space (src, param_end) in
-      if src.[param_next] == 44 then
-        let p4 = expect_int (src, param_next + 1) in
-        let param2 = parse_ident (src, p4) in
-        let (param2_name, param2_end) = param2 in
-        let _ = param2_name in
-        expect_ch (src, (param2_end, 41))
-      else
-        expect_ch (src, (param_end, 41))
-    in
-    (param_name, p3)
+    let p2_next = skip_space (src, p2) in
+    if src.[p2_next] == 41 then (0 - 1, p2_next + 1) else
+      let param = parse_ident (src, p2) in
+      let (param_name, param_end) = param in
+      let p3 =
+        let param_next = skip_space (src, param_end) in
+        if src.[param_next] == 44 then
+          let p4 = expect_int (src, param_next + 1) in
+          let param2 = parse_ident (src, p4) in
+          let (param2_name, param2_end) = param2 in
+          let _ = param2_name in
+          expect_ch (src, (param2_end, 41))
+        else
+          expect_ch (src, (param_end, 41))
+      in
+      (param_name, p3)
 in
 let rec skip_call_statement state =
   let (src, pos0) = state in
@@ -454,6 +456,9 @@ let rec parse_main_body state =
   let (funcs, env) = pair2 in
   let pos = skip_space (src, pos0) in
   if is_return_at (src, pos) then parse_return_value (src, (pos, (funcs, env))) else
+  if src.[pos] == 123 then
+    parse_main_body (src, ((skip_to_close_brace (src, pos + 1)) + 1, (funcs, env)))
+  else
   if is_if_at (src, pos) then
     let p0 = expect_ch (src, (pos + 2, 40)) in
     let cond = parse_condition_value (src, (p0, (funcs, env))) in
@@ -483,6 +488,12 @@ let rec parse_main_body state =
       let assigned = parse_assignment (src, (pos, (funcs, env))) in
       let (next_pos, next_env) = assigned in
       parse_main_body (src, (next_pos, (funcs, next_env)))
+    else if (name == 206622681) * (src.[next] == 40) then
+      let arg = parse_expr_value (src, (next + 1, (funcs, env))) in
+      let (exit_value, arg_end) = arg in
+      let p1 = expect_ch (src, (arg_end, 41)) in
+      let p2 = expect_ch (src, (p1, 59)) in
+      (exit_value, skip_to_close_brace (src, p2))
     else
       parse_main_body (src, (skip_statement (src, pos), (funcs, env)))
 in
@@ -496,18 +507,22 @@ let rec parse_program_loop state =
     let (name, name_end) = name_parsed in
     let params = parse_params (src, name_end) in
     let (param, p1) = params in
-    let p2 = expect_ch (src, (p1, 123)) in
-    if name == 246720401 then
-      let body = parse_main_body (src, (p2, (funcs, empty_env 0))) in
-      let (code, p4) = body in
-      let _ = expect_ch (src, (p4, 125)) in
-      code
+    let p1_next = skip_space (src, p1) in
+    if src.[p1_next] == 59 then
+      parse_program_loop (src, (p1_next + 1, funcs))
     else
-      let ret = parse_func_return (src, (p2, param)) in
-      let (func_value, p3) = ret in
-      let (kind, value) = func_value in
-      let p4 = expect_ch (src, (p3, 125)) in
-      parse_program_loop (src, (p4, extend_func (name, (kind, (value, funcs)))))
+      let p2 = expect_ch (src, (p1, 123)) in
+      if name == 246720401 then
+        let body = parse_main_body (src, (p2, (funcs, empty_env 0))) in
+        let (code, p4) = body in
+        let _ = expect_ch (src, (p4, 125)) in
+        code
+      else
+        let ret = parse_func_return (src, (p2, param)) in
+        let (func_value, p3) = ret in
+        let (kind, value) = func_value in
+        let p4 = expect_ch (src, (p3, 125)) in
+        parse_program_loop (src, (p4, extend_func (name, (kind, (value, funcs)))))
 in
 let rec parse_program src =
   parse_program_loop (src, (0, empty_funcs 0))
