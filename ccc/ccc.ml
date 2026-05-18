@@ -98,7 +98,12 @@ let rec expect_type state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
   if (src.[pos] == 105) * (src.[pos + 1] == 110) * (src.[pos + 2] == 116) then pos + 3 else
-  if (src.[pos] == 118) * (src.[pos + 1] == 111) * (src.[pos + 2] == 105) * (src.[pos + 3] == 100) then pos + 4 else exit 1
+  if (src.[pos] == 118) * (src.[pos + 1] == 111) * (src.[pos + 2] == 105) * (src.[pos + 3] == 100) then pos + 4 else
+  if (src.[pos] == 95) * (src.[pos + 1] == 66) * (src.[pos + 2] == 111) * (src.[pos + 3] == 111) * (src.[pos + 4] == 108) then pos + 5 else
+  if (src.[pos] == 117) * (src.[pos + 1] == 110) * (src.[pos + 2] == 115) * (src.[pos + 3] == 105) * (src.[pos + 4] == 103) * (src.[pos + 5] == 110) * (src.[pos + 6] == 101) * (src.[pos + 7] == 100) then
+    let p1 = skip_space (src, pos + 8) in
+    if (src.[p1] == 99) * (src.[p1 + 1] == 104) * (src.[p1 + 2] == 97) * (src.[p1 + 3] == 114) then p1 + 4 else pos + 8
+  else exit 1
 in
 let rec expect_main state =
   let (src, pos0) = state in
@@ -488,6 +493,10 @@ let rec parse_params state =
   let p0 = expect_ch (src, (pos0, 40)) in
   let p1 = skip_space (src, p0) in
   if src.[p1] == 41 then (0 - 1, p1 + 1) else
+  if (src.[p1] == 118) * (src.[p1 + 1] == 111) * (src.[p1 + 2] == 105) * (src.[p1 + 3] == 100) then
+    let p2 = expect_ch (src, (p1 + 4, 41)) in
+    (0 - 1, p2)
+  else
     let p2 = expect_int (src, p1) in
     let p2_next = skip_space (src, p2) in
     if src.[p2_next] == 41 then (0 - 1, p2_next + 1) else
@@ -845,8 +854,12 @@ let rec parse_program_loop state =
         let ret = parse_func_return (src, (p2, param)) in
         let (func_value, p3) = ret in
         let (kind, value) = func_value in
+        let coerced =
+          if name == 235019908 then value - ((value / 256) * 256) else
+          if name == 710329373 then if value == 0 then 0 else 1 else value
+        in
         let p4 = expect_ch (src, (p3, 125)) in
-        parse_program_loop (src, (p4, extend_func (name, (kind, (value, funcs)))))
+        parse_program_loop (src, (p4, extend_func (name, (kind, (coerced, funcs)))))
 in
 let rec parse_program src =
   parse_program_loop (src, (0, empty_funcs 0))
