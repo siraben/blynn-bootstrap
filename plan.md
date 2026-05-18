@@ -219,6 +219,11 @@ The first staged handoff should follow the early Blynn pattern exemplified by
 emits the next runnable image. In this tree, `01-parenthetical.ml` is that
 first handoff: it runs under `mlc-interp-seed`, parses a parenthesized MZBC
 assembly source, and emits a `.mzbc` image that `mzvm-seed` executes.
+The next stage should stop being assembly-shaped: `02-ml0-compiler.ml` runs in
+the same first language, parses a tiny but complete ML0 source dialect, lowers
+it to VM bytecode, and emits a `.mzbc` artifact. From there we increase the
+compiler dialect by stages until it can compile the current compiler source,
+then the full `ccc`.
 
 The first real parser/compiler for ADTs and `match` lives in `mlc.ml` itself:
 `mlc.ml` parses the full mini-OCaml source language, represents constructors

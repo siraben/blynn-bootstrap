@@ -821,6 +821,27 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           '';
         };
 
+        mlcStage02Ml0Compiler = stageRun {
+          pname = "mlc-stage-02-ml0-compiler";
+          nativeBuildInputs = [
+            mlcInterpSeedM2
+            mzvmSeedM2
+          ];
+          description = "First MLC stage that compiles an ML source subset to MZBC";
+          buildScript = ''
+            cp ${mlcSrc}/stages/02-ml0-compiler.ml 02-ml0-compiler.ml
+            cp ${mlcSrc}/stages/03-ok.ml0 03-ok.ml0
+            ${mlcInterpSeedM2}/bin/mlc-interp-seed 02-ml0-compiler.ml < 03-ok.ml0 > 03-ok.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-ok.mzbc)"
+            test "$actual" = OK
+          '';
+          installScript = ''
+            install -Dm644 02-ml0-compiler.ml "$out/share/mlc/stages/02-ml0-compiler.ml"
+            install -Dm644 03-ok.ml0 "$out/share/mlc/stages/03-ok.ml0"
+            install -Dm644 03-ok.mzbc "$out/share/mlc/stages/03-ok.mzbc"
+          '';
+        };
+
         mlcSeedHost = pkgs.stdenv.mkDerivation {
           pname = "mlc-seed-host";
           version = "0-unstable-2026-05-06";
@@ -1753,6 +1774,7 @@ DEFINE SYSCALL 0F05
             interp-seed.m2 = mlcInterpSeedM2;
             stage.core00 = mlcStage00Core;
             stage.parenthetical01 = mlcStage01Parenthetical;
+            stage.ml0Compiler02 = mlcStage02Ml0Compiler;
             seed.host = mlcSeedHost;
             seed.m2 = mlcSeedM2;
             byte.seed = mlcByteSeed;
@@ -1762,6 +1784,7 @@ DEFINE SYSCALL 0F05
           mlc-interp-seed.m2 = mlcInterpSeedM2;
           mlc-stage-00-core = mlcStage00Core;
           mlc-stage-01-parenthetical = mlcStage01Parenthetical;
+          mlc-stage-02-ml0-compiler = mlcStage02Ml0Compiler;
           mlc-seed.host = mlcSeedHost;
           mlc-seed.m2 = mlcSeedM2;
 
@@ -1817,6 +1840,7 @@ DEFINE SYSCALL 0F05
             mlc.interp-seed.host-vs-m2 = mlcInterpSeedHostVsM2;
             mlc.stage.core00 = mlcStage00Core;
             mlc.stage.parenthetical01 = mlcStage01Parenthetical;
+            mlc.stage.ml0Compiler02 = mlcStage02Ml0Compiler;
             mlc.seed.host-vs-m2 = mlcSeedHostVsM2;
             mlc.byte.seed = mlcByteSeed;
             mlc.byte.committed = mlcByteCommitted;
@@ -1837,6 +1861,7 @@ DEFINE SYSCALL 0F05
           mlc-interp-seed-host-vs-m2 = mlcInterpSeedHostVsM2;
           mlc-stage-00-core = mlcStage00Core;
           mlc-stage-01-parenthetical = mlcStage01Parenthetical;
+          mlc-stage-02-ml0-compiler = mlcStage02Ml0Compiler;
           mlc-seed-m2 = mlcSeedM2;
           mlc-seed-host-vs-m2 = mlcSeedHostVsM2;
           mlc-byte-seed = mlcByteSeed;
