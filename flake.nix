@@ -838,7 +838,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             ${mlcInterpSeedM2}/bin/mlc-interp-seed 02-ml0-compiler.ml < 03-char-string.ml0 > 03-char-string.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-char-string.mzbc)"
             test "$actual" = OK
-            for name in ok arithmetic conditional comparison let-binding sequence negative identifiers string string-value length exit tuple bytes array dynamic-create dynamic-index function function-tuple function-nested function-string; do
+            for name in ok arithmetic conditional comparison let-binding sequence negative identifiers keyword-prefix-infix string string-value length exit tuple bytes array dynamic-create dynamic-index function function-tuple function-nested function-string; do
               ${mlcInterpSeedM2}/bin/mlc-interp-seed 02-ml0-compiler.ml < ${./tests/mlc}/$name.ml > $name.mzbc
               ${mzvmSeedM2}/bin/mzvm-seed $name.mzbc > $name.out
             done
@@ -860,6 +860,7 @@ OK"
             test "$(cat sequence.out)" = OK
             test "$(cat negative.out)" = OK
             test "$(cat identifiers.out)" = O
+            test "$(cat keyword-prefix-infix.out)" = O
             test "$(cat string.out)" = "O	K"
             test "$(cat string-value.out)" = OK
             test "$(cat length.out)" = OK
@@ -886,6 +887,7 @@ OK"
             install -Dm644 03-char-string.mzbc "$out/share/mlc/stages/03-char-string.mzbc"
             install -Dm644 string-value.mzbc "$out/share/mlc/stages/string-value.mzbc"
             install -Dm644 length.mzbc "$out/share/mlc/stages/length.mzbc"
+            install -Dm644 keyword-prefix-infix.mzbc "$out/share/mlc/stages/keyword-prefix-infix.mzbc"
             install -Dm644 read-byte.mzbc "$out/share/mlc/stages/read-byte.mzbc"
             install -Dm644 exit.mzbc "$out/share/mlc/stages/exit.mzbc"
             install -Dm644 tuple.mzbc "$out/share/mlc/stages/tuple.mzbc"
