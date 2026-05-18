@@ -27,9 +27,9 @@ Runtime values use the seed VM's tagged representation:
 - low bit `1`: immediate integer, encoded as `(n << 1) | 1`
 - low bit `0`: heap block pointer
 
-The first implementation is intentionally non-GC: heap allocations are bump
-accounted and the process exits on exhaustion. This matches the planned
-bootstrap route where compiler runs are short-lived batch jobs.
+Heap allocation uses two fixed semispaces. Allocation is bump-pointer within
+the active semispace; when it fills, `mzvm` performs a Cheney-style copying
+collection from the VM roots (`acc` and stack) into the reserve semispace.
 
 ## Instruction Encoding
 

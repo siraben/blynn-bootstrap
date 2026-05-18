@@ -2,10 +2,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifndef MZVM_HEAP_LIMIT
+#define MZVM_HEAP_LIMIT 1048576
+#endif
+
 enum {
   MZBC_VERSION = 1,
   STACK_CAP = 65536,
-  HEAP_LIMIT = 1048576,
 
   OP_HALT = 0,
   OP_CONST = 1,
@@ -42,7 +45,14 @@ static value_t stack[STACK_CAP];
 static long sp;
 static long prim_count;
 static long global_count;
+static value_t *space_a;
+static value_t *space_b;
+static value_t *heap;
+static value_t *reserve_heap;
 static long heap_words;
+static value_t *gc_from;
+static value_t *gc_to;
+static long gc_to_words;
 
 static void die(const char *msg)
 {
@@ -68,6 +78,90 @@ static value_t *block_val(value_t x)
   if ((x & 1) != 0) die("expected block");
   if (x == 0) die("null block");
   return (value_t *)x;
+}
+
+static value_t *space_word(value_t *base, long index)
+{
+  return (value_t *)((char *)base + index * sizeof(value_t));
+}
+
+static int ptr_in_space(value_t *ptr, value_t *base)
+{
+  unsigned long p = (unsigned long)ptr;
+  unsigned long lo = (unsigned long)base;
+  unsigned long hi = (unsigned long)space_word(base, MZVM_HEAP_LIMIT);
+  return p >= lo && p < hi;
+}
+
+static value_t copy_value(value_t value)
+{
+  value_t *block;
+  value_t *out;
+  long size;
+  long words;
+  long i;
+  if ((value & 1) != 0 || value == 0) return value;
+  block = (value_t *)value;
+  if (!ptr_in_space(block, gc_from)) return value;
+  if (block[0] == -1) return block[1];
+  size = block[1];
+  if (size < 0) die("bad block during gc");
+  words = 2 + size;
+  if (gc_to_words + words > MZVM_HEAP_LIMIT) die("heap exhausted after gc");
+  out = space_word(gc_to, gc_to_words);
+  i = 0;
+  while (i < words) {
+    out[i] = block[i];
+    i = i + 1;
+  }
+  gc_to_words = gc_to_words + words;
+  block[0] = -1;
+  block[1] = (value_t)out;
+  return (value_t)out;
+}
+
+static void collect(long needed_words)
+{
+  value_t *old_heap;
+  value_t *new_heap;
+  long scan;
+  long i;
+  long size;
+  if (needed_words > MZVM_HEAP_LIMIT) die("block too large");
+  old_heap = heap;
+  new_heap = reserve_heap;
+  gc_from = old_heap;
+  gc_to = new_heap;
+  gc_to_words = 0;
+  acc = copy_value(acc);
+  i = 0;
+  while (i < sp) {
+    stack[i] = copy_value(stack[i]);
+    i = i + 1;
+  }
+  scan = 0;
+  while (scan < gc_to_words) {
+    size = gc_to[scan + 1];
+    i = 0;
+    while (i < size) {
+      gc_to[scan + 2 + i] = copy_value(gc_to[scan + 2 + i]);
+      i = i + 1;
+    }
+    scan = scan + 2 + size;
+  }
+  heap = new_heap;
+  reserve_heap = old_heap;
+  heap_words = gc_to_words;
+}
+
+static void init_heap(void)
+{
+  space_a = (value_t *)malloc(sizeof(value_t) * MZVM_HEAP_LIMIT);
+  space_b = (value_t *)malloc(sizeof(value_t) * MZVM_HEAP_LIMIT);
+  if (!space_a || !space_b) die("out of memory");
+  heap = space_a;
+  reserve_heap = space_b;
+  heap_words = 0;
 }
 
 static long byte_at(char *bytes, long off)
@@ -142,9 +236,9 @@ static value_t *alloc_block(long tag, long size)
   value_t *block;
   long words = 2 + size;
   if (size < 0) die("negative block size");
-  if (heap_words + words > HEAP_LIMIT) die("heap exhausted");
-  block = (value_t *)malloc(sizeof(value_t) * words);
-  if (!block) die("out of memory");
+  if (heap_words + words > MZVM_HEAP_LIMIT) collect(words);
+  if (heap_words + words > MZVM_HEAP_LIMIT) die("heap exhausted");
+  block = space_word(heap, heap_words);
   block[0] = tag;
   block[1] = size;
   heap_words = heap_words + words;
@@ -330,6 +424,7 @@ int main(int argc, char **argv)
   pc = 0;
   sp = 0;
   acc = val_int(0);
+  init_heap();
   run();
   return 0;
 }

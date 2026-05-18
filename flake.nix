@@ -612,6 +612,10 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             ./mzvm ok.mzbc > actual.txt
             printf 'OK\n' > expected.txt
             cmp expected.txt actual.txt
+            $CC -O2 -Wall -Wextra -DMZVM_HEAP_LIMIT=16 mzvm.c -o mzvm-gc
+            sh ${./scripts/mzvm-write-gc-bytecode.sh} gc.mzbc
+            ./mzvm-gc gc.mzbc > gc-actual.txt
+            cmp expected.txt gc-actual.txt
             runHook postCheck
           '';
 
@@ -689,6 +693,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           "conditional"
           "comparison"
           "let-binding"
+          "array"
           "match"
           "adt"
           "identifiers"
@@ -732,6 +737,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             printf 'OK\n' > conditional.expected
             printf 'OK\nOK\n' > comparison.expected
             printf 'OK\n' > let-binding.expected
+            printf 'OK\n' > array.expected
             printf 'OK\n' > match.expected
             printf 'OK\n' > adt.expected
             printf 'O\n' > identifiers.expected
@@ -780,6 +786,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             cp ${./tests/mlc/conditional.ml} conditional.ml
             cp ${./tests/mlc/comparison.ml} comparison.ml
             cp ${./tests/mlc/let-binding.ml} let-binding.ml
+            cp ${./tests/mlc/array.ml} array.ml
             cp ${./tests/mlc/match.ml} match.ml
             cp ${./tests/mlc/adt.ml} adt.ml
             cp ${./tests/mlc/identifiers.ml} identifiers.ml
@@ -805,6 +812,9 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
 OK"
             ./mlc-seed let-binding.ml let-binding.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed let-binding.mzbc)"
+            test "$actual" = OK
+            ./mlc-seed array.ml array.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed array.mzbc)"
             test "$actual" = OK
             ./mlc-seed match.ml match.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed match.mzbc)"
@@ -843,6 +853,7 @@ OK"
             install -Dm644 conditional.mzbc "$out/share/mlc/tests/conditional.mzbc"
             install -Dm644 comparison.mzbc "$out/share/mlc/tests/comparison.mzbc"
             install -Dm644 let-binding.mzbc "$out/share/mlc/tests/let-binding.mzbc"
+            install -Dm644 array.mzbc "$out/share/mlc/tests/array.mzbc"
             install -Dm644 match.mzbc "$out/share/mlc/tests/match.mzbc"
             install -Dm644 adt.mzbc "$out/share/mlc/tests/adt.mzbc"
             install -Dm644 identifiers.mzbc "$out/share/mlc/tests/identifiers.mzbc"

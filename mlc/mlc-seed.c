@@ -18,6 +18,7 @@ enum {
   OP_C_CALL = 14,
   OP_MAKEBLOCK = 15,
   OP_GETFIELD = 16,
+  OP_SETFIELD = 17,
   OP_GETTAG = 18,
   OP_NE = 19,
   OP_LE = 20,
@@ -32,7 +33,9 @@ static long src_len;
 static long pos;
 static long env_start[64];
 static long env_len[64];
+static long env_level[64];
 static long env_depth;
+static long stack_depth;
 static long ctor_start[64];
 static long ctor_len[64];
 static long ctor_tag[64];
@@ -223,11 +226,9 @@ static void add_constructor(long start, long len, long tag, long arity)
 static long lookup_var(long start, long len)
 {
   long i = env_depth - 1;
-  long stack_index = 0;
   while (i >= 0) {
-    if (span_equal(start, len, env_start[i], env_len[i])) return stack_index;
+    if (span_equal(start, len, env_start[i], env_len[i])) return stack_depth - 1 - env_level[i];
     i = i - 1;
-    stack_index = stack_index + 1;
   }
   return -1;
 }
@@ -236,8 +237,10 @@ static void bind_var(long start, long len)
 {
   if (span_is_char(start, len, '_')) return;
   if (env_depth >= 64) die("too many local bindings");
+  if (stack_depth <= 0) die("internal binding stack underflow");
   env_start[env_depth] = start;
   env_len[env_depth] = len;
+  env_level[env_depth] = stack_depth - 1;
   env_depth = env_depth + 1;
 }
 
@@ -295,10 +298,18 @@ static void emit_call_exit(void)
   emit_u32(2);
 }
 
+static void emit_push(void)
+{
+  emit_byte(OP_PUSH);
+  stack_depth = stack_depth + 1;
+}
+
 static void emit_pop(long count)
 {
   emit_byte(OP_POP);
   emit_u32(count);
+  stack_depth = stack_depth - count;
+  if (stack_depth < 0) die("internal stack underflow");
 }
 
 static void emit_acc(long index)
@@ -324,6 +335,10 @@ static void emit_makeblock(long tag, long size)
   emit_byte(OP_MAKEBLOCK);
   emit_u32(tag);
   emit_u32(size);
+  if (size > 1) {
+    stack_depth = stack_depth - (size - 1);
+    if (stack_depth < 0) die("internal stack underflow");
+  }
 }
 
 static void emit_getfield(long index)
@@ -332,12 +347,30 @@ static void emit_getfield(long index)
   emit_u32(index);
 }
 
+static void emit_setfield(long index)
+{
+  emit_byte(OP_SETFIELD);
+  emit_u32(index);
+  stack_depth = stack_depth - 1;
+  if (stack_depth < 0) die("internal stack underflow");
+}
+
 static void emit_gettag(void)
 {
   emit_byte(OP_GETTAG);
 }
 
+static void emit_binary_op(int op)
+{
+  emit_byte(op);
+  stack_depth = stack_depth - 1;
+  if (stack_depth < 0) die("internal stack underflow");
+}
+
 static void parse_expr(void);
+static void parse_nonseq_expr(void);
+static long measure_expr(long start, long *end_out);
+static long measure_nonseq_expr(long start, long *end_out);
 
 static long parse_int_literal(void)
 {
@@ -364,11 +397,16 @@ static void parse_atom(void)
   long name_start;
   long name_len;
   long ctor;
+  long index;
+  long size;
+  long init_start;
+  long init_end;
+  long i;
   skip_space();
   if (take_char('(')) {
     parse_expr();
     if (take_char(',')) {
-      emit_byte(OP_PUSH);
+      emit_push();
       parse_expr();
       expect_char(')');
       emit_makeblock(0, 2);
@@ -379,6 +417,21 @@ static void parse_atom(void)
     take_keyword("read_byte");
     emit_const(0);
     emit_call_read_byte();
+  } else if (keyword_at("Array.create")) {
+    take_keyword("Array.create");
+    size = parse_int_literal();
+    if (size < 0) die("negative array size");
+    init_start = pos;
+    measure_nonseq_expr(init_start, &init_end);
+    pos = init_start;
+    parse_nonseq_expr();
+    i = 1;
+    while (i < size) {
+      emit_push();
+      i = i + 1;
+    }
+    if (pos != init_end) die("internal array parse mismatch");
+    emit_makeblock(0, size);
   } else if (pos < src_len && src[pos] >= 'A' && src[pos] <= 'Z') {
     take_ident_span(&name_start, &name_len);
     ctor = lookup_constructor(name_start, name_len);
@@ -391,6 +444,13 @@ static void parse_atom(void)
     var_index = lookup_var(name_start, name_len);
     if (var_index < 0) die("unknown variable");
     emit_acc(var_index);
+    if (take_char('.')) {
+      expect_char('(');
+      index = parse_int_literal();
+      if (index < 0) die("negative array index");
+      expect_char(')');
+      emit_getfield(index);
+    }
   } else {
     emit_const(parse_int_literal());
   }
@@ -402,13 +462,13 @@ static void parse_mul(void)
   parse_atom();
   while (more) {
     if (take_char('*')) {
-      emit_byte(OP_PUSH);
+      emit_push();
       parse_atom();
-      emit_byte(OP_MULINT);
+      emit_binary_op(OP_MULINT);
     } else if (take_char('/')) {
-      emit_byte(OP_PUSH);
+      emit_push();
       parse_atom();
-      emit_byte(OP_DIVINT);
+      emit_binary_op(OP_DIVINT);
     } else {
       more = 0;
     }
@@ -421,13 +481,13 @@ static void parse_add(void)
   parse_mul();
   while (more) {
     if (take_char('+')) {
-      emit_byte(OP_PUSH);
+      emit_push();
       parse_mul();
-      emit_byte(OP_ADDINT);
+      emit_binary_op(OP_ADDINT);
     } else if (take_char('-')) {
-      emit_byte(OP_PUSH);
+      emit_push();
       parse_mul();
-      emit_byte(OP_SUBINT);
+      emit_binary_op(OP_SUBINT);
     } else {
       more = 0;
     }
@@ -439,26 +499,26 @@ static void parse_cmp(void)
   parse_add();
   if (take_char('<')) {
     int has_eq = take_char('=');
-    emit_byte(OP_PUSH);
+    emit_push();
     parse_add();
-    if (has_eq) emit_byte(OP_LE);
-    else emit_byte(OP_LT);
+    if (has_eq) emit_binary_op(OP_LE);
+    else emit_binary_op(OP_LT);
   } else if (take_char('>')) {
     int has_eq = take_char('=');
-    emit_byte(OP_PUSH);
+    emit_push();
     parse_add();
-    if (has_eq) emit_byte(OP_GE);
-    else emit_byte(OP_GT);
+    if (has_eq) emit_binary_op(OP_GE);
+    else emit_binary_op(OP_GT);
   } else if (take_char('!')) {
     expect_char('=');
-    emit_byte(OP_PUSH);
+    emit_push();
     parse_add();
-    emit_byte(OP_NE);
+    emit_binary_op(OP_NE);
   } else if (take_char('=')) {
     expect_char('=');
-    emit_byte(OP_PUSH);
+    emit_push();
     parse_add();
-    emit_byte(OP_EQ);
+    emit_binary_op(OP_EQ);
   }
 }
 
@@ -531,6 +591,7 @@ static long measure_expr(long start, long *end_out)
   FILE *saved_file = out_file;
   long saved_len = out_len;
   long saved_pos = pos;
+  long saved_stack_depth = stack_depth;
   long measured;
   out_file = 0;
   out_len = 0;
@@ -541,6 +602,27 @@ static long measure_expr(long start, long *end_out)
   out_file = saved_file;
   out_len = saved_len;
   pos = saved_pos;
+  stack_depth = saved_stack_depth;
+  return measured;
+}
+
+static long measure_nonseq_expr(long start, long *end_out)
+{
+  FILE *saved_file = out_file;
+  long saved_len = out_len;
+  long saved_pos = pos;
+  long saved_stack_depth = stack_depth;
+  long measured;
+  out_file = 0;
+  out_len = 0;
+  pos = start;
+  parse_nonseq_expr();
+  measured = out_len;
+  *end_out = pos;
+  out_file = saved_file;
+  out_len = saved_len;
+  pos = saved_pos;
+  stack_depth = saved_stack_depth;
   return measured;
 }
 
@@ -636,6 +718,7 @@ static void parse_match(void)
   long arm2_start;
   long arm2_end;
   long arm2_len;
+  long branch_stack_depth;
   if (!take_keyword("match")) die("expected match");
   if (ctor_count != 2) die("only two-constructor matches are supported");
   parse_expr();
@@ -644,32 +727,41 @@ static void parse_match(void)
   if (arm1_tag < 0) die("wildcard first match arm is unsupported");
   expect_arrow();
   arm1_start = pos;
+  stack_depth = stack_depth + 1;
+  if (arm1_arity == 1) stack_depth = stack_depth + 1;
   bind_pattern_var(arm1_arity, arm1_binder_start, arm1_binder_len);
   arm1_len = measure_expr(arm1_start, &arm1_end) + match_arm_overhead(arm1_arity, 1);
   unbind_pattern_var(arm1_arity, arm1_binder_start, arm1_binder_len);
+  if (arm1_arity == 1) stack_depth = stack_depth - 1;
+  stack_depth = stack_depth - 1;
   pos = arm1_end;
   expect_char('|');
   parse_pattern(&arm2_tag, &arm2_arity, &arm2_binder_start, &arm2_binder_len);
   if (arm2_tag >= 0 && arm1_tag == arm2_tag) die("duplicate match arm");
   expect_arrow();
   arm2_start = pos;
+  stack_depth = stack_depth + 1;
+  if (arm2_arity == 1) stack_depth = stack_depth + 1;
   bind_pattern_var(arm2_arity, arm2_binder_start, arm2_binder_len);
   arm2_len = measure_expr(arm2_start, &arm2_end) + match_arm_overhead(arm2_arity, 0);
   unbind_pattern_var(arm2_arity, arm2_binder_start, arm2_binder_len);
+  if (arm2_arity == 1) stack_depth = stack_depth - 1;
+  stack_depth = stack_depth - 1;
   pos = arm1_start;
 
-  emit_byte(OP_PUSH);
+  emit_push();
+  branch_stack_depth = stack_depth;
   emit_acc(0);
   emit_gettag();
-  emit_byte(OP_PUSH);
+  emit_push();
   emit_const(arm1_tag);
-  emit_byte(OP_EQ);
+  emit_binary_op(OP_EQ);
   emit_branchifnot(arm1_len);
 
   if (arm1_arity == 1) {
     emit_acc(0);
     emit_getfield(0);
-    emit_byte(OP_PUSH);
+    emit_push();
     bind_pattern_var(arm1_arity, arm1_binder_start, arm1_binder_len);
   }
   parse_expr();
@@ -677,6 +769,7 @@ static void parse_match(void)
   if (arm1_arity == 1) emit_pop(2);
   else emit_pop(1);
   emit_branch(arm2_len);
+  stack_depth = branch_stack_depth;
 
   expect_char('|');
   parse_pattern(&arm2_tag, &arm2_arity, &arm2_binder_start, &arm2_binder_len);
@@ -684,7 +777,7 @@ static void parse_match(void)
   if (arm2_arity == 1) {
     emit_acc(0);
     emit_getfield(0);
-    emit_byte(OP_PUSH);
+    emit_push();
     bind_pattern_var(arm2_arity, arm2_binder_start, arm2_binder_len);
   }
   parse_expr();
@@ -709,14 +802,14 @@ static void parse_let(void)
     expect_char(')');
     expect_char('=');
     parse_expr();
-    emit_byte(OP_PUSH);
+    emit_push();
     emit_acc(0);
     emit_getfield(0);
-    emit_byte(OP_PUSH);
+    emit_push();
     bind_var(name_start, name_len);
     emit_acc(1);
     emit_getfield(1);
-    emit_byte(OP_PUSH);
+    emit_push();
     bind_var(name2_start, name2_len);
     binds = 3;
   } else {
@@ -724,7 +817,7 @@ static void parse_let(void)
     expect_char('=');
     parse_expr();
     if (!span_is_char(name_start, name_len, '_')) {
-      emit_byte(OP_PUSH);
+      emit_push();
       bind_var(name_start, name_len);
       binds = 1;
     }
@@ -741,6 +834,45 @@ static void parse_let(void)
   }
 }
 
+static int parse_array_set(void)
+{
+  long saved_pos;
+  long name_start;
+  long name_len;
+  long var_index;
+  long index;
+  saved_pos = pos;
+  skip_space();
+  if (pos >= src_len || !((src[pos] >= 'a' && src[pos] <= 'z') || src[pos] == '_')) {
+    pos = saved_pos;
+    return 0;
+  }
+  take_ident_span(&name_start, &name_len);
+  if (!take_char('.')) {
+    pos = saved_pos;
+    return 0;
+  }
+  if (!take_char('(')) {
+    pos = saved_pos;
+    return 0;
+  }
+  index = parse_int_literal();
+  if (index < 0) die("negative array index");
+  expect_char(')');
+  if (!take_char('<')) {
+    pos = saved_pos;
+    return 0;
+  }
+  expect_char('-');
+  var_index = lookup_var(name_start, name_len);
+  if (var_index < 0) die("unknown array variable");
+  emit_acc(var_index);
+  emit_push();
+  parse_nonseq_expr();
+  emit_setfield(index);
+  return 1;
+}
+
 static void parse_nonseq_expr(void)
 {
   if (keyword_at("let")) parse_let();
@@ -749,6 +881,7 @@ static void parse_nonseq_expr(void)
   else if (keyword_at("exit")) parse_exit();
   else if (keyword_at("write_string")) parse_write_string();
   else if (keyword_at("write_byte")) parse_write();
+  else if (parse_array_set()) {}
   else parse_cmp();
 }
 
@@ -795,6 +928,7 @@ static long compile_len(void)
   out_len = 0;
   pos = 0;
   env_depth = 0;
+  stack_depth = 0;
   ctor_count = 0;
   parse_type_decls();
   parse_expr();
@@ -831,6 +965,7 @@ static void write_bytecode(const char *path)
   out_len = 0;
   pos = 0;
   env_depth = 0;
+  stack_depth = 0;
   ctor_count = 0;
   parse_type_decls();
   parse_expr();
