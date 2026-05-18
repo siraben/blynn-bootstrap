@@ -823,7 +823,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             cp ${cccSrc}/ccc.ml ccc.ml
             ${mlcSeedM2}/bin/mlc-seed ccc.ml ccc.byte
             actual="$(${mzvmSeedM2}/bin/mzvm-seed ccc.byte)"
-            test "$actual" = OK
+            test "$actual" = "# ccc smoke M1"
           '';
           installScript = ''
             install -Dm644 ccc.byte "$out/share/ccc/ccc.byte"
@@ -833,6 +833,13 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
         cccByteCommitted = pkgs.runCommand "ccc-byte-committed" { } ''
           cmp ${./ccc/ccc.byte} ${cccByteSeed}/share/ccc/ccc.byte
           install -Dm644 ${./ccc/ccc.byte} "$out/share/ccc/ccc.byte"
+        '';
+
+        tccM1CccSeed = pkgs.runCommand "tcc-m1-ccc-seed" { } ''
+          ${mzvmSeedM2}/bin/mzvm-seed ${cccByteCommitted}/share/ccc/ccc.byte > tcc.M1
+          printf '# ccc smoke M1\n' > expected.M1
+          cmp expected.M1 tcc.M1
+          install -Dm644 tcc.M1 "$out/share/ccc/tcc.M1"
         '';
 
         hccHostGhcNative = pkgs.callPackage ./nix/hcc-ghc.nix {
@@ -1477,6 +1484,8 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             byte.committed = cccByteCommitted;
           };
 
+          tcc.m1.ccc.seed = tccM1CccSeed;
+
           hcc = hccBy // {
             profile.host.ghc.native = hccProfileHostGhcNative;
             blynn = {
@@ -1523,6 +1532,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             mlc.byte.committed = mlcByteCommitted;
             ccc.byte.seed = cccByteSeed;
             ccc.byte.committed = cccByteCommitted;
+            tcc.m1.ccc.seed = tccM1CccSeed;
           };
         };
       in {
@@ -1538,6 +1548,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           mlc-byte-committed = mlcByteCommitted;
           ccc-byte-seed = cccByteSeed;
           ccc-byte-committed = cccByteCommitted;
+          tcc-m1-ccc-seed = tccM1CccSeed;
         };
 
         legacyPackages = packageTree;

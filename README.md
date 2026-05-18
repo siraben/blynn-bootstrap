@@ -70,6 +70,7 @@ nix build .#mlc.byte.seed
 nix build .#tests.mlc.byte.committed
 nix build .#ccc.byte.seed
 nix build .#tests.ccc.byte.committed
+nix build .#tcc.m1.ccc.seed
 ```
 
 For faster iteration, use the GCC-built M2-Planet debug path:

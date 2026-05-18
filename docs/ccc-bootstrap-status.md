@@ -14,8 +14,8 @@ plan requirement.
 | 3 | `mlc-seed.m2` | `mlc/mlc-seed.c`; `tests/mlc/*.ml`; flake targets `mlc-seed.host`, `mlc-seed.m2`, and `tests.mlc.seed.host-vs-m2`; host and M2 seed compilers emit byte-identical `.mzbc` for the fixture corpus and `mzvm-seed` runs all fixtures | partial: small expression compiler, local bindings, and narrow ADT match |
 | 4 | committed `mlc.byte` | `mlc/mlc.byte`; flake targets `mlc.byte.seed` and `tests.mlc.byte.committed`; the committed bytecode matches M2-seed output for the current placeholder `mlc/mlc.ml` and runs under `mzvm-seed` | partial: committed smoke bytecode only |
 | 5 | `mlc.byte.selfhost` | none | missing |
-| 6 | `ccc.byte` | `ccc/ccc.ml`; `ccc/ccc.byte`; flake targets `ccc.byte.seed` and `tests.ccc.byte.committed`; current artifact is a seed-compiled smoke bytecode that runs under `mzvm-seed` | partial: committed smoke bytecode only |
-| 7 | `tcc.m1` via CCC | none | missing |
+| 6 | `ccc.byte` | `ccc/ccc.ml`; `ccc/ccc.byte`; flake targets `ccc.byte.seed` and `tests.ccc.byte.committed`; current artifact is a seed-compiled smoke bytecode that emits deterministic M1 text under `mzvm-seed` | partial: committed smoke bytecode only |
+| 7 | `tcc.m1` via CCC | flake target `tcc.m1.ccc.seed` runs committed `ccc.byte` and installs `share/ccc/tcc.M1` | partial: smoke M1 text only |
 | 8 | `tcc.bin` via CCC | none | missing |
 | 9 | `gcc46.m2.ccc.m2` | none | missing |
 | 10 | `gccLatest.m2.ccc.m2` | none | missing |
