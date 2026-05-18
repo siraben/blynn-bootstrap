@@ -24,6 +24,9 @@ Current stages:
   `exit`, pair tuples, pair destructuring, dynamic string/bytes indexing, and
   dynamic array/bytes writes, `Array.create`, and direct unary `let rec`
   functions, plus anonymous unary `fun` closures with captured environments.
+  Application parsing uses one token of lookahead so identifiers such as
+  `emit`, `input`, and `target` can be parsed as arguments while `else`, `in`,
+  and `then` still terminate the surrounding expression.
 - `03-ok.ml0` and `03-char-string.ml0` are small ML0 sources accepted by
   `02-ml0-compiler.ml`.
 - `mlc/mlc.ml` is also compiled by `02-ml0-compiler.ml` in the current gate;

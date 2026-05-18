@@ -842,6 +842,8 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             ${mzvmSeedM2}/bin/mzvm-seed closure.mzbc > closure.out
             printf 'let f = fun x -> let f2 = fun y -> write_byte (x + y) in f2 39 in f 40' | ${mlcInterpSeedM2}/bin/mlc-interp-seed 02-ml0-compiler.ml > closure-capture.mzbc
             ${mzvmSeedM2}/bin/mzvm-seed closure-capture.mzbc > closure-capture.out
+            printf 'let f = fun x -> write_byte x in let emit = 79 in let input = 75 in let target = 10 in let _ = f emit in let _ = f input in f target' | ${mlcInterpSeedM2}/bin/mlc-interp-seed 02-ml0-compiler.ml > closure-lookahead.mzbc
+            ${mzvmSeedM2}/bin/mzvm-seed closure-lookahead.mzbc > closure-lookahead.out
             for name in ok arithmetic conditional comparison let-binding sequence negative identifiers keyword-prefix-infix string string-value length exit tuple bytes array dynamic-create dynamic-index function function-tuple function-nested function-string; do
               ${mlcInterpSeedM2}/bin/mlc-interp-seed 02-ml0-compiler.ml < ${./tests/mlc}/$name.ml > $name.mzbc
               ${mzvmSeedM2}/bin/mzvm-seed $name.mzbc > $name.out
@@ -899,6 +901,7 @@ OK"
             test "$(cat let-binding.out)" = OK
             test "$(cat closure.out)" = O
             test "$(cat closure-capture.out)" = O
+            test "$(cat closure-lookahead.out)" = "OK"
             test "$(cat sequence.out)" = OK
             test "$(cat negative.out)" = OK
             test "$(cat identifiers.out)" = O
@@ -949,6 +952,8 @@ OK"
             install -Dm644 closure.out "$out/share/mlc/stages/closure.out"
             install -Dm644 closure-capture.mzbc "$out/share/mlc/stages/closure-capture.mzbc"
             install -Dm644 closure-capture.out "$out/share/mlc/stages/closure-capture.out"
+            install -Dm644 closure-lookahead.mzbc "$out/share/mlc/stages/closure-lookahead.mzbc"
+            install -Dm644 closure-lookahead.out "$out/share/mlc/stages/closure-lookahead.out"
             install -Dm644 string-value.mzbc "$out/share/mlc/stages/string-value.mzbc"
             install -Dm644 length.mzbc "$out/share/mlc/stages/length.mzbc"
             install -Dm644 keyword-prefix-infix.mzbc "$out/share/mlc/stages/keyword-prefix-infix.mzbc"
