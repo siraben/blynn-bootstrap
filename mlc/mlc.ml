@@ -522,13 +522,33 @@ let rec parse_case_payload input =
         let (bind1, bind1_end0) = bind1_parsed in
         let bind1_end = skip_space (src, bind1_end0) in
         if src.[bind1_end] == 44 then
-          let bind2_parsed = parse_ident (src, bind1_end + 1) in
-          let (bind2, bind2_end0) = bind2_parsed in
-          let bind2_end = skip_space (src, bind2_end0) in
-          if src.[bind2_end] == 41 then
-            (1, (0, (bind1, (bind2, (0 - 1, bind2_end + 1)))))
+          let second_pos = skip_space (src, bind1_end + 1) in
+          if src.[second_pos] == 40 then
+            let bind2_parsed = parse_ident (src, second_pos + 1) in
+            let (bind2, bind2_end0) = bind2_parsed in
+            let bind2_end = skip_space (src, bind2_end0) in
+            if src.[bind2_end] == 44 then
+              let bind3_parsed = parse_ident (src, bind2_end + 1) in
+              let (bind3, bind3_end0) = bind3_parsed in
+              let bind3_end = skip_space (src, bind3_end0) in
+              if src.[bind3_end] == 41 then
+                let close_pos = skip_space (src, bind3_end + 1) in
+                if src.[close_pos] == 41 then
+                  (1, (2, (bind1, (bind2, (bind3, close_pos + 1)))))
+                else
+                  exit 1
+              else
+                exit 1
+            else
+              exit 1
           else
-            exit 1
+            let bind2_parsed = parse_ident (src, second_pos) in
+            let (bind2, bind2_end0) = bind2_parsed in
+            let bind2_end = skip_space (src, bind2_end0) in
+            if src.[bind2_end] == 41 then
+              (1, (0, (bind1, (bind2, (0 - 1, bind2_end + 1)))))
+            else
+              exit 1
         else
           exit 1
     else
@@ -541,7 +561,7 @@ in
 let rec case_payload_len input =
   let (has_arg, pair) = input in
   let (tuple, nested) = pair in
-  if tuple == 1 then if nested == 1 then 55 else 33 else
+  if tuple == 1 then if nested == 0 then 33 else 55 else
   if has_arg == 1 then 11 else 0
 in
 let rec case_payload_env input =
@@ -557,6 +577,11 @@ let rec case_payload_env input =
       let env1 = bind_if_named (bind3, (0, base)) in
       let env2 = bind_if_named (bind2, (1, env1)) in
       bind_if_named (bind1, (2, env2))
+    else if nested == 2 then
+      let base = shift5 case_env in
+      let env1 = bind_if_named (bind3, (0, base)) in
+      let env2 = bind_if_named (bind2, (1, env1)) in
+      bind_if_named (bind1, (3, env2))
     else
       let base = shift_env (shift_env (shift_env case_env)) in
       let env1 = bind_if_named (bind2, (0, base)) in
@@ -585,6 +610,22 @@ let rec emit_case_payload input =
       let _ = emit_getfield (emit, 1) in
       let _ = emit_push emit in
       let _ = emit_acc (emit, 3) in
+      let _ = emit_getfield (emit, 1) in
+      emit_push emit
+    else if nested == 2 then
+      let _ = emit_acc (emit, 0) in
+      let _ = emit_getfield (emit, 0) in
+      let _ = emit_push emit in
+      let _ = emit_acc (emit, 0) in
+      let _ = emit_getfield (emit, 0) in
+      let _ = emit_push emit in
+      let _ = emit_acc (emit, 1) in
+      let _ = emit_getfield (emit, 1) in
+      let _ = emit_push emit in
+      let _ = emit_acc (emit, 0) in
+      let _ = emit_getfield (emit, 0) in
+      let _ = emit_push emit in
+      let _ = emit_acc (emit, 1) in
       let _ = emit_getfield (emit, 1) in
       emit_push emit
     else
@@ -1603,6 +1644,6 @@ let rec compile_program src =
   else
     emit_byte_source (src, pos)
 in
-let source = Bytes.create 65536 in
+let source = Bytes.create 131072 in
 let _ = read_all (source, 0) in
 compile_program source
