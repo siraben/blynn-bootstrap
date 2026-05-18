@@ -1532,6 +1532,15 @@ OK"
             printf 'write_byte (40 + 39)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-add.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-add.mzbc)"
             test "$actual" = O
+            printf 'write_byte (100 - 21)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-sub.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-sub.mzbc)"
+            test "$actual" = O
+            printf 'write_byte ((7 * 11) + 2)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-mul.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-mul.mzbc)"
+            test "$actual" = O
+            printf 'write_byte (158 / 2)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-div.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-div.mzbc)"
+            test "$actual" = O
             printf "write_byte (if 1 == 1 then 'O' else 'X')" | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-if.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-if.mzbc)"
             test "$actual" = O
@@ -1562,6 +1571,9 @@ OK"
             if printf 'write_byte (if true then 79 else write_byte 88)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-branch-type-error.mzbc; then
               exit 1
             fi
+            if printf 'write_byte (true - 1)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-arithmetic-type-error.mzbc; then
+              exit 1
+            fi
             if printf 'let (x, y) = 79 in write_byte x' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-pair-type-error.mzbc; then
               exit 1
             fi
@@ -1575,6 +1587,9 @@ OK"
             install -Dm644 03-direct.mzbc "$out/share/mlc/stages/03-direct.mzbc"
             install -Dm644 03-char.mzbc "$out/share/mlc/stages/03-char.mzbc"
             install -Dm644 03-add.mzbc "$out/share/mlc/stages/03-add.mzbc"
+            install -Dm644 03-sub.mzbc "$out/share/mlc/stages/03-sub.mzbc"
+            install -Dm644 03-mul.mzbc "$out/share/mlc/stages/03-mul.mzbc"
+            install -Dm644 03-div.mzbc "$out/share/mlc/stages/03-div.mzbc"
             install -Dm644 03-if.mzbc "$out/share/mlc/stages/03-if.mzbc"
             install -Dm644 03-if-bool.mzbc "$out/share/mlc/stages/03-if-bool.mzbc"
             install -Dm644 03-let.mzbc "$out/share/mlc/stages/03-let.mzbc"
