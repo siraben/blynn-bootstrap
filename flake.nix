@@ -629,110 +629,26 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           install -Dm644 host-gc.txt "$out/gc-output.txt"
         '';
 
-        mlcInterpSeedHost = pkgs.stdenv.mkDerivation {
-          pname = "mlc-interp-seed-host";
-          version = "0-unstable-2026-05-17";
-          src = mlcSrc;
-
-          dontConfigure = true;
-          dontUpdateAutotoolsGnuConfigScripts = true;
-
-          buildPhase = ''
-            runHook preBuild
-            $CC -O2 -Wall -Wextra mlc-interp-seed.c -o mlc-interp-seed
-            runHook postBuild
-          '';
-
-          doCheck = true;
-          checkPhase = ''
-            runHook preCheck
-            ./mlc-interp-seed stages/00-core.ml > 00-core.out
-            printf 'OOK\n' > 00-core.expected
-            cmp 00-core.expected 00-core.out
-            runHook postCheck
-          '';
-
-          installPhase = ''
-            runHook preInstall
-            install -Dm755 mlc-interp-seed "$out/bin/mlc-interp-seed"
-            install -Dm644 mlc-interp-seed.c "$out/share/mlc/mlc-interp-seed.c"
-            install -Dm644 stages/00-core.ml "$out/share/mlc/stages/00-core.ml"
-            install -Dm644 00-core.out "$out/share/mlc/stages/00-core.out"
-            runHook postInstall
-          '';
-
-          meta = with pkgs.lib; {
-            description = "Host-built tree-walking mini-OCaml bootstrap interpreter";
-            license = licenses.gpl3Only;
-            platforms = platforms.linux;
-          };
+        mlcInterpSeedHost = pkgs.callPackage ./nix/mlc-interp-seed-host.nix {
+          inherit mlcSrc;
         };
 
-        mlcInterpSeedM2 = stageRun {
-          pname = "mlc-interp-seed-m2";
-          nativeBuildInputs = [
-            minimalBootstrap.stage0-posix.mescc-tools
-          ];
-          description = "M2-Planet-built tree-walking mini-OCaml bootstrap interpreter";
-          buildScript = ''
-            . ${./scripts/lib/bootstrap.sh}
-            cp ${mlcSrc}/mlc-interp-seed.c mlc-interp-seed.c
-            cp ${mlcSrc}/stages/00-core.ml 00-core.ml
-            compile_m2 mlc-interp-seed.c mlc-interp-seed
-            actual="$(./mlc-interp-seed 00-core.ml)"
-            test "$actual" = OOK
-            ./mlc-interp-seed 00-core.ml > 00-core.out
-          '';
-          installScript = ''
-            install -Dm755 mlc-interp-seed "$out/bin/mlc-interp-seed"
-            install -Dm644 mlc-interp-seed.c "$out/share/mlc/mlc-interp-seed.c"
-            install -Dm644 00-core.ml "$out/share/mlc/stages/00-core.ml"
-            install -Dm644 00-core.out "$out/share/mlc/stages/00-core.out"
-          '';
+        mlcInterpSeedM2 = pkgs.callPackage ./nix/mlc-interp-seed-m2.nix {
+          inherit stageRun minimalBootstrap mlcSrc;
+          scriptsRoot = ./scripts;
         };
 
-        mlcInterpSeedHostVsM2 = pkgs.runCommand "mlc-interp-seed-host-vs-m2" { } ''
-          cmp ${mlcInterpSeedHost}/share/mlc/stages/00-core.out ${mlcInterpSeedM2}/share/mlc/stages/00-core.out
-          install -Dm644 ${mlcInterpSeedHost}/share/mlc/stages/00-core.out "$out/00-core.out"
-        '';
-
-        mlcStage00Core = stageRun {
-          pname = "mlc-stage-00-core";
-          nativeBuildInputs = [
-            mlcInterpSeedM2
-          ];
-          description = "First named MLC core-language bootstrap stage";
-          buildScript = ''
-            cp ${mlcSrc}/stages/00-core.ml 00-core.ml
-            actual="$(${mlcInterpSeedM2}/bin/mlc-interp-seed 00-core.ml)"
-            test "$actual" = OOK
-            ${mlcInterpSeedM2}/bin/mlc-interp-seed 00-core.ml > 00-core.out
-          '';
-          installScript = ''
-            install -Dm644 00-core.ml "$out/share/mlc/stages/00-core.ml"
-            install -Dm644 00-core.out "$out/share/mlc/stages/00-core.out"
-          '';
+        mlcInterpSeedHostVsM2 = pkgs.callPackage ./nix/mlc-interp-seed-host-vs-m2.nix {
+          runCommand = pkgs.runCommand;
+          inherit mlcInterpSeedHost mlcInterpSeedM2;
         };
 
-        mlcStage01Parenthetical = stageRun {
-          pname = "mlc-stage-01-parenthetical";
-          nativeBuildInputs = [
-            mlcInterpSeedM2
-            mzvmSeedM2
-          ];
-          description = "First MLC handoff stage: parenthesized MZBC assembly to bytecode";
-          buildScript = ''
-            cp ${mlcSrc}/stages/01-parenthetical.ml 01-parenthetical.ml
-            cp ${mlcSrc}/stages/02-ok.mzp 02-ok.mzp
-            ${mlcInterpSeedM2}/bin/mlc-interp-seed 01-parenthetical.ml < 02-ok.mzp > 02-ok.mzbc
-            actual="$(${mzvmSeedM2}/bin/mzvm-seed 02-ok.mzbc)"
-            test "$actual" = OK
-          '';
-          installScript = ''
-            install -Dm644 01-parenthetical.ml "$out/share/mlc/stages/01-parenthetical.ml"
-            install -Dm644 02-ok.mzp "$out/share/mlc/stages/02-ok.mzp"
-            install -Dm644 02-ok.mzbc "$out/share/mlc/stages/02-ok.mzbc"
-          '';
+        mlcStage00Core = pkgs.callPackage ./nix/mlc-stage-00-core.nix {
+          inherit stageRun mlcSrc mlcInterpSeedM2;
+        };
+
+        mlcStage01Parenthetical = pkgs.callPackage ./nix/mlc-stage-01-parenthetical.nix {
+          inherit stageRun mlcSrc mlcInterpSeedM2 mzvmSeedM2;
         };
 
         mlcStage02Ml0Compiler = pkgs.callPackage ./nix/mlc-stage-02-ml0-compiler.nix {
