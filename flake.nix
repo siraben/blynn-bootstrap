@@ -690,6 +690,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           "let-binding"
           "match"
           "adt"
+          "identifiers"
         ];
 
         mlcSeedHost = pkgs.stdenv.mkDerivation {
@@ -719,6 +720,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             printf 'OK\n' > let-binding.expected
             printf 'OK\n' > match.expected
             printf 'OK\n' > adt.expected
+            printf 'O\n' > identifiers.expected
             for name in ${lib.concatStringsSep " " mlcFixtures}; do
               cmp $name.expected $name.out
             done
@@ -757,6 +759,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             cp ${./tests/mlc/let-binding.ml} let-binding.ml
             cp ${./tests/mlc/match.ml} match.ml
             cp ${./tests/mlc/adt.ml} adt.ml
+            cp ${./tests/mlc/identifiers.ml} identifiers.ml
             compile_m2 mlc-seed.c mlc-seed
             ./mlc-seed ok.ml ok.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed ok.mzbc)"
@@ -776,6 +779,9 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             ./mlc-seed adt.ml adt.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed adt.mzbc)"
             test "$actual" = OK
+            ./mlc-seed identifiers.ml identifiers.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed identifiers.mzbc)"
+            test "$actual" = O
           '';
           installScript = ''
             install -Dm755 mlc-seed "$out/bin/mlc-seed"
@@ -786,6 +792,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             install -Dm644 let-binding.mzbc "$out/share/mlc/tests/let-binding.mzbc"
             install -Dm644 match.mzbc "$out/share/mlc/tests/match.mzbc"
             install -Dm644 adt.mzbc "$out/share/mlc/tests/adt.mzbc"
+            install -Dm644 identifiers.mzbc "$out/share/mlc/tests/identifiers.mzbc"
           '';
         };
 

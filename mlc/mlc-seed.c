@@ -26,7 +26,8 @@ static long out_len;
 static char *src;
 static long src_len;
 static long pos;
-static long env_names[64];
+static long env_start[64];
+static long env_len[64];
 static long env_depth;
 static long ctor_start[64];
 static long ctor_len[64];
@@ -165,18 +166,6 @@ static void expect_keyword(const char *word)
   if (!take_keyword(word)) die("unexpected keyword");
 }
 
-static long take_ident1(void)
-{
-  long c;
-  skip_space();
-  if (pos >= src_len) die("expected identifier");
-  c = src[pos];
-  if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_')) die("expected identifier");
-  pos = pos + 1;
-  if (pos < src_len && is_ident_char(src[pos])) die("only one-character identifiers are supported in mlc-seed");
-  return c;
-}
-
 static void take_ident_span(long *start_out, long *len_out)
 {
   long start;
@@ -211,6 +200,11 @@ static long lookup_constructor(long start, long len)
   return -1;
 }
 
+static int span_is_char(long start, long len, int c)
+{
+  return len == 1 && src[start] == c;
+}
+
 static void add_constructor(long start, long len, long tag, long arity)
 {
   if (ctor_count >= 64) die("too many constructors");
@@ -222,12 +216,12 @@ static void add_constructor(long start, long len, long tag, long arity)
   ctor_count = ctor_count + 1;
 }
 
-static long lookup_var(long name)
+static long lookup_var(long start, long len)
 {
   long i = env_depth - 1;
   long stack_index = 0;
   while (i >= 0) {
-    if (env_names[i] == name) return stack_index;
+    if (span_equal(start, len, env_start[i], env_len[i])) return stack_index;
     i = i - 1;
     stack_index = stack_index + 1;
   }
@@ -350,8 +344,8 @@ static void parse_atom(void)
     else if (ctor_arity[ctor] != 0) die("unsupported constructor arity");
     emit_makeblock(ctor_tag[ctor], ctor_arity[ctor]);
   } else if (pos < src_len && ((src[pos] >= 'a' && src[pos] <= 'z') || (src[pos] >= 'A' && src[pos] <= 'Z'))) {
-    long name = take_ident1();
-    var_index = lookup_var(name);
+    take_ident_span(&name_start, &name_len);
+    var_index = lookup_var(name_start, name_len);
     if (var_index < 0) die("unknown variable");
     emit_acc(var_index);
   } else {
@@ -469,7 +463,7 @@ static void expect_arrow(void)
   expect_char('>');
 }
 
-static void parse_pattern(long *tag_out, long *arity_out, long *binder_out)
+static void parse_pattern(long *tag_out, long *arity_out, long *binder_start_out, long *binder_len_out)
 {
   long name_start;
   long name_len;
@@ -479,26 +473,28 @@ static void parse_pattern(long *tag_out, long *arity_out, long *binder_out)
   if (ctor < 0) die("unknown pattern constructor");
   *tag_out = ctor_tag[ctor];
   *arity_out = ctor_arity[ctor];
-  *binder_out = 0;
+  *binder_start_out = 0;
+  *binder_len_out = 0;
   if (*arity_out == 1) {
-    *binder_out = take_ident1();
+    take_ident_span(binder_start_out, binder_len_out);
   } else if (*arity_out != 0) {
     die("unsupported pattern constructor arity");
   }
 }
 
-static void bind_pattern_var(long arity, long binder)
+static void bind_pattern_var(long arity, long binder_start, long binder_len)
 {
-  if (arity == 1 && binder != '_') {
+  if (arity == 1 && !span_is_char(binder_start, binder_len, '_')) {
     if (env_depth >= 64) die("too many local bindings");
-    env_names[env_depth] = binder;
+    env_start[env_depth] = binder_start;
+    env_len[env_depth] = binder_len;
     env_depth = env_depth + 1;
   }
 }
 
-static void unbind_pattern_var(long arity, long binder)
+static void unbind_pattern_var(long arity, long binder_start, long binder_len)
 {
-  if (arity == 1 && binder != '_') env_depth = env_depth - 1;
+  if (arity == 1 && !span_is_char(binder_start, binder_len, '_')) env_depth = env_depth - 1;
 }
 
 static long match_arm_overhead(long arity, int has_fallthrough_branch)
@@ -513,13 +509,15 @@ static void parse_match(void)
 {
   long arm1_tag;
   long arm1_arity;
-  long arm1_binder;
+  long arm1_binder_start;
+  long arm1_binder_len;
   long arm1_start;
   long arm1_end;
   long arm1_len;
   long arm2_tag;
   long arm2_arity;
-  long arm2_binder;
+  long arm2_binder_start;
+  long arm2_binder_len;
   long arm2_start;
   long arm2_end;
   long arm2_len;
@@ -527,21 +525,21 @@ static void parse_match(void)
   if (ctor_count != 2) die("only two-constructor matches are supported");
   parse_expr();
   expect_keyword("with");
-  parse_pattern(&arm1_tag, &arm1_arity, &arm1_binder);
+  parse_pattern(&arm1_tag, &arm1_arity, &arm1_binder_start, &arm1_binder_len);
   expect_arrow();
   arm1_start = pos;
-  bind_pattern_var(arm1_arity, arm1_binder);
+  bind_pattern_var(arm1_arity, arm1_binder_start, arm1_binder_len);
   arm1_len = measure_expr(arm1_start, &arm1_end) + match_arm_overhead(arm1_arity, 1);
-  unbind_pattern_var(arm1_arity, arm1_binder);
+  unbind_pattern_var(arm1_arity, arm1_binder_start, arm1_binder_len);
   pos = arm1_end;
   expect_char('|');
-  parse_pattern(&arm2_tag, &arm2_arity, &arm2_binder);
+  parse_pattern(&arm2_tag, &arm2_arity, &arm2_binder_start, &arm2_binder_len);
   if (arm1_tag == arm2_tag) die("duplicate match arm");
   expect_arrow();
   arm2_start = pos;
-  bind_pattern_var(arm2_arity, arm2_binder);
+  bind_pattern_var(arm2_arity, arm2_binder_start, arm2_binder_len);
   arm2_len = measure_expr(arm2_start, &arm2_end) + match_arm_overhead(arm2_arity, 0);
-  unbind_pattern_var(arm2_arity, arm2_binder);
+  unbind_pattern_var(arm2_arity, arm2_binder_start, arm2_binder_len);
   pos = arm1_start;
 
   emit_byte(OP_PUSH);
@@ -556,25 +554,25 @@ static void parse_match(void)
     emit_acc(0);
     emit_getfield(0);
     emit_byte(OP_PUSH);
-    bind_pattern_var(arm1_arity, arm1_binder);
+    bind_pattern_var(arm1_arity, arm1_binder_start, arm1_binder_len);
   }
   parse_expr();
-  unbind_pattern_var(arm1_arity, arm1_binder);
+  unbind_pattern_var(arm1_arity, arm1_binder_start, arm1_binder_len);
   if (arm1_arity == 1) emit_pop(2);
   else emit_pop(1);
   emit_branch(arm2_len);
 
   expect_char('|');
-  parse_pattern(&arm2_tag, &arm2_arity, &arm2_binder);
+  parse_pattern(&arm2_tag, &arm2_arity, &arm2_binder_start, &arm2_binder_len);
   expect_arrow();
   if (arm2_arity == 1) {
     emit_acc(0);
     emit_getfield(0);
     emit_byte(OP_PUSH);
-    bind_pattern_var(arm2_arity, arm2_binder);
+    bind_pattern_var(arm2_arity, arm2_binder_start, arm2_binder_len);
   }
   parse_expr();
-  unbind_pattern_var(arm2_arity, arm2_binder);
+  unbind_pattern_var(arm2_arity, arm2_binder_start, arm2_binder_len);
   if (arm2_arity == 1) emit_pop(2);
   else emit_pop(1);
   if (pos != arm2_end) die("internal match parse mismatch");
@@ -582,16 +580,18 @@ static void parse_match(void)
 
 static void parse_let(void)
 {
-  long name;
+  long name_start;
+  long name_len;
   int binds = 0;
   if (!take_keyword("let")) die("expected let");
-  name = take_ident1();
+  take_ident_span(&name_start, &name_len);
   expect_char('=');
   parse_expr();
-  if (name != '_') {
+  if (!span_is_char(name_start, name_len, '_')) {
     if (env_depth >= 64) die("too many local bindings");
     emit_byte(OP_PUSH);
-    env_names[env_depth] = name;
+    env_start[env_depth] = name_start;
+    env_len[env_depth] = name_len;
     env_depth = env_depth + 1;
     binds = 1;
   }
