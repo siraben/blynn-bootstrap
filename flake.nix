@@ -823,7 +823,15 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             cp ${cccSrc}/ccc.ml ccc.ml
             ${mlcSeedM2}/bin/mlc-seed ccc.ml ccc.byte
             actual="$(${mzvmSeedM2}/bin/mzvm-seed ccc.byte)"
-            test "$actual" = "# ccc smoke M1"
+            expected='DEFINE LOADI32_RDI 48C7C7
+DEFINE LOADI32_RAX 48C7C0
+DEFINE SYSCALL 0F05
+
+:_start
+	LOADI32_RDI %0
+	LOADI32_RAX %60
+	SYSCALL'
+            test "$actual" = "$expected"
           '';
           installScript = ''
             install -Dm644 ccc.byte "$out/share/ccc/ccc.byte"
@@ -837,7 +845,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
 
         tccM1CccSeed = pkgs.runCommand "tcc-m1-ccc-seed" { } ''
           ${mzvmSeedM2}/bin/mzvm-seed ${cccByteCommitted}/share/ccc/ccc.byte > tcc.M1
-          printf '# ccc smoke M1\n' > expected.M1
+          printf 'DEFINE LOADI32_RDI 48C7C7\nDEFINE LOADI32_RAX 48C7C0\nDEFINE SYSCALL 0F05\n\n:_start\n\tLOADI32_RDI %%0\n\tLOADI32_RAX %%60\n\tSYSCALL\n' > expected.M1
           cmp expected.M1 tcc.M1
           install -Dm644 tcc.M1 "$out/share/ccc/tcc.M1"
         '';

@@ -25,8 +25,10 @@ CCC-specific changes:
 
 - drop floats and all float-register machinery
 - add bytes/string primitives needed by the C compiler
-- add real algebraic data types and pattern matching, compiling matches to
-  constructor tests, field extraction, and bytecode branches
+- add real algebraic data types and pattern matching. Source programs should
+  use constructors and `match`, not manually encoded tags. The compiler lowers
+  typed patterns to decision trees and only then emits constructor tests, field
+  extraction, and bytecode branches as a backend detail
 - target `.mzbc` stack bytecode, not virtual assembly plus register allocation
 
 ## Pass Checklist
@@ -56,8 +58,9 @@ The `mlc` order should be:
 
 ```text
 lexer
-parser
+parser with ADT declarations and pattern syntax
 typing
+pattern-match compilation
 k-normal
 alpha
 beta
@@ -84,8 +87,8 @@ tiny recursive-descent compiler for `let` bindings, `if ... then ... else
 ...`, `write_byte`, integer literals, comparisons, parenthesized arithmetic,
 `+ - * /`, nested OCaml block comments, and a narrow `None`/`Some` `match`
 form. It exists to pin the M2 path, bytecode writer, expression codegen, local
-stack environment, and constructor-tag layout before the real MinCaml-shaped
-passes are ported into `mlc.ml`.
+stack environment, and the VM representation of constructors before the real
+MinCaml-shaped passes are ported into `mlc.ml`.
 
 Do not treat the current `mlc.ml` as self-hosted. The next meaningful step is
 to replace the placeholder with the lexer/parser/type AST spine, including
