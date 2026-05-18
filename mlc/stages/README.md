@@ -80,15 +80,18 @@ Current stages:
   this compiler: explicit `ParseOk` / `ParseErr` replies, `p_force`,
   `p_peek`, `p_try_char`, `p_need_char`, `p_return`, `p_try_string`,
   `p_string_at`, `p_keyword_at`, `p_need_string`, and `p_need_keyword`.
+  Its expression parser now follows HCC's precedence-climbing shape: parse a
+  primary expression, read an operator/precedence pair, parse the right-hand
+  side at the next precedence, rebuild the left-hand side, and loop.
   Higher-order `p_bind` remains with stage 02 until the successor compiler can
   compile function-valued parser continuations. Keyword recognition is now
   string-literal based rather than long character ladders. Programs now parse
   as arbitrary expressions whose final type must be `unit`, so the top-level
   no longer has a special `write_byte` wrapper. The flake gate checks direct
-  bytes, char literals, precedence-aware integer `+` / `-` / `*` / `/`,
-  integer comparisons, sequencing, bool literals, conditionals whose guards
-  must type as `bool`, `let`, top-level `let`, pair construction, pair
-  destructuring, full-input consumption, and static type errors.
+  bytes, `read_byte`, char literals, precedence-aware integer `+` / `-` /
+  `*` / `/`, integer comparisons, sequencing, bool literals, conditionals
+  whose guards must type as `bool`, `let`, top-level `let`, pair construction,
+  pair destructuring, full-input consumption, and static type errors.
 
 Planned stages:
 

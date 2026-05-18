@@ -4,7 +4,8 @@ type expr_more = EWriteByte of expr | EAdd of expr | ESub of expr | EMore2 of ex
 type expr_more2 = EMul of expr | EDiv of expr | EEq of expr | EMore3 of expr_more3
 type expr_more3 = ENe of expr | ELt of expr | ELe of expr | EMore4 of expr_more4
 type expr_more4 = EGt of expr | EGe of expr | EIf of expr | EMore5 of expr_more5
-type expr_more5 = ELet of expr | EPair of expr | ELetPair of expr | ESeq of expr
+type expr_more5 = ELet of expr | EPair of expr | ELetPair of expr | EMore6 of expr_more6
+type expr_more6 = ESeq of expr | EReadByte
 type parse_reply = ParseOk of int | ParseErr
 
 let rec byte n =
@@ -118,6 +119,13 @@ let rec emit_call_write_byte emit =
   let _ = emit_u32_if (emit, 1) in
   let _ = emit_u32_if (emit, 1) in
   9
+in
+let rec emit_call_read_byte emit =
+  let const_len = emit_const (emit, 0) in
+  let _ = emit_byte_if (emit, 14) in
+  let _ = emit_u32_if (emit, 1) in
+  let _ = emit_u32_if (emit, 0) in
+  const_len + 9
 in
 let rec emit_makeblock_pair emit =
   let _ = emit_byte_if (emit, 15) in
@@ -241,6 +249,10 @@ let rec is_write_byte_at state =
   let (src, pos0) = state in
   p_keyword_at (src, (pos0, "write_byte"))
 in
+let rec is_read_byte_at state =
+  let (src, pos0) = state in
+  p_keyword_at (src, (pos0, "read_byte"))
+in
 let rec is_true_at state =
   let (src, pos0) = state in
   p_keyword_at (src, (pos0, "true"))
@@ -264,6 +276,10 @@ in
 let rec need_write_byte state =
   let (src, pos0) = state in
   p_need_keyword (src, (pos0, "write_byte"))
+in
+let rec need_read_byte state =
+  let (src, pos0) = state in
+  p_need_keyword (src, (pos0, "read_byte"))
 in
 let rec parse_number_loop state =
   let (src, pair) = state in
@@ -291,6 +307,38 @@ let rec parse_ident state =
   let pos = skip_space (src, pos0) in
   let ch = src.[pos] in
   if is_alpha ch then parse_ident_loop (src, (pos + 1, ch)) else exit 1
+in
+let rec parse_binop state =
+  let (src, pair) = state in
+  let (pos0, allow_seq) = pair in
+  let pos = skip_space (src, pos0) in
+  if (src.[pos] == ';') * allow_seq then (1, (pos + 1, 0)) else
+  if (src.[pos] == '=') * (src.[pos + 1] == '=') then (2, (pos + 2, 1)) else
+  if (src.[pos] == '!') * (src.[pos + 1] == '=') then (3, (pos + 2, 1)) else
+  if src.[pos] == '<' then
+    if src.[pos + 1] == '=' then (5, (pos + 2, 1)) else (4, (pos + 1, 1))
+  else if src.[pos] == '>' then
+    if src.[pos + 1] == '=' then (7, (pos + 2, 1)) else (6, (pos + 1, 1))
+  else if src.[pos] == '+' then (8, (pos + 1, 2)) else
+  if src.[pos] == '-' then (9, (pos + 1, 2)) else
+  if src.[pos] == '*' then (10, (pos + 1, 3)) else
+  if src.[pos] == '/' then (11, (pos + 1, 3)) else
+    (0, (pos, 0))
+in
+let rec make_binop state =
+  let (op, pair) = state in
+  let (left, right) = pair in
+  if op == 1 then EMore (EMore2 (EMore3 (EMore4 (EMore5 (EMore6 (ESeq (left, right))))))) else
+  if op == 2 then EMore (EMore2 (EEq (left, right))) else
+  if op == 3 then EMore (EMore2 (EMore3 (ENe (left, right)))) else
+  if op == 4 then EMore (EMore2 (EMore3 (ELt (left, right)))) else
+  if op == 5 then EMore (EMore2 (EMore3 (ELe (left, right)))) else
+  if op == 6 then EMore (EMore2 (EMore3 (EMore4 (EGt (left, right))))) else
+  if op == 7 then EMore (EMore2 (EMore3 (EMore4 (EGe (left, right))))) else
+  if op == 8 then EMore (EAdd (left, right)) else
+  if op == 9 then EMore (ESub (left, right)) else
+  if op == 10 then EMore (EMore2 (EMul (left, right))) else
+  if op == 11 then EMore (EMore2 (EDiv (left, right))) else exit 1
 in
 let rec parse_expr_prec state =
   let (src, pair0) = state in
@@ -342,6 +390,8 @@ let rec parse_expr_prec state =
         let expr = parse_expr_prec (src, (expr_pos, (0, (0, (0, EInt 0))))) in
         let (expr_ast, expr_end) = expr in
         (EMore (EWriteByte expr_ast), expr_end)
+      else if is_read_byte_at (src, pos) then
+        p_return (need_read_byte (src, pos), EMore (EMore2 (EMore3 (EMore4 (EMore5 (EMore6 EReadByte))))))
       else
         let peeked = p_peek (src, pos) in
         let (ch, atom_pos) = peeked in
@@ -371,93 +421,18 @@ let rec parse_expr_prec state =
     let (left_ast, left_end) = left in
     parse_expr_prec (src, (left_end, (allow_seq, (min_prec, (1, left_ast)))))
   else
-    let next = skip_space (src, pos0) in
-    if (src.[next] == ';') * allow_seq then
-      if min_prec <= 0 then
-        let right = parse_expr_prec (src, (next + 1, (1, (1, (0, EInt 0))))) in
-        let (right_ast, right_end) = right in
-        let next_left = EMore (EMore2 (EMore3 (EMore4 (EMore5 (ESeq (left_ast0, right_ast)))))) in
-        parse_expr_prec (src, (right_end, (allow_seq, (min_prec, (1, next_left)))))
-      else
-        (left_ast0, pos0)
-    else if (src.[next] == '=') * (src.[next + 1] == '=') then
-      if min_prec <= 1 then
-        let right = parse_expr_prec (src, (next + 2, (allow_seq, (2, (0, EInt 0))))) in
-        let (right_ast, right_end) = right in
-        let next_left = EMore (EMore2 (EEq (left_ast0, right_ast))) in
-        parse_expr_prec (src, (right_end, (allow_seq, (min_prec, (1, next_left)))))
-      else
-        (left_ast0, pos0)
-    else if (src.[next] == '!') * (src.[next + 1] == '=') then
-      if min_prec <= 1 then
-        let right = parse_expr_prec (src, (next + 2, (allow_seq, (2, (0, EInt 0))))) in
-        let (right_ast, right_end) = right in
-        let next_left = EMore (EMore2 (EMore3 (ENe (left_ast0, right_ast)))) in
-        parse_expr_prec (src, (right_end, (allow_seq, (min_prec, (1, next_left)))))
-      else
-        (left_ast0, pos0)
-    else if src.[next] == '<' then
-      if min_prec <= 1 then
-        if src.[next + 1] == '=' then
-          let right = parse_expr_prec (src, (next + 2, (allow_seq, (2, (0, EInt 0))))) in
-          let (right_ast, right_end) = right in
-          let next_left = EMore (EMore2 (EMore3 (ELe (left_ast0, right_ast)))) in
-          parse_expr_prec (src, (right_end, (allow_seq, (min_prec, (1, next_left)))))
-        else
-          let right = parse_expr_prec (src, (next + 1, (allow_seq, (2, (0, EInt 0))))) in
-          let (right_ast, right_end) = right in
-          let next_left = EMore (EMore2 (EMore3 (ELt (left_ast0, right_ast)))) in
-          parse_expr_prec (src, (right_end, (allow_seq, (min_prec, (1, next_left)))))
-      else
-        (left_ast0, pos0)
-    else if src.[next] == '>' then
-      if min_prec <= 1 then
-        if src.[next + 1] == '=' then
-          let right = parse_expr_prec (src, (next + 2, (allow_seq, (2, (0, EInt 0))))) in
-          let (right_ast, right_end) = right in
-          let next_left = EMore (EMore2 (EMore3 (EMore4 (EGe (left_ast0, right_ast))))) in
-          parse_expr_prec (src, (right_end, (allow_seq, (min_prec, (1, next_left)))))
-        else
-          let right = parse_expr_prec (src, (next + 1, (allow_seq, (2, (0, EInt 0))))) in
-          let (right_ast, right_end) = right in
-          let next_left = EMore (EMore2 (EMore3 (EMore4 (EGt (left_ast0, right_ast))))) in
-          parse_expr_prec (src, (right_end, (allow_seq, (min_prec, (1, next_left)))))
-      else
-        (left_ast0, pos0)
-    else if src.[next] == '+' then
-      if min_prec <= 2 then
-        let right = parse_expr_prec (src, (next + 1, (allow_seq, (3, (0, EInt 0))))) in
-        let (right_ast, right_end) = right in
-        let next_left = EMore (EAdd (left_ast0, right_ast)) in
-        parse_expr_prec (src, (right_end, (allow_seq, (min_prec, (1, next_left)))))
-      else
-        (left_ast0, pos0)
-    else if src.[next] == '-' then
-      if min_prec <= 2 then
-        let right = parse_expr_prec (src, (next + 1, (allow_seq, (3, (0, EInt 0))))) in
-        let (right_ast, right_end) = right in
-        let next_left = EMore (ESub (left_ast0, right_ast)) in
-        parse_expr_prec (src, (right_end, (allow_seq, (min_prec, (1, next_left)))))
-      else
-        (left_ast0, pos0)
-    else if src.[next] == '*' then
-      if min_prec <= 3 then
-        let right = parse_expr_prec (src, (next + 1, (allow_seq, (4, (0, EInt 0))))) in
-        let (right_ast, right_end) = right in
-        let next_left = EMore (EMore2 (EMul (left_ast0, right_ast))) in
-        parse_expr_prec (src, (right_end, (allow_seq, (min_prec, (1, next_left)))))
-      else
-        (left_ast0, pos0)
-    else if src.[next] == '/' then
-      if min_prec <= 3 then
-        let right = parse_expr_prec (src, (next + 1, (allow_seq, (4, (0, EInt 0))))) in
-        let (right_ast, right_end) = right in
-        let next_left = EMore (EMore2 (EDiv (left_ast0, right_ast))) in
-        parse_expr_prec (src, (right_end, (allow_seq, (min_prec, (1, next_left)))))
-      else
-        (left_ast0, pos0)
-    else
+    let parsed_op = parse_binop (src, (pos0, allow_seq)) in
+    let (op, op_rest) = parsed_op in
+    let (op_end, prec) = op_rest in
+    if op == 0 then
       (left_ast0, pos0)
+    else if prec < min_prec then
+      (left_ast0, pos0)
+    else
+      let right = parse_expr_prec (src, (op_end, (allow_seq, (prec + 1, (0, EInt 0))))) in
+      let (right_ast, right_end) = right in
+      let next_left = make_binop (op, (left_ast0, right_ast)) in
+      parse_expr_prec (src, (right_end, (allow_seq, (min_prec, (1, next_left)))))
 in
 let rec parse_expr_flag state =
   let (src, pair) = state in
@@ -599,10 +574,13 @@ let rec infer state =
                           | TyInt -> exit 1
                           | TyUnit -> exit 1
                           | TyBool -> exit 1
-                      | ESeq parts ->
-                          let (left, right) = parts in
-                          let _ = need_ty (infer (env, left), TyUnit) in
-                          infer (env, right)
+                      | EMore6 more6 ->
+                          match more6 with
+                            ESeq parts ->
+                              let (left, right) = parts in
+                              let _ = need_ty (infer (env, left), TyUnit) in
+                              infer (env, right)
+                          | EReadByte -> TyInt
 in
 let rec empty_env unit =
   let _ = unit in
@@ -758,11 +736,14 @@ let rec emit_expr state =
                           let body_len = emit_expr (body, (body_env, emit)) in
                           let pop_len = emit_pop (emit, 3) in
                           rhs_len + save_pair + acc_pair0 + get_left + push_left + acc_pair1 + get_right + push_right + body_len + pop_len
-                      | ESeq parts ->
-                          let (left, right) = parts in
-                          let left_len = emit_expr (left, (env, emit)) in
-                          let right_len = emit_expr (right, (env, emit)) in
-                          left_len + right_len
+                      | EMore6 more6 ->
+                          match more6 with
+                            ESeq parts ->
+                              let (left, right) = parts in
+                              let left_len = emit_expr (left, (env, emit)) in
+                              let right_len = emit_expr (right, (env, emit)) in
+                              left_len + right_len
+                          | EReadByte -> emit_call_read_byte emit
 in
 let rec emit_program src =
   let parsed = parse_program (src, 0) in

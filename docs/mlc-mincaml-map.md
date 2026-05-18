@@ -121,11 +121,14 @@ emitted. Because the current compiler cannot yet compile
 function-valued parser continuations, stage 03 uses the executable subset of
 HCC `ParseLite`: explicit `ParseOk` / `ParseErr` replies, `p_force`,
 one-lookahead via `p_peek`, `try`/`need` character and string parsers, and
-keyword recognizers. Stage 02 continues to carry the higher-order `p_bind`
-transition point. Stage 03 also type-checks sequencing with `;`, requiring the
-left expression to have type `unit` before emitting the right expression, and
-its typed integer core now covers `+`, `-`, `*`, `/`, `!=`, `<`, `<=`, `>`,
-and `>=` with precedence-aware parsing for arithmetic and comparisons.
+keyword recognizers. Its expression parser mirrors HCC's precedence-climbing
+loop by reading an operator/precedence pair, recursing at the next precedence
+for the right-hand side, rebuilding the left-hand side, and continuing the
+climb. Stage 02 continues to carry the higher-order `p_bind` transition point.
+Stage 03 also type-checks sequencing with `;`, requiring the left expression to
+have type `unit` before emitting the right expression, and its typed integer
+core now covers `read_byte`, `+`, `-`, `*`, `/`, `!=`, `<`, `<=`, `>`, and
+`>=`.
 
 The older `mlc-seed.c` is deliberately smaller than the full language and is
 now transitional. It is a tiny recursive-descent compiler for `let` bindings,
