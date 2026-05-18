@@ -55,6 +55,10 @@ Opcodes are one byte. Immediate operands are little-endian 32-bit words.
 16  GETFIELD u32
 17  SETFIELD u32
 18  GETTAG
+19  NE
+20  LE
+21  GT
+22  GE
 ```
 
 Branches are relative to the program counter after the branch operand has

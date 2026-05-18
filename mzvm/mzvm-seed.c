@@ -25,7 +25,11 @@ enum {
   OP_MAKEBLOCK = 15,
   OP_GETFIELD = 16,
   OP_SETFIELD = 17,
-  OP_GETTAG = 18
+  OP_GETTAG = 18,
+  OP_NE = 19,
+  OP_LE = 20,
+  OP_GT = 21,
+  OP_GE = 22
 };
 
 typedef long value_t;
@@ -216,6 +220,14 @@ static void run(void)
       acc = val_int(stack_pop() == acc);
     } else if (op == OP_LT) {
       acc = val_int(int_val(stack_pop()) < int_val(acc));
+    } else if (op == OP_NE) {
+      acc = val_int(stack_pop() != acc);
+    } else if (op == OP_LE) {
+      acc = val_int(int_val(stack_pop()) <= int_val(acc));
+    } else if (op == OP_GT) {
+      acc = val_int(int_val(stack_pop()) > int_val(acc));
+    } else if (op == OP_GE) {
+      acc = val_int(int_val(stack_pop()) >= int_val(acc));
     } else if (op == OP_BRANCH) {
       branch_relative(read_s32());
     } else if (op == OP_BRANCHIF) {

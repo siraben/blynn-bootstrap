@@ -18,7 +18,11 @@ enum {
   OP_C_CALL = 14,
   OP_MAKEBLOCK = 15,
   OP_GETFIELD = 16,
-  OP_GETTAG = 18
+  OP_GETTAG = 18,
+  OP_NE = 19,
+  OP_LE = 20,
+  OP_GT = 21,
+  OP_GE = 22
 };
 
 static FILE *out_file;
@@ -434,9 +438,22 @@ static void parse_cmp(void)
 {
   parse_add();
   if (take_char('<')) {
+    int has_eq = take_char('=');
     emit_byte(OP_PUSH);
     parse_add();
-    emit_byte(OP_LT);
+    if (has_eq) emit_byte(OP_LE);
+    else emit_byte(OP_LT);
+  } else if (take_char('>')) {
+    int has_eq = take_char('=');
+    emit_byte(OP_PUSH);
+    parse_add();
+    if (has_eq) emit_byte(OP_GE);
+    else emit_byte(OP_GT);
+  } else if (take_char('!')) {
+    expect_char('=');
+    emit_byte(OP_PUSH);
+    parse_add();
+    emit_byte(OP_NE);
   } else if (take_char('=')) {
     expect_char('=');
     emit_byte(OP_PUSH);
