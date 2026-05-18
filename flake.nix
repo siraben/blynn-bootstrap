@@ -788,6 +788,24 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           install -Dm644 ${mlcSeedHost}/share/mlc/tests/ok.mzbc "$out/ok.mzbc"
         '';
 
+        mlcByteSeed = stageRun {
+          pname = "mlc-byte-seed";
+          nativeBuildInputs = [
+            mlcSeedM2
+            mzvmSeedM2
+          ];
+          description = "Current mlc.ml compiled to MZBC by the M2-built seed compiler";
+          buildScript = ''
+            cp ${mlcSrc}/mlc.ml mlc.ml
+            ${mlcSeedM2}/bin/mlc-seed mlc.ml mlc.byte
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed mlc.byte)"
+            test "$actual" = OK
+          '';
+          installScript = ''
+            install -Dm644 mlc.byte "$out/share/mlc/mlc.byte"
+          '';
+        };
+
         hccHostGhcNative = pkgs.callPackage ./nix/hcc-ghc.nix {
           stdenv = pkgs.stdenv;
           pname = "hcc-host-ghc-native";
@@ -1419,6 +1437,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           mlc = {
             seed.host = mlcSeedHost;
             seed.m2 = mlcSeedM2;
+            byte.seed = mlcByteSeed;
           };
           mlc-seed.host = mlcSeedHost;
           mlc-seed.m2 = mlcSeedM2;
@@ -1465,6 +1484,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             tinyccM1.native-vs-faithful = tinyccM1CompareNativeFaithful;
             mzvm.host-vs-seed = mzvmHostVsSeed;
             mlc.seed.host-vs-m2 = mlcSeedHostVsM2;
+            mlc.byte.seed = mlcByteSeed;
           };
         };
       in {
@@ -1476,6 +1496,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           mzvm-host-vs-seed = mzvmHostVsSeed;
           mlc-seed-m2 = mlcSeedM2;
           mlc-seed-host-vs-m2 = mlcSeedHostVsM2;
+          mlc-byte-seed = mlcByteSeed;
         };
 
         legacyPackages = packageTree;

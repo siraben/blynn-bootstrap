@@ -80,9 +80,43 @@ static int is_ident_char(int c)
   return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
 }
 
+static int at_comment_start(void)
+{
+  return pos + 1 < src_len && src[pos] == '(' && src[pos + 1] == '*';
+}
+
+static void skip_comment(void)
+{
+  long depth = 1;
+  pos = pos + 2;
+  while (pos < src_len && depth > 0) {
+    if (pos + 1 < src_len && src[pos] == '(' && src[pos + 1] == '*') {
+      depth = depth + 1;
+      pos = pos + 2;
+    } else if (pos + 1 < src_len && src[pos] == '*' && src[pos + 1] == ')') {
+      depth = depth - 1;
+      pos = pos + 2;
+    } else {
+      pos = pos + 1;
+    }
+  }
+  if (depth != 0) die("unterminated comment");
+}
+
 static void skip_space(void)
 {
-  while (pos < src_len && is_space(src[pos])) pos = pos + 1;
+  int again = 1;
+  while (again) {
+    again = 0;
+    while (pos < src_len && is_space(src[pos])) {
+      pos = pos + 1;
+      again = 1;
+    }
+    if (pos < src_len && at_comment_start()) {
+      skip_comment();
+      again = 1;
+    }
+  }
 }
 
 static int keyword_at(const char *word)
