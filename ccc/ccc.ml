@@ -38,6 +38,9 @@ let rec is_hex_digit ch =
   if ch < 97 then 0 else
   if ch < 103 then 1 else 0
 in
+let rec is_octal_digit ch =
+  if ch < 48 then 0 else if ch < 56 then 1 else 0
+in
 let rec hex_value ch =
   if is_digit ch then ch - 48 else
   if ch < 97 then (ch - 65) + 10 else (ch - 97) + 10
@@ -198,6 +201,16 @@ let rec parse_hex_loop state =
   let ch = src.[pos] in
   if is_hex_digit ch then parse_hex_loop (src, (pos + 1, (acc * 16) + (hex_value ch))) else (acc, pos)
 in
+let rec parse_octal_escape_loop state =
+  let (src, pair) = state in
+  let (pos, pair2) = pair in
+  let (count, acc) = pair2 in
+  let ch = src.[pos] in
+  if count < 3 then
+    if is_octal_digit ch then parse_octal_escape_loop (src, (pos + 1, (count + 1, (acc * 8) + (ch - 48)))) else (acc, pos)
+  else
+    (acc, pos)
+in
 let rec parse_number state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
@@ -218,20 +231,29 @@ let rec parse_signed_number state =
   else
     parse_number (src, pos)
 in
+let rec parse_escape_value state =
+  let (src, pos) = state in
+  let esc = src.[pos] in
+  if esc == 120 then parse_hex_loop (src, (pos + 1, 0)) else
+  if is_octal_digit esc then parse_octal_escape_loop (src, (pos, (0, 0))) else
+  let value =
+    if esc == 97 then 7 else
+    if esc == 98 then 8 else
+    if esc == 110 then 10 else
+    if esc == 114 then 13 else
+    if esc == 116 then 9 else esc
+  in
+  (value, pos + 1)
+in
 let rec parse_char_value state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
   if src.[pos] == 39 then
     if src.[pos + 1] == 92 then
-      let esc = src.[pos + 2] in
-      let value =
-        if esc == 97 then 7 else
-        if esc == 98 then 8 else
-        if esc == 110 then 10 else
-        if esc == 114 then 13 else
-        if esc == 116 then 9 else esc
-      in
-      (value, pos + 4)
+      let escaped = parse_escape_value (src, pos + 2) in
+      let (value, value_end) = escaped in
+      let p1 = expect_ch (src, (value_end, 39)) in
+      (value, p1)
     else
       (src.[pos + 1], pos + 3)
   else
@@ -244,7 +266,22 @@ in
 let rec parse_string_value state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
-  if src.[pos] == 34 then (1000, skip_string_literal (src, pos + 1)) else exit 1
+  if src.[pos] == 34 then
+    let first =
+      if src.[pos + 1] == 92 then parse_escape_value (src, pos + 2) else (src.[pos + 1], pos + 2)
+    in
+    let (first_value, first_end) = first in
+    let _ = first_end in
+    let literal_end = skip_string_literal (src, pos + 1) in
+    let after_literal = skip_space (src, literal_end) in
+    if src.[after_literal] == 91 then
+      let index = parse_number (src, after_literal + 1) in
+      let (index_value, index_end) = index in
+      let p1 = expect_ch (src, (index_end, 93)) in
+      if index_value == 0 then (first_value, p1) else (0, p1)
+    else
+      (1000, literal_end)
+  else exit 1
 in
 let rec string_at state =
   let index = state in
@@ -596,8 +633,19 @@ let rec parse_params state =
   let p1 = skip_space (src, p0) in
   if src.[p1] == 41 then (0 - 1, p1 + 1) else
   if (src.[p1] == 118) * (src.[p1 + 1] == 111) * (src.[p1 + 2] == 105) * (src.[p1 + 3] == 100) then
-    let p2 = expect_ch (src, (p1 + 4, 41)) in
-    (0 - 1, p2)
+    let p1_next = skip_space (src, p1 + 4) in
+    if src.[p1_next] == 41 then (0 - 1, p1_next + 1) else
+      let p2_next = if src.[p1_next] == 42 then skip_space (src, p1_next + 1) else p1_next in
+      let param = parse_ident (src, p2_next) in
+      let (param_name, param_end) = param in
+      let p3 =
+        let param_next = skip_space (src, param_end) in
+        if src.[param_next] == 44 then
+          (skip_to_close_paren (src, param_next + 1)) + 1
+        else
+          expect_ch (src, (param_end, 41))
+      in
+      (param_name, p3)
   else
     let p2 = expect_int (src, p1) in
     let p2_space = skip_space (src, p2) in
@@ -672,6 +720,13 @@ let rec parse_local_init state =
   let ident = parse_ident (src, ident_pos) in
   let (name, name_end) = ident in
   let name_next = skip_space (src, name_end) in
+  if src.[name_next] == 91 then
+    let size = parse_number (src, name_next + 1) in
+    let (_size_value, size_end) = size in
+    let p0_close = expect_ch (src, (size_end, 93)) in
+    let p0_semi = expect_ch (src, (p0_close, 59)) in
+    (p0_semi, extend_env (name, (0, env)))
+  else
   if src.[name_next] == 59 then (name_next + 1, extend_env (name, (0, env))) else
     let p1 = expect_ch (src, (name_end, 61)) in
     let value = parse_expr_value (src, (p1, (funcs, env))) in
@@ -986,11 +1041,13 @@ let rec parse_program_loop state =
         let _ = expect_ch (src, (p4, 125)) in
         code
       else if (name == 253601173) + (name == 221753487) then
-        parse_program_loop (src, ((skip_to_close_brace (src, p2)) + 1, extend_func (name, (0, (0, funcs)))))
+        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (0, (0, funcs)))))
       else if (name == 913327068) + (name == 632251188) then
-        parse_program_loop (src, ((skip_to_close_brace (src, p2)) + 1, extend_func (name, (0, (0, funcs)))))
+        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (0, (0, funcs)))))
+      else if name == 155589584 then
+        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (0, (0, funcs)))))
       else if (name == 402468489) + (name == 402468487) then
-        parse_program_loop (src, ((skip_to_close_brace (src, p2)) + 1, extend_func (name, (4, (0, funcs)))))
+        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (4, (0, funcs)))))
       else
         let ret = parse_func_return (src, (p2, param)) in
         let (func_value, p3) = ret in
