@@ -26,7 +26,8 @@ enum {
   N_SEQ = 18,
   N_WRITE_BYTE = 19,
   N_READ_BYTE = 20,
-  N_NEG = 21
+  N_NEG = 21,
+  N_EXIT = 22
 };
 
 static char *src;
@@ -172,6 +173,7 @@ static int keyword_span(long start, long len)
     span_eq(start, len, "if") || span_eq(start, len, "then") ||
     span_eq(start, len, "else") || span_eq(start, len, "fun") ||
     span_eq(start, len, "true") || span_eq(start, len, "false") ||
+    span_eq(start, len, "exit") ||
     span_eq(start, len, "read_byte") || span_eq(start, len, "write_byte");
 }
 
@@ -337,6 +339,11 @@ static long parse_prefix(void)
   }
   if (take_keyword("write_byte")) {
     node = new_node(N_WRITE_BYTE);
+    left[node] = parse_prefix();
+    return node;
+  }
+  if (take_keyword("exit")) {
+    node = new_node(N_EXIT);
     left[node] = parse_prefix();
     return node;
   }
@@ -566,6 +573,10 @@ static long eval(long node, long env)
     a = int_val(eval(left[node], env));
     fputc((int)(a & 255), stdout);
     return val_int(0);
+  }
+  if (k == N_EXIT) {
+    a = int_val(eval(left[node], env));
+    exit((int)a);
   }
   if (k == N_READ_BYTE) {
     c = fgetc(stdin);

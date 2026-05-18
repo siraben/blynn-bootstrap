@@ -51,7 +51,7 @@ hex0 seed
   → M2-Planet
   → mzvm-seed         (ZINC VM, ~1k LoC of M2-compatible C)
   → mlc-interp-seed   (tree-walking core-ML interpreter, M2-compatible C)
-  → mlc stage 0..N    (core ML sources grown in named bootstrap stages)
+  → mlc stage 0..N    (parenthetical/level-file style handoff stages)
   → mlc.byte          (self-hosted mini-OCaml compiler, ~1.5k LoC of mini-OCaml)
   → ccc.byte          (C → M1 asm compiler, ~5–8k LoC of mini-OCaml)
   → TinyCC
@@ -214,6 +214,12 @@ lambdas or direct functions, application, `if`, `let` / `let rec`, tuples,
 arrays/bytes, and primitive I/O. It should not grow a full ADT declaration
 parser or pattern compiler.
 
+The first staged handoff should follow the early Blynn pattern exemplified by
+`parenthetically`: a small stage fully parses a tiny next-stage language and
+emits the next runnable image. In this tree, `01-parenthetical.ml` is that
+first handoff: it runs under `mlc-interp-seed`, parses a parenthesized MZBC
+assembly source, and emits a `.mzbc` image that `mzvm-seed` executes.
+
 The first real parser/compiler for ADTs and `match` lives in `mlc.ml` itself:
 `mlc.ml` parses the full mini-OCaml source language, represents constructors
 and patterns as real AST nodes, lowers pattern matching to the core language,
@@ -293,9 +299,13 @@ of the eventual chain:
 3. **`mlc-interp-seed.m2`**: M2-Planet compiles `mlc-interp-seed.c`.
    Self-check: interprets the first core stage and matches the host-built
    interpreter output.
-4. **`mlc stage 0..N`**: the C interpreter runs named ML bootstrap stages,
-   in the same style as Blynn's `methodically → party → crossly → precisely`
-   chain, until the ML implementation can emit `.mzbc`.
+4. **`mlc stage 0..N`**: the C interpreter runs named ML bootstrap stages.
+   Early stages follow Blynn's parenthetical level-file style: each stage
+   fully parses the next stage's small source language and emits the next
+   runnable artifact. Later stages converge toward the fuller
+   `methodically → party → crossly → precisely` style, where a stage consumes a
+   source bundle with parser/type/runtime/compiler pieces and emits the next
+   compiler.
 5. **`mlc.byte`** (committed): the staged ML compiler compiles `mlc.ml` →
    `mlc.byte`.
    This artifact is checked into the tree the first time. Thereafter the

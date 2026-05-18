@@ -100,6 +100,9 @@ tree-walking interpreter for a tiny core with `let`, `let rec f x = ...`,
 `fun x -> ...`, application, conditionals, arithmetic/comparison, sequencing,
 `read_byte`, and `write_byte`. `mlc/stages/00-core.ml` is the first named
 stage smoke input and is checked under both host and M2 builds.
+`mlc/stages/01-parenthetical.ml` is the first real handoff stage in the style
+of Blynn's `parenthetically`: it fully parses a tiny parenthesized MZBC
+assembly language and emits a bytecode artifact that the next VM stage can run.
 
 The older `mlc-seed.c` is deliberately smaller than the full language and is
 now transitional. It is a tiny recursive-descent compiler for `let` bindings,
