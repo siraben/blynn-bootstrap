@@ -350,6 +350,13 @@ let rec parse_string_char state =
   let ch = src.[pos] in
   if ch == '\\' then parse_string_escape (src, pos + 1) else (ch, pos + 1)
 in
+let rec parse_char_literal state =
+  let (src, pos0) = state in
+  let pos = pos0 + 1 in
+  let parsed = parse_string_char (src, pos) in
+  let (ch, next_pos) = parsed in
+  p_return (p_need_char (src, (next_pos, '\'')), EInt ch)
+in
 let rec parse_write_string_loop state =
   let (src, pair) = state in
   let (pos, pair2) = pair in
@@ -485,7 +492,7 @@ let rec parse_expr_prec state =
         else if is_false_at (src, atom_pos) then
           p_return (atom_pos + 5, EBool 0)
         else if ch == '\'' then
-          p_return (atom_pos + 3, EInt (src.[atom_pos + 1]))
+          parse_char_literal (src, atom_pos)
         else if is_digit ch then
           parse_number (src, atom_pos)
         else

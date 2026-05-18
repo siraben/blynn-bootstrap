@@ -1538,6 +1538,12 @@ OK"
             printf "write_byte 'O'" | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-char.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-char.mzbc)"
             test "$actual" = O
+            cat > 03-escaped-char.ml <<'EOF'
+write_byte (if '\n' == 10 then 79 else 88); write_byte (if '\\' == 92 then 75 else 88)
+EOF
+            ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc < 03-escaped-char.ml > 03-escaped-char.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-escaped-char.mzbc)"
+            test "$actual" = OK
             printf 'write_byte (40 + 39)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-add.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-add.mzbc)"
             test "$actual" = O
@@ -1619,6 +1625,7 @@ OK"
             install -Dm644 03-write-string.mzbc "$out/share/mlc/stages/03-write-string.mzbc"
             install -Dm644 03-unit.mzbc "$out/share/mlc/stages/03-unit.mzbc"
             install -Dm644 03-char.mzbc "$out/share/mlc/stages/03-char.mzbc"
+            install -Dm644 03-escaped-char.mzbc "$out/share/mlc/stages/03-escaped-char.mzbc"
             install -Dm644 03-add.mzbc "$out/share/mlc/stages/03-add.mzbc"
             install -Dm644 03-sub.mzbc "$out/share/mlc/stages/03-sub.mzbc"
             install -Dm644 03-mul.mzbc "$out/share/mlc/stages/03-mul.mzbc"
