@@ -163,6 +163,21 @@ let rec parse_char_value state =
   else
     exit 1
 in
+let rec skip_string_literal state =
+  let (src, pos) = state in
+  if src.[pos] == 34 then pos + 1 else skip_string_literal (src, pos + 1)
+in
+let rec parse_string_value state =
+  let (src, pos0) = state in
+  let pos = skip_space (src, pos0) in
+  if src.[pos] == 34 then (1000, skip_string_literal (src, pos + 1)) else exit 1
+in
+let rec string_at state =
+  let index = state in
+  if index == 0 then 109 else
+  if index == 1 then 101 else
+  if index == 2 then 115 else 0
+in
 let rec empty_funcs unit =
   let _ = unit in
   (0 - 1, (0, (0, 0)))
@@ -228,6 +243,7 @@ let rec parse_expr_mode state =
       let (value, value_end) = expr in
       let p1 = expect_ch (src, (value_end, 41)) in
       (value, p1)
+    else if src.[pos] == 34 then parse_string_value (src, pos)
     else if src.[pos] == 39 then parse_char_value (src, pos)
     else if is_digit (src.[pos]) then parse_number (src, pos) else
       let ident = parse_ident (src, pos) in
@@ -247,6 +263,11 @@ let rec parse_expr_mode state =
         else
           let p2 = expect_ch (src, (arg_end, 41)) in
           (apply_func (funcs, (name, arg_value)), p2)
+      else if src.[after_name] == 91 then
+        let index = parse_expr_mode (src, (after_name + 1, (funcs, (env, 0)))) in
+        let (index_value, index_end) = index in
+        let p1 = expect_ch (src, (index_end, 93)) in
+        (string_at index_value, p1)
       else if src.[after_name] == 61 then
         if src.[after_name + 1] == 61 then
           (find_env (env, name), name_end)
@@ -434,7 +455,9 @@ let rec parse_local_init state =
   let (pos0, pair2) = pair in
   let (funcs, env) = pair2 in
   let p0 = expect_local_type (src, pos0) in
-  let ident = parse_ident (src, p0) in
+  let p0_next = skip_space (src, p0) in
+  let ident_pos = if src.[p0_next] == 42 then p0_next + 1 else p0 in
+  let ident = parse_ident (src, ident_pos) in
   let (name, name_end) = ident in
   let name_next = skip_space (src, name_end) in
   if src.[name_next] == 59 then (name_next + 1, extend_env (name, (0, env))) else
@@ -471,16 +494,17 @@ let rec parse_aug_assignment state =
   let p1 = expect_ch (src, (value_end, 59)) in
   (p1, extend_env (name, (next_value, env)))
 in
-let rec parse_postdec_statement state =
+let rec parse_postfix_update_statement state =
   let (src, pair) = state in
   let (pos0, env) = pair in
   let ident = parse_ident (src, pos0) in
   let (name, name_end) = ident in
   let old_value = find_env (env, name) in
-  let p0 = expect_ch (src, (name_end, 45)) in
-  let p1 = expect_ch (src, (p0, 45)) in
+  let op = skip_space (src, name_end) in
+  let p1 = expect_ch (src, (op + 1, src.[op])) in
   let p2 = expect_ch (src, (p1, 59)) in
-  (p2, extend_env (name, (old_value - 1, env)))
+  let new_value = if src.[op] == 43 then old_value + 1 else old_value - 1 in
+  (p2, extend_env (name, (new_value, env)))
 in
 let rec parse_main_prefix state =
   let (src, pair) = state in
@@ -678,7 +702,7 @@ let rec parse_main_body state =
     if cond_value == 0 then
       parse_main_body (src, (skip_statement (src, body_pos), (funcs, env)))
     else
-      let body = parse_postdec_statement (src, (body_pos, env)) in
+      let body = parse_postfix_update_statement (src, (body_pos, env)) in
       let (body_end, body_env) = body in
       let _ = body_end in
       parse_main_body (src, (pos, (funcs, body_env)))
