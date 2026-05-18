@@ -1526,6 +1526,8 @@ DEFINE SYSCALL 0F05
             check_return ${./tests/mescc/scaffold/37-compare-assign.c} 0
             check_return ${./tests/mescc/scaffold/40-if-else.c} 0
             check_return ${./tests/mescc/scaffold/42-goto-label.c} 0
+            check_return ${./tests/mescc/scaffold/45-void-call.c} 0
+            check_return ${./tests/mescc/scaffold/70-function-modulo.c} 0
             printf 'int main(){return 42;}' > return-42.c
             check_return return-42.c 42
           '';

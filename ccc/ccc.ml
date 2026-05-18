@@ -275,6 +275,10 @@ let rec parse_expr_mode state =
     let right = parse_expr_mode (src, (next + 1, (funcs, (env, 1)))) in
     let (right_value, right_end) = right in
     (left_value / right_value, right_end)
+  else if src.[next] == 37 then
+    let right = parse_expr_mode (src, (next + 1, (funcs, (env, 1)))) in
+    let (right_value, right_end) = right in
+    (left_value - ((left_value / right_value) * right_value), right_end)
   else if (src.[next] == 60) * (src.[next + 1] == 60) then
     let right = parse_expr_mode (src, (next + 2, (funcs, (env, 1)))) in
     let (right_value, right_end) = right in
@@ -335,6 +339,7 @@ let rec parse_func_return state =
   let (src, pair) = state in
   let (pos0, param) = pair in
   let start = skip_space (src, pos0) in
+  if src.[start] == 125 then ((0, 0), start) else
   if is_return_at (src, start) then
   let p0 = expect_return (src, start) in
   let p1 = skip_space (src, p0) in
