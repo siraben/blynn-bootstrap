@@ -52,7 +52,7 @@ jobs:
           done
 
   build:
-    name: ${{ matrix.suite }} (${{ matrix.arch }}, ${{ matrix.check_attr || matrix.attr }})
+    name: ${{ matrix.suite }} (${{ matrix.arch }}, ${{ matrix.attr }})
     runs-on: ${{ matrix.runner }}
     timeout-minutes: ${{ matrix.timeout }}
     strategy:
@@ -170,7 +170,6 @@ jobs:
             runner: ubuntu-latest
             timeout: 720
             attr: tests.smoke.m1-aarch64
-            check_attr: tinycc.m2.precisely.m2
     steps:
       - uses: actions/checkout@v4
       - name: Install Nix
