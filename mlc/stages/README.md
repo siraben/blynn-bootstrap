@@ -37,16 +37,19 @@ Current stages:
 - `03-ok.ml0` and `03-char-string.ml0` are small ML0 sources accepted by
   `02-ml0-compiler.ml`.
 - `mlc/mlc.ml` is also compiled by `02-ml0-compiler.ml` in the current gate;
-  the emitted bytecode runs under `mzvm-seed` as a tiny compiler, emits real
-  bytecode for constants, chars, a top-level `let`, variable lookup, integer
-  arithmetic, integer comparisons, and conditional expressions. It accepts `write_byte (40+39)`,
-  `write_byte 'O'`, `write_string "OK"`, `let x = 40 in write_byte (x + 39)`,
-  recursively nested and parenthesized top-level `let` bindings with shadowing, and true/false
+  the emitted bytecode runs under `mzvm-seed` as a tiny compiler with a
+  one-lookahead expression parser. It emits real bytecode for constants, chars,
+  `read_byte`, `Bytes.create`, dynamic byte reads/writes, a top-level `let`,
+  variable lookup, integer arithmetic, integer comparisons, nested/full
+  conditionals, arbitrary final direct calls, and direct unary `let rec`
+  functions. It accepts `write_byte (40+39)`, `write_byte 'O'`,
+  `write_string "OK"`, `let x = 40 in write_byte (x + 39)`, recursively nested
+  and parenthesized top-level `let` bindings with shadowing, and true/false
   `if ... then ... else ...` byte-output fixtures, including conditions formed
   with `<`, `==`, `!=`, `<=`, `>`, and `>=`. It now also parses leading
-  `type` declarations into a constructor environment, records simple unary
-  `let rec` functions to runtime direct calls, uses bounded keyword lookahead
-  for expression-level `let` and `if`, and lowers the first
+  `type` declarations into a constructor environment, uses bounded keyword
+  lookahead for expression-level terminators and keyword-prefix identifiers, and
+  lowers the first
   constructor/wildcard `match` forms, including tuple payload construction and
   destructuring in `adt-tuple-payload.ml` plus recursive ADT traversal in
   `adt-recursion.ml`, to VM block allocation, tag tests, field extraction,

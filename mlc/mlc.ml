@@ -105,6 +105,20 @@ let rec emit_call_write_byte emit =
   let _ = emit_u32_if (emit, 1) in
   9
 in
+let rec emit_call_exit emit =
+  let _ = emit_byte_if (emit, 14) in
+  let _ = emit_u32_if (emit, 1) in
+  let _ = emit_u32_if (emit, 2) in
+  9
+in
+let rec emit_call_read_byte emit =
+  let _ = emit_byte_if (emit, 1) in
+  let _ = emit_u32_if (emit, 0) in
+  let _ = emit_byte_if (emit, 14) in
+  let _ = emit_u32_if (emit, 1) in
+  let _ = emit_u32_if (emit, 0) in
+  14
+in
 let rec emit_call state =
   let (emit, target) = state in
   let _ = emit_byte_if (emit, 23) in
@@ -135,11 +149,24 @@ let rec emit_makeblock state =
   let _ = emit_u32_if (emit, size) in
   9
 in
+let rec emit_makeblock_dyn emit =
+  let _ = emit_byte_if (emit, 28) in
+  let _ = emit_u32_if (emit, 0) in
+  5
+in
 let rec emit_getfield state =
   let (emit, index) = state in
   let _ = emit_byte_if (emit, 16) in
   let _ = emit_u32_if (emit, index) in
   5
+in
+let rec emit_getfield_dyn emit =
+  let _ = emit_byte_if (emit, 25) in
+  1
+in
+let rec emit_setfield_dyn emit =
+  let _ = emit_byte_if (emit, 26) in
+  1
 in
 let rec emit_gettag emit =
   let _ = emit_byte_if (emit, 18) in
@@ -279,159 +306,102 @@ in
 let rec is_type_at input =
   let (src, pos0) = input in
   let pos = skip_space (src, pos0) in
-  if src.[pos] == 116 then
-    if src.[pos + 1] == 121 then
-      if src.[pos + 2] == 112 then
-        if src.[pos + 3] == 101 then
-          if is_ident (src.[pos + 4]) then 0 else 1
-        else 0
-      else 0
-    else 0
+  if (src.[pos] == 116) * (src.[pos + 1] == 121) then
+    (src.[pos + 2] == 112) * (src.[pos + 3] == 101) * (1 - (is_ident (src.[pos + 4])))
   else 0
 in
 let rec is_of_at input =
   let (src, pos0) = input in
   let pos = skip_space (src, pos0) in
-  if src.[pos] == 111 then
-    if src.[pos + 1] == 102 then
-      if is_ident (src.[pos + 2]) then 0 else 1
-    else 0
-  else 0
+  let ok0 = src.[pos] == 111 in
+  let ok1 = ok0 * (src.[pos + 1] == 102) in
+  ok1 * (1 - (is_ident (src.[pos + 2])))
 in
 let rec is_match_at input =
   let (src, pos0) = input in
   let pos = skip_space (src, pos0) in
-  if src.[pos] == 109 then
-    if src.[pos + 1] == 97 then
-      if src.[pos + 2] == 116 then
-        if src.[pos + 3] == 99 then
-          if src.[pos + 4] == 104 then
-            if is_ident (src.[pos + 5]) then 0 else 1
-          else 0
-        else 0
-      else 0
-    else 0
+  if (src.[pos] == 109) * (src.[pos + 1] == 97) * (src.[pos + 2] == 116) then
+    (src.[pos + 3] == 99) * (src.[pos + 4] == 104) * (1 - (is_ident (src.[pos + 5])))
   else 0
 in
 let rec is_write_byte_at input =
   let (src, pos0) = input in
   let pos = skip_space (src, pos0) in
-  if src.[pos] == 119 then
-    if src.[pos + 1] == 114 then
-      if src.[pos + 2] == 105 then
-        if src.[pos + 3] == 116 then
-          if src.[pos + 4] == 101 then
-            if src.[pos + 5] == 95 then
-              if src.[pos + 6] == 98 then
-                if src.[pos + 7] == 121 then
-                  if src.[pos + 8] == 116 then
-                    if src.[pos + 9] == 101 then
-                      if is_ident (src.[pos + 10]) then 0 else 1
-                    else 0
-                  else 0
-                else 0
-              else 0
-            else 0
-          else 0
-        else 0
-      else 0
+  if (src.[pos] == 119) * (src.[pos + 1] == 114) * (src.[pos + 2] == 105) * (src.[pos + 3] == 116) then
+    if (src.[pos + 4] == 101) * (src.[pos + 5] == 95) * (src.[pos + 6] == 98) then
+      (src.[pos + 7] == 121) * (src.[pos + 8] == 116) * (src.[pos + 9] == 101) * (1 - (is_ident (src.[pos + 10])))
     else 0
   else 0
 in
 let rec is_write_string_at input =
   let (src, pos0) = input in
   let pos = skip_space (src, pos0) in
-  if src.[pos] == 119 then
-    if src.[pos + 1] == 114 then
-      if src.[pos + 2] == 105 then
-        if src.[pos + 3] == 116 then
-          if src.[pos + 4] == 101 then
-            if src.[pos + 5] == 95 then
-              if src.[pos + 6] == 115 then
-                if src.[pos + 7] == 116 then
-                  if src.[pos + 8] == 114 then
-                    if src.[pos + 9] == 105 then
-                      if src.[pos + 10] == 110 then
-                        if src.[pos + 11] == 103 then
-                          if is_ident (src.[pos + 12]) then 0 else 1
-                        else 0
-                      else 0
-                    else 0
-                  else 0
-                else 0
-              else 0
-            else 0
-          else 0
-        else 0
-      else 0
+  if (src.[pos] == 119) * (src.[pos + 1] == 114) * (src.[pos + 2] == 105) * (src.[pos + 3] == 116) then
+    if (src.[pos + 4] == 101) * (src.[pos + 5] == 95) * (src.[pos + 6] == 115) * (src.[pos + 7] == 116) then
+      (src.[pos + 8] == 114) * (src.[pos + 9] == 105) * (src.[pos + 10] == 110) * (src.[pos + 11] == 103) * (1 - (is_ident (src.[pos + 12])))
     else 0
   else 0
 in
 let rec is_if_at input =
   let (src, pos0) = input in
   let pos = skip_space (src, pos0) in
-  if src.[pos] == 105 then
-    if src.[pos + 1] == 102 then
-      if is_ident (src.[pos + 2]) then 0 else 1
+  let ok0 = src.[pos] == 105 in
+  let ok1 = ok0 * (src.[pos + 1] == 102) in
+  ok1 * (1 - (is_ident (src.[pos + 2])))
+in
+let rec is_exit_at input =
+  let (src, pos0) = input in
+  let pos = skip_space (src, pos0) in
+  if (src.[pos] == 101) * (src.[pos + 1] == 120) then
+    (src.[pos + 2] == 105) * (src.[pos + 3] == 116) * (1 - (is_ident (src.[pos + 4])))
+  else 0
+in
+let rec is_read_byte_at input =
+  let (src, pos0) = input in
+  let pos = skip_space (src, pos0) in
+  if (src.[pos] == 114) * (src.[pos + 1] == 101) * (src.[pos + 2] == 97) * (src.[pos + 3] == 100) then
+    if (src.[pos + 4] == 95) * (src.[pos + 5] == 98) * (src.[pos + 6] == 121) then
+      (src.[pos + 7] == 116) * (src.[pos + 8] == 101) * (1 - (is_ident (src.[pos + 9])))
+    else 0
+  else 0
+in
+let rec is_bytes_create_at input =
+  let (src, pos0) = input in
+  let pos = skip_space (src, pos0) in
+  if (src.[pos] == 66) * (src.[pos + 1] == 121) * (src.[pos + 2] == 116) * (src.[pos + 3] == 101) then
+    if (src.[pos + 4] == 115) * (src.[pos + 5] == 46) * (src.[pos + 6] == 99) * (src.[pos + 7] == 114) then
+      (src.[pos + 8] == 101) * (src.[pos + 9] == 97) * (src.[pos + 10] == 116) * (src.[pos + 11] == 101) * (1 - (is_ident (src.[pos + 12])))
     else 0
   else 0
 in
 let rec is_then_at input =
   let (src, pos0) = input in
   let pos = skip_space (src, pos0) in
-  if src.[pos] == 116 then
-    if src.[pos + 1] == 104 then
-      if src.[pos + 2] == 101 then
-        if src.[pos + 3] == 110 then
-          if is_ident (src.[pos + 4]) then 0 else 1
-        else 0
-      else 0
-    else 0
+  if (src.[pos] == 116) * (src.[pos + 1] == 104) then
+    (src.[pos + 2] == 101) * (src.[pos + 3] == 110) * (1 - (is_ident (src.[pos + 4])))
   else 0
 in
 let rec is_else_at input =
   let (src, pos0) = input in
   let pos = skip_space (src, pos0) in
-  if src.[pos] == 101 then
-    if src.[pos + 1] == 108 then
-      if src.[pos + 2] == 115 then
-        if src.[pos + 3] == 101 then
-          if is_ident (src.[pos + 4]) then 0 else 1
-        else 0
-      else 0
-    else 0
+  if (src.[pos] == 101) * (src.[pos + 1] == 108) then
+    (src.[pos + 2] == 115) * (src.[pos + 3] == 101) * (1 - (is_ident (src.[pos + 4])))
   else 0
 in
 let rec is_let_at input =
   let (src, pos0) = input in
   let pos = skip_space (src, pos0) in
-  if src.[pos] == 108 then
-    if src.[pos + 1] == 101 then
-      if src.[pos + 2] == 116 then
-        if is_ident (src.[pos + 3]) then 0 else 1
-      else 0
-    else 0
-  else 0
+  (src.[pos] == 108) * (src.[pos + 1] == 101) * (src.[pos + 2] == 116) * (1 - (is_ident (src.[pos + 3])))
 in
 let rec is_in_at input =
   let (src, pos0) = input in
   let pos = skip_space (src, pos0) in
-  if src.[pos] == 105 then
-    if src.[pos + 1] == 110 then
-      if is_ident (src.[pos + 2]) then 0 else 1
-    else 0
-  else 0
+  (src.[pos] == 105) * (src.[pos + 1] == 110) * (1 - (is_ident (src.[pos + 2])))
 in
 let rec is_rec_at input =
   let (src, pos0) = input in
   let pos = skip_space (src, pos0) in
-  if src.[pos] == 114 then
-    if src.[pos + 1] == 101 then
-      if src.[pos + 2] == 99 then
-        if is_ident (src.[pos + 3]) then 0 else 1
-      else 0
-    else 0
-  else 0
+  (src.[pos] == 114) * (src.[pos + 1] == 101) * (src.[pos + 2] == 99) * (1 - (is_ident (src.[pos + 3])))
 in
 let rec expect_with input =
   let (src, pos0) = input in
@@ -556,9 +526,61 @@ let rec compile_simple_expr input =
       if src.[inner_end] == 41 then (inner_len, inner_end + 1) else exit 1
     else
       compile_simple_atom (src, (pos, (env, (ctors, emit))))
-  in
-  let (left_len, next0) = left in
-  let next = skip_space (src, next0) in
+	  in
+	  let (left_len0, next00) = left in
+	  let next1 = skip_space (src, next00) in
+	  let left =
+	    if src.[next1] == 46 then
+	      let open_ch = src.[next1 + 1] in
+	      if open_ch == 91 then
+	        let push_base = emit_push (emit) in
+	        let index = compile_simple_expr (src, (next1 + 2, (shift_env env, (ctors, emit)))) in
+	        let (index_len, index_end0) = index in
+	        let index_end = skip_space (src, index_end0) in
+	        if src.[index_end] == 93 then
+	          let after_index = skip_space (src, index_end + 1) in
+	          if src.[after_index] == 60 then
+	            if src.[after_index + 1] == 45 then
+	              let push_index = emit_push (emit) in
+	              let value = compile_simple_expr (src, (after_index + 2, (shift_env (shift_env env), (ctors, emit)))) in
+	              let (value_len, value_end) = value in
+	              let set_len = emit_setfield_dyn (emit) in
+	              (left_len0 + push_base + index_len + push_index + value_len + set_len, value_end)
+	            else
+	              exit 1
+	          else
+	            let get_len = emit_getfield_dyn (emit) in
+	            (left_len0 + push_base + index_len + get_len, index_end + 1)
+	        else
+	          exit 1
+	      else if open_ch == 40 then
+	        let push_base = emit_push (emit) in
+	        let index = compile_simple_expr (src, (next1 + 2, (shift_env env, (ctors, emit)))) in
+	        let (index_len, index_end0) = index in
+	        let index_end = skip_space (src, index_end0) in
+	        if src.[index_end] == 41 then
+	          let after_index = skip_space (src, index_end + 1) in
+	          if src.[after_index] == 60 then
+	            if src.[after_index + 1] == 45 then
+	              let push_index = emit_push (emit) in
+	              let value = compile_simple_expr (src, (after_index + 2, (shift_env (shift_env env), (ctors, emit)))) in
+	              let (value_len, value_end) = value in
+	              let set_len = emit_setfield_dyn (emit) in
+	              (left_len0 + push_base + index_len + push_index + value_len + set_len, value_end)
+	            else
+	              exit 1
+	          else
+	            let get_len = emit_getfield_dyn (emit) in
+	            (left_len0 + push_base + index_len + get_len, index_end + 1)
+	        else
+	          exit 1
+	      else
+	        left
+	    else
+	      left
+	  in
+	  let (left_len, next0) = left in
+	  let next = skip_space (src, next0) in
   if src.[next] == 43 then
     let push_len = emit_push (emit) in
     let right = compile_simple_expr (src, (next + 1, (shift_env (env), (ctors, emit)))) in
@@ -678,7 +700,44 @@ let rec compile_expr input =
     let (expr_len, done_pos) = expr in
     let call_len = emit_call_write_byte (emit) in
     (expr_len + call_len, done_pos)
-  else if is_let_at (src, pos) then
+	  else if is_exit_at (src, pos) then
+	    let p = skip_space (src, pos + 4) in
+	    let expr = compile_expr (src, (p, (env, (ctors, (funcs, emit))))) in
+	    let (expr_len, done_pos) = expr in
+	    let call_len = emit_call_exit (emit) in
+	    (expr_len + call_len, done_pos)
+	  else if is_read_byte_at (src, pos) then
+	    let len = emit_call_read_byte (emit) in
+	    (len, pos + 9)
+	  else if is_bytes_create_at (src, pos) then
+	    let expr = compile_expr (src, (pos + 12, (env, (ctors, (funcs, emit))))) in
+	    let (expr_len, done_pos) = expr in
+	    let push_len = emit_push (emit) in
+	    let const_len = emit_const (emit, 0) in
+	    let block_len = emit_makeblock_dyn (emit) in
+	    (expr_len + push_len + const_len + block_len, done_pos)
+	  else if is_if_at (src, pos) then
+	    let cond0 = compile_expr (src, (pos + 2, (env, (ctors, (funcs, 0))))) in
+	    let (cond_len, cond_end) = cond0 in
+	    let then_pos = skip_space (src, cond_end) in
+	    if is_then_at (src, then_pos) then
+	      let then0 = compile_expr (src, (then_pos + 4, (env, (ctors, (funcs, 0))))) in
+	      let (then_len, then_end) = then0 in
+	      let else_pos = skip_space (src, then_end) in
+	      if is_else_at (src, else_pos) then
+	        let else0 = compile_expr (src, (else_pos + 4, (env, (ctors, (funcs, 0))))) in
+	        let (else_len, else_end) = else0 in
+	        let _ = if emit == 1 then compile_expr (src, (pos + 2, (env, (ctors, (funcs, 1))))) else (0, 0) in
+	        let _ = emit_branch_if_not (emit, then_len + 5) in
+	        let _ = if emit == 1 then compile_expr (src, (then_pos + 4, (env, (ctors, (funcs, 1))))) else (0, 0) in
+	        let _ = emit_branch (emit, else_len) in
+	        let _ = if emit == 1 then compile_expr (src, (else_pos + 4, (env, (ctors, (funcs, 1))))) else (0, 0) in
+	        (cond_len + 5 + then_len + 5 + else_len, else_end)
+	      else
+	        exit 1
+	    else
+	      exit 1
+	  else if is_let_at (src, pos) then
     let after_let = skip_space (src, pos + 3) in
     if src.[after_let] == 40 then
       let name1_parsed = parse_ident (src, after_let + 1) in
@@ -902,10 +961,62 @@ let rec compile_expr input =
               exit 1
           else if src.[inner_end] == 41 then (inner_len, inner_end + 1) else exit 1
         else
-          compile_atom (src, (pos, (env, (ctors, emit))))
-      in
-      let (left_len, next0) = left in
-      let next = skip_space (src, next0) in
+	          compile_atom (src, (pos, (env, (ctors, emit))))
+	      in
+	      let (left_len0, next00) = left in
+	      let next1 = skip_space (src, next00) in
+	      let left =
+	        if src.[next1] == 46 then
+	          let open_ch = src.[next1 + 1] in
+	          if open_ch == 91 then
+	            let push_base = emit_push (emit) in
+	            let index = compile_expr (src, (next1 + 2, (shift_env env, (ctors, (funcs, emit))))) in
+	            let (index_len, index_end0) = index in
+	            let index_end = skip_space (src, index_end0) in
+	            if src.[index_end] == 93 then
+	              let after_index = skip_space (src, index_end + 1) in
+	              if src.[after_index] == 60 then
+	                if src.[after_index + 1] == 45 then
+	                  let push_index = emit_push (emit) in
+	                  let value = compile_expr (src, (after_index + 2, (shift_env (shift_env env), (ctors, (funcs, emit))))) in
+	                  let (value_len, value_end) = value in
+	                  let set_len = emit_setfield_dyn (emit) in
+	                  (left_len0 + push_base + index_len + push_index + value_len + set_len, value_end)
+	                else
+	                  exit 1
+	              else
+	                let get_len = emit_getfield_dyn (emit) in
+	                (left_len0 + push_base + index_len + get_len, index_end + 1)
+	            else
+	              exit 1
+	          else if open_ch == 40 then
+	            let push_base = emit_push (emit) in
+	            let index = compile_expr (src, (next1 + 2, (shift_env env, (ctors, (funcs, emit))))) in
+	            let (index_len, index_end0) = index in
+	            let index_end = skip_space (src, index_end0) in
+	            if src.[index_end] == 41 then
+	              let after_index = skip_space (src, index_end + 1) in
+	              if src.[after_index] == 60 then
+	                if src.[after_index + 1] == 45 then
+	                  let push_index = emit_push (emit) in
+	                  let value = compile_expr (src, (after_index + 2, (shift_env (shift_env env), (ctors, (funcs, emit))))) in
+	                  let (value_len, value_end) = value in
+	                  let set_len = emit_setfield_dyn (emit) in
+	                  (left_len0 + push_base + index_len + push_index + value_len + set_len, value_end)
+	                else
+	                  exit 1
+	              else
+	                let get_len = emit_getfield_dyn (emit) in
+	                (left_len0 + push_base + index_len + get_len, index_end + 1)
+	            else
+	              exit 1
+	          else
+	            left
+	        else
+	          left
+	      in
+	      let (left_len, next0) = left in
+	      let next = skip_space (src, next0) in
       if src.[next] == 43 then
         let push_len = emit_push (emit) in
         let right = compile_expr (src, (next + 1, (shift_env (env), (ctors, (funcs, emit))))) in
@@ -993,11 +1104,63 @@ let rec compile_expr input =
         else
           exit 1
       else if src.[inner_end] == 41 then (inner_len, inner_end + 1) else exit 1
-    else
-      compile_atom (src, (pos, (env, (ctors, emit))))
-  in
-  let (left_len, next0) = left in
-  let next = skip_space (src, next0) in
+	    else
+	      compile_atom (src, (pos, (env, (ctors, emit))))
+	  in
+	  let (left_len0, next00) = left in
+	  let next1 = skip_space (src, next00) in
+	  let left =
+	    if src.[next1] == 46 then
+	      let open_ch = src.[next1 + 1] in
+	      if open_ch == 91 then
+	        let push_base = emit_push (emit) in
+	        let index = compile_expr (src, (next1 + 2, (shift_env env, (ctors, (funcs, emit))))) in
+	        let (index_len, index_end0) = index in
+	        let index_end = skip_space (src, index_end0) in
+	        if src.[index_end] == 93 then
+	          let after_index = skip_space (src, index_end + 1) in
+	          if src.[after_index] == 60 then
+	            if src.[after_index + 1] == 45 then
+	              let push_index = emit_push (emit) in
+	              let value = compile_expr (src, (after_index + 2, (shift_env (shift_env env), (ctors, (funcs, emit))))) in
+	              let (value_len, value_end) = value in
+	              let set_len = emit_setfield_dyn (emit) in
+	              (left_len0 + push_base + index_len + push_index + value_len + set_len, value_end)
+	            else
+	              exit 1
+	          else
+	            let get_len = emit_getfield_dyn (emit) in
+	            (left_len0 + push_base + index_len + get_len, index_end + 1)
+	        else
+	          exit 1
+	      else if open_ch == 40 then
+	        let push_base = emit_push (emit) in
+	        let index = compile_expr (src, (next1 + 2, (shift_env env, (ctors, (funcs, emit))))) in
+	        let (index_len, index_end0) = index in
+	        let index_end = skip_space (src, index_end0) in
+	        if src.[index_end] == 41 then
+	          let after_index = skip_space (src, index_end + 1) in
+	          if src.[after_index] == 60 then
+	            if src.[after_index + 1] == 45 then
+	              let push_index = emit_push (emit) in
+	              let value = compile_expr (src, (after_index + 2, (shift_env (shift_env env), (ctors, (funcs, emit))))) in
+	              let (value_len, value_end) = value in
+	              let set_len = emit_setfield_dyn (emit) in
+	              (left_len0 + push_base + index_len + push_index + value_len + set_len, value_end)
+	            else
+	              exit 1
+	          else
+	            let get_len = emit_getfield_dyn (emit) in
+	            (left_len0 + push_base + index_len + get_len, index_end + 1)
+	        else
+	          exit 1
+	      else
+	        left
+	    else
+	      left
+	  in
+	  let (left_len, next0) = left in
+	  let next = skip_space (src, next0) in
   if src.[next] == 43 then
     let push_len = emit_push (emit) in
     let right = compile_expr (src, (next + 1, (shift_env (env), (ctors, (funcs, emit))))) in
@@ -1206,9 +1369,9 @@ let rec compile_byte_code input =
             exit 1
         else
           exit 1
-  else
-    compile_write_byte (src, (pos, (env, (ctors, (funcs, emit)))))
-in
+	  else
+	    compile_expr (src, (pos, (env, (ctors, (funcs, emit)))))
+	in
 let rec emit_byte_source input =
   let (src, start_pos) = input in
   let empty_env = (0 - 1, (0, 0)) in
@@ -1229,6 +1392,6 @@ let rec compile_program src =
   else
     emit_byte_source (src, pos)
 in
-let source = Bytes.create 1024 in
+let source = Bytes.create 65536 in
 let _ = read_all (source, 0) in
 compile_program source

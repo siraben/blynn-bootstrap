@@ -133,10 +133,11 @@ hashes are kept within the VM's signed 32-bit immediate range so the same
 parser logic runs under both the C tree-walking root and self-compiled MZBC.
 
 Do not treat the current `mlc.ml` as self-hosted. It is now written in the
-seed core language and has a staged lexer/parser/emitter path for byte
-literals, local `let`, integer expressions, conditionals, direct unary
-function calls, bounded keyword lookahead with capped identifier hashes, and
-the first ADT/pattern slice.
+seed core language and has a staged one-lookahead lexer/parser/emitter path for
+byte literals, local `let`, integer expressions, nested conditionals,
+`read_byte`, `Bytes.create`, dynamic byte indexing and writes, arbitrary final
+direct calls, bounded keyword lookahead with capped identifier hashes, and the
+first ADT/pattern slice.
 Leading `type` declarations build a constructor environment, constructor and
 tuple payload expressions allocate VM blocks, tuple destructuring extracts
 fields, and simple constructor/wildcard `match` forms lower to tag tests and
