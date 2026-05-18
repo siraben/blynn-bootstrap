@@ -128,7 +128,9 @@ captured values and argument before jumping, and closure bodies return with
 function wrappers while syntactic calls keep the direct `CALL` / `RETURN`
 path. Its streaming parser carries one token of lookahead for expression
 terminators, so application parsing can distinguish identifier arguments from
-`in` / `then` / `else` without relying on first-letter heuristics.
+`in` / `then` / `else` without relying on first-letter heuristics. Identifier
+hashes are kept within the VM's signed 32-bit immediate range so the same
+parser logic runs under both the C tree-walking root and self-compiled MZBC.
 
 Do not treat the current `mlc.ml` as self-hosted. It is now written in the
 seed core language and has a tiny lexer/parser/emitter path for byte literals

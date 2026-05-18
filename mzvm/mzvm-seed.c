@@ -43,7 +43,8 @@ enum {
   OP_APPLY = 30,
   OP_RETURN_FRAME = 31,
   OP_FUNCTION = 32,
-  OP_CLOSURE_N = 33
+  OP_CLOSURE_N = 33,
+  OP_CLOSURE_SKIP = 34
 };
 
 typedef long value_t;
@@ -390,6 +391,22 @@ static void run(void)
       i = 0;
       while (i < count) {
         block[3 + i] = stack_acc(i);
+        i = i + 1;
+      }
+      acc = (value_t)block;
+    } else if (op == OP_CLOSURE_SKIP) {
+      long target = read_u32();
+      long count = read_u32();
+      long skip = read_u32();
+      value_t *block;
+      long i;
+      if (target < 0 || target >= code_len) die("closure target out of range");
+      if (count < 0 || skip < 0 || skip + count > sp) die("closure capture out of range");
+      block = alloc_block(1, count + 1);
+      block[2] = val_int(target);
+      i = 0;
+      while (i < count) {
+        block[3 + i] = stack_acc(skip + i);
         i = i + 1;
       }
       acc = (value_t)block;

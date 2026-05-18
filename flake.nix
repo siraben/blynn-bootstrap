@@ -829,6 +829,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           ];
           description = "First MLC stage that compiles an ML source subset to MZBC";
           buildScript = ''
+            ulimit -s unlimited || true
             cp ${mlcSrc}/stages/02-ml0-compiler.ml 02-ml0-compiler.ml
             cp ${mlcSrc}/stages/03-ok.ml0 03-ok.ml0
             cp ${mlcSrc}/stages/03-char-string.ml0 03-char-string.ml0
@@ -850,6 +851,8 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             ${mzvmSeedM2}/bin/mzvm-seed letrec-capture.mzbc > letrec-capture.out
             printf 'let rec f ch = if ch = 79 then write_byte ch else write_byte 88 in f 79' | ${mlcInterpSeedM2}/bin/mlc-interp-seed 02-ml0-compiler.ml > single-eq.mzbc
             ${mzvmSeedM2}/bin/mzvm-seed single-eq.mzbc > single-eq.out
+            printf 'write_byte -1' | ${mlcInterpSeedM2}/bin/mlc-interp-seed 02-ml0-compiler.ml > negative-immediate.mzbc
+            ${mzvmSeedM2}/bin/mzvm-seed negative-immediate.mzbc > negative-immediate.out
             for name in ok arithmetic conditional comparison let-binding sequence negative identifiers keyword-prefix-infix string string-value length exit tuple bytes array dynamic-create dynamic-index function function-tuple function-nested function-string; do
               ${mlcInterpSeedM2}/bin/mlc-interp-seed 02-ml0-compiler.ml < ${./tests/mlc}/$name.ml > $name.mzbc
               ${mzvmSeedM2}/bin/mzvm-seed $name.mzbc > $name.out
@@ -899,6 +902,9 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             ${mzvmSeedM2}/bin/mzvm-seed mlc-stage-if-gt.mzbc > mlc-stage-if-gt.out
             printf "write_byte (if 41 >= 40 then 'O' else 'X')" | ${mzvmSeedM2}/bin/mzvm-seed mlc-stage.mzbc > mlc-stage-if-ge.mzbc
             ${mzvmSeedM2}/bin/mzvm-seed mlc-stage-if-ge.mzbc > mlc-stage-if-ge.out
+            ${mlcInterpSeedM2}/bin/mlc-interp-seed 02-ml0-compiler.ml < 02-ml0-compiler.ml > 02-self.mzbc
+            printf 'write_byte 79' | ${mzvmSeedM2}/bin/mzvm-seed 02-self.mzbc > 02-self-smoke.mzbc
+            ${mzvmSeedM2}/bin/mzvm-seed 02-self-smoke.mzbc > 02-self-smoke.out
             test "$(cat ok.out)" = OK
             test "$(cat arithmetic.out)" = H-
             test "$(cat conditional.out)" = OK
@@ -911,6 +917,8 @@ OK"
             test "$(cat function-value.out)" = O
             test "$(cat letrec-capture.out)" = O
             test "$(cat single-eq.out)" = O
+            printf '\377' > negative-immediate.expected
+            test "$(cat negative-immediate.out)" = "$(cat negative-immediate.expected)"
             test "$(cat sequence.out)" = OK
             test "$(cat negative.out)" = OK
             test "$(cat identifiers.out)" = O
@@ -950,6 +958,7 @@ OK"
             test "$(cat mlc-stage-if-le.out)" = O
             test "$(cat mlc-stage-if-gt.out)" = O
             test "$(cat mlc-stage-if-ge.out)" = O
+            test "$(cat 02-self-smoke.out)" = O
           '';
           installScript = ''
             install -Dm644 02-ml0-compiler.ml "$out/share/mlc/stages/02-ml0-compiler.ml"
@@ -969,6 +978,11 @@ OK"
             install -Dm644 letrec-capture.out "$out/share/mlc/stages/letrec-capture.out"
             install -Dm644 single-eq.mzbc "$out/share/mlc/stages/single-eq.mzbc"
             install -Dm644 single-eq.out "$out/share/mlc/stages/single-eq.out"
+            install -Dm644 negative-immediate.mzbc "$out/share/mlc/stages/negative-immediate.mzbc"
+            install -Dm644 negative-immediate.out "$out/share/mlc/stages/negative-immediate.out"
+            install -Dm644 02-self.mzbc "$out/share/mlc/stages/02-self.mzbc"
+            install -Dm644 02-self-smoke.mzbc "$out/share/mlc/stages/02-self-smoke.mzbc"
+            install -Dm644 02-self-smoke.out "$out/share/mlc/stages/02-self-smoke.out"
             install -Dm644 string-value.mzbc "$out/share/mlc/stages/string-value.mzbc"
             install -Dm644 length.mzbc "$out/share/mlc/stages/length.mzbc"
             install -Dm644 keyword-prefix-infix.mzbc "$out/share/mlc/stages/keyword-prefix-infix.mzbc"

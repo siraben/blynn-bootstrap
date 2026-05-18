@@ -70,6 +70,7 @@ Opcodes are one byte. Immediate operands are little-endian 32-bit words.
 31  RETURN_FRAME
 32  FUNCTION target:u32
 33  CLOSURE_N target:u32 captures:u32
+34  CLOSURE_SKIP target:u32 captures:u32 skip:u32
 ```
 
 Branches are relative to the program counter after the branch operand has
@@ -84,6 +85,9 @@ seed path for unary `let rec` functions.
 target and whose remaining fields are the whole current stack, copied from
 nearest to farthest lexical depth. `CLOSURE_N` is the bounded form used by the
 staged compiler: it captures only the requested number of nearest stack slots.
+`CLOSURE_SKIP` is the bounded non-top form: it skips the requested number of
+nearest stack slots and then captures the next `captures` slots, preserving
+the same nearest-to-farthest order in the closure block.
 `APPLY` expects the closure on the stack and the argument in the accumulator;
 for closure blocks it pushes captured values followed by the argument, saves
 the return program counter and dynamic frame size, and jumps to the closure
