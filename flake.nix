@@ -847,6 +847,10 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             ${mlcInterpSeedM2}/bin/mlc-interp-seed 02-ml0-compiler.ml < ${mlcSrc}/mlc.ml > mlc-stage.mzbc
             printf 'write_byte (40+39)' | ${mzvmSeedM2}/bin/mzvm-seed mlc-stage.mzbc > mlc-stage-compiled.mzbc
             ${mzvmSeedM2}/bin/mzvm-seed mlc-stage-compiled.mzbc > mlc-stage.out
+            printf "write_byte 'O'" | ${mzvmSeedM2}/bin/mzvm-seed mlc-stage.mzbc > mlc-stage-char.mzbc
+            ${mzvmSeedM2}/bin/mzvm-seed mlc-stage-char.mzbc > mlc-stage-char.out
+            printf 'write_string "OK"' | ${mzvmSeedM2}/bin/mzvm-seed mlc-stage.mzbc > mlc-stage-string.mzbc
+            ${mzvmSeedM2}/bin/mzvm-seed mlc-stage-string.mzbc > mlc-stage-string.out
             test "$(cat ok.out)" = OK
             test "$(cat arithmetic.out)" = H-
             test "$(cat conditional.out)" = OK
@@ -871,6 +875,8 @@ OK"
             test "$(cat function-string.out)" = OK
             test "$(cat read-byte.out)" = OK
             test "$(cat mlc-stage.out)" = O
+            test "$(cat mlc-stage-char.out)" = O
+            test "$(cat mlc-stage-string.out)" = OK
           '';
           installScript = ''
             install -Dm644 02-ml0-compiler.ml "$out/share/mlc/stages/02-ml0-compiler.ml"
@@ -894,6 +900,10 @@ OK"
             install -Dm644 mlc-stage.mzbc "$out/share/mlc/stages/mlc-stage.mzbc"
             install -Dm644 mlc-stage-compiled.mzbc "$out/share/mlc/stages/mlc-stage-compiled.mzbc"
             install -Dm644 mlc-stage.out "$out/share/mlc/stages/mlc-stage.out"
+            install -Dm644 mlc-stage-char.mzbc "$out/share/mlc/stages/mlc-stage-char.mzbc"
+            install -Dm644 mlc-stage-char.out "$out/share/mlc/stages/mlc-stage-char.out"
+            install -Dm644 mlc-stage-string.mzbc "$out/share/mlc/stages/mlc-stage-string.mzbc"
+            install -Dm644 mlc-stage-string.out "$out/share/mlc/stages/mlc-stage-string.out"
           '';
         };
 
@@ -1127,10 +1137,18 @@ OK"
             printf 'write_byte (40+39)' | ${mzvmSeedM2}/bin/mzvm-seed mlc.byte > compiled.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled.mzbc)"
             test "$actual" = O
+            printf "write_byte 'O'" | ${mzvmSeedM2}/bin/mzvm-seed mlc.byte > compiled-char.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-char.mzbc)"
+            test "$actual" = O
+            printf 'write_string "OK"' | ${mzvmSeedM2}/bin/mzvm-seed mlc.byte > compiled-string.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-string.mzbc)"
+            test "$actual" = OK
           '';
           installScript = ''
             install -Dm644 mlc.byte "$out/share/mlc/mlc.byte"
             install -Dm644 compiled.mzbc "$out/share/mlc/compiled.mzbc"
+            install -Dm644 compiled-char.mzbc "$out/share/mlc/compiled-char.mzbc"
+            install -Dm644 compiled-string.mzbc "$out/share/mlc/compiled-string.mzbc"
           '';
         };
 

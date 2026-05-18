@@ -7,6 +7,23 @@ let rec emit_u32 n =
   let _ = write_byte (byte (n / 65536)) in
   write_byte (byte (n / 16777216))
 in
+let rec emit_header code_len =
+  let _ = write_byte 77 in
+  let _ = write_byte 90 in
+  let _ = write_byte 66 in
+  let _ = write_byte 67 in
+  let _ = emit_u32 1 in
+  let _ = emit_u32 code_len in
+  let _ = emit_u32 3 in
+  emit_u32 0
+in
+let rec emit_write_const value =
+  let _ = write_byte 1 in
+  let _ = emit_u32 value in
+  let _ = write_byte 14 in
+  let _ = emit_u32 1 in
+  emit_u32 1
+in
 let rec is_digit ch =
   if ch < 48 then 0 else if ch > 57 then 0 else 1
 in
@@ -42,10 +59,16 @@ let rec parse_number input =
   if is_digit ch then parse_number_loop (src, (ch - 48, pos + 1))
   else exit 1
 in
+let rec parse_char input =
+  let (src, pos) = input in
+  let ch = src.[pos + 1] in
+  (ch, pos + 3)
+in
 let rec parse_atom input =
   let (src, pos0) = input in
   let pos = skip_space (src, pos0) in
-  parse_number (src, pos)
+  if src.[pos] == 39 then parse_char (src, pos)
+  else parse_number (src, pos)
 in
 let rec parse_expr input =
   let (src, pos) = input in
@@ -68,24 +91,41 @@ let rec parse_program src =
   else
     parse_expr (src, pos)
 in
-let rec emit_program value =
-  let _ = write_byte 77 in
-  let _ = write_byte 90 in
-  let _ = write_byte 66 in
-  let _ = write_byte 67 in
-  let _ = emit_u32 1 in
-  let _ = emit_u32 15 in
-  let _ = emit_u32 3 in
-  let _ = emit_u32 0 in
-  let _ = write_byte 1 in
-  let _ = emit_u32 value in
-  let _ = write_byte 14 in
-  let _ = emit_u32 1 in
-  let _ = emit_u32 1 in
+let rec parse_string_len state =
+  let (src, pair) = state in
+  let (pos, count) = pair in
+  if src.[pos] == 34 then count
+  else parse_string_len (src, (pos + 1, count + 1))
+in
+let rec emit_string_loop input =
+  let (src, pos) = input in
+  if src.[pos] == 34 then write_byte 0
+  else
+    let _ = emit_write_const (src.[pos]) in
+    emit_string_loop (src, pos + 1)
+in
+let rec emit_byte_program value =
+  let _ = emit_header 15 in
+  let _ = emit_write_const value in
   write_byte 0
+in
+let rec emit_string_program input =
+  let (src, pos) = input in
+  let len = parse_string_len (src, (pos, 0)) in
+  let _ = emit_header (len * 14 + 1) in
+  emit_string_loop (src, pos)
+in
+let rec compile_program src =
+  let pos = skip_space (src, 0) in
+  if src.[pos + 6] == 115 then
+    let p0 = skip_space (src, pos + 12) in
+    if src.[p0] == 34 then emit_string_program (src, p0 + 1)
+    else exit 1
+  else
+    let parsed = parse_program src in
+    let (value, done_pos) = parsed in
+    emit_byte_program value
 in
 let source = Bytes.create 1024 in
 let _ = read_all (source, 0) in
-let parsed = parse_program source in
-let (value, done_pos) = parsed in
-emit_program value
+compile_program source
