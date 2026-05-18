@@ -85,9 +85,11 @@ Deleted MinCaml stages:
 The checked-in `mlc-seed.c` is deliberately smaller than this map. It is now a
 tiny recursive-descent compiler for `let` bindings, `if ... then ... else
 ...`, `write_byte`, integer literals, comparisons, parenthesized arithmetic,
-`+ - * /`, nested OCaml block comments, and a narrow `None`/`Some` `match`
-form. It exists to pin the M2 path, bytecode writer, expression codegen, local
-stack environment, and the VM representation of constructors before the real
+`+ - * /`, nested OCaml block comments, simple top-level ADT declarations of
+the form `type t = A | B of int`, constructor allocation from those
+declarations, and two-arm constructor `match` expressions. It exists to pin the
+M2 path, bytecode writer, expression codegen, local stack environment, pattern
+lowering shape, and the VM representation of constructors before the real
 MinCaml-shaped passes are ported into `mlc.ml`.
 
 Do not treat the current `mlc.ml` as self-hosted. The next meaningful step is

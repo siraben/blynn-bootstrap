@@ -689,6 +689,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           "conditional"
           "let-binding"
           "match"
+          "adt"
         ];
 
         mlcSeedHost = pkgs.stdenv.mkDerivation {
@@ -717,6 +718,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             printf 'OK\n' > conditional.expected
             printf 'OK\n' > let-binding.expected
             printf 'OK\n' > match.expected
+            printf 'OK\n' > adt.expected
             for name in ${lib.concatStringsSep " " mlcFixtures}; do
               cmp $name.expected $name.out
             done
@@ -754,6 +756,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             cp ${./tests/mlc/conditional.ml} conditional.ml
             cp ${./tests/mlc/let-binding.ml} let-binding.ml
             cp ${./tests/mlc/match.ml} match.ml
+            cp ${./tests/mlc/adt.ml} adt.ml
             compile_m2 mlc-seed.c mlc-seed
             ./mlc-seed ok.ml ok.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed ok.mzbc)"
@@ -770,6 +773,9 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             ./mlc-seed match.ml match.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed match.mzbc)"
             test "$actual" = OK
+            ./mlc-seed adt.ml adt.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed adt.mzbc)"
+            test "$actual" = OK
           '';
           installScript = ''
             install -Dm755 mlc-seed "$out/bin/mlc-seed"
@@ -779,6 +785,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             install -Dm644 conditional.mzbc "$out/share/mlc/tests/conditional.mzbc"
             install -Dm644 let-binding.mzbc "$out/share/mlc/tests/let-binding.mzbc"
             install -Dm644 match.mzbc "$out/share/mlc/tests/match.mzbc"
+            install -Dm644 adt.mzbc "$out/share/mlc/tests/adt.mzbc"
           '';
         };
 
