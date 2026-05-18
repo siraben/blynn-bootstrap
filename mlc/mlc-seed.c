@@ -101,6 +101,57 @@ static int is_ident_char(int c)
   return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
 }
 
+static int keyword_at_raw(long at, const char *word)
+{
+  long i = 0;
+  if (at > 0 && is_ident_char(src[at - 1])) return 0;
+  while (word[i]) {
+    if (at + i >= src_len) return 0;
+    if (src[at + i] != word[i]) return 0;
+    i = i + 1;
+  }
+  if (at + i < src_len && is_ident_char(src[at + i])) return 0;
+  return 1;
+}
+
+static long find_rec_and(long start)
+{
+  long i = start;
+  long depth = 0;
+  long comment_depth;
+  while (i < src_len) {
+    if (src[i] == '"') {
+      i = i + 1;
+      while (i < src_len && src[i] != '"') {
+        if (src[i] == '\\' && i + 1 < src_len) i = i + 2;
+        else i = i + 1;
+      }
+      if (i < src_len) i = i + 1;
+    } else if (i + 1 < src_len && src[i] == '(' && src[i + 1] == '*') {
+      comment_depth = 1;
+      i = i + 2;
+      while (i < src_len && comment_depth > 0) {
+        if (i + 1 < src_len && src[i] == '(' && src[i + 1] == '*') {
+          comment_depth = comment_depth + 1;
+          i = i + 2;
+        } else if (i + 1 < src_len && src[i] == '*' && src[i + 1] == ')') {
+          comment_depth = comment_depth - 1;
+          i = i + 2;
+        } else {
+          i = i + 1;
+        }
+      }
+    } else {
+      if ((src[i] == '(' || src[i] == '[') && depth < 64) depth = depth + 1;
+      else if ((src[i] == ')' || src[i] == ']') && depth > 0) depth = depth - 1;
+      else if (depth == 0 && keyword_at_raw(i, "and")) return i;
+      else if (depth == 0 && keyword_at_raw(i, "in")) return -1;
+      i = i + 1;
+    }
+  }
+  return -1;
+}
+
 static int at_comment_start(void)
 {
   return pos + 1 < src_len && src[pos] == '(' && src[pos + 1] == '*';
@@ -810,6 +861,23 @@ static long measure_function_expr(long start, long param_start, long param_len, 
   return measured;
 }
 
+static void emit_function_body(long start, long end, long param_start, long param_len, const char *mismatch)
+{
+  long saved_stack_depth = stack_depth;
+  long saved_env_depth = env_depth;
+  stack_depth = 0;
+  emit_push();
+  bind_var(param_start, param_len);
+  pos = start;
+  parse_expr();
+  unbind_var(param_start, param_len);
+  emit_pop(1);
+  emit_return();
+  if (pos != end) die(mismatch);
+  stack_depth = saved_stack_depth;
+  env_depth = saved_env_depth;
+}
+
 static void parse_if(void)
 {
   long then_start;
@@ -1015,13 +1083,20 @@ static void parse_let(void)
   long name2_len;
   long param_start;
   long param_len;
+  long rec2_start;
+  long rec2_len;
+  long param2_start;
+  long param2_len;
   long fn_body_start;
   long fn_body_end;
+  long fn2_body_start;
+  long fn2_body_end;
   long fn_len;
+  long fn2_len = 0;
   long fn_target;
-  long saved_stack_depth;
-  long saved_env_depth;
+  long and_pos;
   int binds = 0;
+  int has_and = 0;
   if (!take_keyword("let")) die("expected let");
   if (take_keyword("rec")) {
     take_ident_span(&name_start, &name_len);
@@ -1030,24 +1105,39 @@ static void parse_let(void)
     fn_body_start = pos;
     fn_target = out_len + 5;
     add_func(name_start, name_len, fn_target);
-    fn_len = measure_function_expr(fn_body_start, param_start, param_len, &fn_body_end);
-    emit_branch(fn_len);
-    saved_stack_depth = stack_depth;
-    saved_env_depth = env_depth;
-    stack_depth = 0;
-    emit_push();
-    bind_var(param_start, param_len);
+    and_pos = find_rec_and(fn_body_start);
+    if (and_pos >= 0) {
+      has_and = 1;
+      pos = and_pos;
+      expect_keyword("and");
+      take_ident_span(&rec2_start, &rec2_len);
+      take_ident_span(&param2_start, &param2_len);
+      expect_char('=');
+      fn2_body_start = pos;
+      add_func(rec2_start, rec2_len, fn_target);
+    }
     pos = fn_body_start;
-    parse_expr();
-    unbind_var(param_start, param_len);
-    emit_pop(1);
-    emit_return();
-    if (pos != fn_body_end) die("internal let rec parse mismatch");
-    stack_depth = saved_stack_depth;
-    env_depth = saved_env_depth;
+    fn_len = measure_function_expr(fn_body_start, param_start, param_len, &fn_body_end);
+    if (has_and) {
+      if (fn_body_end != and_pos) die("internal let rec and delimiter mismatch");
+      func_target[func_count - 1] = fn_target + fn_len;
+      fn2_len = measure_function_expr(fn2_body_start, param2_start, param2_len, &fn2_body_end);
+    }
+    if (has_and) emit_branch(fn_len + fn2_len);
+    else emit_branch(fn_len);
+    emit_function_body(fn_body_start, fn_body_end, param_start, param_len, "internal let rec parse mismatch");
+    if (has_and) {
+      expect_keyword("and");
+      take_ident_span(&rec2_start, &rec2_len);
+      take_ident_span(&param2_start, &param2_len);
+      expect_char('=');
+      if (pos != fn2_body_start) die("internal let rec and parse mismatch");
+      emit_function_body(fn2_body_start, fn2_body_end, param2_start, param2_len, "internal let rec and body mismatch");
+    }
     expect_keyword("in");
     parse_expr();
     unbind_func();
+    if (has_and) unbind_func();
     return;
   }
   if (take_char('(')) {
