@@ -1320,6 +1320,15 @@ OK"
             printf 'let x = 88 in let x = 79 in write_byte x' | ${mzvmSeedM2}/bin/mzvm-seed mlc.byte > compiled-shadow.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-shadow.mzbc)"
             test "$actual" = O
+            printf 'let iffy = 79 in write_byte iffy' | ${mzvmSeedM2}/bin/mzvm-seed mlc.byte > compiled-keyword-prefix-if.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-keyword-prefix-if.mzbc)"
+            test "$actual" = O
+            printf 'let lhs = 79 in write_byte lhs' | ${mzvmSeedM2}/bin/mzvm-seed mlc.byte > compiled-keyword-prefix-let.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-keyword-prefix-let.mzbc)"
+            test "$actual" = O
+            ${mzvmSeedM2}/bin/mzvm-seed mlc.byte < ${./tests/mlc/keyword-prefix-infix.ml} > compiled-keyword-prefix-infix.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-keyword-prefix-infix.mzbc)"
+            test "$actual" = O
             printf 'write_byte (80 - 1)' | ${mzvmSeedM2}/bin/mzvm-seed mlc.byte > compiled-sub.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-sub.mzbc)"
             test "$actual" = O
@@ -1377,6 +1386,9 @@ OK"
             ${mzvmSeedM2}/bin/mzvm-seed mlc.byte < ${./tests/mlc/match-three.ml} > compiled-match-three.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-match-three.mzbc)"
             test "$actual" = OK
+            ${mzvmSeedM2}/bin/mzvm-seed mlc.byte < ${./tests/mlc/adt-tuple-payload.ml} > compiled-adt-tuple-payload.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-adt-tuple-payload.mzbc)"
+            test "$actual" = OK
           '';
           installScript = ''
             install -Dm644 mlc.byte "$out/share/mlc/mlc.byte"
@@ -1388,6 +1400,9 @@ OK"
             install -Dm644 compiled-let3.mzbc "$out/share/mlc/compiled-let3.mzbc"
             install -Dm644 compiled-paren-let.mzbc "$out/share/mlc/compiled-paren-let.mzbc"
             install -Dm644 compiled-shadow.mzbc "$out/share/mlc/compiled-shadow.mzbc"
+            install -Dm644 compiled-keyword-prefix-if.mzbc "$out/share/mlc/compiled-keyword-prefix-if.mzbc"
+            install -Dm644 compiled-keyword-prefix-let.mzbc "$out/share/mlc/compiled-keyword-prefix-let.mzbc"
+            install -Dm644 compiled-keyword-prefix-infix.mzbc "$out/share/mlc/compiled-keyword-prefix-infix.mzbc"
             install -Dm644 compiled-sub.mzbc "$out/share/mlc/compiled-sub.mzbc"
             install -Dm644 compiled-mul.mzbc "$out/share/mlc/compiled-mul.mzbc"
             install -Dm644 compiled-div.mzbc "$out/share/mlc/compiled-div.mzbc"
@@ -1407,6 +1422,7 @@ OK"
             install -Dm644 compiled-multi-adt.mzbc "$out/share/mlc/compiled-multi-adt.mzbc"
             install -Dm644 compiled-match-three-direct.mzbc "$out/share/mlc/compiled-match-three-direct.mzbc"
             install -Dm644 compiled-match-three.mzbc "$out/share/mlc/compiled-match-three.mzbc"
+            install -Dm644 compiled-adt-tuple-payload.mzbc "$out/share/mlc/compiled-adt-tuple-payload.mzbc"
           '';
         };
 

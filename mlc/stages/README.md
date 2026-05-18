@@ -45,9 +45,11 @@ Current stages:
   `if ... then ... else ...` byte-output fixtures, including conditions formed
   with `<`, `==`, `!=`, `<=`, `>`, and `>=`. It now also parses leading
   `type` declarations into a constructor environment, records simple unary
-  `let rec` functions for direct source-level calls, and lowers the first
-  constructor/wildcard `match` forms, including `match-three.ml`, to VM block
-  allocation, tag tests, field extraction, and branches.
+  `let rec` functions for direct source-level calls, uses bounded keyword
+  lookahead for expression-level `let` and `if`, and lowers the first
+  constructor/wildcard `match` forms, including tuple payload construction and
+  destructuring in `adt-tuple-payload.ml`, to VM block allocation, tag tests,
+  field extraction, and branches.
 
 Planned stages:
 
