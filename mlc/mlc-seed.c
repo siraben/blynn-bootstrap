@@ -9,6 +9,10 @@ enum {
   OP_SUBINT = 6,
   OP_MULINT = 7,
   OP_DIVINT = 8,
+  OP_EQ = 9,
+  OP_LT = 10,
+  OP_BRANCH = 11,
+  OP_BRANCHIFNOT = 13,
   OP_C_CALL = 14
 };
 
@@ -110,6 +114,11 @@ static void expect_char(int c)
   if (!take_char(c)) die("unexpected token");
 }
 
+static void expect_keyword(const char *word)
+{
+  if (!take_keyword(word)) die("unexpected keyword");
+}
+
 static long low_byte(long x)
 {
   long q = x / 256;
@@ -143,6 +152,18 @@ static void emit_call_write_byte(void)
   emit_byte(OP_C_CALL);
   emit_u32(1);
   emit_u32(1);
+}
+
+static void emit_branch(long offset)
+{
+  emit_byte(OP_BRANCH);
+  emit_u32(offset);
+}
+
+static void emit_branchifnot(long offset)
+{
+  emit_byte(OP_BRANCHIFNOT);
+  emit_u32(offset);
 }
 
 static void parse_expr(void);
@@ -215,11 +236,70 @@ static void parse_add(void)
   }
 }
 
+static void parse_cmp(void)
+{
+  parse_add();
+  if (take_char('<')) {
+    emit_byte(OP_PUSH);
+    parse_add();
+    emit_byte(OP_LT);
+  } else if (take_char('=')) {
+    expect_char('=');
+    emit_byte(OP_PUSH);
+    parse_add();
+    emit_byte(OP_EQ);
+  }
+}
+
 static void parse_write(void)
 {
   if (!take_keyword("write_byte")) die("expected write_byte");
-  parse_add();
+  parse_cmp();
   emit_call_write_byte();
+}
+
+static long measure_expr(long start, long *end_out)
+{
+  FILE *saved_file = out_file;
+  long saved_len = out_len;
+  long saved_pos = pos;
+  long measured;
+  out_file = 0;
+  out_len = 0;
+  pos = start;
+  parse_expr();
+  measured = out_len;
+  *end_out = pos;
+  out_file = saved_file;
+  out_len = saved_len;
+  pos = saved_pos;
+  return measured;
+}
+
+static void parse_if(void)
+{
+  long then_start;
+  long then_end;
+  long else_start;
+  long else_end;
+  long then_len;
+  long else_len;
+  if (!take_keyword("if")) die("expected if");
+  parse_expr();
+  expect_keyword("then");
+  then_start = pos;
+  then_len = measure_expr(then_start, &then_end);
+  pos = then_end;
+  expect_keyword("else");
+  else_start = pos;
+  else_len = measure_expr(else_start, &else_end);
+  pos = then_start;
+  emit_branchifnot(then_len + 5);
+  parse_expr();
+  expect_keyword("else");
+  emit_branch(else_len);
+  parse_expr();
+  if (pos != else_end) die("internal if parse mismatch");
 }
 
 static void parse_let(void)
@@ -236,8 +316,9 @@ static void parse_let(void)
 static void parse_expr(void)
 {
   if (keyword_at("let")) parse_let();
+  else if (keyword_at("if")) parse_if();
   else if (keyword_at("write_byte")) parse_write();
-  else parse_add();
+  else parse_cmp();
 }
 
 static long compile_len(void)
