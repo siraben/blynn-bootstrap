@@ -647,11 +647,22 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             ./mzvm-seed ok.mzbc > actual.txt
             IFS= read -r actual < actual.txt
             test "$actual" = OK
+            printf '%b' '\115\132\102\103\001\000\000\000\143\000\000\000\003\000\000\000\000\000\000\000' > block.mzbc
+            printf '%b' '\001\117\000\000\000\017\001\000\000\000\001\000\000\000\022\002\001\001\000\000\000\011\015\053\000\000\000' >> block.mzbc
+            printf '%b' '\001\117\000\000\000\016\001\000\000\000\001\000\000\000' >> block.mzbc
+            printf '%b' '\001\113\000\000\000\016\001\000\000\000\001\000\000\000' >> block.mzbc
+            printf '%b' '\001\012\000\000\000\016\001\000\000\000\001\000\000\000\000' >> block.mzbc
+            printf '%b' '\001\130\000\000\000\016\001\000\000\000\001\000\000\000' >> block.mzbc
+            printf '%b' '\001\012\000\000\000\016\001\000\000\000\001\000\000\000\000' >> block.mzbc
+            ./mzvm-seed block.mzbc > actual.txt
+            IFS= read -r actual < actual.txt
+            test "$actual" = OK
           '';
           installScript = ''
             install -Dm755 mzvm-seed "$out/bin/mzvm-seed"
             install -Dm644 mzvm-seed.c "$out/share/mzvm/mzvm-seed.c"
             install -Dm644 ok.mzbc "$out/share/mzvm/tests/ok.mzbc"
+            install -Dm644 block.mzbc "$out/share/mzvm/tests/block.mzbc"
           '';
         };
 
@@ -662,7 +673,13 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           cmp host.txt seed.txt
           printf 'OK\n' > expected.txt
           cmp expected.txt host.txt
+          sh ${./scripts/mzvm-write-block-bytecode.sh} block.mzbc
+          ${mzvmHost}/bin/mzvm block.mzbc > host-block.txt
+          ${mzvmSeedM2}/bin/mzvm-seed block.mzbc > seed-block.txt
+          cmp host-block.txt seed-block.txt
+          cmp expected.txt host-block.txt
           install -Dm644 host.txt "$out/ok-output.txt"
+          install -Dm644 host-block.txt "$out/block-output.txt"
         '';
 
         mlcSeedM2 = stageRun {

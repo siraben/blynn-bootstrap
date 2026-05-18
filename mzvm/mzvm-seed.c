@@ -24,16 +24,11 @@ enum {
   OP_C_CALL = 14,
   OP_MAKEBLOCK = 15,
   OP_GETFIELD = 16,
-  OP_SETFIELD = 17
+  OP_SETFIELD = 17,
+  OP_GETTAG = 18
 };
 
 typedef long value_t;
-
-struct Block {
-  long tag;
-  long size;
-  value_t field[1];
-};
 
 static char *code;
 static long code_len;
@@ -64,11 +59,11 @@ static long int_val(value_t x)
   return x >> 1;
 }
 
-static struct Block *block_val(value_t x)
+static value_t *block_val(value_t x)
 {
   if ((x & 1) != 0) die("expected block");
   if (x == 0) die("null block");
-  return (struct Block *)x;
+  return (value_t *)x;
 }
 
 static long byte_at(char *bytes, long off)
@@ -138,16 +133,16 @@ static void stack_drop(long n)
   sp = sp - n;
 }
 
-static struct Block *alloc_block(long tag, long size)
+static value_t *alloc_block(long tag, long size)
 {
-  struct Block *block;
+  value_t *block;
   long words = 2 + size;
   if (size < 0) die("negative block size");
   if (heap_words + words > HEAP_LIMIT) die("heap exhausted");
-  block = (struct Block *)malloc(sizeof(struct Block) + sizeof(value_t) * size);
+  block = (value_t *)malloc(sizeof(value_t) * words);
   if (!block) die("out of memory");
-  block->tag = tag;
-  block->size = size;
+  block[0] = tag;
+  block[1] = size;
   heap_words = heap_words + words;
   return block;
 }
@@ -236,27 +231,30 @@ static void run(void)
     } else if (op == OP_MAKEBLOCK) {
       long tag = read_u32();
       long size = read_u32();
-      struct Block *block = alloc_block(tag, size);
+      value_t *block = alloc_block(tag, size);
       long i = size - 1;
       if (size > 0) {
-        block->field[0] = acc;
+        block[2] = acc;
         while (i > 0) {
-          block->field[i] = stack_pop();
+          block[2 + i] = stack_pop();
           i = i - 1;
         }
       }
       acc = (value_t)block;
     } else if (op == OP_GETFIELD) {
       long index = read_u32();
-      struct Block *block = block_val(acc);
-      if (index < 0 || index >= block->size) die("field access out of range");
-      acc = block->field[index];
+      value_t *block = block_val(acc);
+      if (index < 0 || index >= block[1]) die("field access out of range");
+      acc = block[2 + index];
     } else if (op == OP_SETFIELD) {
       long index = read_u32();
-      struct Block *block = block_val(stack_pop());
-      if (index < 0 || index >= block->size) die("field write out of range");
-      block->field[index] = acc;
+      value_t *block = block_val(stack_pop());
+      if (index < 0 || index >= block[1]) die("field write out of range");
+      block[2 + index] = acc;
       acc = val_int(0);
+    } else if (op == OP_GETTAG) {
+      value_t *block = block_val(acc);
+      acc = val_int(block[0]);
     } else {
       die("unknown opcode");
     }

@@ -54,6 +54,7 @@ Opcodes are one byte. Immediate operands are little-endian 32-bit words.
 15  MAKEBLOCK tag:u32 size:u32
 16  GETFIELD u32
 17  SETFIELD u32
+18  GETTAG
 ```
 
 Branches are relative to the program counter after the branch operand has
