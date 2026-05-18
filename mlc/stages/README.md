@@ -31,8 +31,9 @@ Current stages:
   Application parsing uses one token of lookahead so identifiers such as
   `emit`, `input`, and `target` can be parsed as arguments while `else`, `in`,
   and `then` still terminate the surrounding expression.
-  The current gate also compiles `02-ml0-compiler.ml` itself to bytecode and
-  uses that self-compiled compiler for a tiny `write_byte` handoff smoke.
+  The current gate also compiles `02-ml0-compiler.ml` itself to bytecode, uses
+  that self-compiled compiler to compile `02-ml0-compiler.ml` again, and uses
+  the same self-compiled compiler to compile the next source, `mlc/mlc.ml`.
 - `03-ok.ml0` and `03-char-string.ml0` are small ML0 sources accepted by
   `02-ml0-compiler.ml`.
 - `mlc/mlc.ml` is also compiled by `02-ml0-compiler.ml` in the current gate;
@@ -51,8 +52,9 @@ Planned stages:
   uses the first tree-walking language to bootstrap a parity-oriented compiler;
   it does now compile the current next compiler source, `mlc/mlc.ml`, and the
   C root can emit bytecode for `02-ml0-compiler.ml` itself. That emitted
-  compiler passes a small handoff smoke, but is not yet a byte-identical fixed
-  point.
+  compiler compiles both its own source and `mlc/mlc.ml`; the fixed-point
+  byte-equality check is still reserved for the eventual committed
+  `mlc.byte`.
 - Later parser stages increase the ML0 dialect until it can compile the next
   compiler source, then itself.
 - `02-patterns.ml` adds ADT and pattern-match lowering in ML, not in C.

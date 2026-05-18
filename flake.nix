@@ -616,6 +616,9 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             sh ${./scripts/mzvm-write-gc-bytecode.sh} gc.mzbc
             ./mzvm-gc gc.mzbc > gc-actual.txt
             cmp expected.txt gc-actual.txt
+            sh ${./scripts/mzvm-write-signed-bytecode.sh} signed.mzbc
+            ./mzvm signed.mzbc > signed-actual.txt
+            cmp expected.txt signed-actual.txt
             runHook postCheck
           '';
 
@@ -662,12 +665,22 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             ./mzvm-seed block.mzbc > actual.txt
             IFS= read -r actual < actual.txt
             test "$actual" = OK
+            printf '%b' '\115\132\102\103\001\000\000\000\106\000\000\000\003\000\000\000\000\000\000\000' > signed.mzbc
+            printf '%b' '\001\377\377\377\377\002\001\000\000\000\000\012\015\012\000\000\000' >> signed.mzbc
+            printf '%b' '\001\117\000\000\000\013\005\000\000\000\001\130\000\000\000' >> signed.mzbc
+            printf '%b' '\016\001\000\000\000\001\000\000\000' >> signed.mzbc
+            printf '%b' '\001\113\000\000\000\016\001\000\000\000\001\000\000\000' >> signed.mzbc
+            printf '%b' '\001\012\000\000\000\016\001\000\000\000\001\000\000\000\000' >> signed.mzbc
+            ./mzvm-seed signed.mzbc > actual.txt
+            IFS= read -r actual < actual.txt
+            test "$actual" = OK
           '';
           installScript = ''
             install -Dm755 mzvm-seed "$out/bin/mzvm-seed"
             install -Dm644 mzvm-seed.c "$out/share/mzvm/mzvm-seed.c"
             install -Dm644 ok.mzbc "$out/share/mzvm/tests/ok.mzbc"
             install -Dm644 block.mzbc "$out/share/mzvm/tests/block.mzbc"
+            install -Dm644 signed.mzbc "$out/share/mzvm/tests/signed.mzbc"
           '';
         };
 
@@ -683,8 +696,14 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           ${mzvmSeedM2}/bin/mzvm-seed block.mzbc > seed-block.txt
           cmp host-block.txt seed-block.txt
           cmp expected.txt host-block.txt
+          sh ${./scripts/mzvm-write-signed-bytecode.sh} signed.mzbc
+          ${mzvmHost}/bin/mzvm signed.mzbc > host-signed.txt
+          ${mzvmSeedM2}/bin/mzvm-seed signed.mzbc > seed-signed.txt
+          cmp host-signed.txt seed-signed.txt
+          cmp expected.txt host-signed.txt
           install -Dm644 host.txt "$out/ok-output.txt"
           install -Dm644 host-block.txt "$out/block-output.txt"
+          install -Dm644 host-signed.txt "$out/signed-output.txt"
         '';
 
         mlcFixtures = [
@@ -903,8 +922,12 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             printf "write_byte (if 41 >= 40 then 'O' else 'X')" | ${mzvmSeedM2}/bin/mzvm-seed mlc-stage.mzbc > mlc-stage-if-ge.mzbc
             ${mzvmSeedM2}/bin/mzvm-seed mlc-stage-if-ge.mzbc > mlc-stage-if-ge.out
             ${mlcInterpSeedM2}/bin/mlc-interp-seed 02-ml0-compiler.ml < 02-ml0-compiler.ml > 02-self.mzbc
-            printf 'write_byte 79' | ${mzvmSeedM2}/bin/mzvm-seed 02-self.mzbc > 02-self-smoke.mzbc
+            ${mzvmSeedM2}/bin/mzvm-seed 02-self.mzbc < 02-ml0-compiler.ml > 02-self-again.mzbc
+            printf 'write_byte 79' | ${mzvmSeedM2}/bin/mzvm-seed 02-self-again.mzbc > 02-self-smoke.mzbc
             ${mzvmSeedM2}/bin/mzvm-seed 02-self-smoke.mzbc > 02-self-smoke.out
+            ${mzvmSeedM2}/bin/mzvm-seed 02-self.mzbc < ${mlcSrc}/mlc.ml > mlc-stage-from-02-self.mzbc
+            printf 'write_byte 79' | ${mzvmSeedM2}/bin/mzvm-seed mlc-stage-from-02-self.mzbc > mlc-stage-from-02-self-smoke.mzbc
+            ${mzvmSeedM2}/bin/mzvm-seed mlc-stage-from-02-self-smoke.mzbc > mlc-stage-from-02-self-smoke.out
             test "$(cat ok.out)" = OK
             test "$(cat arithmetic.out)" = H-
             test "$(cat conditional.out)" = OK
@@ -959,6 +982,7 @@ OK"
             test "$(cat mlc-stage-if-gt.out)" = O
             test "$(cat mlc-stage-if-ge.out)" = O
             test "$(cat 02-self-smoke.out)" = O
+            test "$(cat mlc-stage-from-02-self-smoke.out)" = O
           '';
           installScript = ''
             install -Dm644 02-ml0-compiler.ml "$out/share/mlc/stages/02-ml0-compiler.ml"
@@ -981,8 +1005,12 @@ OK"
             install -Dm644 negative-immediate.mzbc "$out/share/mlc/stages/negative-immediate.mzbc"
             install -Dm644 negative-immediate.out "$out/share/mlc/stages/negative-immediate.out"
             install -Dm644 02-self.mzbc "$out/share/mlc/stages/02-self.mzbc"
+            install -Dm644 02-self-again.mzbc "$out/share/mlc/stages/02-self-again.mzbc"
             install -Dm644 02-self-smoke.mzbc "$out/share/mlc/stages/02-self-smoke.mzbc"
             install -Dm644 02-self-smoke.out "$out/share/mlc/stages/02-self-smoke.out"
+            install -Dm644 mlc-stage-from-02-self.mzbc "$out/share/mlc/stages/mlc-stage-from-02-self.mzbc"
+            install -Dm644 mlc-stage-from-02-self-smoke.mzbc "$out/share/mlc/stages/mlc-stage-from-02-self-smoke.mzbc"
+            install -Dm644 mlc-stage-from-02-self-smoke.out "$out/share/mlc/stages/mlc-stage-from-02-self-smoke.out"
             install -Dm644 string-value.mzbc "$out/share/mlc/stages/string-value.mzbc"
             install -Dm644 length.mzbc "$out/share/mlc/stages/length.mzbc"
             install -Dm644 keyword-prefix-infix.mzbc "$out/share/mlc/stages/keyword-prefix-infix.mzbc"
