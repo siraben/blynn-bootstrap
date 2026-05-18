@@ -12,6 +12,7 @@
         pkgs = import nixpkgs { inherit system; };
         lib = pkgs.lib;
         hccSrc = ./hcc;
+        mzvmSrc = ./mzvm;
         hccHsSrc = lib.cleanSourceWith {
           src = hccSrc;
           filter = path: type:
@@ -587,6 +588,81 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           stdenv = pkgs.stdenv;
           inherit minimalBootstrap;
         };
+
+        mzvmHost = pkgs.stdenv.mkDerivation {
+          pname = "mzvm-host";
+          version = "0-unstable-2026-05-06";
+          src = mzvmSrc;
+
+          dontConfigure = true;
+          dontUpdateAutotoolsGnuConfigScripts = true;
+
+          buildPhase = ''
+            runHook preBuild
+            $CC -O2 -Wall -Wextra mzvm.c -o mzvm
+            runHook postBuild
+          '';
+
+          doCheck = true;
+          checkPhase = ''
+            runHook preCheck
+            sh ${./scripts/mzvm-write-ok-bytecode.sh} ok.mzbc
+            ./mzvm ok.mzbc > actual.txt
+            printf 'OK\n' > expected.txt
+            cmp expected.txt actual.txt
+            runHook postCheck
+          '';
+
+          installPhase = ''
+            runHook preInstall
+            install -Dm755 mzvm "$out/bin/mzvm"
+            install -Dm644 mzvm.c "$out/share/mzvm/mzvm.c"
+            install -Dm644 mzvm-seed.c "$out/share/mzvm/mzvm-seed.c"
+            runHook postInstall
+          '';
+
+          meta = with pkgs.lib; {
+            description = "Host-built development ZINC-style VM for CCC bootstrap bytecode";
+            license = licenses.gpl3Only;
+            platforms = platforms.linux;
+          };
+        };
+
+        mzvmSeedM2 = stageRun {
+          pname = "mzvm-seed-m2";
+          nativeBuildInputs = [
+            minimalBootstrap.stage0-posix.mescc-tools
+          ];
+          description = "M2-Planet-built seed ZINC-style VM for CCC bootstrap bytecode";
+          buildScript = ''
+            . ${./scripts/lib/bootstrap.sh}
+            cp ${mzvmSrc}/mzvm-seed.c mzvm-seed.c
+            compile_m2 mzvm-seed.c mzvm-seed
+            printf '%b' '\115\132\102\103\001\000\000\000\060\000\000\000\003\000\000\000\000\000\000\000' > ok.mzbc
+            printf '%b' '\001\117\000\000\000\016\001\000\000\000\001\000\000\000' >> ok.mzbc
+            printf '%b' '\001\113\000\000\000\016\001\000\000\000\001\000\000\000' >> ok.mzbc
+            printf '%b' '\001\012\000\000\000\016\001\000\000\000\001\000\000\000' >> ok.mzbc
+            printf '%b' '\001\000\000\000\000\000' >> ok.mzbc
+            ./mzvm-seed ok.mzbc > actual.txt
+            IFS= read -r actual < actual.txt
+            test "$actual" = OK
+          '';
+          installScript = ''
+            install -Dm755 mzvm-seed "$out/bin/mzvm-seed"
+            install -Dm644 mzvm-seed.c "$out/share/mzvm/mzvm-seed.c"
+            install -Dm644 ok.mzbc "$out/share/mzvm/tests/ok.mzbc"
+          '';
+        };
+
+        mzvmHostVsSeed = pkgs.runCommand "mzvm-host-vs-seed" { } ''
+          sh ${./scripts/mzvm-write-ok-bytecode.sh} ok.mzbc
+          ${mzvmHost}/bin/mzvm ok.mzbc > host.txt
+          ${mzvmSeedM2}/bin/mzvm-seed ok.mzbc > seed.txt
+          cmp host.txt seed.txt
+          printf 'OK\n' > expected.txt
+          cmp expected.txt host.txt
+          install -Dm644 host.txt "$out/ok-output.txt"
+        '';
 
         hccHostGhcNative = pkgs.callPackage ./nix/hcc-ghc.nix {
           stdenv = pkgs.stdenv;
@@ -1210,6 +1286,12 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
 
           m2.mesoplanet.gcc = m2MesoplanetGcc;
 
+          mzvm = {
+            host = mzvmHost;
+            seed.m2 = mzvmSeedM2;
+          };
+          mzvm-seed.m2 = mzvmSeedM2;
+
           hcc = hccBy // {
             profile.host.ghc.native = hccProfileHostGhcNative;
             blynn = {
@@ -1250,6 +1332,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             host.ghc.native.tinycc-riscv64 = tinyccBy.riscv64.host.ghc.native;
             precisely.dialect = precisely-dialect-tests;
             tinyccM1.native-vs-faithful = tinyccM1CompareNativeFaithful;
+            mzvm.host-vs-seed = mzvmHostVsSeed;
           };
         };
       in {
