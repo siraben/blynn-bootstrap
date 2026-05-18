@@ -1544,6 +1544,9 @@ OK"
             printf 'let x = 79 in write_byte x' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-top-let.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-top-let.mzbc)"
             test "$actual" = O
+            printf 'let (x, y) = (40, 39) in write_byte (x + y)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-pair-let.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-pair-let.mzbc)"
+            test "$actual" = O
             if printf '40 + 39' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-top-type-error.mzbc; then
               exit 1
             fi
@@ -1554,6 +1557,9 @@ OK"
               exit 1
             fi
             if printf 'write_byte (if true then 79 else write_byte 88)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-branch-type-error.mzbc; then
+              exit 1
+            fi
+            if printf 'let (x, y) = 79 in write_byte x' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-pair-type-error.mzbc; then
               exit 1
             fi
           '';
@@ -1567,6 +1573,7 @@ OK"
             install -Dm644 03-if-bool.mzbc "$out/share/mlc/stages/03-if-bool.mzbc"
             install -Dm644 03-let.mzbc "$out/share/mlc/stages/03-let.mzbc"
             install -Dm644 03-top-let.mzbc "$out/share/mlc/stages/03-top-let.mzbc"
+            install -Dm644 03-pair-let.mzbc "$out/share/mlc/stages/03-pair-let.mzbc"
           '';
         };
 

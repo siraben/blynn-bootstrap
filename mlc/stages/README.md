@@ -74,8 +74,8 @@ Current stages:
 - `03-ast-compiler.ml` is the first successor source compiled by the committed
   fixed-point `mlc.byte`. It keeps the accepted language intentionally small
   while adding a real parse -> AST -> type-check -> emit boundary, with AST
-  and `int` / `bool` / `unit` type nodes represented as ML variants rather
-  than C-side tags. Its
+  and `int` / `bool` / `unit` / pair type nodes represented as ML variants
+  rather than C-side tags. Its
   parser uses the executable subset of the HCC `ParseLite` shape available to
   this compiler (`p_peek`, `p_need_char`, `p_return`, `p_string_at`,
   `p_keyword_at`, `p_need_string`, `p_need_keyword`) and leaves higher-order
@@ -85,7 +85,8 @@ Current stages:
   final type must be `unit`, so the top-level no longer has a special
   `write_byte` wrapper. The flake gate checks direct bytes, char literals,
   addition, bool literals, conditionals whose guards must type as `bool`,
-  `let`, top-level `let`, full-input consumption, and static type errors.
+  `let`, top-level `let`, pair construction, pair destructuring, full-input
+  consumption, and static type errors.
 
 Planned stages:
 
