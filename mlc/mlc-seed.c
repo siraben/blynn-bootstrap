@@ -422,6 +422,7 @@ static void parse_expr(void);
 static void parse_nonseq_expr(void);
 static long measure_expr(long start, long *end_out);
 static long measure_nonseq_expr(long start, long *end_out);
+static int parse_string_char(void);
 
 static int atom_starts(void)
 {
@@ -465,6 +466,7 @@ static void parse_atom(void)
   long init_start;
   long init_end;
   long i;
+  int ch;
   long func_target_value;
   skip_space();
   if (take_char('(')) {
@@ -481,6 +483,24 @@ static void parse_atom(void)
     take_keyword("read_byte");
     emit_const(0);
     emit_call_read_byte();
+  } else if (pos < src_len && src[pos] == '"') {
+    pos = pos + 1;
+    i = 0;
+    ch = parse_string_char();
+    if (ch < 0) {
+      emit_const(0);
+    } else {
+      emit_const(ch);
+      i = 1;
+      ch = parse_string_char();
+      while (ch >= 0) {
+        emit_push();
+        emit_const(ch);
+        i = i + 1;
+        ch = parse_string_char();
+      }
+    }
+    emit_makeblock(0, i);
   } else if (keyword_at("Array.create")) {
     take_keyword("Array.create");
     size = parse_int_literal();
