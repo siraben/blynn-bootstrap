@@ -1,3 +1,5 @@
+type func_summary = FuncConst of int | FuncArg | FuncNotArg | FuncAddArgs | FuncCmpArgs | FuncArgEqAny of int
+
 let rec is_space ch =
   if ch == ' ' then 1 else
   if ch == '\n' then 1 else
@@ -437,7 +439,7 @@ let rec expect_char_cast state =
 in
 let rec empty_funcs unit =
   let _ = unit in
-  (0 - 1, (0, (0, 0)))
+  (0 - 1, (FuncConst 0, 0))
 in
 let rec empty_env unit =
   let _ = unit in
@@ -457,41 +459,44 @@ let rec find_env state =
 in
 let rec extend_func state =
   let (name, pair) = state in
-  let (kind, pair2) = pair in
-  let (value, old) = pair2 in
-  (name, (kind, (value, old)))
+  let (value, old) = pair in
+  (name, (value, old))
 in
 let rec apply_func state =
   let (funcs, pair) = state in
   let (name, arg) = pair in
   let (head, rest) = funcs in
-  let (kind, rest2) = rest in
-  let (value, tail) = rest2 in
+  let (func, tail) = rest in
   if head == name then
-    if kind == 0 then value else
-    if kind == 1 then arg else
-    if kind == 2 then if arg == 0 then 1 else 0 else
-    if kind == 5 then
-      let (value1, rest1) = value in
-      let (value2, rest2) = rest1 in
-      let (value3, value4) = rest2 in
-      if arg == value1 then 1 else
-      if arg == value2 then 1 else
-      if arg == value3 then 1 else
-      if arg == value4 then 1 else 0
-    else
-      let (arg1, arg2) = arg in
-      if kind == 3 then arg1 + arg2 else
-      if arg1 < arg2 then 0 - 1 else
-      if arg1 > arg2 then 1 else 0
+    match func with
+      FuncConst value -> value
+    | FuncArg -> arg
+    | FuncNotArg -> if arg == 0 then 1 else 0
+    | _ ->
+        match func with
+          FuncArgEqAny values ->
+            let (value1, rest1) = values in
+            let (value2, rest2) = rest1 in
+            let (value3, value4) = rest2 in
+            if arg == value1 then 1 else
+            if arg == value2 then 1 else
+            if arg == value3 then 1 else
+            if arg == value4 then 1 else 0
+        | FuncAddArgs ->
+            let (arg1, arg2) = arg in
+            arg1 + arg2
+        | FuncCmpArgs ->
+            let (arg1, arg2) = arg in
+            if arg1 < arg2 then 0 - 1 else
+            if arg1 > arg2 then 1 else 0
+        | _ -> exit 1
   else
   if head < 0 then exit 1 else apply_func (tail, (name, arg))
 in
 let rec contains_func state =
   let (funcs, name) = state in
   let (head, rest) = funcs in
-  let (_kind, rest2) = rest in
-  let (_value, tail) = rest2 in
+  let (_value, tail) = rest in
   if head == name then 1 else
   if head < 0 then 0 else contains_func (tail, name)
 in
@@ -718,6 +723,21 @@ let rec parse_expr_value state =
   let (funcs, env) = pair2 in
   parse_expr_mode (src, (pos0, (funcs, (env, 0))))
 in
+let rec bind_parse_expr_value state =
+  let (parsed, pair) = state in
+  let (_value, pos) = parsed in
+  let (src, pair2) = pair in
+  let (funcs, env) = pair2 in
+  parse_expr_value (src, (pos, (funcs, env)))
+in
+let rec bind_parse_expr_mode state =
+  let (parsed, pair) = state in
+  let (_value, pos) = parsed in
+  let (src, pair2) = pair in
+  let (funcs, pair3) = pair2 in
+  let (env, mode) = pair3 in
+  parse_expr_mode (src, (pos, (funcs, (env, mode))))
+in
 let rec skip_to_close_brace state =
   let (src, pos) = state in
   if src.[pos] == 125 then pos else skip_to_close_brace (src, pos + 1)
@@ -786,27 +806,27 @@ let rec parse_func_return state =
   let (src, pair) = state in
   let (pos0, param) = pair in
   let start = skip_space (src, pos0) in
-  if src.[start] == 125 then ((0, 0), start) else
+  if src.[start] == 125 then (FuncConst 0, start) else
   if is_return_at (src, start) then
   let p0 = expect_return (src, start) in
   let p1 = skip_space (src, p0) in
-  if src.[p1] == 59 then ((0, 0), p1 + 1) else
+  if src.[p1] == 59 then (FuncConst 0, p1 + 1) else
   if src.[p1] == 42 then
     let ident = parse_ident (src, p1 + 1) in
     let (name, name_end) = ident in
     let p2 = expect_ch (src, (name_end, 59)) in
-    if name == param then ((1, 0), p2) else exit 1
+    if name == param then (FuncArg, p2) else exit 1
   else
   if src.[p1] == 33 then
     let ident = parse_ident (src, p1 + 1) in
     let (name, name_end) = ident in
     let p2 = expect_ch (src, (name_end, 59)) in
-    if name == param then ((2, 0), p2) else exit 1
+    if name == param then (FuncNotArg, p2) else exit 1
   else if is_digit (src.[p1]) then
     let parsed = parse_number (src, p1) in
     let (value, value_end) = parsed in
     let p2 = expect_ch (src, (value_end, 59)) in
-    ((0, value), p2)
+    (FuncConst value, p2)
   else
     let ident = parse_ident (src, p1) in
     let (name, name_end) = ident in
@@ -816,20 +836,20 @@ let rec parse_func_return state =
         let parsed = parse_param_eq_chain (src, (p1, param)) in
         let (values, values_end) = parsed in
         let p2 = expect_ch (src, (values_end, 59)) in
-        ((5, values), p2)
+        (FuncArgEqAny values, p2)
       else if src.[after_name] == 43 then
         let ident2 = parse_ident (src, after_name + 1) in
         let (name2, name2_end) = ident2 in
         let p2 = expect_ch (src, (name2_end, 59)) in
-        if name2 == param then exit 1 else ((3, 0), p2)
+        if name2 == param then exit 1 else (FuncAddArgs, p2)
       else
         let p2 = expect_ch (src, (name_end, 59)) in
-        ((1, 0), p2)
+        (FuncArg, p2)
     else if src.[after_name] == 43 then
       let ident2 = parse_ident (src, after_name + 1) in
       let (name2, name2_end) = ident2 in
       let p2 = expect_ch (src, (name2_end, 59)) in
-      ((3, 0), p2)
+      (FuncAddArgs, p2)
     else
       let p2 = expect_ch (src, (name_end, 59)) in
       exit 1
@@ -906,24 +926,26 @@ let rec parse_function_header state =
 in
 let rec skip_call_statement state =
   let (src, pos0) = state in
-  let ident = parse_ident (src, pos0) in
-  let (name, name_end) = ident in
+  let named = parse_ident (src, pos0) in
+  let (name, _name_end) = named in
   let _ = name in
-  let p0 = expect_ch (src, (name_end, 40)) in
-  let p1 = expect_ch (src, (p0, 41)) in
-  expect_ch (src, (p1, 59))
+  let opened = bind_expect_char_keep (named, (src, '(')) in
+  let closed = bind_expect_char_keep (opened, (src, ')')) in
+  let done0 = bind_expect_char_keep (closed, (src, ';')) in
+  let (_value, pos) = done0 in
+  pos
 in
 let rec parse_pointer_write_call state =
   let (src, pair) = state in
   let (pos0, env) = pair in
-  let ident = parse_ident (src, pos0) in
-  let (name, name_end) = ident in
-  let p0 = expect_ch (src, (name_end, 40)) in
-  let p1 = expect_ch (src, (p0, 38)) in
-  let arg = parse_ident (src, p1) in
-  let (arg_name, arg_end) = arg in
-  let p2 = expect_ch (src, (arg_end, 41)) in
-  let p3 = expect_ch (src, (p2, 59)) in
+  let named = parse_ident (src, pos0) in
+  let (name, _name_end) = named in
+  let opened = bind_expect_char_keep (named, (src, '(')) in
+  let refd = bind_expect_char_keep (opened, (src, '&')) in
+  let arg = bind_parse_ident (refd, src) in
+  let closed = bind_expect_char_keep (arg, (src, ')')) in
+  let done0 = bind_expect_char_keep (closed, (src, ';')) in
+  let (arg_name, p3) = done0 in
   let next_env =
     if name == 913327068 then extend_env (arg_name, (0 - 1, env)) else
     if name == 632251188 then extend_env (arg_name, (255, env)) else env
@@ -970,10 +992,9 @@ let rec parse_local_init state =
     (p0_semi, extend_env (name, (0, env)))
   else
   if src.[name_next] == 59 then (name_next + 1, extend_env (name, (0, env))) else
-    let p1 = expect_ch (src, (name_end, 61)) in
-    let value = parse_expr_value (src, (p1, (funcs, env))) in
-    let (init_value, value_end) = value in
-    let p2 = expect_ch (src, (value_end, 59)) in
+    let value = bind_parse_expr_value (bind_expect_char_keep (ident, (src, '=')), (src, (funcs, env))) in
+    let done0 = bind_expect_char_keep (value, (src, ';')) in
+    let (init_value, p2) = done0 in
     let stored = if name == 2089827 then if init_value == 0 then 0 else 1 else init_value in
     (p2, extend_env (name, (stored, env)))
 in
@@ -982,11 +1003,10 @@ let rec parse_assignment state =
   let (pos0, pair2) = pair in
   let (funcs, env) = pair2 in
   let ident = parse_ident (src, pos0) in
-  let (name, name_end) = ident in
-  let p0 = expect_ch (src, (name_end, 61)) in
-  let value = parse_expr_value (src, (p0, (funcs, env))) in
-  let (assigned, value_end) = value in
-  let p1 = expect_ch (src, (value_end, 59)) in
+  let (name, _name_end) = ident in
+  let value = bind_parse_expr_value (bind_expect_char_keep (ident, (src, '=')), (src, (funcs, env))) in
+  let done0 = bind_expect_char_keep (value, (src, ';')) in
+  let (assigned, p1) = done0 in
   (p1, extend_env (name, (assigned, env)))
 in
 let rec parse_aug_assignment state =
@@ -997,11 +1017,11 @@ let rec parse_aug_assignment state =
   let (name, name_end) = ident in
   let old_value = find_env (env, name) in
   let op = skip_space (src, name_end) in
-  let p0 = expect_ch (src, (op + 1, 61)) in
-  let value = parse_expr_value (src, (p0, (funcs, env))) in
-  let (delta, value_end) = value in
+  let value = bind_parse_expr_value ((0, expect_ch (src, (op + 1, '='))), (src, (funcs, env))) in
+  let (delta, _value_end) = value in
   let next_value = if src.[op] == 43 then old_value + delta else old_value - delta in
-  let p1 = expect_ch (src, (value_end, 59)) in
+  let done0 = bind_expect_char_keep (value, (src, ';')) in
+  let (_value, p1) = done0 in
   (p1, extend_env (name, (next_value, env)))
 in
 let rec parse_postfix_update_statement state =
@@ -1011,8 +1031,9 @@ let rec parse_postfix_update_statement state =
   let (name, name_end) = ident in
   let old_value = find_env (env, name) in
   let op = skip_space (src, name_end) in
-  let p1 = expect_ch (src, (op + 1, src.[op])) in
-  let p2 = expect_ch (src, (p1, 59)) in
+  let repeated = bind_expect_char_keep ((name, op + 1), (src, src.[op])) in
+  let done0 = bind_expect_char_keep (repeated, (src, ';')) in
+  let (_value, p2) = done0 in
   let new_value = if src.[op] == 43 then old_value + 1 else old_value - 1 in
   (p2, extend_env (name, (new_value, env)))
 in
@@ -1144,30 +1165,24 @@ let rec parse_return_value state =
   let (src, pair) = state in
   let (pos0, pair2) = pair in
   let (funcs, env) = pair2 in
-  let p0 = expect_return (src, pos0) in
-  let value = parse_expr_value (src, (p0, (funcs, env))) in
+  let value = bind_parse_expr_value ((0, expect_return (src, pos0)), (src, (funcs, env))) in
   let (code0, value_end0) = value in
   let value_end = skip_space (src, value_end0) in
   if src.[value_end] == 63 then
-    let true_value = parse_expr_value (src, (value_end + 1, (funcs, env))) in
-    let (true_code, true_end) = true_value in
-    let p1 = expect_ch (src, (true_end, 58)) in
-    let false_value = parse_expr_value (src, (p1, (funcs, env))) in
-    let (false_code, false_end) = false_value in
-    let p2 = expect_ch (src, (false_end, 59)) in
+    let true_value = bind_parse_expr_value ((code0, value_end + 1), (src, (funcs, env))) in
+    let false_value = bind_parse_expr_value (bind_expect_char_keep (true_value, (src, ':')), (src, (funcs, env))) in
+    let done0 = bind_expect_char_keep (false_value, (src, ';')) in
+    let (false_code, p2) = done0 in
+    let (true_code, _true_end) = true_value in
     if code0 == 0 then (false_code, p2) else (true_code, p2)
   else
-    let p1 = expect_ch (src, (value_end, 59)) in
-    (code0, p1)
+    bind_expect_char_keep ((code0, value_end), (src, ';'))
 in
 let rec parse_goto_statement state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
   if is_goto_at (src, pos) then
-    let ident = parse_ident (src, pos + 4) in
-    let (label, label_end) = ident in
-    let p0 = expect_ch (src, (label_end, 59)) in
-    (label, p0)
+    bind_expect_char_keep (parse_ident (src, pos + 4), (src, ';'))
   else
     exit 1
 in
@@ -1298,39 +1313,44 @@ let rec parse_program_loop state =
         let _ = expect_ch (src, (p4, 125)) in
         code
       else if (name == 253601173) + (name == 221753487) then
-        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (0, (0, funcs)))))
+        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (FuncConst 0, funcs))))
       else if (name == 913327068) + (name == 632251188) then
-        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (0, (0, funcs)))))
+        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (FuncConst 0, funcs))))
       else if name == 155589584 then
-        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (0, (0, funcs)))))
+        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (FuncConst 0, funcs))))
       else if name == 187939072 then
-        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (0, (3, funcs)))))
+        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (FuncConst 3, funcs))))
       else if (name == 317415445) + (name == 820214634) then
-        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (0, (0, funcs)))))
+        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (FuncConst 0, funcs))))
       else if name == 468092681 then
-        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (0, (10, funcs)))))
+        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (FuncConst 10, funcs))))
       else if name == 759352374 then
-        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (0, (1, funcs)))))
+        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (FuncConst 1, funcs))))
       else if (name == 753253611) + (name == 180611956) then
-        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (0, (0, funcs)))))
+        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (FuncConst 0, funcs))))
       else if (name == 340503192) + (name == 89405656) then
-        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (0, (0, funcs)))))
+        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (FuncConst 0, funcs))))
       else if ((name == 130238931) + (name == 45824411)) + ((name == 1816427) + (name == 760488289)) then
-        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (0, (1, funcs)))))
+        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (FuncConst 1, funcs))))
       else if ((name == 53171319) + (name == 329462716)) + ((name == 329460746) + (name == 184120345)) then
-        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (0, (0, funcs)))))
+        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (FuncConst 0, funcs))))
       else if ((name == 402468489) + (name == 402468487)) + (name == 281987142) then
-        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (4, (0, funcs)))))
+        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (FuncCmpArgs, funcs))))
       else
         let ret = parse_func_return (src, (p2, param)) in
-        let (func_value, p3) = ret in
-        let (kind, value) = func_value in
-        let coerced =
-          if name == 235019908 then value - ((value / 256) * 256) else
-          if name == 710329373 then if value == 0 then 0 else 1 else value
+        let (func_value0, p3) = ret in
+        let func_value =
+          match func_value0 with
+            FuncConst value ->
+              let coerced =
+                if name == 235019908 then value - ((value / 256) * 256) else
+                if name == 710329373 then if value == 0 then 0 else 1 else value
+              in
+              FuncConst coerced
+          | _ -> func_value0
         in
         let p4 = expect_ch (src, (p3, 125)) in
-        parse_program_loop (src, (p4, extend_func (name, (kind, (coerced, funcs)))))
+        parse_program_loop (src, (p4, extend_func (name, (func_value, funcs))))
 in
 let rec parse_program src =
   parse_program_loop (src, (0, empty_funcs 0))
