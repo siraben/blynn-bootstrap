@@ -692,6 +692,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           "arithmetic"
           "conditional"
           "comparison"
+          "negative"
           "let-binding"
           "array"
           "function"
@@ -737,6 +738,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             printf 'H-\n' > arithmetic.expected
             printf 'OK\n' > conditional.expected
             printf 'OK\nOK\n' > comparison.expected
+            printf 'OK\n' > negative.expected
             printf 'OK\n' > let-binding.expected
             printf 'OK\n' > array.expected
             printf 'OK\n' > function.expected
@@ -787,6 +789,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             cp ${./tests/mlc/arithmetic.ml} arithmetic.ml
             cp ${./tests/mlc/conditional.ml} conditional.ml
             cp ${./tests/mlc/comparison.ml} comparison.ml
+            cp ${./tests/mlc/negative.ml} negative.ml
             cp ${./tests/mlc/let-binding.ml} let-binding.ml
             cp ${./tests/mlc/array.ml} array.ml
             cp ${./tests/mlc/function.ml} function.ml
@@ -813,6 +816,9 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             actual="$(${mzvmSeedM2}/bin/mzvm-seed comparison.mzbc)"
             test "$actual" = "OK
 OK"
+            ./mlc-seed negative.ml negative.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed negative.mzbc)"
+            test "$actual" = OK
             ./mlc-seed let-binding.ml let-binding.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed let-binding.mzbc)"
             test "$actual" = OK
@@ -858,6 +864,7 @@ OK"
             install -Dm644 arithmetic.mzbc "$out/share/mlc/tests/arithmetic.mzbc"
             install -Dm644 conditional.mzbc "$out/share/mlc/tests/conditional.mzbc"
             install -Dm644 comparison.mzbc "$out/share/mlc/tests/comparison.mzbc"
+            install -Dm644 negative.mzbc "$out/share/mlc/tests/negative.mzbc"
             install -Dm644 let-binding.mzbc "$out/share/mlc/tests/let-binding.mzbc"
             install -Dm644 array.mzbc "$out/share/mlc/tests/array.mzbc"
             install -Dm644 function.mzbc "$out/share/mlc/tests/function.mzbc"
