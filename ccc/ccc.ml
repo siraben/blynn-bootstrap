@@ -85,6 +85,11 @@ let rec is_return_at state =
   let pos = skip_space (src, pos0) in
   (src.[pos] == 114) * (src.[pos + 1] == 101) * (src.[pos + 2] == 116) * (src.[pos + 3] == 117) * (src.[pos + 4] == 114) * (src.[pos + 5] == 110)
 in
+let rec is_if_at state =
+  let (src, pos0) = state in
+  let pos = skip_space (src, pos0) in
+  (src.[pos] == 105) * (src.[pos + 1] == 102)
+in
 let rec expect_ch state =
   let (src, pair) = state in
   let (pos0, ch) = pair in
@@ -260,6 +265,10 @@ let rec skip_statement state =
   let (src, pos) = state in
   if src.[pos] == 59 then pos + 1 else skip_statement (src, pos + 1)
 in
+let rec skip_to_close_brace state =
+  let (src, pos) = state in
+  if src.[pos] == 125 then pos else skip_to_close_brace (src, pos + 1)
+in
 let rec skip_main_prefix state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
@@ -314,6 +323,46 @@ let rec parse_main_prefix state =
     else
       parse_main_prefix (src, (skip_statement (src, pos), (funcs, env)))
 in
+let rec parse_return_value state =
+  let (src, pair) = state in
+  let (pos0, pair2) = pair in
+  let (funcs, env) = pair2 in
+  let p0 = expect_return (src, pos0) in
+  let value = parse_expr_value (src, (p0, (funcs, env))) in
+  let (code, value_end) = value in
+  let p1 = expect_ch (src, (value_end, 59)) in
+  (code, p1)
+in
+let rec parse_main_body state =
+  let (src, pair) = state in
+  let (pos0, pair2) = pair in
+  let (funcs, env) = pair2 in
+  let pos = skip_space (src, pos0) in
+  if is_return_at (src, pos) then parse_return_value (src, (pos, (funcs, env))) else
+  if is_if_at (src, pos) then
+    let p0 = expect_ch (src, (pos + 2, 40)) in
+    let cond = parse_expr_value (src, (p0, (funcs, env))) in
+    let (cond_value, cond_end) = cond in
+    let p1 = expect_ch (src, (cond_end, 41)) in
+    let branch = parse_return_value (src, (p1, (funcs, env))) in
+    let (branch_value, branch_end) = branch in
+    if cond_value == 0 then parse_main_body (src, (branch_end, (funcs, env))) else (branch_value, skip_to_close_brace (src, branch_end))
+  else if (src.[pos] == 105) * (src.[pos + 1] == 110) * (src.[pos + 2] == 116) then
+    let local = parse_local_init (src, (pos, (funcs, env))) in
+    let (next_pos, next_env) = local in
+    parse_main_body (src, (next_pos, (funcs, next_env)))
+  else
+    let ident = parse_ident (src, pos) in
+    let (name, name_end) = ident in
+    let _ = name in
+    let next = skip_space (src, name_end) in
+    if src.[next] == 61 then
+      let assigned = parse_assignment (src, (pos, (funcs, env))) in
+      let (next_pos, next_env) = assigned in
+      parse_main_body (src, (next_pos, (funcs, next_env)))
+    else
+      parse_main_body (src, (skip_statement (src, pos), (funcs, env)))
+in
 let rec parse_program_loop state =
   let (src, pair) = state in
   let (pos0, funcs) = pair in
@@ -326,13 +375,9 @@ let rec parse_program_loop state =
     let (param, p1) = params in
     let p2 = expect_ch (src, (p1, 123)) in
     if name == 246720401 then
-      let main_prefix = parse_main_prefix (src, (p2, (funcs, empty_env 0))) in
-      let (p2a, main_env) = main_prefix in
-      let p3 = expect_return (src, p2a) in
-      let value = parse_expr_value (src, (p3, (funcs, main_env))) in
-      let (code, p4) = value in
-      let p5 = expect_ch (src, (p4, 59)) in
-      let _ = expect_ch (src, (p5, 125)) in
+      let body = parse_main_body (src, (p2, (funcs, empty_env 0))) in
+      let (code, p4) = body in
+      let _ = expect_ch (src, (p4, 125)) in
       code
     else
       let ret = parse_func_return (src, (p2, param)) in
