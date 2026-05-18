@@ -1476,36 +1476,25 @@ OK"
           buildScript = ''
             cp ${cccSrc}/ccc.ml ccc.ml
             ${mzvmSeedM2}/bin/mzvm-seed ${mlcByteCommitted}/share/mlc/mlc.byte < ccc.ml > ccc.byte
-            actual="$(${mzvmSeedM2}/bin/mzvm-seed ccc.byte < ${./tests/mescc/scaffold/01-return-0.c})"
-            expected='DEFINE LOADI32_RDI 48C7C7
+            check_return() {
+              actual="$(${mzvmSeedM2}/bin/mzvm-seed ccc.byte < "$1")"
+              expected="DEFINE LOADI32_RDI 48C7C7
 DEFINE LOADI32_RAX 48C7C0
 DEFINE SYSCALL 0F05
 
 :_start
-	LOADI32_RDI %0
+	LOADI32_RDI %$2
 	LOADI32_RAX %60
-	SYSCALL'
-            test "$actual" = "$expected"
-            actual="$(${mzvmSeedM2}/bin/mzvm-seed ccc.byte < ${./tests/mescc/scaffold/02-return-1.c})"
-            expected='DEFINE LOADI32_RDI 48C7C7
-DEFINE LOADI32_RAX 48C7C0
-DEFINE SYSCALL 0F05
-
-:_start
-	LOADI32_RDI %1
-	LOADI32_RAX %60
-	SYSCALL'
-            test "$actual" = "$expected"
-            actual="$(printf 'int main(){return 42;}' | ${mzvmSeedM2}/bin/mzvm-seed ccc.byte)"
-            expected='DEFINE LOADI32_RDI 48C7C7
-DEFINE LOADI32_RAX 48C7C0
-DEFINE SYSCALL 0F05
-
-:_start
-	LOADI32_RDI %42
-	LOADI32_RAX %60
-	SYSCALL'
-            test "$actual" = "$expected"
+	SYSCALL"
+              test "$actual" = "$expected"
+            }
+            check_return ${./tests/mescc/scaffold/01-return-0.c} 0
+            check_return ${./tests/mescc/scaffold/02-return-1.c} 1
+            check_return ${./tests/mescc/scaffold/03-call.c} 0
+            check_return ${./tests/mescc/scaffold/04-call-0.c} 0
+            check_return ${./tests/mescc/scaffold/05-call-1.c} 1
+            printf 'int main(){return 42;}' > return-42.c
+            check_return return-42.c 42
           '';
           installScript = ''
             install -Dm644 ccc.byte "$out/share/ccc/ccc.byte"

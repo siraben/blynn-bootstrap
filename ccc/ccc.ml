@@ -25,6 +25,31 @@ in
 let rec is_digit ch =
   if ch < 48 then 0 else if ch < 58 then 1 else 0
 in
+let rec is_alpha ch =
+  if ch == 95 then 1 else
+  if ch < 65 then 0 else
+  if ch < 91 then 1 else
+  if ch < 97 then 0 else
+  if ch < 123 then 1 else 0
+in
+let rec is_ident ch =
+  if is_alpha ch then 1 else is_digit ch
+in
+let rec ident_hash n =
+  n - ((n / 1000000007) * 1000000007)
+in
+let rec parse_ident_loop state =
+  let (src, pair) = state in
+  let (pos, acc) = pair in
+  let ch = src.[pos] in
+  if is_ident ch then parse_ident_loop (src, (pos + 1, ident_hash ((acc * 131) + ch))) else (acc, pos)
+in
+let rec parse_ident state =
+  let (src, pos0) = state in
+  let pos = skip_space (src, pos0) in
+  let ch = src.[pos] in
+  if is_alpha ch then parse_ident_loop (src, (pos + 1, ch)) else exit 1
+in
 let rec expect_int state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
@@ -60,18 +85,94 @@ let rec parse_number state =
   let pos = skip_space (src, pos0) in
   if is_digit (src.[pos]) then parse_number_loop (src, (pos, 0)) else exit 1
 in
+let rec empty_funcs unit =
+  let _ = unit in
+  (0 - 1, (0, (0, 0)))
+in
+let rec extend_func state =
+  let (name, pair) = state in
+  let (kind, pair2) = pair in
+  let (value, old) = pair2 in
+  (name, (kind, (value, old)))
+in
+let rec apply_func state =
+  let (funcs, pair) = state in
+  let (name, arg) = pair in
+  let (head, rest) = funcs in
+  let (kind, rest2) = rest in
+  let (value, tail) = rest2 in
+  if head == name then if kind == 0 then value else arg else
+  if head < 0 then exit 1 else apply_func (tail, (name, arg))
+in
+let rec parse_expr_value state =
+  let (src, pair) = state in
+  let (pos0, funcs) = pair in
+  let pos = skip_space (src, pos0) in
+  if is_digit (src.[pos]) then parse_number (src, pos) else
+    let ident = parse_ident (src, pos) in
+    let (name, name_end) = ident in
+    let p0 = expect_ch (src, (name_end, 40)) in
+    let p1 = skip_space (src, p0) in
+    if src.[p1] == 41 then (apply_func (funcs, (name, 0)), p1 + 1) else
+      let arg = parse_expr_value (src, (p1, funcs)) in
+      let (arg_value, arg_end) = arg in
+      let p2 = expect_ch (src, (arg_end, 41)) in
+      (apply_func (funcs, (name, arg_value)), p2)
+in
+let rec parse_func_return state =
+  let (src, pair) = state in
+  let (pos0, param) = pair in
+  let p0 = expect_return (src, pos0) in
+  let p1 = skip_space (src, p0) in
+  if is_digit (src.[p1]) then
+    let parsed = parse_number (src, p1) in
+    let (value, value_end) = parsed in
+    let p2 = expect_ch (src, (value_end, 59)) in
+    ((0, value), p2)
+  else
+    let ident = parse_ident (src, p1) in
+    let (name, name_end) = ident in
+    let p2 = expect_ch (src, (name_end, 59)) in
+    if name == param then ((1, 0), p2) else exit 1
+in
+let rec parse_params state =
+  let (src, pos0) = state in
+  let p0 = expect_ch (src, (pos0, 40)) in
+  let p1 = skip_space (src, p0) in
+  if src.[p1] == 41 then (0 - 1, p1 + 1) else
+    let p2 = expect_int (src, p1) in
+    let param = parse_ident (src, p2) in
+    let (param_name, param_end) = param in
+    let p3 = expect_ch (src, (param_end, 41)) in
+    (param_name, p3)
+in
+let rec parse_program_loop state =
+  let (src, pair) = state in
+  let (pos0, funcs) = pair in
+  let pos = skip_space (src, pos0) in
+  if src.[pos] == 0 then exit 1 else
+    let p0 = expect_int (src, pos) in
+    let name_parsed = parse_ident (src, p0) in
+    let (name, name_end) = name_parsed in
+    let params = parse_params (src, name_end) in
+    let (param, p1) = params in
+    let p2 = expect_ch (src, (p1, 123)) in
+    if name == 246720401 then
+      let p3 = expect_return (src, p2) in
+      let value = parse_expr_value (src, (p3, funcs)) in
+      let (code, p4) = value in
+      let p5 = expect_ch (src, (p4, 59)) in
+      let _ = expect_ch (src, (p5, 125)) in
+      code
+    else
+      let ret = parse_func_return (src, (p2, param)) in
+      let (func_value, p3) = ret in
+      let (kind, value) = func_value in
+      let p4 = expect_ch (src, (p3, 125)) in
+      parse_program_loop (src, (p4, extend_func (name, (kind, (value, funcs)))))
+in
 let rec parse_program src =
-  let p0 = expect_int (src, 0) in
-  let p1 = expect_main (src, p0) in
-  let p2 = expect_ch (src, (p1, 40)) in
-  let p3 = expect_ch (src, (p2, 41)) in
-  let p4 = expect_ch (src, (p3, 123)) in
-  let p5 = expect_return (src, p4) in
-  let parsed = parse_number (src, p5) in
-  let (code, p6) = parsed in
-  let p7 = expect_ch (src, (p6, 59)) in
-  let _ = expect_ch (src, (p7, 125)) in
-  code
+  parse_program_loop (src, (0, empty_funcs 0))
 in
 let rec read_all state =
   let (src, pos) = state in
