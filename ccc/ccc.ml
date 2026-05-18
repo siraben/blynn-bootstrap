@@ -218,6 +218,11 @@ let rec parse_expr_mode state =
       let expr = parse_expr_mode (src, (pos + 1, (funcs, (env, mode)))) in
       let (value, value_end) = expr in
       (0 - value, value_end)
+    else if src.[pos] == 40 then
+      let expr = parse_expr_mode (src, (pos + 1, (funcs, (env, 0)))) in
+      let (value, value_end) = expr in
+      let p1 = expect_ch (src, (value_end, 41)) in
+      (value, p1)
     else if src.[pos] == 39 then parse_char_value (src, pos)
     else if is_digit (src.[pos]) then parse_number (src, pos) else
       let ident = parse_ident (src, pos) in
@@ -237,6 +242,13 @@ let rec parse_expr_mode state =
         else
           let p2 = expect_ch (src, (arg_end, 41)) in
           (apply_func (funcs, (name, arg_value)), p2)
+      else if src.[after_name] == 61 then
+        if src.[after_name + 1] == 61 then
+          (find_env (env, name), name_end)
+        else
+          let value = parse_expr_mode (src, (after_name + 1, (funcs, (env, 0)))) in
+          let (assigned, assigned_end) = value in
+          (assigned, assigned_end)
       else
         (find_env (env, name), name_end)
   in
