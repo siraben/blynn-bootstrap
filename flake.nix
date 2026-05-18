@@ -1538,6 +1538,12 @@ OK"
             printf 'write_byte (let x = 40 in x + 39)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-let.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-let.mzbc)"
             test "$actual" = O
+            printf 'let x = 79 in write_byte x' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-top-let.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-top-let.mzbc)"
+            test "$actual" = O
+            if printf '40 + 39' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-top-type-error.mzbc; then
+              exit 1
+            fi
             if printf 'write_byte 79 garbage' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-trailing.mzbc; then
               exit 1
             fi
@@ -1553,6 +1559,7 @@ OK"
             install -Dm644 03-add.mzbc "$out/share/mlc/stages/03-add.mzbc"
             install -Dm644 03-if.mzbc "$out/share/mlc/stages/03-if.mzbc"
             install -Dm644 03-let.mzbc "$out/share/mlc/stages/03-let.mzbc"
+            install -Dm644 03-top-let.mzbc "$out/share/mlc/stages/03-top-let.mzbc"
           '';
         };
 

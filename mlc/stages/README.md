@@ -80,9 +80,11 @@ Current stages:
   `p_keyword_at`, `p_need_string`, `p_need_keyword`) and leaves higher-order
   `p_bind` for the next compiler that can compile function-valued parser
   continuations. Keyword recognition is now string-literal based rather than
-  long character ladders. The flake gate checks direct bytes, char literals,
-  addition, conditionals, `let`, full-input consumption, and a static branch
-  type error.
+  long character ladders. Programs now parse as arbitrary expressions whose
+  final type must be `unit`, so the top-level no longer has a special
+  `write_byte` wrapper. The flake gate checks direct bytes, char literals,
+  addition, conditionals, `let`, top-level `let`, full-input consumption, and
+  static type errors.
 
 Planned stages:
 

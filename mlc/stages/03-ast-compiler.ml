@@ -276,10 +276,7 @@ let rec parse_expr state =
 in
 let rec parse_program state =
   let (src, pos0) = state in
-  let expr_pos = need_write_byte (src, pos0) in
-  let expr = parse_expr (src, expr_pos) in
-  let (ast, pos) = expr in
-  (EWriteByte ast, pos)
+  parse_expr (src, pos0)
 in
 let rec empty_tenv unit =
   let _ = unit in
