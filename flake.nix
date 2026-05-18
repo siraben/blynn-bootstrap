@@ -1368,6 +1368,11 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           default = packageTree.default;
         };
 
+        checks = {
+          mzvm-host-vs-seed = mzvmHostVsSeed;
+          mlc-seed-m2 = mlcSeedM2;
+        };
+
         legacyPackages = packageTree;
 
         apps.blynn-precisely-gcc = {
