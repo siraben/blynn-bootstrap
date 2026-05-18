@@ -9,8 +9,8 @@ Current stages:
 - `mlc-interp-seed.c` is the M2-compatible C root. It is a tree-walking
   interpreter for the small core language used to bootstrap later ML stages.
 - `00-core.ml` is the first checked core-language input for that root. It
-  exercises closures, recursive functions, conditionals, arithmetic, and byte
-  output.
+  exercises closures, recursive functions, conditionals, arithmetic, char
+  constants, byte output, and literal `write_string`.
 - `01-parenthetical.ml` is the first handoff stage. It is a core-ML program
   run by the C root; it fully parses a tiny parenthesized MZBC assembly and
   emits a runnable `.mzbc` image for `mzvm`.

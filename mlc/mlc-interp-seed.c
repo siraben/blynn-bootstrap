@@ -27,7 +27,8 @@ enum {
   N_WRITE_BYTE = 19,
   N_READ_BYTE = 20,
   N_NEG = 21,
-  N_EXIT = 22
+  N_EXIT = 22,
+  N_WRITE_STRING = 23
 };
 
 static char *src;
@@ -174,7 +175,8 @@ static int keyword_span(long start, long len)
     span_eq(start, len, "else") || span_eq(start, len, "fun") ||
     span_eq(start, len, "true") || span_eq(start, len, "false") ||
     span_eq(start, len, "exit") ||
-    span_eq(start, len, "read_byte") || span_eq(start, len, "write_byte");
+    span_eq(start, len, "read_byte") || span_eq(start, len, "write_byte") ||
+    span_eq(start, len, "write_string");
 }
 
 static int keyword_at(const char *word)
@@ -269,6 +271,58 @@ static long new_binary(long k, long a, long b)
 
 static long parse_expr(void);
 
+static long parse_escaped_char(void)
+{
+  long value;
+  int c;
+  int c2;
+  int c3;
+  if (pos >= src_len) die("unterminated escape");
+  c = src[pos];
+  pos = pos + 1;
+  if (c == 'n') return 10;
+  if (c == 't') return 9;
+  if (is_digit(c)) {
+    if (pos + 1 >= src_len) die("bad decimal escape");
+    c2 = src[pos];
+    c3 = src[pos + 1];
+    if (!is_digit(c2) || !is_digit(c3)) die("bad decimal escape");
+    pos = pos + 2;
+    value = (c - '0') * 100 + (c2 - '0') * 10 + c3 - '0';
+    return value;
+  }
+  return c;
+}
+
+static long parse_char_body(void)
+{
+  int c;
+  if (pos >= src_len) die("unterminated char literal");
+  c = src[pos];
+  pos = pos + 1;
+  if (c == 92) return parse_escaped_char();
+  return c;
+}
+
+static void parse_string_span(long *start_out, long *len_out)
+{
+  long start;
+  expect_char(34);
+  start = pos;
+  while (pos < src_len && src[pos] != 34) {
+    if (src[pos] == 92) {
+      pos = pos + 1;
+      parse_escaped_char();
+    } else {
+      pos = pos + 1;
+    }
+  }
+  if (pos >= src_len) die("unterminated string literal");
+  *start_out = start;
+  *len_out = pos - start;
+  pos = pos + 1;
+}
+
 static int atom_starts(void)
 {
   skip_space();
@@ -278,7 +332,7 @@ static int atom_starts(void)
     if (keyword_at("in") || keyword_at("then") || keyword_at("else") || keyword_at("rec")) return 0;
     return 1;
   }
-  return src[pos] == '(';
+  return src[pos] == '(' || src[pos] == 39;
 }
 
 static long parse_atom(void)
@@ -304,6 +358,13 @@ static long parse_atom(void)
     return node;
   }
   if (take_keyword("read_byte")) return new_node(N_READ_BYTE);
+  if (take_char(39)) {
+    value = parse_char_body();
+    expect_char(39);
+    node = new_node(N_INT);
+    int_value[node] = value;
+    return node;
+  }
   if (is_digit(src[pos])) {
     value = 0;
     while (pos < src_len && is_digit(src[pos])) {
@@ -327,6 +388,8 @@ static long parse_prefix(void)
   long body;
   long start;
   long len;
+  long string_start;
+  long string_len;
   if (take_keyword("fun")) {
     parse_ident(&start, &len);
     expect_two('-', '>');
@@ -340,6 +403,13 @@ static long parse_prefix(void)
   if (take_keyword("write_byte")) {
     node = new_node(N_WRITE_BYTE);
     left[node] = parse_prefix();
+    return node;
+  }
+  if (take_keyword("write_string")) {
+    node = new_node(N_WRITE_STRING);
+    parse_string_span(&string_start, &string_len);
+    name_start[node] = string_start;
+    name_len[node] = string_len;
     return node;
   }
   if (take_keyword("exit")) {
@@ -510,6 +580,22 @@ static long val_int(long value)
   return (value << 1) | 1;
 }
 
+static int string_next_char(long *offset, long end)
+{
+  int c;
+  long saved;
+  if (*offset >= end) die("string read past end");
+  c = src[*offset];
+  *offset = *offset + 1;
+  if (c != 92) return c;
+  saved = pos;
+  pos = *offset;
+  c = (int)parse_escaped_char();
+  *offset = pos;
+  pos = saved;
+  return c;
+}
+
 static long make_closure(long start, long len, long body, long env)
 {
   closure_count = closure_count + 1;
@@ -528,6 +614,8 @@ static long eval(long node, long env)
   long closure;
   long closure_index;
   long call_env;
+  long offset;
+  long end;
   int c;
   if (k == N_INT) return val_int(int_value[node]);
   if (k == N_VAR) return lookup_env(env, name_start[node], name_len[node]);
@@ -572,6 +660,15 @@ static long eval(long node, long env)
   if (k == N_WRITE_BYTE) {
     a = int_val(eval(left[node], env));
     fputc((int)(a & 255), stdout);
+    return val_int(0);
+  }
+  if (k == N_WRITE_STRING) {
+    offset = name_start[node];
+    end = offset + name_len[node];
+    while (offset < end) {
+      c = string_next_char(&offset, end);
+      fputc((int)(c & 255), stdout);
+    }
     return val_int(0);
   }
   if (k == N_EXIT) {
