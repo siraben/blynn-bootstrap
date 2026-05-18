@@ -102,6 +102,11 @@ let rec is_if_at state =
   let pos = skip_space (src, pos0) in
   (src.[pos] == 105) * (src.[pos + 1] == 102)
 in
+let rec is_else_at state =
+  let (src, pos0) = state in
+  let pos = skip_space (src, pos0) in
+  (src.[pos] == 101) * (src.[pos + 1] == 108) * (src.[pos + 2] == 115) * (src.[pos + 3] == 101)
+in
 let rec is_goto_at state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
@@ -614,11 +619,41 @@ let rec parse_main_body state =
     if is_return_at (src, branch_pos) then
       let branch = parse_return_value (src, (branch_pos, (funcs, cond_env))) in
       let (branch_value, branch_end) = branch in
-      if cond_value == 0 then parse_main_body (src, (branch_end, (funcs, cond_env))) else (branch_value, skip_to_close_brace (src, branch_end))
-    else
+      if cond_value == 0 then
+        let else_pos = skip_space (src, branch_end) in
+        if is_else_at (src, else_pos) then
+          let else_body = skip_space (src, else_pos + 4) in
+          if is_if_at (src, else_body) then parse_main_body (src, (else_body, (funcs, cond_env))) else
+            parse_main_body (src, (skip_statement (src, else_body), (funcs, cond_env)))
+        else
+          parse_main_body (src, (branch_end, (funcs, cond_env)))
+      else
+        (branch_value, skip_to_close_brace (src, branch_end))
+    else if is_goto_at (src, branch_pos) then
       let goto = parse_goto_statement (src, branch_pos) in
       let (label, goto_end) = goto in
-      if cond_value == 0 then parse_main_body (src, (goto_end, (funcs, cond_env))) else parse_main_body (src, (find_label (src, (0, label)), (funcs, cond_env)))
+      if cond_value == 0 then
+        let else_pos = skip_space (src, goto_end) in
+        if is_else_at (src, else_pos) then
+          let else_body = skip_space (src, else_pos + 4) in
+          if is_if_at (src, else_body) then parse_main_body (src, (else_body, (funcs, cond_env))) else
+            parse_main_body (src, (skip_statement (src, else_body), (funcs, cond_env)))
+        else
+          parse_main_body (src, (goto_end, (funcs, cond_env)))
+      else
+        parse_main_body (src, (find_label (src, (0, label)), (funcs, cond_env)))
+    else
+      let branch_end = skip_statement (src, branch_pos) in
+      if cond_value == 0 then
+        let else_pos = skip_space (src, branch_end) in
+        if is_else_at (src, else_pos) then
+          let else_body = skip_space (src, else_pos + 4) in
+          if is_if_at (src, else_body) then parse_main_body (src, (else_body, (funcs, cond_env))) else
+            parse_main_body (src, (skip_statement (src, else_body), (funcs, cond_env)))
+        else
+          parse_main_body (src, (branch_end, (funcs, cond_env)))
+      else
+        parse_main_body (src, (branch_end, (funcs, cond_env)))
   else if is_while_at (src, pos) then
     let p0 = expect_ch (src, (pos + 5, 40)) in
     let cond = parse_condition_value (src, (p0, (funcs, env))) in
