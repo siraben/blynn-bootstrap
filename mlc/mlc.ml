@@ -1,12 +1,16 @@
 (* Initial self-host compiler placeholder.
 
-   The first checked target is mlc-seed.c, which only emits bytecode for the
-   write_byte fixture used by the VM smoke test. This file is where the
-   MinCaml-shaped compiler grows next: lexer, parser, monomorphic type
-   inference, K-normalization, simplification, closure conversion, and MZBC
-   emission.
+   This is not the compiler yet. It deliberately uses the seed language surface
+   that the real MinCaml-shaped compiler will need: ADT declarations,
+   constructor allocation, pattern matching, tuple destructuring, local names,
+   and literal output.
 *)
 
-let _ = write_byte 79 in
-let _ = write_byte 75 in
-write_byte 10
+type output = Done | Emit of int
+
+let pair = (79, 10) in
+let (letter, newline) = pair in
+let first = Emit letter in
+let _ = write_byte (match first with Emit value -> value | _ -> 88) in
+let _ = write_string "K" in
+write_byte newline
