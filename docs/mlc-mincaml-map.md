@@ -151,7 +151,8 @@ written in the seed core language and has a staged one-lookahead
 lexer/parser/emitter path for byte literals, local `let`, integer expressions,
 nested conditionals, `read_byte`, `Bytes.create`, dynamic byte indexing and
 writes, imperative `Cell.create` / `Cell.get` / `Cell.set`, two-field record
-declarations/literals/field reads, arbitrary final direct calls, bounded keyword lookahead with capped
+declarations/literals/field reads, declaration-style top-level `let` /
+`let rec`, arbitrary final direct calls, bounded keyword lookahead with capped
 identifier hashes, and the first ADT/pattern slice. The `mlc.byte.selfhost`
 target compiles `mlc/mlc.ml` with committed `mlc.byte` and compares the result
 byte-for-byte with the committed compiler artifact.

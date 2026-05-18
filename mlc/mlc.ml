@@ -1712,24 +1712,21 @@ let rec compile_byte_code input =
         let (fn_len, fn_end) = fn_body in
         let fn_total = 1 + fn_len + 5 + 1 in
         let in_pos = skip_space (src, fn_end) in
-        if is_in_at (src, in_pos) then
-          let body_pos = skip_space (src, in_pos + 2) in
-          let body = compile_byte_code (src, (body_pos, (env, (ctors, (next_funcs, (base + 5 + fn_total, 0)))))) in
-          let (body_len, body_end) = body in
-          let _ =
-            if emit == 1 then
-              let _ = emit_branch (1, fn_total) in
-              let _ = emit_push 1 in
-              let _ = compile_expr (src, (fn_body_start, (fn_env, (ctors, (next_funcs, 1))))) in
-              let _ = emit_pop1 1 in
-              let _ = emit_return 1 in
-              compile_byte_code (src, (body_pos, (env, (ctors, (next_funcs, (base + 5 + fn_total, 1))))))
-            else
-              (0, 0)
-          in
-          (5 + fn_total + body_len, body_end)
-        else
-          exit 1
+        let body_pos = if is_in_at (src, in_pos) then skip_space (src, in_pos + 2) else in_pos in
+        let body = compile_byte_code (src, (body_pos, (env, (ctors, (next_funcs, (base + 5 + fn_total, 0)))))) in
+        let (body_len, body_end) = body in
+        let _ =
+          if emit == 1 then
+            let _ = emit_branch (1, fn_total) in
+            let _ = emit_push 1 in
+            let _ = compile_expr (src, (fn_body_start, (fn_env, (ctors, (next_funcs, 1))))) in
+            let _ = emit_pop1 1 in
+            let _ = emit_return 1 in
+            compile_byte_code (src, (body_pos, (env, (ctors, (next_funcs, (base + 5 + fn_total, 1))))))
+          else
+            (0, 0)
+        in
+        (5 + fn_total + body_len, body_end)
       else
         exit 1
     else
@@ -1747,24 +1744,21 @@ let rec compile_byte_code input =
               let rhs = compile_expr (src, (eq_pos + 1, (env, (ctors, (funcs, emit))))) in
               let (rhs_len, rhs_end) = rhs in
               let in_pos = skip_space (src, rhs_end) in
-              if is_in_at (src, in_pos) then
-                let body_pos = skip_space (src, in_pos + 2) in
-                let p0 = emit_push emit in
-                let a0 = emit_acc (emit, 0) in
-                let g0 = emit_getfield (emit, 0) in
-                let p1 = emit_push emit in
-                let a1 = emit_acc (emit, 1) in
-                let g1 = emit_getfield (emit, 1) in
-                let p2 = emit_push emit in
-                let shifted = shift_env (shift_env (shift_env env)) in
-                let body_env = (name2, (0, (name1, (1, shifted)))) in
-                let body_base = base + rhs_len + p0 + a0 + g0 + p1 + a1 + g1 + p2 in
-                let body = compile_byte_code (src, (body_pos, (body_env, (ctors, (funcs, (body_base, emit)))))) in
-                let (body_len, body_end) = body in
-                let pop_len = emit_pop (emit, 3) in
-                (rhs_len + p0 + a0 + g0 + p1 + a1 + g1 + p2 + body_len + pop_len, body_end)
-              else
-                exit 1
+              let body_pos = if is_in_at (src, in_pos) then skip_space (src, in_pos + 2) else in_pos in
+              let p0 = emit_push emit in
+              let a0 = emit_acc (emit, 0) in
+              let g0 = emit_getfield (emit, 0) in
+              let p1 = emit_push emit in
+              let a1 = emit_acc (emit, 1) in
+              let g1 = emit_getfield (emit, 1) in
+              let p2 = emit_push emit in
+              let shifted = shift_env (shift_env (shift_env env)) in
+              let body_env = (name2, (0, (name1, (1, shifted)))) in
+              let body_base = base + rhs_len + p0 + a0 + g0 + p1 + a1 + g1 + p2 in
+              let body = compile_byte_code (src, (body_pos, (body_env, (ctors, (funcs, (body_base, emit)))))) in
+              let (body_len, body_end) = body in
+              let pop_len = emit_pop (emit, 3) in
+              (rhs_len + p0 + a0 + g0 + p1 + a1 + g1 + p2 + body_len + pop_len, body_end)
             else
               exit 1
           else
@@ -1779,17 +1773,14 @@ let rec compile_byte_code input =
           let rhs = compile_expr (src, (eq_pos + 1, (env, (ctors, (funcs, emit))))) in
           let (rhs_len, rhs_end) = rhs in
           let in_pos = skip_space (src, rhs_end) in
-          if is_in_at (src, in_pos) then
-            let body_pos = skip_space (src, in_pos + 2) in
-            let push_len = emit_push (emit) in
-            let next_env = extend_env (name, env) in
-            let body_base = base + rhs_len + push_len in
-            let body = compile_byte_code (src, (body_pos, (next_env, (ctors, (funcs, (body_base, emit)))))) in
-            let (body_len, body_end) = body in
-            let pop_len = emit_pop1 (emit) in
-            (rhs_len + push_len + body_len + pop_len, body_end)
-          else
-            exit 1
+          let body_pos = if is_in_at (src, in_pos) then skip_space (src, in_pos + 2) else in_pos in
+          let push_len = emit_push (emit) in
+          let next_env = extend_env (name, env) in
+          let body_base = base + rhs_len + push_len in
+          let body = compile_byte_code (src, (body_pos, (next_env, (ctors, (funcs, (body_base, emit)))))) in
+          let (body_len, body_end) = body in
+          let pop_len = emit_pop1 (emit) in
+          (rhs_len + push_len + body_len + pop_len, body_end)
         else
           exit 1
 	  else
