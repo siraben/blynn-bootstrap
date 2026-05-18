@@ -13,6 +13,7 @@
         lib = pkgs.lib;
         hccSrc = ./hcc;
         mzvmSrc = ./mzvm;
+        mlcSrc = ./mlc;
         hccHsSrc = lib.cleanSourceWith {
           src = hccSrc;
           filter = path: type:
@@ -664,6 +665,28 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           install -Dm644 host.txt "$out/ok-output.txt"
         '';
 
+        mlcSeedM2 = stageRun {
+          pname = "mlc-seed-m2";
+          nativeBuildInputs = [
+            minimalBootstrap.stage0-posix.mescc-tools
+          ];
+          description = "M2-Planet-built seed mini-OCaml compiler for CCC bootstrap bytecode";
+          buildScript = ''
+            . ${./scripts/lib/bootstrap.sh}
+            cp ${mlcSrc}/mlc-seed.c mlc-seed.c
+            cp ${./tests/mlc/ok.ml} ok.ml
+            compile_m2 mlc-seed.c mlc-seed
+            ./mlc-seed ok.ml ok.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed ok.mzbc)"
+            test "$actual" = OK
+          '';
+          installScript = ''
+            install -Dm755 mlc-seed "$out/bin/mlc-seed"
+            install -Dm644 mlc-seed.c "$out/share/mlc/mlc-seed.c"
+            install -Dm644 ok.mzbc "$out/share/mlc/tests/ok.mzbc"
+          '';
+        };
+
         hccHostGhcNative = pkgs.callPackage ./nix/hcc-ghc.nix {
           stdenv = pkgs.stdenv;
           pname = "hcc-host-ghc-native";
@@ -1291,6 +1314,11 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             seed.m2 = mzvmSeedM2;
           };
           mzvm-seed.m2 = mzvmSeedM2;
+
+          mlc = {
+            seed.m2 = mlcSeedM2;
+          };
+          mlc-seed.m2 = mlcSeedM2;
 
           hcc = hccBy // {
             profile.host.ghc.native = hccProfileHostGhcNative;
