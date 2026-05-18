@@ -7,6 +7,11 @@ minimal-bootstrap path with `hcc`, a C compiler written in Blynn's
 The goal is an auditable path from the stage0 seed tools to TinyCC and then
 through the usual minimal-bootstrap GCC chain.
 
+`plan.md` now tracks a side-by-side pivot toward CCC, a mini-OCaml-hosted C
+compiler running on a small ZINC-style bytecode VM. The existing HCC chain
+remains the working TinyCC/GCC route while CCC is brought up in auditable
+slices.
+
 ## Status
 
 - `precisely_up` is built from the Blynn bootstrap chain, including a
@@ -21,6 +26,14 @@ through the usual minimal-bootstrap GCC chain.
   `gcc46Cxx`, `gcc10`, `gccLatest`, `glibc`, and `gccGlibc`.
 - HCC emits stage0 M1 for amd64 and i386 smoke targets. The full TinyCC
   bootstrap path is still wired for amd64.
+- CCC Phase A has started:
+  - `mzvm.host` builds the development VM with the host C compiler.
+  - `mzvm-seed.m2` builds the seed VM with stage0 M2-Planet and runs a
+    hand-encoded `.mzbc` smoke program.
+  - `tests.mzvm.host-vs-seed` checks host and seed VMs agree on the bytecode
+    fixture.
+  - `mlc-seed.m2` builds the initial M2 seed compiler slice and verifies its
+    emitted bytecode under `mzvm-seed`.
 
 ## Layout
 
@@ -29,6 +42,8 @@ flake.nix                         # package graph and bootstrap target exports
 nix/                              # derivations and bootstrap patches
 scripts/                          # portable bootstrap drivers, independent of Nix
 hcc/                              # HCC sources and smoke fixtures
+mlc/                              # CCC mini-OCaml compiler seed and scaffold
+mzvm/                             # CCC ZINC-style bytecode VM
 hcc/*.modules                     # ordered source manifests for Blynn stages
 tests/                            # HCC and MesCC reference tests
 upstream/                         # pinned upstream mirrors used to refresh patches
@@ -40,6 +55,15 @@ upstream/                         # pinned upstream mirrors used to refresh patc
 nix build .#tinycc.m2.precisely.m2
 nix build .#gcc46.m2.precisely.m2
 nix build .#gccLatest.m2.precisely.m2
+```
+
+CCC bring-up targets:
+
+```sh
+nix build .#mzvm.host
+nix build .#mzvm-seed.m2
+nix build .#tests.mzvm.host-vs-seed
+nix build .#mlc-seed.m2
 ```
 
 For faster iteration, use the GCC-built M2-Planet debug path:
