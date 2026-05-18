@@ -29,8 +29,9 @@ Current stages:
 - `mlc/mlc.ml` is also compiled by `02-ml0-compiler.ml` in the current gate;
   the emitted bytecode runs under `mzvm-seed` as a tiny compiler, emits real
   bytecode for constants, chars, a top-level `let`, variable lookup, and `+`,
-  and accepts `write_byte (40+39)`, `write_byte 'O'`, `write_string "OK"`,
-  and `let x = 40 in write_byte (x + 39)`.
+  and conditional expressions. It accepts `write_byte (40+39)`,
+  `write_byte 'O'`, `write_string "OK"`, `let x = 40 in write_byte (x + 39)`,
+  and true/false `if ... then ... else ...` byte-output fixtures.
 
 Planned stages:
 

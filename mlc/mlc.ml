@@ -63,6 +63,18 @@ let rec emit_call_write_byte emit =
   let _ = emit_u32_if (emit, 1) in
   9
 in
+let rec emit_branch state =
+  let (emit, offset) = state in
+  let _ = emit_byte_if (emit, 11) in
+  let _ = emit_u32_if (emit, offset) in
+  5
+in
+let rec emit_branch_if_not state =
+  let (emit, offset) = state in
+  let _ = emit_byte_if (emit, 13) in
+  let _ = emit_u32_if (emit, offset) in
+  5
+in
 let rec is_digit ch =
   if ch < 48 then 0 else if ch > 57 then 0 else 1
 in
@@ -133,7 +145,7 @@ let rec shift_env env =
   let (name, depth) = env in
   (name, depth + 1)
 in
-let rec compile_atom input =
+let rec compile_simple_atom input =
   let (src, pair) = input in
   let (pos0, pair2) = pair in
   let (env, emit) = pair2 in
@@ -157,6 +169,55 @@ let rec compile_atom input =
       (len, done_pos)
     else
       exit 1
+in
+let rec compile_simple_expr input =
+  let (src, pair) = input in
+  let (pos, pair2) = pair in
+  let (env, emit) = pair2 in
+  let left = compile_simple_atom (src, (pos, (env, emit))) in
+  let (left_len, next0) = left in
+  let next = skip_space (src, next0) in
+  if src.[next] == 43 then
+    let push_len = emit_push emit in
+    let right = compile_simple_expr (src, (next + 1, (shift_env env, emit))) in
+    let (right_len, done_pos) = right in
+    let add_len = emit_add emit in
+    (left_len + push_len + right_len + add_len, done_pos)
+  else
+    left
+in
+let rec compile_if input =
+  let (src, pair) = input in
+  let (pos, pair2) = pair in
+  let (env, emit) = pair2 in
+  let cond0 = compile_simple_expr (src, (pos + 2, (env, 0))) in
+  let (cond_len, cond_end) = cond0 in
+  let then_pos = skip_space (src, cond_end) in
+  if src.[then_pos] == 116 then
+    let then0 = compile_simple_expr (src, (then_pos + 4, (env, 0))) in
+    let (then_len, then_end) = then0 in
+    let else_pos = skip_space (src, then_end) in
+    if src.[else_pos] == 101 then
+      let else0 = compile_simple_expr (src, (else_pos + 4, (env, 0))) in
+      let (else_len, else_end) = else0 in
+      let _ = if emit == 1 then compile_simple_expr (src, (pos + 2, (env, 1))) else (0, 0) in
+      let _ = emit_branch_if_not (emit, then_len + 5) in
+      let _ = if emit == 1 then compile_simple_expr (src, (then_pos + 4, (env, 1))) else (0, 0) in
+      let _ = emit_branch (emit, else_len) in
+      let _ = if emit == 1 then compile_simple_expr (src, (else_pos + 4, (env, 1))) else (0, 0) in
+      (cond_len + 5 + then_len + 5 + else_len, else_end)
+    else
+      exit 1
+  else
+    exit 1
+in
+let rec compile_atom input =
+  let (src, pair) = input in
+  let (pos0, pair2) = pair in
+  let (env, emit) = pair2 in
+  let pos = skip_space (src, pos0) in
+  if src.[pos] == 105 then compile_if (src, (pos, (env, emit)))
+  else compile_simple_atom (src, (pos, (env, emit)))
 in
 let rec compile_expr input =
   let (src, pair) = input in
