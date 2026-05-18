@@ -91,10 +91,11 @@ destructuring, simple top-level ADT declarations of the form
 `type t = A | B of int`, constructor allocation from those declarations, and
 two-arm constructor `match` expressions with a second-arm wildcard fallback.
 It also has a temporary
-`write_string "..."` form that lowers literal bytes to repeated `write_byte`
-calls. It exists to pin the M2 path, bytecode writer, expression codegen,
-local stack environment, pattern lowering shape, and the VM representation of
-constructors before the real MinCaml-shaped passes are ported into `mlc.ml`.
+`write_string "..."` form, including three-digit byte escapes, that lowers
+literal bytes to repeated `write_byte` calls. It exists to pin the M2 path,
+bytecode writer, expression codegen, local stack environment, pattern lowering
+shape, and the VM representation of constructors before the real
+MinCaml-shaped passes are ported into `mlc.ml`.
 
 Do not treat the current `mlc.ml` as self-hosted. The next meaningful step is
 to replace the placeholder with the lexer/parser/type AST spine, including

@@ -462,6 +462,7 @@ static void parse_exit(void)
 static int parse_string_char(void)
 {
   int c;
+  int out;
   if (pos >= src_len) die("unterminated string");
   c = src[pos];
   pos = pos + 1;
@@ -473,6 +474,17 @@ static int parse_string_char(void)
     if (c == 't') return 9;
     if (c == '\\') return 92;
     if (c == '"') return 34;
+    if (c >= '0' && c <= '9') {
+      out = c - '0';
+      if (pos >= src_len || src[pos] < '0' || src[pos] > '9') die("short numeric string escape");
+      out = out * 10 + (src[pos] - '0');
+      pos = pos + 1;
+      if (pos >= src_len || src[pos] < '0' || src[pos] > '9') die("short numeric string escape");
+      out = out * 10 + (src[pos] - '0');
+      pos = pos + 1;
+      if (out > 255) die("numeric string escape out of range");
+      return out;
+    }
     die("unsupported string escape");
   }
   if (c == '"') return -1;
