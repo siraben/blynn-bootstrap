@@ -32,8 +32,11 @@ slices.
     hand-encoded `.mzbc` smoke program.
   - `tests.mzvm.host-vs-seed` checks host and seed VMs agree on the bytecode
     fixture.
+  - `mlc-interp-seed.m2` builds the new M2 tree-walking core-ML interpreter
+    root and runs the first named `mlc/stages` input.
   - `mlc-seed.m2` builds the initial M2 seed compiler slice and verifies its
-    emitted bytecode under `mzvm-seed`.
+    emitted bytecode under `mzvm-seed`; this remains transitional while the
+    staged interpreter path grows.
 
 ## Layout
 
@@ -43,6 +46,7 @@ nix/                              # derivations and bootstrap patches
 scripts/                          # portable bootstrap drivers, independent of Nix
 hcc/                              # HCC sources and smoke fixtures
 mlc/                              # CCC mini-OCaml compiler seed and scaffold
+mlc/stages/                       # named MLC bootstrap stages
 mzvm/                             # CCC ZINC-style bytecode VM
 hcc/*.modules                     # ordered source manifests for Blynn stages
 tests/                            # HCC and MesCC reference tests
@@ -63,6 +67,9 @@ CCC bring-up targets:
 nix build .#mzvm.host
 nix build .#mzvm-seed.m2
 nix build .#tests.mzvm.host-vs-seed
+nix build .#mlc-interp-seed.host
+nix build .#mlc-interp-seed.m2
+nix build .#tests.mlc.interp-seed.host-vs-m2
 nix build .#mlc-seed.host
 nix build .#mlc-seed.m2
 nix build .#tests.mlc.seed.host-vs-m2

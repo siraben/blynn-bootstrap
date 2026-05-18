@@ -715,6 +715,73 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           "read-byte"
         ];
 
+        mlcInterpSeedHost = pkgs.stdenv.mkDerivation {
+          pname = "mlc-interp-seed-host";
+          version = "0-unstable-2026-05-17";
+          src = mlcSrc;
+
+          dontConfigure = true;
+          dontUpdateAutotoolsGnuConfigScripts = true;
+
+          buildPhase = ''
+            runHook preBuild
+            $CC -O2 -Wall -Wextra mlc-interp-seed.c -o mlc-interp-seed
+            runHook postBuild
+          '';
+
+          doCheck = true;
+          checkPhase = ''
+            runHook preCheck
+            ./mlc-interp-seed stages/00-core.ml > 00-core.out
+            printf 'OOK\n' > 00-core.expected
+            cmp 00-core.expected 00-core.out
+            runHook postCheck
+          '';
+
+          installPhase = ''
+            runHook preInstall
+            install -Dm755 mlc-interp-seed "$out/bin/mlc-interp-seed"
+            install -Dm644 mlc-interp-seed.c "$out/share/mlc/mlc-interp-seed.c"
+            install -Dm644 stages/00-core.ml "$out/share/mlc/stages/00-core.ml"
+            install -Dm644 00-core.out "$out/share/mlc/stages/00-core.out"
+            runHook postInstall
+          '';
+
+          meta = with pkgs.lib; {
+            description = "Host-built tree-walking mini-OCaml bootstrap interpreter";
+            license = licenses.gpl3Only;
+            platforms = platforms.linux;
+          };
+        };
+
+        mlcInterpSeedM2 = stageRun {
+          pname = "mlc-interp-seed-m2";
+          nativeBuildInputs = [
+            minimalBootstrap.stage0-posix.mescc-tools
+          ];
+          description = "M2-Planet-built tree-walking mini-OCaml bootstrap interpreter";
+          buildScript = ''
+            . ${./scripts/lib/bootstrap.sh}
+            cp ${mlcSrc}/mlc-interp-seed.c mlc-interp-seed.c
+            cp ${mlcSrc}/stages/00-core.ml 00-core.ml
+            compile_m2 mlc-interp-seed.c mlc-interp-seed
+            actual="$(./mlc-interp-seed 00-core.ml)"
+            test "$actual" = OOK
+            ./mlc-interp-seed 00-core.ml > 00-core.out
+          '';
+          installScript = ''
+            install -Dm755 mlc-interp-seed "$out/bin/mlc-interp-seed"
+            install -Dm644 mlc-interp-seed.c "$out/share/mlc/mlc-interp-seed.c"
+            install -Dm644 00-core.ml "$out/share/mlc/stages/00-core.ml"
+            install -Dm644 00-core.out "$out/share/mlc/stages/00-core.out"
+          '';
+        };
+
+        mlcInterpSeedHostVsM2 = pkgs.runCommand "mlc-interp-seed-host-vs-m2" { } ''
+          cmp ${mlcInterpSeedHost}/share/mlc/stages/00-core.out ${mlcInterpSeedM2}/share/mlc/stages/00-core.out
+          install -Dm644 ${mlcInterpSeedHost}/share/mlc/stages/00-core.out "$out/00-core.out"
+        '';
+
         mlcSeedHost = pkgs.stdenv.mkDerivation {
           pname = "mlc-seed-host";
           version = "0-unstable-2026-05-06";
@@ -1643,11 +1710,15 @@ DEFINE SYSCALL 0F05
           mzvm-seed.m2 = mzvmSeedM2;
 
           mlc = {
+            interp-seed.host = mlcInterpSeedHost;
+            interp-seed.m2 = mlcInterpSeedM2;
             seed.host = mlcSeedHost;
             seed.m2 = mlcSeedM2;
             byte.seed = mlcByteSeed;
             byte.committed = mlcByteCommitted;
           };
+          mlc-interp-seed.host = mlcInterpSeedHost;
+          mlc-interp-seed.m2 = mlcInterpSeedM2;
           mlc-seed.host = mlcSeedHost;
           mlc-seed.m2 = mlcSeedM2;
 
@@ -1700,6 +1771,7 @@ DEFINE SYSCALL 0F05
             precisely.dialect = precisely-dialect-tests;
             tinyccM1.native-vs-faithful = tinyccM1CompareNativeFaithful;
             mzvm.host-vs-seed = mzvmHostVsSeed;
+            mlc.interp-seed.host-vs-m2 = mlcInterpSeedHostVsM2;
             mlc.seed.host-vs-m2 = mlcSeedHostVsM2;
             mlc.byte.seed = mlcByteSeed;
             mlc.byte.committed = mlcByteCommitted;
@@ -1716,6 +1788,8 @@ DEFINE SYSCALL 0F05
 
         checks = {
           mzvm-host-vs-seed = mzvmHostVsSeed;
+          mlc-interp-seed-m2 = mlcInterpSeedM2;
+          mlc-interp-seed-host-vs-m2 = mlcInterpSeedHostVsM2;
           mlc-seed-m2 = mlcSeedM2;
           mlc-seed-host-vs-m2 = mlcSeedHostVsM2;
           mlc-byte-seed = mlcByteSeed;

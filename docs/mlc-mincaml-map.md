@@ -75,14 +75,15 @@ main
 
 Bootstrap split:
 
-- `mlc-seed.c` compiles only a small core ML. Keep it oriented around
-  variables, literals, lambdas or direct functions, application, `if`,
-  `let` / `let rec`, tuples, arrays/bytes, and primitive I/O.
-- `mlc-seed.c` should not be the real ADT or pattern-matching compiler.
+- `mlc-interp-seed.c` is the M2-compatible C root. It tree-walks only a small
+  core ML. Keep it oriented around variables, literals, lambdas or direct
+  functions, application, `if`, `let` / `let rec`, tuples, arrays/bytes, and
+  primitive I/O.
+- The C root should not be the real ADT or pattern-matching compiler.
   Pattern syntax, constructor declarations, exhaustiveness/refutability
   handling, and decision-tree lowering belong in `mlc.ml`.
 - Full mini-OCaml remains a real source language with ADTs and `match`.
-  Those features are parsed and lowered by `mlc.byte` after the first
+  Those features are parsed and lowered by `mlc.byte` after the staged
   bootstrap compiler exists.
 
 Deleted MinCaml stages:
@@ -94,8 +95,15 @@ Deleted MinCaml stages:
 
 ## Current Bootstrap Slice
 
-The checked-in `mlc-seed.c` is deliberately smaller than this map. It is now a
-tiny recursive-descent compiler for `let` bindings, `if ... then ... else
+The checked-in `mlc-interp-seed.c` is the new C bootstrap root. It is a
+tree-walking interpreter for a tiny core with `let`, `let rec f x = ...`,
+`fun x -> ...`, application, conditionals, arithmetic/comparison, sequencing,
+`read_byte`, and `write_byte`. `mlc/stages/00-core.ml` is the first named
+stage smoke input and is checked under both host and M2 builds.
+
+The older `mlc-seed.c` is deliberately smaller than the full language and is
+now transitional. It is a tiny recursive-descent compiler for `let` bindings,
+`if ... then ... else
 ...`, sequencing with `;`, `read_byte`, `write_byte`, `exit`, integer literals, integer comparisons,
 parenthesized arithmetic, `+ - * /`, nested OCaml block comments,
 multi-character local identifiers, two-element tuple construction and
@@ -110,6 +118,7 @@ real MinCaml-shaped passes are ported into `mlc.ml`.
 
 Do not treat the current `mlc.ml` as self-hosted. It is now written in the
 seed core language and has a tiny lexer/parser/emitter path for byte literals
-and one infix addition. The next meaningful step is to keep `mlc-seed.c` to the
-core subset and grow `mlc.ml` into the first real parser/lowerer for ADTs and
-patterns.
+and one infix addition. The next meaningful step is to grow the staged ML path
+from `mlc-interp-seed.c` toward the first real parser/lowerer for ADTs and
+patterns, then retire the transitional direct C bytecode compiler from the
+critical path.

@@ -50,7 +50,8 @@ hex0 seed
   → stage0-posix tools
   → M2-Planet
   → mzvm-seed         (ZINC VM, ~1k LoC of M2-compatible C)
-  → mlc-seed          (mini-OCaml → ZINC bytecode, ~1.5k LoC of M2-compatible C)
+  → mlc-interp-seed   (tree-walking core-ML interpreter, M2-compatible C)
+  → mlc stage 0..N    (core ML sources grown in named bootstrap stages)
   → mlc.byte          (self-hosted mini-OCaml compiler, ~1.5k LoC of mini-OCaml)
   → ccc.byte          (C → M1 asm compiler, ~5–8k LoC of mini-OCaml)
   → TinyCC
@@ -64,10 +65,15 @@ The two pieces we own end-to-end:
   - `mzvm.c` — a richer build for native development (same bytecode ABI; lets
     us reuse host tools like `cc` for fast iteration).
 - **mlc** — the mini-OCaml compiler. Two implementations:
-  - `mlc-seed.c` — M2-Planet compatible, hand-written. Compiles only the
-    subset of mini-OCaml needed to compile `mlc.ml` and `ccc.ml`.
+  - `mlc-interp-seed.c` — M2-Planet compatible, hand-written. It is a
+    tree-walking interpreter for the tiny core language used to run the first
+    ML bootstrap stages.
+  - `mlc-seed.c` — transitional M2-compatible direct bytecode compiler for
+    current smoke coverage. It should shrink out of the critical path as the
+    staged ML compiler takes over.
   - `mlc.ml` — the real, self-hosted compiler, written in its own input
-    language. The shipped `mlc.byte` artifact is what `mlc-seed` reproduces.
+    language. The shipped `mlc.byte` artifact is what the staged bootstrap
+    reproduces.
 
 **ccc** is the actual C compiler, structured as a port of HCC's pass list onto
 mini-OCaml. It emits M1 assembly directly — no textual IR layer — feeding the
@@ -200,26 +206,28 @@ Bytecode emission for ZINC needs no register allocator — the stack is the
 register file — which is the largest single saving versus MinCaml's
 hardware-asm pipeline.
 
-`mlc-seed.c` should stay much weaker than the full source language. It is not
-the first real implementation of pattern matching. It is a small compiler for a
-core ML bootstrap language oriented around variables, literals, lambdas or
-direct functions, application, `if`, `let` / `let rec`, tuples, arrays/bytes,
-and primitive I/O. It should not grow a full ADT declaration parser or pattern
-compiler.
+The C root should stay much weaker than the full source language. It is not the
+first real implementation of pattern matching, and it should be a tree-walking
+interpreter rather than an increasingly strong one-shot compiler. Its source
+language is a core ML bootstrap language oriented around variables, literals,
+lambdas or direct functions, application, `if`, `let` / `let rec`, tuples,
+arrays/bytes, and primitive I/O. It should not grow a full ADT declaration
+parser or pattern compiler.
 
 The first real parser/compiler for ADTs and `match` lives in `mlc.ml` itself:
 `mlc.ml` parses the full mini-OCaml source language, represents constructors
 and patterns as real AST nodes, lowers pattern matching to the core language,
-then emits `.mzbc`. The C seed only needs enough core-language support to build
-that first `mlc.byte`.
+then emits `.mzbc`. The C interpreter only needs enough core-language support
+to run the named ML bootstrap stages that build the first `mlc.byte`.
 
 To keep this sane:
 
-- We constrain the seed-compiled part of `mlc.ml` to the core subset above.
+- We constrain the interpreter-run bootstrap stages to the core subset above.
 - Full source programs, including later `ccc.ml`, use proper constructors and
   `match`; they are accepted by `mlc.byte`, not by the C seed.
 - A unit-test corpus should cover both layers: seed-core fixtures for
-  `mlc-seed.c`, and full-language fixtures for `mlc.byte` once it exists.
+  `mlc-interp-seed.c` / transitional `mlc-seed.c`, and full-language fixtures
+  for `mlc.byte` once it exists.
 
 ---
 
@@ -282,29 +290,33 @@ of the eventual chain:
    `OK`.
 2. **`mzvm.host`**: host-cc build of the same source family for dev. Both
    binaries must agree on the test corpus.
-3. **`mlc-seed.m2`**: M2-Planet compiles `mlc-seed.c`. Self-check: compiles
-   a fixture `.ml` to bytecode and `mzvm-seed` runs it with the expected
-   output.
-4. **`mlc.byte`** (committed): `mlc-seed` compiles `mlc.ml` → `mlc.byte`.
+3. **`mlc-interp-seed.m2`**: M2-Planet compiles `mlc-interp-seed.c`.
+   Self-check: interprets the first core stage and matches the host-built
+   interpreter output.
+4. **`mlc stage 0..N`**: the C interpreter runs named ML bootstrap stages,
+   in the same style as Blynn's `methodically → party → crossly → precisely`
+   chain, until the ML implementation can emit `.mzbc`.
+5. **`mlc.byte`** (committed): the staged ML compiler compiles `mlc.ml` →
+   `mlc.byte`.
    This artifact is checked into the tree the first time. Thereafter the
-   committed `mlc.byte` is what runs in CI, while `mlc-seed` is exercised
-   only to verify it.
-5. **`mlc.byte.selfhost`**: `mzvm mlc.byte mlc.ml` produces bytecode that
+   committed `mlc.byte` is what runs in CI, while the staged bootstrap is
+   exercised only to verify it.
+6. **`mlc.byte.selfhost`**: `mzvm mlc.byte mlc.ml` produces bytecode that
    must byte-equal `mlc.byte`. (Fixed-point self-host check.)
-6. **`ccc.byte`**: `mzvm mlc.byte ccc.ml` produces the C-compiler bytecode.
-7. **`tcc.m1`**: `mzvm ccc.byte tcc.preprocessed.c` produces M1 assembly
+7. **`ccc.byte`**: `mzvm mlc.byte ccc.ml` produces the C-compiler bytecode.
+8. **`tcc.m1`**: `mzvm ccc.byte tcc.preprocessed.c` produces M1 assembly
    directly.
-8. **`tcc.bin`**: stage0 `M1` + `hex2` assemble and link. Smoke-tested
+9. **`tcc.bin`**: stage0 `M1` + `hex2` assemble and link. Smoke-tested
    against the current TCC bootstrap fixtures.
-9. **`gcc46.m2.ccc.m2`**: the new analog of `gcc46.m2.precisely.m2`.
-10. **`gccLatest.m2.ccc.m2`**: end-to-end target.
+10. **`gcc46.m2.ccc.m2`**: the new analog of `gcc46.m2.precisely.m2`.
+11. **`gccLatest.m2.ccc.m2`**: end-to-end target.
 
-The **diverse double-compilation** check rides on step 5: if `mlc-seed`
-(C-coded) and `mlc.byte` (mini-OCaml-coded) agree on the bytecode for
-`mlc.ml`, then a Trojan in `mlc.byte` would have to be reproduced in
-`mlc-seed.c` — which is plain hand-audited C in the bootstrap tree.
+The **diverse double-compilation** check rides on step 6: if the staged
+bootstrap path rooted in the C interpreter and `mlc.byte` agree on the bytecode
+for `mlc.ml`, then a Trojan in `mlc.byte` would have to be reproduced in the
+plain hand-audited C/root-stage path.
 
-A second DDC check rides on step 8: TCC bootstrapped via CCC must produce
+A second DDC check rides on step 9: TCC bootstrapped via CCC must produce
 the same TCC that today's HCC chain produces (modulo deterministic-build
 caveats). For the transition period we run both chains and diff.
 
