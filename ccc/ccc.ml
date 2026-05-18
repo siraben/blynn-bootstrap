@@ -1,4 +1,5 @@
 type func_summary = FuncConst of int | FuncArg | FuncNotArg | FuncAddArgs | FuncCmpArgs | FuncArgEqAny of int
+type parse_reply = ParseOk of int | ParseErr
 
 let rec is_space ch =
   if ch == ' ' then 1 else
@@ -72,44 +73,58 @@ let rec parse_ident state =
   let ch = src.[pos] in
   if is_alpha ch then parse_ident_loop (src, (pos + 1, ch)) else exit 1
 in
-let rec is_string_at_loop state =
+let rec p_force reply =
+  match reply with
+    ParseOk pos -> pos
+  | ParseErr -> exit 1
+in
+let rec p_peek state =
+  let (src, pos0) = state in
+  let pos = skip_space (src, pos0) in
+  (src.[pos], pos)
+in
+let rec p_try_char state =
+  let (src, pair) = state in
+  let (pos0, ch) = pair in
+  let peeked = p_peek (src, pos0) in
+  let (got, pos) = peeked in
+  if got == ch then ParseOk (pos + 1) else ParseErr
+in
+let rec p_need_char state =
+  p_force (p_try_char state)
+in
+let rec p_try_string_loop state =
   let (want, pair) = state in
   let (len, pair2) = pair in
   let (src, pair3) = pair2 in
   let (pos, index) = pair3 in
-  if index == len then 1 else
-  if src.[pos + index] == want.[index] then is_string_at_loop (want, (len, (src, (pos, index + 1)))) else 0
+  if index == len then ParseOk (pos + index) else
+  if src.[pos + index] == want.[index] then p_try_string_loop (want, (len, (src, (pos, index + 1)))) else ParseErr
 in
-let rec is_string_at state =
+let rec p_try_string state =
   let (want, pair) = state in
   let (len, pair2) = pair in
   let (src, pos0) = pair2 in
   let pos = skip_space (src, pos0) in
-  is_string_at_loop (want, (len, (src, (pos, 0))))
+  p_try_string_loop (want, (len, (src, (pos, 0))))
+in
+let rec p_need_string state =
+  p_force (p_try_string state)
+in
+let rec is_string_at state =
+  let reply = p_try_string state in
+  match reply with
+    ParseOk pos -> let _ = pos in 1
+  | ParseErr -> 0
 in
 let rec expect_char state =
-  let (src, pair) = state in
-  let (pos0, ch) = pair in
-  let pos = skip_space (src, pos0) in
-  if src.[pos] == ch then pos + 1 else exit 1
+  p_need_char state
 in
 let rec expect_ch state =
   expect_char state
 in
-let rec expect_string_loop state =
-  let (want, pair) = state in
-  let (len, pair2) = pair in
-  let (src, pair3) = pair2 in
-  let (pos, index) = pair3 in
-  if index == len then pos + index else
-  if src.[pos + index] == want.[index] then expect_string_loop (want, (len, (src, (pos, index + 1)))) else exit 1
-in
 let rec expect_string state =
-  let (want, pair) = state in
-  let (len, pair2) = pair in
-  let (src, pos0) = pair2 in
-  let pos = skip_space (src, pos0) in
-  expect_string_loop (want, (len, (src, (pos, 0))))
+  p_need_string state
 in
 let rec parse_expect_char state =
   let (ch, pair) = state in
