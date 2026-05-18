@@ -1476,13 +1476,23 @@ OK"
           buildScript = ''
             cp ${cccSrc}/ccc.ml ccc.ml
             ${mzvmSeedM2}/bin/mzvm-seed ${mlcByteCommitted}/share/mlc/mlc.byte < ccc.ml > ccc.byte
-            actual="$(printf 'int main(){return 0;}' | ${mzvmSeedM2}/bin/mzvm-seed ccc.byte)"
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed ccc.byte < ${./tests/mescc/scaffold/01-return-0.c})"
             expected='DEFINE LOADI32_RDI 48C7C7
 DEFINE LOADI32_RAX 48C7C0
 DEFINE SYSCALL 0F05
 
 :_start
 	LOADI32_RDI %0
+	LOADI32_RAX %60
+	SYSCALL'
+            test "$actual" = "$expected"
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed ccc.byte < ${./tests/mescc/scaffold/02-return-1.c})"
+            expected='DEFINE LOADI32_RDI 48C7C7
+DEFINE LOADI32_RAX 48C7C0
+DEFINE SYSCALL 0F05
+
+:_start
+	LOADI32_RDI %1
 	LOADI32_RAX %60
 	SYSCALL'
             test "$actual" = "$expected"
@@ -1508,7 +1518,7 @@ DEFINE SYSCALL 0F05
         '';
 
         tccM1CccSeed = pkgs.runCommand "tcc-m1-ccc-seed" { } ''
-          printf 'int main(){return 0;}' | ${mzvmSeedM2}/bin/mzvm-seed ${cccByteCommitted}/share/ccc/ccc.byte > tcc.M1
+          ${mzvmSeedM2}/bin/mzvm-seed ${cccByteCommitted}/share/ccc/ccc.byte < ${./tests/mescc/scaffold/01-return-0.c} > tcc.M1
           printf 'DEFINE LOADI32_RDI 48C7C7\nDEFINE LOADI32_RAX 48C7C0\nDEFINE SYSCALL 0F05\n\n:_start\n\tLOADI32_RDI %%0\n\tLOADI32_RAX %%60\n\tSYSCALL\n' > expected.M1
           cmp expected.M1 tcc.M1
           install -Dm644 tcc.M1 "$out/share/ccc/tcc.M1"

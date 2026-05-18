@@ -4,9 +4,23 @@ let rec is_space ch =
   if ch == 9 then 1 else
   if ch == 13 then 1 else 0
 in
+let rec skip_block_comment state =
+  let (src, pos) = state in
+  if (src.[pos] == 42) * (src.[pos + 1] == 47) then pos + 2 else skip_block_comment (src, pos + 1)
+in
+let rec skip_line_comment state =
+  let (src, pos) = state in
+  if src.[pos] == 10 then pos + 1 else
+  if src.[pos] == 0 then pos else skip_line_comment (src, pos + 1)
+in
 let rec skip_space state =
   let (src, pos) = state in
-  if is_space (src.[pos]) then skip_space (src, pos + 1) else pos
+  if is_space (src.[pos]) then skip_space (src, pos + 1) else
+  if src.[pos] == 47 then
+    if src.[pos + 1] == 42 then skip_space (src, skip_block_comment (src, pos + 2)) else
+    if src.[pos + 1] == 47 then skip_space (src, skip_line_comment (src, pos + 2)) else pos
+  else
+    pos
 in
 let rec is_digit ch =
   if ch < 48 then 0 else if ch < 58 then 1 else 0
