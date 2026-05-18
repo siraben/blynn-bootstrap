@@ -459,6 +459,7 @@ static int atom_starts(void)
   skip_space();
   if (pos >= src_len) return 0;
   if (src[pos] == '(') return 1;
+  if (src[pos] == '"') return 1;
   if (src[pos] == '-') return 1;
   if (src[pos] >= '0' && src[pos] <= '9') return 1;
   if (src[pos] >= 'a' && src[pos] <= 'z') return 1;

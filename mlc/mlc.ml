@@ -37,8 +37,8 @@ in
 let text = "79" in
 let newline = Bytes.create 1 in
 newline.[0] <- 10;
-let first = parse_ones (text, 7) in
-let second = parse_ones ("75", 7) in
+let first = parse_byte text in
+let second = parse_byte "75" in
 let _ = write_byte (emit first) in
 let _ = write_byte (emit second) in
 write_byte newline.[0]
