@@ -4,12 +4,19 @@
 enum {
   OP_HALT = 0,
   OP_CONST = 1,
+  OP_PUSH = 2,
+  OP_ADDINT = 5,
+  OP_SUBINT = 6,
+  OP_MULINT = 7,
+  OP_DIVINT = 8,
   OP_C_CALL = 14
 };
 
 static FILE *out_file;
 static long out_len;
-static long parse_next;
+static char *src;
+static long src_len;
+static long pos;
 
 static void die(const char *msg)
 {
@@ -56,58 +63,51 @@ static int is_space(int c)
   return c == ' ' || c == '\n' || c == '\r' || c == '\t';
 }
 
-static long skip_space(char *src, long len, long i)
-{
-  while (i < len && is_space(src[i])) i = i + 1;
-  return i;
-}
-
 static int is_ident_char(int c)
 {
   return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
 }
 
-static int match_write_byte(char *src, long len, long i)
+static void skip_space(void)
 {
-  if (i + 10 > len) return 0;
-  if (src[i] != 'w') return 0;
-  if (src[i + 1] != 'r') return 0;
-  if (src[i + 2] != 'i') return 0;
-  if (src[i + 3] != 't') return 0;
-  if (src[i + 4] != 'e') return 0;
-  if (src[i + 5] != '_') return 0;
-  if (src[i + 6] != 'b') return 0;
-  if (src[i + 7] != 'y') return 0;
-  if (src[i + 8] != 't') return 0;
-  if (src[i + 9] != 'e') return 0;
-  if (i + 10 < len && is_ident_char(src[i + 10])) return 0;
+  while (pos < src_len && is_space(src[pos])) pos = pos + 1;
+}
+
+static int keyword_at(const char *word)
+{
+  long i = 0;
+  skip_space();
+  while (word[i]) {
+    if (pos + i >= src_len) return 0;
+    if (src[pos + i] != word[i]) return 0;
+    i = i + 1;
+  }
+  if (pos + i < src_len && is_ident_char(src[pos + i])) return 0;
   return 1;
 }
 
-static long parse_int_at(char *src, long len, long i)
+static int take_keyword(const char *word)
 {
-  long sign = 1;
-  long out = 0;
-  int seen = 0;
-  long p = skip_space(src, len, i);
-  if (p < len && src[p] == '-') {
-    sign = -1;
-    p = p + 1;
-  }
-  while (p < len && src[p] >= '0' && src[p] <= '9') {
-    out = out * 10 + (src[p] - '0');
-    seen = 1;
-    p = p + 1;
-  }
-  if (!seen) die("expected integer after write_byte");
-  parse_next = p;
-  return out * sign;
+  long i = 0;
+  if (!keyword_at(word)) return 0;
+  while (word[i]) i = i + 1;
+  pos = pos + i;
+  return 1;
 }
 
-static void emit_byte(int c)
+static int take_char(int c)
 {
-  fputc(c, out_file);
-  out_len = out_len + 1;
+  skip_space();
+  if (pos < src_len && src[pos] == c) {
+    pos = pos + 1;
+    return 1;
+  }
+  return 0;
+}
+
+static void expect_char(int c)
+{
+  if (!take_char(c)) die("unexpected token");
 }
 
 static long low_byte(long x)
@@ -118,6 +118,12 @@ static long low_byte(long x)
   return out;
 }
 
+static void emit_byte(int c)
+{
+  if (out_file) fputc(c, out_file);
+  out_len = out_len + 1;
+}
+
 static void emit_u32(long x)
 {
   emit_byte((int)low_byte(x));
@@ -126,50 +132,122 @@ static void emit_u32(long x)
   emit_byte((int)low_byte(x / 16777216));
 }
 
-static void emit_const_write(long n)
+static void emit_const(long n)
 {
   emit_byte(OP_CONST);
   emit_u32(n);
+}
+
+static void emit_call_write_byte(void)
+{
   emit_byte(OP_C_CALL);
   emit_u32(1);
   emit_u32(1);
 }
 
-static long count_writes(char *src, long src_len)
+static void parse_expr(void);
+
+static long parse_int_literal(void)
 {
-  long i = 0;
-  long writes = 0;
-  while (i < src_len) {
-    if (match_write_byte(src, src_len, i)) {
-      i = i + 10;
-      parse_int_at(src, src_len, i);
-      i = parse_next;
-      writes = writes + 1;
-    } else {
-      i = i + 1;
-    }
+  long sign = 1;
+  long out = 0;
+  int seen = 0;
+  skip_space();
+  if (pos < src_len && src[pos] == '-') {
+    sign = -1;
+    pos = pos + 1;
   }
-  return writes;
+  while (pos < src_len && src[pos] >= '0' && src[pos] <= '9') {
+    out = out * 10 + (src[pos] - '0');
+    seen = 1;
+    pos = pos + 1;
+  }
+  if (!seen) die("expected integer");
+  return out * sign;
 }
 
-static long emit_source(char *src, long src_len)
+static void parse_atom(void)
 {
-  long i = 0;
-  long writes = 0;
-  out_len = 0;
-  while (i < src_len) {
-    if (match_write_byte(src, src_len, i)) {
-      long n;
-      i = i + 10;
-      n = parse_int_at(src, src_len, i);
-      i = parse_next;
-      emit_const_write(n);
-      writes = writes + 1;
+  skip_space();
+  if (take_char('(')) {
+    parse_expr();
+    expect_char(')');
+  } else {
+    emit_const(parse_int_literal());
+  }
+}
+
+static void parse_mul(void)
+{
+  int more = 1;
+  parse_atom();
+  while (more) {
+    if (take_char('*')) {
+      emit_byte(OP_PUSH);
+      parse_atom();
+      emit_byte(OP_MULINT);
+    } else if (take_char('/')) {
+      emit_byte(OP_PUSH);
+      parse_atom();
+      emit_byte(OP_DIVINT);
     } else {
-      i = i + 1;
+      more = 0;
     }
   }
-  if (writes == 0) die("no write_byte calls found");
+}
+
+static void parse_add(void)
+{
+  int more = 1;
+  parse_mul();
+  while (more) {
+    if (take_char('+')) {
+      emit_byte(OP_PUSH);
+      parse_mul();
+      emit_byte(OP_ADDINT);
+    } else if (take_char('-')) {
+      emit_byte(OP_PUSH);
+      parse_mul();
+      emit_byte(OP_SUBINT);
+    } else {
+      more = 0;
+    }
+  }
+}
+
+static void parse_write(void)
+{
+  if (!take_keyword("write_byte")) die("expected write_byte");
+  parse_add();
+  emit_call_write_byte();
+}
+
+static void parse_let(void)
+{
+  if (!take_keyword("let")) die("expected let");
+  skip_space();
+  expect_char('_');
+  expect_char('=');
+  parse_expr();
+  if (!take_keyword("in")) die("expected in");
+  parse_expr();
+}
+
+static void parse_expr(void)
+{
+  if (keyword_at("let")) parse_let();
+  else if (keyword_at("write_byte")) parse_write();
+  else parse_add();
+}
+
+static long compile_len(void)
+{
+  out_file = 0;
+  out_len = 0;
+  pos = 0;
+  parse_expr();
+  skip_space();
+  if (pos != src_len) die("unexpected trailing input");
   emit_byte(OP_HALT);
   return out_len;
 }
@@ -182,13 +260,12 @@ static void write_u32_file(FILE *file, long x)
   fputc((int)low_byte(x / 16777216), file);
 }
 
-static void write_bytecode(const char *path, char *src, long src_len)
+static void write_bytecode(const char *path)
 {
-  FILE *file = fopen(path, "wb");
-  long writes = count_writes(src, src_len);
-  long code_len = writes * 14 + 1;
+  FILE *file;
+  long code_len = compile_len();
   long actual_len;
-  if (writes == 0) die("no write_byte calls found");
+  file = fopen(path, "wb");
   if (!file) die("cannot open output file");
   fputc('M', file);
   fputc('Z', file);
@@ -199,20 +276,22 @@ static void write_bytecode(const char *path, char *src, long src_len)
   write_u32_file(file, 3);
   write_u32_file(file, 0);
   out_file = file;
-  actual_len = emit_source(src, src_len);
-  if (actual_len != code_len) die("internal bytecode length mismatch");
+  out_len = 0;
+  pos = 0;
+  parse_expr();
+  emit_byte(OP_HALT);
+  actual_len = out_len;
   fclose(file);
+  if (actual_len != code_len) die("internal bytecode length mismatch");
 }
 
 int main(int argc, char **argv)
 {
-  long src_len;
-  char *src;
   if (argc != 3) {
     fputs("usage: mlc-seed INPUT.ml OUTPUT.mzbc\n", stderr);
     return 2;
   }
   src = read_file(argv[1], &src_len);
-  write_bytecode(argv[2], src, src_len);
+  write_bytecode(argv[2]);
   return 0;
 }

@@ -79,10 +79,11 @@ Deleted MinCaml stages:
 
 ## Current Bootstrap Slice
 
-The checked-in `mlc-seed.c` is deliberately smaller than this map. It only
-recognizes `write_byte <integer>` calls and emits deterministic `.mzbc` for
-the first VM/compiler smoke fixture. It exists to pin the M2 path and bytecode
-writer before the real MinCaml-shaped passes are ported into `mlc.ml`.
+The checked-in `mlc-seed.c` is deliberately smaller than this map. It is now a
+tiny recursive-descent compiler for `let _ = ... in ...`, `write_byte`,
+integer literals, parenthesized arithmetic, and `+ - * /`. It exists to pin
+the M2 path, bytecode writer, and expression codegen before the real
+MinCaml-shaped passes are ported into `mlc.ml`.
 
 Do not treat the current `mlc.ml` as self-hosted. The next meaningful step is
 to replace the placeholder with the lexer/parser/type AST spine, including

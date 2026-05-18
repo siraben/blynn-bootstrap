@@ -675,15 +675,20 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             . ${./scripts/lib/bootstrap.sh}
             cp ${mlcSrc}/mlc-seed.c mlc-seed.c
             cp ${./tests/mlc/ok.ml} ok.ml
+            cp ${./tests/mlc/arithmetic.ml} arithmetic.ml
             compile_m2 mlc-seed.c mlc-seed
             ./mlc-seed ok.ml ok.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed ok.mzbc)"
             test "$actual" = OK
+            ./mlc-seed arithmetic.ml arithmetic.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed arithmetic.mzbc)"
+            test "$actual" = H-
           '';
           installScript = ''
             install -Dm755 mlc-seed "$out/bin/mlc-seed"
             install -Dm644 mlc-seed.c "$out/share/mlc/mlc-seed.c"
             install -Dm644 ok.mzbc "$out/share/mlc/tests/ok.mzbc"
+            install -Dm644 arithmetic.mzbc "$out/share/mlc/tests/arithmetic.mzbc"
           '';
         };
 
