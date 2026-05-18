@@ -1388,6 +1388,9 @@ OK"
             ${mzvmSeedM2}/bin/mzvm-seed mlc.byte < ${./tests/mlc/match-three.ml} > compiled-match-three.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-match-three.mzbc)"
             test "$actual" = OK
+            ${mzvmSeedM2}/bin/mzvm-seed mlc.byte < ${./tests/mlc/match-four.ml} > compiled-match-four.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-match-four.mzbc)"
+            test "$actual" = O
             ${mzvmSeedM2}/bin/mzvm-seed mlc.byte < ${./tests/mlc/adt-tuple-payload.ml} > compiled-adt-tuple-payload.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-adt-tuple-payload.mzbc)"
             test "$actual" = OK

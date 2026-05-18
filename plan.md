@@ -224,6 +224,26 @@ the same first language, parses a tiny but complete ML0 source dialect, lowers
 it to VM bytecode, and emits a `.mzbc` artifact. From there we increase the
 compiler dialect by stages until it can compile the current compiler source,
 then the full `ccc`.
+We should mirror Blynn's progression, but not its stage count. Blynn's local
+root script walks from raw `parenthetically` images into native
+`marginally -> methodically -> crossly -> precisely`, and the later party
+script adds parser/type/runtime/compiler bundles in steps. Here that becomes a
+compressed five-stage cap:
+
+1. `mlc-interp-seed.c`: weak C tree-walking root for the core lambda/let/IO
+   language only.
+2. `01-parenthetical.ml`: parenthesized bytecode assembly handoff.
+3. `02-ml0-compiler.ml`: first real ML-to-VM compiler, still tiny but
+   self/next-source checked.
+4. `mlc.ml`: the practical compiler dialect, with proper ADTs, `match`,
+   parser/lowerer/emitter support, and enough expression/function support for
+   compiler implementation.
+5. `ccc.ml`: the C compiler written in that dialect and compiled by
+   committed `mlc.byte`.
+
+If a feature does not help stage 4 compile `ccc.ml`, it should wait. If it is
+needed for `ccc.ml`, it belongs in `mlc.ml` or its immediate staged successor,
+not in the C root.
 Every promoted compiler stage must eventually satisfy the handoff invariant:
 it compiles its own source and the next compiler source. Smoke stages may exist
 to grow the dialect, but they are not treated as self-hosting stages until that
@@ -308,13 +328,15 @@ of the eventual chain:
 3. **`mlc-interp-seed.m2`**: M2-Planet compiles `mlc-interp-seed.c`.
    Self-check: interprets the first core stage and matches the host-built
    interpreter output.
-4. **`mlc stage 0..N`**: the C interpreter runs named ML bootstrap stages.
+4. **`mlc stage 0..4`**: the C interpreter runs named ML bootstrap stages.
    Early stages follow Blynn's parenthetical level-file style: each stage
    fully parses the next stage's small source language and emits the next
    runnable artifact. Later stages converge toward the fuller
    `methodically → party → crossly → precisely` style, where a stage consumes a
    source bundle with parser/type/runtime/compiler pieces and emits the next
-   compiler.
+   compiler. Unlike Blynn's long raw and party towers, this path is capped at
+   five stages total through the ML dialect needed for `ccc.ml`; extra smoke
+   fixtures can exist, but they are not promoted stages.
 5. **`mlc.byte`** (committed): the staged ML compiler compiles `mlc.ml` →
    `mlc.byte`.
    This artifact is checked into the tree the first time. Thereafter the
