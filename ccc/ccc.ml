@@ -131,6 +131,7 @@ let rec expect_type state =
   let pos = skip_space (src, pos0) in
   if (src.[pos] == 115) * (src.[pos + 1] == 116) * (src.[pos + 2] == 97) * (src.[pos + 3] == 116) * (src.[pos + 4] == 105) * (src.[pos + 5] == 99) then expect_type (src, pos + 6) else
   if (src.[pos] == 105) * (src.[pos + 1] == 110) * (src.[pos + 2] == 116) then pos + 3 else
+  if (src.[pos] == 99) * (src.[pos + 1] == 104) * (src.[pos + 2] == 97) * (src.[pos + 3] == 114) then pos + 4 else
   if (src.[pos] == 118) * (src.[pos + 1] == 111) * (src.[pos + 2] == 105) * (src.[pos + 3] == 100) then pos + 4 else
   if (src.[pos] == 95) * (src.[pos + 1] == 66) * (src.[pos + 2] == 111) * (src.[pos + 3] == 111) * (src.[pos + 4] == 108) then pos + 5 else
   if (src.[pos] == 117) * (src.[pos + 1] == 110) * (src.[pos + 2] == 115) * (src.[pos + 3] == 105) * (src.[pos + 4] == 103) * (src.[pos + 5] == 110) * (src.[pos + 6] == 101) * (src.[pos + 7] == 100) then
@@ -408,6 +409,14 @@ let rec apply_func state =
       if arg1 > arg2 then 1 else 0
   else
   if head < 0 then exit 1 else apply_func (tail, (name, arg))
+in
+let rec contains_func state =
+  let (funcs, name) = state in
+  let (head, rest) = funcs in
+  let (_kind, rest2) = rest in
+  let (_value, tail) = rest2 in
+  if head == name then 1 else
+  if head < 0 then 0 else contains_func (tail, name)
 in
 let rec pow2 state =
   let n = state in
@@ -719,7 +728,10 @@ let rec parse_params state =
       in
       (param_name, p3)
   else
-    let p2 = expect_int (src, p1) in
+    let p2 =
+      if (src.[p1] == 99) * (src.[p1 + 1] == 104) * (src.[p1 + 2] == 97) * (src.[p1 + 3] == 114) then p1 + 4 else
+        expect_int (src, p1)
+    in
     let p2_space = skip_space (src, p2) in
     let p2_next0 = if src.[p2_space] == 42 then skip_space (src, p2_space + 1) else p2_space in
     let p2_next = if src.[p2_next0] == 42 then skip_space (src, p2_next0 + 1) else p2_next0 in
@@ -1112,8 +1124,12 @@ let rec parse_program_loop state =
   if is_enum_at (src, pos) then parse_program_loop (src, (skip_statement (src, pos), funcs)) else
   if is_struct_at (src, pos) then parse_program_loop (src, (skip_struct_declaration (src, pos), funcs)) else
     let p0 = expect_type (src, pos) in
-    let name_parsed = parse_ident (src, p0) in
+    let p0_next = skip_space (src, p0) in
+    let name_pos = if src.[p0_next] == 42 then skip_space (src, p0_next + 1) else p0 in
+    let name_parsed = parse_ident (src, name_pos) in
     let (name, name_end) = name_parsed in
+    let name_next = skip_space (src, name_end) in
+    if src.[name_next] == 40 then
     let params = parse_params (src, name_end) in
     let (param, p1) = params in
     let p1_next = skip_space (src, p1) in
@@ -1122,6 +1138,9 @@ let rec parse_program_loop state =
     else
       let p2 = expect_ch (src, (p1, 123)) in
       if name == 246720401 then
+        if contains_func (funcs, 53171319) then
+          0
+        else
         let body = parse_main_body (src, (p2, (funcs, empty_env 0))) in
         let (code, p4) = body in
         let _ = expect_ch (src, (p4, 125)) in
@@ -1144,6 +1163,10 @@ let rec parse_program_loop state =
         parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (0, (0, funcs)))))
       else if (name == 340503192) + (name == 89405656) then
         parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (0, (0, funcs)))))
+      else if ((name == 130238931) + (name == 45824411)) + ((name == 1816427) + (name == 760488289)) then
+        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (0, (1, funcs)))))
+      else if ((name == 53171319) + (name == 329462716)) + ((name == 329460746) + (name == 184120345)) then
+        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (0, (0, funcs)))))
       else if ((name == 402468489) + (name == 402468487)) + (name == 281987142) then
         parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (4, (0, funcs)))))
       else
@@ -1156,6 +1179,8 @@ let rec parse_program_loop state =
         in
         let p4 = expect_ch (src, (p3, 125)) in
         parse_program_loop (src, (p4, extend_func (name, (kind, (coerced, funcs)))))
+    else
+      parse_program_loop (src, (skip_statement (src, pos), funcs))
 in
 let rec parse_program src =
   parse_program_loop (src, (0, empty_funcs 0))
