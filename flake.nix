@@ -1505,6 +1505,7 @@ DEFINE SYSCALL 0F05
             check_return ${./tests/mescc/scaffold/13-if-neq.c} 0
             check_return ${./tests/mescc/scaffold/14-if-goto.c} 0
             check_return ${./tests/mescc/scaffold/15-if-not-f.c} 0
+            check_return ${./tests/mescc/scaffold/16-if-t.c} 0
             printf 'int main(){return 42;}' > return-42.c
             check_return return-42.c 42
           '';
