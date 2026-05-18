@@ -327,10 +327,16 @@ let rec parse_expr_value state =
   let (funcs, env) = pair2 in
   parse_expr_mode (src, (pos0, (funcs, (env, 0))))
 in
+let rec skip_to_close_brace state =
+  let (src, pos) = state in
+  if src.[pos] == 125 then pos else skip_to_close_brace (src, pos + 1)
+in
 let rec parse_func_return state =
   let (src, pair) = state in
   let (pos0, param) = pair in
-  let p0 = expect_return (src, pos0) in
+  let start = skip_space (src, pos0) in
+  if is_return_at (src, start) then
+  let p0 = expect_return (src, start) in
   let p1 = skip_space (src, p0) in
   if src.[p1] == 59 then ((0, 0), p1 + 1) else
   if src.[p1] == 33 then
@@ -355,6 +361,14 @@ let rec parse_func_return state =
     else
       let p2 = expect_ch (src, (name_end, 59)) in
       if name == param then ((1, 0), p2) else exit 1
+  else if is_alpha (src.[start]) then
+    let label = parse_ident (src, start) in
+    let (label_name, label_end) = label in
+    let _ = label_name in
+    let label_next = skip_space (src, label_end) in
+    if src.[label_next] == 58 then ((0, 0), skip_to_close_brace (src, label_next + 1)) else exit 1
+  else
+    exit 1
 in
 let rec parse_params state =
   let (src, pos0) = state in
@@ -391,10 +405,6 @@ in
 let rec skip_statement state =
   let (src, pos) = state in
   if src.[pos] == 59 then pos + 1 else skip_statement (src, pos + 1)
-in
-let rec skip_to_close_brace state =
-  let (src, pos) = state in
-  if src.[pos] == 125 then pos else skip_to_close_brace (src, pos + 1)
 in
 let rec find_label state =
   let (src, pair) = state in
