@@ -52,6 +52,7 @@ Current stages:
   conditionals, arbitrary final direct calls, and direct unary `let rec`
   functions. It accepts `write_byte (40+39)`, `write_byte 'O'`,
   `write_string "OK"`, `Cell.create` / `Cell.get` / `Cell.set`,
+  two-field record declarations/literals/field reads,
   `let x = 40 in write_byte (x + 39)`, recursively nested
   and parenthesized top-level `let` bindings with shadowing, and true/false
   `if ... then ... else ...` byte-output fixtures, including conditions formed

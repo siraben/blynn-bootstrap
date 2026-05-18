@@ -249,13 +249,16 @@ let rec parse_char input =
 in
 let rec pack_ctor state =
   let (tag, has_arg) = state in
-  (tag * 2) + has_arg
+  (tag * 4) + has_arg
 in
 let rec ctor_tag packed =
-  packed / 2
+  packed / 4
 in
 let rec ctor_has_arg packed =
-  packed - ((packed / 2) * 2)
+  packed - ((packed / 4) * 4)
+in
+let rec ctor_is_field packed =
+  ctor_has_arg packed == 2
 in
 let rec extend_ctor state =
   let (name, pair) = state in
@@ -272,6 +275,10 @@ in
 let rec lookup_ctor state =
   let packed = find_ctor state in
   if packed < 0 then exit 1 else packed
+in
+let rec lookup_field state =
+  let packed = lookup_ctor state in
+  if ctor_is_field packed then ctor_tag packed else exit 1
 in
 let rec extend_func state =
   let (name, pair) = state in
@@ -472,6 +479,26 @@ let rec parse_type_ctors state =
     let next_ctors = extend_ctor (name, (pack_ctor (tag, 0), ctors)) in
     if src.[after_ctor] == 124 then parse_type_ctors (src, (after_ctor, (tag + 1, next_ctors))) else (after_ctor, next_ctors)
 in
+let rec parse_record_fields state =
+  let (src, pair) = state in
+  let (pos0, pair2) = pair in
+  let (index, ctors) = pair2 in
+  let pos = skip_space (src, pos0) in
+  if src.[pos] == 125 then (pos + 1, ctors) else
+    let parsed = parse_ident (src, pos) in
+    let (field, field_end) = parsed in
+    let colon = skip_space (src, field_end) in
+    if src.[colon] == 58 then
+      let typ = parse_ident (src, colon + 1) in
+      let (dummy, typ_end) = typ in
+      let _ = dummy in
+      let next_ctors = extend_ctor (field, (pack_ctor (index, 2), ctors)) in
+      let next = skip_space (src, typ_end) in
+      if src.[next] == 59 then parse_record_fields (src, (next + 1, (index + 1, next_ctors))) else
+      if src.[next] == 125 then (next + 1, next_ctors) else exit 1
+    else
+      exit 1
+in
 let rec parse_type_decls input =
   let (src, pair) = input in
   let (pos0, ctors) = pair in
@@ -482,7 +509,11 @@ let rec parse_type_decls input =
     let _ = dummy in
     let eq_pos = skip_space (src, name_end) in
     if src.[eq_pos] == 61 then
-      let parsed = parse_type_ctors (src, (eq_pos + 1, (0, ctors))) in
+      let after_eq = skip_space (src, eq_pos + 1) in
+      let parsed =
+        if src.[after_eq] == 123 then parse_record_fields (src, (after_eq + 1, (0, ctors)))
+        else parse_type_ctors (src, (after_eq, (0, ctors)))
+      in
       let (next_pos, next_ctors) = parsed in
       parse_type_decls (src, (next_pos, next_ctors))
     else
@@ -780,7 +811,11 @@ let rec compile_simple_expr input =
 	        else
 	          exit 1
 	      else
-	        left
+	        let field = parse_ident (src, next1 + 1) in
+	        let (field_name, field_end) = field in
+	        let index = lookup_field (ctors, field_name) in
+	        let field_len = emit_getfield (emit, index) in
+	        (left_len0 + field_len, field_end)
 	    else
 	      left
 	  in
@@ -899,7 +934,43 @@ let rec compile_expr input =
   let (ctors, pair4) = pair3 in
   let (funcs, emit) = pair4 in
   let pos = skip_space (src, pos0) in
-  if is_write_byte_at (src, pos) then
+  if src.[pos] == 123 then
+    let field1 = parse_ident (src, pos + 1) in
+    let (field1_name, field1_end) = field1 in
+    let field1_index = lookup_field (ctors, field1_name) in
+    let eq1 = skip_space (src, field1_end) in
+    if src.[eq1] == 61 then
+      let value1 = compile_expr (src, (eq1 + 1, (env, (ctors, (funcs, emit))))) in
+      let (value1_len, value1_end) = value1 in
+      let semi = skip_space (src, value1_end) in
+      if src.[semi] == 59 then
+        let field2 = parse_ident (src, semi + 1) in
+        let (field2_name, field2_end) = field2 in
+        let field2_index = lookup_field (ctors, field2_name) in
+        let eq2 = skip_space (src, field2_end) in
+        if src.[eq2] == 61 then
+          let push_len = emit_push emit in
+          let value2 = compile_expr (src, (eq2 + 1, (shift_env env, (ctors, (funcs, emit))))) in
+          let (value2_len, value2_end) = value2 in
+          let close = skip_space (src, value2_end) in
+          if src.[close] == 125 then
+            if field1_index == 0 then
+              if field2_index == 1 then
+                let block_len = emit_makeblock (emit, (0, 2)) in
+                (value1_len + push_len + value2_len + block_len, close + 1)
+              else
+                exit 1
+            else
+              exit 1
+          else
+            exit 1
+        else
+          exit 1
+      else
+        exit 1
+    else
+      exit 1
+  else if is_write_byte_at (src, pos) then
     let p = skip_space (src, pos + 10) in
     let expr = compile_expr (src, (p, (env, (ctors, (funcs, emit))))) in
     let (expr_len, done_pos) = expr in
@@ -1277,7 +1348,9 @@ let rec compile_expr input =
     let ctor = if depth < 0 then find_ctor (ctors, name) else 0 - 1 in
     if ctor >= 0 then
       let tag = ctor_tag ctor in
-      if ctor_has_arg ctor == 1 then
+      if ctor_is_field ctor then
+        exit 1
+      else if ctor_has_arg ctor == 1 then
         let payload = compile_expr (src, (name_end, (env, (ctors, (funcs, emit))))) in
         let (payload_len, payload_end) = payload in
         let block_len = emit_makeblock (emit, (tag, 1)) in
@@ -1353,7 +1426,11 @@ let rec compile_expr input =
 	            else
 	              exit 1
 	          else
-	            left
+	            let field = parse_ident (src, next1 + 1) in
+	            let (field_name, field_end) = field in
+	            let index = lookup_field (ctors, field_name) in
+	            let field_len = emit_getfield (emit, index) in
+	            (left_len0 + field_len, field_end)
 	        else
 	          left
 	      in
@@ -1497,7 +1574,11 @@ let rec compile_expr input =
 	        else
 	          exit 1
 	      else
-	        left
+	        let field = parse_ident (src, next1 + 1) in
+	        let (field_name, field_end) = field in
+	        let index = lookup_field (ctors, field_name) in
+	        let field_len = emit_getfield (emit, index) in
+	        (left_len0 + field_len, field_end)
 	    else
 	      left
 	  in

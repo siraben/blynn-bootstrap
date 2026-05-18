@@ -110,13 +110,17 @@ needs:
   backend detail. This adds compiler work, but it makes the later `ccc.ml`
   port clearer because ASTs, tokens, C types, and diagnostics can use direct
   constructors.
+- **Records and imperative cells.** CCC source should be able to name product
+  fields directly and keep parser/output state in small mutable cells where
+  explicit state threading would obscure the compiler. Records lower to fixed
+  VM block layouts; cells lower to one-field mutable blocks.
 - **Association lists / int-keyed maps** as ordinary library data, not
   builtin. HCC already runs this way.
 - **Primitives for I/O**: `read_byte`, `write_byte`, `open_in`, `open_out`,
   `exit`. Kept minimal — only what `mlc` and `ccc` actually call.
 
 **Explicitly out**
-- Polymorphism, records, modules, functors, objects, exceptions, finalizers,
+- Polymorphism, modules, functors, objects, exceptions, finalizers,
   floats
   (we do not need floats for the C-compiler path; we drop MinCaml's float pipe
   entirely), SPARC backend.

@@ -150,8 +150,8 @@ compiler artifact, but not as the final full MinCaml-style compiler yet. It is
 written in the seed core language and has a staged one-lookahead
 lexer/parser/emitter path for byte literals, local `let`, integer expressions,
 nested conditionals, `read_byte`, `Bytes.create`, dynamic byte indexing and
-writes, imperative `Cell.create` / `Cell.get` / `Cell.set`, arbitrary final
-direct calls, bounded keyword lookahead with capped
+writes, imperative `Cell.create` / `Cell.get` / `Cell.set`, two-field record
+declarations/literals/field reads, arbitrary final direct calls, bounded keyword lookahead with capped
 identifier hashes, and the first ADT/pattern slice. The `mlc.byte.selfhost`
 target compiles `mlc/mlc.ml` with committed `mlc.byte` and compares the result
 byte-for-byte with the committed compiler artifact.
