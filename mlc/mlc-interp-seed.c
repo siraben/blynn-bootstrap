@@ -4,7 +4,7 @@
 enum {
   MAX_NODES = 8192,
   MAX_ENVS = 8192,
-  MAX_CLOSURES = 2048,
+  MAX_CLOSURES = 32768,
 
   N_INT = 1,
   N_VAR = 2,
