@@ -228,6 +228,20 @@ static long lookup_var(long start, long len)
   return -1;
 }
 
+static void bind_var(long start, long len)
+{
+  if (span_is_char(start, len, '_')) return;
+  if (env_depth >= 64) die("too many local bindings");
+  env_start[env_depth] = start;
+  env_len[env_depth] = len;
+  env_depth = env_depth + 1;
+}
+
+static void unbind_var(long start, long len)
+{
+  if (!span_is_char(start, len, '_')) env_depth = env_depth - 1;
+}
+
 static long low_byte(long x)
 {
   long q = x / 256;
@@ -349,6 +363,13 @@ static void parse_atom(void)
   skip_space();
   if (take_char('(')) {
     parse_expr();
+    if (take_char(',')) {
+      emit_byte(OP_PUSH);
+      parse_expr();
+      expect_char(')');
+      emit_makeblock(0, 2);
+      return;
+    }
     expect_char(')');
   } else if (keyword_at("read_byte")) {
     take_keyword("read_byte");
@@ -547,17 +568,12 @@ static void parse_pattern(long *tag_out, long *arity_out, long *binder_start_out
 
 static void bind_pattern_var(long arity, long binder_start, long binder_len)
 {
-  if (arity == 1 && !span_is_char(binder_start, binder_len, '_')) {
-    if (env_depth >= 64) die("too many local bindings");
-    env_start[env_depth] = binder_start;
-    env_len[env_depth] = binder_len;
-    env_depth = env_depth + 1;
-  }
+  if (arity == 1) bind_var(binder_start, binder_len);
 }
 
 static void unbind_pattern_var(long arity, long binder_start, long binder_len)
 {
-  if (arity == 1 && !span_is_char(binder_start, binder_len, '_')) env_depth = env_depth - 1;
+  if (arity == 1) unbind_var(binder_start, binder_len);
 }
 
 static long match_arm_overhead(long arity, int has_fallthrough_branch)
@@ -645,22 +661,44 @@ static void parse_let(void)
 {
   long name_start;
   long name_len;
+  long name2_start;
+  long name2_len;
   int binds = 0;
   if (!take_keyword("let")) die("expected let");
-  take_ident_span(&name_start, &name_len);
-  expect_char('=');
-  parse_expr();
-  if (!span_is_char(name_start, name_len, '_')) {
-    if (env_depth >= 64) die("too many local bindings");
+  if (take_char('(')) {
+    take_ident_span(&name_start, &name_len);
+    expect_char(',');
+    take_ident_span(&name2_start, &name2_len);
+    expect_char(')');
+    expect_char('=');
+    parse_expr();
     emit_byte(OP_PUSH);
-    env_start[env_depth] = name_start;
-    env_len[env_depth] = name_len;
-    env_depth = env_depth + 1;
-    binds = 1;
+    emit_acc(0);
+    emit_getfield(0);
+    emit_byte(OP_PUSH);
+    bind_var(name_start, name_len);
+    emit_acc(1);
+    emit_getfield(1);
+    emit_byte(OP_PUSH);
+    bind_var(name2_start, name2_len);
+    binds = 3;
+  } else {
+    take_ident_span(&name_start, &name_len);
+    expect_char('=');
+    parse_expr();
+    if (!span_is_char(name_start, name_len, '_')) {
+      emit_byte(OP_PUSH);
+      bind_var(name_start, name_len);
+      binds = 1;
+    }
   }
   if (!take_keyword("in")) die("expected in");
   parse_expr();
-  if (binds) {
+  if (binds == 3) {
+    unbind_var(name2_start, name2_len);
+    unbind_var(name_start, name_len);
+    emit_pop(3);
+  } else if (binds) {
     env_depth = env_depth - 1;
     emit_pop(1);
   }

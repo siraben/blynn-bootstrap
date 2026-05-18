@@ -60,6 +60,10 @@ Opcodes are one byte. Immediate operands are little-endian 32-bit words.
 Branches are relative to the program counter after the branch operand has
 been read.
 
+`MAKEBLOCK` consumes fields from the stack plus the accumulator in source
+order: earlier fields have already been pushed, and the accumulator is the
+last field. `GETFIELD 0` therefore returns the first source-level field.
+
 ## Seed Primitive Table
 
 The seed ABI reserves primitive indices in the bytecode header. Version 1

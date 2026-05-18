@@ -234,10 +234,10 @@ static void run(void)
       value_t *block = alloc_block(tag, size);
       long i = size - 1;
       if (size > 0) {
-        block[2] = acc;
+        block[2 + i] = acc;
         while (i > 0) {
-          block[2 + i] = stack_pop();
           i = i - 1;
+          block[2 + i] = stack_pop();
         }
       }
       acc = (value_t)block;
