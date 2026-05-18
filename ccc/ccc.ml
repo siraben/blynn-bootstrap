@@ -13,9 +13,15 @@ let rec skip_line_comment state =
   if src.[pos] == 10 then pos + 1 else
   if src.[pos] == 0 then pos else skip_line_comment (src, pos + 1)
 in
+let rec skip_line state =
+  let (src, pos) = state in
+  if src.[pos] == 10 then pos + 1 else
+  if src.[pos] == 0 then pos else skip_line (src, pos + 1)
+in
 let rec skip_space state =
   let (src, pos) = state in
   if is_space (src.[pos]) then skip_space (src, pos + 1) else
+  if src.[pos] == 35 then skip_space (src, skip_line (src, pos + 1)) else
   if src.[pos] == 47 then
     if src.[pos + 1] == 42 then skip_space (src, skip_block_comment (src, pos + 2)) else
     if src.[pos + 1] == 47 then skip_space (src, skip_line_comment (src, pos + 2)) else pos
@@ -157,7 +163,10 @@ let rec parse_expr_value state =
       let expr = parse_expr_value (src, (pos + 1, (funcs, env))) in
       let (value, value_end) = expr in
       if value == 0 then (1, value_end) else (0, value_end)
-    else if src.[pos] == 45 then parse_signed_number (src, pos)
+    else if src.[pos] == 45 then
+      let expr = parse_expr_value (src, (pos + 1, (funcs, env))) in
+      let (value, value_end) = expr in
+      (0 - value, value_end)
     else if is_digit (src.[pos]) then parse_number (src, pos) else
       let ident = parse_ident (src, pos) in
       let (name, name_end) = ident in
@@ -247,6 +256,10 @@ let rec skip_call_statement state =
   let p1 = expect_ch (src, (p0, 41)) in
   expect_ch (src, (p1, 59))
 in
+let rec skip_statement state =
+  let (src, pos) = state in
+  if src.[pos] == 59 then pos + 1 else skip_statement (src, pos + 1)
+in
 let rec skip_main_prefix state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
@@ -259,11 +272,25 @@ let rec parse_local_init state =
   let p0 = expect_int (src, pos0) in
   let ident = parse_ident (src, p0) in
   let (name, name_end) = ident in
-  let p1 = expect_ch (src, (name_end, 61)) in
-  let value = parse_expr_value (src, (p1, (funcs, env))) in
-  let (init_value, value_end) = value in
-  let p2 = expect_ch (src, (value_end, 59)) in
-  (p2, extend_env (name, (init_value, env)))
+  let name_next = skip_space (src, name_end) in
+  if src.[name_next] == 59 then (name_next + 1, extend_env (name, (0, env))) else
+    let p1 = expect_ch (src, (name_end, 61)) in
+    let value = parse_expr_value (src, (p1, (funcs, env))) in
+    let (init_value, value_end) = value in
+    let p2 = expect_ch (src, (value_end, 59)) in
+    (p2, extend_env (name, (init_value, env)))
+in
+let rec parse_assignment state =
+  let (src, pair) = state in
+  let (pos0, pair2) = pair in
+  let (funcs, env) = pair2 in
+  let ident = parse_ident (src, pos0) in
+  let (name, name_end) = ident in
+  let p0 = expect_ch (src, (name_end, 61)) in
+  let value = parse_expr_value (src, (p0, (funcs, env))) in
+  let (assigned, value_end) = value in
+  let p1 = expect_ch (src, (value_end, 59)) in
+  (p1, extend_env (name, (assigned, env)))
 in
 let rec parse_main_prefix state =
   let (src, pair) = state in
@@ -276,7 +303,16 @@ let rec parse_main_prefix state =
     let (next_pos, next_env) = local in
     parse_main_prefix (src, (next_pos, (funcs, next_env)))
   else
-    parse_main_prefix (src, (skip_call_statement (src, pos), (funcs, env)))
+    let ident = parse_ident (src, pos) in
+    let (name, name_end) = ident in
+    let _ = name in
+    let next = skip_space (src, name_end) in
+    if src.[next] == 61 then
+      let assigned = parse_assignment (src, (pos, (funcs, env))) in
+      let (next_pos, next_env) = assigned in
+      parse_main_prefix (src, (next_pos, (funcs, next_env)))
+    else
+      parse_main_prefix (src, (skip_statement (src, pos), (funcs, env)))
 in
 let rec parse_program_loop state =
   let (src, pair) = state in
