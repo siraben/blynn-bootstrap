@@ -11,7 +11,7 @@ plan requirement.
 |------|-------------|------------------|--------|
 | 1 | `mzvm-seed.m2` | `mzvm/mzvm-seed.c`; flake target `mzvm-seed.m2`; builds with M2-Planet and runs the generated `OK` `.mzbc` fixture | complete for the first VM smoke |
 | 2 | `mzvm.host` | `mzvm/mzvm.c`; flake target `mzvm.host`; `tests.mzvm.host-vs-seed` compares host and seed output | complete for the first VM smoke |
-| 3 | `mlc-seed.m2` | `mlc/mlc-seed.c`; `tests/mlc/ok.ml`; `tests/mlc/arithmetic.ml`; `tests/mlc/conditional.ml`; flake target `mlc-seed.m2`; M2-built compiler emits `.mzbc` and `mzvm-seed` runs all fixtures | partial: small expression compiler only |
+| 3 | `mlc-seed.m2` | `mlc/mlc-seed.c`; `tests/mlc/ok.ml`; `tests/mlc/arithmetic.ml`; `tests/mlc/conditional.ml`; `tests/mlc/match.ml`; flake target `mlc-seed.m2`; M2-built compiler emits `.mzbc` and `mzvm-seed` runs all fixtures | partial: small expression compiler plus narrow ADT match |
 | 4 | committed `mlc.byte` | none | missing |
 | 5 | `mlc.byte.selfhost` | none | missing |
 | 6 | `ccc.byte` | none | missing |

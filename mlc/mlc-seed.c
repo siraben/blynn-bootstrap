@@ -5,6 +5,8 @@ enum {
   OP_HALT = 0,
   OP_CONST = 1,
   OP_PUSH = 2,
+  OP_POP = 3,
+  OP_ACC = 4,
   OP_ADDINT = 5,
   OP_SUBINT = 6,
   OP_MULINT = 7,
@@ -13,7 +15,10 @@ enum {
   OP_LT = 10,
   OP_BRANCH = 11,
   OP_BRANCHIFNOT = 13,
-  OP_C_CALL = 14
+  OP_C_CALL = 14,
+  OP_MAKEBLOCK = 15,
+  OP_GETFIELD = 16,
+  OP_GETTAG = 18
 };
 
 static FILE *out_file;
@@ -21,6 +26,7 @@ static long out_len;
 static char *src;
 static long src_len;
 static long pos;
+static int env_has_x;
 
 static void die(const char *msg)
 {
@@ -154,6 +160,18 @@ static void emit_call_write_byte(void)
   emit_u32(1);
 }
 
+static void emit_pop(long count)
+{
+  emit_byte(OP_POP);
+  emit_u32(count);
+}
+
+static void emit_acc(long index)
+{
+  emit_byte(OP_ACC);
+  emit_u32(index);
+}
+
 static void emit_branch(long offset)
 {
   emit_byte(OP_BRANCH);
@@ -164,6 +182,24 @@ static void emit_branchifnot(long offset)
 {
   emit_byte(OP_BRANCHIFNOT);
   emit_u32(offset);
+}
+
+static void emit_makeblock(long tag, long size)
+{
+  emit_byte(OP_MAKEBLOCK);
+  emit_u32(tag);
+  emit_u32(size);
+}
+
+static void emit_getfield(long index)
+{
+  emit_byte(OP_GETFIELD);
+  emit_u32(index);
+}
+
+static void emit_gettag(void)
+{
+  emit_byte(OP_GETTAG);
 }
 
 static void parse_expr(void);
@@ -193,6 +229,16 @@ static void parse_atom(void)
   if (take_char('(')) {
     parse_expr();
     expect_char(')');
+  } else if (keyword_at("None")) {
+    take_keyword("None");
+    emit_makeblock(0, 0);
+  } else if (keyword_at("Some")) {
+    take_keyword("Some");
+    parse_atom();
+    emit_makeblock(1, 1);
+  } else if (env_has_x && keyword_at("x")) {
+    take_keyword("x");
+    emit_acc(0);
   } else {
     emit_const(parse_int_literal());
   }
@@ -302,6 +348,65 @@ static void parse_if(void)
   if (pos != else_end) die("internal if parse mismatch");
 }
 
+static void expect_arrow(void)
+{
+  expect_char('-');
+  expect_char('>');
+}
+
+static void parse_match(void)
+{
+  long some_start;
+  long some_end;
+  long none_start;
+  long none_end;
+  long some_len;
+  long none_len;
+  int saved_env;
+  if (!take_keyword("match")) die("expected match");
+  parse_expr();
+  expect_keyword("with");
+  expect_keyword("Some");
+  expect_keyword("x");
+  expect_arrow();
+  some_start = pos;
+  saved_env = env_has_x;
+  env_has_x = 1;
+  some_len = measure_expr(some_start, &some_end) + 21;
+  env_has_x = saved_env;
+  pos = some_end;
+  expect_char('|');
+  expect_keyword("None");
+  expect_arrow();
+  none_start = pos;
+  none_len = measure_expr(none_start, &none_end) + 5;
+  pos = some_start;
+
+  emit_byte(OP_PUSH);
+  emit_acc(0);
+  emit_gettag();
+  emit_byte(OP_PUSH);
+  emit_const(1);
+  emit_byte(OP_EQ);
+  emit_branchifnot(some_len);
+
+  emit_acc(0);
+  emit_getfield(0);
+  emit_byte(OP_PUSH);
+  env_has_x = 1;
+  parse_expr();
+  env_has_x = saved_env;
+  emit_pop(2);
+  emit_branch(none_len);
+
+  expect_char('|');
+  expect_keyword("None");
+  expect_arrow();
+  emit_pop(1);
+  parse_expr();
+  if (pos != none_end) die("internal match parse mismatch");
+}
+
 static void parse_let(void)
 {
   if (!take_keyword("let")) die("expected let");
@@ -316,6 +421,7 @@ static void parse_let(void)
 static void parse_expr(void)
 {
   if (keyword_at("let")) parse_let();
+  else if (keyword_at("match")) parse_match();
   else if (keyword_at("if")) parse_if();
   else if (keyword_at("write_byte")) parse_write();
   else parse_cmp();

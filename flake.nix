@@ -694,6 +694,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             cp ${./tests/mlc/ok.ml} ok.ml
             cp ${./tests/mlc/arithmetic.ml} arithmetic.ml
             cp ${./tests/mlc/conditional.ml} conditional.ml
+            cp ${./tests/mlc/match.ml} match.ml
             compile_m2 mlc-seed.c mlc-seed
             ./mlc-seed ok.ml ok.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed ok.mzbc)"
@@ -704,6 +705,9 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             ./mlc-seed conditional.ml conditional.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed conditional.mzbc)"
             test "$actual" = OK
+            ./mlc-seed match.ml match.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed match.mzbc)"
+            test "$actual" = OK
           '';
           installScript = ''
             install -Dm755 mlc-seed "$out/bin/mlc-seed"
@@ -711,6 +715,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             install -Dm644 ok.mzbc "$out/share/mlc/tests/ok.mzbc"
             install -Dm644 arithmetic.mzbc "$out/share/mlc/tests/arithmetic.mzbc"
             install -Dm644 conditional.mzbc "$out/share/mlc/tests/conditional.mzbc"
+            install -Dm644 match.mzbc "$out/share/mlc/tests/match.mzbc"
           '';
         };
 
