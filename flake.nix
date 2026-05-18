@@ -1493,6 +1493,8 @@ DEFINE SYSCALL 0F05
             check_return ${./tests/mescc/scaffold/03-call.c} 0
             check_return ${./tests/mescc/scaffold/04-call-0.c} 0
             check_return ${./tests/mescc/scaffold/05-call-1.c} 1
+            check_return ${./tests/mescc/scaffold/06-call-not-1.c} 0
+            check_return ${./tests/mescc/scaffold/06-not-call-1.c} 0
             printf 'int main(){return 42;}' > return-42.c
             check_return return-42.c 42
           '';

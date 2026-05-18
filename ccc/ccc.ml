@@ -101,14 +101,18 @@ let rec apply_func state =
   let (head, rest) = funcs in
   let (kind, rest2) = rest in
   let (value, tail) = rest2 in
-  if head == name then if kind == 0 then value else arg else
+  if head == name then if kind == 0 then value else if kind == 1 then arg else if arg == 0 then 1 else 0 else
   if head < 0 then exit 1 else apply_func (tail, (name, arg))
 in
 let rec parse_expr_value state =
   let (src, pair) = state in
   let (pos0, funcs) = pair in
   let pos = skip_space (src, pos0) in
-  if is_digit (src.[pos]) then parse_number (src, pos) else
+  if src.[pos] == 33 then
+    let expr = parse_expr_value (src, (pos + 1, funcs)) in
+    let (value, value_end) = expr in
+    if value == 0 then (1, value_end) else (0, value_end)
+  else if is_digit (src.[pos]) then parse_number (src, pos) else
     let ident = parse_ident (src, pos) in
     let (name, name_end) = ident in
     let p0 = expect_ch (src, (name_end, 40)) in
@@ -124,7 +128,12 @@ let rec parse_func_return state =
   let (pos0, param) = pair in
   let p0 = expect_return (src, pos0) in
   let p1 = skip_space (src, p0) in
-  if is_digit (src.[p1]) then
+  if src.[p1] == 33 then
+    let ident = parse_ident (src, p1 + 1) in
+    let (name, name_end) = ident in
+    let p2 = expect_ch (src, (name_end, 59)) in
+    if name == param then ((2, 0), p2) else exit 1
+  else if is_digit (src.[p1]) then
     let parsed = parse_number (src, p1) in
     let (value, value_end) = parsed in
     let p2 = expect_ch (src, (value_end, 59)) in
