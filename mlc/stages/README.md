@@ -43,7 +43,10 @@ Current stages:
   `write_byte 'O'`, `write_string "OK"`, `let x = 40 in write_byte (x + 39)`,
   recursively nested and parenthesized top-level `let` bindings with shadowing, and true/false
   `if ... then ... else ...` byte-output fixtures, including conditions formed
-  with `<`, `==`, `!=`, `<=`, `>`, and `>=`.
+  with `<`, `==`, `!=`, `<=`, `>`, and `>=`. It now also parses leading
+  `type` declarations into a constructor environment and lowers the first
+  two-arm constructor/wildcard `match` forms to VM block allocation, tag
+  tests, field extraction, and branches.
 
 Planned stages:
 
@@ -57,6 +60,7 @@ Planned stages:
   `mlc.byte`.
 - Later parser stages increase the ML0 dialect until it can compile the next
   compiler source, then itself.
-- `02-patterns.ml` adds ADT and pattern-match lowering in ML, not in C.
+- Later pattern stages extend the current `mlc.ml` ADT/match slice to nested,
+  recursive, and decision-tree patterns in ML, not in C.
 - `03-bytecode.ml` emits MZBC and replaces the transitional direct C bytecode
   compiler for normal bootstrap use.

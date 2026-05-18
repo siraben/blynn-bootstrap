@@ -1291,13 +1291,11 @@ OK"
         mlcByteSeed = stageRun {
           pname = "mlc-byte-seed";
           nativeBuildInputs = [
-            mlcSeedM2
             mzvmSeedM2
           ];
-          description = "Current mlc.ml compiled to MZBC by the M2-built seed compiler";
+          description = "Current mlc.ml compiled to MZBC by the staged ML0 compiler";
           buildScript = ''
-            cp ${mlcSrc}/mlc.ml mlc.ml
-            ${mlcSeedM2}/bin/mlc-seed mlc.ml mlc.byte
+            cp ${mlcStage02Ml0Compiler}/share/mlc/stages/mlc-stage-from-02-self.mzbc mlc.byte
             printf 'write_byte (40+39)' | ${mzvmSeedM2}/bin/mzvm-seed mlc.byte > compiled.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled.mzbc)"
             test "$actual" = O
@@ -1361,6 +1359,15 @@ OK"
             printf "write_byte (if 41 >= 40 then 'O' else 'X')" | ${mzvmSeedM2}/bin/mzvm-seed mlc.byte > compiled-if-ge.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-if-ge.mzbc)"
             test "$actual" = O
+            ${mzvmSeedM2}/bin/mzvm-seed mlc.byte < ${./tests/mlc/adt.ml} > compiled-adt.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-adt.mzbc)"
+            test "$actual" = OK
+            ${mzvmSeedM2}/bin/mzvm-seed mlc.byte < ${./tests/mlc/match.ml} > compiled-match.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-match.mzbc)"
+            test "$actual" = OK
+            ${mzvmSeedM2}/bin/mzvm-seed mlc.byte < ${./tests/mlc/wildcard-match.ml} > compiled-wildcard-match.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-wildcard-match.mzbc)"
+            test "$actual" = OK
           '';
           installScript = ''
             install -Dm644 mlc.byte "$out/share/mlc/mlc.byte"
@@ -1385,6 +1392,9 @@ OK"
             install -Dm644 compiled-if-le.mzbc "$out/share/mlc/compiled-if-le.mzbc"
             install -Dm644 compiled-if-gt.mzbc "$out/share/mlc/compiled-if-gt.mzbc"
             install -Dm644 compiled-if-ge.mzbc "$out/share/mlc/compiled-if-ge.mzbc"
+            install -Dm644 compiled-adt.mzbc "$out/share/mlc/compiled-adt.mzbc"
+            install -Dm644 compiled-match.mzbc "$out/share/mlc/compiled-match.mzbc"
+            install -Dm644 compiled-wildcard-match.mzbc "$out/share/mlc/compiled-wildcard-match.mzbc"
           '';
         };
 
