@@ -1,7 +1,9 @@
 type ty = TyInt | TyUnit | TyBool | TyPair of ty
 type expr = EInt of int | EVar of int | EBool of int | EMore of expr_more
 type expr_more = EWriteByte of expr | EAdd of expr | EEq of expr | EMore2 of expr_more2
-type expr_more2 = EIf of expr | ELet of expr | EPair of expr | ELetPair of expr
+type expr_more2 = EIf of expr | ELet of expr | EPair of expr | EMore3 of expr_more3
+type expr_more3 = ELetPair of expr | ESeq of expr
+type parse_reply = ParseOk of int | ParseErr
 
 let rec byte n =
   n - ((n / 256) * 256)
@@ -118,11 +120,10 @@ let rec skip_space state =
   let (src, pos) = state in
   if is_space (src.[pos]) then skip_space (src, pos + 1) else pos
 in
-let rec need_char state =
-  let (src, pair) = state in
-  let (pos0, want) = pair in
-  let pos = skip_space (src, pos0) in
-  if src.[pos] == want then pos + 1 else exit 1
+let rec p_force reply =
+  match reply with
+    ParseOk pos -> pos
+  | ParseErr -> exit 1
 in
 let rec p_return state =
   let (pos, value) = state in
@@ -133,34 +134,48 @@ let rec p_peek state =
   let pos = skip_space (src, pos0) in
   (src.[pos], pos)
 in
-let rec p_need_char state =
-  need_char state
+let rec p_try_char state =
+  let (src, pair) = state in
+  let (pos0, want) = pair in
+  let peeked = p_peek (src, pos0) in
+  let (got, pos) = peeked in
+  if got == want then ParseOk (pos + 1) else ParseErr
 in
-let rec p_string_loop state =
+let rec p_need_char state =
+  p_force (p_try_char state)
+in
+let rec need_char state =
+  p_need_char state
+in
+let rec p_try_string_loop state =
   let (src, pair) = state in
   let (pos, pair2) = pair in
   let (text, index) = pair2 in
-  if index == String.length text then 1 else
-  if src.[pos + index] == text.[index] then p_string_loop (src, (pos, (text, index + 1))) else 0
+  if index == String.length text then ParseOk (pos + index) else
+  if src.[pos + index] == text.[index] then p_try_string_loop (src, (pos, (text, index + 1))) else ParseErr
 in
-let rec p_string_at state =
+let rec p_try_string state =
   let (src, pair) = state in
   let (pos0, text) = pair in
   let pos = skip_space (src, pos0) in
-  p_string_loop (src, (pos, (text, 0)))
+  p_try_string_loop (src, (pos, (text, 0)))
+in
+let rec p_string_at state =
+  match p_try_string state with
+    ParseOk pos -> let _ = pos in 1
+  | ParseErr -> 0
 in
 let rec p_keyword_at state =
   let (src, pair) = state in
   let (pos0, text) = pair in
   let pos = skip_space (src, pos0) in
-  let ok = p_string_loop (src, (pos, (text, 0))) in
-  if ok == 1 then 1 - (is_ident (src.[pos + String.length text])) else 0
+  let reply = p_try_string_loop (src, (pos, (text, 0))) in
+  match reply with
+    ParseOk end_pos -> 1 - (is_ident (src.[end_pos]))
+  | ParseErr -> 0
 in
 let rec p_need_string state =
-  let (src, pair) = state in
-  let (pos0, text) = pair in
-  let pos = skip_space (src, pos0) in
-  if p_string_at (src, (pos, text)) == 1 then pos + String.length text else exit 1
+  p_force (p_try_string state)
 in
 let rec p_need_keyword state =
   let (src, pair) = state in
@@ -243,18 +258,19 @@ let rec parse_ident state =
   let ch = src.[pos] in
   if is_alpha ch then parse_ident_loop (src, (pos + 1, ch)) else exit 1
 in
-let rec parse_expr state =
-  let (src, pos0) = state in
+let rec parse_expr_flag state =
+  let (src, pair0) = state in
+  let (pos0, allow_seq) = pair0 in
   let pos = skip_space (src, pos0) in
   let left =
     if is_if_at (src, pos) then
-      let cond = parse_expr (src, pos + 2) in
+      let cond = parse_expr_flag (src, (pos + 2, 1)) in
       let (cond_ast, cond_end) = cond in
       let then_pos = need_then (src, cond_end) in
-      let yes = parse_expr (src, then_pos) in
+      let yes = parse_expr_flag (src, (then_pos, 1)) in
       let (yes_ast, yes_end) = yes in
       let else_pos = need_else (src, yes_end) in
-      let no = parse_expr (src, else_pos) in
+      let no = parse_expr_flag (src, (else_pos, 1)) in
       let (no_ast, no_end) = no in
       (EMore (EMore2 (EIf (cond_ast, (yes_ast, no_ast)))), no_end)
     else if is_let_at (src, pos) then
@@ -267,36 +283,36 @@ let rec parse_expr state =
         let (name2_hash, name2_end0) = name2 in
         let after_names = need_char (src, (name2_end0, ')')) in
         let eq_pos = need_char (src, (after_names, '=')) in
-        let rhs = parse_expr (src, eq_pos) in
+        let rhs = parse_expr_flag (src, (eq_pos, 1)) in
         let (rhs_ast, rhs_end) = rhs in
         let body_pos = need_in (src, rhs_end) in
-        let body = parse_expr (src, body_pos) in
+        let body = parse_expr_flag (src, (body_pos, 1)) in
         let (body_ast, body_end) = body in
-        (EMore (EMore2 (ELetPair (name1_hash, (name2_hash, (rhs_ast, body_ast))))), body_end)
+        (EMore (EMore2 (EMore3 (ELetPair (name1_hash, (name2_hash, (rhs_ast, body_ast)))))), body_end)
       else
         let ident = parse_ident (src, bind_pos) in
         let (name, name_end) = ident in
         let eq_pos = need_char (src, (name_end, '=')) in
-        let rhs = parse_expr (src, eq_pos) in
+        let rhs = parse_expr_flag (src, (eq_pos, 1)) in
         let (rhs_ast, rhs_end) = rhs in
         let body_pos = need_in (src, rhs_end) in
-        let body = parse_expr (src, body_pos) in
+        let body = parse_expr_flag (src, (body_pos, 1)) in
         let (body_ast, body_end) = body in
         (EMore (EMore2 (ELet (name, (rhs_ast, body_ast)))), body_end)
     else if is_write_byte_at (src, pos) then
       let expr_pos = need_write_byte (src, pos) in
-      let expr = parse_expr (src, expr_pos) in
+      let expr = parse_expr_flag (src, (expr_pos, 0)) in
       let (expr_ast, expr_end) = expr in
       (EMore (EWriteByte expr_ast), expr_end)
     else
       let peeked = p_peek (src, pos) in
       let (ch, atom_pos) = peeked in
       if ch == '(' then
-        let expr = parse_expr (src, atom_pos + 1) in
+        let expr = parse_expr_flag (src, (atom_pos + 1, 1)) in
         let (ast, expr_end) = expr in
         let after_first = skip_space (src, expr_end) in
         if src.[after_first] == ',' then
-          let right = parse_expr (src, after_first + 1) in
+          let right = parse_expr_flag (src, (after_first + 1, 1)) in
           let (right_ast, right_end) = right in
           p_return (p_need_char (src, (right_end, ')')), EMore (EMore2 (EPair (ast, right_ast))))
         else
@@ -317,15 +333,26 @@ let rec parse_expr state =
   let (left_ast, left_end) = left in
   let next = skip_space (src, left_end) in
   if src.[next] == '+' then
-    let right = parse_expr (src, next + 1) in
+    let right = parse_expr_flag (src, (next + 1, allow_seq)) in
     let (right_ast, right_end) = right in
     (EMore (EAdd (left_ast, right_ast)), right_end)
   else if (src.[next] == '=') * (src.[next + 1] == '=') then
-    let right = parse_expr (src, next + 2) in
+    let right = parse_expr_flag (src, (next + 2, allow_seq)) in
     let (right_ast, right_end) = right in
     (EMore (EEq (left_ast, right_ast)), right_end)
+  else if allow_seq == 1 then
+    if src.[next] == ';' then
+      let right = parse_expr_flag (src, (next + 1, 1)) in
+      let (right_ast, right_end) = right in
+      (EMore (EMore2 (EMore3 (ESeq (left_ast, right_ast)))), right_end)
+    else
+      left
   else
     left
+in
+let rec parse_expr state =
+  let (src, pos0) = state in
+  parse_expr_flag (src, (pos0, 1))
 in
 let rec parse_program state =
   let (src, pos0) = state in
@@ -400,16 +427,24 @@ let rec infer state =
           | EPair parts ->
               let (left, right) = parts in
               TyPair (infer (env, left), infer (env, right))
-          | ELetPair parts ->
-              let (name1, rest1) = parts in
-              let (name2, rest2) = rest1 in
-              let (rhs, body) = rest2 in
-              let rhs_ty = infer (env, rhs) in
-              match rhs_ty with
-                TyPair pair_ty ->
-                  let (left_ty, right_ty) = pair_ty in
-                  infer (extend_tenv (name2, (right_ty, extend_tenv (name1, (left_ty, env)))), body)
-              | _ -> exit 1
+          | EMore3 more3 ->
+              match more3 with
+                ELetPair parts ->
+                  let (name1, rest1) = parts in
+                  let (name2, rest2) = rest1 in
+                  let (rhs, body) = rest2 in
+                  let rhs_ty = infer (env, rhs) in
+                  match rhs_ty with
+                    TyPair pair_ty ->
+                      let (left_ty, right_ty) = pair_ty in
+                      infer (extend_tenv (name2, (right_ty, extend_tenv (name1, (left_ty, env)))), body)
+                  | TyInt -> exit 1
+                  | TyUnit -> exit 1
+                  | TyBool -> exit 1
+              | ESeq parts ->
+                  let (left, right) = parts in
+                  let _ = need_ty (infer (env, left), TyUnit) in
+                  infer (env, right)
 in
 let rec empty_env unit =
   let _ = unit in
@@ -487,22 +522,29 @@ let rec emit_expr state =
               let right_len = emit_expr (right, (shift_env env, emit)) in
               let pair_len = emit_makeblock_pair emit in
               left_len + push_len + right_len + pair_len
-          | ELetPair parts ->
-              let (name1, rest1) = parts in
-              let (name2, rest2) = rest1 in
-              let (rhs, body) = rest2 in
-              let rhs_len = emit_expr (rhs, (env, emit)) in
-              let save_pair = emit_push emit in
-              let acc_pair0 = emit_acc (emit, 0) in
-              let get_left = emit_getfield (emit, 0) in
-              let push_left = emit_push emit in
-              let acc_pair1 = emit_acc (emit, 1) in
-              let get_right = emit_getfield (emit, 1) in
-              let push_right = emit_push emit in
-              let body_env = extend_env (name2, extend_env (name1, shift_env env)) in
-              let body_len = emit_expr (body, (body_env, emit)) in
-              let pop_len = emit_pop (emit, 3) in
-              rhs_len + save_pair + acc_pair0 + get_left + push_left + acc_pair1 + get_right + push_right + body_len + pop_len
+          | EMore3 more3 ->
+              match more3 with
+                ELetPair parts ->
+                  let (name1, rest1) = parts in
+                  let (name2, rest2) = rest1 in
+                  let (rhs, body) = rest2 in
+                  let rhs_len = emit_expr (rhs, (env, emit)) in
+                  let save_pair = emit_push emit in
+                  let acc_pair0 = emit_acc (emit, 0) in
+                  let get_left = emit_getfield (emit, 0) in
+                  let push_left = emit_push emit in
+                  let acc_pair1 = emit_acc (emit, 1) in
+                  let get_right = emit_getfield (emit, 1) in
+                  let push_right = emit_push emit in
+                  let body_env = extend_env (name2, extend_env (name1, shift_env env)) in
+                  let body_len = emit_expr (body, (body_env, emit)) in
+                  let pop_len = emit_pop (emit, 3) in
+                  rhs_len + save_pair + acc_pair0 + get_left + push_left + acc_pair1 + get_right + push_right + body_len + pop_len
+              | ESeq parts ->
+                  let (left, right) = parts in
+                  let left_len = emit_expr (left, (env, emit)) in
+                  let right_len = emit_expr (right, (env, emit)) in
+                  left_len + right_len
 in
 let rec emit_program src =
   let parsed = parse_program (src, 0) in

@@ -1547,6 +1547,9 @@ OK"
             printf 'let (x, y) = (40, 39) in write_byte (x + y)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-pair-let.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-pair-let.mzbc)"
             test "$actual" = O
+            printf 'write_byte 79; write_byte 75; write_byte 10' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-sequence.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-sequence.mzbc)"
+            test "$actual" = OK
             if printf '40 + 39' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-top-type-error.mzbc; then
               exit 1
             fi
@@ -1562,6 +1565,9 @@ OK"
             if printf 'let (x, y) = 79 in write_byte x' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-pair-type-error.mzbc; then
               exit 1
             fi
+            if printf '79; write_byte 75' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-sequence-type-error.mzbc; then
+              exit 1
+            fi
           '';
           installScript = ''
             install -Dm644 03-ast-compiler.ml "$out/share/mlc/stages/03-ast-compiler.ml"
@@ -1574,6 +1580,7 @@ OK"
             install -Dm644 03-let.mzbc "$out/share/mlc/stages/03-let.mzbc"
             install -Dm644 03-top-let.mzbc "$out/share/mlc/stages/03-top-let.mzbc"
             install -Dm644 03-pair-let.mzbc "$out/share/mlc/stages/03-pair-let.mzbc"
+            install -Dm644 03-sequence.mzbc "$out/share/mlc/stages/03-sequence.mzbc"
           '';
         };
 

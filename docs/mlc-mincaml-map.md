@@ -119,9 +119,11 @@ then emit VM bytecode. Its first typed core distinguishes `int`, `bool`,
 `bool` guard, and pair destructuring checked before field extraction is
 emitted. Because the current compiler cannot yet compile
 function-valued parser continuations, stage 03 uses the executable subset of
-HCC `ParseLite` naming (`p_peek`, `p_need_char`, `p_return`, and
-string/keyword recognizers such as `p_need_string`) while stage 02 continues
-to carry the higher-order `p_bind` transition point.
+HCC `ParseLite`: explicit `ParseOk` / `ParseErr` replies, `p_force`,
+one-lookahead via `p_peek`, `try`/`need` character and string parsers, and
+keyword recognizers. Stage 02 continues to carry the higher-order `p_bind`
+transition point. Stage 03 also type-checks sequencing with `;`, requiring the
+left expression to have type `unit` before emitting the right expression.
 
 The older `mlc-seed.c` is deliberately smaller than the full language and is
 now transitional. It is a tiny recursive-descent compiler for `let` bindings,
