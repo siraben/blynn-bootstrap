@@ -327,6 +327,17 @@ let rec seq_expr state =
   let (left, right) = state in
   EMore (EMore2 (EMore3 (EMore4 (EMore5 (EMore6 (ESeq (left, right)))))))
 in
+let rec let_expr state =
+  let (name, pair) = state in
+  let (rhs, body) = pair in
+  EMore (EMore2 (EMore3 (EMore4 (EMore5 (ELet (name, (rhs, body)))))))
+in
+let rec let_pair_expr state =
+  let (name1, rest1) = state in
+  let (name2, rest2) = rest1 in
+  let (rhs, body) = rest2 in
+  EMore (EMore2 (EMore3 (EMore4 (EMore5 (ELetPair (name1, (name2, (rhs, body))))))))
+in
 let rec parse_string_escape state =
   let (src, pos) = state in
   let ch = src.[pos] in
@@ -509,7 +520,36 @@ let rec parse_expr state =
 in
 let rec parse_program state =
   let (src, pos0) = state in
-  parse_expr (src, pos0)
+  let pos = skip_space (src, pos0) in
+  if is_let_at (src, pos) then
+    let bind_pos = skip_space (src, pos + 3) in
+    if src.[bind_pos] == '(' then
+      let name1 = parse_ident (src, bind_pos + 1) in
+      let (name1_hash, name1_end0) = name1 in
+      let comma = need_char (src, (name1_end0, ',')) in
+      let name2 = parse_ident (src, comma) in
+      let (name2_hash, name2_end0) = name2 in
+      let after_names = need_char (src, (name2_end0, ')')) in
+      let eq_pos = need_char (src, (after_names, '=')) in
+      let rhs = parse_expr_flag (src, (eq_pos, 0)) in
+      let (rhs_ast, rhs_end) = rhs in
+      let after_rhs = skip_space (src, rhs_end) in
+      if is_in_at (src, after_rhs) then parse_expr (src, pos) else
+        let body = parse_program (src, after_rhs) in
+        let (body_ast, body_end) = body in
+        (let_pair_expr (name1_hash, (name2_hash, (rhs_ast, body_ast))), body_end)
+    else
+      let ident = parse_ident (src, bind_pos) in
+      let (name, name_end) = ident in
+      let eq_pos = need_char (src, (name_end, '=')) in
+      let rhs = parse_expr_flag (src, (eq_pos, 0)) in
+      let (rhs_ast, rhs_end) = rhs in
+      let after_rhs = skip_space (src, rhs_end) in
+      if is_in_at (src, after_rhs) then parse_expr (src, pos) else
+        let body = parse_program (src, after_rhs) in
+        let (body_ast, body_end) = body in
+        (let_expr (name, (rhs_ast, body_ast)), body_end)
+  else parse_expr (src, pos)
 in
 let rec empty_tenv unit =
   let _ = unit in

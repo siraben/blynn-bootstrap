@@ -126,9 +126,11 @@ loop by reading an operator/precedence pair, recursing at the next precedence
 for the right-hand side, rebuilding the left-hand side, and continuing the
 climb. Stage 02 continues to carry the higher-order `p_bind` transition point.
 Stage 03 also type-checks sequencing with `;`, requiring the left expression to
-have type `unit` before emitting the right expression, and its typed integer
-core now covers `read_byte`, literal `write_string`, `()`, `+`, `-`, `*`,
-`/`, unary `-`, boolean `!`, `!=`, `<`, `<=`, `>`, and `>=`.
+have type `unit` before emitting the right expression. Its typed integer core
+now covers `read_byte`, literal `write_string`, `()`, `+`, `-`, `*`, `/`,
+unary `-`, boolean `!`, `!=`, `<`, `<=`, `>`, and `>=`, and its program parser
+accepts declaration-style top-level `let` and pair destructuring by lowering
+them to the same checked expression AST.
 
 The older `mlc-seed.c` is deliberately smaller than the full language and is
 now transitional. It is a tiny recursive-descent compiler for `let` bindings,

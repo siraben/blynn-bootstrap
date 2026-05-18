@@ -91,8 +91,10 @@ Current stages:
   bytes, `read_byte`, literal `write_string`, char literals, `()`,
   precedence-aware integer `+` / `-` / `*` / `/`, unary integer `-`, boolean
   `!`, integer comparisons, sequencing, bool literals, conditionals whose
-  guards must type as `bool`, `let`, top-level `let`, pair construction, pair
-  destructuring, full-input consumption, and static type errors.
+  guards must type as `bool`, expression-level `let ... in ...`,
+  declaration-style top-level `let` bindings, pair construction, pair
+  destructuring, top-level pair destructuring, full-input consumption, and
+  static type errors.
 
 Planned stages:
 
