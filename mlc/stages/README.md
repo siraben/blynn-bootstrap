@@ -85,10 +85,10 @@ Current stages:
   string-literal based rather than long character ladders. Programs now parse
   as arbitrary expressions whose final type must be `unit`, so the top-level
   no longer has a special `write_byte` wrapper. The flake gate checks direct
-  bytes, char literals, integer `+` / `-` / `*` / `/`, integer comparisons,
-  sequencing, bool literals, conditionals whose guards must type as `bool`,
-  `let`, top-level `let`, pair construction, pair destructuring, full-input
-  consumption, and static type errors.
+  bytes, char literals, precedence-aware integer `+` / `-` / `*` / `/`,
+  integer comparisons, sequencing, bool literals, conditionals whose guards
+  must type as `bool`, `let`, top-level `let`, pair construction, pair
+  destructuring, full-input consumption, and static type errors.
 
 Planned stages:
 

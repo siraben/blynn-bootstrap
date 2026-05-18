@@ -125,7 +125,7 @@ keyword recognizers. Stage 02 continues to carry the higher-order `p_bind`
 transition point. Stage 03 also type-checks sequencing with `;`, requiring the
 left expression to have type `unit` before emitting the right expression, and
 its typed integer core now covers `+`, `-`, `*`, `/`, `!=`, `<`, `<=`, `>`,
-and `>=`.
+and `>=` with precedence-aware parsing for arithmetic and comparisons.
 
 The older `mlc-seed.c` is deliberately smaller than the full language and is
 now transitional. It is a tiny recursive-descent compiler for `let` bindings,

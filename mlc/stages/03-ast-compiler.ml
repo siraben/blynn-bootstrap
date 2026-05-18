@@ -292,131 +292,177 @@ let rec parse_ident state =
   let ch = src.[pos] in
   if is_alpha ch then parse_ident_loop (src, (pos + 1, ch)) else exit 1
 in
-let rec parse_expr_flag state =
+let rec parse_expr_prec state =
   let (src, pair0) = state in
-  let (pos0, allow_seq) = pair0 in
-  let pos = skip_space (src, pos0) in
-  let left =
-    if is_if_at (src, pos) then
-      let cond = parse_expr_flag (src, (pos + 2, 1)) in
-      let (cond_ast, cond_end) = cond in
-      let then_pos = need_then (src, cond_end) in
-      let yes = parse_expr_flag (src, (then_pos, 1)) in
-      let (yes_ast, yes_end) = yes in
-      let else_pos = need_else (src, yes_end) in
-      let no = parse_expr_flag (src, (else_pos, 1)) in
-      let (no_ast, no_end) = no in
-      (EMore (EMore2 (EMore3 (EMore4 (EIf (cond_ast, (yes_ast, no_ast)))))), no_end)
-    else if is_let_at (src, pos) then
-      let bind_pos = skip_space (src, pos + 3) in
-      if src.[bind_pos] == '(' then
-        let name1 = parse_ident (src, bind_pos + 1) in
-        let (name1_hash, name1_end0) = name1 in
-        let comma = need_char (src, (name1_end0, ',')) in
-        let name2 = parse_ident (src, comma) in
-        let (name2_hash, name2_end0) = name2 in
-        let after_names = need_char (src, (name2_end0, ')')) in
-        let eq_pos = need_char (src, (after_names, '=')) in
-        let rhs = parse_expr_flag (src, (eq_pos, 1)) in
-        let (rhs_ast, rhs_end) = rhs in
-        let body_pos = need_in (src, rhs_end) in
-        let body = parse_expr_flag (src, (body_pos, 1)) in
-        let (body_ast, body_end) = body in
-        (EMore (EMore2 (EMore3 (EMore4 (EMore5 (ELetPair (name1_hash, (name2_hash, (rhs_ast, body_ast)))))))), body_end)
-      else
-        let ident = parse_ident (src, bind_pos) in
-        let (name, name_end) = ident in
-        let eq_pos = need_char (src, (name_end, '=')) in
-        let rhs = parse_expr_flag (src, (eq_pos, 1)) in
-        let (rhs_ast, rhs_end) = rhs in
-        let body_pos = need_in (src, rhs_end) in
-        let body = parse_expr_flag (src, (body_pos, 1)) in
-        let (body_ast, body_end) = body in
-        (EMore (EMore2 (EMore3 (EMore4 (EMore5 (ELet (name, (rhs_ast, body_ast))))))), body_end)
-    else if is_write_byte_at (src, pos) then
-      let expr_pos = need_write_byte (src, pos) in
-      let expr = parse_expr_flag (src, (expr_pos, 0)) in
-      let (expr_ast, expr_end) = expr in
-      (EMore (EWriteByte expr_ast), expr_end)
-    else
-      let peeked = p_peek (src, pos) in
-      let (ch, atom_pos) = peeked in
-      if ch == '(' then
-        let expr = parse_expr_flag (src, (atom_pos + 1, 1)) in
-        let (ast, expr_end) = expr in
-        let after_first = skip_space (src, expr_end) in
-        if src.[after_first] == ',' then
-          let right = parse_expr_flag (src, (after_first + 1, 1)) in
-          let (right_ast, right_end) = right in
-          p_return (p_need_char (src, (right_end, ')')), EMore (EMore2 (EMore3 (EMore4 (EMore5 (EPair (ast, right_ast)))))))
+  let (pos0, pair1) = pair0 in
+  let (allow_seq, pair2) = pair1 in
+  let (min_prec, pair3) = pair2 in
+  let (has_left, left_ast0) = pair3 in
+  if has_left == 0 then
+    let pos = skip_space (src, pos0) in
+    let left =
+      if is_if_at (src, pos) then
+        let cond = parse_expr_prec (src, (pos + 2, (1, (0, (0, EInt 0))))) in
+        let (cond_ast, cond_end) = cond in
+        let then_pos = need_then (src, cond_end) in
+        let yes = parse_expr_prec (src, (then_pos, (1, (0, (0, EInt 0))))) in
+        let (yes_ast, yes_end) = yes in
+        let else_pos = need_else (src, yes_end) in
+        let no = parse_expr_prec (src, (else_pos, (1, (0, (0, EInt 0))))) in
+        let (no_ast, no_end) = no in
+        (EMore (EMore2 (EMore3 (EMore4 (EIf (cond_ast, (yes_ast, no_ast)))))), no_end)
+      else if is_let_at (src, pos) then
+        let bind_pos = skip_space (src, pos + 3) in
+        if src.[bind_pos] == '(' then
+          let name1 = parse_ident (src, bind_pos + 1) in
+          let (name1_hash, name1_end0) = name1 in
+          let comma = need_char (src, (name1_end0, ',')) in
+          let name2 = parse_ident (src, comma) in
+          let (name2_hash, name2_end0) = name2 in
+          let after_names = need_char (src, (name2_end0, ')')) in
+          let eq_pos = need_char (src, (after_names, '=')) in
+          let rhs = parse_expr_prec (src, (eq_pos, (1, (0, (0, EInt 0))))) in
+          let (rhs_ast, rhs_end) = rhs in
+          let body_pos = need_in (src, rhs_end) in
+          let body = parse_expr_prec (src, (body_pos, (1, (0, (0, EInt 0))))) in
+          let (body_ast, body_end) = body in
+          (EMore (EMore2 (EMore3 (EMore4 (EMore5 (ELetPair (name1_hash, (name2_hash, (rhs_ast, body_ast)))))))), body_end)
         else
-          p_return (p_need_char (src, (expr_end, ')')), ast)
-      else if is_true_at (src, atom_pos) then
-        p_return (atom_pos + 4, EBool 1)
-      else if is_false_at (src, atom_pos) then
-        p_return (atom_pos + 5, EBool 0)
-      else if ch == '\'' then
-        p_return (atom_pos + 3, EInt (src.[atom_pos + 1]))
-      else if is_digit ch then
-        parse_number (src, atom_pos)
+          let ident = parse_ident (src, bind_pos) in
+          let (name, name_end) = ident in
+          let eq_pos = need_char (src, (name_end, '=')) in
+          let rhs = parse_expr_prec (src, (eq_pos, (1, (0, (0, EInt 0))))) in
+          let (rhs_ast, rhs_end) = rhs in
+          let body_pos = need_in (src, rhs_end) in
+          let body = parse_expr_prec (src, (body_pos, (1, (0, (0, EInt 0))))) in
+          let (body_ast, body_end) = body in
+          (EMore (EMore2 (EMore3 (EMore4 (EMore5 (ELet (name, (rhs_ast, body_ast))))))), body_end)
+      else if is_write_byte_at (src, pos) then
+        let expr_pos = need_write_byte (src, pos) in
+        let expr = parse_expr_prec (src, (expr_pos, (0, (0, (0, EInt 0))))) in
+        let (expr_ast, expr_end) = expr in
+        (EMore (EWriteByte expr_ast), expr_end)
       else
-        let ident = parse_ident (src, atom_pos) in
-        let (name, name_end) = ident in
-        p_return (name_end, EVar name)
-  in
-  let (left_ast, left_end) = left in
-  let next = skip_space (src, left_end) in
-  if src.[next] == '+' then
-    let right = parse_expr_flag (src, (next + 1, allow_seq)) in
-    let (right_ast, right_end) = right in
-    (EMore (EAdd (left_ast, right_ast)), right_end)
-  else if src.[next] == '-' then
-    let right = parse_expr_flag (src, (next + 1, allow_seq)) in
-    let (right_ast, right_end) = right in
-    (EMore (ESub (left_ast, right_ast)), right_end)
-  else if src.[next] == '*' then
-    let right = parse_expr_flag (src, (next + 1, allow_seq)) in
-    let (right_ast, right_end) = right in
-    (EMore (EMore2 (EMul (left_ast, right_ast))), right_end)
-  else if src.[next] == '/' then
-    let right = parse_expr_flag (src, (next + 1, allow_seq)) in
-    let (right_ast, right_end) = right in
-    (EMore (EMore2 (EDiv (left_ast, right_ast))), right_end)
-  else if (src.[next] == '=') * (src.[next + 1] == '=') then
-    let right = parse_expr_flag (src, (next + 2, allow_seq)) in
-    let (right_ast, right_end) = right in
-    (EMore (EMore2 (EEq (left_ast, right_ast))), right_end)
-  else if (src.[next] == '!') * (src.[next + 1] == '=') then
-    let right = parse_expr_flag (src, (next + 2, allow_seq)) in
-    let (right_ast, right_end) = right in
-    (EMore (EMore2 (EMore3 (ENe (left_ast, right_ast)))), right_end)
-  else if src.[next] == '<' then
-    if src.[next + 1] == '=' then
-      let right = parse_expr_flag (src, (next + 2, allow_seq)) in
-      let (right_ast, right_end) = right in
-      (EMore (EMore2 (EMore3 (ELe (left_ast, right_ast)))), right_end)
-    else
-      let right = parse_expr_flag (src, (next + 1, allow_seq)) in
-      let (right_ast, right_end) = right in
-      (EMore (EMore2 (EMore3 (ELt (left_ast, right_ast)))), right_end)
-  else if src.[next] == '>' then
-    if src.[next + 1] == '=' then
-      let right = parse_expr_flag (src, (next + 2, allow_seq)) in
-      let (right_ast, right_end) = right in
-      (EMore (EMore2 (EMore3 (EMore4 (EGe (left_ast, right_ast))))), right_end)
-    else
-      let right = parse_expr_flag (src, (next + 1, allow_seq)) in
-      let (right_ast, right_end) = right in
-      (EMore (EMore2 (EMore3 (EMore4 (EGt (left_ast, right_ast))))), right_end)
-  else if allow_seq == 1 then
-    if src.[next] == ';' then
-      let right = parse_expr_flag (src, (next + 1, 1)) in
-      let (right_ast, right_end) = right in
-      (EMore (EMore2 (EMore3 (EMore4 (EMore5 (ESeq (left_ast, right_ast)))))), right_end)
-    else
-      left
+        let peeked = p_peek (src, pos) in
+        let (ch, atom_pos) = peeked in
+        if ch == '(' then
+          let expr = parse_expr_prec (src, (atom_pos + 1, (1, (0, (0, EInt 0))))) in
+          let (ast, expr_end) = expr in
+          let after_first = skip_space (src, expr_end) in
+          if src.[after_first] == ',' then
+            let right = parse_expr_prec (src, (after_first + 1, (1, (0, (0, EInt 0))))) in
+            let (right_ast, right_end) = right in
+            p_return (p_need_char (src, (right_end, ')')), EMore (EMore2 (EMore3 (EMore4 (EMore5 (EPair (ast, right_ast)))))))
+          else
+            p_return (p_need_char (src, (expr_end, ')')), ast)
+        else if is_true_at (src, atom_pos) then
+          p_return (atom_pos + 4, EBool 1)
+        else if is_false_at (src, atom_pos) then
+          p_return (atom_pos + 5, EBool 0)
+        else if ch == '\'' then
+          p_return (atom_pos + 3, EInt (src.[atom_pos + 1]))
+        else if is_digit ch then
+          parse_number (src, atom_pos)
+        else
+          let ident = parse_ident (src, atom_pos) in
+          let (name, name_end) = ident in
+          p_return (name_end, EVar name)
+    in
+    let (left_ast, left_end) = left in
+    parse_expr_prec (src, (left_end, (allow_seq, (min_prec, (1, left_ast)))))
   else
-    left
+    let next = skip_space (src, pos0) in
+    if (src.[next] == ';') * allow_seq then
+      if min_prec <= 0 then
+        let right = parse_expr_prec (src, (next + 1, (1, (1, (0, EInt 0))))) in
+        let (right_ast, right_end) = right in
+        let next_left = EMore (EMore2 (EMore3 (EMore4 (EMore5 (ESeq (left_ast0, right_ast)))))) in
+        parse_expr_prec (src, (right_end, (allow_seq, (min_prec, (1, next_left)))))
+      else
+        (left_ast0, pos0)
+    else if (src.[next] == '=') * (src.[next + 1] == '=') then
+      if min_prec <= 1 then
+        let right = parse_expr_prec (src, (next + 2, (allow_seq, (2, (0, EInt 0))))) in
+        let (right_ast, right_end) = right in
+        let next_left = EMore (EMore2 (EEq (left_ast0, right_ast))) in
+        parse_expr_prec (src, (right_end, (allow_seq, (min_prec, (1, next_left)))))
+      else
+        (left_ast0, pos0)
+    else if (src.[next] == '!') * (src.[next + 1] == '=') then
+      if min_prec <= 1 then
+        let right = parse_expr_prec (src, (next + 2, (allow_seq, (2, (0, EInt 0))))) in
+        let (right_ast, right_end) = right in
+        let next_left = EMore (EMore2 (EMore3 (ENe (left_ast0, right_ast)))) in
+        parse_expr_prec (src, (right_end, (allow_seq, (min_prec, (1, next_left)))))
+      else
+        (left_ast0, pos0)
+    else if src.[next] == '<' then
+      if min_prec <= 1 then
+        if src.[next + 1] == '=' then
+          let right = parse_expr_prec (src, (next + 2, (allow_seq, (2, (0, EInt 0))))) in
+          let (right_ast, right_end) = right in
+          let next_left = EMore (EMore2 (EMore3 (ELe (left_ast0, right_ast)))) in
+          parse_expr_prec (src, (right_end, (allow_seq, (min_prec, (1, next_left)))))
+        else
+          let right = parse_expr_prec (src, (next + 1, (allow_seq, (2, (0, EInt 0))))) in
+          let (right_ast, right_end) = right in
+          let next_left = EMore (EMore2 (EMore3 (ELt (left_ast0, right_ast)))) in
+          parse_expr_prec (src, (right_end, (allow_seq, (min_prec, (1, next_left)))))
+      else
+        (left_ast0, pos0)
+    else if src.[next] == '>' then
+      if min_prec <= 1 then
+        if src.[next + 1] == '=' then
+          let right = parse_expr_prec (src, (next + 2, (allow_seq, (2, (0, EInt 0))))) in
+          let (right_ast, right_end) = right in
+          let next_left = EMore (EMore2 (EMore3 (EMore4 (EGe (left_ast0, right_ast))))) in
+          parse_expr_prec (src, (right_end, (allow_seq, (min_prec, (1, next_left)))))
+        else
+          let right = parse_expr_prec (src, (next + 1, (allow_seq, (2, (0, EInt 0))))) in
+          let (right_ast, right_end) = right in
+          let next_left = EMore (EMore2 (EMore3 (EMore4 (EGt (left_ast0, right_ast))))) in
+          parse_expr_prec (src, (right_end, (allow_seq, (min_prec, (1, next_left)))))
+      else
+        (left_ast0, pos0)
+    else if src.[next] == '+' then
+      if min_prec <= 2 then
+        let right = parse_expr_prec (src, (next + 1, (allow_seq, (3, (0, EInt 0))))) in
+        let (right_ast, right_end) = right in
+        let next_left = EMore (EAdd (left_ast0, right_ast)) in
+        parse_expr_prec (src, (right_end, (allow_seq, (min_prec, (1, next_left)))))
+      else
+        (left_ast0, pos0)
+    else if src.[next] == '-' then
+      if min_prec <= 2 then
+        let right = parse_expr_prec (src, (next + 1, (allow_seq, (3, (0, EInt 0))))) in
+        let (right_ast, right_end) = right in
+        let next_left = EMore (ESub (left_ast0, right_ast)) in
+        parse_expr_prec (src, (right_end, (allow_seq, (min_prec, (1, next_left)))))
+      else
+        (left_ast0, pos0)
+    else if src.[next] == '*' then
+      if min_prec <= 3 then
+        let right = parse_expr_prec (src, (next + 1, (allow_seq, (4, (0, EInt 0))))) in
+        let (right_ast, right_end) = right in
+        let next_left = EMore (EMore2 (EMul (left_ast0, right_ast))) in
+        parse_expr_prec (src, (right_end, (allow_seq, (min_prec, (1, next_left)))))
+      else
+        (left_ast0, pos0)
+    else if src.[next] == '/' then
+      if min_prec <= 3 then
+        let right = parse_expr_prec (src, (next + 1, (allow_seq, (4, (0, EInt 0))))) in
+        let (right_ast, right_end) = right in
+        let next_left = EMore (EMore2 (EDiv (left_ast0, right_ast))) in
+        parse_expr_prec (src, (right_end, (allow_seq, (min_prec, (1, next_left)))))
+      else
+        (left_ast0, pos0)
+    else
+      (left_ast0, pos0)
+in
+let rec parse_expr_flag state =
+  let (src, pair) = state in
+  let (pos0, allow_seq) = pair in
+  parse_expr_prec (src, (pos0, (allow_seq, (0, (0, EInt 0)))))
 in
 let rec parse_expr state =
   let (src, pos0) = state in

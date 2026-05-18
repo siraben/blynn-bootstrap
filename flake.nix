@@ -1532,10 +1532,10 @@ OK"
             printf 'write_byte (40 + 39)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-add.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-add.mzbc)"
             test "$actual" = O
-            printf 'write_byte (100 - 21)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-sub.mzbc
+            printf 'write_byte (100 - 20 - 1)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-sub.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-sub.mzbc)"
             test "$actual" = O
-            printf 'write_byte ((7 * 11) + 2)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-mul.mzbc
+            printf 'write_byte (7 * 11 + 2)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-mul.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-mul.mzbc)"
             test "$actual" = O
             printf 'write_byte (158 / 2)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-div.mzbc
