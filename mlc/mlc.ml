@@ -927,6 +927,56 @@ let rec compile_atom input =
   if is_if_at (src, pos) then compile_if (src, (pos, (env, (ctors, emit))))
   else compile_simple_atom (src, (pos, (env, (ctors, emit))))
 in
+let rec compile_arg_expr input =
+  let (src, pair) = input in
+  let (pos0, pair2) = pair in
+  let (env, pair3) = pair2 in
+  let (ctors, pair4) = pair3 in
+  let (funcs, emit) = pair4 in
+  let _ = funcs in
+  let pos = skip_space (src, pos0) in
+  let left =
+    if src.[pos] == 40 then
+      let inner = compile_simple_expr (src, (pos + 1, (env, (ctors, emit)))) in
+      let (inner_len, inner_end0) = inner in
+      let inner_end = skip_space (src, inner_end0) in
+      if src.[inner_end] == 41 then (inner_len, inner_end + 1) else exit 1
+    else
+      compile_simple_atom (src, (pos, (env, (ctors, emit))))
+  in
+  let (left_len0, next00) = left in
+  let next1 = skip_space (src, next00) in
+  if src.[next1] == 46 then
+    let open_ch = src.[next1 + 1] in
+    if open_ch == 91 then
+      let push_base = emit_push emit in
+      let index = compile_simple_expr (src, (next1 + 2, (shift_env env, (ctors, emit)))) in
+      let (index_len, index_end0) = index in
+      let index_end = skip_space (src, index_end0) in
+      if src.[index_end] == 93 then
+        let get_len = emit_getfield_dyn emit in
+        (left_len0 + push_base + index_len + get_len, index_end + 1)
+      else
+        exit 1
+    else if open_ch == 40 then
+      let push_base = emit_push emit in
+      let index = compile_simple_expr (src, (next1 + 2, (shift_env env, (ctors, emit)))) in
+      let (index_len, index_end0) = index in
+      let index_end = skip_space (src, index_end0) in
+      if src.[index_end] == 41 then
+        let get_len = emit_getfield_dyn emit in
+        (left_len0 + push_base + index_len + get_len, index_end + 1)
+      else
+        exit 1
+    else
+      let field = parse_ident (src, next1 + 1) in
+      let (field_name, field_end) = field in
+      let index = lookup_field (ctors, field_name) in
+      let field_len = emit_getfield (emit, index) in
+      (left_len0 + field_len, field_end)
+  else
+    left
+in
 let rec compile_expr input =
   let (src, pair) = input in
   let (pos0, pair2) = pair in
@@ -998,12 +1048,39 @@ let rec compile_expr input =
 	    let block_len = emit_makeblock (emit, (0, 1)) in
 	    (expr_len + block_len, done_pos)
 	  else if is_cell_get_at (src, pos) then
-	    let expr = compile_expr (src, (pos + 8, (env, (ctors, (funcs, emit))))) in
+	    let expr = compile_arg_expr (src, (pos + 8, (env, (ctors, (funcs, emit))))) in
 	    let (expr_len, done_pos) = expr in
 	    let field_len = emit_getfield (emit, 0) in
-	    (expr_len + field_len, done_pos)
+	    let left_len = expr_len + field_len in
+	    let next = skip_space (src, done_pos) in
+	    if src.[next] == 43 then
+	      let push_len = emit_push (emit) in
+	      let right = compile_expr (src, (next + 1, (shift_env (env), (ctors, (funcs, emit))))) in
+	      let (right_len, right_done) = right in
+	      let add_len = emit_add (emit) in
+	      (left_len + push_len + right_len + add_len, right_done)
+	    else if src.[next] == 45 then
+	      let push_len = emit_push (emit) in
+	      let right = compile_expr (src, (next + 1, (shift_env (env), (ctors, (funcs, emit))))) in
+	      let (right_len, right_done) = right in
+	      let sub_len = emit_sub (emit) in
+	      (left_len + push_len + right_len + sub_len, right_done)
+	    else if src.[next] == 42 then
+	      let push_len = emit_push (emit) in
+	      let right = compile_expr (src, (next + 1, (shift_env (env), (ctors, (funcs, emit))))) in
+	      let (right_len, right_done) = right in
+	      let mul_len = emit_mul (emit) in
+	      (left_len + push_len + right_len + mul_len, right_done)
+	    else if src.[next] == 47 then
+	      let push_len = emit_push (emit) in
+	      let right = compile_expr (src, (next + 1, (shift_env (env), (ctors, (funcs, emit))))) in
+	      let (right_len, right_done) = right in
+	      let div_len = emit_div (emit) in
+	      (left_len + push_len + right_len + div_len, right_done)
+	    else
+	      (left_len, done_pos)
 	  else if is_cell_set_at (src, pos) then
-	    let cell = compile_expr (src, (pos + 8, (env, (ctors, (funcs, emit))))) in
+	    let cell = compile_arg_expr (src, (pos + 8, (env, (ctors, (funcs, emit))))) in
 	    let (cell_len, cell_end) = cell in
 	    let push_len = emit_push emit in
 	    let value = compile_expr (src, (cell_end, (shift_env env, (ctors, (funcs, emit))))) in
