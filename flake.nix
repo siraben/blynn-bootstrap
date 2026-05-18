@@ -857,6 +857,8 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             ${mzvmSeedM2}/bin/mzvm-seed mlc-stage-let2.mzbc > mlc-stage-let2.out
             printf 'let x = 40 in let y = 20 in let z = 19 in write_byte (x + y + z)' | ${mzvmSeedM2}/bin/mzvm-seed mlc-stage.mzbc > mlc-stage-let3.mzbc
             ${mzvmSeedM2}/bin/mzvm-seed mlc-stage-let3.mzbc > mlc-stage-let3.out
+            printf 'let x = (40 + 39) in write_byte x' | ${mzvmSeedM2}/bin/mzvm-seed mlc-stage.mzbc > mlc-stage-paren-let.mzbc
+            ${mzvmSeedM2}/bin/mzvm-seed mlc-stage-paren-let.mzbc > mlc-stage-paren-let.out
             printf 'let x = 88 in let x = 79 in write_byte x' | ${mzvmSeedM2}/bin/mzvm-seed mlc-stage.mzbc > mlc-stage-shadow.mzbc
             ${mzvmSeedM2}/bin/mzvm-seed mlc-stage-shadow.mzbc > mlc-stage-shadow.out
             printf 'write_byte (80 - 1)' | ${mzvmSeedM2}/bin/mzvm-seed mlc-stage.mzbc > mlc-stage-sub.mzbc
@@ -915,6 +917,7 @@ OK"
             test "$(cat mlc-stage-let.out)" = O
             test "$(cat mlc-stage-let2.out)" = O
             test "$(cat mlc-stage-let3.out)" = O
+            test "$(cat mlc-stage-paren-let.out)" = O
             test "$(cat mlc-stage-shadow.out)" = O
             test "$(cat mlc-stage-sub.out)" = O
             test "$(cat mlc-stage-mul.out)" = O
@@ -963,6 +966,8 @@ OK"
             install -Dm644 mlc-stage-let2.out "$out/share/mlc/stages/mlc-stage-let2.out"
             install -Dm644 mlc-stage-let3.mzbc "$out/share/mlc/stages/mlc-stage-let3.mzbc"
             install -Dm644 mlc-stage-let3.out "$out/share/mlc/stages/mlc-stage-let3.out"
+            install -Dm644 mlc-stage-paren-let.mzbc "$out/share/mlc/stages/mlc-stage-paren-let.mzbc"
+            install -Dm644 mlc-stage-paren-let.out "$out/share/mlc/stages/mlc-stage-paren-let.out"
             install -Dm644 mlc-stage-shadow.mzbc "$out/share/mlc/stages/mlc-stage-shadow.mzbc"
             install -Dm644 mlc-stage-shadow.out "$out/share/mlc/stages/mlc-stage-shadow.out"
             install -Dm644 mlc-stage-sub.mzbc "$out/share/mlc/stages/mlc-stage-sub.mzbc"
@@ -1239,6 +1244,9 @@ OK"
             printf 'let x = 40 in let y = 20 in let z = 19 in write_byte (x + y + z)' | ${mzvmSeedM2}/bin/mzvm-seed mlc.byte > compiled-let3.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-let3.mzbc)"
             test "$actual" = O
+            printf 'let x = (40 + 39) in write_byte x' | ${mzvmSeedM2}/bin/mzvm-seed mlc.byte > compiled-paren-let.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-paren-let.mzbc)"
+            test "$actual" = O
             printf 'let x = 88 in let x = 79 in write_byte x' | ${mzvmSeedM2}/bin/mzvm-seed mlc.byte > compiled-shadow.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-shadow.mzbc)"
             test "$actual" = O
@@ -1290,6 +1298,7 @@ OK"
             install -Dm644 compiled-let.mzbc "$out/share/mlc/compiled-let.mzbc"
             install -Dm644 compiled-let2.mzbc "$out/share/mlc/compiled-let2.mzbc"
             install -Dm644 compiled-let3.mzbc "$out/share/mlc/compiled-let3.mzbc"
+            install -Dm644 compiled-paren-let.mzbc "$out/share/mlc/compiled-paren-let.mzbc"
             install -Dm644 compiled-shadow.mzbc "$out/share/mlc/compiled-shadow.mzbc"
             install -Dm644 compiled-sub.mzbc "$out/share/mlc/compiled-sub.mzbc"
             install -Dm644 compiled-mul.mzbc "$out/share/mlc/compiled-mul.mzbc"

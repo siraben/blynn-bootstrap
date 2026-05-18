@@ -217,9 +217,18 @@ let rec compile_simple_atom input =
 in
 let rec compile_simple_expr input =
   let (src, pair) = input in
-  let (pos, pair2) = pair in
+  let (pos0, pair2) = pair in
   let (env, emit) = pair2 in
-  let left = compile_simple_atom (src, (pos, (env, emit))) in
+  let pos = skip_space (src, pos0) in
+  let left =
+    if src.[pos] == 40 then
+      let inner = compile_simple_expr (src, (pos + 1, (env, emit))) in
+      let (inner_len, inner_end0) = inner in
+      let inner_end = skip_space (src, inner_end0) in
+      if src.[inner_end] == 41 then (inner_len, inner_end + 1) else exit 1
+    else
+      compile_simple_atom (src, (pos, (env, emit)))
+  in
   let (left_len, next0) = left in
   let next = skip_space (src, next0) in
   if src.[next] == 43 then
@@ -328,9 +337,18 @@ let rec compile_atom input =
 in
 let rec compile_expr input =
   let (src, pair) = input in
-  let (pos, pair2) = pair in
+  let (pos0, pair2) = pair in
   let (env, emit) = pair2 in
-  let left = compile_atom (src, (pos, (env, emit))) in
+  let pos = skip_space (src, pos0) in
+  let left =
+    if src.[pos] == 40 then
+      let inner = compile_expr (src, (pos + 1, (env, emit))) in
+      let (inner_len, inner_end0) = inner in
+      let inner_end = skip_space (src, inner_end0) in
+      if src.[inner_end] == 41 then (inner_len, inner_end + 1) else exit 1
+    else
+      compile_atom (src, (pos, (env, emit)))
+  in
   let (left_len, next0) = left in
   let next = skip_space (src, next0) in
   if src.[next] == 43 then
@@ -428,8 +446,7 @@ let rec compile_write_byte input =
   let (pos, pair2) = pair in
   let (env, emit) = pair2 in
   let p = skip_space (src, pos + 10) in
-  let expr_pos = if src.[p] == 40 then p + 1 else p in
-  let expr = compile_expr (src, (expr_pos, (env, emit))) in
+  let expr = compile_expr (src, (p, (env, emit))) in
   let (expr_len, done_pos) = expr in
   let call_len = emit_call_write_byte emit in
   (expr_len + call_len, done_pos)
