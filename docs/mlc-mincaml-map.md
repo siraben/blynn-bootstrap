@@ -140,7 +140,8 @@ the first ADT/pattern slice.
 Leading `type` declarations build a constructor environment, constructor and
 tuple payload expressions allocate VM blocks, tuple destructuring extracts
 fields, and simple constructor/wildcard `match` forms lower to tag tests and
-branches, including multi-declaration, `match-three.ml`, and
-`adt-tuple-payload.ml` cases. The next meaningful step is to extend that
-ML-side parser/lowerer to recursive and nested decision-tree patterns, then
-retire the transitional direct C bytecode compiler from the critical path.
+branches, including multi-declaration, `match-three.ml`,
+`adt-tuple-payload.ml`, and recursive `adt-recursion.ml` cases. The next
+meaningful step is to extend that ML-side parser/lowerer to general nested
+decision-tree patterns, then retire the transitional direct C bytecode
+compiler from the critical path.

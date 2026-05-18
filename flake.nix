@@ -1389,6 +1389,9 @@ OK"
             ${mzvmSeedM2}/bin/mzvm-seed mlc.byte < ${./tests/mlc/adt-tuple-payload.ml} > compiled-adt-tuple-payload.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-adt-tuple-payload.mzbc)"
             test "$actual" = OK
+            ${mzvmSeedM2}/bin/mzvm-seed mlc.byte < ${./tests/mlc/adt-recursion.ml} > compiled-adt-recursion.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-adt-recursion.mzbc)"
+            test "$actual" = OK
           '';
           installScript = ''
             install -Dm644 mlc.byte "$out/share/mlc/mlc.byte"
@@ -1423,6 +1426,7 @@ OK"
             install -Dm644 compiled-match-three-direct.mzbc "$out/share/mlc/compiled-match-three-direct.mzbc"
             install -Dm644 compiled-match-three.mzbc "$out/share/mlc/compiled-match-three.mzbc"
             install -Dm644 compiled-adt-tuple-payload.mzbc "$out/share/mlc/compiled-adt-tuple-payload.mzbc"
+            install -Dm644 compiled-adt-recursion.mzbc "$out/share/mlc/compiled-adt-recursion.mzbc"
           '';
         };
 

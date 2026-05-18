@@ -105,6 +105,16 @@ let rec emit_call_write_byte emit =
   let _ = emit_u32_if (emit, 1) in
   9
 in
+let rec emit_call state =
+  let (emit, target) = state in
+  let _ = emit_byte_if (emit, 23) in
+  let _ = emit_u32_if (emit, target) in
+  5
+in
+let rec emit_return emit =
+  let _ = emit_byte_if (emit, 24) in
+  1
+in
 let rec emit_branch state =
   let (emit, offset) = state in
   let _ = emit_byte_if (emit, 11) in
@@ -857,17 +867,11 @@ let rec compile_expr input =
     let depth = find_env (env, name) in
     let found_func = if depth < 0 then find_func (funcs, name) else 0 in
     if found_func == 1 then
-      let param = func_param (funcs, name) in
-      let body_start = func_body_start (funcs, name) in
       let arg = compile_expr (src, (name_end, (env, (ctors, (funcs, emit))))) in
       let (arg_len, arg_end) = arg in
-      let push_len = emit_push emit in
-      let body_env = extend_env (param, env) in
-      let body = compile_expr (src, (body_start, (body_env, (ctors, (funcs, emit))))) in
-      let (body_len, dummy_end) = body in
-      let _ = dummy_end in
-      let pop_len = emit_pop1 emit in
-      (arg_len + push_len + body_len + pop_len, arg_end)
+      let target = func_body_start (funcs, name) in
+      let call_len = emit_call (emit, target) in
+      (arg_len + call_len, arg_end)
     else
     let ctor = if depth < 0 then find_ctor (ctors, name) else 0 - 1 in
     if ctor >= 0 then
@@ -1101,7 +1105,8 @@ let rec compile_byte_code input =
   let (pos0, pair2) = pair in
   let (env, pair3) = pair2 in
   let (ctors, pair4) = pair3 in
-  let (funcs, emit) = pair4 in
+  let (funcs, pair5) = pair4 in
+  let (base, emit) = pair5 in
   let pos = skip_space (src, pos0) in
   if is_let_at (src, pos) then
     let after_let = skip_space (src, pos + 3) in
@@ -1114,15 +1119,29 @@ let rec compile_byte_code input =
       let eq_pos = skip_space (src, param_end) in
       if src.[eq_pos] == 61 then
         let fn_body_start = eq_pos + 1 in
+        let target = base + 5 in
+        let next_funcs = extend_func (fname, (param, (target, funcs))) in
         let fn_env = extend_env (param, env) in
-        let fn_body = compile_expr (src, (fn_body_start, (fn_env, (ctors, (funcs, 0))))) in
+        let fn_body = compile_expr (src, (fn_body_start, (fn_env, (ctors, (next_funcs, 0))))) in
         let (fn_len, fn_end) = fn_body in
-        let _ = fn_len in
+        let fn_total = 1 + fn_len + 5 + 1 in
         let in_pos = skip_space (src, fn_end) in
         if is_in_at (src, in_pos) then
           let body_pos = skip_space (src, in_pos + 2) in
-          let next_funcs = extend_func (fname, (param, (fn_body_start, funcs))) in
-          compile_byte_code (src, (body_pos, (env, (ctors, (next_funcs, emit)))))
+          let body = compile_byte_code (src, (body_pos, (env, (ctors, (next_funcs, (base + 5 + fn_total, 0)))))) in
+          let (body_len, body_end) = body in
+          let _ =
+            if emit == 1 then
+              let _ = emit_branch (1, fn_total) in
+              let _ = emit_push 1 in
+              let _ = compile_expr (src, (fn_body_start, (fn_env, (ctors, (next_funcs, 1))))) in
+              let _ = emit_pop1 1 in
+              let _ = emit_return 1 in
+              compile_byte_code (src, (body_pos, (env, (ctors, (next_funcs, (base + 5 + fn_total, 1))))))
+            else
+              (0, 0)
+          in
+          (5 + fn_total + body_len, body_end)
         else
           exit 1
       else
@@ -1153,7 +1172,8 @@ let rec compile_byte_code input =
                 let p2 = emit_push emit in
                 let shifted = shift_env (shift_env (shift_env env)) in
                 let body_env = (name2, (0, (name1, (1, shifted)))) in
-                let body = compile_byte_code (src, (body_pos, (body_env, (ctors, (funcs, emit))))) in
+                let body_base = base + rhs_len + p0 + a0 + g0 + p1 + a1 + g1 + p2 in
+                let body = compile_byte_code (src, (body_pos, (body_env, (ctors, (funcs, (body_base, emit)))))) in
                 let (body_len, body_end) = body in
                 let pop_len = emit_pop (emit, 3) in
                 (rhs_len + p0 + a0 + g0 + p1 + a1 + g1 + p2 + body_len + pop_len, body_end)
@@ -1177,7 +1197,8 @@ let rec compile_byte_code input =
             let body_pos = skip_space (src, in_pos + 2) in
             let push_len = emit_push (emit) in
             let next_env = extend_env (name, env) in
-            let body = compile_byte_code (src, (body_pos, (next_env, (ctors, (funcs, emit))))) in
+            let body_base = base + rhs_len + push_len in
+            let body = compile_byte_code (src, (body_pos, (next_env, (ctors, (funcs, (body_base, emit)))))) in
             let (body_len, body_end) = body in
             let pop_len = emit_pop1 (emit) in
             (rhs_len + push_len + body_len + pop_len, body_end)
@@ -1193,10 +1214,10 @@ let rec emit_byte_source input =
   let empty_env = (0 - 1, (0, 0)) in
   let parsed_types = parse_type_decls (src, (start_pos, empty_ctors)) in
   let (body_pos, ctors) = parsed_types in
-  let measured = compile_byte_code (src, (body_pos, (empty_env, (ctors, (empty_funcs, 0))))) in
+  let measured = compile_byte_code (src, (body_pos, (empty_env, (ctors, (empty_funcs, (0, 0)))))) in
   let (code_len, done_pos) = measured in
   let _ = emit_header (code_len + 1) in
-  let _ = compile_byte_code (src, (body_pos, (empty_env, (ctors, (empty_funcs, 1))))) in
+  let _ = compile_byte_code (src, (body_pos, (empty_env, (ctors, (empty_funcs, (0, 1)))))) in
   write_byte 0
 in
 let rec compile_program src =
