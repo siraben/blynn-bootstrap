@@ -55,6 +55,12 @@ let rec expect_int state =
   let pos = skip_space (src, pos0) in
   if (src.[pos] == 105) * (src.[pos + 1] == 110) * (src.[pos + 2] == 116) then pos + 3 else exit 1
 in
+let rec expect_type state =
+  let (src, pos0) = state in
+  let pos = skip_space (src, pos0) in
+  if (src.[pos] == 105) * (src.[pos + 1] == 110) * (src.[pos + 2] == 116) then pos + 3 else
+  if (src.[pos] == 118) * (src.[pos + 1] == 111) * (src.[pos + 2] == 105) * (src.[pos + 3] == 100) then pos + 4 else exit 1
+in
 let rec expect_main state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
@@ -67,6 +73,11 @@ let rec expect_return state =
     if (src.[pos + 4] == 114) * (src.[pos + 5] == 110) then pos + 6 else exit 1
   else
     exit 1
+in
+let rec is_return_at state =
+  let (src, pos0) = state in
+  let pos = skip_space (src, pos0) in
+  (src.[pos] == 114) * (src.[pos + 1] == 101) * (src.[pos + 2] == 116) * (src.[pos + 3] == 117) * (src.[pos + 4] == 114) * (src.[pos + 5] == 110)
 in
 let rec expect_ch state =
   let (src, pair) = state in
@@ -128,6 +139,7 @@ let rec parse_func_return state =
   let (pos0, param) = pair in
   let p0 = expect_return (src, pos0) in
   let p1 = skip_space (src, p0) in
+  if src.[p1] == 59 then ((0, 0), p1 + 1) else
   if src.[p1] == 33 then
     let ident = parse_ident (src, p1 + 1) in
     let (name, name_end) = ident in
@@ -155,19 +167,34 @@ let rec parse_params state =
     let p3 = expect_ch (src, (param_end, 41)) in
     (param_name, p3)
 in
+let rec skip_call_statement state =
+  let (src, pos0) = state in
+  let ident = parse_ident (src, pos0) in
+  let (name, name_end) = ident in
+  let _ = name in
+  let p0 = expect_ch (src, (name_end, 40)) in
+  let p1 = expect_ch (src, (p0, 41)) in
+  expect_ch (src, (p1, 59))
+in
+let rec skip_main_prefix state =
+  let (src, pos0) = state in
+  let pos = skip_space (src, pos0) in
+  if is_return_at (src, pos) then pos else skip_main_prefix (src, skip_call_statement (src, pos))
+in
 let rec parse_program_loop state =
   let (src, pair) = state in
   let (pos0, funcs) = pair in
   let pos = skip_space (src, pos0) in
   if src.[pos] == 0 then exit 1 else
-    let p0 = expect_int (src, pos) in
+    let p0 = expect_type (src, pos) in
     let name_parsed = parse_ident (src, p0) in
     let (name, name_end) = name_parsed in
     let params = parse_params (src, name_end) in
     let (param, p1) = params in
     let p2 = expect_ch (src, (p1, 123)) in
     if name == 246720401 then
-      let p3 = expect_return (src, p2) in
+      let p2a = skip_main_prefix (src, p2) in
+      let p3 = expect_return (src, p2a) in
       let value = parse_expr_value (src, (p3, funcs)) in
       let (code, p4) = value in
       let p5 = expect_ch (src, (p4, 59)) in
