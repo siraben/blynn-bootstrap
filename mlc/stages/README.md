@@ -21,7 +21,8 @@ Current stages:
   stdin, lowers expressions directly to MZBC, and emits a runnable bytecode
   image. Its current gate includes arithmetic, conditionals, `let`, variables,
   sequencing, char constants, string literals, `write_string`, `read_byte`,
-  `exit`, dynamic string/bytes indexing, and direct unary `let rec` functions.
+  `exit`, pair tuples, pair destructuring, dynamic string/bytes indexing, and
+  direct unary `let rec` functions.
 - `03-ok.ml0` and `03-char-string.ml0` are small ML0 sources accepted by
   `02-ml0-compiler.ml`.
 

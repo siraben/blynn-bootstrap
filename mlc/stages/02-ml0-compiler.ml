@@ -54,6 +54,7 @@ let rec emit_makeblock_dyn dummy =
   let _ = write_byte 28 in
   write_u32 0
 in
+let rec emit_getfield n = emit1 16 n in
 let rec emit_getfield_dyn dummy = write_byte 25 in
 let rec is_space ch =
   if ch = 32 then 1 else
@@ -123,6 +124,7 @@ let rec extend_env key =
   let found = old query in
   if found < 0 then -1 else found + 1
 in
+let rec shift_env env = extend_env (0 - 2) env in
 let rec empty_funcs key = -1 in
 let rec extend_func key =
   fun target ->
@@ -204,6 +206,27 @@ let rec compile mode =
     if ch = 108 then
       let ch = expect 101 read_byte in
       let ch = expect 116 ch in
+      let ch = skip_space ch in
+      if ch = 40 then
+        ident read_byte (fun name1 -> fun ch ->
+        let ch = expect 44 (skip_space ch) in
+        ident ch (fun name2 -> fun ch ->
+        let ch = expect 41 (skip_space ch) in
+        let ch = expect 61 (skip_space ch) in
+        compile 0 ch env funcs base (fun rhs_len -> fun rhs_emit -> fun ch ->
+        let ch = expect 105 (skip_space ch) in
+        let ch = expect 110 ch in
+        let body_base = base + rhs_len + 1 + 5 + 5 + 1 + 5 + 5 + 1 in
+        let body_env = extend_env name2 (extend_env name1 (shift_env env)) in
+        compile 0 ch body_env funcs body_base (fun body_len -> fun body_emit -> fun ch ->
+        kon
+          (rhs_len + 1 + 5 + 5 + 1 + 5 + 5 + 1 + body_len + 5)
+          (emit3
+            rhs_emit
+            (emit3 emit_push (emit3 (emit_acc 0) (emit_getfield 0) emit_push) (emit3 (emit_acc 1) (emit_getfield 1) emit_push))
+            (emit2 body_emit (emit1 3 3)))
+          ch))))
+      else
       ident ch (fun name -> fun ch ->
       if name = 1969684 then
         ident ch (fun fname -> fun ch ->
@@ -376,9 +399,20 @@ let rec compile mode =
   else if mode = 6 then
     let ch = skip_space ch in
     if ch = 40 then
-      compile 0 read_byte env funcs base (fun len -> fun emit -> fun ch ->
-      let ch = expect 41 (skip_space ch) in
-      kon len emit ch)
+      let ch = skip_space read_byte in
+      let parser = if ch = 105 then 0 else 2 in
+      compile parser ch env funcs base (fun len -> fun emit -> fun ch ->
+      let ch = skip_space ch in
+      if ch = 44 then
+        compile 0 read_byte env funcs (base + len + 1) (fun right_len -> fun right_emit -> fun ch ->
+        let ch = expect 41 (skip_space ch) in
+        kon
+          (len + 1 + right_len + 9)
+          (emit3 emit emit_push (emit2 right_emit (emit_makeblock 2)))
+          ch)
+      else
+        let ch = expect 41 ch in
+        kon len emit ch)
     else if ch = 39 then
       parse_char read_byte (fun value -> fun ch ->
       let ch = expect 39 ch in
