@@ -76,10 +76,13 @@ Current stages:
   while adding a real parse -> AST -> type-check -> emit boundary, with AST
   and type nodes represented as ML variants rather than C-side tags. Its
   parser uses the executable subset of the HCC `ParseLite` shape available to
-  this compiler (`p_peek`, `p_need_char`, `p_return`) and leaves higher-order
+  this compiler (`p_peek`, `p_need_char`, `p_return`, `p_string_at`,
+  `p_keyword_at`, `p_need_string`, `p_need_keyword`) and leaves higher-order
   `p_bind` for the next compiler that can compile function-valued parser
-  continuations. The flake gate checks direct bytes, char literals, addition,
-  conditionals, `let`, full-input consumption, and a static branch type error.
+  continuations. Keyword recognition is now string-literal based rather than
+  long character ladders. The flake gate checks direct bytes, char literals,
+  addition, conditionals, `let`, full-input consumption, and a static branch
+  type error.
 
 Planned stages:
 

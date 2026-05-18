@@ -117,57 +117,77 @@ in
 let rec p_need_char state =
   need_char state
 in
+let rec p_string_loop state =
+  let (src, pair) = state in
+  let (pos, pair2) = pair in
+  let (text, index) = pair2 in
+  if index == String.length text then 1 else
+  if src.[pos + index] == text.[index] then p_string_loop (src, (pos, (text, index + 1))) else 0
+in
+let rec p_string_at state =
+  let (src, pair) = state in
+  let (pos0, text) = pair in
+  let pos = skip_space (src, pos0) in
+  p_string_loop (src, (pos, (text, 0)))
+in
+let rec p_keyword_at state =
+  let (src, pair) = state in
+  let (pos0, text) = pair in
+  let pos = skip_space (src, pos0) in
+  let ok = p_string_loop (src, (pos, (text, 0))) in
+  if ok == 1 then 1 - (is_ident (src.[pos + String.length text])) else 0
+in
+let rec p_need_string state =
+  let (src, pair) = state in
+  let (pos0, text) = pair in
+  let pos = skip_space (src, pos0) in
+  if p_string_at (src, (pos, text)) == 1 then pos + String.length text else exit 1
+in
+let rec p_need_keyword state =
+  let (src, pair) = state in
+  let (pos0, text) = pair in
+  let pos = skip_space (src, pos0) in
+  if p_keyword_at (src, (pos, text)) == 1 then pos + String.length text else exit 1
+in
 let rec is_if_at state =
   let (src, pos0) = state in
-  let pos = skip_space (src, pos0) in
-  (src.[pos] == 'i') * (src.[pos + 1] == 'f') * (1 - (is_ident (src.[pos + 2])))
+  p_keyword_at (src, (pos0, "if"))
 in
 let rec is_then_at state =
   let (src, pos0) = state in
-  let pos = skip_space (src, pos0) in
-  (src.[pos] == 't') * (src.[pos + 1] == 'h') * (src.[pos + 2] == 'e') * (src.[pos + 3] == 'n') * (1 - (is_ident (src.[pos + 4])))
+  p_keyword_at (src, (pos0, "then"))
 in
 let rec is_else_at state =
   let (src, pos0) = state in
-  let pos = skip_space (src, pos0) in
-  (src.[pos] == 'e') * (src.[pos + 1] == 'l') * (src.[pos + 2] == 's') * (src.[pos + 3] == 'e') * (1 - (is_ident (src.[pos + 4])))
+  p_keyword_at (src, (pos0, "else"))
 in
 let rec is_let_at state =
   let (src, pos0) = state in
-  let pos = skip_space (src, pos0) in
-  (src.[pos] == 'l') * (src.[pos + 1] == 'e') * (src.[pos + 2] == 't') * (1 - (is_ident (src.[pos + 3])))
+  p_keyword_at (src, (pos0, "let"))
 in
 let rec is_in_at state =
   let (src, pos0) = state in
-  let pos = skip_space (src, pos0) in
-  (src.[pos] == 'i') * (src.[pos + 1] == 'n') * (1 - (is_ident (src.[pos + 2])))
+  p_keyword_at (src, (pos0, "in"))
 in
 let rec is_write_byte_at state =
   let (src, pos0) = state in
-  let pos = skip_space (src, pos0) in
-  (src.[pos] == 'w') * (src.[pos + 1] == 'r') * (src.[pos + 2] == 'i') * (src.[pos + 3] == 't') *
-  (src.[pos + 4] == 'e') * (src.[pos + 5] == '_') * (src.[pos + 6] == 'b') * (src.[pos + 7] == 'y') *
-  (src.[pos + 8] == 't') * (src.[pos + 9] == 'e') * (1 - (is_ident (src.[pos + 10])))
+  p_keyword_at (src, (pos0, "write_byte"))
 in
 let rec need_then state =
   let (src, pos0) = state in
-  let pos = skip_space (src, pos0) in
-  if is_then_at (src, pos) then pos + 4 else exit 1
+  p_need_keyword (src, (pos0, "then"))
 in
 let rec need_else state =
   let (src, pos0) = state in
-  let pos = skip_space (src, pos0) in
-  if is_else_at (src, pos) then pos + 4 else exit 1
+  p_need_keyword (src, (pos0, "else"))
 in
 let rec need_in state =
   let (src, pos0) = state in
-  let pos = skip_space (src, pos0) in
-  if is_in_at (src, pos) then pos + 2 else exit 1
+  p_need_keyword (src, (pos0, "in"))
 in
 let rec need_write_byte state =
   let (src, pos0) = state in
-  let pos = skip_space (src, pos0) in
-  if is_write_byte_at (src, pos) then pos + 10 else exit 1
+  p_need_keyword (src, (pos0, "write_byte"))
 in
 let rec parse_number_loop state =
   let (src, pair) = state in

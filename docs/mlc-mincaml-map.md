@@ -116,8 +116,9 @@ the committed fixed-point `mlc.byte` and deliberately introduces a MinCaml-like
 front-end split: parse source into ML ADT nodes, run a small static type check,
 then emit VM bytecode. Because the current compiler cannot yet compile
 function-valued parser continuations, stage 03 uses the executable subset of
-HCC `ParseLite` naming (`p_peek`, `p_need_char`, `p_return`) while stage 02
-continues to carry the higher-order `p_bind` transition point.
+HCC `ParseLite` naming (`p_peek`, `p_need_char`, `p_return`, and
+string/keyword recognizers such as `p_need_string`) while stage 02 continues
+to carry the higher-order `p_bind` transition point.
 
 The older `mlc-seed.c` is deliberately smaller than the full language and is
 now transitional. It is a tiny recursive-descent compiler for `let` bindings,
