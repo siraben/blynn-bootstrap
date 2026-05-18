@@ -135,9 +135,10 @@ parser logic runs under both the C tree-walking root and self-compiled MZBC.
 Do not treat the current `mlc.ml` as self-hosted. It is now written in the
 seed core language and has a staged lexer/parser/emitter path for byte
 literals, local `let`, integer expressions, conditionals, and the first
-two-arm ADT/pattern slice. Leading `type` declarations build a constructor
+ADT/pattern slice. Leading `type` declarations build a constructor
 environment, constructor expressions allocate VM blocks, and simple
-constructor/wildcard `match` forms lower to tag tests and branches. The next
-meaningful step is to extend that ML-side parser/lowerer to recursive and
-nested decision-tree patterns, then retire the transitional direct C bytecode
-compiler from the critical path.
+constructor/wildcard `match` forms lower to tag tests and branches, including
+multi-declaration and three-arm direct matches. The next meaningful step is to
+extend that ML-side parser/lowerer to recursive and nested decision-tree
+patterns, then retire the transitional direct C bytecode compiler from the
+critical path.

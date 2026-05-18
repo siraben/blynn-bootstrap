@@ -564,13 +564,37 @@ let rec compile_expr input =
     let case2_env = if case2_has_arg == 1 then extend_env (case2_bind, case_env) else case_env in
     let case2_body0 = compile_expr (src, (case2_body_start, (case2_env, (ctors, 0)))) in
     let (case2_body_len, case2_body_end) = case2_body0 in
+    let case3_pos1 = skip_space (src, case2_body_end) in
+    let has_case3 = if src.[case3_pos1] == 124 then 1 else 0 in
+    let case3_pos = if has_case3 == 1 then skip_space (src, case3_pos1 + 1) else case3_pos1 in
+    let case3_is_wild = if has_case3 == 1 then if src.[case3_pos] == 95 then 1 else 0 else 1 in
+    let case3_pat =
+      if case3_is_wild == 1 then (0 - 1, case3_pos + 1) else parse_ident (src, case3_pos)
+    in
+    let (case3_name, case3_pat_end0) = case3_pat in
+    let case3_ctor = if case3_is_wild == 1 then 0 else lookup_ctor (ctors, case3_name) in
+    let case3_pat_end = skip_space (src, case3_pat_end0) in
+    let case3_has_arg = if case3_is_wild == 1 then 0 else ctor_has_arg case3_ctor in
+    let case3_binder = if case3_has_arg == 1 then parse_ident (src, case3_pat_end) else (0 - 1, case3_pat_end) in
+    let (case3_bind, case3_bind_end) = case3_binder in
+    let case3_arrow = if case3_has_arg == 1 then case3_bind_end else case3_pat_end in
+    let case3_body_start = if has_case3 == 1 then expect_arrow (src, case3_arrow) else case2_body_end in
+    let case3_env = if case3_has_arg == 1 then extend_env (case3_bind, case_env) else case_env in
+    let case3_body0 =
+      if has_case3 == 1 then compile_expr (src, (case3_body_start, (case3_env, (ctors, 0)))) else (0, case2_body_end)
+    in
+    let (case3_body_len, case3_body_end) = case3_body0 in
     let case1_payload_len = if case1_has_arg == 1 then 11 else 0 in
     let case1_payload_pop_len = if case1_has_arg == 1 then 5 else 0 in
     let case1_total = case1_payload_len + case1_body_len + case1_payload_pop_len + 5 in
     let case2_payload_len = if case2_has_arg == 1 then 11 else 0 in
     let case2_payload_pop_len = if case2_has_arg == 1 then 5 else 0 in
     let case2_total = case2_payload_len + case2_body_len + case2_payload_pop_len + 5 in
-    let cases_len = 18 + case1_total + 5 + case2_total in
+    let case3_payload_len = if case3_has_arg == 1 then 11 else 0 in
+    let case3_payload_pop_len = if case3_has_arg == 1 then 5 else 0 in
+    let case3_total = if has_case3 == 1 then case3_payload_len + case3_body_len + case3_payload_pop_len + 5 else 0 in
+    let case2_segment = if has_case3 == 1 then 18 + case2_total + 5 + case3_total else case2_total in
+    let cases_len = 18 + case1_total + 5 + case2_segment in
     let _ =
       if emit == 1 then
         let _ = compile_expr (src, (pos + 5, (env, (ctors, 1)))) in
@@ -591,7 +615,17 @@ let rec compile_expr input =
         let _ = compile_expr (src, (case1_body_start, (case1_env, (ctors, 1)))) in
         let _ = if case1_has_arg == 1 then emit_pop1 1 else 0 in
         let _ = emit_pop1 1 in
-        let _ = emit_branch (1, case2_total) in
+        let _ = emit_branch (1, case2_segment) in
+        let _ =
+          if has_case3 == 1 then
+            let _ = emit_acc (1, 0) in
+            let _ = emit_gettag 1 in
+            let _ = emit_push 1 in
+            let _ = emit_const (1, ctor_tag case2_ctor) in
+            let _ = emit_eq 1 in
+            emit_branch_if_not (1, case2_total + 5)
+          else 0
+        in
         let _ =
           if case2_has_arg == 1 then
             let _ = emit_acc (1, 0) in
@@ -602,11 +636,22 @@ let rec compile_expr input =
         let _ = compile_expr (src, (case2_body_start, (case2_env, (ctors, 1)))) in
         let _ = if case2_has_arg == 1 then emit_pop1 1 else 0 in
         let _ = emit_pop1 1 in
+        let _ = if has_case3 == 1 then emit_branch (1, case3_total) else 0 in
+        let _ =
+          if case3_has_arg == 1 then
+            let _ = emit_acc (1, 0) in
+            let _ = emit_getfield (1, 0) in
+            emit_push 1
+          else 0
+        in
+        let _ = if has_case3 == 1 then compile_expr (src, (case3_body_start, (case3_env, (ctors, 1)))) else (0, 0) in
+        let _ = if case3_has_arg == 1 then emit_pop1 1 else 0 in
+        let _ = if has_case3 == 1 then emit_pop1 1 else 0 in
         0
       else
         0
     in
-    (scrutinee_len + 1 + cases_len, case2_body_end)
+    (scrutinee_len + 1 + cases_len, case3_body_end)
   else if is_ident (src.[pos]) then
     let parsed = parse_ident (src, pos) in
     let (name, name_end) = parsed in
