@@ -263,6 +263,13 @@ static void emit_call_write_byte(void)
   emit_u32(1);
 }
 
+static void emit_call_read_byte(void)
+{
+  emit_byte(OP_C_CALL);
+  emit_u32(1);
+  emit_u32(0);
+}
+
 static void emit_pop(long count)
 {
   emit_byte(OP_POP);
@@ -336,6 +343,10 @@ static void parse_atom(void)
   if (take_char('(')) {
     parse_expr();
     expect_char(')');
+  } else if (keyword_at("read_byte")) {
+    take_keyword("read_byte");
+    emit_const(0);
+    emit_call_read_byte();
   } else if (pos < src_len && src[pos] >= 'A' && src[pos] <= 'Z') {
     take_ident_span(&name_start, &name_len);
     ctor = lookup_constructor(name_start, name_len);

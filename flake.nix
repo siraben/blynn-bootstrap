@@ -693,6 +693,9 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           "identifiers"
           "string"
         ];
+        mlcInputFixtures = [
+          "read-byte"
+        ];
 
         mlcSeedHost = pkgs.stdenv.mkDerivation {
           pname = "mlc-seed-host";
@@ -715,6 +718,10 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
               ./mlc-seed ${./tests/mlc}/$name.ml $name.mzbc
               ${mzvmHost}/bin/mzvm $name.mzbc > $name.out
             done
+            for name in ${lib.concatStringsSep " " mlcInputFixtures}; do
+              ./mlc-seed ${./tests/mlc}/$name.ml $name.mzbc
+            done
+            printf 'O' | ${mzvmHost}/bin/mzvm read-byte.mzbc > read-byte.out
             printf 'OK\n' > ok.expected
             printf 'H-\n' > arithmetic.expected
             printf 'OK\n' > conditional.expected
@@ -723,9 +730,11 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             printf 'OK\n' > adt.expected
             printf 'O\n' > identifiers.expected
             printf 'O\tK\n' > string.expected
+            printf 'OK\n' > read-byte.expected
             for name in ${lib.concatStringsSep " " mlcFixtures}; do
               cmp $name.expected $name.out
             done
+            cmp read-byte.expected read-byte.out
             runHook postCheck
           '';
 
@@ -736,6 +745,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             for name in ${lib.concatStringsSep " " mlcFixtures}; do
               install -Dm644 $name.mzbc "$out/share/mlc/tests/$name.mzbc"
             done
+            install -Dm644 read-byte.mzbc "$out/share/mlc/tests/read-byte.mzbc"
             runHook postInstall
           '';
 
@@ -763,6 +773,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             cp ${./tests/mlc/adt.ml} adt.ml
             cp ${./tests/mlc/identifiers.ml} identifiers.ml
             cp ${./tests/mlc/string.ml} string.ml
+            cp ${./tests/mlc/read-byte.ml} read-byte.ml
             compile_m2 mlc-seed.c mlc-seed
             ./mlc-seed ok.ml ok.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed ok.mzbc)"
@@ -788,6 +799,10 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             ./mlc-seed string.ml string.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed string.mzbc)"
             test "$actual" = "O	K"
+            ./mlc-seed read-byte.ml read-byte.mzbc
+            printf 'O' > input.txt
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed read-byte.mzbc < input.txt)"
+            test "$actual" = OK
           '';
           installScript = ''
             install -Dm755 mlc-seed "$out/bin/mlc-seed"
@@ -800,11 +815,15 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             install -Dm644 adt.mzbc "$out/share/mlc/tests/adt.mzbc"
             install -Dm644 identifiers.mzbc "$out/share/mlc/tests/identifiers.mzbc"
             install -Dm644 string.mzbc "$out/share/mlc/tests/string.mzbc"
+            install -Dm644 read-byte.mzbc "$out/share/mlc/tests/read-byte.mzbc"
           '';
         };
 
         mlcSeedHostVsM2 = pkgs.runCommand "mlc-seed-host-vs-m2" { } ''
           for name in ${lib.concatStringsSep " " mlcFixtures}; do
+            cmp ${mlcSeedHost}/share/mlc/tests/$name.mzbc ${mlcSeedM2}/share/mlc/tests/$name.mzbc
+          done
+          for name in ${lib.concatStringsSep " " mlcInputFixtures}; do
             cmp ${mlcSeedHost}/share/mlc/tests/$name.mzbc ${mlcSeedM2}/share/mlc/tests/$name.mzbc
           done
           install -Dm644 ${mlcSeedHost}/share/mlc/tests/ok.mzbc "$out/ok.mzbc"

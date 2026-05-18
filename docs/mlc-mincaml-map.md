@@ -84,15 +84,15 @@ Deleted MinCaml stages:
 
 The checked-in `mlc-seed.c` is deliberately smaller than this map. It is now a
 tiny recursive-descent compiler for `let` bindings, `if ... then ... else
-...`, `write_byte`, integer literals, comparisons, parenthesized arithmetic,
-`+ - * /`, nested OCaml block comments, multi-character local identifiers,
-simple top-level ADT declarations of the form `type t = A | B of int`,
-constructor allocation from those declarations, and two-arm constructor `match`
-expressions. It also has a temporary `write_string "..."` form that lowers
-literal bytes to repeated `write_byte` calls. It exists to pin the M2 path,
-bytecode writer, expression codegen, local stack environment, pattern lowering
-shape, and the VM representation of constructors before the real
-MinCaml-shaped passes are ported into `mlc.ml`.
+...`, `read_byte`, `write_byte`, integer literals, comparisons,
+parenthesized arithmetic, `+ - * /`, nested OCaml block comments,
+multi-character local identifiers, simple top-level ADT declarations of the
+form `type t = A | B of int`, constructor allocation from those declarations,
+and two-arm constructor `match` expressions. It also has a temporary
+`write_string "..."` form that lowers literal bytes to repeated `write_byte`
+calls. It exists to pin the M2 path, bytecode writer, expression codegen,
+local stack environment, pattern lowering shape, and the VM representation of
+constructors before the real MinCaml-shaped passes are ported into `mlc.ml`.
 
 Do not treat the current `mlc.ml` as self-hosted. The next meaningful step is
 to replace the placeholder with the lexer/parser/type AST spine, including
