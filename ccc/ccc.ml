@@ -61,6 +61,18 @@ let rec expect_int state =
   let pos = skip_space (src, pos0) in
   if (src.[pos] == 105) * (src.[pos + 1] == 110) * (src.[pos + 2] == 116) then pos + 3 else exit 1
 in
+let rec expect_local_type state =
+  let (src, pos0) = state in
+  let pos = skip_space (src, pos0) in
+  if (src.[pos] == 105) * (src.[pos + 1] == 110) * (src.[pos + 2] == 116) then pos + 3 else
+  if (src.[pos] == 99) * (src.[pos + 1] == 104) * (src.[pos + 2] == 97) * (src.[pos + 3] == 114) then pos + 4 else exit 1
+in
+let rec is_local_type_at state =
+  let (src, pos0) = state in
+  let pos = skip_space (src, pos0) in
+  ((src.[pos] == 105) * (src.[pos + 1] == 110) * (src.[pos + 2] == 116)) +
+  ((src.[pos] == 99) * (src.[pos + 1] == 104) * (src.[pos + 2] == 97) * (src.[pos + 3] == 114))
+in
 let rec expect_type state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
@@ -128,7 +140,13 @@ let rec parse_char_value state =
   if src.[pos] == 39 then
     if src.[pos + 1] == 92 then
       let esc = src.[pos + 2] in
-      let value = if esc == 97 then 7 else if esc == 98 then 8 else esc in
+      let value =
+        if esc == 97 then 7 else
+        if esc == 98 then 8 else
+        if esc == 110 then 10 else
+        if esc == 114 then 13 else
+        if esc == 116 then 9 else esc
+      in
       (value, pos + 4)
     else
       (src.[pos + 1], pos + 3)
@@ -218,6 +236,38 @@ let rec parse_expr_value state =
     let right = parse_expr_value (src, (next + 1, (funcs, env))) in
     let (right_value, right_end) = right in
     (left_value + right_value, right_end)
+  else if src.[next] == 61 then
+    if src.[next + 1] == 61 then
+      let right = parse_expr_value (src, (next + 2, (funcs, env))) in
+      let (right_value, right_end) = right in
+      if left_value == right_value then (1, right_end) else (0, right_end)
+    else
+      exit 1
+  else if src.[next] == 33 then
+    if src.[next + 1] == 61 then
+      let right = parse_expr_value (src, (next + 2, (funcs, env))) in
+      let (right_value, right_end) = right in
+      if left_value == right_value then (0, right_end) else (1, right_end)
+    else
+      exit 1
+  else if src.[next] == 60 then
+    if src.[next + 1] == 61 then
+      let right = parse_expr_value (src, (next + 2, (funcs, env))) in
+      let (right_value, right_end) = right in
+      if left_value <= right_value then (1, right_end) else (0, right_end)
+    else
+      let right = parse_expr_value (src, (next + 1, (funcs, env))) in
+      let (right_value, right_end) = right in
+      if left_value < right_value then (1, right_end) else (0, right_end)
+  else if src.[next] == 62 then
+    if src.[next + 1] == 61 then
+      let right = parse_expr_value (src, (next + 2, (funcs, env))) in
+      let (right_value, right_end) = right in
+      if left_value >= right_value then (1, right_end) else (0, right_end)
+    else
+      let right = parse_expr_value (src, (next + 1, (funcs, env))) in
+      let (right_value, right_end) = right in
+      if left_value > right_value then (1, right_end) else (0, right_end)
   else
     (left_value, left_end)
 in
@@ -310,7 +360,7 @@ let rec parse_local_init state =
   let (src, pair) = state in
   let (pos0, pair2) = pair in
   let (funcs, env) = pair2 in
-  let p0 = expect_int (src, pos0) in
+  let p0 = expect_local_type (src, pos0) in
   let ident = parse_ident (src, p0) in
   let (name, name_end) = ident in
   let name_next = skip_space (src, name_end) in
@@ -339,7 +389,7 @@ let rec parse_main_prefix state =
   let (funcs, env) = pair2 in
   let pos = skip_space (src, pos0) in
   if is_return_at (src, pos) then (pos, env) else
-  if (src.[pos] == 105) * (src.[pos + 1] == 110) * (src.[pos + 2] == 116) then
+  if is_local_type_at (src, pos) then
     let local = parse_local_init (src, (pos, (funcs, env))) in
     let (next_pos, next_env) = local in
     parse_main_prefix (src, (next_pos, (funcs, next_env)))
@@ -362,38 +412,18 @@ let rec parse_condition_value state =
   let left = parse_expr_value (src, (pos0, (funcs, env))) in
   let (left_value, left_end) = left in
   let next = skip_space (src, left_end) in
-  if src.[next] == 61 then
-    if src.[next + 1] == 61 then
-      let right = parse_expr_value (src, (next + 2, (funcs, env))) in
-      let (right_value, right_end) = right in
-      if left_value == right_value then (1, right_end) else (0, right_end)
+  if (src.[next] == 38) * (src.[next + 1] == 38) then
+    let right = parse_condition_value (src, (next + 2, (funcs, env))) in
+    let (right_value, right_end) = right in
+    if left_value == 0 then (0, right_end) else
+    if right_value == 0 then (0, right_end) else (1, right_end)
+  else if (src.[next] == 124) * (src.[next + 1] == 124) then
+    let right = parse_condition_value (src, (next + 2, (funcs, env))) in
+    let (right_value, right_end) = right in
+    if left_value == 0 then
+      if right_value == 0 then (0, right_end) else (1, right_end)
     else
-      exit 1
-  else if src.[next] == 33 then
-    if src.[next + 1] == 61 then
-      let right = parse_expr_value (src, (next + 2, (funcs, env))) in
-      let (right_value, right_end) = right in
-      if left_value == right_value then (0, right_end) else (1, right_end)
-    else
-      exit 1
-  else if src.[next] == 60 then
-    if src.[next + 1] == 61 then
-      let right = parse_expr_value (src, (next + 2, (funcs, env))) in
-      let (right_value, right_end) = right in
-      if left_value <= right_value then (1, right_end) else (0, right_end)
-    else
-      let right = parse_expr_value (src, (next + 1, (funcs, env))) in
-      let (right_value, right_end) = right in
-      if left_value < right_value then (1, right_end) else (0, right_end)
-  else if src.[next] == 62 then
-    if src.[next + 1] == 61 then
-      let right = parse_expr_value (src, (next + 2, (funcs, env))) in
-      let (right_value, right_end) = right in
-      if left_value >= right_value then (1, right_end) else (0, right_end)
-    else
-      let right = parse_expr_value (src, (next + 1, (funcs, env))) in
-      let (right_value, right_end) = right in
-      if left_value > right_value then (1, right_end) else (0, right_end)
+      (1, right_end)
   else
     (left_value, left_end)
 in
@@ -438,7 +468,7 @@ let rec parse_main_body state =
       let goto = parse_goto_statement (src, branch_pos) in
       let (label, goto_end) = goto in
       if cond_value == 0 then parse_main_body (src, (goto_end, (funcs, env))) else parse_main_body (src, (find_label (src, (0, label)), (funcs, env)))
-  else if (src.[pos] == 105) * (src.[pos + 1] == 110) * (src.[pos + 2] == 116) then
+  else if is_local_type_at (src, pos) then
     let local = parse_local_init (src, (pos, (funcs, env))) in
     let (next_pos, next_env) = local in
     parse_main_body (src, (next_pos, (funcs, next_env)))

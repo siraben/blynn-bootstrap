@@ -1507,10 +1507,14 @@ DEFINE SYSCALL 0F05
             check_return ${./tests/mescc/scaffold/15-if-not-f.c} 0
             check_return ${./tests/mescc/scaffold/16-if-t.c} 0
             check_return ${./tests/mescc/scaffold/17-compare-char.c} 0
+            check_return ${./tests/mescc/scaffold/17-compare-assign.c} 0
+            check_return ${./tests/mescc/scaffold/17-compare-call.c} 0
             check_return ${./tests/mescc/scaffold/17-compare-ge.c} 0
             check_return ${./tests/mescc/scaffold/17-compare-gt.c} 0
             check_return ${./tests/mescc/scaffold/17-compare-le.c} 0
             check_return ${./tests/mescc/scaffold/17-compare-lt.c} 0
+            check_return ${./tests/mescc/scaffold/17-compare-and.c} 0
+            check_return ${./tests/mescc/scaffold/17-compare-or.c} 0
             printf 'int main(){return 42;}' > return-42.c
             check_return return-42.c 42
           '';
