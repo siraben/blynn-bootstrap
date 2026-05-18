@@ -1547,6 +1547,7 @@ DEFINE SYSCALL 0F05
             check_return ${./tests/hcc/m1-smoke/examples/function-pointer-call-type.c} 0
             check_return ${./tests/hcc/m1-smoke/examples/dynamic-aggregate.c} 0
             check_return ${./tests/hcc/m1-smoke/examples/conditional-aggregate-copy.c} 0
+            check_return ${./tests/hcc/m1-smoke/examples/archive-header-layout.c} 0
             printf 'int main(){return 42;}' > return-42.c
             check_return return-42.c 42
           '';
@@ -1672,6 +1673,7 @@ DEFINE SYSCALL 0F05
           build_and_run ${./tests/hcc/m1-smoke/examples/function-pointer-call-type.c} 0 hcc-function-pointer-call-type
           build_and_run ${./tests/hcc/m1-smoke/examples/dynamic-aggregate.c} 0 hcc-dynamic-aggregate
           build_and_run ${./tests/hcc/m1-smoke/examples/conditional-aggregate-copy.c} 0 hcc-conditional-aggregate-copy
+          build_and_run ${./tests/hcc/m1-smoke/examples/archive-header-layout.c} 0 hcc-archive-header-layout
         '';
 
         hccHostGhcNative = pkgs.callPackage ./nix/hcc-ghc.nix {

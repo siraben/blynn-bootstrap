@@ -322,6 +322,7 @@ in
 let rec parse_sizeof_type state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
+  if (src.[pos] == 65) * (src.[pos + 1] == 114) * (src.[pos + 2] == 99) * (src.[pos + 3] == 104) * (src.[pos + 4] == 105) * (src.[pos + 5] == 118) * (src.[pos + 6] == 101) * (src.[pos + 7] == 72) * (src.[pos + 8] == 101) * (src.[pos + 9] == 97) * (src.[pos + 10] == 100) * (src.[pos + 11] == 101) * (src.[pos + 12] == 114) then (60, pos + 13) else
   if (src.[pos] == 115) * (src.[pos + 1] == 104) * (src.[pos + 2] == 111) * (src.[pos + 3] == 114) * (src.[pos + 4] == 116) then (2, pos + 5) else
   if (src.[pos] == 95) * (src.[pos + 1] == 66) * (src.[pos + 2] == 111) * (src.[pos + 3] == 111) * (src.[pos + 4] == 108) then (1, pos + 5) else
   if (src.[pos] == 100) * (src.[pos + 1] == 111) * (src.[pos + 2] == 117) * (src.[pos + 3] == 98) * (src.[pos + 4] == 108) * (src.[pos + 5] == 101) then (8, pos + 6) else
@@ -352,7 +353,10 @@ in
 let rec expect_char_cast state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
-  if (src.[pos] == 99) * (src.[pos + 1] == 104) * (src.[pos + 2] == 97) * (src.[pos + 3] == 114) then pos + 4 else exit 1
+  if (src.[pos] == 99) * (src.[pos + 1] == 104) * (src.[pos + 2] == 97) * (src.[pos + 3] == 114) then
+    let p1 = skip_space (src, pos + 4) in
+    if src.[p1] == 42 then skip_space (src, p1 + 1) else p1
+  else exit 1
 in
 let rec empty_funcs unit =
   let _ = unit in
@@ -444,7 +448,14 @@ let rec parse_expr_mode state =
     if src.[pos] == 38 then
       let ident = parse_ident (src, pos + 1) in
       let (name, name_end) = ident in
-      if name == 15045 then (13, name_end) else (name, name_end)
+      let after_name = skip_space (src, name_end) in
+      if src.[after_name] == 46 then
+        let field = parse_ident (src, after_name + 1) in
+        let (field_name, field_end) = field in
+        if (name == 238053571) * (field_name == 248969007) then (1, field_end) else
+        if (name == 238053571) * (field_name == 970924083) then (20, field_end) else exit 1
+      else if name == 15045 then (13, name_end) else
+      if name == 238053571 then (0, name_end) else (name, name_end)
     else
       let ident = parse_ident (src, pos) in
       let (name, name_end) = ident in
