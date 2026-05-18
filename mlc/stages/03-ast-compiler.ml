@@ -1,6 +1,7 @@
-type ty = TyInt | TyUnit
-type expr = EInt of int | EVar of int | EWriteByte of expr | EMore of expr_more
-type expr_more = EAdd of expr | EEq of expr | EIf of expr | ELet of expr
+type ty = TyInt | TyUnit | TyBool
+type expr = EInt of int | EVar of int | EBool of int | EMore of expr_more
+type expr_more = EWriteByte of expr | EAdd of expr | EEq of expr | EMore2 of expr_more2
+type expr_more2 = EIf of expr | ELet of expr
 
 let rec byte n =
   n - ((n / 256) * 256)
@@ -173,6 +174,14 @@ let rec is_write_byte_at state =
   let (src, pos0) = state in
   p_keyword_at (src, (pos0, "write_byte"))
 in
+let rec is_true_at state =
+  let (src, pos0) = state in
+  p_keyword_at (src, (pos0, "true"))
+in
+let rec is_false_at state =
+  let (src, pos0) = state in
+  p_keyword_at (src, (pos0, "false"))
+in
 let rec need_then state =
   let (src, pos0) = state in
   p_need_keyword (src, (pos0, "then"))
@@ -229,7 +238,7 @@ let rec parse_expr state =
       let else_pos = need_else (src, yes_end) in
       let no = parse_expr (src, else_pos) in
       let (no_ast, no_end) = no in
-      (EMore (EIf (cond_ast, (yes_ast, no_ast))), no_end)
+      (EMore (EMore2 (EIf (cond_ast, (yes_ast, no_ast)))), no_end)
     else if is_let_at (src, pos) then
       let ident = parse_ident (src, pos + 3) in
       let (name, name_end) = ident in
@@ -239,12 +248,12 @@ let rec parse_expr state =
       let body_pos = need_in (src, rhs_end) in
       let body = parse_expr (src, body_pos) in
       let (body_ast, body_end) = body in
-      (EMore (ELet (name, (rhs_ast, body_ast))), body_end)
+      (EMore (EMore2 (ELet (name, (rhs_ast, body_ast)))), body_end)
     else if is_write_byte_at (src, pos) then
       let expr_pos = need_write_byte (src, pos) in
       let expr = parse_expr (src, expr_pos) in
       let (expr_ast, expr_end) = expr in
-      (EWriteByte expr_ast, expr_end)
+      (EMore (EWriteByte expr_ast), expr_end)
     else
       let peeked = p_peek (src, pos) in
       let (ch, atom_pos) = peeked in
@@ -252,6 +261,10 @@ let rec parse_expr state =
         let expr = parse_expr (src, atom_pos + 1) in
         let (ast, expr_end) = expr in
         p_return (p_need_char (src, (expr_end, ')')), ast)
+      else if is_true_at (src, atom_pos) then
+        p_return (atom_pos + 4, EBool 1)
+      else if is_false_at (src, atom_pos) then
+        p_return (atom_pos + 5, EBool 0)
       else if ch == '\'' then
         p_return (atom_pos + 3, EInt (src.[atom_pos + 1]))
       else if is_digit ch then
@@ -297,8 +310,9 @@ in
 let rec same_ty state =
   let (left, right) = state in
   match left with
-    TyInt -> (match right with TyInt -> 1 | TyUnit -> 0)
-  | TyUnit -> (match right with TyInt -> 0 | TyUnit -> 1)
+    TyInt -> (match right with TyInt -> 1 | TyUnit -> 0 | TyBool -> 0)
+  | TyUnit -> (match right with TyInt -> 0 | TyUnit -> 1 | TyBool -> 0)
+  | TyBool -> (match right with TyInt -> 0 | TyUnit -> 0 | TyBool -> 1)
 in
 let rec need_ty state =
   let (got, want) = state in
@@ -309,12 +323,13 @@ let rec infer state =
   match ast with
     EInt value -> let _ = value in TyInt
   | EVar name -> lookup_tenv (env, name)
-  | EWriteByte expr ->
-      let _ = need_ty (infer (env, expr), TyInt) in
-      TyUnit
+  | EBool value -> let _ = value in TyBool
   | EMore more ->
       match more with
-        EAdd pair ->
+        EWriteByte expr ->
+          let _ = need_ty (infer (env, expr), TyInt) in
+          TyUnit
+      | EAdd pair ->
           let (left, right) = pair in
           let _ = need_ty (infer (env, left), TyInt) in
           let _ = need_ty (infer (env, right), TyInt) in
@@ -323,19 +338,21 @@ let rec infer state =
           let (left, right) = pair2 in
           let left_ty = infer (env, left) in
           let _ = need_ty (infer (env, right), left_ty) in
-          TyInt
-      | EIf parts ->
-          let (cond, branches) = parts in
-          let (yes, no) = branches in
-          let _ = need_ty (infer (env, cond), TyInt) in
-          let yes_ty = infer (env, yes) in
-          let _ = need_ty (infer (env, no), yes_ty) in
-          yes_ty
-      | ELet parts ->
-          let (name, body_pair) = parts in
-          let (rhs, body) = body_pair in
-          let rhs_ty = infer (env, rhs) in
-          infer (extend_tenv (name, (rhs_ty, env)), body)
+          TyBool
+      | EMore2 more2 ->
+          match more2 with
+            EIf parts ->
+              let (cond, branches) = parts in
+              let (yes, no) = branches in
+              let _ = need_ty (infer (env, cond), TyBool) in
+              let yes_ty = infer (env, yes) in
+              let _ = need_ty (infer (env, no), yes_ty) in
+              yes_ty
+          | ELet parts ->
+              let (name, body_pair) = parts in
+              let (rhs, body) = body_pair in
+              let rhs_ty = infer (env, rhs) in
+              infer (extend_tenv (name, (rhs_ty, env)), body)
 in
 let rec empty_env unit =
   let _ = unit in
@@ -363,13 +380,14 @@ let rec emit_expr state =
   match ast with
     EInt value -> emit_const (emit, value)
   | EVar name -> emit_acc (emit, lookup_env (env, name))
-  | EWriteByte expr ->
-      let expr_len = emit_expr (expr, (env, emit)) in
-      let call_len = emit_call_write_byte emit in
-      expr_len + call_len
+  | EBool value -> emit_const (emit, value)
   | EMore more ->
       match more with
-        EAdd pair2 ->
+        EWriteByte expr ->
+          let expr_len = emit_expr (expr, (env, emit)) in
+          let call_len = emit_call_write_byte emit in
+          expr_len + call_len
+      | EAdd pair2 ->
           let (left, right) = pair2 in
           let left_len = emit_expr (left, (env, emit)) in
           let push_len = emit_push emit in
@@ -383,26 +401,28 @@ let rec emit_expr state =
           let right_len = emit_expr (right, (shift_env env, emit)) in
           let eq_len = emit_eq emit in
           left_len + push_len + right_len + eq_len
-      | EIf parts ->
-          let (cond, branches) = parts in
-          let (yes, no) = branches in
-          let cond_len = emit_expr (cond, (env, 0)) in
-          let yes_len = emit_expr (yes, (env, 0)) in
-          let no_len = emit_expr (no, (env, 0)) in
-          let _ = if emit == 1 then emit_expr (cond, (env, 1)) else 0 in
-          let _ = emit_branch_if_not (emit, yes_len + 5) in
-          let _ = if emit == 1 then emit_expr (yes, (env, 1)) else 0 in
-          let _ = emit_branch (emit, no_len) in
-          let _ = if emit == 1 then emit_expr (no, (env, 1)) else 0 in
-          cond_len + 5 + yes_len + 5 + no_len
-      | ELet parts ->
-          let (name, body_pair) = parts in
-          let (rhs, body) = body_pair in
-          let rhs_len = emit_expr (rhs, (env, emit)) in
-          let push_len = emit_push emit in
-          let body_len = emit_expr (body, (extend_env (name, env), emit)) in
-          let pop_len = emit_pop1 emit in
-          rhs_len + push_len + body_len + pop_len
+      | EMore2 more2 ->
+          match more2 with
+            EIf parts ->
+              let (cond, branches) = parts in
+              let (yes, no) = branches in
+              let cond_len = emit_expr (cond, (env, 0)) in
+              let yes_len = emit_expr (yes, (env, 0)) in
+              let no_len = emit_expr (no, (env, 0)) in
+              let _ = if emit == 1 then emit_expr (cond, (env, 1)) else 0 in
+              let _ = emit_branch_if_not (emit, yes_len + 5) in
+              let _ = if emit == 1 then emit_expr (yes, (env, 1)) else 0 in
+              let _ = emit_branch (emit, no_len) in
+              let _ = if emit == 1 then emit_expr (no, (env, 1)) else 0 in
+              cond_len + 5 + yes_len + 5 + no_len
+          | ELet parts ->
+              let (name, body_pair) = parts in
+              let (rhs, body) = body_pair in
+              let rhs_len = emit_expr (rhs, (env, emit)) in
+              let push_len = emit_push emit in
+              let body_len = emit_expr (body, (extend_env (name, env), emit)) in
+              let pop_len = emit_pop1 emit in
+              rhs_len + push_len + body_len + pop_len
 in
 let rec emit_program src =
   let parsed = parse_program (src, 0) in

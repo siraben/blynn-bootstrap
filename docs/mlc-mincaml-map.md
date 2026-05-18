@@ -114,7 +114,9 @@ one-character lookahead state.
 The next checked successor, `mlc/stages/03-ast-compiler.ml`, is compiled by
 the committed fixed-point `mlc.byte` and deliberately introduces a MinCaml-like
 front-end split: parse source into ML ADT nodes, run a small static type check,
-then emit VM bytecode. Because the current compiler cannot yet compile
+then emit VM bytecode. Its first typed core distinguishes `int`, `bool`, and
+`unit`, with comparisons returning `bool` and `if` requiring a `bool` guard.
+Because the current compiler cannot yet compile
 function-valued parser continuations, stage 03 uses the executable subset of
 HCC `ParseLite` naming (`p_peek`, `p_need_char`, `p_return`, and
 string/keyword recognizers such as `p_need_string`) while stage 02 continues
