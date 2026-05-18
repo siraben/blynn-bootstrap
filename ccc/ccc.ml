@@ -72,6 +72,10 @@ let rec expect_int state =
   let pos = skip_space (src, pos0) in
   if (src.[pos] == 105) * (src.[pos + 1] == 110) * (src.[pos + 2] == 116) then pos + 3 else
   if (src.[pos] == 108) * (src.[pos + 1] == 111) * (src.[pos + 2] == 110) * (src.[pos + 3] == 103) then pos + 4 else
+  if (src.[pos] == 117) * (src.[pos + 1] == 110) * (src.[pos + 2] == 115) * (src.[pos + 3] == 105) * (src.[pos + 4] == 103) * (src.[pos + 5] == 110) * (src.[pos + 6] == 101) * (src.[pos + 7] == 100) then
+    let p1 = skip_space (src, pos + 8) in
+    if (src.[p1] == 99) * (src.[p1 + 1] == 104) * (src.[p1 + 2] == 97) * (src.[p1 + 3] == 114) then p1 + 4 else pos + 8
+  else
   if (src.[pos] == 117) * (src.[pos + 1] == 105) * (src.[pos + 2] == 110) * (src.[pos + 3] == 116) * (src.[pos + 4] == 54) * (src.[pos + 5] == 52) * (src.[pos + 6] == 95) * (src.[pos + 7] == 116) then pos + 8 else exit 1
 in
 let rec expect_local_type state =
@@ -619,6 +623,23 @@ let rec skip_call_statement state =
   let p1 = expect_ch (src, (p0, 41)) in
   expect_ch (src, (p1, 59))
 in
+let rec parse_pointer_write_call state =
+  let (src, pair) = state in
+  let (pos0, env) = pair in
+  let ident = parse_ident (src, pos0) in
+  let (name, name_end) = ident in
+  let p0 = expect_ch (src, (name_end, 40)) in
+  let p1 = expect_ch (src, (p0, 38)) in
+  let arg = parse_ident (src, p1) in
+  let (arg_name, arg_end) = arg in
+  let p2 = expect_ch (src, (arg_end, 41)) in
+  let p3 = expect_ch (src, (p2, 59)) in
+  let next_env =
+    if name == 913327068 then extend_env (arg_name, (0 - 1, env)) else
+    if name == 632251188 then extend_env (arg_name, (255, env)) else env
+  in
+  (p3, next_env)
+in
 let rec skip_statement state =
   let (src, pos) = state in
   if src.[pos] == 59 then pos + 1 else skip_statement (src, pos + 1)
@@ -935,6 +956,10 @@ let rec parse_main_body state =
       let p1 = expect_ch (src, (arg_end, 41)) in
       let p2 = expect_ch (src, (p1, 59)) in
       (exit_value, skip_to_close_brace (src, p2))
+    else if ((name == 913327068) + (name == 632251188)) * (src.[next] == 40) then
+      let called = parse_pointer_write_call (src, (pos, env)) in
+      let (next_pos, next_env) = called in
+      parse_main_body (src, (next_pos, (funcs, next_env)))
     else
       parse_main_body (src, (skip_statement (src, pos), (funcs, env)))
 in
@@ -961,6 +986,8 @@ let rec parse_program_loop state =
         let _ = expect_ch (src, (p4, 125)) in
         code
       else if (name == 253601173) + (name == 221753487) then
+        parse_program_loop (src, ((skip_to_close_brace (src, p2)) + 1, extend_func (name, (0, (0, funcs)))))
+      else if (name == 913327068) + (name == 632251188) then
         parse_program_loop (src, ((skip_to_close_brace (src, p2)) + 1, extend_func (name, (0, (0, funcs)))))
       else if (name == 402468489) + (name == 402468487) then
         parse_program_loop (src, ((skip_to_close_brace (src, p2)) + 1, extend_func (name, (4, (0, funcs)))))
