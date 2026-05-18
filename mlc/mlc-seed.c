@@ -871,6 +871,43 @@ static long match_arm_overhead(long arity, int has_fallthrough_branch)
   return out;
 }
 
+static long measure_match_arm(long arity, long binder_start, long binder_len, long start, long *end_out, int has_fallthrough_branch)
+{
+  long out;
+  stack_depth = stack_depth + 1;
+  if (arity == 1) stack_depth = stack_depth + 1;
+  bind_pattern_var(arity, binder_start, binder_len);
+  out = measure_expr(start, end_out) + match_arm_overhead(arity, has_fallthrough_branch);
+  unbind_pattern_var(arity, binder_start, binder_len);
+  if (arity == 1) stack_depth = stack_depth - 1;
+  stack_depth = stack_depth - 1;
+  return out;
+}
+
+static void emit_match_test(long tag, long skip_len)
+{
+  emit_acc(0);
+  emit_gettag();
+  emit_push();
+  emit_const(tag);
+  emit_binary_op(OP_EQ);
+  emit_branchifnot(skip_len);
+}
+
+static void emit_match_arm_body(long arity, long binder_start, long binder_len)
+{
+  if (arity == 1) {
+    emit_acc(0);
+    emit_getfield(0);
+    emit_push();
+    bind_pattern_var(arity, binder_start, binder_len);
+  }
+  parse_expr();
+  unbind_pattern_var(arity, binder_start, binder_len);
+  if (arity == 1) emit_pop(2);
+  else emit_pop(1);
+}
+
 static void parse_match(void)
 {
   long arm1_tag;
@@ -887,7 +924,16 @@ static void parse_match(void)
   long arm2_start;
   long arm2_end;
   long arm2_len;
+  long arm3_tag = -1;
+  long arm3_arity = 0;
+  long arm3_binder_start = 0;
+  long arm3_binder_len = 0;
+  long arm3_start = 0;
+  long arm3_end = 0;
+  long arm3_len = 0;
+  int has_arm3 = 0;
   long branch_stack_depth;
+  long arm2_test_len = 18;
   if (!take_keyword("match")) die("expected match");
   parse_expr();
   expect_keyword("with");
@@ -895,64 +941,55 @@ static void parse_match(void)
   if (arm1_tag < 0) die("wildcard first match arm is unsupported");
   expect_arrow();
   arm1_start = pos;
-  stack_depth = stack_depth + 1;
-  if (arm1_arity == 1) stack_depth = stack_depth + 1;
-  bind_pattern_var(arm1_arity, arm1_binder_start, arm1_binder_len);
-  arm1_len = measure_expr(arm1_start, &arm1_end) + match_arm_overhead(arm1_arity, 1);
-  unbind_pattern_var(arm1_arity, arm1_binder_start, arm1_binder_len);
-  if (arm1_arity == 1) stack_depth = stack_depth - 1;
-  stack_depth = stack_depth - 1;
+  arm1_len = measure_match_arm(arm1_arity, arm1_binder_start, arm1_binder_len, arm1_start, &arm1_end, 1);
   pos = arm1_end;
   expect_char('|');
   parse_pattern(&arm2_tag, &arm2_arity, &arm2_binder_start, &arm2_binder_len);
   if (arm2_tag >= 0 && arm1_tag == arm2_tag) die("duplicate match arm");
   expect_arrow();
   arm2_start = pos;
-  stack_depth = stack_depth + 1;
-  if (arm2_arity == 1) stack_depth = stack_depth + 1;
-  bind_pattern_var(arm2_arity, arm2_binder_start, arm2_binder_len);
-  arm2_len = measure_expr(arm2_start, &arm2_end) + match_arm_overhead(arm2_arity, 0);
-  unbind_pattern_var(arm2_arity, arm2_binder_start, arm2_binder_len);
-  if (arm2_arity == 1) stack_depth = stack_depth - 1;
-  stack_depth = stack_depth - 1;
+  arm2_len = measure_match_arm(arm2_arity, arm2_binder_start, arm2_binder_len, arm2_start, &arm2_end, 0);
+  pos = arm2_end;
+  if (take_char('|')) {
+    has_arm3 = 1;
+    parse_pattern(&arm3_tag, &arm3_arity, &arm3_binder_start, &arm3_binder_len);
+    if (arm3_tag >= 0 && (arm3_tag == arm1_tag || arm3_tag == arm2_tag)) die("duplicate match arm");
+    expect_arrow();
+    arm3_start = pos;
+    arm2_len = measure_match_arm(arm2_arity, arm2_binder_start, arm2_binder_len, arm2_start, &arm2_end, 1);
+    arm3_len = measure_match_arm(arm3_arity, arm3_binder_start, arm3_binder_len, arm3_start, &arm3_end, 0);
+    pos = arm3_end;
+  }
   pos = arm1_start;
 
   emit_push();
   branch_stack_depth = stack_depth;
-  emit_acc(0);
-  emit_gettag();
-  emit_push();
-  emit_const(arm1_tag);
-  emit_binary_op(OP_EQ);
-  emit_branchifnot(arm1_len);
+  emit_match_test(arm1_tag, arm1_len);
 
-  if (arm1_arity == 1) {
-    emit_acc(0);
-    emit_getfield(0);
-    emit_push();
-    bind_pattern_var(arm1_arity, arm1_binder_start, arm1_binder_len);
-  }
-  parse_expr();
-  unbind_pattern_var(arm1_arity, arm1_binder_start, arm1_binder_len);
-  if (arm1_arity == 1) emit_pop(2);
-  else emit_pop(1);
-  emit_branch(arm2_len);
+  emit_match_arm_body(arm1_arity, arm1_binder_start, arm1_binder_len);
+  if (has_arm3) emit_branch(arm2_test_len + arm2_len + arm3_len);
+  else emit_branch(arm2_len);
   stack_depth = branch_stack_depth;
 
   expect_char('|');
   parse_pattern(&arm2_tag, &arm2_arity, &arm2_binder_start, &arm2_binder_len);
   expect_arrow();
-  if (arm2_arity == 1) {
-    emit_acc(0);
-    emit_getfield(0);
-    emit_push();
-    bind_pattern_var(arm2_arity, arm2_binder_start, arm2_binder_len);
+  if (has_arm3) {
+    if (arm2_tag < 0) die("wildcard middle match arm is unsupported");
+    emit_match_test(arm2_tag, arm2_len);
   }
-  parse_expr();
-  unbind_pattern_var(arm2_arity, arm2_binder_start, arm2_binder_len);
-  if (arm2_arity == 1) emit_pop(2);
-  else emit_pop(1);
-  if (pos != arm2_end) die("internal match parse mismatch");
+  emit_match_arm_body(arm2_arity, arm2_binder_start, arm2_binder_len);
+  if (has_arm3) {
+    emit_branch(arm3_len);
+    stack_depth = branch_stack_depth;
+    expect_char('|');
+    parse_pattern(&arm3_tag, &arm3_arity, &arm3_binder_start, &arm3_binder_len);
+    expect_arrow();
+    emit_match_arm_body(arm3_arity, arm3_binder_start, arm3_binder_len);
+    if (pos != arm3_end) die("internal match parse mismatch");
+  } else {
+    if (pos != arm2_end) die("internal match parse mismatch");
+  }
 }
 
 static void parse_let(void)

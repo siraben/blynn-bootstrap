@@ -91,7 +91,7 @@ destructuring, direct unary `let rec` calls, fixed-size `Array.create`,
 `Bytes.create`, string literals as immutable byte blocks, `a.(i)` / `b.[i]` reads and
 `a.(i) <- v` / `b.[i] <- v` writes, simple top-level ADT declarations of the form
 `type t = A | B of int`, constructor allocation from those declarations, and
-two-arm constructor `match` expressions with a second-arm wildcard fallback.
+constructor `match` expressions up to three arms with a final fallback arm.
 It also has a temporary
 `write_string "..."` form, including three-digit byte escapes, that lowers
 literal bytes to repeated `write_byte` calls. It exists to pin the M2 path,

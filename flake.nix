@@ -702,6 +702,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           "function-tuple"
           "function-nested"
           "match"
+          "match-three"
           "adt"
           "multi-adt"
           "adt-recursion"
@@ -755,6 +756,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             printf 'OK\n' > function-tuple.expected
             printf 'OK\n' > function-nested.expected
             printf 'OK\n' > match.expected
+            printf 'OK\n' > match-three.expected
             printf 'OK\n' > adt.expected
             printf 'OK\n' > multi-adt.expected
             printf 'OK\n' > adt-recursion.expected
@@ -813,6 +815,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             cp ${./tests/mlc/function-tuple.ml} function-tuple.ml
             cp ${./tests/mlc/function-nested.ml} function-nested.ml
             cp ${./tests/mlc/match.ml} match.ml
+            cp ${./tests/mlc/match-three.ml} match-three.ml
             cp ${./tests/mlc/adt.ml} adt.ml
             cp ${./tests/mlc/multi-adt.ml} multi-adt.ml
             cp ${./tests/mlc/adt-recursion.ml} adt-recursion.ml
@@ -867,6 +870,9 @@ OK"
             ./mlc-seed match.ml match.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed match.mzbc)"
             test "$actual" = OK
+            ./mlc-seed match-three.ml match-three.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed match-three.mzbc)"
+            test "$actual" = OK
             ./mlc-seed adt.ml adt.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed adt.mzbc)"
             test "$actual" = OK
@@ -916,6 +922,7 @@ OK"
             install -Dm644 function-tuple.mzbc "$out/share/mlc/tests/function-tuple.mzbc"
             install -Dm644 function-nested.mzbc "$out/share/mlc/tests/function-nested.mzbc"
             install -Dm644 match.mzbc "$out/share/mlc/tests/match.mzbc"
+            install -Dm644 match-three.mzbc "$out/share/mlc/tests/match-three.mzbc"
             install -Dm644 adt.mzbc "$out/share/mlc/tests/adt.mzbc"
             install -Dm644 multi-adt.mzbc "$out/share/mlc/tests/multi-adt.mzbc"
             install -Dm644 adt-recursion.mzbc "$out/share/mlc/tests/adt-recursion.mzbc"
