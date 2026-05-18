@@ -1391,6 +1391,9 @@ OK"
             ${mzvmSeedM2}/bin/mzvm-seed mlc.byte < ${./tests/mlc/adt-tuple-payload.ml} > compiled-adt-tuple-payload.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-adt-tuple-payload.mzbc)"
             test "$actual" = OK
+            ${mzvmSeedM2}/bin/mzvm-seed mlc.byte < ${./tests/mlc/adt-pattern-tuple.ml} > compiled-adt-pattern-tuple.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-adt-pattern-tuple.mzbc)"
+            test "$actual" = OK
             ${mzvmSeedM2}/bin/mzvm-seed mlc.byte < ${./tests/mlc/adt-recursion.ml} > compiled-adt-recursion.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-adt-recursion.mzbc)"
             test "$actual" = OK
@@ -1446,6 +1449,7 @@ OK"
             install -Dm644 compiled-match-three-direct.mzbc "$out/share/mlc/compiled-match-three-direct.mzbc"
             install -Dm644 compiled-match-three.mzbc "$out/share/mlc/compiled-match-three.mzbc"
             install -Dm644 compiled-adt-tuple-payload.mzbc "$out/share/mlc/compiled-adt-tuple-payload.mzbc"
+            install -Dm644 compiled-adt-pattern-tuple.mzbc "$out/share/mlc/compiled-adt-pattern-tuple.mzbc"
             install -Dm644 compiled-adt-recursion.mzbc "$out/share/mlc/compiled-adt-recursion.mzbc"
             install -Dm644 compiled-final-call.mzbc "$out/share/mlc/compiled-final-call.mzbc"
             install -Dm644 compiled-call-precedence.mzbc "$out/share/mlc/compiled-call-precedence.mzbc"
