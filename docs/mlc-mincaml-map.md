@@ -88,7 +88,7 @@ tiny recursive-descent compiler for `let` bindings, `if ... then ... else
 parenthesized arithmetic, `+ - * /`, nested OCaml block comments,
 multi-character local identifiers, two-element tuple construction and
 destructuring, direct unary `let rec` calls, fixed-size `Array.create`,
-`Bytes.create`, string literals as immutable byte blocks, literal-index `a.(i)` / `b.[i]` reads and
+`Bytes.create`, string literals as immutable byte blocks, `a.(i)` / `b.[i]` reads and
 `a.(i) <- v` / `b.[i] <- v` writes, simple top-level ADT declarations of the form
 `type t = A | B of int`, constructor allocation from those declarations, and
 two-arm constructor `match` expressions with a second-arm wildcard fallback.

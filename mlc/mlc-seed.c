@@ -25,7 +25,9 @@ enum {
   OP_GT = 21,
   OP_GE = 22,
   OP_CALL = 23,
-  OP_RETURN = 24
+  OP_RETURN = 24,
+  OP_GETFIELD_DYN = 25,
+  OP_SETFIELD_DYN = 26
 };
 
 static FILE *out_file;
@@ -402,11 +404,17 @@ static void emit_getfield(long index)
   emit_u32(index);
 }
 
-static void emit_setfield(long index)
+static void emit_getfield_dyn(void)
 {
-  emit_byte(OP_SETFIELD);
-  emit_u32(index);
+  emit_byte(OP_GETFIELD_DYN);
   stack_depth = stack_depth - 1;
+  if (stack_depth < 0) die("internal stack underflow");
+}
+
+static void emit_setfield_dyn(void)
+{
+  emit_byte(OP_SETFIELD_DYN);
+  stack_depth = stack_depth - 2;
   if (stack_depth < 0) die("internal stack underflow");
 }
 
@@ -465,7 +473,6 @@ static void parse_atom(void)
   long name_start;
   long name_len;
   long ctor;
-  long index;
   long size;
   long init_start;
   long init_end;
@@ -551,17 +558,17 @@ static void parse_atom(void)
     emit_acc(var_index);
     if (take_char('.')) {
       if (take_char('(')) {
-        index = parse_int_literal();
-        if (index < 0) die("negative array index");
+        emit_push();
+        parse_nonseq_expr();
         expect_char(')');
       } else if (take_char('[')) {
-        index = parse_int_literal();
-        if (index < 0) die("negative bytes index");
+        emit_push();
+        parse_nonseq_expr();
         expect_char(']');
       } else {
         die("expected field index");
       }
-      emit_getfield(index);
+      emit_getfield_dyn();
     }
   } else {
     emit_const(parse_int_literal());
@@ -704,6 +711,8 @@ static long measure_expr(long start, long *end_out)
   long saved_len = out_len;
   long saved_pos = pos;
   long saved_stack_depth = stack_depth;
+  long saved_env_depth = env_depth;
+  long saved_func_count = func_count;
   long measured;
   out_file = 0;
   out_len = 0;
@@ -715,6 +724,8 @@ static long measure_expr(long start, long *end_out)
   out_len = saved_len;
   pos = saved_pos;
   stack_depth = saved_stack_depth;
+  env_depth = saved_env_depth;
+  func_count = saved_func_count;
   return measured;
 }
 
@@ -724,6 +735,8 @@ static long measure_nonseq_expr(long start, long *end_out)
   long saved_len = out_len;
   long saved_pos = pos;
   long saved_stack_depth = stack_depth;
+  long saved_env_depth = env_depth;
+  long saved_func_count = func_count;
   long measured;
   out_file = 0;
   out_len = 0;
@@ -735,6 +748,8 @@ static long measure_nonseq_expr(long start, long *end_out)
   out_len = saved_len;
   pos = saved_pos;
   stack_depth = saved_stack_depth;
+  env_depth = saved_env_depth;
+  func_count = saved_func_count;
   return measured;
 }
 
@@ -745,6 +760,7 @@ static long measure_function_expr(long start, long param_start, long param_len, 
   long saved_pos = pos;
   long saved_stack_depth = stack_depth;
   long saved_env_depth = env_depth;
+  long saved_func_count = func_count;
   long measured;
   out_file = 0;
   out_len = 0;
@@ -763,6 +779,7 @@ static long measure_function_expr(long start, long param_start, long param_len, 
   pos = saved_pos;
   stack_depth = saved_stack_depth;
   env_depth = saved_env_depth;
+  func_count = saved_func_count;
   return measured;
 }
 
@@ -1014,7 +1031,9 @@ static int parse_array_set(void)
   long name_start;
   long name_len;
   long var_index;
-  long index;
+  long index_start;
+  long index_end;
+  int close_char;
   saved_pos = pos;
   skip_space();
   if (pos >= src_len || !((src[pos] >= 'a' && src[pos] <= 'z') || src[pos] == '_')) {
@@ -1027,17 +1046,17 @@ static int parse_array_set(void)
     return 0;
   }
   if (take_char('(')) {
-    index = parse_int_literal();
-    if (index < 0) die("negative array index");
-    expect_char(')');
+    close_char = ')';
   } else if (take_char('[')) {
-    index = parse_int_literal();
-    if (index < 0) die("negative bytes index");
-    expect_char(']');
+    close_char = ']';
   } else {
     pos = saved_pos;
     return 0;
   }
+  index_start = pos;
+  measure_nonseq_expr(index_start, &index_end);
+  pos = index_end;
+  expect_char(close_char);
   if (!take_char('<')) {
     pos = saved_pos;
     return 0;
@@ -1047,8 +1066,15 @@ static int parse_array_set(void)
   if (var_index < 0) die("unknown array variable");
   emit_acc(var_index);
   emit_push();
+  pos = index_start;
   parse_nonseq_expr();
-  emit_setfield(index);
+  if (pos != index_end) die("internal index parse mismatch");
+  expect_char(close_char);
+  expect_char('<');
+  expect_char('-');
+  emit_push();
+  parse_nonseq_expr();
+  emit_setfield_dyn();
   return 1;
 }
 

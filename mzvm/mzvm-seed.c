@@ -34,7 +34,9 @@ enum {
   OP_GT = 21,
   OP_GE = 22,
   OP_CALL = 23,
-  OP_RETURN = 24
+  OP_RETURN = 24,
+  OP_GETFIELD_DYN = 25,
+  OP_SETFIELD_DYN = 26
 };
 
 typedef long value_t;
@@ -381,6 +383,17 @@ static void run(void)
       acc = block[2 + index];
     } else if (op == OP_SETFIELD) {
       long index = read_u32();
+      value_t *block = block_val(stack_pop());
+      if (index < 0 || index >= block[1]) die("field write out of range");
+      block[2 + index] = acc;
+      acc = val_int(0);
+    } else if (op == OP_GETFIELD_DYN) {
+      long index = int_val(acc);
+      value_t *block = block_val(stack_pop());
+      if (index < 0 || index >= block[1]) die("field access out of range");
+      acc = block[2 + index];
+    } else if (op == OP_SETFIELD_DYN) {
+      long index = int_val(stack_pop());
       value_t *block = block_val(stack_pop());
       if (index < 0 || index >= block[1]) die("field write out of range");
       block[2 + index] = acc;

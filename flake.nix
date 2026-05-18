@@ -697,6 +697,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           "array"
           "bytes"
           "string-value"
+          "dynamic-index"
           "function"
           "function-tuple"
           "function-nested"
@@ -749,6 +750,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             printf 'OK\n' > array.expected
             printf 'OK\n' > bytes.expected
             printf 'OK\n' > string-value.expected
+            printf 'OK\n' > dynamic-index.expected
             printf 'OK\n' > function.expected
             printf 'OK\n' > function-tuple.expected
             printf 'OK\n' > function-nested.expected
@@ -806,6 +808,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             cp ${./tests/mlc/array.ml} array.ml
             cp ${./tests/mlc/bytes.ml} bytes.ml
             cp ${./tests/mlc/string-value.ml} string-value.ml
+            cp ${./tests/mlc/dynamic-index.ml} dynamic-index.ml
             cp ${./tests/mlc/function.ml} function.ml
             cp ${./tests/mlc/function-tuple.ml} function-tuple.ml
             cp ${./tests/mlc/function-nested.ml} function-nested.ml
@@ -848,6 +851,9 @@ OK"
             test "$actual" = OK
             ./mlc-seed string-value.ml string-value.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed string-value.mzbc)"
+            test "$actual" = OK
+            ./mlc-seed dynamic-index.ml dynamic-index.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed dynamic-index.mzbc)"
             test "$actual" = OK
             ./mlc-seed function.ml function.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed function.mzbc)"
@@ -905,6 +911,7 @@ OK"
             install -Dm644 array.mzbc "$out/share/mlc/tests/array.mzbc"
             install -Dm644 bytes.mzbc "$out/share/mlc/tests/bytes.mzbc"
             install -Dm644 string-value.mzbc "$out/share/mlc/tests/string-value.mzbc"
+            install -Dm644 dynamic-index.mzbc "$out/share/mlc/tests/dynamic-index.mzbc"
             install -Dm644 function.mzbc "$out/share/mlc/tests/function.mzbc"
             install -Dm644 function-tuple.mzbc "$out/share/mlc/tests/function-tuple.mzbc"
             install -Dm644 function-nested.mzbc "$out/share/mlc/tests/function-nested.mzbc"
