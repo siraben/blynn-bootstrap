@@ -32,7 +32,9 @@ enum {
   OP_NE = 19,
   OP_LE = 20,
   OP_GT = 21,
-  OP_GE = 22
+  OP_GE = 22,
+  OP_CALL = 23,
+  OP_RETURN = 24
 };
 
 typedef long value_t;
@@ -42,7 +44,9 @@ static long code_len;
 static long pc;
 static value_t acc;
 static value_t stack[STACK_CAP];
+static long return_stack[STACK_CAP];
 static long sp;
+static long rp;
 static long prim_count;
 static long global_count;
 static value_t *space_a;
@@ -192,7 +196,9 @@ static long read_u32(void)
 static long read_s32(void)
 {
   unsigned long u = (unsigned long)read_u32();
-  if (u >= 2147483648UL) return (long)(u - 4294967296UL);
+  unsigned long sign = 2147483647UL + 1UL;
+  unsigned long modulus = sign + sign;
+  if (u >= sign) return (long)(u - modulus);
   return (long)u;
 }
 
@@ -229,6 +235,20 @@ static void stack_drop(long n)
 {
   if (n < 0 || n > sp) die("stack pop out of range");
   sp = sp - n;
+}
+
+static void return_push(long x)
+{
+  if (rp >= STACK_CAP) die("return stack overflow");
+  return_stack[rp] = x;
+  rp = rp + 1;
+}
+
+static long return_pop(void)
+{
+  if (rp <= 0) die("return stack underflow");
+  rp = rp - 1;
+  return return_stack[rp];
 }
 
 static value_t *alloc_block(long tag, long size)
@@ -322,6 +342,13 @@ static void run(void)
       acc = val_int(int_val(stack_pop()) > int_val(acc));
     } else if (op == OP_GE) {
       acc = val_int(int_val(stack_pop()) >= int_val(acc));
+    } else if (op == OP_CALL) {
+      long target = read_u32();
+      if (target < 0 || target >= code_len) die("call target out of range");
+      return_push(pc);
+      pc = target;
+    } else if (op == OP_RETURN) {
+      pc = return_pop();
     } else if (op == OP_BRANCH) {
       branch_relative(read_s32());
     } else if (op == OP_BRANCHIF) {
@@ -423,6 +450,7 @@ int main(int argc, char **argv)
   load_bytecode(argv[1]);
   pc = 0;
   sp = 0;
+  rp = 0;
   acc = val_int(0);
   init_heap();
   run();

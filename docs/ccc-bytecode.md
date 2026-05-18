@@ -59,10 +59,18 @@ Opcodes are one byte. Immediate operands are little-endian 32-bit words.
 20  LE
 21  GT
 22  GE
+23  CALL u32
+24  RETURN
 ```
 
 Branches are relative to the program counter after the branch operand has
 been read.
+
+`CALL` encodes an absolute bytecode offset. It pushes the return program
+counter onto the VM return stack and jumps to direct function code emitted
+earlier in the stream. `RETURN` pops that return address. This is the current
+seed path for unary `let rec` functions; closure opcodes remain future ABI
+work.
 
 `MAKEBLOCK` consumes fields from the stack plus the accumulator in source
 order: earlier fields have already been pushed, and the accumulator is the

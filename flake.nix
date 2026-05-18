@@ -694,6 +694,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           "comparison"
           "let-binding"
           "array"
+          "function"
           "match"
           "adt"
           "identifiers"
@@ -738,6 +739,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             printf 'OK\nOK\n' > comparison.expected
             printf 'OK\n' > let-binding.expected
             printf 'OK\n' > array.expected
+            printf 'OK\n' > function.expected
             printf 'OK\n' > match.expected
             printf 'OK\n' > adt.expected
             printf 'O\n' > identifiers.expected
@@ -787,6 +789,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             cp ${./tests/mlc/comparison.ml} comparison.ml
             cp ${./tests/mlc/let-binding.ml} let-binding.ml
             cp ${./tests/mlc/array.ml} array.ml
+            cp ${./tests/mlc/function.ml} function.ml
             cp ${./tests/mlc/match.ml} match.ml
             cp ${./tests/mlc/adt.ml} adt.ml
             cp ${./tests/mlc/identifiers.ml} identifiers.ml
@@ -815,6 +818,9 @@ OK"
             test "$actual" = OK
             ./mlc-seed array.ml array.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed array.mzbc)"
+            test "$actual" = OK
+            ./mlc-seed function.ml function.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed function.mzbc)"
             test "$actual" = OK
             ./mlc-seed match.ml match.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed match.mzbc)"
@@ -854,6 +860,7 @@ OK"
             install -Dm644 comparison.mzbc "$out/share/mlc/tests/comparison.mzbc"
             install -Dm644 let-binding.mzbc "$out/share/mlc/tests/let-binding.mzbc"
             install -Dm644 array.mzbc "$out/share/mlc/tests/array.mzbc"
+            install -Dm644 function.mzbc "$out/share/mlc/tests/function.mzbc"
             install -Dm644 match.mzbc "$out/share/mlc/tests/match.mzbc"
             install -Dm644 adt.mzbc "$out/share/mlc/tests/adt.mzbc"
             install -Dm644 identifiers.mzbc "$out/share/mlc/tests/identifiers.mzbc"

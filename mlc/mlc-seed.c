@@ -23,7 +23,9 @@ enum {
   OP_NE = 19,
   OP_LE = 20,
   OP_GT = 21,
-  OP_GE = 22
+  OP_GE = 22,
+  OP_CALL = 23,
+  OP_RETURN = 24
 };
 
 static FILE *out_file;
@@ -41,6 +43,10 @@ static long ctor_len[64];
 static long ctor_tag[64];
 static long ctor_arity[64];
 static long ctor_count;
+static long active_func_start;
+static long active_func_len;
+static long active_func_target;
+static long active_func_count;
 
 static void die(const char *msg)
 {
@@ -207,6 +213,12 @@ static long lookup_constructor(long start, long len)
   return -1;
 }
 
+static long lookup_func_target(long start, long len)
+{
+  if (active_func_count > 0 && span_equal(start, len, active_func_start, active_func_len)) return active_func_target;
+  return -1;
+}
+
 static int span_is_char(long start, long len, int c)
 {
   return len == 1 && src[start] == c;
@@ -221,6 +233,21 @@ static void add_constructor(long start, long len, long tag, long arity)
   ctor_tag[ctor_count] = tag;
   ctor_arity[ctor_count] = arity;
   ctor_count = ctor_count + 1;
+}
+
+static void add_func(long start, long len, long target)
+{
+  if (active_func_count != 0) die("nested let rec is unsupported");
+  active_func_start = start;
+  active_func_len = len;
+  active_func_target = target;
+  active_func_count = 1;
+}
+
+static void unbind_func(void)
+{
+  if (active_func_count <= 0) die("internal function stack underflow");
+  active_func_count = 0;
 }
 
 static long lookup_var(long start, long len)
@@ -271,10 +298,23 @@ static void emit_u32(long x)
   emit_byte((int)low_byte(x / 16777216));
 }
 
+static void emit_s32(long x)
+{
+  if (x >= 0) {
+    emit_u32(x);
+  } else {
+    x = -x - 1;
+    emit_byte((int)(255 - low_byte(x)));
+    emit_byte((int)(255 - low_byte(x / 256)));
+    emit_byte((int)(255 - low_byte(x / 65536)));
+    emit_byte((int)(255 - low_byte(x / 16777216)));
+  }
+}
+
 static void emit_const(long n)
 {
   emit_byte(OP_CONST);
-  emit_u32(n);
+  emit_s32(n);
 }
 
 static void emit_call_write_byte(void)
@@ -321,13 +361,24 @@ static void emit_acc(long index)
 static void emit_branch(long offset)
 {
   emit_byte(OP_BRANCH);
-  emit_u32(offset);
+  emit_s32(offset);
 }
 
 static void emit_branchifnot(long offset)
 {
   emit_byte(OP_BRANCHIFNOT);
-  emit_u32(offset);
+  emit_s32(offset);
+}
+
+static void emit_call(long target)
+{
+  emit_byte(OP_CALL);
+  emit_u32(target);
+}
+
+static void emit_return(void)
+{
+  emit_byte(OP_RETURN);
 }
 
 static void emit_makeblock(long tag, long size)
@@ -372,6 +423,18 @@ static void parse_nonseq_expr(void);
 static long measure_expr(long start, long *end_out);
 static long measure_nonseq_expr(long start, long *end_out);
 
+static int atom_starts(void)
+{
+  skip_space();
+  if (pos >= src_len) return 0;
+  if (src[pos] == '(') return 1;
+  if (src[pos] == '-') return 1;
+  if (src[pos] >= '0' && src[pos] <= '9') return 1;
+  if (src[pos] >= 'a' && src[pos] <= 'z') return 1;
+  if (src[pos] >= 'A' && src[pos] <= 'Z') return 1;
+  return 0;
+}
+
 static long parse_int_literal(void)
 {
   long sign = 1;
@@ -402,6 +465,7 @@ static void parse_atom(void)
   long init_start;
   long init_end;
   long i;
+  long func_target_value;
   skip_space();
   if (take_char('(')) {
     parse_expr();
@@ -441,6 +505,12 @@ static void parse_atom(void)
     emit_makeblock(ctor_tag[ctor], ctor_arity[ctor]);
   } else if (pos < src_len && ((src[pos] >= 'a' && src[pos] <= 'z') || (src[pos] >= 'A' && src[pos] <= 'Z'))) {
     take_ident_span(&name_start, &name_len);
+    func_target_value = lookup_func_target(name_start, name_len);
+    if (func_target_value >= 0 && atom_starts()) {
+      parse_atom();
+      emit_call(func_target_value);
+      return;
+    }
     var_index = lookup_var(name_start, name_len);
     if (var_index < 0) die("unknown variable");
     emit_acc(var_index);
@@ -626,6 +696,34 @@ static long measure_nonseq_expr(long start, long *end_out)
   return measured;
 }
 
+static long measure_function_expr(long start, long param_start, long param_len, long *end_out)
+{
+  FILE *saved_file = out_file;
+  long saved_len = out_len;
+  long saved_pos = pos;
+  long saved_stack_depth = stack_depth;
+  long saved_env_depth = env_depth;
+  long measured;
+  out_file = 0;
+  out_len = 0;
+  pos = start;
+  stack_depth = 0;
+  emit_push();
+  bind_var(param_start, param_len);
+  parse_expr();
+  unbind_var(param_start, param_len);
+  emit_pop(1);
+  emit_return();
+  measured = out_len;
+  *end_out = pos;
+  out_file = saved_file;
+  out_len = saved_len;
+  pos = saved_pos;
+  stack_depth = saved_stack_depth;
+  env_depth = saved_env_depth;
+  return measured;
+}
+
 static void parse_if(void)
 {
   long then_start;
@@ -793,8 +891,43 @@ static void parse_let(void)
   long name_len;
   long name2_start;
   long name2_len;
+  long param_start;
+  long param_len;
+  long fn_body_start;
+  long fn_body_end;
+  long fn_len;
+  long fn_target;
+  long saved_stack_depth;
+  long saved_env_depth;
   int binds = 0;
   if (!take_keyword("let")) die("expected let");
+  if (take_keyword("rec")) {
+    take_ident_span(&name_start, &name_len);
+    take_ident_span(&param_start, &param_len);
+    expect_char('=');
+    fn_body_start = pos;
+    fn_target = out_len + 5;
+    add_func(name_start, name_len, fn_target);
+    fn_len = measure_function_expr(fn_body_start, param_start, param_len, &fn_body_end);
+    emit_branch(fn_len);
+    saved_stack_depth = stack_depth;
+    saved_env_depth = env_depth;
+    stack_depth = 0;
+    emit_push();
+    bind_var(param_start, param_len);
+    pos = fn_body_start;
+    parse_expr();
+    unbind_var(param_start, param_len);
+    emit_pop(1);
+    emit_return();
+    if (pos != fn_body_end) die("internal let rec parse mismatch");
+    stack_depth = saved_stack_depth;
+    env_depth = saved_env_depth;
+    expect_keyword("in");
+    parse_expr();
+    unbind_func();
+    return;
+  }
   if (take_char('(')) {
     take_ident_span(&name_start, &name_len);
     expect_char(',');
@@ -930,6 +1063,7 @@ static long compile_len(void)
   env_depth = 0;
   stack_depth = 0;
   ctor_count = 0;
+  active_func_count = 0;
   parse_type_decls();
   parse_expr();
   skip_space();
@@ -967,6 +1101,7 @@ static void write_bytecode(const char *path)
   env_depth = 0;
   stack_depth = 0;
   ctor_count = 0;
+  active_func_count = 0;
   parse_type_decls();
   parse_expr();
   emit_byte(OP_HALT);
