@@ -61,6 +61,14 @@ let rec emit_sub emit =
   let _ = emit_byte_if (emit, 6) in
   1
 in
+let rec emit_mul emit =
+  let _ = emit_byte_if (emit, 7) in
+  1
+in
+let rec emit_div emit =
+  let _ = emit_byte_if (emit, 8) in
+  1
+in
 let rec emit_eq emit =
   let _ = emit_byte_if (emit, 9) in
   1
@@ -201,6 +209,18 @@ let rec compile_simple_expr input =
     let (right_len, done_pos) = right in
     let sub_len = emit_sub emit in
     (left_len + push_len + right_len + sub_len, done_pos)
+  else if src.[next] == 42 then
+    let push_len = emit_push emit in
+    let right = compile_simple_expr (src, (next + 1, (shift_env env, emit))) in
+    let (right_len, done_pos) = right in
+    let mul_len = emit_mul emit in
+    (left_len + push_len + right_len + mul_len, done_pos)
+  else if src.[next] == 47 then
+    let push_len = emit_push emit in
+    let right = compile_simple_expr (src, (next + 1, (shift_env env, emit))) in
+    let (right_len, done_pos) = right in
+    let div_len = emit_div emit in
+    (left_len + push_len + right_len + div_len, done_pos)
   else if src.[next] == 60 then
     let push_len = emit_push emit in
     let right = compile_simple_expr (src, (next + 1, (shift_env env, emit))) in
@@ -271,6 +291,18 @@ let rec compile_expr input =
     let (right_len, done_pos) = right in
     let sub_len = emit_sub emit in
     (left_len + push_len + right_len + sub_len, done_pos)
+  else if src.[next] == 42 then
+    let push_len = emit_push emit in
+    let right = compile_expr (src, (next + 1, (shift_env env, emit))) in
+    let (right_len, done_pos) = right in
+    let mul_len = emit_mul emit in
+    (left_len + push_len + right_len + mul_len, done_pos)
+  else if src.[next] == 47 then
+    let push_len = emit_push emit in
+    let right = compile_expr (src, (next + 1, (shift_env env, emit))) in
+    let (right_len, done_pos) = right in
+    let div_len = emit_div emit in
+    (left_len + push_len + right_len + div_len, done_pos)
   else if src.[next] == 60 then
     let push_len = emit_push emit in
     let right = compile_expr (src, (next + 1, (shift_env env, emit))) in
