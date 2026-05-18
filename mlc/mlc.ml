@@ -162,8 +162,20 @@ let rec parse_char input =
   (ch, pos + 3)
 in
 let rec shift_env env =
-  let (name, depth) = env in
-  (name, depth + 1)
+  let (name, rest) = env in
+  let (depth, tail) = rest in
+  if name < 0 then env else (name, (depth + 1, shift_env tail))
+in
+let rec lookup_env input =
+  let (env, want) = input in
+  let (name, rest) = env in
+  let (depth, tail) = rest in
+  if name == want then depth else
+  if name < 0 then exit 1 else lookup_env (tail, want)
+in
+let rec extend_env input =
+  let (name, env) = input in
+  (name, (0, shift_env env))
 in
 let rec compile_simple_atom input =
   let (src, pair) = input in
@@ -183,12 +195,9 @@ let rec compile_simple_atom input =
   else
     let ident = parse_ident (src, pos) in
     let (name, done_pos) = ident in
-    let (env_name, depth) = env in
-    if name == env_name then
-      let len = emit_acc (emit, depth) in
-      (len, done_pos)
-    else
-      exit 1
+    let depth = lookup_env (env, name) in
+    let len = emit_acc (emit, depth) in
+    (len, done_pos)
 in
 let rec compile_simple_expr input =
   let (src, pair) = input in
@@ -342,48 +351,76 @@ let rec emit_string_program input =
 in
 let rec compile_write_byte input =
   let (src, pair) = input in
-  let (pos, emit) = pair in
+  let (pos, pair2) = pair in
+  let (env, emit) = pair2 in
   let p = skip_space (src, pos + 10) in
   let expr_pos = if src.[p] == 40 then p + 1 else p in
-  let expr = compile_expr (src, (expr_pos, ((0 - 1, 0), emit))) in
+  let expr = compile_expr (src, (expr_pos, (env, emit))) in
   let (expr_len, done_pos) = expr in
   let call_len = emit_call_write_byte emit in
-  expr_len + call_len
+  (expr_len + call_len, done_pos)
 in
 let rec compile_let_write_byte input =
-  let (src, emit) = input in
-  let binding = parse_ident (src, 3) in
+  let (src, pair) = input in
+  let (pos, pair2) = pair in
+  let (env, emit) = pair2 in
+  let binding = parse_ident (src, pos + 3) in
   let (name, name_end) = binding in
   let eq_pos = skip_space (src, name_end) in
   if src.[eq_pos] == 61 then
-    let rhs = compile_expr (src, (eq_pos + 1, ((0 - 1, 0), emit))) in
+    let rhs = compile_expr (src, (eq_pos + 1, (env, emit))) in
     let (rhs_len, rhs_end) = rhs in
     let in_pos = skip_space (src, rhs_end) in
     if src.[in_pos] == 105 then
       let body_pos = skip_space (src, in_pos + 2) in
       let push_len = emit_push emit in
-      let p = skip_space (src, body_pos + 10) in
-      let expr_pos = if src.[p] == 40 then p + 1 else p in
-      let body = compile_expr (src, (expr_pos, ((name, 0), emit))) in
+      let next_env = extend_env (name, env) in
+      let body =
+        if src.[body_pos] == 108 then
+          let binding2 = parse_ident (src, body_pos + 3) in
+          let (name2, name2_end) = binding2 in
+          let eq2_pos = skip_space (src, name2_end) in
+          if src.[eq2_pos] == 61 then
+            let rhs2 = compile_expr (src, (eq2_pos + 1, (next_env, emit))) in
+            let (rhs2_len, rhs2_end) = rhs2 in
+            let in2_pos = skip_space (src, rhs2_end) in
+            if src.[in2_pos] == 105 then
+              let body2_pos = skip_space (src, in2_pos + 2) in
+              let push2_len = emit_push emit in
+              let body2 = compile_write_byte (src, (body2_pos, (extend_env (name2, next_env), emit))) in
+              let (body2_len, body2_end) = body2 in
+              let pop2_len = emit_pop1 emit in
+              (rhs2_len + push2_len + body2_len + pop2_len, body2_end)
+            else
+              exit 1
+          else
+            exit 1
+        else
+          compile_write_byte (src, (body_pos, (next_env, emit)))
+      in
       let (body_len, body_end) = body in
-      let call_len = emit_call_write_byte emit in
       let pop_len = emit_pop1 emit in
-      rhs_len + push_len + body_len + call_len + pop_len
+      (rhs_len + push_len + body_len + pop_len, body_end)
     else
       exit 1
   else
     exit 1
 in
 let rec compile_byte_code input =
-  let (src, emit) = input in
-  let pos = skip_space (src, 0) in
-  if src.[pos] == 108 then compile_let_write_byte (src, emit)
-  else compile_write_byte (src, (pos, emit))
+  let (src, pair) = input in
+  let (pos0, pair2) = pair in
+  let (env, emit) = pair2 in
+  let pos = skip_space (src, pos0) in
+  if src.[pos] == 108 then compile_let_write_byte (src, (pos, (env, emit)))
+  else
+    compile_write_byte (src, (pos, (env, emit)))
 in
 let rec emit_byte_source src =
-  let code_len = compile_byte_code (src, 0) in
+  let empty_env = (0 - 1, (0, 0)) in
+  let measured = compile_byte_code (src, (0, (empty_env, 0))) in
+  let (code_len, done_pos) = measured in
   let _ = emit_header (code_len + 1) in
-  let _ = compile_byte_code (src, 1) in
+  let _ = compile_byte_code (src, (0, (empty_env, 1))) in
   write_byte 0
 in
 let rec compile_program src =
