@@ -36,7 +36,8 @@ enum {
   OP_CALL = 23,
   OP_RETURN = 24,
   OP_GETFIELD_DYN = 25,
-  OP_SETFIELD_DYN = 26
+  OP_SETFIELD_DYN = 26,
+  OP_BLOCKSIZE = 27
 };
 
 typedef long value_t;
@@ -398,6 +399,9 @@ static void run(void)
       if (index < 0 || index >= block[1]) die("field write out of range");
       block[2 + index] = acc;
       acc = val_int(0);
+    } else if (op == OP_BLOCKSIZE) {
+      value_t *block = block_val(acc);
+      acc = val_int(block[1]);
     } else if (op == OP_GETTAG) {
       value_t *block = block_val(acc);
       acc = val_int(block[0]);

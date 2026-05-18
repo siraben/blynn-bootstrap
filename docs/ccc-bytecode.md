@@ -63,6 +63,7 @@ Opcodes are one byte. Immediate operands are little-endian 32-bit words.
 24  RETURN
 25  GETFIELD_DYN
 26  SETFIELD_DYN
+27  BLOCKSIZE
 ```
 
 Branches are relative to the program counter after the branch operand has
@@ -80,6 +81,8 @@ last field. `GETFIELD 0` therefore returns the first source-level field.
 `GETFIELD_DYN` consumes the block from the stack and the integer index from
 the accumulator. `SETFIELD_DYN` consumes the value from the accumulator and
 the integer index and block from the stack.
+`BLOCKSIZE` returns the number of fields in the block currently in the
+accumulator.
 
 ## Seed Primitive Table
 

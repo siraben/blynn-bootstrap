@@ -13,8 +13,10 @@ let rec is_digit ch =
 in
 let rec lex input =
   let (src, pos) = input in
-  let ch = src.[pos] in
-  if is_digit ch then TokInt (ch - 48) else TokEof
+  if pos < String.length src then
+    let ch = src.[pos] in
+    if is_digit ch then TokInt (ch - 48) else TokEof
+  else TokEof
 in
 let rec parse_ones input =
   let (src, tens) = input in

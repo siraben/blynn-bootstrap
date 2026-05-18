@@ -27,7 +27,8 @@ enum {
   OP_CALL = 23,
   OP_RETURN = 24,
   OP_GETFIELD_DYN = 25,
-  OP_SETFIELD_DYN = 26
+  OP_SETFIELD_DYN = 26,
+  OP_BLOCKSIZE = 27
 };
 
 static FILE *out_file;
@@ -435,6 +436,11 @@ static void emit_gettag(void)
   emit_byte(OP_GETTAG);
 }
 
+static void emit_blocksize(void)
+{
+  emit_byte(OP_BLOCKSIZE);
+}
+
 static void emit_binary_op(int op)
 {
   emit_byte(op);
@@ -506,6 +512,14 @@ static void parse_atom(void)
     take_keyword("read_byte");
     emit_const(0);
     emit_call_read_byte();
+  } else if (keyword_at("Bytes.length")) {
+    take_keyword("Bytes.length");
+    parse_atom();
+    emit_blocksize();
+  } else if (keyword_at("String.length")) {
+    take_keyword("String.length");
+    parse_atom();
+    emit_blocksize();
   } else if (pos < src_len && src[pos] == '"') {
     pos = pos + 1;
     i = 0;
