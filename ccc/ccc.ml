@@ -80,11 +80,20 @@ let rec expect_local_type state =
   if (src.[pos] == 99) * (src.[pos + 1] == 104) * (src.[pos + 2] == 97) * (src.[pos + 3] == 114) then pos + 4 else
   if (src.[pos] == 115) * (src.[pos + 1] == 105) * (src.[pos + 2] == 103) * (src.[pos + 3] == 110) * (src.[pos + 4] == 101) * (src.[pos + 5] == 100) then
     let p1 = skip_space (src, pos + 6) in
-    if (src.[p1] == 99) * (src.[p1 + 1] == 104) * (src.[p1 + 2] == 97) * (src.[p1 + 3] == 114) then p1 + 4 else exit 1
+    if (src.[p1] == 99) * (src.[p1 + 1] == 104) * (src.[p1 + 2] == 97) * (src.[p1 + 3] == 114) then p1 + 4 else
+    if (src.[p1] == 115) * (src.[p1 + 1] == 104) * (src.[p1 + 2] == 111) * (src.[p1 + 3] == 114) * (src.[p1 + 4] == 116) then p1 + 5 else exit 1
   else if (src.[pos] == 117) * (src.[pos + 1] == 110) * (src.[pos + 2] == 115) * (src.[pos + 3] == 105) * (src.[pos + 4] == 103) * (src.[pos + 5] == 110) * (src.[pos + 6] == 101) * (src.[pos + 7] == 100) then
     let p1 = skip_space (src, pos + 8) in
     if (src.[p1] == 99) * (src.[p1 + 1] == 104) * (src.[p1 + 2] == 97) * (src.[p1 + 3] == 114) then p1 + 4 else
-    if (src.[p1] == 115) * (src.[p1 + 1] == 104) * (src.[p1 + 2] == 111) * (src.[p1 + 3] == 114) * (src.[p1 + 4] == 116) then p1 + 5 else pos + 8
+    if (src.[p1] == 115) * (src.[p1 + 1] == 104) * (src.[p1 + 2] == 111) * (src.[p1 + 3] == 114) * (src.[p1 + 4] == 116) then p1 + 5 else
+    if (src.[p1] == 108) * (src.[p1 + 1] == 111) * (src.[p1 + 2] == 110) * (src.[p1 + 3] == 103) then
+      let p2 = skip_space (src, p1 + 4) in
+      if (src.[p2] == 108) * (src.[p2 + 1] == 111) * (src.[p2 + 2] == 110) * (src.[p2 + 3] == 103) then p2 + 4 else p1 + 4
+    else pos + 8
+  else if (src.[pos] == 108) * (src.[pos + 1] == 111) * (src.[pos + 2] == 110) * (src.[pos + 3] == 103) then
+    let p1 = skip_space (src, pos + 4) in
+    if (src.[p1] == 108) * (src.[p1 + 1] == 111) * (src.[p1 + 2] == 110) * (src.[p1 + 3] == 103) then p1 + 4 else pos + 4
+  else if (src.[pos] == 95) * (src.[pos + 1] == 66) * (src.[pos + 2] == 111) * (src.[pos + 3] == 111) * (src.[pos + 4] == 108) then pos + 5
   else exit 1
 in
 let rec is_local_type_at state =
@@ -93,7 +102,9 @@ let rec is_local_type_at state =
   ((src.[pos] == 105) * (src.[pos + 1] == 110) * (src.[pos + 2] == 116)) +
   ((src.[pos] == 99) * (src.[pos + 1] == 104) * (src.[pos + 2] == 97) * (src.[pos + 3] == 114)) +
   ((src.[pos] == 115) * (src.[pos + 1] == 105) * (src.[pos + 2] == 103) * (src.[pos + 3] == 110) * (src.[pos + 4] == 101) * (src.[pos + 5] == 100)) +
-  ((src.[pos] == 117) * (src.[pos + 1] == 110) * (src.[pos + 2] == 115) * (src.[pos + 3] == 105) * (src.[pos + 4] == 103) * (src.[pos + 5] == 110) * (src.[pos + 6] == 101) * (src.[pos + 7] == 100))
+  ((src.[pos] == 117) * (src.[pos + 1] == 110) * (src.[pos + 2] == 115) * (src.[pos + 3] == 105) * (src.[pos + 4] == 103) * (src.[pos + 5] == 110) * (src.[pos + 6] == 101) * (src.[pos + 7] == 100)) +
+  ((src.[pos] == 108) * (src.[pos + 1] == 111) * (src.[pos + 2] == 110) * (src.[pos + 3] == 103)) +
+  ((src.[pos] == 95) * (src.[pos + 1] == 66) * (src.[pos + 2] == 111) * (src.[pos + 3] == 111) * (src.[pos + 4] == 108))
 in
 let rec expect_type state =
   let (src, pos0) = state in
@@ -246,6 +257,35 @@ let rec expect_unsigned_char_cast state =
   let p1 = skip_space (src, pos + 8) in
   if (src.[p1] == 99) * (src.[p1 + 1] == 104) * (src.[p1 + 2] == 97) * (src.[p1 + 3] == 114) then p1 + 4 else exit 1
 in
+let rec parse_sizeof_type state =
+  let (src, pos0) = state in
+  let pos = skip_space (src, pos0) in
+  if (src.[pos] == 115) * (src.[pos + 1] == 104) * (src.[pos + 2] == 111) * (src.[pos + 3] == 114) * (src.[pos + 4] == 116) then (2, pos + 5) else
+  if (src.[pos] == 95) * (src.[pos + 1] == 66) * (src.[pos + 2] == 111) * (src.[pos + 3] == 111) * (src.[pos + 4] == 108) then (1, pos + 5) else
+  if (src.[pos] == 100) * (src.[pos + 1] == 111) * (src.[pos + 2] == 117) * (src.[pos + 3] == 98) * (src.[pos + 4] == 108) * (src.[pos + 5] == 101) then (8, pos + 6) else
+  if (src.[pos] == 108) * (src.[pos + 1] == 111) * (src.[pos + 2] == 110) * (src.[pos + 3] == 103) then
+    let p1 = skip_space (src, pos + 4) in
+    if (src.[p1] == 108) * (src.[p1 + 1] == 111) * (src.[p1 + 2] == 110) * (src.[p1 + 3] == 103) then (8, p1 + 4) else
+    if (src.[p1] == 100) * (src.[p1 + 1] == 111) * (src.[p1 + 2] == 117) * (src.[p1 + 3] == 98) * (src.[p1 + 4] == 108) * (src.[p1 + 5] == 101) then (16, p1 + 6) else (8, pos + 4)
+  else if (src.[pos] == 117) * (src.[pos + 1] == 110) * (src.[pos + 2] == 115) * (src.[pos + 3] == 105) * (src.[pos + 4] == 103) * (src.[pos + 5] == 110) * (src.[pos + 6] == 101) * (src.[pos + 7] == 100) then
+    let p1 = skip_space (src, pos + 8) in
+    if (src.[p1] == 115) * (src.[p1 + 1] == 104) * (src.[p1 + 2] == 111) * (src.[p1 + 3] == 114) * (src.[p1 + 4] == 116) then (2, p1 + 5) else
+    if (src.[p1] == 108) * (src.[p1 + 1] == 111) * (src.[p1 + 2] == 110) * (src.[p1 + 3] == 103) then
+      let p2 = skip_space (src, p1 + 4) in
+      if (src.[p2] == 108) * (src.[p2 + 1] == 111) * (src.[p2 + 2] == 110) * (src.[p2 + 3] == 103) then (8, p2 + 4) else (8, p1 + 4)
+    else
+      exit 1
+  else
+    exit 1
+in
+let rec parse_sizeof_value state =
+  let (src, pos0) = state in
+  let p0 = expect_ch (src, (pos0 + 6, 40)) in
+  let parsed = parse_sizeof_type (src, p0) in
+  let (size, type_end) = parsed in
+  let p1 = expect_ch (src, (type_end, 41)) in
+  (size, p1)
+in
 let rec expect_char_cast state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
@@ -339,6 +379,7 @@ let rec parse_expr_mode state =
       let ident = parse_ident (src, pos) in
       let (name, name_end) = ident in
       let after_name = skip_space (src, name_end) in
+      if name == 839785307 then parse_sizeof_value (src, pos) else
       if src.[after_name] == 40 then
         let p1 = skip_space (src, after_name + 1) in
         if src.[p1] == 41 then (apply_func (funcs, (name, 0)), p1 + 1) else
@@ -589,7 +630,8 @@ let rec parse_local_init state =
     let value = parse_expr_value (src, (p1, (funcs, env))) in
     let (init_value, value_end) = value in
     let p2 = expect_ch (src, (value_end, 59)) in
-    (p2, extend_env (name, (init_value, env)))
+    let stored = if name == 2089827 then if init_value == 0 then 0 else 1 else init_value in
+    (p2, extend_env (name, (stored, env)))
 in
 let rec parse_assignment state =
   let (src, pair) = state in
