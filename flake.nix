@@ -845,7 +845,8 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             ${mlcInterpSeedM2}/bin/mlc-interp-seed 02-ml0-compiler.ml < ${./tests/mlc}/read-byte.ml > read-byte.mzbc
             printf O | ${mzvmSeedM2}/bin/mzvm-seed read-byte.mzbc > read-byte.out
             ${mlcInterpSeedM2}/bin/mlc-interp-seed 02-ml0-compiler.ml < ${mlcSrc}/mlc.ml > mlc-stage.mzbc
-            ${mzvmSeedM2}/bin/mzvm-seed mlc-stage.mzbc > mlc-stage.out
+            printf '40+39' | ${mzvmSeedM2}/bin/mzvm-seed mlc-stage.mzbc > mlc-stage-compiled.mzbc
+            ${mzvmSeedM2}/bin/mzvm-seed mlc-stage-compiled.mzbc > mlc-stage.out
             test "$(cat ok.out)" = OK
             test "$(cat arithmetic.out)" = H-
             test "$(cat conditional.out)" = OK
@@ -869,7 +870,7 @@ OK"
             test "$(cat function-nested.out)" = OK
             test "$(cat function-string.out)" = OK
             test "$(cat read-byte.out)" = OK
-            test "$(cat mlc-stage.out)" = OK
+            test "$(cat mlc-stage.out)" = O
           '';
           installScript = ''
             install -Dm644 02-ml0-compiler.ml "$out/share/mlc/stages/02-ml0-compiler.ml"
@@ -891,6 +892,7 @@ OK"
             install -Dm644 function-nested.mzbc "$out/share/mlc/stages/function-nested.mzbc"
             install -Dm644 function-string.mzbc "$out/share/mlc/stages/function-string.mzbc"
             install -Dm644 mlc-stage.mzbc "$out/share/mlc/stages/mlc-stage.mzbc"
+            install -Dm644 mlc-stage-compiled.mzbc "$out/share/mlc/stages/mlc-stage-compiled.mzbc"
             install -Dm644 mlc-stage.out "$out/share/mlc/stages/mlc-stage.out"
           '';
         };
@@ -1122,11 +1124,13 @@ OK"
           buildScript = ''
             cp ${mlcSrc}/mlc.ml mlc.ml
             ${mlcSeedM2}/bin/mlc-seed mlc.ml mlc.byte
-            actual="$(${mzvmSeedM2}/bin/mzvm-seed mlc.byte)"
-            test "$actual" = OK
+            printf '40+39' | ${mzvmSeedM2}/bin/mzvm-seed mlc.byte > compiled.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled.mzbc)"
+            test "$actual" = O
           '';
           installScript = ''
             install -Dm644 mlc.byte "$out/share/mlc/mlc.byte"
+            install -Dm644 compiled.mzbc "$out/share/mlc/compiled.mzbc"
           '';
         };
 

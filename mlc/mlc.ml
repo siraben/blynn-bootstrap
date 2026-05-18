@@ -1,13 +1,28 @@
+let rec byte n =
+  n - (n / 256) * 256
+in
+let rec emit_u32 n =
+  let _ = write_byte (byte n) in
+  let _ = write_byte (byte (n / 256)) in
+  let _ = write_byte (byte (n / 65536)) in
+  write_byte (byte (n / 16777216))
+in
 let rec is_digit ch =
   if ch < 48 then 0 else if ch > 57 then 0 else 1
 in
+let rec read_all state =
+  let (buf, pos) = state in
+  let ch = read_byte in
+  if ch < 0 then pos
+  else
+    let _ = buf.[pos] <- ch in
+    read_all (buf, pos + 1)
+in
 let rec lex input =
   let (src, pos) = input in
-  if pos < String.length src then
-    let ch = src.[pos] in
-    if is_digit ch then (1, (ch - 48, pos + 1))
-    else if ch == 43 then (2, pos + 1)
-    else (0, 0)
+  let ch = src.[pos] in
+  if is_digit ch then (1, (ch - 48, pos + 1))
+  else if ch == 43 then (2, pos + 1)
   else (0, 0)
 in
 let rec parse_two input =
@@ -41,21 +56,33 @@ let rec parse_expr src =
     else lhs
   else (0, 0)
 in
-let rec emit expr =
+let rec eval expr =
   let (tag, payload) = expr in
   if tag == 1 then payload
   else if tag == 2 then
     let (lhs, rhs) = payload in
-    let left = emit lhs in
-    let right = emit rhs in
+    let left = eval lhs in
+    let right = eval rhs in
     (left + right)
   else 88
 in
-let text = "40+39" in
-let newline = Bytes.create 1 in
-newline.[0] <- 10;
-let first = parse_expr text in
-let second = parse_expr "75" in
-let _ = write_byte (emit first) in
-let _ = write_byte (emit second) in
-write_byte newline.[0]
+let rec emit_program value =
+  let _ = write_byte 77 in
+  let _ = write_byte 90 in
+  let _ = write_byte 66 in
+  let _ = write_byte 67 in
+  let _ = emit_u32 1 in
+  let _ = emit_u32 15 in
+  let _ = emit_u32 3 in
+  let _ = emit_u32 0 in
+  let _ = write_byte 1 in
+  let _ = emit_u32 value in
+  let _ = write_byte 14 in
+  let _ = emit_u32 1 in
+  let _ = emit_u32 1 in
+  write_byte 0
+in
+let source = Bytes.create 1024 in
+let _ = read_all (source, 0) in
+let expr = parse_expr source in
+emit_program (eval expr)

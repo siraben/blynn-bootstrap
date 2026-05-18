@@ -27,7 +27,8 @@ Current stages:
 - `03-ok.ml0` and `03-char-string.ml0` are small ML0 sources accepted by
   `02-ml0-compiler.ml`.
 - `mlc/mlc.ml` is also compiled by `02-ml0-compiler.ml` in the current gate;
-  the emitted bytecode runs under `mzvm-seed` and prints `OK`.
+  the emitted bytecode runs under `mzvm-seed` as a tiny compiler, accepts
+  `40+39`, emits `.mzbc`, and that emitted bytecode prints `O`.
 
 Planned stages:
 

@@ -298,24 +298,11 @@ let rec compile mode =
           if depth < 0 then exit 1 else
           kon 5 (emit_acc depth) ch)
     else if ch = 119 then
-      let ch = expect 114 read_byte in
-      let ch = expect 105 ch in
-      let ch = expect 116 ch in
-      let ch = expect 101 ch in
-      let ch = expect 95 ch in
-      let next = ch in
-      if next = 98 then
-        let ch = expect 121 read_byte in
-        let ch = expect 116 ch in
-        let ch = expect 101 ch in
+      ident ch (fun word -> fun ch ->
+      if word = (0 - 3064569626749143468) then
         compile 2 ch env funcs base (fun expr_len -> fun expr_emit -> fun ch ->
         kon (expr_len + 9) (emit2 expr_emit emit_call_write_byte) ch)
-      else if next = 115 then
-        let ch = expect 116 read_byte in
-        let ch = expect 114 ch in
-        let ch = expect 105 ch in
-        let ch = expect 110 ch in
-        let ch = expect 103 ch in
+      else if word = 587990158255014305 then
         let ch = expect 34 (skip_space ch) in
         let rec string_out total_len =
           fun total_emit ->
@@ -328,7 +315,19 @@ let rec compile mode =
         in
         string_out 0 (fun dummy -> 0) ch
       else
-        exit 1
+        let ch = skip_space ch in
+        let target = funcs word in
+        if target < 0 then
+          let depth = env word in
+          if depth < 0 then exit 1 else
+          kon 5 (emit_acc depth) ch
+        else if atom_start ch then
+          compile 6 ch env funcs base (fun arg_len -> fun arg_emit -> fun ch ->
+          kon (arg_len + 5) (emit2 arg_emit (emit_call target)) ch)
+        else
+          let depth = env word in
+          if depth < 0 then exit 1 else
+          kon 5 (emit_acc depth) ch)
     else if ch = 101 then
       ident ch (fun word -> fun ch ->
       if word = 229130382 then
