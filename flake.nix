@@ -1493,6 +1493,7 @@ DEFINE SYSCALL 0F05
             check_return ${./tests/mescc/scaffold/03-call.c} 0
             check_return ${./tests/mescc/scaffold/04-call-0.c} 0
             check_return ${./tests/mescc/scaffold/05-call-1.c} 1
+            check_return ${./tests/mescc/scaffold/06-call-2.c} 0
             check_return ${./tests/mescc/scaffold/06-call-not-1.c} 0
             check_return ${./tests/mescc/scaffold/06-not-call-1.c} 0
             check_return ${./tests/mescc/scaffold/06-return-void.c} 0
