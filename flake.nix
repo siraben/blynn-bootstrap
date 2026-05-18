@@ -845,7 +845,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             ${mlcInterpSeedM2}/bin/mlc-interp-seed 02-ml0-compiler.ml < ${./tests/mlc}/read-byte.ml > read-byte.mzbc
             printf O | ${mzvmSeedM2}/bin/mzvm-seed read-byte.mzbc > read-byte.out
             ${mlcInterpSeedM2}/bin/mlc-interp-seed 02-ml0-compiler.ml < ${mlcSrc}/mlc.ml > mlc-stage.mzbc
-            printf '40+39' | ${mzvmSeedM2}/bin/mzvm-seed mlc-stage.mzbc > mlc-stage-compiled.mzbc
+            printf 'write_byte (40+39)' | ${mzvmSeedM2}/bin/mzvm-seed mlc-stage.mzbc > mlc-stage-compiled.mzbc
             ${mzvmSeedM2}/bin/mzvm-seed mlc-stage-compiled.mzbc > mlc-stage.out
             test "$(cat ok.out)" = OK
             test "$(cat arithmetic.out)" = H-
@@ -1124,7 +1124,7 @@ OK"
           buildScript = ''
             cp ${mlcSrc}/mlc.ml mlc.ml
             ${mlcSeedM2}/bin/mlc-seed mlc.ml mlc.byte
-            printf '40+39' | ${mzvmSeedM2}/bin/mzvm-seed mlc.byte > compiled.mzbc
+            printf 'write_byte (40+39)' | ${mzvmSeedM2}/bin/mzvm-seed mlc.byte > compiled.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled.mzbc)"
             test "$actual" = O
           '';
