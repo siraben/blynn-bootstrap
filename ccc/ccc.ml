@@ -75,6 +75,8 @@ let rec expect_int state =
   let pos = skip_space (src, pos0) in
   if (src.[pos] == 105) * (src.[pos + 1] == 110) * (src.[pos + 2] == 116) then pos + 3 else
   if (src.[pos] == 108) * (src.[pos + 1] == 111) * (src.[pos + 2] == 110) * (src.[pos + 3] == 103) then pos + 4 else
+  if (src.[pos] == 67) * (src.[pos + 1] == 111) * (src.[pos + 2] == 109) * (src.[pos + 3] == 112) * (src.[pos + 4] == 97) * (src.[pos + 5] == 114) * (src.[pos + 6] == 101) then pos + 7 else
+  if (src.[pos] == 66) * (src.[pos + 1] == 111) * (src.[pos + 2] == 120) then pos + 3 else
   if (src.[pos] == 117) * (src.[pos + 1] == 110) * (src.[pos + 2] == 115) * (src.[pos + 3] == 105) * (src.[pos + 4] == 103) * (src.[pos + 5] == 110) * (src.[pos + 6] == 101) * (src.[pos + 7] == 100) then
     let p1 = skip_space (src, pos + 8) in
     if (src.[p1] == 99) * (src.[p1 + 1] == 104) * (src.[p1 + 2] == 97) * (src.[p1 + 3] == 114) then p1 + 4 else pos + 8
@@ -445,6 +447,10 @@ let rec parse_expr_mode state =
       if name == 839785307 then parse_sizeof_value (src, pos) else
       if src.[after_name] == 40 then
         let p1 = skip_space (src, after_name + 1) in
+        if (name == 820214634) + (name == 468092681) then
+          let p2 = (skip_to_close_paren (src, p1)) + 1 in
+          (apply_func (funcs, (name, 0)), p2)
+        else
         if src.[p1] == 41 then (apply_func (funcs, (name, 0)), p1 + 1) else
         let p1_arg = skip_space (src, p1) in
         let arg =
@@ -590,7 +596,7 @@ let rec skip_struct_declaration state =
   let (src, pos) = state in
   if src.[pos] == 123 then
     let close = skip_balanced_block (src, (pos + 1, 0)) in
-    expect_ch (src, (close + 1, 59))
+    skip_struct_declaration (src, close + 1)
   else if src.[pos] == 59 then pos + 1 else
     skip_struct_declaration (src, pos + 1)
 in
@@ -1036,7 +1042,7 @@ let rec parse_program_loop state =
   let (pos0, funcs) = pair in
   let pos = skip_space (src, pos0) in
   if src.[pos] == 0 then exit 1 else
-  if is_typedef_at (src, pos) then parse_program_loop (src, (skip_statement (src, pos), funcs)) else
+  if is_typedef_at (src, pos) then parse_program_loop (src, (skip_struct_declaration (src, pos), funcs)) else
   if is_enum_at (src, pos) then parse_program_loop (src, (skip_statement (src, pos), funcs)) else
   if is_struct_at (src, pos) then parse_program_loop (src, (skip_struct_declaration (src, pos), funcs)) else
     let p0 = expect_type (src, pos) in
@@ -1062,6 +1068,12 @@ let rec parse_program_loop state =
         parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (0, (0, funcs)))))
       else if name == 187939072 then
         parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (0, (3, funcs)))))
+      else if (name == 317415445) + (name == 820214634) then
+        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (0, (0, funcs)))))
+      else if name == 468092681 then
+        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (0, (10, funcs)))))
+      else if name == 759352374 then
+        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (0, (1, funcs)))))
       else if (name == 402468489) + (name == 402468487) then
         parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (4, (0, funcs)))))
       else
