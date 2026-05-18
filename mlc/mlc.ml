@@ -57,6 +57,10 @@ let rec emit_add emit =
   let _ = emit_byte_if (emit, 5) in
   1
 in
+let rec emit_lt emit =
+  let _ = emit_byte_if (emit, 10) in
+  1
+in
 let rec emit_call_write_byte emit =
   let _ = emit_byte_if (emit, 14) in
   let _ = emit_u32_if (emit, 1) in
@@ -183,6 +187,12 @@ let rec compile_simple_expr input =
     let (right_len, done_pos) = right in
     let add_len = emit_add emit in
     (left_len + push_len + right_len + add_len, done_pos)
+  else if src.[next] == 60 then
+    let push_len = emit_push emit in
+    let right = compile_simple_expr (src, (next + 1, (shift_env env, emit))) in
+    let (right_len, done_pos) = right in
+    let lt_len = emit_lt emit in
+    (left_len + push_len + right_len + lt_len, done_pos)
   else
     left
 in
@@ -232,6 +242,12 @@ let rec compile_expr input =
     let (right_len, done_pos) = right in
     let add_len = emit_add emit in
     (left_len + push_len + right_len + add_len, done_pos)
+  else if src.[next] == 60 then
+    let push_len = emit_push emit in
+    let right = compile_expr (src, (next + 1, (shift_env env, emit))) in
+    let (right_len, done_pos) = right in
+    let lt_len = emit_lt emit in
+    (left_len + push_len + right_len + lt_len, done_pos)
   else
     left
 in

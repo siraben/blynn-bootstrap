@@ -857,6 +857,10 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             ${mzvmSeedM2}/bin/mzvm-seed mlc-stage-if-true.mzbc > mlc-stage-if-true.out
             printf "write_byte (if 0 then 'X' else 'O')" | ${mzvmSeedM2}/bin/mzvm-seed mlc-stage.mzbc > mlc-stage-if-false.mzbc
             ${mzvmSeedM2}/bin/mzvm-seed mlc-stage-if-false.mzbc > mlc-stage-if-false.out
+            printf "write_byte (if 40 < 41 then 'O' else 'X')" | ${mzvmSeedM2}/bin/mzvm-seed mlc-stage.mzbc > mlc-stage-if-lt-true.mzbc
+            ${mzvmSeedM2}/bin/mzvm-seed mlc-stage-if-lt-true.mzbc > mlc-stage-if-lt-true.out
+            printf "write_byte (if 41 < 40 then 'X' else 'O')" | ${mzvmSeedM2}/bin/mzvm-seed mlc-stage.mzbc > mlc-stage-if-lt-false.mzbc
+            ${mzvmSeedM2}/bin/mzvm-seed mlc-stage-if-lt-false.mzbc > mlc-stage-if-lt-false.out
             test "$(cat ok.out)" = OK
             test "$(cat arithmetic.out)" = H-
             test "$(cat conditional.out)" = OK
@@ -887,6 +891,8 @@ OK"
             test "$(cat mlc-stage-let.out)" = O
             test "$(cat mlc-stage-if-true.out)" = O
             test "$(cat mlc-stage-if-false.out)" = O
+            test "$(cat mlc-stage-if-lt-true.out)" = O
+            test "$(cat mlc-stage-if-lt-false.out)" = O
           '';
           installScript = ''
             install -Dm644 02-ml0-compiler.ml "$out/share/mlc/stages/02-ml0-compiler.ml"
@@ -921,6 +927,10 @@ OK"
             install -Dm644 mlc-stage-if-true.out "$out/share/mlc/stages/mlc-stage-if-true.out"
             install -Dm644 mlc-stage-if-false.mzbc "$out/share/mlc/stages/mlc-stage-if-false.mzbc"
             install -Dm644 mlc-stage-if-false.out "$out/share/mlc/stages/mlc-stage-if-false.out"
+            install -Dm644 mlc-stage-if-lt-true.mzbc "$out/share/mlc/stages/mlc-stage-if-lt-true.mzbc"
+            install -Dm644 mlc-stage-if-lt-true.out "$out/share/mlc/stages/mlc-stage-if-lt-true.out"
+            install -Dm644 mlc-stage-if-lt-false.mzbc "$out/share/mlc/stages/mlc-stage-if-lt-false.mzbc"
+            install -Dm644 mlc-stage-if-lt-false.out "$out/share/mlc/stages/mlc-stage-if-lt-false.out"
           '';
         };
 
@@ -1169,6 +1179,12 @@ OK"
             printf "write_byte (if 0 then 'X' else 'O')" | ${mzvmSeedM2}/bin/mzvm-seed mlc.byte > compiled-if-false.mzbc
             actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-if-false.mzbc)"
             test "$actual" = O
+            printf "write_byte (if 40 < 41 then 'O' else 'X')" | ${mzvmSeedM2}/bin/mzvm-seed mlc.byte > compiled-if-lt-true.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-if-lt-true.mzbc)"
+            test "$actual" = O
+            printf "write_byte (if 41 < 40 then 'X' else 'O')" | ${mzvmSeedM2}/bin/mzvm-seed mlc.byte > compiled-if-lt-false.mzbc
+            actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-if-lt-false.mzbc)"
+            test "$actual" = O
           '';
           installScript = ''
             install -Dm644 mlc.byte "$out/share/mlc/mlc.byte"
@@ -1178,6 +1194,8 @@ OK"
             install -Dm644 compiled-let.mzbc "$out/share/mlc/compiled-let.mzbc"
             install -Dm644 compiled-if-true.mzbc "$out/share/mlc/compiled-if-true.mzbc"
             install -Dm644 compiled-if-false.mzbc "$out/share/mlc/compiled-if-false.mzbc"
+            install -Dm644 compiled-if-lt-true.mzbc "$out/share/mlc/compiled-if-lt-true.mzbc"
+            install -Dm644 compiled-if-lt-false.mzbc "$out/share/mlc/compiled-if-lt-false.mzbc"
           '';
         };
 
