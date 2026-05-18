@@ -218,11 +218,21 @@ let rec is_unsigned_char_cast state =
   if p1 < 0 then 0 else
   (src.[p1] == 99) * (src.[p1 + 1] == 104) * (src.[p1 + 2] == 97) * (src.[p1 + 3] == 114)
 in
+let rec is_char_cast state =
+  let (src, pos0) = state in
+  let pos = skip_space (src, pos0) in
+  (src.[pos] == 99) * (src.[pos + 1] == 104) * (src.[pos + 2] == 97) * (src.[pos + 3] == 114)
+in
 let rec expect_unsigned_char_cast state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
   let p1 = skip_space (src, pos + 8) in
   if (src.[p1] == 99) * (src.[p1 + 1] == 104) * (src.[p1 + 2] == 97) * (src.[p1 + 3] == 114) then p1 + 4 else exit 1
+in
+let rec expect_char_cast state =
+  let (src, pos0) = state in
+  let pos = skip_space (src, pos0) in
+  if (src.[pos] == 99) * (src.[pos + 1] == 104) * (src.[pos + 2] == 97) * (src.[pos + 3] == 114) then pos + 4 else exit 1
 in
 let rec empty_funcs unit =
   let _ = unit in
@@ -288,9 +298,15 @@ let rec parse_expr_mode state =
       if is_unsigned_char_cast (src, pos + 1) then
         let cast_end = expect_unsigned_char_cast (src, pos + 1) in
         let p1 = expect_ch (src, (cast_end, 41)) in
-        let expr = parse_expr_mode (src, (p1, (funcs, (env, mode)))) in
+        let expr = parse_expr_mode (src, (p1, (funcs, (env, 1)))) in
         let (value, value_end) = expr in
         if value < 0 then (value + 256, value_end) else (value, value_end)
+      else if is_char_cast (src, pos + 1) then
+        let cast_end = expect_char_cast (src, pos + 1) in
+        let p1 = expect_ch (src, (cast_end, 41)) in
+        let expr = parse_expr_mode (src, (p1, (funcs, (env, 1)))) in
+        let (value, value_end) = expr in
+        if value > 127 then (value - 256, value_end) else (value, value_end)
       else
         let expr = parse_expr_mode (src, (pos + 1, (funcs, (env, 0)))) in
         let (value, value_end) = expr in
