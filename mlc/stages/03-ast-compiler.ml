@@ -603,7 +603,9 @@ let rec parse_binop state =
   let (pos0, allow_seq) = pair in
   let pos = skip_space (src, pos0) in
   if (src.[pos] == ';') * allow_seq then (1, (pos + 1, 0)) else
-  if (src.[pos] == '=') * (src.[pos + 1] == '=') then (2, (pos + 2, 1)) else
+  if src.[pos] == '=' then
+    if src.[pos + 1] == '=' then (2, (pos + 2, 1)) else (2, (pos + 1, 1))
+  else
   if (src.[pos] == '!') * (src.[pos + 1] == '=') then (3, (pos + 2, 1)) else
   if src.[pos] == '<' then
     if src.[pos + 1] == '=' then (5, (pos + 2, 1)) else (4, (pos + 1, 1))

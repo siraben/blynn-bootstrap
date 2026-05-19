@@ -134,9 +134,10 @@ now covers `read_byte`, literal `write_string`, string literals as immutable
 blocks, `String.length` over literal and bound strings, `Bytes.create`,
 `Bytes.length`, `s.[i]`, `b.[i]`, `b.[i] <- ch`, stderr-only `debug_byte` /
 `debug_string` / decimal `debug_int`, raw and escaped char literals, `()`,
-`+`, `-`, `*`, `/`, unary `-`, boolean `!`, `!=`, `<`, `<=`, `>`, and `>=`,
-and its program parser accepts declaration-style top-level `let` and pair
-destructuring by lowering them to the same checked expression AST.
+`+`, `-`, `*`, `/`, unary `-`, boolean `!`, ML-style `=` plus transitional
+`==`, `!=`, `<`, `<=`, `>`, and `>=`, and its program parser accepts
+declaration-style top-level `let` and pair destructuring by lowering them to
+the same checked expression AST.
 
 The older `mlc-seed.c` is deliberately smaller than the full language and is
 now transitional. It is a tiny recursive-descent compiler for `let` bindings,

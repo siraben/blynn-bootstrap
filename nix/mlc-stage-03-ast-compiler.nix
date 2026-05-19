@@ -86,6 +86,9 @@ stageRun {
         printf "write_byte (if 1 == 1 then 'O' else 'X')" | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-if.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-if.mzbc)"
         test "$actual" = O
+        printf "write_byte (if 1 = 1 then 'O' else 'X')" | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-if-ml-eq.mzbc
+        actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-if-ml-eq.mzbc)"
+        test "$actual" = O
         printf "write_byte (if true then 'O' else 'X')" | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-if-bool.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-if-bool.mzbc)"
         test "$actual" = O
@@ -126,6 +129,9 @@ stageRun {
           exit 1
         fi
         if printf 'write_byte (!1)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-unary-type-error.mzbc; then
+          exit 1
+        fi
+        if printf 'write_byte (if true = 1 then 79 else 88)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-ml-eq-type-error.mzbc; then
           exit 1
         fi
         if printf 'write_byte (if true < false then 79 else 88)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-comparison-type-error.mzbc; then
@@ -187,6 +193,7 @@ stageRun {
     install -Dm644 03-div.mzbc "$out/share/mlc/stages/03-div.mzbc"
     install -Dm644 03-unary.mzbc "$out/share/mlc/stages/03-unary.mzbc"
     install -Dm644 03-if.mzbc "$out/share/mlc/stages/03-if.mzbc"
+    install -Dm644 03-if-ml-eq.mzbc "$out/share/mlc/stages/03-if-ml-eq.mzbc"
     install -Dm644 03-if-bool.mzbc "$out/share/mlc/stages/03-if-bool.mzbc"
     install -Dm644 03-comparison.mzbc "$out/share/mlc/stages/03-comparison.mzbc"
     install -Dm644 03-let.mzbc "$out/share/mlc/stages/03-let.mzbc"

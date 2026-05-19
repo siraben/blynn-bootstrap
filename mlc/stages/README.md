@@ -93,7 +93,8 @@ Current stages:
   bytes, `read_byte`, literal `write_string`, stderr-only `debug_byte` /
   `debug_string` / decimal `debug_int`, char literals including escapes, `()`,
   precedence-aware integer `+` / `-` / `*` / `/`, unary integer `-`, boolean
-  `!`, integer comparisons, sequencing, bool literals, conditionals whose
+  `!`, ML-style `=` plus transitional `==`, integer comparisons, sequencing,
+  bool literals, conditionals whose
   guards must type as `bool`, expression-level `let ... in ...`,
   declaration-style top-level `let` bindings, pair construction, pair
   destructuring, top-level pair destructuring, full-input consumption, and
