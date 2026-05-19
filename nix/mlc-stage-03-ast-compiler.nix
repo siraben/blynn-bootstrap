@@ -52,6 +52,10 @@ stageRun {
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-debug-byte.mzbc 2> 03-debug-byte.err)"
         test "$actual" = O
         test "$(cat 03-debug-byte.err)" = T
+        printf 'debug_int (40 + 2); write_byte 79' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-debug-int.mzbc
+        actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-debug-int.mzbc 2> 03-debug-int.err)"
+        test "$actual" = O
+        test "$(cat 03-debug-int.err)" = 42
         printf '(); write_byte 79' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-unit.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-unit.mzbc)"
         test "$actual" = O
@@ -173,6 +177,7 @@ stageRun {
     install -Dm644 03-bytes-index-var.mzbc "$out/share/mlc/stages/03-bytes-index-var.mzbc"
     install -Dm644 03-debug-string.mzbc "$out/share/mlc/stages/03-debug-string.mzbc"
     install -Dm644 03-debug-byte.mzbc "$out/share/mlc/stages/03-debug-byte.mzbc"
+    install -Dm644 03-debug-int.mzbc "$out/share/mlc/stages/03-debug-int.mzbc"
     install -Dm644 03-unit.mzbc "$out/share/mlc/stages/03-unit.mzbc"
     install -Dm644 03-char.mzbc "$out/share/mlc/stages/03-char.mzbc"
     install -Dm644 03-escaped-char.mzbc "$out/share/mlc/stages/03-escaped-char.mzbc"

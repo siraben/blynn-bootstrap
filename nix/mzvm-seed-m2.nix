@@ -49,6 +49,11 @@ stageRun {
     ./mzvm-seed debug.mzbc > debug-out.txt 2> debug-err.txt
     test "$(cat debug-out.txt)" = ""
     test "$(cat debug-err.txt)" = T
+    printf '%b' '\115\132\102\103\001\000\000\000\017\000\000\000\005\000\000\000\000\000\000\000' > debug-int.mzbc
+    printf '%b' '\001\052\000\000\000\016\001\000\000\000\004\000\000\000\000' >> debug-int.mzbc
+    ./mzvm-seed debug-int.mzbc > debug-int-out.txt 2> debug-int-err.txt
+    test "$(cat debug-int-out.txt)" = ""
+    test "$(cat debug-int-err.txt)" = 42
     printf '%b' '\115\132\102\103\001\000\000\000\001\000\000\000\000\000\000\000\000\000\000\000\377' > bad-op.mzbc
     if ./mzvm-seed bad-op.mzbc > bad-op-out.txt 2> bad-op-err.txt; then
       exit 1
@@ -81,6 +86,7 @@ stageRun {
     install -Dm644 block.mzbc "$out/share/mzvm/tests/block.mzbc"
     install -Dm644 signed.mzbc "$out/share/mzvm/tests/signed.mzbc"
     install -Dm644 debug.mzbc "$out/share/mzvm/tests/debug.mzbc"
+    install -Dm644 debug-int.mzbc "$out/share/mzvm/tests/debug-int.mzbc"
     install -Dm644 bad-op.mzbc "$out/share/mzvm/tests/bad-op.mzbc"
     install -Dm644 gc.mzbc "$out/share/mzvm/tests/gc.mzbc"
   '';

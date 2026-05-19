@@ -34,6 +34,10 @@ stageRun {
     actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-debug-string.mzbc 2> debug-string.err)"
     test "$actual" = O
     test "$(cat debug-string.err)" = TRACE
+    printf 'let _ = debug_int (40 + 2) in write_byte 79' | ${mzvmSeedM2}/bin/mzvm-seed mlc.byte > compiled-debug-int.mzbc
+    actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-debug-int.mzbc 2> debug-int.err)"
+    test "$actual" = O
+    test "$(cat debug-int.err)" = 42
     printf 'let x = 40 in write_byte (x + 39)' | ${mzvmSeedM2}/bin/mzvm-seed mlc.byte > compiled-let.mzbc
     actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-let.mzbc)"
     test "$actual" = O

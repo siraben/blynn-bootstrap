@@ -124,6 +124,8 @@ implements the minimal table needed by the first `mlc-seed` fixtures:
 0  read_byte  : unit -> int
 1  write_byte : int -> unit
 2  exit       : int -> never
+3  debug_byte : int -> unit, writes one byte to stderr
+4  debug_int  : int -> unit, writes a decimal integer to stderr
 ```
 
 `C_CALL` currently accepts one argument. Multi-argument primitives should be

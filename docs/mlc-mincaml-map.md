@@ -132,11 +132,11 @@ Stage 03 also type-checks sequencing with `;`, requiring the left expression to
 have type `unit` before emitting the right expression. Its typed integer core
 now covers `read_byte`, literal `write_string`, string literals as immutable
 blocks, `String.length` over literal and bound strings, `Bytes.create`,
-`Bytes.length`, `s.[i]`, `b.[i]`, `b.[i] <- ch`, raw and escaped char
-literals, `()`, `+`, `-`, `*`, `/`, unary `-`, boolean `!`, `!=`, `<`, `<=`,
-`>`, and `>=`, and its program parser accepts declaration-style top-level
-`let` and pair destructuring by lowering them to the same checked expression
-AST.
+`Bytes.length`, `s.[i]`, `b.[i]`, `b.[i] <- ch`, stderr-only `debug_byte` /
+`debug_string` / decimal `debug_int`, raw and escaped char literals, `()`,
+`+`, `-`, `*`, `/`, unary `-`, boolean `!`, `!=`, `<`, `<=`, `>`, and `>=`,
+and its program parser accepts declaration-style top-level `let` and pair
+destructuring by lowering them to the same checked expression AST.
 
 The older `mlc-seed.c` is deliberately smaller than the full language and is
 now transitional. It is a tiny recursive-descent compiler for `let` bindings,
@@ -177,7 +177,8 @@ written in the seed core language and has a staged one-lookahead
 lexer/parser/emitter path for byte literals, escaped char literals, immutable
 string byte blocks, `String.length` / `Bytes.length`, local `let`, integer
 expressions, nested conditionals, `read_byte`, `Bytes.create`, dynamic byte indexing and
-writes, imperative `Cell.create` / `Cell.get` / `Cell.set`, two-field record
+writes, stderr-only `debug_byte` / `debug_string` / decimal `debug_int`,
+imperative `Cell.create` / `Cell.get` / `Cell.set`, two-field record
 declarations/literals/field reads, declaration-style top-level `let` /
 `let rec`, arbitrary final direct calls, bounded keyword lookahead with capped
 identifier hashes, and the first ADT/pattern slice. The `mlc.byte.selfhost`

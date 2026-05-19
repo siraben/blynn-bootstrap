@@ -14,7 +14,7 @@ let rec emit_header code_len =
   let _ = write_byte 67 in
   let _ = emit_u32 1 in
   let _ = emit_u32 code_len in
-  let _ = emit_u32 4 in
+  let _ = emit_u32 5 in
   emit_u32 0
 in
 let rec emit_write_const value =
@@ -109,6 +109,12 @@ let rec emit_call_debug_byte emit =
   let _ = emit_byte_if (emit, 14) in
   let _ = emit_u32_if (emit, 1) in
   let _ = emit_u32_if (emit, 3) in
+  9
+in
+let rec emit_call_debug_int emit =
+  let _ = emit_byte_if (emit, 14) in
+  let _ = emit_u32_if (emit, 1) in
+  let _ = emit_u32_if (emit, 4) in
   9
 in
 let rec emit_call_exit emit =
@@ -386,6 +392,15 @@ let rec is_debug_string_at input =
   if (src.[pos] == 100) * (src.[pos + 1] == 101) * (src.[pos + 2] == 98) then
     if (src.[pos + 3] == 117) * (src.[pos + 4] == 103) * (src.[pos + 5] == 95) * (src.[pos + 6] == 115) then
       (src.[pos + 7] == 116) * (src.[pos + 8] == 114) * (src.[pos + 9] == 105) * (src.[pos + 10] == 110) * (src.[pos + 11] == 103) * (1 - (is_ident (src.[pos + 12])))
+    else 0
+  else 0
+in
+let rec is_debug_int_at input =
+  let (src, pos0) = input in
+  let pos = skip_space (src, pos0) in
+  if (src.[pos] == 100) * (src.[pos + 1] == 101) * (src.[pos + 2] == 98) then
+    if (src.[pos + 3] == 117) * (src.[pos + 4] == 103) * (src.[pos + 5] == 95) * (src.[pos + 6] == 105) then
+      (src.[pos + 7] == 110) * (src.[pos + 8] == 116) * (1 - (is_ident (src.[pos + 9])))
     else 0
   else 0
 in
@@ -1137,6 +1152,12 @@ let rec compile_expr input =
     let expr = compile_expr (src, (p, (env, (ctors, (funcs, emit))))) in
     let (expr_len, done_pos) = expr in
     let call_len = emit_call_debug_byte (emit) in
+    (expr_len + call_len, done_pos)
+  else if is_debug_int_at (src, pos) then
+    let p = skip_space (src, pos + 9) in
+    let expr = compile_expr (src, (p, (env, (ctors, (funcs, emit))))) in
+    let (expr_len, done_pos) = expr in
+    let call_len = emit_call_debug_int (emit) in
     (expr_len + call_len, done_pos)
   else if is_debug_string_at (src, pos) then
     let p = skip_space (src, pos + 12) in

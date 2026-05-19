@@ -795,7 +795,7 @@ if ch < 0 then
   let _ = write_byte 'C' in
   let _ = write_u32 1 in
   let _ = write_u32 code_len in
-  let _ = write_u32 4 in
+  let _ = write_u32 5 in
   let _ = write_u32 0 in
   code_emit 0
 else

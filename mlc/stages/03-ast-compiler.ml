@@ -8,7 +8,8 @@ type expr_more4 = EGt of expr | EGe of expr | EIf of expr | EMore5 of expr_more5
 type expr_more5 = ELet of expr | EPair of expr | ELetPair of expr | EMore6 of expr_more6
 type expr_more6 = ESeq of expr | EDebugByte of expr | EReadByte | EMore7 of expr_more7
 type expr_more7 = EString of int | EStringLength of expr | EBytesCreate of expr | EMore8 of expr_more8
-type expr_more8 = EBytesLength of expr | EIndex of expr | ESetIndex of expr | EUnit
+type expr_more8 = EBytesLength of expr | EIndex of expr | ESetIndex of expr | EMore9 of expr_more9
+type expr_more9 = EDebugInt of expr | EUnit
 type parse_reply = ParseOk of int | ParseErr
 
 let rec byte n =
@@ -27,7 +28,7 @@ let rec emit_header len =
   let _ = write_byte 'C' in
   let _ = emit_u32 1 in
   let _ = emit_u32 len in
-  let _ = emit_u32 4 in
+  let _ = emit_u32 5 in
   emit_u32 0
 in
 let rec emit_byte_if state =
@@ -127,6 +128,12 @@ let rec emit_call_debug_byte emit =
   let _ = emit_byte_if (emit, 14) in
   let _ = emit_u32_if (emit, 1) in
   let _ = emit_u32_if (emit, 3) in
+  9
+in
+let rec emit_call_debug_int emit =
+  let _ = emit_byte_if (emit, 14) in
+  let _ = emit_u32_if (emit, 1) in
+  let _ = emit_u32_if (emit, 4) in
   9
 in
 let rec emit_call_read_byte emit =
@@ -294,6 +301,10 @@ let rec is_debug_string_at state =
   let (src, pos0) = state in
   p_keyword_at (src, (pos0, "debug_string"))
 in
+let rec is_debug_int_at state =
+  let (src, pos0) = state in
+  p_keyword_at (src, (pos0, "debug_int"))
+in
 let rec is_read_byte_at state =
   let (src, pos0) = state in
   p_keyword_at (src, (pos0, "read_byte"))
@@ -346,6 +357,10 @@ let rec need_debug_string state =
   let (src, pos0) = state in
   p_need_keyword (src, (pos0, "debug_string"))
 in
+let rec need_debug_int state =
+  let (src, pos0) = state in
+  p_need_keyword (src, (pos0, "debug_int"))
+in
 let rec need_read_byte state =
   let (src, pos0) = state in
   p_need_keyword (src, (pos0, "read_byte"))
@@ -391,13 +406,16 @@ let rec parse_ident state =
 in
 let rec unit_expr dummy =
   let _ = dummy in
-  EMore (EMore2 (EMore3 (EMore4 (EMore5 (EMore6 (EMore7 (EMore8 EUnit)))))))
+  EMore (EMore2 (EMore3 (EMore4 (EMore5 (EMore6 (EMore7 (EMore8 (EMore9 EUnit))))))))
 in
 let rec write_byte_expr ch =
   EMore (EWriteByte (EInt ch))
 in
 let rec debug_byte_expr ch =
   EMore (EMore2 (EMore3 (EMore4 (EMore5 (EMore6 (EDebugByte (EInt ch)))))))
+in
+let rec debug_int_expr expr =
+  EMore (EMore2 (EMore3 (EMore4 (EMore5 (EMore6 (EMore7 (EMore8 (EMore9 (EDebugInt expr)))))))))
 in
 let rec string_expr pos =
   EMore (EMore2 (EMore3 (EMore4 (EMore5 (EMore6 (EMore7 (EString pos)))))))
@@ -669,6 +687,11 @@ let rec parse_expr_prec state =
         let expr = parse_expr_prec (src, (expr_pos, (0, (0, (0, EInt 0))))) in
         let (expr_ast, expr_end) = expr in
         (EMore (EMore2 (EMore3 (EMore4 (EMore5 (EMore6 (EDebugByte expr_ast)))))), expr_end)
+      else if is_debug_int_at (src, pos) then
+        let expr_pos = need_debug_int (src, pos) in
+        let expr = parse_expr_prec (src, (expr_pos, (0, (0, (0, EInt 0))))) in
+        let (expr_ast, expr_end) = expr in
+        (debug_int_expr expr_ast, expr_end)
       else if is_debug_string_at (src, pos) then
         parse_debug_string (src, pos)
       else if is_string_length_at (src, pos) then
@@ -959,7 +982,12 @@ let rec infer state =
                                       let _ = need_ty (infer (env, index), TyInt) in
                                       let _ = need_ty (infer (env, value), TyInt) in
                                       TyUnit
-                                  | EUnit -> TyUnit
+                                  | EMore9 more9 ->
+                                      match more9 with
+                                        EDebugInt expr ->
+                                          let _ = need_ty (infer (env, expr), TyInt) in
+                                          TyUnit
+                                      | EUnit -> TyUnit
 in
 let rec empty_env unit =
   let _ = unit in
@@ -1194,7 +1222,13 @@ let rec emit_expr state =
                                           let value_len = emit_expr (value, (src, (shift_env (shift_env env), emit))) in
                                           let set_len = emit_setfield_dyn emit in
                                           base_len + push_base + index_len + push_index + value_len + set_len
-                                      | EUnit -> emit_const (emit, 0)
+                                      | EMore9 more9 ->
+                                          match more9 with
+                                            EDebugInt expr ->
+                                              let expr_len = emit_expr (expr, (src, (env, emit))) in
+                                              let call_len = emit_call_debug_int emit in
+                                              expr_len + call_len
+                                          | EUnit -> emit_const (emit, 0)
 in
 let rec emit_program src =
   let parsed = parse_program (src, 0) in

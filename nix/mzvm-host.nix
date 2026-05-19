@@ -38,6 +38,11 @@ stdenv.mkDerivation {
     ./mzvm debug.mzbc > debug-out.txt 2> debug-err.txt
     test "$(cat debug-out.txt)" = ""
     test "$(cat debug-err.txt)" = T
+    printf '%b' '\115\132\102\103\001\000\000\000\017\000\000\000\005\000\000\000\000\000\000\000' > debug-int.mzbc
+    printf '%b' '\001\052\000\000\000\016\001\000\000\000\004\000\000\000\000' >> debug-int.mzbc
+    ./mzvm debug-int.mzbc > debug-int-out.txt 2> debug-int-err.txt
+    test "$(cat debug-int-out.txt)" = ""
+    test "$(cat debug-int-err.txt)" = 42
     printf '%b' '\115\132\102\103\001\000\000\000\001\000\000\000\000\000\000\000\000\000\000\000\377' > bad-op.mzbc
     if ./mzvm bad-op.mzbc > bad-op-out.txt 2> bad-op-err.txt; then
       exit 1

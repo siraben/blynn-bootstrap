@@ -351,6 +351,12 @@ static void prim_debug_byte(void)
   acc = val_int(0);
 }
 
+static void prim_debug_int(void)
+{
+  fput_long(stderr, int_val(acc));
+  acc = val_int(0);
+}
+
 static void prim_exit(void)
 {
   exit((int)int_val(acc));
@@ -371,6 +377,7 @@ static void call_prim(long argc, long prim)
   else if (prim == 1) prim_write_byte();
   else if (prim == 2) prim_exit();
   else if (prim == 3) prim_debug_byte();
+  else if (prim == 4) prim_debug_int();
   else die("unknown primitive");
 }
 
