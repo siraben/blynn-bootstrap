@@ -353,188 +353,117 @@ let rec func_body_start state =
   if name == want then body_start else
   if name < 0 then exit 1 else func_body_start (tail, want)
 in
+let rec string_at_loop state =
+  let (src, pair) = state in
+  let (pos, pair2) = pair in
+  let (text, index) = pair2 in
+  if index == String.length text then 1 else
+  if src.[pos + index] == text.[index] then string_at_loop (src, (pos, (text, index + 1))) else 0
+in
+let rec string_at input =
+  let (src, pair) = input in
+  let (pos0, text) = pair in
+  let pos = skip_space (src, pos0) in
+  string_at_loop (src, (pos, (text, 0)))
+in
+let rec keyword_at input =
+  let (src, pair) = input in
+  let (pos0, text) = pair in
+  let pos = skip_space (src, pos0) in
+  let len = String.length text in
+  if string_at_loop (src, (pos, (text, 0))) == 1 then 1 - (is_ident (src.[pos + len])) else 0
+in
 let rec is_type_at input =
   let (src, pos0) = input in
-  let pos = skip_space (src, pos0) in
-  if (src.[pos] == 116) * (src.[pos + 1] == 121) then
-    (src.[pos + 2] == 112) * (src.[pos + 3] == 101) * (1 - (is_ident (src.[pos + 4])))
-  else 0
+  keyword_at (src, (pos0, "type"))
 in
 let rec is_of_at input =
   let (src, pos0) = input in
-  let pos = skip_space (src, pos0) in
-  let ok0 = src.[pos] == 111 in
-  let ok1 = ok0 * (src.[pos + 1] == 102) in
-  ok1 * (1 - (is_ident (src.[pos + 2])))
+  keyword_at (src, (pos0, "of"))
 in
 let rec is_match_at input =
   let (src, pos0) = input in
-  let pos = skip_space (src, pos0) in
-  if (src.[pos] == 109) * (src.[pos + 1] == 97) * (src.[pos + 2] == 116) then
-    (src.[pos + 3] == 99) * (src.[pos + 4] == 104) * (1 - (is_ident (src.[pos + 5])))
-  else 0
+  keyword_at (src, (pos0, "match"))
 in
 let rec is_write_byte_at input =
   let (src, pos0) = input in
-  let pos = skip_space (src, pos0) in
-  if (src.[pos] == 119) * (src.[pos + 1] == 114) * (src.[pos + 2] == 105) * (src.[pos + 3] == 116) then
-    if (src.[pos + 4] == 101) * (src.[pos + 5] == 95) * (src.[pos + 6] == 98) then
-      (src.[pos + 7] == 121) * (src.[pos + 8] == 116) * (src.[pos + 9] == 101) * (1 - (is_ident (src.[pos + 10])))
-    else 0
-  else 0
+  keyword_at (src, (pos0, "write_byte"))
 in
 let rec is_write_string_at input =
   let (src, pos0) = input in
-  let pos = skip_space (src, pos0) in
-  if (src.[pos] == 119) * (src.[pos + 1] == 114) * (src.[pos + 2] == 105) * (src.[pos + 3] == 116) then
-    if (src.[pos + 4] == 101) * (src.[pos + 5] == 95) * (src.[pos + 6] == 115) * (src.[pos + 7] == 116) then
-      (src.[pos + 8] == 114) * (src.[pos + 9] == 105) * (src.[pos + 10] == 110) * (src.[pos + 11] == 103) * (1 - (is_ident (src.[pos + 12])))
-    else 0
-  else 0
+  keyword_at (src, (pos0, "write_string"))
 in
 let rec is_debug_byte_at input =
   let (src, pos0) = input in
-  let pos = skip_space (src, pos0) in
-  if (src.[pos] == 100) * (src.[pos + 1] == 101) * (src.[pos + 2] == 98) then
-    if (src.[pos + 3] == 117) * (src.[pos + 4] == 103) * (src.[pos + 5] == 95) * (src.[pos + 6] == 98) then
-      (src.[pos + 7] == 121) * (src.[pos + 8] == 116) * (src.[pos + 9] == 101) * (1 - (is_ident (src.[pos + 10])))
-    else 0
-  else 0
+  keyword_at (src, (pos0, "debug_byte"))
 in
 let rec is_debug_string_at input =
   let (src, pos0) = input in
-  let pos = skip_space (src, pos0) in
-  if (src.[pos] == 100) * (src.[pos + 1] == 101) * (src.[pos + 2] == 98) then
-    if (src.[pos + 3] == 117) * (src.[pos + 4] == 103) * (src.[pos + 5] == 95) * (src.[pos + 6] == 115) then
-      (src.[pos + 7] == 116) * (src.[pos + 8] == 114) * (src.[pos + 9] == 105) * (src.[pos + 10] == 110) * (src.[pos + 11] == 103) * (1 - (is_ident (src.[pos + 12])))
-    else 0
-  else 0
+  keyword_at (src, (pos0, "debug_string"))
 in
 let rec is_debug_printf_at input =
   let (src, pos0) = input in
-  let pos = skip_space (src, pos0) in
-  if (src.[pos] == 100) * (src.[pos + 1] == 101) * (src.[pos + 2] == 98) then
-    if (src.[pos + 3] == 117) * (src.[pos + 4] == 103) * (src.[pos + 5] == 95) * (src.[pos + 6] == 112) then
-      if (src.[pos + 7] == 114) * (src.[pos + 8] == 105) * (src.[pos + 9] == 110) * (src.[pos + 10] == 116) then
-        (src.[pos + 11] == 102) * (1 - (is_ident (src.[pos + 12])))
-      else 0
-    else 0
-  else 0
+  keyword_at (src, (pos0, "debug_printf"))
 in
 let rec is_debug_int_at input =
   let (src, pos0) = input in
-  let pos = skip_space (src, pos0) in
-  if (src.[pos] == 100) * (src.[pos + 1] == 101) * (src.[pos + 2] == 98) then
-    if (src.[pos + 3] == 117) * (src.[pos + 4] == 103) * (src.[pos + 5] == 95) * (src.[pos + 6] == 105) then
-      (src.[pos + 7] == 110) * (src.[pos + 8] == 116) * (1 - (is_ident (src.[pos + 9])))
-    else 0
-  else 0
+  keyword_at (src, (pos0, "debug_int"))
 in
 let rec is_if_at input =
   let (src, pos0) = input in
-  let pos = skip_space (src, pos0) in
-  let ok0 = src.[pos] == 105 in
-  let ok1 = ok0 * (src.[pos + 1] == 102) in
-  ok1 * (1 - (is_ident (src.[pos + 2])))
+  keyword_at (src, (pos0, "if"))
 in
 let rec is_exit_at input =
   let (src, pos0) = input in
-  let pos = skip_space (src, pos0) in
-  if (src.[pos] == 101) * (src.[pos + 1] == 120) then
-    (src.[pos + 2] == 105) * (src.[pos + 3] == 116) * (1 - (is_ident (src.[pos + 4])))
-  else 0
+  keyword_at (src, (pos0, "exit"))
 in
 let rec is_read_byte_at input =
   let (src, pos0) = input in
-  let pos = skip_space (src, pos0) in
-  if (src.[pos] == 114) * (src.[pos + 1] == 101) * (src.[pos + 2] == 97) * (src.[pos + 3] == 100) then
-    if (src.[pos + 4] == 95) * (src.[pos + 5] == 98) * (src.[pos + 6] == 121) then
-      (src.[pos + 7] == 116) * (src.[pos + 8] == 101) * (1 - (is_ident (src.[pos + 9])))
-    else 0
-  else 0
+  keyword_at (src, (pos0, "read_byte"))
 in
 let rec is_bytes_create_at input =
   let (src, pos0) = input in
-  let pos = skip_space (src, pos0) in
-  if (src.[pos] == 66) * (src.[pos + 1] == 121) * (src.[pos + 2] == 116) * (src.[pos + 3] == 101) then
-    if (src.[pos + 4] == 115) * (src.[pos + 5] == 46) * (src.[pos + 6] == 99) * (src.[pos + 7] == 114) then
-      (src.[pos + 8] == 101) * (src.[pos + 9] == 97) * (src.[pos + 10] == 116) * (src.[pos + 11] == 101) * (1 - (is_ident (src.[pos + 12])))
-    else 0
-  else 0
+  keyword_at (src, (pos0, "Bytes.create"))
 in
 let rec is_bytes_length_at input =
   let (src, pos0) = input in
-  let pos = skip_space (src, pos0) in
-  if (src.[pos] == 66) * (src.[pos + 1] == 121) * (src.[pos + 2] == 116) * (src.[pos + 3] == 101) then
-    if (src.[pos + 4] == 115) * (src.[pos + 5] == 46) * (src.[pos + 6] == 108) * (src.[pos + 7] == 101) then
-      (src.[pos + 8] == 110) * (src.[pos + 9] == 103) * (src.[pos + 10] == 116) * (src.[pos + 11] == 104) * (1 - (is_ident (src.[pos + 12])))
-    else 0
-  else 0
+  keyword_at (src, (pos0, "Bytes.length"))
 in
 let rec is_string_length_at input =
   let (src, pos0) = input in
-  let pos = skip_space (src, pos0) in
-  if (src.[pos] == 83) * (src.[pos + 1] == 116) * (src.[pos + 2] == 114) * (src.[pos + 3] == 105) then
-    if (src.[pos + 4] == 110) * (src.[pos + 5] == 103) * (src.[pos + 6] == 46) * (src.[pos + 7] == 108) then
-      (src.[pos + 8] == 101) * (src.[pos + 9] == 110) * (src.[pos + 10] == 103) * (src.[pos + 11] == 116) * (src.[pos + 12] == 104) * (1 - (is_ident (src.[pos + 13])))
-    else 0
-  else 0
+  keyword_at (src, (pos0, "String.length"))
 in
 let rec is_cell_create_at input =
   let (src, pos0) = input in
-  let pos = skip_space (src, pos0) in
-  if (src.[pos] == 67) * (src.[pos + 1] == 101) * (src.[pos + 2] == 108) * (src.[pos + 3] == 108) then
-    if (src.[pos + 4] == 46) * (src.[pos + 5] == 99) * (src.[pos + 6] == 114) * (src.[pos + 7] == 101) then
-      (src.[pos + 8] == 97) * (src.[pos + 9] == 116) * (src.[pos + 10] == 101) * (1 - (is_ident (src.[pos + 11])))
-    else 0
-  else 0
+  keyword_at (src, (pos0, "Cell.create"))
 in
 let rec is_cell_get_at input =
   let (src, pos0) = input in
-  let pos = skip_space (src, pos0) in
-  if (src.[pos] == 67) * (src.[pos + 1] == 101) * (src.[pos + 2] == 108) * (src.[pos + 3] == 108) then
-    if (src.[pos + 4] == 46) * (src.[pos + 5] == 103) * (src.[pos + 6] == 101) then
-      (src.[pos + 7] == 116) * (1 - (is_ident (src.[pos + 8])))
-    else 0
-  else 0
+  keyword_at (src, (pos0, "Cell.get"))
 in
 let rec is_cell_set_at input =
   let (src, pos0) = input in
-  let pos = skip_space (src, pos0) in
-  if (src.[pos] == 67) * (src.[pos + 1] == 101) * (src.[pos + 2] == 108) * (src.[pos + 3] == 108) then
-    if (src.[pos + 4] == 46) * (src.[pos + 5] == 115) * (src.[pos + 6] == 101) then
-      (src.[pos + 7] == 116) * (1 - (is_ident (src.[pos + 8])))
-    else 0
-  else 0
+  keyword_at (src, (pos0, "Cell.set"))
 in
 let rec is_then_at input =
   let (src, pos0) = input in
-  let pos = skip_space (src, pos0) in
-  if (src.[pos] == 116) * (src.[pos + 1] == 104) then
-    (src.[pos + 2] == 101) * (src.[pos + 3] == 110) * (1 - (is_ident (src.[pos + 4])))
-  else 0
+  keyword_at (src, (pos0, "then"))
 in
 let rec is_else_at input =
   let (src, pos0) = input in
-  let pos = skip_space (src, pos0) in
-  if (src.[pos] == 101) * (src.[pos + 1] == 108) then
-    (src.[pos + 2] == 115) * (src.[pos + 3] == 101) * (1 - (is_ident (src.[pos + 4])))
-  else 0
+  keyword_at (src, (pos0, "else"))
 in
 let rec is_let_at input =
   let (src, pos0) = input in
-  let pos = skip_space (src, pos0) in
-  (src.[pos] == 108) * (src.[pos + 1] == 101) * (src.[pos + 2] == 116) * (1 - (is_ident (src.[pos + 3])))
+  keyword_at (src, (pos0, "let"))
 in
 let rec is_in_at input =
   let (src, pos0) = input in
-  let pos = skip_space (src, pos0) in
-  (src.[pos] == 105) * (src.[pos + 1] == 110) * (1 - (is_ident (src.[pos + 2])))
+  keyword_at (src, (pos0, "in"))
 in
 let rec is_rec_at input =
   let (src, pos0) = input in
-  let pos = skip_space (src, pos0) in
-  (src.[pos] == 114) * (src.[pos + 1] == 101) * (src.[pos + 2] == 99) * (1 - (is_ident (src.[pos + 3])))
+  keyword_at (src, (pos0, "rec"))
 in
 let rec expect_with input =
   let (src, pos0) = input in
