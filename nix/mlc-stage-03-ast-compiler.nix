@@ -44,6 +44,12 @@ stageRun {
         printf 'let b = Bytes.create 2\nlet i = 1\nb.[i] <- 79; write_byte b.[i]' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-bytes-index-var.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-bytes-index-var.mzbc)"
         test "$actual" = O
+        printf 'let b = Bytes.create 3\nlet i = 1\nb.[i + 1] <- 75; b.[0] <- 79; write_byte b.[0]; write_byte b.[i * 2]' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-bytes-index-expr.mzbc
+        actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-bytes-index-expr.mzbc)"
+        test "$actual" = OK
+        printf 'let b = Bytes.create 1\nb.[0] <- 40 + 39; write_byte b.[0]' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-bytes-set-expr.mzbc
+        actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-bytes-set-expr.mzbc)"
+        test "$actual" = O
         printf 'debug_string "TRACE"; write_byte 79' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-debug-string.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-debug-string.mzbc 2> 03-debug-string.err)"
         test "$actual" = O
@@ -181,6 +187,8 @@ stageRun {
     install -Dm644 03-string-index.mzbc "$out/share/mlc/stages/03-string-index.mzbc"
     install -Dm644 03-bytes-index-set.mzbc "$out/share/mlc/stages/03-bytes-index-set.mzbc"
     install -Dm644 03-bytes-index-var.mzbc "$out/share/mlc/stages/03-bytes-index-var.mzbc"
+    install -Dm644 03-bytes-index-expr.mzbc "$out/share/mlc/stages/03-bytes-index-expr.mzbc"
+    install -Dm644 03-bytes-set-expr.mzbc "$out/share/mlc/stages/03-bytes-set-expr.mzbc"
     install -Dm644 03-debug-string.mzbc "$out/share/mlc/stages/03-debug-string.mzbc"
     install -Dm644 03-debug-byte.mzbc "$out/share/mlc/stages/03-debug-byte.mzbc"
     install -Dm644 03-debug-int.mzbc "$out/share/mlc/stages/03-debug-int.mzbc"

@@ -118,8 +118,9 @@ then emit VM bytecode. Its first typed core distinguishes `int`, `bool`,
 `unit`, `string`, `bytes`, and pair types, with comparisons returning `bool`,
 `if` requiring a `bool` guard, string and bytes length forms requiring the
 matching block type, indexed reads requiring a string or bytes block plus an
-integer index, bytes writes requiring an integer byte value, and pair
-destructuring checked before field extraction is emitted. Because the current
+integer index expression, bytes writes requiring an integer byte-value
+expression, and pair destructuring checked before field extraction is emitted.
+Because the current
 compiler cannot yet compile
 function-valued parser continuations, stage 03 uses the executable subset of
 HCC `ParseLite`: explicit `ParseOk` / `ParseErr` replies, `p_force`,
@@ -132,7 +133,8 @@ Stage 03 also type-checks sequencing with `;`, requiring the left expression to
 have type `unit` before emitting the right expression. Its typed integer core
 now covers `read_byte`, literal `write_string`, string literals as immutable
 blocks, `String.length` over literal and bound strings, `Bytes.create`,
-`Bytes.length`, `s.[i]`, `b.[i]`, `b.[i] <- ch`, stderr-only `debug_byte` /
+`Bytes.length`, `s.[i]`, `b.[i]`, arithmetic index expressions,
+`b.[i] <- ch`, arithmetic byte-value expressions, stderr-only `debug_byte` /
 `debug_string` / decimal `debug_int`, raw and escaped char literals, `()`,
 `+`, `-`, `*`, `/`, unary `-`, boolean `!`, ML-style `=` plus transitional
 `==`, `!=`, `<`, `<=`, `>`, and `>=`, and its program parser accepts

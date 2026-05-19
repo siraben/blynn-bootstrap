@@ -540,18 +540,80 @@ let rec parse_debug_string state =
   let str_pos = skip_space (src, str_pos0) in
   if src.[str_pos] == '"' then parse_debug_string_loop (src, (str_pos + 1, (0, unit_expr 0))) else exit 1
 in
+let rec add_expr state =
+  let (left, right) = state in
+  EMore (EAdd (left, right))
+in
+let rec sub_expr state =
+  let (left, right) = state in
+  EMore (ESub (left, right))
+in
+let rec mul_expr state =
+  let (left, right) = state in
+  EMore (EMore2 (EMul (left, right)))
+in
+let rec div_expr state =
+  let (left, right) = state in
+  EMore (EMore2 (EDiv (left, right)))
+in
 let rec parse_value_arg state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
   let ch = src.[pos] in
   if ch == '"' then
     parse_string_literal (src, pos)
+  else if ch == '\'' then
+    parse_char_literal (src, pos)
   else if is_digit ch then
     parse_number (src, pos)
   else
     let ident = parse_ident (src, pos) in
     let (name, name_end) = ident in
     (EVar name, name_end)
+in
+let rec parse_index_binop state =
+  let (src, pos0) = state in
+  let pos = skip_space (src, pos0) in
+  if src.[pos] == '+' then (1, (pos + 1, 1)) else
+  if src.[pos] == '-' then (2, (pos + 1, 1)) else
+  if src.[pos] == '*' then (3, (pos + 1, 2)) else
+  if src.[pos] == '/' then (4, (pos + 1, 2)) else
+    (0, (pos, 0))
+in
+let rec make_index_binop state =
+  let (op, pair) = state in
+  let (left, right) = pair in
+  if op == 1 then add_expr (left, right) else
+  if op == 2 then sub_expr (left, right) else
+  if op == 3 then mul_expr (left, right) else
+  if op == 4 then div_expr (left, right) else exit 1
+in
+let rec parse_index_expr_prec state =
+  let (src, pair0) = state in
+  let (pos0, pair1) = pair0 in
+  let (min_prec, pair2) = pair1 in
+  let (has_left, left_ast0) = pair2 in
+  if has_left == 0 then
+    let left = parse_value_arg (src, pos0) in
+    let (left_ast, left_end) = left in
+    parse_index_expr_prec (src, (left_end, (min_prec, (1, left_ast))))
+  else
+    let parsed_op = parse_index_binop (src, pos0) in
+    let (op, op_rest) = parsed_op in
+    let (op_end, prec) = op_rest in
+    if op == 0 then
+      (left_ast0, pos0)
+    else if prec < min_prec then
+      (left_ast0, pos0)
+    else
+      let right = parse_index_expr_prec (src, (op_end, (prec + 1, (0, EInt 0)))) in
+      let (right_ast, right_end) = right in
+      let next_left = make_index_binop (op, (left_ast0, right_ast)) in
+      parse_index_expr_prec (src, (right_end, (min_prec, (1, next_left))))
+in
+let rec parse_index_expr state =
+  let (src, pos0) = state in
+  parse_index_expr_prec (src, (pos0, (0, (0, EInt 0))))
 in
 let rec parse_string_length_expr state =
   let (src, pos0) = state in
@@ -580,13 +642,13 @@ let rec parse_index_suffix state =
   let pos = skip_space (src, pos0) in
   if src.[pos] == '.' then
     if src.[pos + 1] == '[' then
-      let index = parse_value_arg (src, pos + 2) in
+      let index = parse_index_expr (src, pos + 2) in
       let (index_ast, index_end) = index in
       let close = p_need_char (src, (index_end, ']')) in
       let after_close = skip_space (src, close) in
       if src.[after_close] == '<' then
         if src.[after_close + 1] == '-' then
-          let value = parse_value_arg (src, after_close + 2) in
+          let value = parse_index_expr (src, after_close + 2) in
           let (value_ast, value_end) = value in
           (set_index_expr (base, (index_ast, value_ast)), value_end)
         else
@@ -627,10 +689,10 @@ let rec make_binop state =
   if op == 5 then EMore (EMore2 (EMore3 (ELe (left, right)))) else
   if op == 6 then EMore (EMore2 (EMore3 (EMore4 (EGt (left, right))))) else
   if op == 7 then EMore (EMore2 (EMore3 (EMore4 (EGe (left, right))))) else
-  if op == 8 then EMore (EAdd (left, right)) else
-  if op == 9 then EMore (ESub (left, right)) else
-  if op == 10 then EMore (EMore2 (EMul (left, right))) else
-  if op == 11 then EMore (EMore2 (EDiv (left, right))) else exit 1
+  if op == 8 then add_expr (left, right) else
+  if op == 9 then sub_expr (left, right) else
+  if op == 10 then mul_expr (left, right) else
+  if op == 11 then div_expr (left, right) else exit 1
 in
 let rec parse_expr_prec state =
   let (src, pair0) = state in
