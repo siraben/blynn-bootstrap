@@ -132,10 +132,11 @@ climb. Stage 02 continues to carry the higher-order `p_bind` transition point.
 Stage 03 also type-checks sequencing with `;`, requiring the left expression to
 have type `unit` before emitting the right expression. Its typed integer core
 now covers `read_byte`, literal `write_string`, string literals as immutable
-blocks, `String.length` over literal and bound strings, `Bytes.create`,
-`Bytes.length`, `s.[i]`, `b.[i]`, arithmetic index expressions,
-`b.[i] <- ch`, arithmetic byte-value expressions, stderr-only `debug_byte` /
-`debug_string` / decimal `debug_int`, raw and escaped char literals, `()`,
+blocks, `String.length` over literal and bound strings, `Bytes.create` with
+arithmetic size expressions, `Bytes.length`, `s.[i]`, `b.[i]`, arithmetic
+index expressions, `b.[i] <- ch`, arithmetic and char-literal byte-value
+expressions, stderr-only `debug_byte` / `debug_string` / decimal `debug_int`,
+raw and escaped char literals, `()`,
 `+`, `-`, `*`, `/`, unary `-`, boolean `!`, ML-style `=` plus transitional
 `==`, `!=`, `<`, `<=`, `>`, and `>=`, and its program parser accepts
 declaration-style top-level `let` and pair destructuring by lowering them to

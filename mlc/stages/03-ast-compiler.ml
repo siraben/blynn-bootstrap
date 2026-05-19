@@ -625,7 +625,7 @@ in
 let rec parse_bytes_create_expr state =
   let (src, pos0) = state in
   let arg_pos = need_bytes_create (src, pos0) in
-  let parsed_arg = parse_value_arg (src, arg_pos) in
+  let parsed_arg = parse_index_expr (src, arg_pos) in
   let (arg_ast, done_pos) = parsed_arg in
   (bytes_create_expr arg_ast, done_pos)
 in

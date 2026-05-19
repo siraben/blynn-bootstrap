@@ -90,9 +90,10 @@ Current stages:
   string-literal based rather than long character ladders. Programs now parse
   as arbitrary expressions whose final type must be `unit`, so the top-level
   no longer has a special `write_byte` wrapper. The flake gate checks direct
-  bytes, `read_byte`, literal `write_string`, arithmetic index and byte-value
-  expressions for `b.[i]` / `b.[i] <- ch`, stderr-only `debug_byte` /
-  `debug_string` / decimal `debug_int`, char literals including escapes, `()`,
+  bytes, `read_byte`, literal `write_string`, arithmetic `Bytes.create` sizes,
+  arithmetic index and byte-value expressions for `b.[i]` / `b.[i] <- ch`,
+  stderr-only `debug_byte` / `debug_string` / decimal `debug_int`, char
+  literals including escapes, `()`,
   precedence-aware integer `+` / `-` / `*` / `/`, unary integer `-`, boolean
   `!`, ML-style `=` plus transitional `==`, integer comparisons, sequencing,
   bool literals, conditionals whose
