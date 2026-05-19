@@ -230,6 +230,9 @@ let rec skip_space input =
   let (src, pos) = input in
   if is_space (src.[pos]) then skip_space (src, pos + 1) else pos
 in
+let rec parse_fail unit =
+  exit 1
+in
 let rec parse_number_loop state =
   let (src, pair) = state in
   let (acc, pos) = pair in
@@ -242,7 +245,7 @@ let rec parse_number input =
   let pos = skip_space (src, pos) in
   let ch = src.[pos] in
   if is_digit ch then parse_number_loop (src, (ch - '0', pos + 1))
-  else exit 1
+  else parse_fail 0
 in
 let rec ident_hash n =
   n - ((n / 1000000007) * 1000000007)
@@ -253,38 +256,6 @@ let rec parse_ident_loop state =
   let ch = src.[pos] in
   if is_ident ch then parse_ident_loop (src, (ident_hash ((acc * 131) + ch), pos + 1))
   else (acc, pos)
-in
-let rec parse_ident input =
-  let (src, pos0) = input in
-  let pos = skip_space (src, pos0) in
-  let ch = src.[pos] in
-  if is_ident ch then parse_ident_loop (src, (ch, pos + 1))
-  else exit 1
-in
-let rec parse_char input =
-  let (src, pos) = input in
-  let ch = src.[pos + 1] in
-  if ch == '\\' then
-    let esc = src.[pos + 2] in
-    if esc == 'n' then ('\n', pos + 4) else
-    if esc == 't' then ('\t', pos + 4) else
-    if is_digit esc then
-      let d2 = src.[pos + 3] in
-      let d3 = src.[pos + 4] in
-      if is_digit d2 then
-        if is_digit d3 then
-          let d1 = esc - '0' in
-          let d2 = d2 - '0' in
-          let d3 = d3 - '0' in
-          ((d1 * 100) + (d2 * 10) + d3, pos + 6)
-        else
-          exit 1
-      else
-        exit 1
-    else
-      (esc, pos + 4)
-  else
-    (ch, pos + 3)
 in
 let rec pack_ctor state =
   let (tag, has_arg) = state in
@@ -313,11 +284,11 @@ let rec find_ctor state =
 in
 let rec lookup_ctor state =
   let packed = find_ctor state in
-  if packed < 0 then exit 1 else packed
+  if packed < 0 then parse_fail 0 else packed
 in
 let rec lookup_field state =
   let packed = lookup_ctor state in
-  if ctor_is_field packed then ctor_tag packed else exit 1
+  if ctor_is_field packed then ctor_tag packed else parse_fail 0
 in
 let rec extend_func state =
   let (name, pair) = state in
@@ -342,7 +313,7 @@ let rec func_param state =
   let (body_start, tail) = pair in
   let _ = body_start in
   if name == want then param else
-  if name < 0 then exit 1 else func_param (tail, want)
+  if name < 0 then parse_fail 0 else func_param (tail, want)
 in
 let rec func_body_start state =
   let (funcs, want) = state in
@@ -351,7 +322,7 @@ let rec func_body_start state =
   let (body_start, tail) = pair in
   let _ = param in
   if name == want then body_start else
-  if name < 0 then exit 1 else func_body_start (tail, want)
+  if name < 0 then parse_fail 0 else func_body_start (tail, want)
 in
 let rec string_at_loop state =
   let (src, pair) = state in
@@ -373,111 +344,227 @@ let rec keyword_at input =
   let len = String.length text in
   if string_at_loop (src, (pos, (text, 0))) == 1 then 1 - (is_ident (src.[pos + len])) else 0
 in
-let rec need_string input =
+let rec p_ok state =
+  let (value, pos) = state in
+  (1, (value, pos))
+in
+let rec p_err pos =
+  (0, (0, pos))
+in
+let rec p_is_ok reply =
+  let (ok, rest) = reply in
+  let _ = rest in
+  ok
+in
+let rec p_value reply =
+  let (ok, rest) = reply in
+  let (value, pos) = rest in
+  let _ = ok in
+  let _ = pos in
+  value
+in
+let rec p_pos reply =
+  let (ok, rest) = reply in
+  let (value, pos) = rest in
+  let _ = ok in
+  let _ = value in
+  pos
+in
+let rec p_force reply =
+  if p_is_ok reply == 1 then (p_value reply, p_pos reply) else parse_fail 0
+in
+let rec p_force_pos reply =
+  let forced = p_force reply in
+  let (value, pos) = forced in
+  let _ = value in
+  pos
+in
+let rec p_peek input =
+  let (src, pos0) = input in
+  let pos = skip_space (src, pos0) in
+  (src.[pos], pos)
+in
+let rec p_try_char input =
+  let (src, pair) = input in
+  let (pos0, want) = pair in
+  let peeked = p_peek (src, pos0) in
+  let (got, pos) = peeked in
+  if got == want then p_ok (got, pos + 1) else p_err pos
+in
+let rec p_need_char input =
+  p_force_pos (p_try_char input)
+in
+let rec p_try_string input =
   let (src, pair) = input in
   let (pos0, text) = pair in
   let pos = skip_space (src, pos0) in
-  let len = String.length text in
-  if string_at (src, (pos, text)) == 1 then pos + len else exit 1
+  if string_at_loop (src, (pos, (text, 0))) == 1 then p_ok (0, pos + String.length text) else p_err pos
+in
+let rec p_try_keyword input =
+  let (src, pair) = input in
+  let (pos0, text) = pair in
+  let pos = skip_space (src, pos0) in
+  if keyword_at (src, (pos, text)) == 1 then p_ok (0, pos + String.length text) else p_err pos
+in
+let rec p_need_string input =
+  p_force_pos (p_try_string input)
+in
+let rec p_need_keyword input =
+  p_force_pos (p_try_keyword input)
+in
+let rec need_string input =
+  p_need_string input
 in
 let rec need_keyword input =
-  let (src, pair) = input in
-  let (pos0, text) = pair in
+  p_need_keyword input
+in
+let rec p_try_ident input =
+  let (src, pos0) = input in
   let pos = skip_space (src, pos0) in
-  let len = String.length text in
-  if keyword_at (src, (pos, text)) == 1 then pos + len else exit 1
+  let ch = src.[pos] in
+  if is_ident ch then
+    let parsed = parse_ident_loop (src, (ch, pos + 1)) in
+    let (name, done_pos) = parsed in
+    p_ok (name, done_pos)
+  else
+    p_err pos
+in
+let rec p_need_ident input =
+  p_force (p_try_ident input)
+in
+let rec parse_ident input =
+  p_need_ident input
+in
+let rec parse_char_escape input =
+  let (src, pos) = input in
+  let esc = src.[pos] in
+  if esc == 'n' then p_ok ('\n', pos + 1) else
+  if esc == 't' then p_ok ('\t', pos + 1) else
+  if is_digit esc then
+    let d2 = src.[pos + 1] in
+    let d3 = src.[pos + 2] in
+    if (is_digit d2) * (is_digit d3) == 1 then
+      let d1 = esc - '0' in
+      let d2 = d2 - '0' in
+      let d3 = d3 - '0' in
+      p_ok ((d1 * 100) + (d2 * 10) + d3, pos + 3)
+    else
+      p_err pos
+  else
+    p_ok (esc, pos + 1)
+in
+let rec p_try_char_literal input =
+  let (src, pos0) = input in
+  let pos = skip_space (src, pos0) in
+  let opened = p_try_char (src, (pos, '\'')) in
+  if p_is_ok opened == 1 then
+    let open_pos = p_pos opened in
+    let ch = src.[open_pos] in
+    let parsed =
+      if ch == '\\' then parse_char_escape (src, open_pos + 1) else p_ok (ch, open_pos + 1)
+    in
+    if p_is_ok parsed == 1 then
+      let closed = p_try_char (src, (p_pos parsed, '\'')) in
+      if p_is_ok closed == 1 then p_ok (p_value parsed, p_pos closed) else closed
+    else
+      parsed
+  else
+    opened
+in
+let rec parse_char input =
+  p_force (p_try_char_literal input)
 in
 let rec is_type_at input =
   let (src, pos0) = input in
-  keyword_at (src, (pos0, "type"))
+  p_is_ok (p_try_keyword (src, (pos0, "type")))
 in
 let rec is_of_at input =
   let (src, pos0) = input in
-  keyword_at (src, (pos0, "of"))
+  p_is_ok (p_try_keyword (src, (pos0, "of")))
 in
 let rec is_match_at input =
   let (src, pos0) = input in
-  keyword_at (src, (pos0, "match"))
+  p_is_ok (p_try_keyword (src, (pos0, "match")))
 in
 let rec is_write_byte_at input =
   let (src, pos0) = input in
-  keyword_at (src, (pos0, "write_byte"))
+  p_is_ok (p_try_keyword (src, (pos0, "write_byte")))
 in
 let rec is_write_string_at input =
   let (src, pos0) = input in
-  keyword_at (src, (pos0, "write_string"))
+  p_is_ok (p_try_keyword (src, (pos0, "write_string")))
 in
 let rec is_debug_byte_at input =
   let (src, pos0) = input in
-  keyword_at (src, (pos0, "debug_byte"))
+  p_is_ok (p_try_keyword (src, (pos0, "debug_byte")))
 in
 let rec is_debug_string_at input =
   let (src, pos0) = input in
-  keyword_at (src, (pos0, "debug_string"))
+  p_is_ok (p_try_keyword (src, (pos0, "debug_string")))
 in
 let rec is_debug_printf_at input =
   let (src, pos0) = input in
-  keyword_at (src, (pos0, "debug_printf"))
+  p_is_ok (p_try_keyword (src, (pos0, "debug_printf")))
 in
 let rec is_debug_int_at input =
   let (src, pos0) = input in
-  keyword_at (src, (pos0, "debug_int"))
+  p_is_ok (p_try_keyword (src, (pos0, "debug_int")))
 in
 let rec is_if_at input =
   let (src, pos0) = input in
-  keyword_at (src, (pos0, "if"))
+  p_is_ok (p_try_keyword (src, (pos0, "if")))
 in
 let rec is_exit_at input =
   let (src, pos0) = input in
-  keyword_at (src, (pos0, "exit"))
+  p_is_ok (p_try_keyword (src, (pos0, "exit")))
 in
 let rec is_read_byte_at input =
   let (src, pos0) = input in
-  keyword_at (src, (pos0, "read_byte"))
+  p_is_ok (p_try_keyword (src, (pos0, "read_byte")))
 in
 let rec is_bytes_create_at input =
   let (src, pos0) = input in
-  keyword_at (src, (pos0, "Bytes.create"))
+  p_is_ok (p_try_keyword (src, (pos0, "Bytes.create")))
 in
 let rec is_bytes_length_at input =
   let (src, pos0) = input in
-  keyword_at (src, (pos0, "Bytes.length"))
+  p_is_ok (p_try_keyword (src, (pos0, "Bytes.length")))
 in
 let rec is_string_length_at input =
   let (src, pos0) = input in
-  keyword_at (src, (pos0, "String.length"))
+  p_is_ok (p_try_keyword (src, (pos0, "String.length")))
 in
 let rec is_cell_create_at input =
   let (src, pos0) = input in
-  keyword_at (src, (pos0, "Cell.create"))
+  p_is_ok (p_try_keyword (src, (pos0, "Cell.create")))
 in
 let rec is_cell_get_at input =
   let (src, pos0) = input in
-  keyword_at (src, (pos0, "Cell.get"))
+  p_is_ok (p_try_keyword (src, (pos0, "Cell.get")))
 in
 let rec is_cell_set_at input =
   let (src, pos0) = input in
-  keyword_at (src, (pos0, "Cell.set"))
+  p_is_ok (p_try_keyword (src, (pos0, "Cell.set")))
 in
 let rec is_then_at input =
   let (src, pos0) = input in
-  keyword_at (src, (pos0, "then"))
+  p_is_ok (p_try_keyword (src, (pos0, "then")))
 in
 let rec is_else_at input =
   let (src, pos0) = input in
-  keyword_at (src, (pos0, "else"))
+  p_is_ok (p_try_keyword (src, (pos0, "else")))
 in
 let rec is_let_at input =
   let (src, pos0) = input in
-  keyword_at (src, (pos0, "let"))
+  p_is_ok (p_try_keyword (src, (pos0, "let")))
 in
 let rec is_in_at input =
   let (src, pos0) = input in
-  keyword_at (src, (pos0, "in"))
+  p_is_ok (p_try_keyword (src, (pos0, "in")))
 in
 let rec is_rec_at input =
   let (src, pos0) = input in
-  keyword_at (src, (pos0, "rec"))
+  p_is_ok (p_try_keyword (src, (pos0, "rec")))
 in
 let rec expect_with input =
   let (src, pos0) = input in
@@ -512,20 +599,24 @@ let rec parse_record_fields state =
   let (pos0, pair2) = pair in
   let (index, ctors) = pair2 in
   let pos = skip_space (src, pos0) in
-  if src.[pos] == 125 then (pos + 1, ctors) else
+  let empty = p_try_char (src, (pos, '}')) in
+  if p_is_ok empty == 1 then (p_pos empty, ctors) else
     let parsed = parse_ident (src, pos) in
     let (field, field_end) = parsed in
-    let colon = skip_space (src, field_end) in
-    if src.[colon] == 58 then
-      let typ = parse_ident (src, colon + 1) in
-      let (dummy, typ_end) = typ in
-      let _ = dummy in
-      let next_ctors = extend_ctor (field, (pack_ctor (index, 2), ctors)) in
-      let next = skip_space (src, typ_end) in
-      if src.[next] == 59 then parse_record_fields (src, (next + 1, (index + 1, next_ctors))) else
-      if src.[next] == 125 then (next + 1, next_ctors) else exit 1
-    else
-      exit 1
+    let after_colon = p_need_char (src, (field_end, ':')) in
+    let typ = parse_ident (src, after_colon) in
+    let (dummy, typ_end) = typ in
+    let _ = dummy in
+    let next_ctors = extend_ctor (field, (pack_ctor (index, 2), ctors)) in
+    let next = skip_space (src, typ_end) in
+    let semi = p_try_char (src, (next, ';')) in
+    if p_is_ok semi == 1 then parse_record_fields (src, (p_pos semi, (index + 1, next_ctors))) else
+    let close = p_try_char (src, (next, '}')) in
+    if p_is_ok close == 1 then (p_pos close, next_ctors) else
+      let forced = p_force close in
+      let (dummy2, done_pos) = forced in
+      let _ = dummy2 in
+      (done_pos, next_ctors)
 in
 let rec parse_type_decls input =
   let (src, pair) = input in
@@ -535,17 +626,15 @@ let rec parse_type_decls input =
     let type_name = parse_ident (src, pos + 4) in
     let (dummy, name_end) = type_name in
     let _ = dummy in
-    let eq_pos = skip_space (src, name_end) in
-    if src.[eq_pos] == 61 then
-      let after_eq = skip_space (src, eq_pos + 1) in
-      let parsed =
-        if src.[after_eq] == 123 then parse_record_fields (src, (after_eq + 1, (0, ctors)))
-        else parse_type_ctors (src, (after_eq, (0, ctors)))
-      in
-      let (next_pos, next_ctors) = parsed in
-      parse_type_decls (src, (next_pos, next_ctors))
-    else
-      exit 1
+    let after_eq = p_need_char (src, (name_end, '=')) in
+    let after_eq = skip_space (src, after_eq) in
+    let opened = p_try_char (src, (after_eq, '{')) in
+    let parsed =
+      if p_is_ok opened == 1 then parse_record_fields (src, (p_pos opened, (0, ctors)))
+      else parse_type_ctors (src, (after_eq, (0, ctors)))
+    in
+    let (next_pos, next_ctors) = parsed in
+    parse_type_decls (src, (next_pos, next_ctors))
   else
     (pos, ctors)
 in
@@ -564,7 +653,7 @@ in
 let rec lookup_env input =
   let (env, want) = input in
   let found = find_env (env, want) in
-  if found < 0 then exit 1 else found
+  if found < 0 then parse_fail 0 else found
 in
 let rec extend_env input =
   let (name, env) = input in
@@ -602,13 +691,13 @@ let rec parse_case_payload input =
               if src.[bind3_end] == 41 then
                 (1, (1, (bind1, (bind2, (bind3, bind3_end + 1)))))
               else
-                exit 1
+                parse_fail 0
             else
-              exit 1
+              parse_fail 0
           else
-            exit 1
+            parse_fail 0
         else
-          exit 1
+          parse_fail 0
       else
         let bind1_parsed = parse_ident (src, first_pos) in
         let (bind1, bind1_end0) = bind1_parsed in
@@ -628,11 +717,11 @@ let rec parse_case_payload input =
                 if src.[close_pos] == 41 then
                   (1, (2, (bind1, (bind2, (bind3, close_pos + 1)))))
                 else
-                  exit 1
+                  parse_fail 0
               else
-                exit 1
+                parse_fail 0
             else
-              exit 1
+              parse_fail 0
           else
             let bind2_parsed = parse_ident (src, second_pos) in
             let (bind2, bind2_end0) = bind2_parsed in
@@ -640,9 +729,9 @@ let rec parse_case_payload input =
             if src.[bind2_end] == 41 then
               (1, (0, (bind1, (bind2, (0 - 1, bind2_end + 1)))))
             else
-              exit 1
+              parse_fail 0
         else
-          exit 1
+          parse_fail 0
     else
       let bind1_parsed = parse_ident (src, pos) in
       let (bind1, bind1_end) = bind1_parsed in
@@ -779,7 +868,7 @@ let rec compile_simple_atom input =
         let block_len = emit_makeblock (emit, (tag, 0)) in
         (block_len, done_pos)
       else
-        exit 1
+        parse_fail 0
 in
 let rec compile_simple_expr input =
   let (src, pair) = input in
@@ -792,7 +881,7 @@ let rec compile_simple_expr input =
       let inner = compile_simple_expr (src, (pos + 1, (env, (ctors, emit)))) in
       let (inner_len, inner_end0) = inner in
       let inner_end = skip_space (src, inner_end0) in
-      if src.[inner_end] == 41 then (inner_len, inner_end + 1) else exit 1
+      if src.[inner_end] == 41 then (inner_len, inner_end + 1) else parse_fail 0
     else
       compile_simple_atom (src, (pos, (env, (ctors, emit))))
 	  in
@@ -816,12 +905,12 @@ let rec compile_simple_expr input =
 	              let set_len = emit_setfield_dyn (emit) in
 	              (left_len0 + push_base + index_len + push_index + value_len + set_len, value_end)
 	            else
-	              exit 1
+	              parse_fail 0
 	          else
 	            let get_len = emit_getfield_dyn (emit) in
 	            (left_len0 + push_base + index_len + get_len, index_end + 1)
 	        else
-	          exit 1
+	          parse_fail 0
 	      else if open_ch == 40 then
 	        let push_base = emit_push (emit) in
 	        let index = compile_simple_expr (src, (next1 + 2, (shift_env env, (ctors, emit)))) in
@@ -837,12 +926,12 @@ let rec compile_simple_expr input =
 	              let set_len = emit_setfield_dyn (emit) in
 	              (left_len0 + push_base + index_len + push_index + value_len + set_len, value_end)
 	            else
-	              exit 1
+	              parse_fail 0
 	          else
 	            let get_len = emit_getfield_dyn (emit) in
 	            (left_len0 + push_base + index_len + get_len, index_end + 1)
 	        else
-	          exit 1
+	          parse_fail 0
 	      else
 	        let field = parse_ident (src, next1 + 1) in
 	        let (field_name, field_end) = field in
@@ -912,7 +1001,7 @@ let rec compile_simple_expr input =
       let ne_len = emit_ne (emit) in
       (left_len + push_len + right_len + ne_len, done_pos)
     else
-      exit 1
+      parse_fail 0
   else if src.[next] == 61 then
     if src.[next + 1] == 61 then
       let push_len = emit_push (emit) in
@@ -921,7 +1010,7 @@ let rec compile_simple_expr input =
       let eq_len = emit_eq (emit) in
       (left_len + push_len + right_len + eq_len, done_pos)
     else
-      exit 1
+      parse_fail 0
   else
     left
 in
@@ -947,9 +1036,9 @@ let rec compile_if input =
       let _ = if emit == 1 then compile_simple_expr (src, (else_pos + 4, (env, (ctors, 1)))) else (0, 0) in
       (cond_len + 5 + then_len + 5 + else_len, else_end)
     else
-      exit 1
+      parse_fail 0
   else
-    exit 1
+    parse_fail 0
 in
 let rec compile_atom input =
   let (src, pair) = input in
@@ -1003,7 +1092,7 @@ in
 let rec compile_debug_printf_prefix state =
   let (src, pair) = state in
   let (pos, emit) = pair in
-  if src.[pos] == 34 then exit 1 else
+  if src.[pos] == 34 then parse_fail 0 else
     if (src.[pos] == 37) * (src.[pos + 1] == 100) then (0, pos + 2) else
       let const_len = emit_const (emit, src.[pos]) in
       let call_len = emit_call_debug_byte emit in
@@ -1040,7 +1129,7 @@ let rec compile_arg_expr input =
       let inner = compile_simple_expr (src, (pos + 1, (env, (ctors, emit)))) in
       let (inner_len, inner_end0) = inner in
       let inner_end = skip_space (src, inner_end0) in
-      if src.[inner_end] == 41 then (inner_len, inner_end + 1) else exit 1
+      if src.[inner_end] == 41 then (inner_len, inner_end + 1) else parse_fail 0
     else
       compile_simple_atom (src, (pos, (env, (ctors, emit))))
   in
@@ -1057,7 +1146,7 @@ let rec compile_arg_expr input =
         let get_len = emit_getfield_dyn emit in
         (left_len0 + push_base + index_len + get_len, index_end + 1)
       else
-        exit 1
+        parse_fail 0
     else if open_ch == 40 then
       let push_base = emit_push emit in
       let index = compile_simple_expr (src, (next1 + 2, (shift_env env, (ctors, emit)))) in
@@ -1067,7 +1156,7 @@ let rec compile_arg_expr input =
         let get_len = emit_getfield_dyn emit in
         (left_len0 + push_base + index_len + get_len, index_end + 1)
       else
-        exit 1
+        parse_fail 0
     else
       let field = parse_ident (src, next1 + 1) in
       let (field_name, field_end) = field in
@@ -1123,9 +1212,9 @@ let rec compile_expr input =
                 let block_len = emit_makeblock (emit, (0, 2)) in
                 (value1_len + push_len + value2_len + block_len, close + 1)
               else
-                exit 1
+                parse_fail 0
             else
-              exit 1
+              parse_fail 0
           else if src.[close] == 59 then
             let field3 = parse_ident (src, close + 1) in
             let (field3_name, field3_end) = field3 in
@@ -1143,23 +1232,23 @@ let rec compile_expr input =
                       let block_len = emit_makeblock (emit, (0, 3)) in
                       (value1_len + push_len + value2_len + push_len2 + value3_len + block_len, close3 + 1)
                     else
-                      exit 1
+                      parse_fail 0
                   else
-                    exit 1
+                    parse_fail 0
                 else
-                  exit 1
+                  parse_fail 0
               else
-                exit 1
+                parse_fail 0
             else
-              exit 1
+              parse_fail 0
           else
-            exit 1
+            parse_fail 0
         else
-          exit 1
+          parse_fail 0
       else
-        exit 1
+        parse_fail 0
     else
-      exit 1
+      parse_fail 0
   else if is_write_byte_at (src, pos) then
     let p = skip_space (src, pos + 10) in
     let expr = compile_expr (src, (p, (env, (ctors, (funcs, emit))))) in
@@ -1181,7 +1270,7 @@ let rec compile_expr input =
   else if is_debug_string_at (src, pos) then
     let after_debug_string = need_keyword (src, (pos, "debug_string")) in
     let p = skip_space (src, after_debug_string) in
-    if src.[p] == 34 then compile_debug_string_literal (src, (p + 1, emit)) else exit 1
+    if src.[p] == 34 then compile_debug_string_literal (src, (p + 1, emit)) else parse_fail 0
   else if is_debug_printf_at (src, pos) then
     let after_debug_printf = need_keyword (src, (pos, "debug_printf")) in
     let p = skip_space (src, after_debug_printf) in
@@ -1196,7 +1285,7 @@ let rec compile_expr input =
       let (suffix_len, suffix_end) = suffix in
       let _ = suffix_end in
       (prefix_len + expr_len + call_len + suffix_len, done_pos)
-    else exit 1
+    else parse_fail 0
 	  else if is_exit_at (src, pos) then
 	    let p = need_keyword (src, (pos, "exit")) in
 	    let expr = compile_expr (src, (p, (env, (ctors, (funcs, emit))))) in
@@ -1281,9 +1370,9 @@ let rec compile_expr input =
 	        let _ = if emit == 1 then compile_expr (src, (else_pos + 4, (env, (ctors, (funcs, 1))))) else (0, 0) in
 	        (cond_len + 5 + then_len + 5 + else_len, else_end)
 	      else
-	        exit 1
+	        parse_fail 0
 	    else
-	      exit 1
+	      parse_fail 0
 	  else if is_let_at (src, pos) then
     let after_let = skip_space (src, pos + 3) in
     if src.[after_let] == 40 then
@@ -1316,13 +1405,13 @@ let rec compile_expr input =
               let pop_len = emit_pop (emit, 3) in
               (rhs_len + p0 + a0 + g0 + p1 + a1 + g1 + p2 + body_len + pop_len, body_end)
             else
-              exit 1
+              parse_fail 0
           else
-            exit 1
+            parse_fail 0
         else
-          exit 1
+          parse_fail 0
       else
-        exit 1
+        parse_fail 0
     else
       let binding = parse_ident (src, pos + 3) in
       let (name, name_end) = binding in
@@ -1340,9 +1429,9 @@ let rec compile_expr input =
           let pop_len = emit_pop1 emit in
           (rhs_len + push_len + body_len + pop_len, body_end)
         else
-          exit 1
+          parse_fail 0
       else
-        exit 1
+        parse_fail 0
   else if is_match_at (src, pos) then
     let scrutinee0 = compile_expr (src, (pos + 5, (env, (ctors, (funcs, 0))))) in
     let (scrutinee_len, scrutinee_end) = scrutinee0 in
@@ -1365,7 +1454,7 @@ let rec compile_expr input =
     let case1_body0 = compile_expr (src, (case1_body_start, (case1_env, (ctors, (funcs, 0))))) in
     let (case1_body_len, case1_body_end) = case1_body0 in
     let case2_pos1 = skip_space (src, case1_body_end) in
-    let case2_pos = if src.[case2_pos1] == 124 then skip_space (src, case2_pos1 + 1) else exit 1 in
+    let case2_pos = if src.[case2_pos1] == 124 then skip_space (src, case2_pos1 + 1) else parse_fail 0 in
     let case2_is_wild = if src.[case2_pos] == 95 then 1 else 0 in
     let case2_pat =
       if case2_is_wild == 1 then (0 - 1, case2_pos + 1) else parse_ident (src, case2_pos)
@@ -1374,7 +1463,7 @@ let rec compile_expr input =
     let case2_found_ctor = if case2_is_wild == 1 then 0 else find_ctor (ctors, case2_name) in
     let case2_is_default_var = if case2_is_wild == 1 then 0 else if case2_found_ctor < 0 then is_lower_ident_start (src.[case2_pos]) else 0 in
     let case2_is_default = if case2_is_wild == 1 then 1 else case2_is_default_var in
-    let case2_ctor = if case2_is_default == 1 then 0 else if case2_found_ctor < 0 then exit 1 else case2_found_ctor in
+    let case2_ctor = if case2_is_default == 1 then 0 else if case2_found_ctor < 0 then parse_fail 0 else case2_found_ctor in
     let case2_has_arg = if case2_is_default == 1 then 0 else ctor_has_arg case2_ctor in
     let case2_payload = parse_case_payload (src, (case2_pat_end0, case2_has_arg)) in
     let (case2_tuple, case2_payload2) = case2_payload in
@@ -1400,7 +1489,7 @@ let rec compile_expr input =
     let case3_found_ctor = if case3_is_wild == 1 then 0 else find_ctor (ctors, case3_name) in
     let case3_is_default_var = if case3_is_wild == 1 then 0 else if case3_found_ctor < 0 then is_lower_ident_start (src.[case3_pos]) else 0 in
     let case3_is_default = if case3_is_wild == 1 then 1 else case3_is_default_var in
-    let case3_ctor = if case3_is_default == 1 then 0 else if case3_found_ctor < 0 then exit 1 else case3_found_ctor in
+    let case3_ctor = if case3_is_default == 1 then 0 else if case3_found_ctor < 0 then parse_fail 0 else case3_found_ctor in
     let case3_has_arg = if case3_is_default == 1 then 0 else ctor_has_arg case3_ctor in
     let case3_payload = parse_case_payload (src, (case3_pat_end0, case3_has_arg)) in
     let (case3_tuple, case3_payload2) = case3_payload in
@@ -1428,7 +1517,7 @@ let rec compile_expr input =
     let case4_found_ctor = if case4_is_wild == 1 then 0 else find_ctor (ctors, case4_name) in
     let case4_is_default_var = if case4_is_wild == 1 then 0 else if case4_found_ctor < 0 then is_lower_ident_start (src.[case4_pos]) else 0 in
     let case4_is_default = if case4_is_wild == 1 then 1 else case4_is_default_var in
-    let case4_ctor = if case4_is_default == 1 then 0 else if case4_found_ctor < 0 then exit 1 else case4_found_ctor in
+    let case4_ctor = if case4_is_default == 1 then 0 else if case4_found_ctor < 0 then parse_fail 0 else case4_found_ctor in
     let case4_has_arg = if case4_is_default == 1 then 0 else ctor_has_arg case4_ctor in
     let case4_payload = parse_case_payload (src, (case4_pat_end0, case4_has_arg)) in
     let (case4_tuple, case4_payload2) = case4_payload in
@@ -1456,8 +1545,8 @@ let rec compile_expr input =
     let case3_total = if has_case3 == 1 then case3_payload_len + case3_body_len + case3_payload_pop_len + 5 else 0 in
     let case4_payload_len = case_payload_len (case4_has_arg, (case4_tuple, case4_nested)) in
     let case4_payload_pop_len = if case4_has_arg == 1 then 5 else 0 in
-    let _ = if has_case3 == 1 then if case2_is_default == 1 then exit 1 else 0 else 0 in
-    let _ = if has_case4 == 1 then if case3_is_default == 1 then exit 1 else 0 else 0 in
+    let _ = if has_case3 == 1 then if case2_is_default == 1 then parse_fail 0 else 0 else 0 in
+    let _ = if has_case4 == 1 then if case3_is_default == 1 then parse_fail 0 else 0 else 0 in
     let case4_total = if has_case4 == 1 then case4_payload_len + case4_body_len + case4_payload_pop_len + 5 else 0 in
     let case3_segment = if has_case4 == 1 then 18 + case3_total + 5 + case4_total else case3_total in
     let case2_segment = if has_case3 == 1 then 18 + case2_total + 5 + case3_segment else case2_total in
@@ -1537,8 +1626,8 @@ let rec compile_expr input =
               let block_len = emit_makeblock (emit, (0, 2)) in
               (inner_len + push_len + right_len + block_len, right_end + 1)
             else
-              exit 1
-          else if src.[inner_end] == 41 then (inner_len, inner_end + 1) else exit 1
+              parse_fail 0
+          else if src.[inner_end] == 41 then (inner_len, inner_end + 1) else parse_fail 0
         else if src.[arg_pos] == 34 then
           compile_string_literal (src, (arg_pos, emit))
         else
@@ -1607,7 +1696,7 @@ let rec compile_expr input =
           let ne_len = emit_ne (emit) in
           (left_len + push_len + right_len + ne_len, done_pos)
         else
-          exit 1
+          parse_fail 0
       else if src.[next] == 61 then
         if src.[next + 1] == 61 then
           let push_len = emit_push (emit) in
@@ -1616,7 +1705,7 @@ let rec compile_expr input =
           let eq_len = emit_eq (emit) in
           (left_len + push_len + right_len + eq_len, done_pos)
         else
-          exit 1
+          parse_fail 0
       else
         (left_len, arg_end)
     else
@@ -1624,7 +1713,7 @@ let rec compile_expr input =
     if ctor >= 0 then
       let tag = ctor_tag ctor in
       if ctor_is_field ctor then
-        exit 1
+        parse_fail 0
       else if ctor_has_arg ctor == 1 then
         let payload = compile_expr (src, (name_end, (env, (ctors, (funcs, emit))))) in
         let (payload_len, payload_end) = payload in
@@ -1648,8 +1737,8 @@ let rec compile_expr input =
               let block_len = emit_makeblock (emit, (0, 2)) in
               (inner_len + push_len + right_len + block_len, right_end + 1)
             else
-              exit 1
-          else if src.[inner_end] == 41 then (inner_len, inner_end + 1) else exit 1
+              parse_fail 0
+          else if src.[inner_end] == 41 then (inner_len, inner_end + 1) else parse_fail 0
         else
 	          compile_atom (src, (pos, (env, (ctors, emit))))
 	      in
@@ -1673,12 +1762,12 @@ let rec compile_expr input =
 	                  let set_len = emit_setfield_dyn (emit) in
 	                  (left_len0 + push_base + index_len + push_index + value_len + set_len, value_end)
 	                else
-	                  exit 1
+	                  parse_fail 0
 	              else
 	                let get_len = emit_getfield_dyn (emit) in
 	                (left_len0 + push_base + index_len + get_len, index_end + 1)
 	            else
-	              exit 1
+	              parse_fail 0
 	          else if open_ch == 40 then
 	            let push_base = emit_push (emit) in
 	            let index = compile_expr (src, (next1 + 2, (shift_env env, (ctors, (funcs, emit))))) in
@@ -1694,12 +1783,12 @@ let rec compile_expr input =
 	                  let set_len = emit_setfield_dyn (emit) in
 	                  (left_len0 + push_base + index_len + push_index + value_len + set_len, value_end)
 	                else
-	                  exit 1
+	                  parse_fail 0
 	              else
 	                let get_len = emit_getfield_dyn (emit) in
 	                (left_len0 + push_base + index_len + get_len, index_end + 1)
 	            else
-	              exit 1
+	              parse_fail 0
 	          else
 	            let field = parse_ident (src, next1 + 1) in
 	            let (field_name, field_end) = field in
@@ -1769,7 +1858,7 @@ let rec compile_expr input =
           let ne_len = emit_ne (emit) in
           (left_len + push_len + right_len + ne_len, done_pos)
         else
-          exit 1
+          parse_fail 0
       else if src.[next] == 61 then
         if src.[next + 1] == 61 then
           let push_len = emit_push (emit) in
@@ -1778,7 +1867,7 @@ let rec compile_expr input =
           let eq_len = emit_eq (emit) in
           (left_len + push_len + right_len + eq_len, done_pos)
         else
-          exit 1
+          parse_fail 0
       else
         left
   else
@@ -1796,8 +1885,8 @@ let rec compile_expr input =
           let block_len = emit_makeblock (emit, (0, 2)) in
           (inner_len + push_len + right_len + block_len, right_end + 1)
         else
-          exit 1
-      else if src.[inner_end] == 41 then (inner_len, inner_end + 1) else exit 1
+          parse_fail 0
+      else if src.[inner_end] == 41 then (inner_len, inner_end + 1) else parse_fail 0
 	    else
 	      compile_atom (src, (pos, (env, (ctors, emit))))
 	  in
@@ -1821,12 +1910,12 @@ let rec compile_expr input =
 	              let set_len = emit_setfield_dyn (emit) in
 	              (left_len0 + push_base + index_len + push_index + value_len + set_len, value_end)
 	            else
-	              exit 1
+	              parse_fail 0
 	          else
 	            let get_len = emit_getfield_dyn (emit) in
 	            (left_len0 + push_base + index_len + get_len, index_end + 1)
 	        else
-	          exit 1
+	          parse_fail 0
 	      else if open_ch == 40 then
 	        let push_base = emit_push (emit) in
 	        let index = compile_expr (src, (next1 + 2, (shift_env env, (ctors, (funcs, emit))))) in
@@ -1842,12 +1931,12 @@ let rec compile_expr input =
 	              let set_len = emit_setfield_dyn (emit) in
 	              (left_len0 + push_base + index_len + push_index + value_len + set_len, value_end)
 	            else
-	              exit 1
+	              parse_fail 0
 	          else
 	            let get_len = emit_getfield_dyn (emit) in
 	            (left_len0 + push_base + index_len + get_len, index_end + 1)
 	        else
-	          exit 1
+	          parse_fail 0
 	      else
 	        let field = parse_ident (src, next1 + 1) in
 	        let (field_name, field_end) = field in
@@ -1917,7 +2006,7 @@ let rec compile_expr input =
       let ne_len = emit_ne (emit) in
       (left_len + push_len + right_len + ne_len, done_pos)
     else
-      exit 1
+      parse_fail 0
   else if src.[next] == 61 then
     if src.[next + 1] == 61 then
       let push_len = emit_push (emit) in
@@ -1926,7 +2015,7 @@ let rec compile_expr input =
       let eq_len = emit_eq (emit) in
       (left_len + push_len + right_len + eq_len, done_pos)
     else
-      exit 1
+      parse_fail 0
   else
     left
 in
@@ -2003,7 +2092,7 @@ let rec compile_byte_code input =
         in
         (5 + fn_total + body_len, body_end)
       else
-        exit 1
+        parse_fail 0
     else
       if src.[after_let] == 40 then
         let name1_parsed = parse_ident (src, after_let + 1) in
@@ -2035,11 +2124,11 @@ let rec compile_byte_code input =
               let pop_len = emit_pop (emit, 3) in
               (rhs_len + p0 + a0 + g0 + p1 + a1 + g1 + p2 + body_len + pop_len, body_end)
             else
-              exit 1
+              parse_fail 0
           else
-            exit 1
+            parse_fail 0
         else
-          exit 1
+          parse_fail 0
       else
         let binding = parse_ident (src, pos + 3) in
         let (name, name_end) = binding in
@@ -2057,7 +2146,7 @@ let rec compile_byte_code input =
           let pop_len = emit_pop1 (emit) in
           (rhs_len + push_len + body_len + pop_len, body_end)
         else
-          exit 1
+          parse_fail 0
 	  else
 	    compile_expr (src, (pos, (env, (ctors, (funcs, emit)))))
 	in
@@ -2080,7 +2169,7 @@ let rec compile_program src =
     let after_write_string = need_keyword (src, (pos, "write_string")) in
     let p0 = skip_space (src, after_write_string) in
     if src.[p0] == 34 then emit_string_program (src, p0 + 1)
-    else exit 1
+    else parse_fail 0
   else
     emit_byte_source (src, pos)
 in

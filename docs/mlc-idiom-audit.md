@@ -23,6 +23,11 @@ that construct and have a check for it.
   `p_keyword_at`, `p_need_string`, `p_need_keyword`, explicit parse replies,
   and HCC-style precedence climbing. It is not yet strong enough to compile
   `mlc.ml`, so those helpers are a model, not the active bootstrap producer.
+- `mlc.ml` now has the stage-02-compatible core of that parser layer:
+  tuple-encoded `p_ok` / `p_err` replies, `p_force`, `p_try_char`,
+  `p_try_string`, `p_try_keyword`, `p_try_ident`, and corresponding `p_need_*`
+  helpers. This keeps the parser state explicit while avoiding a dependency on
+  ADT syntax before stage 02 can compile ADTs in the compiler implementation.
 - A scan of `mlc/mlc.ml` after `b49f06f` found roughly 320 numeric character
   comparisons or byte writes, including about 216 direct `src.[...] == N`
   source-character checks. Most are now avoidable.
@@ -41,8 +46,8 @@ These can move directly into `mlc.ml` because stage 02 already compiles them:
   digits, uppercase letters, lowercase letters, and `_`.
 - Replace byte-emission magic for the MZBC header with char literals:
   `write_byte 'M'; write_byte 'Z'; write_byte 'B'; write_byte 'C'`.
-- Continue expanding `need_string` / `need_keyword` use in `mlc.ml` for fixed
-  control-flow keywords.
+- Continue moving delimiter and keyword parsing through `p_try_*` / `p_need_*`
+  instead of hand-written nested checks.
 
 ## Rewritten
 
@@ -56,6 +61,9 @@ These can move directly into `mlc.ml` because stage 02 already compiles them:
   fixed `with` / `->` match syntax, direct `write_byte`, top-level
   `write_string`, debug/exit/read primitives, dotted `String.length` /
   `Bytes.*`, and `Cell.*` advances.
+- Raw local `exit 1` parse failures in `mlc.ml` are centralized through
+  `parse_fail`, and the char literal, identifier, keyword/lookahead, and
+  record/type delimiter paths now use the tuple-encoded parse reply helpers.
 
 ## Promote before use
 
@@ -68,10 +76,14 @@ These need a stronger previous stage before they should become required by
 - Record-heavy internal compiler data structures. Stage 02 does not compile
   records, so `mlc.ml` can accept records in user programs but should not depend
   on records internally until the previous compiler stage does.
-- Broad Parsec-style parser combinators in `mlc.ml`. Stage 02 supports
-  closures and `p_bind`, but a wholesale parser rewrite should first be covered
-  by a previous-stage fixture that compiles nested binds, `try`/`need` helpers,
-  and failure propagation in the exact style used by the compiler.
+- ADT-backed Parsec-style parser replies in `mlc.ml`. Stage 02 supports the
+  tuple-encoded `p_ok` / `p_err` layer now used by `mlc.ml`, but proper
+  `ParseOk` / `ParseErr` constructors in the compiler implementation require
+  promoting ADTs into the previous stage first.
+- Higher-order parser `bind` in `mlc.ml`. Stage 02 can compile closures, but
+  the current fixed-point `mlc.ml` compiler cannot compile dynamic function
+  application in its own source yet; keep the active parser layer first-order
+  until that self-hosting gap is closed.
 - Full ML type inference in the active compiler. Stage 03 has a small static
   checker, not Hindley-Milner inference, and is not yet self-compiling.
 
@@ -83,10 +95,10 @@ These need a stronger previous stage before they should become required by
    functions to data-like spellings. This is done for the shared recognizer
    layer.
 3. Add `need_string` / `need_keyword` to `mlc.ml` and replace `expect_with`,
-   `expect_arrow`, and fixed primitive spelling code. This is started for
-   match syntax and primitive/module-name advances; continue widening it
-   gradually to control-flow keywords.
-4. Add previous-stage tests for the exact parser-combinator style needed by
-   the next `mlc.ml` parser cleanup.
-5. Only after the previous stage can compile those helpers, move the larger
-   `mlc.ml` parser toward the stage03/HCC `ParseLite` shape.
+   `expect_arrow`, and fixed primitive spelling code. This is done for the
+   current primitive/module-name advances.
+4. Keep moving `mlc.ml` parser branches from nested delimiter checks to
+   `p_try_*` / `p_need_*`, with `parse_fail` as the only raw process-exit
+   boundary.
+5. Promote ADTs into the previous stage, then replace the tuple-encoded parser
+   replies with proper `ParseOk` / `ParseErr` constructors.
