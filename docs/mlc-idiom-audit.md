@@ -62,8 +62,12 @@ These can move directly into `mlc.ml` because stage 02 already compiles them:
   `write_string`, debug/exit/read primitives, dotted `String.length` /
   `Bytes.*`, and `Cell.*` advances.
 - Raw local `exit 1` parse failures in `mlc.ml` are centralized through
-  `parse_fail`, and the char literal, identifier, keyword/lookahead, and
-  record/type delimiter paths now use the tuple-encoded parse reply helpers.
+  `parse_fail`, and the char literal, identifier, keyword/lookahead,
+  record/type declaration delimiter paths, record literal delimiters, pattern
+  payload delimiters, expression-level and top-level `let` delimiters,
+  optional top-level `in`, `if`/`then`/`else`, debug/write string openers,
+  tuple argument delimiters, and dynamic indexing delimiters now use the
+  tuple-encoded parse reply helpers.
 
 ## Promote before use
 

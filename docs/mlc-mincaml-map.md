@@ -130,6 +130,10 @@ expression parser mirrors HCC's precedence-climbing loop by reading an
 operator/precedence pair, recursing at the next precedence for the right-hand
 side, rebuilding the left-hand side, and continuing the climb. Stage 02
 continues to carry the higher-order `p_bind` transition point.
+The fixed-point `mlc.ml` parser core now also exposes the same state-threaded
+reply surface with an explicit option encoding (`opt_none` / `opt_some`) and
+`p_return` / `p_optional`; record-field parsing uses those optional replies
+instead of open-coded nullable character probes.
 Stage 03 also type-checks sequencing with `;`, requiring the left expression to
 have type `unit` before emitting the right expression. Its typed integer core
 now covers `read_byte`, literal `write_string`, string literals as immutable

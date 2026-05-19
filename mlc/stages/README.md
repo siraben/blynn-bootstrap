@@ -74,7 +74,9 @@ Current stages:
   `adt-tuple-payload.ml`, nested tuple payload patterns in
   `adt-pattern-nested-tuple.ml`, and recursive ADT traversal in
   `adt-recursion.ml`, to VM block allocation, tag tests, field extraction,
-  direct calls, field mutation for imperative cells, and branches.
+  direct calls, field mutation for imperative cells, and branches. Its parser
+  helper layer now includes explicit option values and `p_optional` for
+  state-threaded optional probes.
 - `03-ast-compiler.ml` is the first successor source compiled by the committed
   fixed-point `mlc.byte`. It keeps the accepted language intentionally small
   while adding a real parse -> AST -> type-check -> emit boundary, with AST
