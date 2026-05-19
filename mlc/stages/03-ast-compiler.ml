@@ -1,5 +1,5 @@
 type ty = TyInt | TyUnit | TyBool | TyMore of ty_more
-type ty_more = TyString | TyPair of ty
+type ty_more = TyString | TyBytes | TyPair of ty
 type expr = EInt of int | EVar of int | EBool of int | EMore of expr_more
 type expr_more = EWriteByte of expr | EAdd of expr | ESub of expr | EMore2 of expr_more2
 type expr_more2 = EMul of expr | EDiv of expr | EEq of expr | EMore3 of expr_more3
@@ -7,7 +7,8 @@ type expr_more3 = ENe of expr | ELt of expr | ELe of expr | EMore4 of expr_more4
 type expr_more4 = EGt of expr | EGe of expr | EIf of expr | EMore5 of expr_more5
 type expr_more5 = ELet of expr | EPair of expr | ELetPair of expr | EMore6 of expr_more6
 type expr_more6 = ESeq of expr | EDebugByte of expr | EReadByte | EMore7 of expr_more7
-type expr_more7 = EString of int | EStringLength of expr | EUnit
+type expr_more7 = EString of int | EStringLength of expr | EBytesCreate of expr | EMore8 of expr_more8
+type expr_more8 = EBytesLength of expr | EUnit
 type parse_reply = ParseOk of int | ParseErr
 
 let rec byte n =
@@ -158,6 +159,11 @@ let rec emit_blocksize emit =
   let _ = emit_byte_if (emit, 27) in
   1
 in
+let rec emit_makeblock_dyn emit =
+  let _ = emit_byte_if (emit, 28) in
+  let _ = emit_u32_if (emit, 0) in
+  5
+in
 let rec is_space ch =
   if ch == ' ' then 1 else
   if ch == '\t' then 1 else
@@ -288,6 +294,14 @@ let rec is_string_length_at state =
   let (src, pos0) = state in
   p_string_at (src, (pos0, "String.length"))
 in
+let rec is_bytes_create_at state =
+  let (src, pos0) = state in
+  p_string_at (src, (pos0, "Bytes.create"))
+in
+let rec is_bytes_length_at state =
+  let (src, pos0) = state in
+  p_string_at (src, (pos0, "Bytes.length"))
+in
 let rec is_true_at state =
   let (src, pos0) = state in
   p_keyword_at (src, (pos0, "true"))
@@ -332,6 +346,14 @@ let rec need_string_length state =
   let (src, pos0) = state in
   p_need_string (src, (pos0, "String.length"))
 in
+let rec need_bytes_create state =
+  let (src, pos0) = state in
+  p_need_string (src, (pos0, "Bytes.create"))
+in
+let rec need_bytes_length state =
+  let (src, pos0) = state in
+  p_need_string (src, (pos0, "Bytes.length"))
+in
 let rec parse_number_loop state =
   let (src, pair) = state in
   let (pos, acc) = pair in
@@ -361,7 +383,7 @@ let rec parse_ident state =
 in
 let rec unit_expr dummy =
   let _ = dummy in
-  EMore (EMore2 (EMore3 (EMore4 (EMore5 (EMore6 (EMore7 EUnit))))))
+  EMore (EMore2 (EMore3 (EMore4 (EMore5 (EMore6 (EMore7 (EMore8 EUnit)))))))
 in
 let rec write_byte_expr ch =
   EMore (EWriteByte (EInt ch))
@@ -374,6 +396,12 @@ let rec string_expr pos =
 in
 let rec string_length_expr expr =
   EMore (EMore2 (EMore3 (EMore4 (EMore5 (EMore6 (EMore7 (EStringLength expr)))))))
+in
+let rec bytes_create_expr expr =
+  EMore (EMore2 (EMore3 (EMore4 (EMore5 (EMore6 (EMore7 (EBytesCreate expr)))))))
+in
+let rec bytes_length_expr expr =
+  EMore (EMore2 (EMore3 (EMore4 (EMore5 (EMore6 (EMore7 (EMore8 (EBytesLength expr))))))))
 in
 let rec read_byte_expr unit =
   let _ = unit in
@@ -477,12 +505,14 @@ let rec parse_debug_string state =
   let str_pos = skip_space (src, str_pos0) in
   if src.[str_pos] == '"' then parse_debug_string_loop (src, (str_pos + 1, (0, unit_expr 0))) else exit 1
 in
-let rec parse_string_length_arg state =
+let rec parse_value_arg state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
   let ch = src.[pos] in
   if ch == '"' then
     parse_string_literal (src, pos)
+  else if is_digit ch then
+    parse_number (src, pos)
   else
     let ident = parse_ident (src, pos) in
     let (name, name_end) = ident in
@@ -491,9 +521,23 @@ in
 let rec parse_string_length_expr state =
   let (src, pos0) = state in
   let arg_pos = need_string_length (src, pos0) in
-  let parsed_arg = parse_string_length_arg (src, arg_pos) in
+  let parsed_arg = parse_value_arg (src, arg_pos) in
   let (arg_ast, done_pos) = parsed_arg in
   (string_length_expr arg_ast, done_pos)
+in
+let rec parse_bytes_create_expr state =
+  let (src, pos0) = state in
+  let arg_pos = need_bytes_create (src, pos0) in
+  let parsed_arg = parse_value_arg (src, arg_pos) in
+  let (arg_ast, done_pos) = parsed_arg in
+  (bytes_create_expr arg_ast, done_pos)
+in
+let rec parse_bytes_length_expr state =
+  let (src, pos0) = state in
+  let arg_pos = need_bytes_length (src, pos0) in
+  let parsed_arg = parse_value_arg (src, arg_pos) in
+  let (arg_ast, done_pos) = parsed_arg in
+  (bytes_length_expr arg_ast, done_pos)
 in
 let rec parse_binop state =
   let (src, pair) = state in
@@ -588,6 +632,10 @@ let rec parse_expr_prec state =
         parse_debug_string (src, pos)
       else if is_string_length_at (src, pos) then
         parse_string_length_expr (src, pos)
+      else if is_bytes_create_at (src, pos) then
+        parse_bytes_create_expr (src, pos)
+      else if is_bytes_length_at (src, pos) then
+        parse_bytes_length_expr (src, pos)
       else if is_read_byte_at (src, pos) then
         p_return (need_read_byte (src, pos), read_byte_expr 0)
       else
@@ -713,6 +761,7 @@ let rec same_ty state =
   | TyMore left_more ->
       match left_more with
         TyString -> (match right with TyMore right_more -> (match right_more with TyString -> 1 | _ -> 0) | _ -> 0)
+      | TyBytes -> (match right with TyMore right_more -> (match right_more with TyBytes -> 1 | _ -> 0) | _ -> 0)
       | TyPair left_pair ->
           match right with
             TyMore right_more ->
@@ -818,7 +867,8 @@ let rec infer state =
                                   TyPair pair_ty ->
                                     let (left_ty, right_ty) = pair_ty in
                                     infer (extend_tenv (name2, (right_ty, extend_tenv (name1, (left_ty, env)))), body)
-                                | TyString -> exit 1)
+                                | TyString -> exit 1
+                                | TyBytes -> exit 1)
                             | TyInt -> exit 1
                             | TyUnit -> exit 1
                             | TyBool -> exit 1
@@ -838,7 +888,15 @@ let rec infer state =
                                 | EStringLength expr ->
                                     let _ = need_ty (infer (env, expr), TyMore TyString) in
                                     TyInt
-                                | EUnit -> TyUnit
+                                | EBytesCreate expr ->
+                                    let _ = need_ty (infer (env, expr), TyInt) in
+                                    TyMore TyBytes
+                                | EMore8 more8 ->
+                                    match more8 with
+                                      EBytesLength expr ->
+                                        let _ = need_ty (infer (env, expr), TyMore TyBytes) in
+                                        TyInt
+                                    | EUnit -> TyUnit
 in
 let rec empty_env unit =
   let _ = unit in
@@ -1040,11 +1098,23 @@ let rec emit_expr state =
                             | EMore7 more7 ->
                                 match more7 with
                                   EString pos -> emit_string_literal (src, (pos, emit))
-                                | EStringLength expr ->
-                                    let expr_len = emit_expr (expr, (src, (env, emit))) in
-                                    let size_len = emit_blocksize emit in
-                                    expr_len + size_len
-                                | EUnit -> emit_const (emit, 0)
+                                  | EStringLength expr ->
+                                      let expr_len = emit_expr (expr, (src, (env, emit))) in
+                                      let size_len = emit_blocksize emit in
+                                      expr_len + size_len
+                                  | EBytesCreate expr ->
+                                      let expr_len = emit_expr (expr, (src, (env, emit))) in
+                                      let push_len = emit_push emit in
+                                      let const_len = emit_const (emit, 0) in
+                                      let block_len = emit_makeblock_dyn emit in
+                                      expr_len + push_len + const_len + block_len
+                                  | EMore8 more8 ->
+                                      match more8 with
+                                        EBytesLength expr ->
+                                          let expr_len = emit_expr (expr, (src, (env, emit))) in
+                                          let size_len = emit_blocksize emit in
+                                          expr_len + size_len
+                                      | EUnit -> emit_const (emit, 0)
 in
 let rec emit_program src =
   let parsed = parse_program (src, 0) in
