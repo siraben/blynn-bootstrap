@@ -329,7 +329,7 @@ in
 let rec parse_signed_number state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
-  if src.[pos] == 45 then
+  if src.[pos] == '-' then
     let parsed = parse_number (src, pos + 1) in
     let (value, value_end) = parsed in
     (0 - value, value_end)
@@ -353,11 +353,11 @@ in
 let rec parse_char_value state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
-  if src.[pos] == 39 then
+  if src.[pos] == '\'' then
     if src.[pos + 1] == 92 then
       let escaped = parse_escape_value (src, pos + 2) in
       let (value, value_end) = escaped in
-      let p1 = expect_ch (src, (value_end, 39)) in
+      let p1 = expect_ch (src, (value_end, '\'')) in
       (value, p1)
     else
       (src.[pos + 1], pos + 3)
@@ -366,12 +366,12 @@ let rec parse_char_value state =
 in
 let rec skip_string_literal state =
   let (src, pos) = state in
-  if src.[pos] == 34 then pos + 1 else skip_string_literal (src, pos + 1)
+  if src.[pos] == '"' then pos + 1 else skip_string_literal (src, pos + 1)
 in
 let rec parse_string_value state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
-  if src.[pos] == 34 then
+  if src.[pos] == '"' then
     let first =
       if src.[pos + 1] == 92 then parse_escape_value (src, pos + 2) else (src.[pos + 1], pos + 2)
     in
@@ -379,10 +379,10 @@ let rec parse_string_value state =
     let _ = first_end in
     let literal_end = skip_string_literal (src, pos + 1) in
     let after_literal = skip_space (src, literal_end) in
-    if src.[after_literal] == 91 then
+    if src.[after_literal] == '[' then
       let index = parse_number (src, after_literal + 1) in
       let (index_value, index_end) = index in
-      let p1 = expect_ch (src, (index_end, 93)) in
+      let p1 = expect_ch (src, (index_end, ']')) in
       if index_value == 0 then (first_value, p1) else (0, p1)
     else
       (1000, literal_end)
@@ -456,7 +456,7 @@ let rec expect_char_cast state =
   let pos = skip_space (src, pos0) in
   if (src.[pos] == 99) * (src.[pos + 1] == 104) * (src.[pos + 2] == 97) * (src.[pos + 3] == 114) then
     let p1 = skip_space (src, pos + 4) in
-    if src.[p1] == 42 then skip_space (src, p1 + 1) else p1
+    if src.[p1] == '*' then skip_space (src, p1 + 1) else p1
   else parse_fail 0
 in
 let rec empty_funcs unit =
@@ -526,8 +526,8 @@ in
 let rec skip_to_close_paren_loop state =
   let (src, pair) = state in
   let (pos, depth) = pair in
-  if src.[pos] == 40 then skip_to_close_paren_loop (src, (pos + 1, depth + 1)) else
-  if src.[pos] == 41 then
+  if src.[pos] == '(' then skip_to_close_paren_loop (src, (pos + 1, depth + 1)) else
+  if src.[pos] == ')' then
     if depth == 0 then pos else skip_to_close_paren_loop (src, (pos + 1, depth - 1))
   else
     skip_to_close_paren_loop (src, (pos + 1, depth))
@@ -543,40 +543,40 @@ let rec parse_expr_mode state =
   let (env, mode) = pair3 in
   let pos = skip_space (src, pos0) in
   let left =
-    if src.[pos] == 33 then
+    if src.[pos] == '!' then
       let expr = parse_expr_mode (src, (pos + 1, (funcs, (env, mode)))) in
       let (value, value_end) = expr in
       if value == 0 then (1, value_end) else (0, value_end)
-    else if src.[pos] == 45 then
+    else if src.[pos] == '-' then
       let expr = parse_expr_mode (src, (pos + 1, (funcs, (env, mode)))) in
       let (value, value_end) = expr in
       (0 - value, value_end)
-    else if src.[pos] == 40 then
+    else if src.[pos] == '(' then
       if is_unsigned_char_cast (src, pos + 1) then
         let cast_end = expect_unsigned_char_cast (src, pos + 1) in
-        let p1 = expect_ch (src, (cast_end, 41)) in
+        let p1 = expect_ch (src, (cast_end, ')')) in
         let expr = parse_expr_mode (src, (p1, (funcs, (env, 1)))) in
         let (value, value_end) = expr in
         if value < 0 then (value + 256, value_end) else (value, value_end)
       else if is_char_cast (src, pos + 1) then
         let cast_end = expect_char_cast (src, pos + 1) in
-        let p1 = expect_ch (src, (cast_end, 41)) in
+        let p1 = expect_ch (src, (cast_end, ')')) in
         let expr = parse_expr_mode (src, (p1, (funcs, (env, 1)))) in
         let (value, value_end) = expr in
         if value > 127 then (value - 256, value_end) else (value, value_end)
       else
         let expr = parse_expr_mode (src, (pos + 1, (funcs, (env, 0)))) in
         let (value, value_end) = expr in
-        let p1 = expect_ch (src, (value_end, 41)) in
+        let p1 = expect_ch (src, (value_end, ')')) in
         (value, p1)
-    else if src.[pos] == 34 then parse_string_value (src, pos)
-    else if src.[pos] == 39 then parse_char_value (src, pos)
+    else if src.[pos] == '"' then parse_string_value (src, pos)
+    else if src.[pos] == '\'' then parse_char_value (src, pos)
     else if is_digit (src.[pos]) then parse_number (src, pos) else
     if src.[pos] == 38 then
       let ident = parse_ident (src, pos + 1) in
       let (name, name_end) = ident in
       let after_name = skip_space (src, name_end) in
-      if src.[after_name] == 46 then
+      if src.[after_name] == '.' then
         let field = parse_ident (src, after_name + 1) in
         let (field_name, field_end) = field in
         if (name == 238053571) * (field_name == 248969007) then (1, field_end) else
@@ -588,13 +588,13 @@ let rec parse_expr_mode state =
       let (name, name_end) = ident in
       let after_name = skip_space (src, name_end) in
       if name == 839785307 then parse_sizeof_value (src, pos) else
-      if src.[after_name] == 40 then
+      if src.[after_name] == '(' then
         let p1 = skip_space (src, after_name + 1) in
         if (name == 820214634) + (name == 468092681) then
           let p2 = (skip_to_close_paren (src, p1)) + 1 in
           (apply_func (funcs, (name, 0)), p2)
         else
-        if src.[p1] == 41 then (apply_func (funcs, (name, 0)), p1 + 1) else
+        if src.[p1] == ')' then (apply_func (funcs, (name, 0)), p1 + 1) else
         let p1_arg = skip_space (src, p1) in
         let arg =
           if src.[p1_arg] == 38 then parse_expr_mode (src, (p1_arg + 1, (funcs, (env, 0)))) else
@@ -602,25 +602,25 @@ let rec parse_expr_mode state =
         in
         let (arg_value, arg_end) = arg in
         let arg_next = skip_space (src, arg_end) in
-        if src.[arg_next] == 44 then
+        if src.[arg_next] == ',' then
           let arg2 = parse_expr_mode (src, (arg_next + 1, (funcs, (env, 0)))) in
           let (arg2_value, arg2_end) = arg2 in
           let after_arg2 = skip_space (src, arg2_end) in
-          if src.[after_arg2] == 44 then
+          if src.[after_arg2] == ',' then
             let p2 = (skip_to_close_paren (src, after_arg2 + 1)) + 1 in
             (apply_func (funcs, (name, 0)), p2)
           else
-            let p2 = expect_ch (src, (arg2_end, 41)) in
+            let p2 = expect_ch (src, (arg2_end, ')')) in
             (apply_func (funcs, (name, (arg_value, arg2_value))), p2)
         else
-          let p2 = expect_ch (src, (arg_end, 41)) in
+          let p2 = expect_ch (src, (arg_end, ')')) in
           (apply_func (funcs, (name, arg_value)), p2)
-      else if src.[after_name] == 91 then
+      else if src.[after_name] == '[' then
         let index = parse_expr_mode (src, (after_name + 1, (funcs, (env, 0)))) in
         let (index_value, index_end) = index in
-        let p1 = expect_ch (src, (index_end, 93)) in
+        let p1 = expect_ch (src, (index_end, ']')) in
         let after_index = skip_space (src, p1) in
-        if (src.[after_index] == 45) * (src.[after_index + 1] == 62) then
+        if (src.[after_index] == '-') * (src.[after_index + 1] == '>') then
           let field = parse_ident (src, after_index + 2) in
           let (field_name, field_end) = field in
           if (name == 185017699) * (field_name == 15507) then
@@ -628,11 +628,11 @@ let rec parse_expr_mode state =
           else parse_fail 0
         else
           (string_at index_value, p1)
-      else if src.[after_name] == 46 then
+      else if src.[after_name] == '.' then
         let field = parse_ident (src, after_name + 1) in
         let (field_name, field_end) = field in
         let after_field = skip_space (src, field_end) in
-        if (src.[after_field] == 45) * (src.[after_field + 1] == 62) then
+        if (src.[after_field] == '-') * (src.[after_field + 1] == '>') then
           let field2 = parse_ident (src, after_field + 2) in
           let (field2_name, field2_end) = field2 in
           if (name == 112) * (field_name == 1986845) * (field2_name == 970924083) then (13, field2_end) else parse_fail 0
@@ -640,8 +640,8 @@ let rec parse_expr_mode state =
         if (name == 112) * (field_name == 811101477) then (7, field_end) else
         if (name == 1920314) * (field_name == 2003486) then (69, field_end) else
         if (name == 1920314) * (field_name == 970924083) then (1234, field_end) else parse_fail 0
-      else if src.[after_name] == 61 then
-        if src.[after_name + 1] == 61 then
+      else if src.[after_name] == '=' then
+        if src.[after_name + 1] == '=' then
           (find_env (env, name), name_end)
         else
           let value = parse_expr_mode (src, (after_name + 1, (funcs, (env, 0)))) in
@@ -652,19 +652,19 @@ let rec parse_expr_mode state =
   in
   let (left_value, left_end) = left in
   let next = skip_space (src, left_end) in
-  if src.[next] == 43 then
+  if src.[next] == '+' then
     let right = parse_expr_mode (src, (next + 1, (funcs, (env, 1)))) in
     let (right_value, right_end) = right in
     (left_value + right_value, right_end)
-  else if src.[next] == 45 then
+  else if src.[next] == '-' then
     let right = parse_expr_mode (src, (next + 1, (funcs, (env, 1)))) in
     let (right_value, right_end) = right in
     (left_value - right_value, right_end)
-  else if src.[next] == 42 then
+  else if src.[next] == '*' then
     let right = parse_expr_mode (src, (next + 1, (funcs, (env, 1)))) in
     let (right_value, right_end) = right in
     (left_value * right_value, right_end)
-  else if src.[next] == 47 then
+  else if src.[next] == '/' then
     let right = parse_expr_mode (src, (next + 1, (funcs, (env, 1)))) in
     let (right_value, right_end) = right in
     (left_value / right_value, right_end)
@@ -672,11 +672,11 @@ let rec parse_expr_mode state =
     let right = parse_expr_mode (src, (next + 1, (funcs, (env, 1)))) in
     let (right_value, right_end) = right in
     (left_value - ((left_value / right_value) * right_value), right_end)
-  else if (src.[next] == 60) * (src.[next + 1] == 60) then
+  else if (src.[next] == '<') * (src.[next + 1] == '<') then
     let right = parse_number (src, next + 2) in
     let (right_value, right_end) = right in
     let after_shift = skip_space (src, right_end) in
-    if (src.[after_shift] == 62) * (src.[after_shift + 1] == 62) then
+    if (src.[after_shift] == '>') * (src.[after_shift + 1] == '>') then
       let right2 = parse_number (src, after_shift + 2) in
       let (right2_value, right2_end) = right2 in
       if (right_value == 30) * (right2_value == 30) then
@@ -687,34 +687,34 @@ let rec parse_expr_mode state =
         ((left_value * (pow2 right_value)) / (pow2 right2_value), right2_end)
     else
       (left_value * (pow2 right_value), right_end)
-  else if (src.[next] == 62) * (src.[next + 1] == 62) then
+  else if (src.[next] == '>') * (src.[next + 1] == '>') then
     let right = parse_number (src, next + 2) in
     let (right_value, right_end) = right in
     let shifted = left_value / (pow2 right_value) in
     let after_shift = skip_space (src, right_end) in
-    if (src.[after_shift] == 60) * (src.[after_shift + 1] == 60) then
+    if (src.[after_shift] == '<') * (src.[after_shift + 1] == '<') then
       let right2 = parse_number (src, after_shift + 2) in
       let (right2_value, right2_end) = right2 in
       (shifted * (pow2 right2_value), right2_end)
     else
       (shifted, right_end)
   else if mode == 0 then
-  if src.[next] == 61 then
-    if src.[next + 1] == 61 then
+  if src.[next] == '=' then
+    if src.[next + 1] == '=' then
       let right = parse_expr_mode (src, (next + 2, (funcs, (env, 1)))) in
       let (right_value, right_end) = right in
       if left_value == right_value then (1, right_end) else (0, right_end)
     else
       parse_fail 0
-  else if src.[next] == 33 then
-    if src.[next + 1] == 61 then
+  else if src.[next] == '!' then
+    if src.[next + 1] == '=' then
       let right = parse_expr_mode (src, (next + 2, (funcs, (env, 1)))) in
       let (right_value, right_end) = right in
       if left_value == right_value then (0, right_end) else (1, right_end)
     else
       parse_fail 0
-  else if src.[next] == 60 then
-    if src.[next + 1] == 61 then
+  else if src.[next] == '<' then
+    if src.[next + 1] == '=' then
       let right = parse_expr_mode (src, (next + 2, (funcs, (env, 1)))) in
       let (right_value, right_end) = right in
       if left_value <= right_value then (1, right_end) else (0, right_end)
@@ -722,8 +722,8 @@ let rec parse_expr_mode state =
       let right = parse_expr_mode (src, (next + 1, (funcs, (env, 1)))) in
       let (right_value, right_end) = right in
       if left_value < right_value then (1, right_end) else (0, right_end)
-  else if src.[next] == 62 then
-    if src.[next + 1] == 61 then
+  else if src.[next] == '>' then
+    if src.[next + 1] == '=' then
       let right = parse_expr_mode (src, (next + 2, (funcs, (env, 1)))) in
       let (right_value, right_end) = right in
       if left_value >= right_value then (1, right_end) else (0, right_end)
@@ -759,23 +759,23 @@ let rec bind_parse_expr_mode state =
 in
 let rec skip_to_close_brace state =
   let (src, pos) = state in
-  if src.[pos] == 125 then pos else skip_to_close_brace (src, pos + 1)
+  if src.[pos] == '}' then pos else skip_to_close_brace (src, pos + 1)
 in
 let rec skip_balanced_block state =
   let (src, pair) = state in
   let (pos, depth) = pair in
-  if src.[pos] == 123 then skip_balanced_block (src, (pos + 1, depth + 1)) else
-  if src.[pos] == 125 then
+  if src.[pos] == '{' then skip_balanced_block (src, (pos + 1, depth + 1)) else
+  if src.[pos] == '}' then
     if depth == 0 then pos else skip_balanced_block (src, (pos + 1, depth - 1))
   else
     skip_balanced_block (src, (pos + 1, depth))
 in
 let rec skip_struct_declaration state =
   let (src, pos) = state in
-  if src.[pos] == 123 then
+  if src.[pos] == '{' then
     let close = skip_balanced_block (src, (pos + 1, 0)) in
     skip_struct_declaration (src, close + 1)
-  else if src.[pos] == 59 then pos + 1 else
+  else if src.[pos] == ';' then pos + 1 else
     skip_struct_declaration (src, pos + 1)
 in
 let rec parse_param_eq_const state =
@@ -825,59 +825,59 @@ let rec parse_func_return state =
   let (src, pair) = state in
   let (pos0, param) = pair in
   let start = skip_space (src, pos0) in
-  if src.[start] == 125 then (FuncConst 0, start) else
+  if src.[start] == '}' then (FuncConst 0, start) else
   if is_return_at (src, start) then
   let p0 = expect_return (src, start) in
   let p1 = skip_space (src, p0) in
-  if src.[p1] == 59 then (FuncConst 0, p1 + 1) else
-  if src.[p1] == 42 then
+  if src.[p1] == ';' then (FuncConst 0, p1 + 1) else
+  if src.[p1] == '*' then
     let ident = parse_ident (src, p1 + 1) in
     let (name, name_end) = ident in
-    let p2 = expect_ch (src, (name_end, 59)) in
+    let p2 = expect_ch (src, (name_end, ';')) in
     if name == param then (FuncArg, p2) else parse_fail 0
   else
-  if src.[p1] == 33 then
+  if src.[p1] == '!' then
     let ident = parse_ident (src, p1 + 1) in
     let (name, name_end) = ident in
-    let p2 = expect_ch (src, (name_end, 59)) in
+    let p2 = expect_ch (src, (name_end, ';')) in
     if name == param then (FuncNotArg, p2) else parse_fail 0
   else if is_digit (src.[p1]) then
     let parsed = parse_number (src, p1) in
     let (value, value_end) = parsed in
-    let p2 = expect_ch (src, (value_end, 59)) in
+    let p2 = expect_ch (src, (value_end, ';')) in
     (FuncConst value, p2)
   else
     let ident = parse_ident (src, p1) in
     let (name, name_end) = ident in
     let after_name = skip_space (src, name_end) in
     if name == param then
-      if (src.[after_name] == 61) * (src.[after_name + 1] == 61) then
+      if (src.[after_name] == '=') * (src.[after_name + 1] == '=') then
         let parsed = parse_param_eq_chain (src, (p1, param)) in
         let (values, values_end) = parsed in
-        let p2 = expect_ch (src, (values_end, 59)) in
+        let p2 = expect_ch (src, (values_end, ';')) in
         (FuncArgEqAny values, p2)
-      else if src.[after_name] == 43 then
+      else if src.[after_name] == '+' then
         let ident2 = parse_ident (src, after_name + 1) in
         let (name2, name2_end) = ident2 in
-        let p2 = expect_ch (src, (name2_end, 59)) in
+        let p2 = expect_ch (src, (name2_end, ';')) in
         if name2 == param then parse_fail 0 else (FuncAddArgs, p2)
       else
-        let p2 = expect_ch (src, (name_end, 59)) in
+        let p2 = expect_ch (src, (name_end, ';')) in
         (FuncArg, p2)
-    else if src.[after_name] == 43 then
+    else if src.[after_name] == '+' then
       let ident2 = parse_ident (src, after_name + 1) in
       let (name2, name2_end) = ident2 in
-      let p2 = expect_ch (src, (name2_end, 59)) in
+      let p2 = expect_ch (src, (name2_end, ';')) in
       (FuncAddArgs, p2)
     else
-      let p2 = expect_ch (src, (name_end, 59)) in
+      let p2 = expect_ch (src, (name_end, ';')) in
       parse_fail 0
   else if is_alpha (src.[start]) then
     let label = parse_ident (src, start) in
     let (label_name, label_end) = label in
     let _ = label_name in
     let label_next = skip_space (src, label_end) in
-    if src.[label_next] == 58 then ((0, 0), skip_to_close_brace (src, label_next + 1)) else parse_fail 0
+    if src.[label_next] == ':' then ((0, 0), skip_to_close_brace (src, label_next + 1)) else parse_fail 0
   else
     parse_fail 0
 in
@@ -892,7 +892,7 @@ let rec parse_params state =
     let (_void_kw, p1_void) = void_parsed in
     let p1_next = skip_space (src, p1_void) in
     if src.[p1_next] == ')' then (0 - 1, p1_next + 1) else
-      let p2_next = if src.[p1_next] == 42 then skip_space (src, p1_next + 1) else p1_next in
+      let p2_next = if src.[p1_next] == '*' then skip_space (src, p1_next + 1) else p1_next in
       let param = parse_ident (src, p2_next) in
       let (param_name, param_end) = param in
       let p3 =
@@ -973,7 +973,7 @@ let rec parse_pointer_write_call state =
 in
 let rec skip_statement state =
   let (src, pos) = state in
-  if src.[pos] == 59 then pos + 1 else skip_statement (src, pos + 1)
+  if src.[pos] == ';' then pos + 1 else skip_statement (src, pos + 1)
 in
 let rec find_label state =
   let (src, pair) = state in
@@ -984,7 +984,7 @@ let rec find_label state =
     let ident = parse_ident (src, pos) in
     let (name, name_end) = ident in
     let name_next = skip_space (src, name_end) in
-    if (name == want) * (src.[name_next] == 58) then name_next + 1 else find_label (src, (name_end, want))
+    if (name == want) * (src.[name_next] == ':') then name_next + 1 else find_label (src, (name_end, want))
   else
     find_label (src, (pos + 1, want))
 in
@@ -999,18 +999,18 @@ let rec parse_local_init state =
   let (funcs, env) = pair2 in
   let p0 = expect_local_type (src, pos0) in
   let p0_next = skip_space (src, p0) in
-  let ident_pos = if src.[p0_next] == 42 then p0_next + 1 else p0 in
+  let ident_pos = if src.[p0_next] == '*' then p0_next + 1 else p0 in
   let ident = parse_ident (src, ident_pos) in
   let (name, name_end) = ident in
   let name_next = skip_space (src, name_end) in
-  if src.[name_next] == 91 then
+  if src.[name_next] == '[' then
     let size = parse_number (src, name_next + 1) in
     let (_size_value, size_end) = size in
-    let p0_close = expect_ch (src, (size_end, 93)) in
-    let p0_semi = expect_ch (src, (p0_close, 59)) in
+    let p0_close = expect_ch (src, (size_end, ']')) in
+    let p0_semi = expect_ch (src, (p0_close, ';')) in
     (p0_semi, extend_env (name, (0, env)))
   else
-  if src.[name_next] == 59 then (name_next + 1, extend_env (name, (0, env))) else
+  if src.[name_next] == ';' then (name_next + 1, extend_env (name, (0, env))) else
     let value = bind_parse_expr_value (bind_expect_char_keep (ident, (src, '=')), (src, (funcs, env))) in
     let done0 = bind_expect_char_keep (value, (src, ';')) in
     let (init_value, p2) = done0 in
@@ -1038,7 +1038,7 @@ let rec parse_aug_assignment state =
   let op = skip_space (src, name_end) in
   let value = bind_parse_expr_value ((0, expect_ch (src, (op + 1, '='))), (src, (funcs, env))) in
   let (delta, _value_end) = value in
-  let next_value = if src.[op] == 43 then old_value + delta else old_value - delta in
+  let next_value = if src.[op] == '+' then old_value + delta else old_value - delta in
   let done0 = bind_expect_char_keep (value, (src, ';')) in
   let (_value, p1) = done0 in
   (p1, extend_env (name, (next_value, env)))
@@ -1053,7 +1053,7 @@ let rec parse_postfix_update_statement state =
   let repeated = bind_expect_char_keep ((name, op + 1), (src, src.[op])) in
   let done0 = bind_expect_char_keep (repeated, (src, ';')) in
   let (_value, p2) = done0 in
-  let new_value = if src.[op] == 43 then old_value + 1 else old_value - 1 in
+  let new_value = if src.[op] == '+' then old_value + 1 else old_value - 1 in
   (p2, extend_env (name, (new_value, env)))
 in
 let rec parse_assignment_expr state =
@@ -1076,7 +1076,7 @@ let rec parse_aug_assignment_expr state =
   let op = skip_space (src, name_end) in
   let value = bind_parse_expr_value ((0, expect_ch (src, (op + 1, '='))), (src, (funcs, env))) in
   let (delta, p1) = value in
-  let next_value = if src.[op] == 43 then old_value + delta else old_value - delta in
+  let next_value = if src.[op] == '+' then old_value + delta else old_value - delta in
   (p1, extend_env (name, (next_value, env)))
 in
 let rec parse_postfix_update_expr state =
@@ -1088,7 +1088,7 @@ let rec parse_postfix_update_expr state =
   let op = skip_space (src, name_end) in
   let repeated = bind_expect_char_keep ((name, op + 1), (src, src.[op])) in
   let (_value, p2) = repeated in
-  let new_value = if src.[op] == 43 then old_value + 1 else old_value - 1 in
+  let new_value = if src.[op] == '+' then old_value + 1 else old_value - 1 in
   (p2, extend_env (name, (new_value, env)))
 in
 let rec parse_for_update state =
@@ -1158,7 +1158,7 @@ let rec parse_main_prefix state =
     let (name, name_end) = ident in
     let _ = name in
     let next = skip_space (src, name_end) in
-    if src.[next] == 61 then
+    if src.[next] == '=' then
       let assigned = parse_assignment (src, (pos, (funcs, env))) in
       let (next_pos, next_env) = assigned in
       parse_main_prefix (src, (next_pos, (funcs, next_env)))
@@ -1171,35 +1171,35 @@ let rec parse_condition_value state =
   let (funcs, env) = pair2 in
   let pos = skip_space (src, pos0) in
   let left =
-    if src.[pos] == 40 then
+    if src.[pos] == '(' then
       if (is_unsigned_char_cast (src, pos + 1)) + (is_char_cast (src, pos + 1)) then
         parse_expr_value (src, (pos0, (funcs, env)))
       else
         let inner = parse_condition_value (src, (pos + 1, (funcs, env))) in
         let (inner_value, inner_end) = inner in
-        let p1 = expect_ch (src, (inner_end, 41)) in
+        let p1 = expect_ch (src, (inner_end, ')')) in
         (inner_value, p1)
     else
       parse_expr_value (src, (pos0, (funcs, env)))
   in
   let (left_value, left_end) = left in
   let next = skip_space (src, left_end) in
-  if src.[next] == 61 then
-    if src.[next + 1] == 61 then
+  if src.[next] == '=' then
+    if src.[next + 1] == '=' then
       let right = parse_expr_value (src, (next + 2, (funcs, env))) in
       let (right_value, right_end) = right in
       if left_value == right_value then (1, right_end) else (0, right_end)
     else
       parse_fail 0
-  else if src.[next] == 33 then
-    if src.[next + 1] == 61 then
+  else if src.[next] == '!' then
+    if src.[next + 1] == '=' then
       let right = parse_expr_value (src, (next + 2, (funcs, env))) in
       let (right_value, right_end) = right in
       if left_value == right_value then (0, right_end) else (1, right_end)
     else
       parse_fail 0
-  else if src.[next] == 60 then
-    if src.[next + 1] == 61 then
+  else if src.[next] == '<' then
+    if src.[next + 1] == '=' then
       let right = parse_expr_value (src, (next + 2, (funcs, env))) in
       let (right_value, right_end) = right in
       if left_value <= right_value then (1, right_end) else (0, right_end)
@@ -1207,8 +1207,8 @@ let rec parse_condition_value state =
       let right = parse_expr_value (src, (next + 1, (funcs, env))) in
       let (right_value, right_end) = right in
       if left_value < right_value then (1, right_end) else (0, right_end)
-  else if src.[next] == 62 then
-    if src.[next + 1] == 61 then
+  else if src.[next] == '>' then
+    if src.[next + 1] == '=' then
       let right = parse_expr_value (src, (next + 2, (funcs, env))) in
       let (right_value, right_end) = right in
       if left_value >= right_value then (1, right_end) else (0, right_end)
@@ -1221,7 +1221,7 @@ let rec parse_condition_value state =
     let (right_value, right_end) = right in
     if left_value == 0 then (0, right_end) else
     if right_value == 0 then (0, right_end) else (1, right_end)
-  else if (src.[next] == 124) * (src.[next + 1] == 124) then
+  else if (src.[next] == '|') * (src.[next + 1] == '|') then
     let right = parse_condition_value (src, (next + 2, (funcs, env))) in
     let (right_value, right_end) = right in
     if left_value == 0 then
@@ -1236,13 +1236,13 @@ let rec parse_condition_effect state =
   let (pos0, pair2) = pair in
   let (funcs, env) = pair2 in
   let pos = skip_space (src, pos0) in
-  if (src.[pos] == 43) * (src.[pos + 1] == 43) then
+  if (src.[pos] == '+') * (src.[pos + 1] == '+') then
     let ident = parse_ident (src, pos + 2) in
     let (name, name_end) = ident in
     let old_value = find_env (env, name) in
     let new_value = old_value + 1 in
     (new_value, (name_end, extend_env (name, (new_value, env))))
-  else if (src.[pos] == 45) * (src.[pos + 1] == 45) then
+  else if (src.[pos] == '-') * (src.[pos + 1] == '-') then
     let ident = parse_ident (src, pos + 2) in
     let (name, name_end) = ident in
     let old_value = find_env (env, name) in
@@ -1252,10 +1252,10 @@ let rec parse_condition_effect state =
     let ident = parse_ident (src, pos) in
     let (name, name_end) = ident in
     let next = skip_space (src, name_end) in
-    if (src.[next] == 43) * (src.[next + 1] == 43) then
+    if (src.[next] == '+') * (src.[next + 1] == '+') then
       let old_value = find_env (env, name) in
       (old_value, (next + 2, extend_env (name, (old_value + 1, env))))
-    else if (src.[next] == 45) * (src.[next + 1] == 45) then
+    else if (src.[next] == '-') * (src.[next + 1] == '-') then
       let old_value = find_env (env, name) in
       (old_value, (next + 2, extend_env (name, (old_value - 1, env))))
     else
@@ -1328,15 +1328,15 @@ let rec parse_main_body state =
   let (funcs, env) = pair2 in
   let pos = skip_space (src, pos0) in
   if is_return_at (src, pos) then parse_return_value (src, (pos, (funcs, env))) else
-  if src.[pos] == 123 then
+  if src.[pos] == '{' then
     parse_main_body (src, ((skip_balanced_block (src, (pos + 1, 0))) + 1, (funcs, env)))
   else
   if is_if_at (src, pos) then
-    let p0 = expect_ch (src, (pos + 2, 40)) in
+    let p0 = expect_ch (src, (pos + 2, '(')) in
     let cond = parse_condition_effect (src, (p0, (funcs, env))) in
     let (cond_value, cond_pair) = cond in
     let (cond_end, cond_env) = cond_pair in
-    let p1 = expect_ch (src, (cond_end, 41)) in
+    let p1 = expect_ch (src, (cond_end, ')')) in
     let branch_pos = skip_space (src, p1) in
     if is_return_at (src, branch_pos) then
       let branch = parse_return_value (src, (branch_pos, (funcs, cond_env))) in
@@ -1377,10 +1377,10 @@ let rec parse_main_body state =
       else
         parse_main_body (src, (branch_end, (funcs, cond_env)))
   else if is_while_at (src, pos) then
-    let p0 = expect_ch (src, (pos + 5, 40)) in
+    let p0 = expect_ch (src, (pos + 5, '(')) in
     let cond = parse_condition_value (src, (p0, (funcs, env))) in
     let (cond_value, cond_end) = cond in
-    let p1 = expect_ch (src, (cond_end, 41)) in
+    let p1 = expect_ch (src, (cond_end, ')')) in
     let body_pos = skip_space (src, p1) in
     if cond_value == 0 then
       parse_main_body (src, (skip_statement (src, body_pos), (funcs, env)))
@@ -1402,25 +1402,25 @@ let rec parse_main_body state =
     let (name, name_end) = ident in
     let _ = name in
     let next = skip_space (src, name_end) in
-    if src.[next] == 58 then
+    if src.[next] == ':' then
       parse_main_body (src, (next + 1, (funcs, env)))
-    else if ((src.[next] == 43) + (src.[next] == 45)) * (src.[next + 1] == 61) then
+    else if ((src.[next] == '+') + (src.[next] == '-')) * (src.[next + 1] == '=') then
       let assigned = parse_aug_assignment (src, (pos, (funcs, env))) in
       let (next_pos, next_env) = assigned in
       parse_main_body (src, (next_pos, (funcs, next_env)))
-    else if (name == 1920314) * (src.[next] == 61) then
+    else if (name == 1920314) * (src.[next] == '=') then
       parse_main_body (src, (skip_statement (src, pos), (funcs, env)))
-    else if src.[next] == 61 then
+    else if src.[next] == '=' then
       let assigned = parse_assignment (src, (pos, (funcs, env))) in
       let (next_pos, next_env) = assigned in
       parse_main_body (src, (next_pos, (funcs, next_env)))
-    else if (name == 206622681) * (src.[next] == 40) then
+    else if (name == 206622681) * (src.[next] == '(') then
       let arg = parse_expr_value (src, (next + 1, (funcs, env))) in
       let (exit_value, arg_end) = arg in
-      let p1 = expect_ch (src, (arg_end, 41)) in
-      let p2 = expect_ch (src, (p1, 59)) in
+      let p1 = expect_ch (src, (arg_end, ')')) in
+      let p2 = expect_ch (src, (p1, ';')) in
       (exit_value, skip_to_close_brace (src, p2))
-    else if ((name == 913327068) + (name == 632251188)) * (src.[next] == 40) then
+    else if ((name == 913327068) + (name == 632251188)) * (src.[next] == '(') then
       let called = parse_pointer_write_call (src, (pos, env)) in
       let (next_pos, next_env) = called in
       parse_main_body (src, (next_pos, (funcs, next_env)))
@@ -1440,17 +1440,17 @@ let rec parse_program_loop state =
     let (name, param) = name_and_param in
     if name < 0 then parse_program_loop (src, (p1, funcs)) else
     let p1_next = skip_space (src, p1) in
-    if src.[p1_next] == 59 then
+    if src.[p1_next] == ';' then
       parse_program_loop (src, (p1_next + 1, funcs))
     else
-      let p2 = expect_ch (src, (p1, 123)) in
+      let p2 = expect_ch (src, (p1, '{')) in
       if name == 246720401 then
         if contains_func (funcs, 53171319) then
           0
         else
         let body = parse_main_body (src, (p2, (funcs, empty_env 0))) in
         let (code, p4) = body in
-        let _ = expect_ch (src, (p4, 125)) in
+        let _ = expect_ch (src, (p4, '}')) in
         code
       else if (name == 253601173) + (name == 221753487) then
         parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (FuncConst 0, funcs))))
@@ -1489,7 +1489,7 @@ let rec parse_program_loop state =
               FuncConst coerced
           | _ -> func_value0
         in
-        let p4 = expect_ch (src, (p3, 125)) in
+        let p4 = expect_ch (src, (p3, '}')) in
         parse_program_loop (src, (p4, extend_func (name, (func_value, funcs))))
 in
 let rec parse_program src =
