@@ -55,7 +55,8 @@ Current stages:
   conditionals, arbitrary final direct calls, and direct unary `let rec`
   functions. It accepts `write_byte (40+39)`, `write_byte 'O'`,
   `write_string "OK"`, stderr-only `debug_byte` / `debug_string` /
-  decimal `debug_int`,
+  decimal `debug_int`, string literals passed to direct functions and indexed
+  through function parameters,
   `Cell.create` / `Cell.get` / `Cell.set`,
   record declarations, record literals up to three fields, and field reads,
   declaration-style top-level `let` / `let rec`,

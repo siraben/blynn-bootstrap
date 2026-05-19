@@ -1030,7 +1030,9 @@ let rec compile_arg_expr input =
   let _ = funcs in
   let pos = skip_space (src, pos0) in
   let left =
-    if src.[pos] == 40 then
+    if src.[pos] == 34 then
+      compile_string_literal (src, (pos, emit))
+    else if src.[pos] == 40 then
       let inner = compile_simple_expr (src, (pos + 1, (env, (ctors, emit)))) in
       let (inner_len, inner_end0) = inner in
       let inner_end = skip_space (src, inner_end0) in
@@ -1524,6 +1526,8 @@ let rec compile_expr input =
             else
               exit 1
           else if src.[inner_end] == 41 then (inner_len, inner_end + 1) else exit 1
+        else if src.[arg_pos] == 34 then
+          compile_string_literal (src, (arg_pos, emit))
         else
           compile_atom (src, (arg_pos, (env, (ctors, emit))))
       in
