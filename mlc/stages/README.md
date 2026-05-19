@@ -57,7 +57,7 @@ Current stages:
   `write_string "OK"`, stderr-only `debug_byte` / `debug_string` /
   decimal `debug_int`,
   `Cell.create` / `Cell.get` / `Cell.set`,
-  two-field record declarations/literals/field reads,
+  record declarations, record literals up to three fields, and field reads,
   declaration-style top-level `let` / `let rec`,
   `let x = 40 in write_byte (x + 39)`, recursively nested
   and parenthesized top-level `let` bindings with shadowing, and true/false

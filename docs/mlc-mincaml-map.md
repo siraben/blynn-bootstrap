@@ -184,8 +184,8 @@ string byte blocks, `String.length` / `Bytes.length`, local `let`, integer
 expressions, nested conditionals, `read_byte`, `Bytes.create`, dynamic byte indexing and
 writes, stderr-only `debug_byte` / `debug_string` / decimal `debug_int` /
 one-integer `debug_printf`,
-imperative `Cell.create` / `Cell.get` / `Cell.set`, two-field record
-declarations/literals/field reads, declaration-style top-level `let` /
+imperative `Cell.create` / `Cell.get` / `Cell.set`, record declarations,
+record literals up to three fields, field reads, declaration-style top-level `let` /
 `let rec`, arbitrary final direct calls, bounded keyword lookahead with capped
 identifier hashes, and the first ADT/pattern slice. The `mlc.byte.selfhost`
 target compiles `mlc/mlc.ml` with committed `mlc.byte` and compares the result

@@ -1177,6 +1177,32 @@ let rec compile_expr input =
                 exit 1
             else
               exit 1
+          else if src.[close] == 59 then
+            let field3 = parse_ident (src, close + 1) in
+            let (field3_name, field3_end) = field3 in
+            let field3_index = lookup_field (ctors, field3_name) in
+            let eq3 = skip_space (src, field3_end) in
+            if src.[eq3] == 61 then
+              let push_len2 = emit_push emit in
+              let value3 = compile_expr (src, (eq3 + 1, (shift_env (shift_env env), (ctors, (funcs, emit))))) in
+              let (value3_len, value3_end) = value3 in
+              let close3 = skip_space (src, value3_end) in
+              if src.[close3] == 125 then
+                if field1_index == 0 then
+                  if field2_index == 1 then
+                    if field3_index == 2 then
+                      let block_len = emit_makeblock (emit, (0, 3)) in
+                      (value1_len + push_len + value2_len + push_len2 + value3_len + block_len, close3 + 1)
+                    else
+                      exit 1
+                  else
+                    exit 1
+                else
+                  exit 1
+              else
+                exit 1
+            else
+              exit 1
           else
             exit 1
         else

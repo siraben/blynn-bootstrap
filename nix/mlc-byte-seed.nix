@@ -160,6 +160,9 @@ stageRun {
     ${mzvmSeedM2}/bin/mzvm-seed mlc.byte < ${testsRoot}/mlc/record.ml > compiled-record.mzbc
     actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-record.mzbc)"
     test "$actual" = O
+    ${mzvmSeedM2}/bin/mzvm-seed mlc.byte < ${testsRoot}/mlc/record-three.ml > compiled-record-three.mzbc
+    actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-record-three.mzbc)"
+    test "$actual" = O
     ${mzvmSeedM2}/bin/mzvm-seed mlc.byte < ${testsRoot}/mlc/top-level-defs.ml > compiled-top-level-defs.mzbc
     actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-top-level-defs.mzbc)"
     test "$actual" = O
@@ -225,6 +228,7 @@ stageRun {
     install -Dm644 compiled-call-precedence.mzbc "$out/share/mlc/compiled-call-precedence.mzbc"
     install -Dm644 compiled-read-byte.mzbc "$out/share/mlc/compiled-read-byte.mzbc"
     install -Dm644 compiled-dynamic-bytes.mzbc "$out/share/mlc/compiled-dynamic-bytes.mzbc"
+    install -Dm644 compiled-record-three.mzbc "$out/share/mlc/compiled-record-three.mzbc"
     install -Dm644 compiled-selfhost.mzbc "$out/share/mlc/compiled-selfhost.mzbc"
     install -Dm644 compiled-selfhost-smoke.mzbc "$out/share/mlc/compiled-selfhost-smoke.mzbc"
   '';
