@@ -92,6 +92,7 @@ DEFINE SYSCALL 0F05
     check_return ${testsRoot}/hcc/m1-smoke/examples/bootstrap-qsort-pointer.c 0
     check_return ${testsRoot}/hcc/m1-smoke/examples/sizeof-member-array-bound.c 0
     check_return ${testsRoot}/hcc/scalar-immediate-smoke.c 0
+    check_return ${testsRoot}/hcc/parse-smoke.c 0
     printf 'int main(){return 42;}' > return-42.c
     check_return return-42.c 42
     if ${mzvmSeedM2}/bin/mzvm-seed ccc.byte < ${testsRoot}/hcc/diagnostics/unknown-identifier.c > unknown-identifier.M1; then

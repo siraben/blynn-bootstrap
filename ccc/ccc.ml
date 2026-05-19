@@ -111,6 +111,12 @@ let rec p_try_string state =
   let pos = skip_space (src, pos0) in
   p_try_string_loop (want, (len, (src, (pos, 0))))
 in
+let rec p_optional_pos state =
+  let (reply, pos0) = state in
+  match reply with
+    ParseOk pos -> (1, pos)
+  | ParseErr -> (0, pos0)
+in
 let rec p_need_string state =
   p_force (p_try_string state)
 in
@@ -169,6 +175,13 @@ let rec bind_skip_pointer_keep state =
   let (value, pos0) = parsed in
   let pos = skip_space (src, pos0) in
   if src.[pos] == '*' then (value, skip_space (src, pos + 1)) else parsed
+in
+let rec skip_const_qualifiers state =
+  let (src, pos0) = state in
+  let pos = skip_space (src, pos0) in
+  let parsed = p_optional_pos (p_try_string ("const", (5, (src, pos))), pos) in
+  let (has_const, after_const) = parsed in
+  if has_const == 1 then skip_const_qualifiers (src, after_const) else pos
 in
 let rec expect_int state =
   let (src, pos0) = state in
@@ -230,6 +243,7 @@ let rec expect_type state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
   if is_string_at ("static", (6, (src, pos))) then expect_type (src, expect_string ("static", (6, (src, pos)))) else
+  if is_string_at ("const", (5, (src, pos))) then expect_type (src, expect_string ("const", (5, (src, pos)))) else
   if is_string_at ("int", (3, (src, pos))) then expect_string ("int", (3, (src, pos))) else
   if is_string_at ("char", (4, (src, pos))) then expect_string ("char", (4, (src, pos))) else
   if is_string_at ("void", (4, (src, pos))) then expect_string ("void", (4, (src, pos))) else
@@ -938,10 +952,13 @@ let rec parse_function_header state =
   let (src, pos) = state in
   let typed = parse_type_token (src, pos) in
   let after_pointer = bind_skip_pointer_keep (typed, src) in
-  let named = bind_parse_ident (after_pointer, src) in
-  let (name, name_end) = named in
-  let name_next = skip_space (src, name_end) in
-  if src.[name_next] == '(' then bind_parse_params_after_ident (named, src) else ((0 - 1, 0), skip_decl_statement (src, pos))
+  let (_type_value, name_pos0) = after_pointer in
+  let name_pos = skip_const_qualifiers (src, name_pos0) in
+  if src.[name_pos] == '(' then ((0 - 1, 0), skip_decl_statement (src, pos)) else
+    let named = parse_ident (src, name_pos) in
+    let (name, name_end) = named in
+    let name_next = skip_space (src, name_end) in
+    if src.[name_next] == '(' then bind_parse_params_after_ident (named, src) else ((0 - 1, 0), skip_decl_statement (src, pos))
 in
 let rec skip_call_statement state =
   let (src, pos0) = state in
@@ -1431,7 +1448,7 @@ let rec parse_program_loop state =
   let (src, pair) = state in
   let (pos0, funcs) = pair in
   let pos = skip_space (src, pos0) in
-  if src.[pos] == 0 then parse_fail 0 else
+  if src.[pos] == 0 then 0 else
   if is_typedef_at (src, pos) then parse_program_loop (src, (skip_struct_declaration (src, pos), funcs)) else
   if is_enum_at (src, pos) then parse_program_loop (src, (skip_statement (src, pos), funcs)) else
   if is_struct_at (src, pos) then parse_program_loop (src, (skip_struct_declaration (src, pos), funcs)) else
