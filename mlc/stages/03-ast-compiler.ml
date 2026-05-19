@@ -202,10 +202,13 @@ let rec skip_space state =
   let (src, pos) = state in
   if is_space (src.[pos]) then skip_space (src, pos + 1) else pos
 in
+let rec fail unit =
+  exit 1
+in
 let rec p_force reply =
   match reply with
     ParseOk pos -> pos
-  | ParseErr -> exit 1
+  | ParseErr -> fail 0
 in
 let rec p_return state =
   let (pos, value) = state in
@@ -259,11 +262,14 @@ in
 let rec p_need_string state =
   p_force (p_try_string state)
 in
-let rec p_need_keyword state =
+let rec p_try_keyword state =
   let (src, pair) = state in
   let (pos0, text) = pair in
   let pos = skip_space (src, pos0) in
-  if p_keyword_at (src, (pos, text)) == 1 then pos + String.length text else exit 1
+  if p_keyword_at (src, (pos, text)) == 1 then ParseOk (pos + String.length text) else ParseErr
+in
+let rec p_need_keyword state =
+  p_force (p_try_keyword state)
 in
 let rec is_if_at state =
   let (src, pos0) = state in
@@ -395,7 +401,7 @@ let rec parse_number state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
   let ch = src.[pos] in
-  if is_digit ch then parse_number_loop (src, (pos + 1, ch - '0')) else exit 1
+  if is_digit ch then parse_number_loop (src, (pos + 1, ch - '0')) else fail 0
 in
 let rec ident_hash n =
   n - ((n / 1000000007) * 1000000007)
@@ -410,7 +416,7 @@ let rec parse_ident state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
   let ch = src.[pos] in
-  if is_alpha ch then parse_ident_loop (src, (pos + 1, ch)) else exit 1
+  if is_alpha ch then parse_ident_loop (src, (pos + 1, ch)) else fail 0
 in
 let rec unit_expr dummy =
   let _ = dummy in
@@ -501,7 +507,7 @@ let rec parse_string_length_literal state =
     let (len, done_pos) = parsed in
     (EInt len, done_pos)
   else
-    exit 1
+    fail 0
 in
 let rec parse_string_literal state =
   let (src, pos0) = state in
@@ -527,7 +533,7 @@ let rec parse_write_string state =
   let (src, pos0) = state in
   let str_pos0 = need_write_string (src, pos0) in
   let str_pos = skip_space (src, str_pos0) in
-  if src.[str_pos] == '"' then parse_write_string_loop (src, (str_pos + 1, (0, unit_expr 0))) else exit 1
+  if src.[str_pos] == '"' then parse_write_string_loop (src, (str_pos + 1, (0, unit_expr 0))) else fail 0
 in
 let rec parse_debug_string_loop state =
   let (src, pair) = state in
@@ -546,13 +552,13 @@ let rec parse_debug_string state =
   let (src, pos0) = state in
   let str_pos0 = need_debug_string (src, pos0) in
   let str_pos = skip_space (src, str_pos0) in
-  if src.[str_pos] == '"' then parse_debug_string_loop (src, (str_pos + 1, (0, unit_expr 0))) else exit 1
+  if src.[str_pos] == '"' then parse_debug_string_loop (src, (str_pos + 1, (0, unit_expr 0))) else fail 0
 in
 let rec parse_debug_printf_prefix_loop state =
   let (src, pair) = state in
   let (pos, pair2) = pair in
   let (has_expr, acc) = pair2 in
-  if src.[pos] == '"' then exit 1 else
+  if src.[pos] == '"' then fail 0 else
   if (src.[pos] == '%') * (src.[pos + 1] == 'd') then
     if has_expr == 1 then (acc, pos + 2) else (unit_expr 0, pos + 2)
   else
@@ -586,7 +592,7 @@ let rec parse_debug_printf_format state =
     let (suffix_ast, expr_pos) = suffix in
     (prefix_ast, (suffix_ast, expr_pos))
   else
-    exit 1
+    fail 0
 in
 let rec add_expr state =
   let (left, right) = state in
@@ -634,7 +640,7 @@ let rec make_index_binop state =
   if op == 1 then add_expr (left, right) else
   if op == 2 then sub_expr (left, right) else
   if op == 3 then mul_expr (left, right) else
-  if op == 4 then div_expr (left, right) else exit 1
+  if op == 4 then div_expr (left, right) else fail 0
 in
 let rec parse_index_expr_prec state =
   let (src, pair0) = state in
@@ -700,7 +706,7 @@ let rec parse_index_suffix state =
           let (value_ast, value_end) = value in
           (set_index_expr (base, (index_ast, value_ast)), value_end)
         else
-          exit 1
+          fail 0
       else
         (index_expr (base, index_ast), close)
     else
@@ -740,7 +746,7 @@ let rec make_binop state =
   if op == 8 then add_expr (left, right) else
   if op == 9 then sub_expr (left, right) else
   if op == 10 then mul_expr (left, right) else
-  if op == 11 then div_expr (left, right) else exit 1
+  if op == 11 then div_expr (left, right) else fail 0
 in
 let rec parse_expr_prec state =
   let (src, pair0) = state in
@@ -935,7 +941,7 @@ let rec lookup_tenv state =
   let (head, rest) = env in
   let (typ, tail) = rest in
   if head == name then typ else
-  if head < 0 then exit 1 else lookup_tenv (tail, name)
+  if head < 0 then fail 0 else lookup_tenv (tail, name)
 in
 let rec same_ty state =
   let (left, right) = state in
@@ -955,7 +961,7 @@ let rec same_ty state =
 in
 let rec need_ty state =
   let (got, want) = state in
-  if same_ty (got, want) == 1 then 0 else exit 1
+  if same_ty (got, want) == 1 then 0 else fail 0
 in
 let rec infer state =
   let (env, ast) = state in
@@ -1052,11 +1058,11 @@ let rec infer state =
                                   TyPair pair_ty ->
                                     let (left_ty, right_ty) = pair_ty in
                                     infer (extend_tenv (name2, (right_ty, extend_tenv (name1, (left_ty, env)))), body)
-                                | TyString -> exit 1
-                                | TyBytes -> exit 1)
-                            | TyInt -> exit 1
-                            | TyUnit -> exit 1
-                            | TyBool -> exit 1
+                                | TyString -> fail 0
+                                | TyBytes -> fail 0)
+                            | TyInt -> fail 0
+                            | TyUnit -> fail 0
+                            | TyBool -> fail 0
                       | EMore6 more6 ->
                           match more6 with
                             ESeq parts ->
@@ -1090,10 +1096,10 @@ let rec infer state =
                                           (match more with
                                             TyString -> TyInt
                                           | TyBytes -> TyInt
-                                          | TyPair pair_ty -> let _ = pair_ty in exit 1)
-                                      | TyInt -> exit 1
-                                      | TyUnit -> exit 1
-                                      | TyBool -> exit 1)
+                                          | TyPair pair_ty -> let _ = pair_ty in fail 0)
+                                      | TyInt -> fail 0
+                                      | TyUnit -> fail 0
+                                      | TyBool -> fail 0)
                                   | ESetIndex parts ->
                                       let (base, rest) = parts in
                                       let (index, value) = rest in
@@ -1126,7 +1132,7 @@ let rec lookup_env state =
   let (name, rest) = env in
   let (depth, tail) = rest in
   if name == want then depth else
-  if name < 0 then exit 1 else lookup_env (tail, want)
+  if name < 0 then fail 0 else lookup_env (tail, want)
 in
 let rec emit_string_tail state =
   let (src, pair) = state in
@@ -1353,7 +1359,7 @@ let rec emit_program src =
   let parsed = parse_program (src, 0) in
   let (ast, pos) = parsed in
   let done_pos = skip_space (src, pos) in
-  let _ = if src.[done_pos] == 0 then 0 else exit 1 in
+  let _ = if src.[done_pos] == 0 then 0 else fail 0 in
   let _ = need_ty (infer (empty_tenv 0, ast), TyUnit) in
   let code_len = emit_expr (ast, (src, (empty_env 0, 0))) in
   let _ = emit_header (code_len + 1) in
