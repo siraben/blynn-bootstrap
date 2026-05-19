@@ -28,9 +28,10 @@ that construct and have a check for it.
   `p_try_string`, `p_try_keyword`, `p_try_ident`, and corresponding `p_need_*`
   helpers. This keeps the parser state explicit while avoiding a dependency on
   ADT syntax before stage 02 can compile ADTs in the compiler implementation.
-- A scan of `mlc/mlc.ml` after `b49f06f` found roughly 320 numeric character
-  comparisons or byte writes, including about 216 direct `src.[...] == N`
-  source-character checks. Most are now avoidable.
+- A scan of `mlc/mlc.ml` after the char-literal cleanup found no remaining
+  direct `src.[...] == N` ASCII source-character checks; the remaining
+  numeric byte writes are VM bytecode opcodes or data bytes rather than parser
+  delimiters.
 
 ## Rewrite now
 
@@ -52,7 +53,9 @@ These can move directly into `mlc.ml` because stage 02 already compiles them:
 ## Rewritten
 
 - `mlc.ml` now uses ordinary char literals for the MZBC header,
-  character-class ranges, digit arithmetic, and whitespace checks.
+  character-class ranges, digit arithmetic, whitespace checks, ADT/type
+  delimiters, pattern payload delimiters, operator tokens, string/debug format
+  delimiters, dynamic indexing delimiters, and match-case bars.
 - Hand-spelled keyword recognizers like `is_write_byte_at` and
   `is_debug_printf_at` now route through shared `string_at` / `keyword_at`
   helpers. Stage 02 already supports the required string literals, string
@@ -94,7 +97,8 @@ These need a stronger previous stage before they should become required by
 ## Suggested order
 
 1. Convert `mlc.ml` ASCII constants to ordinary char literals. This is
-   done for the parser core and header helpers.
+   done for the parser core, header helpers, type/pattern parsing, operator
+   parsing, string/debug parsing, and dynamic indexing paths.
 2. Add `string_at` and `keyword_at` to `mlc.ml`, then collapse the `is_*_at`
    functions to data-like spellings. This is done for the shared recognizer
    layer.
