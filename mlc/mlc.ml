@@ -2104,37 +2104,91 @@ let rec compile_byte_code input =
           let seq_pos = skip_space (src, sparam_end) in
           if src.[seq_pos] == 61 then
             let s_body_start = seq_pos + 1 in
-            let provisional_funcs = extend_func (sname, (sparam, (0, extend_func (fname, (param, (target, funcs)))))) in
-            let fn_env = extend_env (param, env) in
-            let fn_body = compile_expr (src, (fn_body_start, (fn_env, (ctors, (provisional_funcs, 0))))) in
-            let (fn_len, fn_end) = fn_body in
-            let fn_total = 1 + fn_len + 5 + 1 in
-            let starget = target + fn_total in
-            let next_funcs = extend_func (sname, (sparam, (starget, extend_func (fname, (param, (target, funcs)))))) in
-            let s_env = extend_env (sparam, env) in
-            let s_body = compile_expr (src, (s_body_start, (s_env, (ctors, (next_funcs, 0))))) in
-            let (s_len, s_end) = s_body in
-            let s_total = 1 + s_len + 5 + 1 in
-            let in_pos = skip_space (src, s_end) in
-            let body_pos = if is_in_at (src, in_pos) then skip_space (src, in_pos + 2) else in_pos in
-            let body = compile_byte_code (src, (body_pos, (env, (ctors, (next_funcs, (base + 5 + fn_total + s_total, 0)))))) in
-            let (body_len, body_end) = body in
-            let _ =
-              if emit == 1 then
-                let _ = emit_branch (1, fn_total + s_total) in
-                let _ = emit_push 1 in
-                let _ = compile_expr (src, (fn_body_start, (fn_env, (ctors, (next_funcs, 1))))) in
-                let _ = emit_pop1 1 in
-                let _ = emit_return 1 in
-                let _ = emit_push 1 in
-                let _ = compile_expr (src, (s_body_start, (s_env, (ctors, (next_funcs, 1))))) in
-                let _ = emit_pop1 1 in
-                let _ = emit_return 1 in
-                compile_byte_code (src, (body_pos, (env, (ctors, (next_funcs, (base + 5 + fn_total + s_total, 1))))))
+            let third_and_pos = find_and_pos (src, s_body_start) in
+            if third_and_pos >= 0 then
+              let tname_parsed = parse_ident (src, third_and_pos + 3) in
+              let (tname, tname_end) = tname_parsed in
+              let tparam_parsed = parse_ident (src, tname_end) in
+              let (tparam, tparam_end) = tparam_parsed in
+              let teq_pos = skip_space (src, tparam_end) in
+              if src.[teq_pos] == 61 then
+                let t_body_start = teq_pos + 1 in
+                let provisional_funcs = extend_func (tname, (tparam, (0, extend_func (sname, (sparam, (0, extend_func (fname, (param, (target, funcs))))))))) in
+                let fn_env = extend_env (param, env) in
+                let fn_body = compile_expr (src, (fn_body_start, (fn_env, (ctors, (provisional_funcs, 0))))) in
+                let (fn_len, fn_end) = fn_body in
+                let fn_total = 1 + fn_len + 5 + 1 in
+                let starget = target + fn_total in
+                let funcs2 = extend_func (sname, (sparam, (starget, extend_func (fname, (param, (target, funcs)))))) in
+                let funcs2_provisional = extend_func (tname, (tparam, (0, funcs2))) in
+                let s_env = extend_env (sparam, env) in
+                let s_body = compile_expr (src, (s_body_start, (s_env, (ctors, (funcs2_provisional, 0))))) in
+                let (s_len, s_end) = s_body in
+                let s_total = 1 + s_len + 5 + 1 in
+                let ttarget = starget + s_total in
+                let next_funcs = extend_func (tname, (tparam, (ttarget, funcs2))) in
+                let t_env = extend_env (tparam, env) in
+                let t_body = compile_expr (src, (t_body_start, (t_env, (ctors, (next_funcs, 0))))) in
+                let (t_len, t_end) = t_body in
+                let t_total = 1 + t_len + 5 + 1 in
+                let in_pos = skip_space (src, t_end) in
+                let body_pos = if is_in_at (src, in_pos) then skip_space (src, in_pos + 2) else in_pos in
+                let body = compile_byte_code (src, (body_pos, (env, (ctors, (next_funcs, (base + 5 + fn_total + s_total + t_total, 0)))))) in
+                let (body_len, body_end) = body in
+                let _ =
+                  if emit == 1 then
+                    let _ = emit_branch (1, fn_total + s_total + t_total) in
+                    let _ = emit_push 1 in
+                    let _ = compile_expr (src, (fn_body_start, (fn_env, (ctors, (next_funcs, 1))))) in
+                    let _ = emit_pop1 1 in
+                    let _ = emit_return 1 in
+                    let _ = emit_push 1 in
+                    let _ = compile_expr (src, (s_body_start, (s_env, (ctors, (next_funcs, 1))))) in
+                    let _ = emit_pop1 1 in
+                    let _ = emit_return 1 in
+                    let _ = emit_push 1 in
+                    let _ = compile_expr (src, (t_body_start, (t_env, (ctors, (next_funcs, 1))))) in
+                    let _ = emit_pop1 1 in
+                    let _ = emit_return 1 in
+                    compile_byte_code (src, (body_pos, (env, (ctors, (next_funcs, (base + 5 + fn_total + s_total + t_total, 1))))))
+                  else
+                    (0, 0)
+                in
+                (5 + fn_total + s_total + t_total + body_len, body_end)
               else
-                (0, 0)
-            in
-            (5 + fn_total + s_total + body_len, body_end)
+                parse_fail 0
+            else
+              let provisional_funcs = extend_func (sname, (sparam, (0, extend_func (fname, (param, (target, funcs)))))) in
+              let fn_env = extend_env (param, env) in
+              let fn_body = compile_expr (src, (fn_body_start, (fn_env, (ctors, (provisional_funcs, 0))))) in
+              let (fn_len, fn_end) = fn_body in
+              let fn_total = 1 + fn_len + 5 + 1 in
+              let starget = target + fn_total in
+              let next_funcs = extend_func (sname, (sparam, (starget, extend_func (fname, (param, (target, funcs)))))) in
+              let s_env = extend_env (sparam, env) in
+              let s_body = compile_expr (src, (s_body_start, (s_env, (ctors, (next_funcs, 0))))) in
+              let (s_len, s_end) = s_body in
+              let s_total = 1 + s_len + 5 + 1 in
+              let in_pos = skip_space (src, s_end) in
+              let body_pos = if is_in_at (src, in_pos) then skip_space (src, in_pos + 2) else in_pos in
+              let body = compile_byte_code (src, (body_pos, (env, (ctors, (next_funcs, (base + 5 + fn_total + s_total, 0)))))) in
+              let (body_len, body_end) = body in
+              let _ =
+                if emit == 1 then
+                  let _ = emit_branch (1, fn_total + s_total) in
+                  let _ = emit_push 1 in
+                  let _ = compile_expr (src, (fn_body_start, (fn_env, (ctors, (next_funcs, 1))))) in
+                  let _ = emit_pop1 1 in
+                  let _ = emit_return 1 in
+                  let _ = emit_push 1 in
+                  let _ = compile_expr (src, (s_body_start, (s_env, (ctors, (next_funcs, 1))))) in
+                  let _ = emit_pop1 1 in
+                  let _ = emit_return 1 in
+                  compile_byte_code (src, (body_pos, (env, (ctors, (next_funcs, (base + 5 + fn_total + s_total, 1))))))
+                else
+                  (0, 0)
+              in
+              (5 + fn_total + s_total + body_len, body_end)
           else
             parse_fail 0
         else

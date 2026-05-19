@@ -191,9 +191,9 @@ record literals up to three fields, field reads, declaration-style top-level `le
 identifier hashes, and the first ADT/pattern slice. The `mlc.byte.selfhost`
 target compiles `mlc/mlc.ml` with committed `mlc.byte` and compares the result
 byte-for-byte with the committed compiler artifact.
-Direct unary recursive functions also support a one-partner
-`let rec f x = ... and g y = ...` group, with both function targets available
-while compiling either body.
+Direct unary recursive functions also support groups up to three functions, such as
+`let rec f x = ... and g y = ... and h z = ...`, with all function targets
+available while compiling each body.
 Leading `type` declarations build a constructor environment, constructor and
 tuple payload expressions allocate VM blocks, tuple destructuring extracts
 fields, and simple constructor/wildcard/default-variable `match` forms lower to tag tests and
