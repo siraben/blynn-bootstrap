@@ -95,6 +95,12 @@ nix build .#gccLatest.m2.precisely.gccm2
 byte-for-byte output checks. Upstream Blynn and Mes sources are fetched by
 fixed-output derivations and patched with `patches/upstreams`.
 
+The mini-ML toolchain also exposes `debug_byte` and `debug_string` as
+stderr-only primitives. Use them for temporary compiler breadcrumbs when stdout
+is bytecode or M1 output. Native VM crashes should still be debugged under
+`nix develop` with `gdb`; the mini-ML sources are not yet valid OCaml, so this
+is not at the HCC/GHC-style host-language debugging point.
+
 ## Portable Bootstrap
 
 The repo-owned scripts under `scripts/` are the primary bootstrap interface.

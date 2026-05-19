@@ -369,6 +369,13 @@ static void emit_call_write_byte(void)
   emit_u32(1);
 }
 
+static void emit_call_debug_byte(void)
+{
+  emit_byte(OP_C_CALL);
+  emit_u32(1);
+  emit_u32(3);
+}
+
 static void emit_call_read_byte(void)
 {
   emit_byte(OP_C_CALL);
@@ -679,6 +686,13 @@ static void parse_write(void)
   emit_call_write_byte();
 }
 
+static void parse_debug_byte(void)
+{
+  if (!take_keyword("debug_byte")) die("expected debug_byte");
+  parse_cmp();
+  emit_call_debug_byte();
+}
+
 static void parse_exit(void)
 {
   if (!take_keyword("exit")) die("expected exit");
@@ -730,6 +744,24 @@ static void parse_write_string(void)
   while (c >= 0) {
     emit_const(c);
     emit_call_write_byte();
+    wrote = 1;
+    c = parse_string_char();
+  }
+  if (!wrote) emit_const(0);
+}
+
+static void parse_debug_string(void)
+{
+  int c;
+  int wrote = 0;
+  if (!take_keyword("debug_string")) die("expected debug_string");
+  skip_space();
+  if (pos >= src_len || src[pos] != '"') die("expected string");
+  pos = pos + 1;
+  c = parse_string_char();
+  while (c >= 0) {
+    emit_const(c);
+    emit_call_debug_byte();
     wrote = 1;
     c = parse_string_char();
   }
@@ -1019,7 +1051,9 @@ static void parse_nonseq_expr(void)
   if (keyword_at("let")) parse_let();
   else if (keyword_at("if")) parse_if();
   else if (keyword_at("exit")) parse_exit();
+  else if (keyword_at("debug_string")) parse_debug_string();
   else if (keyword_at("write_string")) parse_write_string();
+  else if (keyword_at("debug_byte")) parse_debug_byte();
   else if (keyword_at("write_byte")) parse_write();
   else if (parse_array_set()) {}
   else parse_cmp();
@@ -1067,7 +1101,7 @@ static void write_bytecode(const char *path)
   fputc('C', file);
   write_u32_file(file, 1);
   write_u32_file(file, code_len);
-  write_u32_file(file, 3);
+  write_u32_file(file, 4);
   write_u32_file(file, 0);
   out_file = file;
   out_len = 0;

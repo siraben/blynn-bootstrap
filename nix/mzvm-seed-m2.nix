@@ -44,6 +44,11 @@ stageRun {
     ./mzvm-seed signed.mzbc > actual.txt
     IFS= read -r actual < actual.txt
     test "$actual" = OK
+    printf '%b' '\115\132\102\103\001\000\000\000\017\000\000\000\004\000\000\000\000\000\000\000' > debug.mzbc
+    printf '%b' '\001\124\000\000\000\016\001\000\000\000\003\000\000\000\000' >> debug.mzbc
+    ./mzvm-seed debug.mzbc > debug-out.txt 2> debug-err.txt
+    test "$(cat debug-out.txt)" = ""
+    test "$(cat debug-err.txt)" = T
     i=0
     printf '%b' '\115\132\102\103\001\000\000\000\273\001\000\000\003\000\000\000\000\000\000\000' > gc.mzbc
     while [ "$i" -lt 20 ]; do
@@ -66,6 +71,7 @@ stageRun {
     install -Dm644 ok.mzbc "$out/share/mzvm/tests/ok.mzbc"
     install -Dm644 block.mzbc "$out/share/mzvm/tests/block.mzbc"
     install -Dm644 signed.mzbc "$out/share/mzvm/tests/signed.mzbc"
+    install -Dm644 debug.mzbc "$out/share/mzvm/tests/debug.mzbc"
     install -Dm644 gc.mzbc "$out/share/mzvm/tests/gc.mzbc"
   '';
 }

@@ -26,6 +26,14 @@ stageRun {
     printf 'write_string "OK"' | ${mzvmSeedM2}/bin/mzvm-seed mlc.byte > compiled-string.mzbc
     actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-string.mzbc)"
     test "$actual" = OK
+    printf 'let _ = debug_byte 84 in write_byte 79' | ${mzvmSeedM2}/bin/mzvm-seed mlc.byte > compiled-debug-byte.mzbc
+    actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-debug-byte.mzbc 2> debug-byte.err)"
+    test "$actual" = O
+    test "$(cat debug-byte.err)" = T
+    printf 'let _ = debug_string "TRACE" in write_byte 79' | ${mzvmSeedM2}/bin/mzvm-seed mlc.byte > compiled-debug-string.mzbc
+    actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-debug-string.mzbc 2> debug-string.err)"
+    test "$actual" = O
+    test "$(cat debug-string.err)" = TRACE
     printf 'let x = 40 in write_byte (x + 39)' | ${mzvmSeedM2}/bin/mzvm-seed mlc.byte > compiled-let.mzbc
     actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-let.mzbc)"
     test "$actual" = O
@@ -158,6 +166,8 @@ stageRun {
     install -Dm644 compiled.mzbc "$out/share/mlc/compiled.mzbc"
     install -Dm644 compiled-char.mzbc "$out/share/mlc/compiled-char.mzbc"
     install -Dm644 compiled-string.mzbc "$out/share/mlc/compiled-string.mzbc"
+    install -Dm644 compiled-debug-byte.mzbc "$out/share/mlc/compiled-debug-byte.mzbc"
+    install -Dm644 compiled-debug-string.mzbc "$out/share/mlc/compiled-debug-string.mzbc"
     install -Dm644 compiled-let.mzbc "$out/share/mlc/compiled-let.mzbc"
     install -Dm644 compiled-let2.mzbc "$out/share/mlc/compiled-let2.mzbc"
     install -Dm644 compiled-let3.mzbc "$out/share/mlc/compiled-let3.mzbc"

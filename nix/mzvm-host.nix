@@ -33,6 +33,11 @@ stdenv.mkDerivation {
     sh ${scriptsRoot}/mzvm-write-signed-bytecode.sh signed.mzbc
     ./mzvm signed.mzbc > signed-actual.txt
     cmp expected.txt signed-actual.txt
+    printf '%b' '\115\132\102\103\001\000\000\000\017\000\000\000\004\000\000\000\000\000\000\000' > debug.mzbc
+    printf '%b' '\001\124\000\000\000\016\001\000\000\000\003\000\000\000\000' >> debug.mzbc
+    ./mzvm debug.mzbc > debug-out.txt 2> debug-err.txt
+    test "$(cat debug-out.txt)" = ""
+    test "$(cat debug-err.txt)" = T
     runHook postCheck
   '';
 

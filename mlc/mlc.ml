@@ -14,7 +14,7 @@ let rec emit_header code_len =
   let _ = write_byte 67 in
   let _ = emit_u32 1 in
   let _ = emit_u32 code_len in
-  let _ = emit_u32 3 in
+  let _ = emit_u32 4 in
   emit_u32 0
 in
 let rec emit_write_const value =
@@ -103,6 +103,12 @@ let rec emit_call_write_byte emit =
   let _ = emit_byte_if (emit, 14) in
   let _ = emit_u32_if (emit, 1) in
   let _ = emit_u32_if (emit, 1) in
+  9
+in
+let rec emit_call_debug_byte emit =
+  let _ = emit_byte_if (emit, 14) in
+  let _ = emit_u32_if (emit, 1) in
+  let _ = emit_u32_if (emit, 3) in
   9
 in
 let rec emit_call_exit emit =
@@ -362,6 +368,24 @@ let rec is_write_string_at input =
   if (src.[pos] == 119) * (src.[pos + 1] == 114) * (src.[pos + 2] == 105) * (src.[pos + 3] == 116) then
     if (src.[pos + 4] == 101) * (src.[pos + 5] == 95) * (src.[pos + 6] == 115) * (src.[pos + 7] == 116) then
       (src.[pos + 8] == 114) * (src.[pos + 9] == 105) * (src.[pos + 10] == 110) * (src.[pos + 11] == 103) * (1 - (is_ident (src.[pos + 12])))
+    else 0
+  else 0
+in
+let rec is_debug_byte_at input =
+  let (src, pos0) = input in
+  let pos = skip_space (src, pos0) in
+  if (src.[pos] == 100) * (src.[pos + 1] == 101) * (src.[pos + 2] == 98) then
+    if (src.[pos + 3] == 117) * (src.[pos + 4] == 103) * (src.[pos + 5] == 95) * (src.[pos + 6] == 98) then
+      (src.[pos + 7] == 121) * (src.[pos + 8] == 116) * (src.[pos + 9] == 101) * (1 - (is_ident (src.[pos + 10])))
+    else 0
+  else 0
+in
+let rec is_debug_string_at input =
+  let (src, pos0) = input in
+  let pos = skip_space (src, pos0) in
+  if (src.[pos] == 100) * (src.[pos + 1] == 101) * (src.[pos + 2] == 98) then
+    if (src.[pos + 3] == 117) * (src.[pos + 4] == 103) * (src.[pos + 5] == 95) * (src.[pos + 6] == 115) then
+      (src.[pos + 7] == 116) * (src.[pos + 8] == 114) * (src.[pos + 9] == 105) * (src.[pos + 10] == 110) * (src.[pos + 11] == 103) * (1 - (is_ident (src.[pos + 12])))
     else 0
   else 0
 in
@@ -987,6 +1011,16 @@ let rec compile_string_literal state =
     let block_len = emit_makeblock (emit, (0, len)) in
     (first_len + tail_len + block_len, done_pos + 1)
 in
+let rec compile_debug_string_literal state =
+  let (src, pair) = state in
+  let (pos, emit) = pair in
+  if src.[pos] == 34 then (0, pos + 1) else
+    let const_len = emit_const (emit, src.[pos]) in
+    let call_len = emit_call_debug_byte emit in
+    let rest = compile_debug_string_literal (src, (pos + 1, emit)) in
+    let (rest_len, done_pos) = rest in
+    (const_len + call_len + rest_len, done_pos)
+in
 let rec compile_arg_expr input =
   let (src, pair) = input in
   let (pos0, pair2) = pair in
@@ -1098,6 +1132,15 @@ let rec compile_expr input =
     let (expr_len, done_pos) = expr in
     let call_len = emit_call_write_byte (emit) in
     (expr_len + call_len, done_pos)
+  else if is_debug_byte_at (src, pos) then
+    let p = skip_space (src, pos + 10) in
+    let expr = compile_expr (src, (p, (env, (ctors, (funcs, emit))))) in
+    let (expr_len, done_pos) = expr in
+    let call_len = emit_call_debug_byte (emit) in
+    (expr_len + call_len, done_pos)
+  else if is_debug_string_at (src, pos) then
+    let p = skip_space (src, pos + 12) in
+    if src.[p] == 34 then compile_debug_string_literal (src, (p + 1, emit)) else exit 1
 	  else if is_exit_at (src, pos) then
 	    let p = skip_space (src, pos + 4) in
 	    let expr = compile_expr (src, (p, (env, (ctors, (funcs, emit))))) in

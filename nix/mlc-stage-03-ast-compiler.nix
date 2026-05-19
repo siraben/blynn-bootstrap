@@ -23,6 +23,14 @@ stageRun {
         printf 'write_string "OK"' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-write-string.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-write-string.mzbc)"
         test "$actual" = OK
+        printf 'debug_string "TRACE"; write_byte 79' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-debug-string.mzbc
+        actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-debug-string.mzbc 2> 03-debug-string.err)"
+        test "$actual" = O
+        test "$(cat 03-debug-string.err)" = TRACE
+        printf 'debug_byte 84; write_byte 79' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-debug-byte.mzbc
+        actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-debug-byte.mzbc 2> 03-debug-byte.err)"
+        test "$actual" = O
+        test "$(cat 03-debug-byte.err)" = T
         printf '(); write_byte 79' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-unit.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-unit.mzbc)"
         test "$actual" = O
@@ -114,6 +122,8 @@ stageRun {
     install -Dm644 03-direct.mzbc "$out/share/mlc/stages/03-direct.mzbc"
     install -Dm644 03-read-byte.mzbc "$out/share/mlc/stages/03-read-byte.mzbc"
     install -Dm644 03-write-string.mzbc "$out/share/mlc/stages/03-write-string.mzbc"
+    install -Dm644 03-debug-string.mzbc "$out/share/mlc/stages/03-debug-string.mzbc"
+    install -Dm644 03-debug-byte.mzbc "$out/share/mlc/stages/03-debug-byte.mzbc"
     install -Dm644 03-unit.mzbc "$out/share/mlc/stages/03-unit.mzbc"
     install -Dm644 03-char.mzbc "$out/share/mlc/stages/03-char.mzbc"
     install -Dm644 03-escaped-char.mzbc "$out/share/mlc/stages/03-escaped-char.mzbc"

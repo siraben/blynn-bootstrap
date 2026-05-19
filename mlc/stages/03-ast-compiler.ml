@@ -5,7 +5,7 @@ type expr_more2 = EMul of expr | EDiv of expr | EEq of expr | EMore3 of expr_mor
 type expr_more3 = ENe of expr | ELt of expr | ELe of expr | EMore4 of expr_more4
 type expr_more4 = EGt of expr | EGe of expr | EIf of expr | EMore5 of expr_more5
 type expr_more5 = ELet of expr | EPair of expr | ELetPair of expr | EMore6 of expr_more6
-type expr_more6 = ESeq of expr | EReadByte | EUnit
+type expr_more6 = ESeq of expr | EDebugByte of expr | EReadByte | EUnit
 type parse_reply = ParseOk of int | ParseErr
 
 let rec byte n =
@@ -24,7 +24,7 @@ let rec emit_header len =
   let _ = write_byte 'C' in
   let _ = emit_u32 1 in
   let _ = emit_u32 len in
-  let _ = emit_u32 3 in
+  let _ = emit_u32 4 in
   emit_u32 0
 in
 let rec emit_byte_if state =
@@ -118,6 +118,12 @@ let rec emit_call_write_byte emit =
   let _ = emit_byte_if (emit, 14) in
   let _ = emit_u32_if (emit, 1) in
   let _ = emit_u32_if (emit, 1) in
+  9
+in
+let rec emit_call_debug_byte emit =
+  let _ = emit_byte_if (emit, 14) in
+  let _ = emit_u32_if (emit, 1) in
+  let _ = emit_u32_if (emit, 3) in
   9
 in
 let rec emit_call_read_byte emit =
@@ -253,6 +259,14 @@ let rec is_write_string_at state =
   let (src, pos0) = state in
   p_keyword_at (src, (pos0, "write_string"))
 in
+let rec is_debug_byte_at state =
+  let (src, pos0) = state in
+  p_keyword_at (src, (pos0, "debug_byte"))
+in
+let rec is_debug_string_at state =
+  let (src, pos0) = state in
+  p_keyword_at (src, (pos0, "debug_string"))
+in
 let rec is_read_byte_at state =
   let (src, pos0) = state in
   p_keyword_at (src, (pos0, "read_byte"))
@@ -284,6 +298,14 @@ in
 let rec need_write_string state =
   let (src, pos0) = state in
   p_need_keyword (src, (pos0, "write_string"))
+in
+let rec need_debug_byte state =
+  let (src, pos0) = state in
+  p_need_keyword (src, (pos0, "debug_byte"))
+in
+let rec need_debug_string state =
+  let (src, pos0) = state in
+  p_need_keyword (src, (pos0, "debug_string"))
 in
 let rec need_read_byte state =
   let (src, pos0) = state in
@@ -322,6 +344,9 @@ let rec unit_expr dummy =
 in
 let rec write_byte_expr ch =
   EMore (EWriteByte (EInt ch))
+in
+let rec debug_byte_expr ch =
+  EMore (EMore2 (EMore3 (EMore4 (EMore5 (EMore6 (EDebugByte (EInt ch)))))))
 in
 let rec seq_expr state =
   let (left, right) = state in
@@ -375,6 +400,25 @@ let rec parse_write_string state =
   let str_pos0 = need_write_string (src, pos0) in
   let str_pos = skip_space (src, str_pos0) in
   if src.[str_pos] == '"' then parse_write_string_loop (src, (str_pos + 1, (0, unit_expr 0))) else exit 1
+in
+let rec parse_debug_string_loop state =
+  let (src, pair) = state in
+  let (pos, pair2) = pair in
+  let (has_expr, acc) = pair2 in
+  if src.[pos] == '"' then
+    if has_expr == 1 then (acc, pos + 1) else (unit_expr 0, pos + 1)
+  else
+    let parsed = parse_string_char (src, pos) in
+    let (ch, next_pos) = parsed in
+    let byte_ast = debug_byte_expr ch in
+    if has_expr == 1 then parse_debug_string_loop (src, (next_pos, (1, seq_expr (acc, byte_ast)))) else
+      parse_debug_string_loop (src, (next_pos, (1, byte_ast)))
+in
+let rec parse_debug_string state =
+  let (src, pos0) = state in
+  let str_pos0 = need_debug_string (src, pos0) in
+  let str_pos = skip_space (src, str_pos0) in
+  if src.[str_pos] == '"' then parse_debug_string_loop (src, (str_pos + 1, (0, unit_expr 0))) else exit 1
 in
 let rec parse_binop state =
   let (src, pair) = state in
@@ -460,6 +504,13 @@ let rec parse_expr_prec state =
         (EMore (EWriteByte expr_ast), expr_end)
       else if is_write_string_at (src, pos) then
         parse_write_string (src, pos)
+      else if is_debug_byte_at (src, pos) then
+        let expr_pos = need_debug_byte (src, pos) in
+        let expr = parse_expr_prec (src, (expr_pos, (0, (0, (0, EInt 0))))) in
+        let (expr_ast, expr_end) = expr in
+        (EMore (EMore2 (EMore3 (EMore4 (EMore5 (EMore6 (EDebugByte expr_ast)))))), expr_end)
+      else if is_debug_string_at (src, pos) then
+        parse_debug_string (src, pos)
       else if is_read_byte_at (src, pos) then
         p_return (need_read_byte (src, pos), EMore (EMore2 (EMore3 (EMore4 (EMore5 (EMore6 EReadByte))))))
       else
@@ -691,6 +742,9 @@ let rec infer state =
                               let (left, right) = parts in
                               let _ = need_ty (infer (env, left), TyUnit) in
                               infer (env, right)
+                          | EDebugByte expr ->
+                              let _ = need_ty (infer (env, expr), TyInt) in
+                              TyUnit
                           | EReadByte -> TyInt
                           | EUnit -> TyUnit
 in
@@ -855,6 +909,10 @@ let rec emit_expr state =
                               let left_len = emit_expr (left, (env, emit)) in
                               let right_len = emit_expr (right, (env, emit)) in
                               left_len + right_len
+                          | EDebugByte expr ->
+                              let expr_len = emit_expr (expr, (env, emit)) in
+                              let call_len = emit_call_debug_byte emit in
+                              expr_len + call_len
                           | EReadByte -> emit_call_read_byte emit
                           | EUnit -> emit_const (emit, 0)
 in

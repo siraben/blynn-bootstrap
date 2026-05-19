@@ -304,6 +304,12 @@ static void prim_write_byte(void)
   acc = val_int(0);
 }
 
+static void prim_debug_byte(void)
+{
+  fputc((int)(int_val(acc) & 255), stderr);
+  acc = val_int(0);
+}
+
 static void prim_exit(void)
 {
   exit((int)int_val(acc));
@@ -323,6 +329,7 @@ static void call_prim(long argc, long prim)
   if (prim == 0) prim_read_byte();
   else if (prim == 1) prim_write_byte();
   else if (prim == 2) prim_exit();
+  else if (prim == 3) prim_debug_byte();
   else die("unknown primitive");
 }
 

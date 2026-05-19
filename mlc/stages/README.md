@@ -54,7 +54,8 @@ Current stages:
   variable lookup, integer arithmetic, integer comparisons, nested/full
   conditionals, arbitrary final direct calls, and direct unary `let rec`
   functions. It accepts `write_byte (40+39)`, `write_byte 'O'`,
-  `write_string "OK"`, `Cell.create` / `Cell.get` / `Cell.set`,
+  `write_string "OK"`, stderr-only `debug_byte` / `debug_string`,
+  `Cell.create` / `Cell.get` / `Cell.set`,
   two-field record declarations/literals/field reads,
   declaration-style top-level `let` / `let rec`,
   `let x = 40 in write_byte (x + 39)`, recursively nested
