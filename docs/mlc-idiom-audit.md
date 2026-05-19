@@ -41,8 +41,8 @@ These can move directly into `mlc.ml` because stage 02 already compiles them:
   digits, uppercase letters, lowercase letters, and `_`.
 - Replace byte-emission magic for the MZBC header with char literals:
   `write_byte 'M'; write_byte 'Z'; write_byte 'B'; write_byte 'C'`.
-- Use `expect_string`-style helpers in `mlc.ml` for fixed spellings such as
-  `with`, `->`, primitive names, and dotted module names.
+- Continue expanding `need_string` / `need_keyword` use in `mlc.ml` for fixed
+  primitive names and dotted module names.
 
 ## Rewritten
 
@@ -52,6 +52,9 @@ These can move directly into `mlc.ml` because stage 02 already compiles them:
   `is_debug_printf_at` now route through shared `string_at` / `keyword_at`
   helpers. Stage 02 already supports the required string literals, string
   length, and indexing.
+- `mlc.ml` now has `need_string` / `need_keyword`, and uses them for the
+  fixed `with` / `->` match syntax plus the direct `write_byte` /
+  top-level `write_string` advances.
 
 ## Promote before use
 
@@ -79,7 +82,8 @@ These need a stronger previous stage before they should become required by
    functions to data-like spellings. This is done for the shared recognizer
    layer.
 3. Add `need_string` / `need_keyword` to `mlc.ml` and replace `expect_with`,
-   `expect_arrow`, and fixed primitive spelling code.
+   `expect_arrow`, and fixed primitive spelling code. This is started for
+   match syntax and direct write primitives; continue widening it gradually.
 4. Add previous-stage tests for the exact parser-combinator style needed by
    the next `mlc.ml` parser cleanup.
 5. Only after the previous stage can compile those helpers, move the larger

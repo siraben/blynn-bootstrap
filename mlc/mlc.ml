@@ -373,6 +373,20 @@ let rec keyword_at input =
   let len = String.length text in
   if string_at_loop (src, (pos, (text, 0))) == 1 then 1 - (is_ident (src.[pos + len])) else 0
 in
+let rec need_string input =
+  let (src, pair) = input in
+  let (pos0, text) = pair in
+  let pos = skip_space (src, pos0) in
+  let len = String.length text in
+  if string_at (src, (pos, text)) == 1 then pos + len else exit 1
+in
+let rec need_keyword input =
+  let (src, pair) = input in
+  let (pos0, text) = pair in
+  let pos = skip_space (src, pos0) in
+  let len = String.length text in
+  if keyword_at (src, (pos, text)) == 1 then pos + len else exit 1
+in
 let rec is_type_at input =
   let (src, pos0) = input in
   keyword_at (src, (pos0, "type"))
@@ -467,21 +481,11 @@ let rec is_rec_at input =
 in
 let rec expect_with input =
   let (src, pos0) = input in
-  let pos = skip_space (src, pos0) in
-  if src.[pos] == 119 then
-    if src.[pos + 1] == 105 then
-      if src.[pos + 2] == 116 then
-        if src.[pos + 3] == 104 then pos + 4 else exit 1
-      else exit 1
-    else exit 1
-  else exit 1
+  need_keyword (src, (pos0, "with"))
 in
 let rec expect_arrow input =
   let (src, pos0) = input in
-  let pos = skip_space (src, pos0) in
-  if src.[pos] == 45 then
-    if src.[pos + 1] == 62 then pos + 2 else exit 1
-  else exit 1
+  need_string (src, (pos0, "->"))
 in
 let rec parse_type_ctors state =
   let (src, pair) = state in
@@ -1942,7 +1946,7 @@ let rec compile_write_byte input =
   let (env, pair3) = pair2 in
   let (ctors, pair4) = pair3 in
   let (funcs, emit) = pair4 in
-  let p = skip_space (src, pos + 10) in
+  let p = need_keyword (src, (pos, "write_byte")) in
   let expr = compile_expr (src, (p, (env, (ctors, (funcs, emit))))) in
   let (expr_len, done_pos) = expr in
   let call_len = emit_call_write_byte (emit) in
@@ -2064,7 +2068,8 @@ in
 let rec compile_program src =
   let pos = skip_space (src, 0) in
   if is_write_string_at (src, pos) then
-    let p0 = skip_space (src, pos + 12) in
+    let after_write_string = need_keyword (src, (pos, "write_string")) in
+    let p0 = skip_space (src, after_write_string) in
     if src.[p0] == 34 then emit_string_program (src, p0 + 1)
     else exit 1
   else
