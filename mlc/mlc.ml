@@ -395,6 +395,17 @@ let rec is_debug_string_at input =
     else 0
   else 0
 in
+let rec is_debug_printf_at input =
+  let (src, pos0) = input in
+  let pos = skip_space (src, pos0) in
+  if (src.[pos] == 100) * (src.[pos + 1] == 101) * (src.[pos + 2] == 98) then
+    if (src.[pos + 3] == 117) * (src.[pos + 4] == 103) * (src.[pos + 5] == 95) * (src.[pos + 6] == 112) then
+      if (src.[pos + 7] == 114) * (src.[pos + 8] == 105) * (src.[pos + 9] == 110) * (src.[pos + 10] == 116) then
+        (src.[pos + 11] == 102) * (1 - (is_ident (src.[pos + 12])))
+      else 0
+    else 0
+  else 0
+in
 let rec is_debug_int_at input =
   let (src, pos0) = input in
   let pos = skip_space (src, pos0) in
@@ -1036,6 +1047,31 @@ let rec compile_debug_string_literal state =
     let (rest_len, done_pos) = rest in
     (const_len + call_len + rest_len, done_pos)
 in
+let rec compile_debug_printf_prefix state =
+  let (src, pair) = state in
+  let (pos, emit) = pair in
+  if src.[pos] == 34 then exit 1 else
+    if (src.[pos] == 37) * (src.[pos + 1] == 100) then (0, pos + 2) else
+      let const_len = emit_const (emit, src.[pos]) in
+      let call_len = emit_call_debug_byte emit in
+      let rest = compile_debug_printf_prefix (src, (pos + 1, emit)) in
+      let (rest_len, done_pos) = rest in
+      (const_len + call_len + rest_len, done_pos)
+in
+let rec skip_debug_printf_suffix state =
+  let (src, pos) = state in
+  if src.[pos] == 34 then pos + 1 else skip_debug_printf_suffix (src, pos + 1)
+in
+let rec compile_debug_printf_suffix state =
+  let (src, pair) = state in
+  let (pos, emit) = pair in
+  if src.[pos] == 34 then (0, pos + 1) else
+    let const_len = emit_const (emit, src.[pos]) in
+    let call_len = emit_call_debug_byte emit in
+    let rest = compile_debug_printf_suffix (src, (pos + 1, emit)) in
+    let (rest_len, done_pos) = rest in
+    (const_len + call_len + rest_len, done_pos)
+in
 let rec compile_arg_expr input =
   let (src, pair) = input in
   let (pos0, pair2) = pair in
@@ -1162,6 +1198,20 @@ let rec compile_expr input =
   else if is_debug_string_at (src, pos) then
     let p = skip_space (src, pos + 12) in
     if src.[p] == 34 then compile_debug_string_literal (src, (p + 1, emit)) else exit 1
+  else if is_debug_printf_at (src, pos) then
+    let p = skip_space (src, pos + 12) in
+    if src.[p] == 34 then
+      let prefix = compile_debug_printf_prefix (src, (p + 1, emit)) in
+      let (prefix_len, suffix_pos) = prefix in
+      let expr_pos = skip_space (src, skip_debug_printf_suffix (src, suffix_pos)) in
+      let expr = compile_expr (src, (expr_pos, (env, (ctors, (funcs, emit))))) in
+      let (expr_len, done_pos) = expr in
+      let call_len = emit_call_debug_int emit in
+      let suffix = compile_debug_printf_suffix (src, (suffix_pos, emit)) in
+      let (suffix_len, suffix_end) = suffix in
+      let _ = suffix_end in
+      (prefix_len + expr_len + call_len + suffix_len, done_pos)
+    else exit 1
 	  else if is_exit_at (src, pos) then
 	    let p = skip_space (src, pos + 4) in
 	    let expr = compile_expr (src, (p, (env, (ctors, (funcs, emit))))) in

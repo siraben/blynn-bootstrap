@@ -301,6 +301,10 @@ let rec is_debug_string_at state =
   let (src, pos0) = state in
   p_keyword_at (src, (pos0, "debug_string"))
 in
+let rec is_debug_printf_at state =
+  let (src, pos0) = state in
+  p_keyword_at (src, (pos0, "debug_printf"))
+in
 let rec is_debug_int_at state =
   let (src, pos0) = state in
   p_keyword_at (src, (pos0, "debug_int"))
@@ -356,6 +360,10 @@ in
 let rec need_debug_string state =
   let (src, pos0) = state in
   p_need_keyword (src, (pos0, "debug_string"))
+in
+let rec need_debug_printf state =
+  let (src, pos0) = state in
+  p_need_keyword (src, (pos0, "debug_printf"))
 in
 let rec need_debug_int state =
   let (src, pos0) = state in
@@ -539,6 +547,46 @@ let rec parse_debug_string state =
   let str_pos0 = need_debug_string (src, pos0) in
   let str_pos = skip_space (src, str_pos0) in
   if src.[str_pos] == '"' then parse_debug_string_loop (src, (str_pos + 1, (0, unit_expr 0))) else exit 1
+in
+let rec parse_debug_printf_prefix_loop state =
+  let (src, pair) = state in
+  let (pos, pair2) = pair in
+  let (has_expr, acc) = pair2 in
+  if src.[pos] == '"' then exit 1 else
+  if (src.[pos] == '%') * (src.[pos + 1] == 'd') then
+    if has_expr == 1 then (acc, pos + 2) else (unit_expr 0, pos + 2)
+  else
+    let parsed = parse_string_char (src, pos) in
+    let (ch, next_pos) = parsed in
+    let byte_ast = debug_byte_expr ch in
+    if has_expr == 1 then parse_debug_printf_prefix_loop (src, (next_pos, (1, seq_expr (acc, byte_ast)))) else
+      parse_debug_printf_prefix_loop (src, (next_pos, (1, byte_ast)))
+in
+let rec parse_debug_printf_suffix_loop state =
+  let (src, pair) = state in
+  let (pos, pair2) = pair in
+  let (has_expr, acc) = pair2 in
+  if src.[pos] == '"' then
+    if has_expr == 1 then (acc, pos + 1) else (unit_expr 0, pos + 1)
+  else
+    let parsed = parse_string_char (src, pos) in
+    let (ch, next_pos) = parsed in
+    let byte_ast = debug_byte_expr ch in
+    if has_expr == 1 then parse_debug_printf_suffix_loop (src, (next_pos, (1, seq_expr (acc, byte_ast)))) else
+      parse_debug_printf_suffix_loop (src, (next_pos, (1, byte_ast)))
+in
+let rec parse_debug_printf_format state =
+  let (src, pos0) = state in
+  let str_pos0 = need_debug_printf (src, pos0) in
+  let str_pos = skip_space (src, str_pos0) in
+  if src.[str_pos] == '"' then
+    let prefix = parse_debug_printf_prefix_loop (src, (str_pos + 1, (0, unit_expr 0))) in
+    let (prefix_ast, suffix_pos) = prefix in
+    let suffix = parse_debug_printf_suffix_loop (src, (suffix_pos, (0, unit_expr 0))) in
+    let (suffix_ast, expr_pos) = suffix in
+    (prefix_ast, (suffix_ast, expr_pos))
+  else
+    exit 1
 in
 let rec add_expr state =
   let (left, right) = state in
@@ -756,6 +804,13 @@ let rec parse_expr_prec state =
         let expr = parse_expr_prec (src, (expr_pos, (0, (0, (0, EInt 0))))) in
         let (expr_ast, expr_end) = expr in
         (debug_int_expr expr_ast, expr_end)
+      else if is_debug_printf_at (src, pos) then
+        let fmt = parse_debug_printf_format (src, pos) in
+        let (prefix_ast, rest) = fmt in
+        let (suffix_ast, expr_pos) = rest in
+        let expr = parse_expr_prec (src, (expr_pos, (0, (0, (0, EInt 0))))) in
+        let (expr_ast, expr_end) = expr in
+        (seq_expr (prefix_ast, seq_expr (debug_int_expr expr_ast, suffix_ast)), expr_end)
       else if is_debug_string_at (src, pos) then
         parse_debug_string (src, pos)
       else if is_string_length_at (src, pos) then

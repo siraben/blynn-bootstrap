@@ -131,3 +131,6 @@ implements the minimal table needed by the first `mlc-seed` fixtures:
 `C_CALL` currently accepts one argument. Multi-argument primitives should be
 lowered by passing a tuple block until the compiler grows a stronger calling
 convention.
+The source-level `debug_printf "label=%d" expr` debugging form is compiler
+syntax; it lowers to `debug_byte` calls around one `debug_int` call and does
+not add a VM primitive.
