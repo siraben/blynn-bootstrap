@@ -36,6 +36,8 @@ stageRun {
     ${mzvmSeedM2}/bin/mzvm-seed letrec-capture.mzbc > letrec-capture.out
     printf 'let rec f ch = if ch = 79 then write_byte ch else write_byte 88 in f 79' | ${mlcInterpSeedM2}/bin/mlc-interp-seed 02-ml0-compiler.ml > single-eq.mzbc
     ${mzvmSeedM2}/bin/mzvm-seed single-eq.mzbc > single-eq.out
+    printf '%s' "write_byte (if '\013' = 13 then 'O' else 'X')" | ${mlcInterpSeedM2}/bin/mlc-interp-seed 02-ml0-compiler.ml > decimal-char-stage02.mzbc
+    ${mzvmSeedM2}/bin/mzvm-seed decimal-char-stage02.mzbc > decimal-char-stage02.out
     printf 'write_byte -1' | ${mlcInterpSeedM2}/bin/mlc-interp-seed 02-ml0-compiler.ml > negative-immediate.mzbc
     ${mzvmSeedM2}/bin/mzvm-seed negative-immediate.mzbc > negative-immediate.out
     for name in ok arithmetic conditional comparison let-binding sequence negative identifiers keyword-prefix-infix string string-value length exit tuple bytes array dynamic-create dynamic-index function function-tuple function-nested function-string; do
@@ -49,6 +51,8 @@ stageRun {
     ${mzvmSeedM2}/bin/mzvm-seed mlc-stage-compiled.mzbc > mlc-stage.out
     printf "write_byte 'O'" | ${mzvmSeedM2}/bin/mzvm-seed mlc-stage.mzbc > mlc-stage-char.mzbc
     ${mzvmSeedM2}/bin/mzvm-seed mlc-stage-char.mzbc > mlc-stage-char.out
+    printf '%s' "write_byte (if '\013' == 13 then 'O' else 'X')" | ${mzvmSeedM2}/bin/mzvm-seed mlc-stage.mzbc > mlc-stage-decimal-char.mzbc
+    ${mzvmSeedM2}/bin/mzvm-seed mlc-stage-decimal-char.mzbc > mlc-stage-decimal-char.out
     printf 'write_string "OK"' | ${mzvmSeedM2}/bin/mzvm-seed mlc-stage.mzbc > mlc-stage-string.mzbc
     ${mzvmSeedM2}/bin/mzvm-seed mlc-stage-string.mzbc > mlc-stage-string.out
     printf 'let x = 40 in write_byte (x + 39)' | ${mzvmSeedM2}/bin/mzvm-seed mlc-stage.mzbc > mlc-stage-let.mzbc
@@ -106,6 +110,7 @@ OK"
     test "$(cat function-value.out)" = O
     test "$(cat letrec-capture.out)" = O
     test "$(cat single-eq.out)" = O
+    test "$(cat decimal-char-stage02.out)" = O
     printf '\377' > negative-immediate.expected
     test "$(cat negative-immediate.out)" = "$(cat negative-immediate.expected)"
     test "$(cat sequence.out)" = OK
@@ -128,6 +133,7 @@ OK"
     test "$(cat read-byte.out)" = OK
     test "$(cat mlc-stage.out)" = O
     test "$(cat mlc-stage-char.out)" = O
+    test "$(cat mlc-stage-decimal-char.out)" = O
     test "$(cat mlc-stage-string.out)" = OK
     test "$(cat mlc-stage-let.out)" = O
     test "$(cat mlc-stage-let2.out)" = O
@@ -168,6 +174,8 @@ OK"
     install -Dm644 letrec-capture.out "$out/share/mlc/stages/letrec-capture.out"
     install -Dm644 single-eq.mzbc "$out/share/mlc/stages/single-eq.mzbc"
     install -Dm644 single-eq.out "$out/share/mlc/stages/single-eq.out"
+    install -Dm644 decimal-char-stage02.mzbc "$out/share/mlc/stages/decimal-char-stage02.mzbc"
+    install -Dm644 decimal-char-stage02.out "$out/share/mlc/stages/decimal-char-stage02.out"
     install -Dm644 negative-immediate.mzbc "$out/share/mlc/stages/negative-immediate.mzbc"
     install -Dm644 negative-immediate.out "$out/share/mlc/stages/negative-immediate.out"
     install -Dm644 02-self.mzbc "$out/share/mlc/stages/02-self.mzbc"
@@ -196,6 +204,8 @@ OK"
     install -Dm644 mlc-stage.out "$out/share/mlc/stages/mlc-stage.out"
     install -Dm644 mlc-stage-char.mzbc "$out/share/mlc/stages/mlc-stage-char.mzbc"
     install -Dm644 mlc-stage-char.out "$out/share/mlc/stages/mlc-stage-char.out"
+    install -Dm644 mlc-stage-decimal-char.mzbc "$out/share/mlc/stages/mlc-stage-decimal-char.mzbc"
+    install -Dm644 mlc-stage-decimal-char.out "$out/share/mlc/stages/mlc-stage-decimal-char.out"
     install -Dm644 mlc-stage-string.mzbc "$out/share/mlc/stages/mlc-stage-string.mzbc"
     install -Dm644 mlc-stage-string.out "$out/share/mlc/stages/mlc-stage-string.out"
     install -Dm644 mlc-stage-let.mzbc "$out/share/mlc/stages/mlc-stage-let.mzbc"

@@ -8,10 +8,13 @@ that construct and have a check for it.
 
 ## Current evidence
 
-- `mlc/stages/02-ml0-compiler.ml` already compiles raw and escaped char
-  literals. Its own parser uses char literals for whitespace, delimiters,
-  keyword heads, and MZBC syntax, and `nix/mlc-stage-02-ml0-compiler.nix`
-  checks `write_byte 'O'`.
+- `mlc/stages/02-ml0-compiler.ml` already compiles ordinary char literals.
+  Its own parser uses char literals for whitespace, delimiters, keyword heads,
+  and MZBC syntax, and `nix/mlc-stage-02-ml0-compiler.nix` checks
+  `write_byte 'O'`.
+- Decimal escaped char literals such as `'\013'` are now covered on both sides
+  of the handoff: stage 02 compiles them, and the `mlc.ml` parser accepts them
+  in code compiled by the generated compiler.
 - Stage 02 also compiles string literals, `String.length`, `Bytes.create`,
   dynamic string/bytes indexing, closures, and the early `expect_string`
   primitive. Those are enough to support string-based keyword helpers in
@@ -64,8 +67,8 @@ These need a stronger previous stage before they should become required by
 
 ## Suggested order
 
-1. Convert `mlc.ml` ASCII constants to char literals. This is low-risk,
-   mechanical, and stage02-covered.
+1. Convert `mlc.ml` ASCII constants to ordinary char literals. This is
+   low-risk, mechanical, and stage02-covered.
 2. Add `string_at` and `keyword_at` to `mlc.ml`, then collapse the `is_*_at`
    functions to data-like spellings.
 3. Add `need_string` / `need_keyword` to `mlc.ml` and replace `expect_with`,

@@ -8,10 +8,10 @@ let rec emit_u32 n =
   write_byte (byte (n / 16777216))
 in
 let rec emit_header code_len =
-  let _ = write_byte 77 in
-  let _ = write_byte 90 in
-  let _ = write_byte 66 in
-  let _ = write_byte 67 in
+  let _ = write_byte 'M' in
+  let _ = write_byte 'Z' in
+  let _ = write_byte 'B' in
+  let _ = write_byte 'C' in
   let _ = emit_u32 1 in
   let _ = emit_u32 code_len in
   let _ = emit_u32 5 in
@@ -195,28 +195,28 @@ let rec emit_gettag emit =
   1
 in
 let rec is_digit ch =
-  if ch < 48 then 0 else if ch > 57 then 0 else 1
+  if ch < '0' then 0 else if ch > '9' then 0 else 1
 in
 let rec is_ident ch =
-  if 48 <= ch then
-    if ch <= 57 then 1 else
-    if 65 <= ch then
-      if ch <= 90 then 1 else
-      if ch == 95 then 1 else
-      if 97 <= ch then if ch <= 122 then 1 else 0 else 0
+  if '0' <= ch then
+    if ch <= '9' then 1 else
+    if 'A' <= ch then
+      if ch <= 'Z' then 1 else
+      if ch == '_' then 1 else
+      if 'a' <= ch then if ch <= 'z' then 1 else 0 else 0
     else
-      if ch == 95 then 1 else 0
+      if ch == '_' then 1 else 0
   else
     0
 in
 let rec is_lower_ident_start ch =
-  if 97 <= ch then if ch <= 122 then 1 else 0 else 0
+  if 'a' <= ch then if ch <= 'z' then 1 else 0 else 0
 in
 let rec is_space ch =
-  if ch == 32 then 1 else
-  if ch == 9 then 1 else
-  if ch == 10 then 1 else
-  if ch == 13 then 1 else 0
+  if ch == ' ' then 1 else
+  if ch == '\t' then 1 else
+  if ch == '\n' then 1 else
+  if ch == '\013' then 1 else 0
 in
 let rec read_all state =
   let (buf, pos) = state in
@@ -234,14 +234,14 @@ let rec parse_number_loop state =
   let (src, pair) = state in
   let (acc, pos) = pair in
   let ch = src.[pos] in
-  if is_digit ch then parse_number_loop (src, (((acc * 10) + ch) - 48, pos + 1))
+  if is_digit ch then parse_number_loop (src, (((acc * 10) + ch) - '0', pos + 1))
   else (acc, pos)
 in
 let rec parse_number input =
   let (src, pos) = input in
   let pos = skip_space (src, pos) in
   let ch = src.[pos] in
-  if is_digit ch then parse_number_loop (src, (ch - 48, pos + 1))
+  if is_digit ch then parse_number_loop (src, (ch - '0', pos + 1))
   else exit 1
 in
 let rec ident_hash n =
@@ -266,11 +266,23 @@ let rec parse_char input =
   let ch = src.[pos + 1] in
   if ch == '\\' then
     let esc = src.[pos + 2] in
-    let value =
-      if esc == 'n' then '\n' else
-      if esc == 't' then '\t' else esc
-    in
-    (value, pos + 4)
+    if esc == 'n' then ('\n', pos + 4) else
+    if esc == 't' then ('\t', pos + 4) else
+    if is_digit esc then
+      let d2 = src.[pos + 3] in
+      let d3 = src.[pos + 4] in
+      if is_digit d2 then
+        if is_digit d3 then
+          let d1 = esc - '0' in
+          let d2 = d2 - '0' in
+          let d3 = d3 - '0' in
+          ((d1 * 100) + (d2 * 10) + d3, pos + 6)
+        else
+          exit 1
+      else
+        exit 1
+    else
+      (esc, pos + 4)
   else
     (ch, pos + 3)
 in

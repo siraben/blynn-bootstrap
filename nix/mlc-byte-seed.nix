@@ -23,6 +23,9 @@ stageRun {
     printf "write_byte 'O'" | ${mzvmSeedM2}/bin/mzvm-seed mlc.byte > compiled-char.mzbc
     actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-char.mzbc)"
     test "$actual" = O
+    printf '%s' "write_byte (if '\013' == 13 then 'O' else 'X')" | ${mzvmSeedM2}/bin/mzvm-seed mlc.byte > compiled-decimal-char.mzbc
+    actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-decimal-char.mzbc)"
+    test "$actual" = O
     printf 'write_string "OK"' | ${mzvmSeedM2}/bin/mzvm-seed mlc.byte > compiled-string.mzbc
     actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-string.mzbc)"
     test "$actual" = OK
@@ -189,6 +192,7 @@ stageRun {
     install -Dm644 mlc.byte "$out/share/mlc/mlc.byte"
     install -Dm644 compiled.mzbc "$out/share/mlc/compiled.mzbc"
     install -Dm644 compiled-char.mzbc "$out/share/mlc/compiled-char.mzbc"
+    install -Dm644 compiled-decimal-char.mzbc "$out/share/mlc/compiled-decimal-char.mzbc"
     install -Dm644 compiled-string.mzbc "$out/share/mlc/compiled-string.mzbc"
     install -Dm644 compiled-debug-byte.mzbc "$out/share/mlc/compiled-debug-byte.mzbc"
     install -Dm644 compiled-debug-string.mzbc "$out/share/mlc/compiled-debug-string.mzbc"
