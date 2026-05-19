@@ -8,7 +8,7 @@ type expr_more4 = EGt of expr | EGe of expr | EIf of expr | EMore5 of expr_more5
 type expr_more5 = ELet of expr | EPair of expr | ELetPair of expr | EMore6 of expr_more6
 type expr_more6 = ESeq of expr | EDebugByte of expr | EReadByte | EMore7 of expr_more7
 type expr_more7 = EString of int | EStringLength of expr | EBytesCreate of expr | EMore8 of expr_more8
-type expr_more8 = EBytesLength of expr | EUnit
+type expr_more8 = EBytesLength of expr | EIndex of expr | ESetIndex of expr | EUnit
 type parse_reply = ParseOk of int | ParseErr
 
 let rec byte n =
@@ -154,6 +154,14 @@ let rec emit_getfield state =
   let _ = emit_byte_if (emit, 16) in
   let _ = emit_u32_if (emit, index) in
   5
+in
+let rec emit_getfield_dyn emit =
+  let _ = emit_byte_if (emit, 25) in
+  1
+in
+let rec emit_setfield_dyn emit =
+  let _ = emit_byte_if (emit, 26) in
+  1
 in
 let rec emit_blocksize emit =
   let _ = emit_byte_if (emit, 27) in
@@ -403,6 +411,15 @@ in
 let rec bytes_length_expr expr =
   EMore (EMore2 (EMore3 (EMore4 (EMore5 (EMore6 (EMore7 (EMore8 (EBytesLength expr))))))))
 in
+let rec index_expr state =
+  let (base, index) = state in
+  EMore (EMore2 (EMore3 (EMore4 (EMore5 (EMore6 (EMore7 (EMore8 (EIndex (base, index)))))))))
+in
+let rec set_index_expr state =
+  let (base, rest) = state in
+  let (index, value) = rest in
+  EMore (EMore2 (EMore3 (EMore4 (EMore5 (EMore6 (EMore7 (EMore8 (ESetIndex (base, (index, value))))))))))
+in
 let rec read_byte_expr unit =
   let _ = unit in
   EMore (EMore2 (EMore3 (EMore4 (EMore5 (EMore6 EReadByte)))))
@@ -539,6 +556,30 @@ let rec parse_bytes_length_expr state =
   let (arg_ast, done_pos) = parsed_arg in
   (bytes_length_expr arg_ast, done_pos)
 in
+let rec parse_index_suffix state =
+  let (src, pair) = state in
+  let (base, pos0) = pair in
+  let pos = skip_space (src, pos0) in
+  if src.[pos] == '.' then
+    if src.[pos + 1] == '[' then
+      let index = parse_value_arg (src, pos + 2) in
+      let (index_ast, index_end) = index in
+      let close = p_need_char (src, (index_end, ']')) in
+      let after_close = skip_space (src, close) in
+      if src.[after_close] == '<' then
+        if src.[after_close + 1] == '-' then
+          let value = parse_value_arg (src, after_close + 2) in
+          let (value_ast, value_end) = value in
+          (set_index_expr (base, (index_ast, value_ast)), value_end)
+        else
+          exit 1
+      else
+        (index_expr (base, index_ast), close)
+    else
+      (base, pos0)
+  else
+    (base, pos0)
+in
 let rec parse_binop state =
   let (src, pair) = state in
   let (pos0, allow_seq) = pair in
@@ -670,13 +711,15 @@ let rec parse_expr_prec state =
         else if ch == '\'' then
           parse_char_literal (src, atom_pos)
         else if ch == '"' then
-          parse_string_literal (src, atom_pos)
+          let parsed_string = parse_string_literal (src, atom_pos) in
+          let (string_ast, string_end) = parsed_string in
+          parse_index_suffix (src, (string_ast, string_end))
         else if is_digit ch then
           parse_number (src, atom_pos)
         else
           let ident = parse_ident (src, atom_pos) in
           let (name, name_end) = ident in
-          p_return (name_end, EVar name)
+          parse_index_suffix (src, (EVar name, name_end))
     in
     let (left_ast, left_end) = left in
     parse_expr_prec (src, (left_end, (allow_seq, (min_prec, (1, left_ast)))))
@@ -893,10 +936,30 @@ let rec infer state =
                                     TyMore TyBytes
                                 | EMore8 more8 ->
                                     match more8 with
-                                      EBytesLength expr ->
-                                        let _ = need_ty (infer (env, expr), TyMore TyBytes) in
-                                        TyInt
-                                    | EUnit -> TyUnit
+                                    EBytesLength expr ->
+                                      let _ = need_ty (infer (env, expr), TyMore TyBytes) in
+                                      TyInt
+                                  | EIndex parts ->
+                                      let (base, index) = parts in
+                                      let base_ty = infer (env, base) in
+                                      let _ = need_ty (infer (env, index), TyInt) in
+                                      (match base_ty with
+                                        TyMore more ->
+                                          (match more with
+                                            TyString -> TyInt
+                                          | TyBytes -> TyInt
+                                          | TyPair pair_ty -> let _ = pair_ty in exit 1)
+                                      | TyInt -> exit 1
+                                      | TyUnit -> exit 1
+                                      | TyBool -> exit 1)
+                                  | ESetIndex parts ->
+                                      let (base, rest) = parts in
+                                      let (index, value) = rest in
+                                      let _ = need_ty (infer (env, base), TyMore TyBytes) in
+                                      let _ = need_ty (infer (env, index), TyInt) in
+                                      let _ = need_ty (infer (env, value), TyInt) in
+                                      TyUnit
+                                  | EUnit -> TyUnit
 in
 let rec empty_env unit =
   let _ = unit in
@@ -1114,6 +1177,23 @@ let rec emit_expr state =
                                           let expr_len = emit_expr (expr, (src, (env, emit))) in
                                           let size_len = emit_blocksize emit in
                                           expr_len + size_len
+                                      | EIndex parts ->
+                                          let (base, index) = parts in
+                                          let base_len = emit_expr (base, (src, (env, emit))) in
+                                          let push_base = emit_push emit in
+                                          let index_len = emit_expr (index, (src, (shift_env env, emit))) in
+                                          let get_len = emit_getfield_dyn emit in
+                                          base_len + push_base + index_len + get_len
+                                      | ESetIndex parts ->
+                                          let (base, rest) = parts in
+                                          let (index, value) = rest in
+                                          let base_len = emit_expr (base, (src, (env, emit))) in
+                                          let push_base = emit_push emit in
+                                          let index_len = emit_expr (index, (src, (shift_env env, emit))) in
+                                          let push_index = emit_push emit in
+                                          let value_len = emit_expr (value, (src, (shift_env (shift_env env), emit))) in
+                                          let set_len = emit_setfield_dyn emit in
+                                          base_len + push_base + index_len + push_index + value_len + set_len
                                       | EUnit -> emit_const (emit, 0)
 in
 let rec emit_program src =

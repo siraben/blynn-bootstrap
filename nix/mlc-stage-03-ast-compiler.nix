@@ -35,6 +35,15 @@ stageRun {
         printf 'let b = Bytes.create 3\nwrite_byte (Bytes.length b + 76)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-bytes-create-length.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-bytes-create-length.mzbc)"
         test "$actual" = O
+        printf 'let s = "OK"\nwrite_byte s.[1]' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-string-index.mzbc
+        actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-string-index.mzbc)"
+        test "$actual" = K
+        printf 'let b = Bytes.create 2\nb.[0] <- 79; b.[1] <- 75; write_byte b.[0]; write_byte b.[1]' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-bytes-index-set.mzbc
+        actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-bytes-index-set.mzbc)"
+        test "$actual" = OK
+        printf 'let b = Bytes.create 2\nlet i = 1\nb.[i] <- 79; write_byte b.[i]' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-bytes-index-var.mzbc
+        actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-bytes-index-var.mzbc)"
+        test "$actual" = O
         printf 'debug_string "TRACE"; write_byte 79' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-debug-string.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-debug-string.mzbc 2> 03-debug-string.err)"
         test "$actual" = O
@@ -139,6 +148,12 @@ stageRun {
         if printf 'write_byte (Bytes.length "OK")' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-bytes-length-type-error.mzbc; then
           exit 1
         fi
+        if printf 'let s = "OK"\ns.[0] <- 79' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-string-index-set-type-error.mzbc; then
+          exit 1
+        fi
+        if printf 'let b = Bytes.create 1\nb.["x"] <- 79' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-bytes-index-type-error.mzbc; then
+          exit 1
+        fi
         if printf '79; write_byte 75' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-sequence-type-error.mzbc; then
           exit 1
         fi
@@ -153,6 +168,9 @@ stageRun {
     install -Dm644 03-empty-string-length-literal.mzbc "$out/share/mlc/stages/03-empty-string-length-literal.mzbc"
     install -Dm644 03-string-binding-length.mzbc "$out/share/mlc/stages/03-string-binding-length.mzbc"
     install -Dm644 03-bytes-create-length.mzbc "$out/share/mlc/stages/03-bytes-create-length.mzbc"
+    install -Dm644 03-string-index.mzbc "$out/share/mlc/stages/03-string-index.mzbc"
+    install -Dm644 03-bytes-index-set.mzbc "$out/share/mlc/stages/03-bytes-index-set.mzbc"
+    install -Dm644 03-bytes-index-var.mzbc "$out/share/mlc/stages/03-bytes-index-var.mzbc"
     install -Dm644 03-debug-string.mzbc "$out/share/mlc/stages/03-debug-string.mzbc"
     install -Dm644 03-debug-byte.mzbc "$out/share/mlc/stages/03-debug-byte.mzbc"
     install -Dm644 03-unit.mzbc "$out/share/mlc/stages/03-unit.mzbc"

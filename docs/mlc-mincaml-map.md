@@ -117,8 +117,9 @@ front-end split: parse source into ML ADT nodes, run a small static type check,
 then emit VM bytecode. Its first typed core distinguishes `int`, `bool`,
 `unit`, `string`, `bytes`, and pair types, with comparisons returning `bool`,
 `if` requiring a `bool` guard, string and bytes length forms requiring the
-matching block type, and pair destructuring checked before field extraction is
-emitted. Because the current
+matching block type, indexed reads requiring a string or bytes block plus an
+integer index, bytes writes requiring an integer byte value, and pair
+destructuring checked before field extraction is emitted. Because the current
 compiler cannot yet compile
 function-valued parser continuations, stage 03 uses the executable subset of
 HCC `ParseLite`: explicit `ParseOk` / `ParseErr` replies, `p_force`,
@@ -131,10 +132,11 @@ Stage 03 also type-checks sequencing with `;`, requiring the left expression to
 have type `unit` before emitting the right expression. Its typed integer core
 now covers `read_byte`, literal `write_string`, string literals as immutable
 blocks, `String.length` over literal and bound strings, `Bytes.create`,
-`Bytes.length`, raw and escaped char literals, `()`, `+`, `-`, `*`, `/`, unary
-`-`, boolean `!`, `!=`, `<`, `<=`, `>`, and `>=`, and its program parser
-accepts declaration-style top-level `let` and pair destructuring by lowering
-them to the same checked expression AST.
+`Bytes.length`, `s.[i]`, `b.[i]`, `b.[i] <- ch`, raw and escaped char
+literals, `()`, `+`, `-`, `*`, `/`, unary `-`, boolean `!`, `!=`, `<`, `<=`,
+`>`, and `>=`, and its program parser accepts declaration-style top-level
+`let` and pair destructuring by lowering them to the same checked expression
+AST.
 
 The older `mlc-seed.c` is deliberately smaller than the full language and is
 now transitional. It is a tiny recursive-descent compiler for `let` bindings,
