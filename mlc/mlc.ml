@@ -1087,12 +1087,14 @@ let rec compile_expr input =
   if src.[pos] == 34 then
     compile_string_literal (src, (pos, emit))
   else if is_string_length_at (src, pos) then
-    let expr = compile_arg_expr (src, (pos + 13, (env, (ctors, (funcs, emit))))) in
+    let after_string_length = need_keyword (src, (pos, "String.length")) in
+    let expr = compile_arg_expr (src, (after_string_length, (env, (ctors, (funcs, emit))))) in
     let (expr_len, done_pos) = expr in
     let size_len = emit_blocksize emit in
     (expr_len + size_len, done_pos)
   else if is_bytes_length_at (src, pos) then
-    let expr = compile_arg_expr (src, (pos + 12, (env, (ctors, (funcs, emit))))) in
+    let after_bytes_length = need_keyword (src, (pos, "Bytes.length")) in
+    let expr = compile_arg_expr (src, (after_bytes_length, (env, (ctors, (funcs, emit))))) in
     let (expr_len, done_pos) = expr in
     let size_len = emit_blocksize emit in
     (expr_len + size_len, done_pos)
@@ -1165,22 +1167,24 @@ let rec compile_expr input =
     let call_len = emit_call_write_byte (emit) in
     (expr_len + call_len, done_pos)
   else if is_debug_byte_at (src, pos) then
-    let p = skip_space (src, pos + 10) in
+    let p = need_keyword (src, (pos, "debug_byte")) in
     let expr = compile_expr (src, (p, (env, (ctors, (funcs, emit))))) in
     let (expr_len, done_pos) = expr in
     let call_len = emit_call_debug_byte (emit) in
     (expr_len + call_len, done_pos)
   else if is_debug_int_at (src, pos) then
-    let p = skip_space (src, pos + 9) in
+    let p = need_keyword (src, (pos, "debug_int")) in
     let expr = compile_expr (src, (p, (env, (ctors, (funcs, emit))))) in
     let (expr_len, done_pos) = expr in
     let call_len = emit_call_debug_int (emit) in
     (expr_len + call_len, done_pos)
   else if is_debug_string_at (src, pos) then
-    let p = skip_space (src, pos + 12) in
+    let after_debug_string = need_keyword (src, (pos, "debug_string")) in
+    let p = skip_space (src, after_debug_string) in
     if src.[p] == 34 then compile_debug_string_literal (src, (p + 1, emit)) else exit 1
   else if is_debug_printf_at (src, pos) then
-    let p = skip_space (src, pos + 12) in
+    let after_debug_printf = need_keyword (src, (pos, "debug_printf")) in
+    let p = skip_space (src, after_debug_printf) in
     if src.[p] == 34 then
       let prefix = compile_debug_printf_prefix (src, (p + 1, emit)) in
       let (prefix_len, suffix_pos) = prefix in
@@ -1194,28 +1198,32 @@ let rec compile_expr input =
       (prefix_len + expr_len + call_len + suffix_len, done_pos)
     else exit 1
 	  else if is_exit_at (src, pos) then
-	    let p = skip_space (src, pos + 4) in
+	    let p = need_keyword (src, (pos, "exit")) in
 	    let expr = compile_expr (src, (p, (env, (ctors, (funcs, emit))))) in
 	    let (expr_len, done_pos) = expr in
 	    let call_len = emit_call_exit (emit) in
 	    (expr_len + call_len, done_pos)
 	  else if is_read_byte_at (src, pos) then
 	    let len = emit_call_read_byte (emit) in
-	    (len, pos + 9)
+	    let done_pos = need_keyword (src, (pos, "read_byte")) in
+	    (len, done_pos)
 	  else if is_bytes_create_at (src, pos) then
-	    let expr = compile_expr (src, (pos + 12, (env, (ctors, (funcs, emit))))) in
+	    let after_bytes_create = need_keyword (src, (pos, "Bytes.create")) in
+	    let expr = compile_expr (src, (after_bytes_create, (env, (ctors, (funcs, emit))))) in
 	    let (expr_len, done_pos) = expr in
 	    let push_len = emit_push (emit) in
 	    let const_len = emit_const (emit, 0) in
 	    let block_len = emit_makeblock_dyn (emit) in
 	    (expr_len + push_len + const_len + block_len, done_pos)
 	  else if is_cell_create_at (src, pos) then
-	    let expr = compile_expr (src, (pos + 11, (env, (ctors, (funcs, emit))))) in
+	    let after_cell_create = need_keyword (src, (pos, "Cell.create")) in
+	    let expr = compile_expr (src, (after_cell_create, (env, (ctors, (funcs, emit))))) in
 	    let (expr_len, done_pos) = expr in
 	    let block_len = emit_makeblock (emit, (0, 1)) in
 	    (expr_len + block_len, done_pos)
 	  else if is_cell_get_at (src, pos) then
-	    let expr = compile_arg_expr (src, (pos + 8, (env, (ctors, (funcs, emit))))) in
+	    let after_cell_get = need_keyword (src, (pos, "Cell.get")) in
+	    let expr = compile_arg_expr (src, (after_cell_get, (env, (ctors, (funcs, emit))))) in
 	    let (expr_len, done_pos) = expr in
 	    let field_len = emit_getfield (emit, 0) in
 	    let left_len = expr_len + field_len in
@@ -1247,7 +1255,8 @@ let rec compile_expr input =
 	    else
 	      (left_len, done_pos)
 	  else if is_cell_set_at (src, pos) then
-	    let cell = compile_arg_expr (src, (pos + 8, (env, (ctors, (funcs, emit))))) in
+	    let after_cell_set = need_keyword (src, (pos, "Cell.set")) in
+	    let cell = compile_arg_expr (src, (after_cell_set, (env, (ctors, (funcs, emit))))) in
 	    let (cell_len, cell_end) = cell in
 	    let push_len = emit_push emit in
 	    let value = compile_expr (src, (cell_end, (shift_env env, (ctors, (funcs, emit))))) in

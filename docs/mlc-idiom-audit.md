@@ -42,7 +42,7 @@ These can move directly into `mlc.ml` because stage 02 already compiles them:
 - Replace byte-emission magic for the MZBC header with char literals:
   `write_byte 'M'; write_byte 'Z'; write_byte 'B'; write_byte 'C'`.
 - Continue expanding `need_string` / `need_keyword` use in `mlc.ml` for fixed
-  primitive names and dotted module names.
+  control-flow keywords.
 
 ## Rewritten
 
@@ -53,8 +53,9 @@ These can move directly into `mlc.ml` because stage 02 already compiles them:
   helpers. Stage 02 already supports the required string literals, string
   length, and indexing.
 - `mlc.ml` now has `need_string` / `need_keyword`, and uses them for the
-  fixed `with` / `->` match syntax plus the direct `write_byte` /
-  top-level `write_string` advances.
+  fixed `with` / `->` match syntax, direct `write_byte`, top-level
+  `write_string`, debug/exit/read primitives, dotted `String.length` /
+  `Bytes.*`, and `Cell.*` advances.
 
 ## Promote before use
 
@@ -83,7 +84,8 @@ These need a stronger previous stage before they should become required by
    layer.
 3. Add `need_string` / `need_keyword` to `mlc.ml` and replace `expect_with`,
    `expect_arrow`, and fixed primitive spelling code. This is started for
-   match syntax and direct write primitives; continue widening it gradually.
+   match syntax and primitive/module-name advances; continue widening it
+   gradually to control-flow keywords.
 4. Add previous-stage tests for the exact parser-combinator style needed by
    the next `mlc.ml` parser cleanup.
 5. Only after the previous stage can compile those helpers, move the larger
