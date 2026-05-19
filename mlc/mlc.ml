@@ -566,6 +566,10 @@ let rec is_rec_at input =
   let (src, pos0) = input in
   p_is_ok (p_try_keyword (src, (pos0, "rec")))
 in
+let rec is_and_at input =
+  let (src, pos0) = input in
+  p_is_ok (p_try_keyword (src, (pos0, "and")))
+in
 let rec expect_with input =
   let (src, pos0) = input in
   need_keyword (src, (pos0, "with"))
@@ -2050,6 +2054,27 @@ let rec compile_write_byte input =
   let call_len = emit_call_write_byte (emit) in
   (expr_len + call_len, done_pos)
 in
+let rec skip_string_pos input =
+  let (src, pos0) = input in
+  if src.[pos0] == 0 then parse_fail 0 else
+  if src.[pos0] == '\\' then skip_string_pos (src, pos0 + 2) else
+  if src.[pos0] == '"' then pos0 + 1 else skip_string_pos (src, pos0 + 1)
+in
+let rec skip_char_pos input =
+  let (src, pos0) = input in
+  if src.[pos0] == 0 then parse_fail 0 else
+  if src.[pos0] == '\\' then skip_char_pos (src, pos0 + 2) else
+  if src.[pos0] == '\'' then pos0 + 1 else skip_char_pos (src, pos0 + 1)
+in
+let rec find_and_pos input =
+  let (src, pos0) = input in
+  let pos = skip_space (src, pos0) in
+  if src.[pos] == 0 then 0 - 1 else
+  if src.[pos] == '"' then find_and_pos (src, skip_string_pos (src, pos + 1)) else
+  if src.[pos] == '\'' then find_and_pos (src, skip_char_pos (src, pos + 1)) else
+  if is_in_at (src, pos) == 1 then 0 - 1 else
+  if is_and_at (src, pos) == 1 then pos else find_and_pos (src, pos + 1)
+in
 let rec compile_byte_code input =
   let (src, pair) = input in
   let (pos0, pair2) = pair in
@@ -2070,27 +2095,70 @@ let rec compile_byte_code input =
       if src.[eq_pos] == 61 then
         let fn_body_start = eq_pos + 1 in
         let target = base + 5 in
-        let next_funcs = extend_func (fname, (param, (target, funcs))) in
-        let fn_env = extend_env (param, env) in
-        let fn_body = compile_expr (src, (fn_body_start, (fn_env, (ctors, (next_funcs, 0))))) in
-        let (fn_len, fn_end) = fn_body in
-        let fn_total = 1 + fn_len + 5 + 1 in
-        let in_pos = skip_space (src, fn_end) in
-        let body_pos = if is_in_at (src, in_pos) then skip_space (src, in_pos + 2) else in_pos in
-        let body = compile_byte_code (src, (body_pos, (env, (ctors, (next_funcs, (base + 5 + fn_total, 0)))))) in
-        let (body_len, body_end) = body in
-        let _ =
-          if emit == 1 then
-            let _ = emit_branch (1, fn_total) in
-            let _ = emit_push 1 in
-            let _ = compile_expr (src, (fn_body_start, (fn_env, (ctors, (next_funcs, 1))))) in
-            let _ = emit_pop1 1 in
-            let _ = emit_return 1 in
-            compile_byte_code (src, (body_pos, (env, (ctors, (next_funcs, (base + 5 + fn_total, 1))))))
+        let and_pos = find_and_pos (src, fn_body_start) in
+        if and_pos >= 0 then
+          let sname_parsed = parse_ident (src, and_pos + 3) in
+          let (sname, sname_end) = sname_parsed in
+          let sparam_parsed = parse_ident (src, sname_end) in
+          let (sparam, sparam_end) = sparam_parsed in
+          let seq_pos = skip_space (src, sparam_end) in
+          if src.[seq_pos] == 61 then
+            let s_body_start = seq_pos + 1 in
+            let provisional_funcs = extend_func (sname, (sparam, (0, extend_func (fname, (param, (target, funcs)))))) in
+            let fn_env = extend_env (param, env) in
+            let fn_body = compile_expr (src, (fn_body_start, (fn_env, (ctors, (provisional_funcs, 0))))) in
+            let (fn_len, fn_end) = fn_body in
+            let fn_total = 1 + fn_len + 5 + 1 in
+            let starget = target + fn_total in
+            let next_funcs = extend_func (sname, (sparam, (starget, extend_func (fname, (param, (target, funcs)))))) in
+            let s_env = extend_env (sparam, env) in
+            let s_body = compile_expr (src, (s_body_start, (s_env, (ctors, (next_funcs, 0))))) in
+            let (s_len, s_end) = s_body in
+            let s_total = 1 + s_len + 5 + 1 in
+            let in_pos = skip_space (src, s_end) in
+            let body_pos = if is_in_at (src, in_pos) then skip_space (src, in_pos + 2) else in_pos in
+            let body = compile_byte_code (src, (body_pos, (env, (ctors, (next_funcs, (base + 5 + fn_total + s_total, 0)))))) in
+            let (body_len, body_end) = body in
+            let _ =
+              if emit == 1 then
+                let _ = emit_branch (1, fn_total + s_total) in
+                let _ = emit_push 1 in
+                let _ = compile_expr (src, (fn_body_start, (fn_env, (ctors, (next_funcs, 1))))) in
+                let _ = emit_pop1 1 in
+                let _ = emit_return 1 in
+                let _ = emit_push 1 in
+                let _ = compile_expr (src, (s_body_start, (s_env, (ctors, (next_funcs, 1))))) in
+                let _ = emit_pop1 1 in
+                let _ = emit_return 1 in
+                compile_byte_code (src, (body_pos, (env, (ctors, (next_funcs, (base + 5 + fn_total + s_total, 1))))))
+              else
+                (0, 0)
+            in
+            (5 + fn_total + s_total + body_len, body_end)
           else
-            (0, 0)
-        in
-        (5 + fn_total + body_len, body_end)
+            parse_fail 0
+        else
+          let next_funcs = extend_func (fname, (param, (target, funcs))) in
+          let fn_env = extend_env (param, env) in
+          let fn_body = compile_expr (src, (fn_body_start, (fn_env, (ctors, (next_funcs, 0))))) in
+          let (fn_len, fn_end) = fn_body in
+          let fn_total = 1 + fn_len + 5 + 1 in
+          let in_pos = skip_space (src, fn_end) in
+          let body_pos = if is_in_at (src, in_pos) then skip_space (src, in_pos + 2) else in_pos in
+          let body = compile_byte_code (src, (body_pos, (env, (ctors, (next_funcs, (base + 5 + fn_total, 0)))))) in
+          let (body_len, body_end) = body in
+          let _ =
+            if emit == 1 then
+              let _ = emit_branch (1, fn_total) in
+              let _ = emit_push 1 in
+              let _ = compile_expr (src, (fn_body_start, (fn_env, (ctors, (next_funcs, 1))))) in
+              let _ = emit_pop1 1 in
+              let _ = emit_return 1 in
+              compile_byte_code (src, (body_pos, (env, (ctors, (next_funcs, (base + 5 + fn_total, 1))))))
+            else
+              (0, 0)
+          in
+          (5 + fn_total + body_len, body_end)
       else
         parse_fail 0
     else

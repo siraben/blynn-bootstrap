@@ -178,6 +178,9 @@ stageRun {
     ${mzvmSeedM2}/bin/mzvm-seed mlc.byte < ${testsRoot}/mlc/function-string.ml > compiled-function-string.mzbc
     actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-function-string.mzbc)"
     test "$actual" = OK
+    ${mzvmSeedM2}/bin/mzvm-seed mlc.byte < ${testsRoot}/mlc/function-and.ml > compiled-function-and.mzbc
+    actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-function-and.mzbc)"
+    test "$actual" = OK
     ${mzvmSeedM2}/bin/mzvm-seed mlc.byte < ${testsRoot}/mlc/read-byte.ml > compiled-read-byte.mzbc
     actual="$(printf O | ${mzvmSeedM2}/bin/mzvm-seed compiled-read-byte.mzbc)"
     test "$actual" = OK
@@ -234,6 +237,7 @@ stageRun {
     install -Dm644 compiled-final-call.mzbc "$out/share/mlc/compiled-final-call.mzbc"
     install -Dm644 compiled-call-precedence.mzbc "$out/share/mlc/compiled-call-precedence.mzbc"
     install -Dm644 compiled-function-string.mzbc "$out/share/mlc/compiled-function-string.mzbc"
+    install -Dm644 compiled-function-and.mzbc "$out/share/mlc/compiled-function-and.mzbc"
     install -Dm644 compiled-read-byte.mzbc "$out/share/mlc/compiled-read-byte.mzbc"
     install -Dm644 compiled-dynamic-bytes.mzbc "$out/share/mlc/compiled-dynamic-bytes.mzbc"
     install -Dm644 compiled-record-three.mzbc "$out/share/mlc/compiled-record-three.mzbc"
