@@ -117,6 +117,16 @@ stageRun {
     ${mzvmSeedM2}/bin/mzvm-seed mlc.byte < ${testsRoot}/mlc/match-bind-default.ml > compiled-match-bind-default.mzbc
     actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-match-bind-default.mzbc)"
     test "$actual" = OK
+    if printf 'type maybe_byte = Missing | Present of int\nwrite_byte (match Missing with Present x -> x | Presnt x -> 88)' | ${mzvmSeedM2}/bin/mzvm-seed mlc.byte > bad-uppercase-default.mzbc; then
+      exit 1
+    else
+      :
+    fi
+    if printf 'type letter = A | B | C\nwrite_byte (match B with A -> 88 | other -> 88 | B -> 79)' | ${mzvmSeedM2}/bin/mzvm-seed mlc.byte > bad-nonfinal-default.mzbc; then
+      exit 1
+    else
+      :
+    fi
     ${mzvmSeedM2}/bin/mzvm-seed mlc.byte < ${testsRoot}/mlc/multi-adt.ml > compiled-multi-adt.mzbc
     actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-multi-adt.mzbc)"
     test "$actual" = OK

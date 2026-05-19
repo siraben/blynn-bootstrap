@@ -209,6 +209,9 @@ let rec is_ident ch =
   else
     0
 in
+let rec is_lower_ident_start ch =
+  if 97 <= ch then if ch <= 122 then 1 else 0 else 0
+in
 let rec is_space ch =
   if ch == 32 then 1 else
   if ch == 9 then 1 else
@@ -1387,9 +1390,9 @@ let rec compile_expr input =
     in
     let (case2_name, case2_pat_end0) = case2_pat in
     let case2_found_ctor = if case2_is_wild == 1 then 0 else find_ctor (ctors, case2_name) in
-    let case2_is_default_var = if case2_is_wild == 1 then 0 else if case2_found_ctor < 0 then 1 else 0 in
+    let case2_is_default_var = if case2_is_wild == 1 then 0 else if case2_found_ctor < 0 then is_lower_ident_start (src.[case2_pos]) else 0 in
     let case2_is_default = if case2_is_wild == 1 then 1 else case2_is_default_var in
-    let case2_ctor = if case2_is_default == 1 then 0 else case2_found_ctor in
+    let case2_ctor = if case2_is_default == 1 then 0 else if case2_found_ctor < 0 then exit 1 else case2_found_ctor in
     let case2_has_arg = if case2_is_default == 1 then 0 else ctor_has_arg case2_ctor in
     let case2_payload = parse_case_payload (src, (case2_pat_end0, case2_has_arg)) in
     let (case2_tuple, case2_payload2) = case2_payload in
@@ -1413,9 +1416,9 @@ let rec compile_expr input =
     in
     let (case3_name, case3_pat_end0) = case3_pat in
     let case3_found_ctor = if case3_is_wild == 1 then 0 else find_ctor (ctors, case3_name) in
-    let case3_is_default_var = if case3_is_wild == 1 then 0 else if case3_found_ctor < 0 then 1 else 0 in
+    let case3_is_default_var = if case3_is_wild == 1 then 0 else if case3_found_ctor < 0 then is_lower_ident_start (src.[case3_pos]) else 0 in
     let case3_is_default = if case3_is_wild == 1 then 1 else case3_is_default_var in
-    let case3_ctor = if case3_is_default == 1 then 0 else case3_found_ctor in
+    let case3_ctor = if case3_is_default == 1 then 0 else if case3_found_ctor < 0 then exit 1 else case3_found_ctor in
     let case3_has_arg = if case3_is_default == 1 then 0 else ctor_has_arg case3_ctor in
     let case3_payload = parse_case_payload (src, (case3_pat_end0, case3_has_arg)) in
     let (case3_tuple, case3_payload2) = case3_payload in
@@ -1441,9 +1444,9 @@ let rec compile_expr input =
     in
     let (case4_name, case4_pat_end0) = case4_pat in
     let case4_found_ctor = if case4_is_wild == 1 then 0 else find_ctor (ctors, case4_name) in
-    let case4_is_default_var = if case4_is_wild == 1 then 0 else if case4_found_ctor < 0 then 1 else 0 in
+    let case4_is_default_var = if case4_is_wild == 1 then 0 else if case4_found_ctor < 0 then is_lower_ident_start (src.[case4_pos]) else 0 in
     let case4_is_default = if case4_is_wild == 1 then 1 else case4_is_default_var in
-    let case4_ctor = if case4_is_default == 1 then 0 else case4_found_ctor in
+    let case4_ctor = if case4_is_default == 1 then 0 else if case4_found_ctor < 0 then exit 1 else case4_found_ctor in
     let case4_has_arg = if case4_is_default == 1 then 0 else ctor_has_arg case4_ctor in
     let case4_payload = parse_case_payload (src, (case4_pat_end0, case4_has_arg)) in
     let (case4_tuple, case4_payload2) = case4_payload in
