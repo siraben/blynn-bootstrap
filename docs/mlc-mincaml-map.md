@@ -145,8 +145,11 @@ one-integer `debug_printf`,
 raw and escaped char literals, `()`,
 `+`, `-`, `*`, `/`, unary `-`, boolean `!`, ML-style `=` plus transitional
 `==`, `!=`, `<`, `<=`, `>`, and `>=`, and its program parser accepts
-declaration-style top-level `let` and pair destructuring by lowering them to
-the same checked expression AST.
+ignored leading `type` declaration lines, declaration-style top-level `let`,
+and pair destructuring by lowering them to the same checked expression AST.
+The ignored type preamble is a parser-entry checkpoint toward compiling
+compiler-shaped sources with real ADTs later; constructors and patterns are
+not typed in stage 03 yet.
 
 The older `mlc-seed.c` is deliberately smaller than the full language and is
 now transitional. It is a tiny recursive-descent compiler for `let` bindings,

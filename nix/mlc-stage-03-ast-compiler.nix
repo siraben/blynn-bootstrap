@@ -120,6 +120,12 @@ stageRun {
         printf 'let x = 40\nlet y = 39\nwrite_byte (x + y)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-top-defs.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-top-defs.mzbc)"
         test "$actual" = O
+        printf 'type byte = Byte of int | Empty\nwrite_byte 79' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-leading-type.mzbc
+        actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-leading-type.mzbc)"
+        test "$actual" = O
+        printf 'type left = L | LL of int\ntype right = R | RR of int\nlet x = 79\nwrite_byte x' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-leading-types.mzbc
+        actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-leading-types.mzbc)"
+        test "$actual" = O
         printf 'let (x, y) = (40, 39) in write_byte (x + y)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-pair-let.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-pair-let.mzbc)"
         test "$actual" = O
@@ -220,6 +226,8 @@ stageRun {
     install -Dm644 03-let.mzbc "$out/share/mlc/stages/03-let.mzbc"
     install -Dm644 03-top-let.mzbc "$out/share/mlc/stages/03-top-let.mzbc"
     install -Dm644 03-top-defs.mzbc "$out/share/mlc/stages/03-top-defs.mzbc"
+    install -Dm644 03-leading-type.mzbc "$out/share/mlc/stages/03-leading-type.mzbc"
+    install -Dm644 03-leading-types.mzbc "$out/share/mlc/stages/03-leading-types.mzbc"
     install -Dm644 03-pair-let.mzbc "$out/share/mlc/stages/03-pair-let.mzbc"
     install -Dm644 03-top-pair-def.mzbc "$out/share/mlc/stages/03-top-pair-def.mzbc"
     install -Dm644 03-sequence.mzbc "$out/share/mlc/stages/03-sequence.mzbc"

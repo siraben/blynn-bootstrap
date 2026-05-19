@@ -339,6 +339,20 @@ let rec is_false_at state =
   let (src, pos0) = state in
   p_keyword_at (src, (pos0, "false"))
 in
+let rec is_type_at state =
+  let (src, pos0) = state in
+  p_keyword_at (src, (pos0, "type"))
+in
+let rec skip_line state =
+  let (src, pos) = state in
+  if src.[pos] == 0 then pos else
+  if src.[pos] == '\n' then pos + 1 else skip_line (src, pos + 1)
+in
+let rec skip_type_decls state =
+  let (src, pos0) = state in
+  let pos = skip_space (src, pos0) in
+  if is_type_at (src, pos) then skip_type_decls (src, skip_line (src, pos)) else pos
+in
 let rec need_then state =
   let (src, pos0) = state in
   p_need_keyword (src, (pos0, "then"))
@@ -896,7 +910,7 @@ let rec parse_expr state =
 in
 let rec parse_program state =
   let (src, pos0) = state in
-  let pos = skip_space (src, pos0) in
+  let pos = skip_type_decls (src, pos0) in
   if is_let_at (src, pos) then
     let bind_pos = skip_space (src, pos + 3) in
     if src.[bind_pos] == '(' then
@@ -1052,17 +1066,17 @@ let rec infer state =
                           let (name2, rest2) = rest1 in
                           let (rhs, body) = rest2 in
                           let rhs_ty = infer (env, rhs) in
-                            match rhs_ty with
-                              TyMore more ->
-                                (match more with
-                                  TyPair pair_ty ->
-                                    let (left_ty, right_ty) = pair_ty in
-                                    infer (extend_tenv (name2, (right_ty, extend_tenv (name1, (left_ty, env)))), body)
-                                | TyString -> fail 0
-                                | TyBytes -> fail 0)
-                            | TyInt -> fail 0
-                            | TyUnit -> fail 0
-                            | TyBool -> fail 0
+                          (match rhs_ty with
+                            TyMore more ->
+                              (match more with
+                                TyPair pair_ty ->
+                                  let (left_ty, right_ty) = pair_ty in
+                                  infer (extend_tenv (name2, (right_ty, extend_tenv (name1, (left_ty, env)))), body)
+                              | TyString -> fail 0
+                              | TyBytes -> fail 0)
+                          | TyInt -> fail 0
+                          | TyUnit -> fail 0
+                          | TyBool -> fail 0)
                       | EMore6 more6 ->
                           match more6 with
                             ESeq parts ->
