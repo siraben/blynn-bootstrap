@@ -203,6 +203,7 @@ tuple payload expressions allocate VM blocks, tuple destructuring extracts
 fields, and simple constructor/wildcard/default-variable `match` forms lower to tag tests and
 branches, including multi-declaration, `match-three.ml`,
 `match-four.ml`,
+`match-six.ml`,
 `match-bind-default.ml`,
 `adt-tuple-payload.ml`, direct tuple payload patterns in
 `adt-pattern-tuple.ml`, tuple payload wildcards in

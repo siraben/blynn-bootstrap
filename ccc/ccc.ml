@@ -491,24 +491,21 @@ let rec apply_func state =
       FuncConst value -> value
     | FuncArg -> arg
     | FuncNotArg -> if arg == 0 then 1 else 0
-    | _ ->
-        match func with
-          FuncArgEqAny values ->
-            let (value1, rest1) = values in
-            let (value2, rest2) = rest1 in
-            let (value3, value4) = rest2 in
-            if arg == value1 then 1 else
-            if arg == value2 then 1 else
-            if arg == value3 then 1 else
-            if arg == value4 then 1 else 0
-        | FuncAddArgs ->
-            let (arg1, arg2) = arg in
-            arg1 + arg2
-        | FuncCmpArgs ->
-            let (arg1, arg2) = arg in
-            if arg1 < arg2 then 0 - 1 else
-            if arg1 > arg2 then 1 else 0
-        | _ -> exit 1
+    | FuncArgEqAny values ->
+        let (value1, rest1) = values in
+        let (value2, rest2) = rest1 in
+        let (value3, value4) = rest2 in
+        if arg == value1 then 1 else
+        if arg == value2 then 1 else
+        if arg == value3 then 1 else
+        if arg == value4 then 1 else 0
+    | FuncAddArgs ->
+        let (arg1, arg2) = arg in
+        arg1 + arg2
+    | FuncCmpArgs ->
+        let (arg1, arg2) = arg in
+        if arg1 < arg2 then 0 - 1 else
+        if arg1 > arg2 then 1 else 0
   else
   if head < 0 then exit 1 else apply_func (tail, (name, arg))
 in
