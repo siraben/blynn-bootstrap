@@ -86,7 +86,10 @@ Current stages:
   this compiler: explicit `ParseOk` / `ParseErr` replies, `p_force`,
   `p_peek`, `p_try_char`, `p_need_char`, `p_return`, `p_try_string`,
   `p_string_at`, `p_keyword_at`, `p_try_keyword`, `p_need_string`, and
-  `p_need_keyword`. Failed parser, type, and environment checks now pass
+  `p_need_keyword`. Top-level definition parsing now returns an explicit
+  option reply (`ExprSome` / `ExprNone`) and falls back through one parser
+  handoff point instead of branching directly into the expression parser.
+  Failed parser, type, and environment checks now pass
   through one local failure boundary instead of scattering raw process exits
   through the stage source.
   Its expression parser now follows HCC's precedence-climbing shape: parse a

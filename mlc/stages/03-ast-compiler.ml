@@ -11,6 +11,7 @@ type expr_more7 = EString of int | EStringLength of expr | EBytesCreate of expr 
 type expr_more8 = EBytesLength of expr | EIndex of expr | ESetIndex of expr | EMore9 of expr_more9
 type expr_more9 = EDebugInt of expr | EUnit
 type parse_reply = ParseOk of int | ParseErr
+type expr_option = ExprSome of expr | ExprNone
 
 let rec byte n =
   n - ((n / 256) * 256)
@@ -908,9 +909,21 @@ let rec parse_expr state =
   let (src, pos0) = state in
   parse_expr_flag (src, (pos0, 1))
 in
-let rec parse_program state =
+let rec p_expr_or_parse state =
+  let (reply, pair) = state in
+  let (src, pos) = pair in
+  match reply with
+    ExprSome parsed -> parsed
+  | ExprNone -> parse_expr (src, pos)
+in
+let rec skip_program_types state =
   let (src, pos0) = state in
-  let pos = skip_type_decls (src, pos0) in
+  (src, skip_type_decls (src, pos0))
+in
+let rec parse_program state =
+  p_expr_or_parse (parse_top_let (skip_program_types state), skip_program_types state)
+and parse_top_let state =
+  let (src, pos) = state in
   if is_let_at (src, pos) then
     let bind_pos = skip_space (src, pos + 3) in
     if src.[bind_pos] == '(' then
@@ -924,10 +937,10 @@ let rec parse_program state =
       let rhs = parse_expr_flag (src, (eq_pos, 0)) in
       let (rhs_ast, rhs_end) = rhs in
       let after_rhs = skip_space (src, rhs_end) in
-      if is_in_at (src, after_rhs) then parse_expr (src, pos) else
+      if is_in_at (src, after_rhs) then ExprSome (parse_expr (src, pos)) else
         let body = parse_program (src, after_rhs) in
         let (body_ast, body_end) = body in
-        (let_pair_expr (name1_hash, (name2_hash, (rhs_ast, body_ast))), body_end)
+        ExprSome (let_pair_expr (name1_hash, (name2_hash, (rhs_ast, body_ast))), body_end)
     else
       let ident = parse_ident (src, bind_pos) in
       let (name, name_end) = ident in
@@ -935,11 +948,11 @@ let rec parse_program state =
       let rhs = parse_expr_flag (src, (eq_pos, 0)) in
       let (rhs_ast, rhs_end) = rhs in
       let after_rhs = skip_space (src, rhs_end) in
-      if is_in_at (src, after_rhs) then parse_expr (src, pos) else
+      if is_in_at (src, after_rhs) then ExprSome (parse_expr (src, pos)) else
         let body = parse_program (src, after_rhs) in
         let (body_ast, body_end) = body in
-        (let_expr (name, (rhs_ast, body_ast)), body_end)
-  else parse_expr (src, pos)
+        ExprSome (let_expr (name, (rhs_ast, body_ast)), body_end)
+  else ExprNone
 in
 let rec empty_tenv unit =
   let _ = unit in
