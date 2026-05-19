@@ -93,6 +93,7 @@
           src = upstreamSources.blynnCompiler;
           patches = [
             (upstreamPatches + "/blynn-compiler-local.patch")
+            (upstreamPatches + "/blynn-compiler-crossly-perf.patch")
           ];
         };
         m2libcSrc = "${blynnSrc}/M2libc";
