@@ -920,12 +920,17 @@ let rec skip_program_types state =
   let (src, pos0) = state in
   (src, skip_type_decls (src, pos0))
 in
+let rec top_let_bind_state state =
+  let (src, pos) = state in
+  (src, (pos, skip_space (src, pos + 3)))
+in
 let rec parse_program state =
   p_expr_or_parse (parse_top_let (skip_program_types state), skip_program_types state)
 and parse_top_let state =
-  let (src, pos) = state in
-  if is_let_at (src, pos) then
-    let bind_pos = skip_space (src, pos + 3) in
+  if is_let_at state then parse_top_let_binding (top_let_bind_state state) else ExprNone
+and parse_top_let_binding state =
+  let (src, pair) = state in
+  let (let_pos, bind_pos) = pair in
     if src.[bind_pos] == '(' then
       let name1 = parse_ident (src, bind_pos + 1) in
       let (name1_hash, name1_end0) = name1 in
@@ -937,7 +942,7 @@ and parse_top_let state =
       let rhs = parse_expr_flag (src, (eq_pos, 0)) in
       let (rhs_ast, rhs_end) = rhs in
       let after_rhs = skip_space (src, rhs_end) in
-      if is_in_at (src, after_rhs) then ExprSome (parse_expr (src, pos)) else
+      if is_in_at (src, after_rhs) then ExprSome (parse_expr (src, let_pos)) else
         let body = parse_program (src, after_rhs) in
         let (body_ast, body_end) = body in
         ExprSome (let_pair_expr (name1_hash, (name2_hash, (rhs_ast, body_ast))), body_end)
@@ -948,11 +953,10 @@ and parse_top_let state =
       let rhs = parse_expr_flag (src, (eq_pos, 0)) in
       let (rhs_ast, rhs_end) = rhs in
       let after_rhs = skip_space (src, rhs_end) in
-      if is_in_at (src, after_rhs) then ExprSome (parse_expr (src, pos)) else
+      if is_in_at (src, after_rhs) then ExprSome (parse_expr (src, let_pos)) else
         let body = parse_program (src, after_rhs) in
         let (body_ast, body_end) = body in
         ExprSome (let_expr (name, (rhs_ast, body_ast)), body_end)
-  else ExprNone
 in
 let rec empty_tenv unit =
   let _ = unit in
