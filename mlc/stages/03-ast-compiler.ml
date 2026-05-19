@@ -269,6 +269,12 @@ let rec p_try_keyword state =
   let pos = skip_space (src, pos0) in
   if p_keyword_at (src, (pos, text)) == 1 then ParseOk (pos + String.length text) else ParseErr
 in
+let rec p_optional_pos state =
+  let (reply, pos0) = state in
+  match reply with
+    ParseOk pos -> (1, pos)
+  | ParseErr -> (0, pos0)
+in
 let rec p_need_keyword state =
   p_force (p_try_keyword state)
 in
@@ -920,14 +926,31 @@ let rec skip_program_types state =
   let (src, pos0) = state in
   (src, skip_type_decls (src, pos0))
 in
-let rec top_let_bind_state state =
-  let (src, pos) = state in
-  (src, (pos, skip_space (src, pos + 3)))
+let rec top_let_start state =
+  let (src, pos0) = state in
+  let pos = skip_space (src, pos0) in
+  let parsed = p_optional_pos (p_try_keyword (src, (pos, "let")), pos) in
+  let (has_let, after_let) = parsed in
+  (has_let, (pos, after_let))
+in
+let rec top_let_has_let state =
+  let parsed = top_let_start state in
+  let (has_let, pair) = parsed in
+  let _ = pair in
+  has_let
+in
+let rec top_let_bind_state_opt state =
+  let (src, pos0) = state in
+  let parsed = top_let_start (src, pos0) in
+  let (has_let, pair) = parsed in
+  let (let_pos, after_let) = pair in
+  let _ = has_let in
+  (src, (let_pos, skip_space (src, after_let)))
 in
 let rec parse_program state =
   p_expr_or_parse (parse_top_let (skip_program_types state), skip_program_types state)
 and parse_top_let state =
-  if is_let_at state then parse_top_let_binding (top_let_bind_state state) else ExprNone
+  if top_let_has_let state == 1 then parse_top_let_binding (top_let_bind_state_opt state) else ExprNone
 and parse_top_let_binding state =
   let (src, pair) = state in
   let (let_pos, bind_pos) = pair in

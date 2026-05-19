@@ -125,7 +125,8 @@ compiler cannot yet compile
 function-valued parser continuations, stage 03 uses the executable subset of
 HCC `ParseLite`: explicit `ParseOk` / `ParseErr` replies, `p_force`,
 one-lookahead via `p_peek`, `try`/`need` character and string parsers, and
-keyword recognizers, including a `p_try_keyword` / `p_need_keyword` split. Its
+keyword recognizers, including a `p_try_keyword` / `p_need_keyword` split and
+a state-preserving `p_optional_pos` helper for optional keyword probes. Its
 expression parser mirrors HCC's precedence-climbing loop by reading an
 operator/precedence pair, recursing at the next precedence for the right-hand
 side, rebuilding the left-hand side, and continuing the climb. Stage 02
