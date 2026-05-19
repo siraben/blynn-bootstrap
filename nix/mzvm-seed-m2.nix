@@ -49,6 +49,15 @@ stageRun {
     ./mzvm-seed debug.mzbc > debug-out.txt 2> debug-err.txt
     test "$(cat debug-out.txt)" = ""
     test "$(cat debug-err.txt)" = T
+    printf '%b' '\115\132\102\103\001\000\000\000\001\000\000\000\000\000\000\000\000\000\000\000\377' > bad-op.mzbc
+    if ./mzvm-seed bad-op.mzbc > bad-op-out.txt 2> bad-op-err.txt; then
+      exit 1
+    fi
+    test "$(cat bad-op-out.txt)" = ""
+    case "$(cat bad-op-err.txt)" in
+      *"unknown opcode pc=0 op=255 sp=0 rp=0"*) ;;
+      *) exit 1 ;;
+    esac
     i=0
     printf '%b' '\115\132\102\103\001\000\000\000\273\001\000\000\003\000\000\000\000\000\000\000' > gc.mzbc
     while [ "$i" -lt 20 ]; do
@@ -72,6 +81,7 @@ stageRun {
     install -Dm644 block.mzbc "$out/share/mzvm/tests/block.mzbc"
     install -Dm644 signed.mzbc "$out/share/mzvm/tests/signed.mzbc"
     install -Dm644 debug.mzbc "$out/share/mzvm/tests/debug.mzbc"
+    install -Dm644 bad-op.mzbc "$out/share/mzvm/tests/bad-op.mzbc"
     install -Dm644 gc.mzbc "$out/share/mzvm/tests/gc.mzbc"
   '';
 }

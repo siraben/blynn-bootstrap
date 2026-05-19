@@ -271,6 +271,10 @@ let rec is_read_byte_at state =
   let (src, pos0) = state in
   p_keyword_at (src, (pos0, "read_byte"))
 in
+let rec is_string_length_at state =
+  let (src, pos0) = state in
+  p_string_at (src, (pos0, "String.length"))
+in
 let rec is_true_at state =
   let (src, pos0) = state in
   p_keyword_at (src, (pos0, "true"))
@@ -310,6 +314,10 @@ in
 let rec need_read_byte state =
   let (src, pos0) = state in
   p_need_keyword (src, (pos0, "read_byte"))
+in
+let rec need_string_length state =
+  let (src, pos0) = state in
+  p_need_string (src, (pos0, "String.length"))
 in
 let rec parse_number_loop state =
   let (src, pair) = state in
@@ -381,6 +389,25 @@ let rec parse_char_literal state =
   let parsed = parse_string_char (src, pos) in
   let (ch, next_pos) = parsed in
   p_return (p_need_char (src, (next_pos, '\'')), EInt ch)
+in
+let rec parse_string_length_loop state =
+  let (src, pair) = state in
+  let (pos, count) = pair in
+  if src.[pos] == '"' then (count, pos + 1) else
+    let parsed = parse_string_char (src, pos) in
+    let (ch, next_pos) = parsed in
+    let _ = ch in
+    parse_string_length_loop (src, (next_pos, count + 1))
+in
+let rec parse_string_length_literal state =
+  let (src, pos0) = state in
+  let arg_pos = skip_space (src, need_string_length (src, pos0)) in
+  if src.[arg_pos] == '"' then
+    let parsed = parse_string_length_loop (src, (arg_pos + 1, 0)) in
+    let (len, done_pos) = parsed in
+    (EInt len, done_pos)
+  else
+    exit 1
 in
 let rec parse_write_string_loop state =
   let (src, pair) = state in
@@ -511,6 +538,8 @@ let rec parse_expr_prec state =
         (EMore (EMore2 (EMore3 (EMore4 (EMore5 (EMore6 (EDebugByte expr_ast)))))), expr_end)
       else if is_debug_string_at (src, pos) then
         parse_debug_string (src, pos)
+      else if is_string_length_at (src, pos) then
+        parse_string_length_literal (src, pos)
       else if is_read_byte_at (src, pos) then
         p_return (need_read_byte (src, pos), EMore (EMore2 (EMore3 (EMore4 (EMore5 (EMore6 EReadByte))))))
       else

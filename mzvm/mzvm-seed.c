@@ -62,6 +62,8 @@ typedef long value_t;
 static char *code;
 static long code_len;
 static long pc;
+static long last_pc;
+static long current_op;
 static value_t acc;
 static value_t *stack_chunks[STACK_CHUNK_COUNT];
 static long *return_stack_chunks[STACK_CHUNK_COUNT];
@@ -78,10 +80,49 @@ static value_t *gc_from;
 static value_t *gc_to;
 static long gc_to_words;
 
+static void fput_long(FILE *out, long n)
+{
+  char buf[32];
+  long i;
+  unsigned long value;
+  if (n < 0) {
+    fputc('-', out);
+    value = (unsigned long)(0 - n);
+  } else {
+    value = (unsigned long)n;
+  }
+  i = 0;
+  if (value == 0) {
+    fputc('0', out);
+    return;
+  }
+  while (value > 0) {
+    buf[i] = (char)('0' + (value % 10));
+    value = value / 10;
+    i = i + 1;
+  }
+  while (i > 0) {
+    i = i - 1;
+    fputc(buf[i], out);
+  }
+}
+
 static void die(const char *msg)
 {
   fputs("mzvm: ", stderr);
   fputs(msg, stderr);
+  fputs(" pc=", stderr);
+  fput_long(stderr, last_pc);
+  fputs(" op=", stderr);
+  fput_long(stderr, current_op);
+  fputs(" sp=", stderr);
+  fput_long(stderr, sp);
+  fputs(" rp=", stderr);
+  fput_long(stderr, rp);
+  fputs(" heap=", stderr);
+  fput_long(stderr, heap_words);
+  fputs("/", stderr);
+  fput_long(stderr, MZVM_HEAP_LIMIT);
   fputc('\n', stderr);
   exit(1);
 }
@@ -350,6 +391,8 @@ static void run(void)
   int running = 1;
   while (running) {
     unsigned op = read_u8();
+    last_pc = pc - 1;
+    current_op = op;
     if (op == OP_HALT) {
       running = 0;
     } else if (op == OP_CONST) {

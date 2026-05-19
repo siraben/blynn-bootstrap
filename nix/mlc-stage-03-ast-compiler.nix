@@ -23,6 +23,12 @@ stageRun {
         printf 'write_string "OK"' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-write-string.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-write-string.mzbc)"
         test "$actual" = OK
+        printf 'write_byte (String.length "OK" + 77)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-string-length-literal.mzbc
+        actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-string-length-literal.mzbc)"
+        test "$actual" = O
+        printf 'write_byte (String.length "" + 79)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-empty-string-length-literal.mzbc
+        actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-empty-string-length-literal.mzbc)"
+        test "$actual" = O
         printf 'debug_string "TRACE"; write_byte 79' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-debug-string.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-debug-string.mzbc 2> 03-debug-string.err)"
         test "$actual" = O
@@ -112,6 +118,9 @@ stageRun {
         if printf 'let x = true\nwrite_byte x' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-top-def-type-error.mzbc; then
           exit 1
         fi
+        if printf 'write_byte (String.length 79)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-string-length-literal-error.mzbc; then
+          exit 1
+        fi
         if printf '79; write_byte 75' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-sequence-type-error.mzbc; then
           exit 1
         fi
@@ -122,6 +131,8 @@ stageRun {
     install -Dm644 03-direct.mzbc "$out/share/mlc/stages/03-direct.mzbc"
     install -Dm644 03-read-byte.mzbc "$out/share/mlc/stages/03-read-byte.mzbc"
     install -Dm644 03-write-string.mzbc "$out/share/mlc/stages/03-write-string.mzbc"
+    install -Dm644 03-string-length-literal.mzbc "$out/share/mlc/stages/03-string-length-literal.mzbc"
+    install -Dm644 03-empty-string-length-literal.mzbc "$out/share/mlc/stages/03-empty-string-length-literal.mzbc"
     install -Dm644 03-debug-string.mzbc "$out/share/mlc/stages/03-debug-string.mzbc"
     install -Dm644 03-debug-byte.mzbc "$out/share/mlc/stages/03-debug-byte.mzbc"
     install -Dm644 03-unit.mzbc "$out/share/mlc/stages/03-unit.mzbc"
