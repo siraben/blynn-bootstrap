@@ -114,6 +114,9 @@ stageRun {
     ${mzvmSeedM2}/bin/mzvm-seed mlc.byte < ${testsRoot}/mlc/wildcard-match.ml > compiled-wildcard-match.mzbc
     actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-wildcard-match.mzbc)"
     test "$actual" = OK
+    ${mzvmSeedM2}/bin/mzvm-seed mlc.byte < ${testsRoot}/mlc/match-bind-default.ml > compiled-match-bind-default.mzbc
+    actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-match-bind-default.mzbc)"
+    test "$actual" = OK
     ${mzvmSeedM2}/bin/mzvm-seed mlc.byte < ${testsRoot}/mlc/multi-adt.ml > compiled-multi-adt.mzbc
     actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-multi-adt.mzbc)"
     test "$actual" = OK
@@ -200,6 +203,7 @@ stageRun {
     install -Dm644 compiled-adt.mzbc "$out/share/mlc/compiled-adt.mzbc"
     install -Dm644 compiled-match.mzbc "$out/share/mlc/compiled-match.mzbc"
     install -Dm644 compiled-wildcard-match.mzbc "$out/share/mlc/compiled-wildcard-match.mzbc"
+    install -Dm644 compiled-match-bind-default.mzbc "$out/share/mlc/compiled-match-bind-default.mzbc"
     install -Dm644 compiled-multi-adt.mzbc "$out/share/mlc/compiled-multi-adt.mzbc"
     install -Dm644 compiled-match-three-direct.mzbc "$out/share/mlc/compiled-match-three-direct.mzbc"
     install -Dm644 compiled-match-three.mzbc "$out/share/mlc/compiled-match-three.mzbc"

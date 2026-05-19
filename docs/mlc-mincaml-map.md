@@ -192,9 +192,10 @@ target compiles `mlc/mlc.ml` with committed `mlc.byte` and compares the result
 byte-for-byte with the committed compiler artifact.
 Leading `type` declarations build a constructor environment, constructor and
 tuple payload expressions allocate VM blocks, tuple destructuring extracts
-fields, and simple constructor/wildcard `match` forms lower to tag tests and
+fields, and simple constructor/wildcard/default-variable `match` forms lower to tag tests and
 branches, including multi-declaration, `match-three.ml`,
 `match-four.ml`,
+`match-bind-default.ml`,
 `adt-tuple-payload.ml`, direct tuple payload patterns in
 `adt-pattern-tuple.ml`, tuple payload wildcards in
 `adt-pattern-tuple-wildcard.ml`, nested tuple payload patterns in

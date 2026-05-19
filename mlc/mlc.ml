@@ -735,6 +735,11 @@ let rec case_payload_env input =
   else
     case_env
 in
+let rec case_default_env input =
+  let (is_wild, pair) = input in
+  let (name, case_env) = pair in
+  if is_wild == 1 then case_env else extend_env (name, case_env)
+in
 let rec emit_case_payload input =
   let (emit, pair) = input in
   let (has_arg, pair2) = pair in
@@ -1381,8 +1386,11 @@ let rec compile_expr input =
       if case2_is_wild == 1 then (0 - 1, case2_pos + 1) else parse_ident (src, case2_pos)
     in
     let (case2_name, case2_pat_end0) = case2_pat in
-    let case2_ctor = if case2_is_wild == 1 then 0 else lookup_ctor (ctors, case2_name) in
-    let case2_has_arg = if case2_is_wild == 1 then 0 else ctor_has_arg case2_ctor in
+    let case2_found_ctor = if case2_is_wild == 1 then 0 else find_ctor (ctors, case2_name) in
+    let case2_is_default_var = if case2_is_wild == 1 then 0 else if case2_found_ctor < 0 then 1 else 0 in
+    let case2_is_default = if case2_is_wild == 1 then 1 else case2_is_default_var in
+    let case2_ctor = if case2_is_default == 1 then 0 else case2_found_ctor in
+    let case2_has_arg = if case2_is_default == 1 then 0 else ctor_has_arg case2_ctor in
     let case2_payload = parse_case_payload (src, (case2_pat_end0, case2_has_arg)) in
     let (case2_tuple, case2_payload2) = case2_payload in
     let (case2_nested, case2_payload3) = case2_payload2 in
@@ -1390,7 +1398,10 @@ let rec compile_expr input =
     let (case2_bind_right, case2_payload5) = case2_payload4 in
     let (case2_bind_third, case2_arrow) = case2_payload5 in
     let case2_body_start = expect_arrow (src, case2_arrow) in
-    let case2_env = case_payload_env (case2_has_arg, (case2_tuple, (case2_nested, (case2_bind, (case2_bind_right, (case2_bind_third, case_env)))))) in
+    let case2_env =
+      if case2_is_default == 1 then case_default_env (case2_is_wild, (case2_name, case_env)) else
+        case_payload_env (case2_has_arg, (case2_tuple, (case2_nested, (case2_bind, (case2_bind_right, (case2_bind_third, case_env))))))
+    in
     let case2_body0 = compile_expr (src, (case2_body_start, (case2_env, (ctors, (funcs, 0))))) in
     let (case2_body_len, case2_body_end) = case2_body0 in
     let case3_pos1 = skip_space (src, case2_body_end) in
@@ -1401,8 +1412,11 @@ let rec compile_expr input =
       if case3_is_wild == 1 then (0 - 1, case3_pos + 1) else parse_ident (src, case3_pos)
     in
     let (case3_name, case3_pat_end0) = case3_pat in
-    let case3_ctor = if case3_is_wild == 1 then 0 else lookup_ctor (ctors, case3_name) in
-    let case3_has_arg = if case3_is_wild == 1 then 0 else ctor_has_arg case3_ctor in
+    let case3_found_ctor = if case3_is_wild == 1 then 0 else find_ctor (ctors, case3_name) in
+    let case3_is_default_var = if case3_is_wild == 1 then 0 else if case3_found_ctor < 0 then 1 else 0 in
+    let case3_is_default = if case3_is_wild == 1 then 1 else case3_is_default_var in
+    let case3_ctor = if case3_is_default == 1 then 0 else case3_found_ctor in
+    let case3_has_arg = if case3_is_default == 1 then 0 else ctor_has_arg case3_ctor in
     let case3_payload = parse_case_payload (src, (case3_pat_end0, case3_has_arg)) in
     let (case3_tuple, case3_payload2) = case3_payload in
     let (case3_nested, case3_payload3) = case3_payload2 in
@@ -1410,7 +1424,10 @@ let rec compile_expr input =
     let (case3_bind_right, case3_payload5) = case3_payload4 in
     let (case3_bind_third, case3_arrow) = case3_payload5 in
     let case3_body_start = if has_case3 == 1 then expect_arrow (src, case3_arrow) else case2_body_end in
-    let case3_env = case_payload_env (case3_has_arg, (case3_tuple, (case3_nested, (case3_bind, (case3_bind_right, (case3_bind_third, case_env)))))) in
+    let case3_env =
+      if case3_is_default == 1 then case_default_env (case3_is_wild, (case3_name, case_env)) else
+        case_payload_env (case3_has_arg, (case3_tuple, (case3_nested, (case3_bind, (case3_bind_right, (case3_bind_third, case_env))))))
+    in
     let case3_body0 =
       if has_case3 == 1 then compile_expr (src, (case3_body_start, (case3_env, (ctors, (funcs, 0))))) else (0, case2_body_end)
     in
@@ -1423,8 +1440,11 @@ let rec compile_expr input =
       if case4_is_wild == 1 then (0 - 1, case4_pos + 1) else parse_ident (src, case4_pos)
     in
     let (case4_name, case4_pat_end0) = case4_pat in
-    let case4_ctor = if case4_is_wild == 1 then 0 else lookup_ctor (ctors, case4_name) in
-    let case4_has_arg = if case4_is_wild == 1 then 0 else ctor_has_arg case4_ctor in
+    let case4_found_ctor = if case4_is_wild == 1 then 0 else find_ctor (ctors, case4_name) in
+    let case4_is_default_var = if case4_is_wild == 1 then 0 else if case4_found_ctor < 0 then 1 else 0 in
+    let case4_is_default = if case4_is_wild == 1 then 1 else case4_is_default_var in
+    let case4_ctor = if case4_is_default == 1 then 0 else case4_found_ctor in
+    let case4_has_arg = if case4_is_default == 1 then 0 else ctor_has_arg case4_ctor in
     let case4_payload = parse_case_payload (src, (case4_pat_end0, case4_has_arg)) in
     let (case4_tuple, case4_payload2) = case4_payload in
     let (case4_nested, case4_payload3) = case4_payload2 in
@@ -1432,7 +1452,10 @@ let rec compile_expr input =
     let (case4_bind_right, case4_payload5) = case4_payload4 in
     let (case4_bind_third, case4_arrow) = case4_payload5 in
     let case4_body_start = if has_case4 == 1 then expect_arrow (src, case4_arrow) else case3_body_end in
-    let case4_env = case_payload_env (case4_has_arg, (case4_tuple, (case4_nested, (case4_bind, (case4_bind_right, (case4_bind_third, case_env)))))) in
+    let case4_env =
+      if case4_is_default == 1 then case_default_env (case4_is_wild, (case4_name, case_env)) else
+        case_payload_env (case4_has_arg, (case4_tuple, (case4_nested, (case4_bind, (case4_bind_right, (case4_bind_third, case_env))))))
+    in
     let case4_body0 =
       if has_case4 == 1 then compile_expr (src, (case4_body_start, (case4_env, (ctors, (funcs, 0))))) else (0, case3_body_end)
     in
@@ -1448,6 +1471,8 @@ let rec compile_expr input =
     let case3_total = if has_case3 == 1 then case3_payload_len + case3_body_len + case3_payload_pop_len + 5 else 0 in
     let case4_payload_len = case_payload_len (case4_has_arg, (case4_tuple, case4_nested)) in
     let case4_payload_pop_len = if case4_has_arg == 1 then 5 else 0 in
+    let _ = if has_case3 == 1 then if case2_is_default == 1 then exit 1 else 0 else 0 in
+    let _ = if has_case4 == 1 then if case3_is_default == 1 then exit 1 else 0 else 0 in
     let case4_total = if has_case4 == 1 then case4_payload_len + case4_body_len + case4_payload_pop_len + 5 else 0 in
     let case3_segment = if has_case4 == 1 then 18 + case3_total + 5 + case4_total else case3_total in
     let case2_segment = if has_case3 == 1 then 18 + case2_total + 5 + case3_segment else case2_total in

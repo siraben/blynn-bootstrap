@@ -65,8 +65,8 @@ Current stages:
   with `<`, `==`, `!=`, `<=`, `>`, and `>=`. It now also parses leading
   `type` declarations into a constructor environment, uses bounded keyword
   lookahead for expression-level terminators and keyword-prefix identifiers, and
-  lowers the first constructor/wildcard `match` forms with up to four arms,
-  including tuple payload construction,
+  lowers the first constructor/wildcard/default-variable `match` forms with up
+  to four arms, including tuple payload construction,
   direct tuple payload patterns in `adt-pattern-tuple.ml`, tuple payload
   wildcards in `adt-pattern-tuple-wildcard.ml`, destructuring in
   `adt-tuple-payload.ml`, nested tuple payload patterns in
@@ -118,9 +118,9 @@ Planned stages:
   if needed, one immediate successor; the path should stay within the
   five-stage cap documented in `plan.md`.
 - Later pattern stages extend the current `mlc.ml` ADT/match/direct-function
-  slice from constructor, wildcard, direct tuple payload, tuple-wildcard, and
-  nested tuple payload patterns to recursive and general decision-tree patterns
-  in ML, not in C.
+  slice from constructor, wildcard, default-variable, direct tuple payload,
+  tuple-wildcard, and nested tuple payload patterns to recursive and general
+  decision-tree patterns in ML, not in C.
 - `mlc.ml` emits MZBC and replaces the transitional direct C bytecode compiler
   for normal bootstrap use as its parser/lowerer reaches the dialect needed by
   `ccc.ml`.
