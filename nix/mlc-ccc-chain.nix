@@ -1,0 +1,98 @@
+{
+  pkgs,
+  stageRun,
+  minimalBootstrap,
+  mlcSrc,
+  cccSrc,
+  mzvmHost,
+  mzvmSeedM2,
+  testsRoot,
+  scriptsRoot,
+}:
+
+let
+  testsMlc = testsRoot + "/mlc";
+in
+rec {
+  mlcInterpSeedHost = pkgs.callPackage ./mlc-interp-seed-host.nix {
+    inherit mlcSrc;
+  };
+
+  mlcInterpSeedM2 = pkgs.callPackage ./mlc-interp-seed-m2.nix {
+    inherit stageRun minimalBootstrap mlcSrc scriptsRoot;
+  };
+
+  mlcInterpSeedHostVsM2 = pkgs.callPackage ./mlc-interp-seed-host-vs-m2.nix {
+    runCommand = pkgs.runCommand;
+    inherit mlcInterpSeedHost mlcInterpSeedM2;
+  };
+
+  mlcStage00Core = pkgs.callPackage ./mlc-stage-00-core.nix {
+    inherit stageRun mlcSrc mlcInterpSeedM2;
+  };
+
+  mlcStage01Parenthetical = pkgs.callPackage ./mlc-stage-01-parenthetical.nix {
+    inherit stageRun mlcSrc mlcInterpSeedM2 mzvmSeedM2;
+  };
+
+  mlcStage02Ml0Compiler = pkgs.callPackage ./mlc-stage-02-ml0-compiler.nix {
+    inherit stageRun mlcSrc mlcInterpSeedM2 mzvmSeedM2 testsMlc;
+  };
+
+  mlcSeedHost = pkgs.callPackage ./mlc-seed-host.nix {
+    inherit mlcSrc mzvmHost testsMlc;
+  };
+
+  mlcSeedM2 = pkgs.callPackage ./mlc-seed-m2.nix {
+    inherit stageRun minimalBootstrap mlcSrc mzvmSeedM2 scriptsRoot testsMlc;
+  };
+
+  mlcSeedHostVsM2 = pkgs.callPackage ./mlc-seed-host-vs-m2.nix {
+    runCommand = pkgs.runCommand;
+    inherit mlcSeedHost mlcSeedM2;
+  };
+
+  mlcByteSeed = pkgs.callPackage ./mlc-byte-seed.nix {
+    inherit stageRun mlcSrc mlcStage02Ml0Compiler mzvmSeedM2 testsRoot;
+    diffutils = pkgs.diffutils;
+  };
+
+  mlcByteCommitted = pkgs.runCommand "mlc-byte-committed" { } ''
+    cmp ${mlcSrc}/mlc.byte ${mlcByteSeed}/share/mlc/mlc.byte
+    install -Dm644 ${mlcSrc}/mlc.byte "$out/share/mlc/mlc.byte"
+  '';
+
+  mlcByteSelfhost = pkgs.runCommand "mlc-byte-selfhost" { } ''
+    cmp ${mlcByteSeed}/share/mlc/mlc.byte ${mlcByteSeed}/share/mlc/compiled-selfhost.mzbc
+    install -Dm644 ${mlcByteSeed}/share/mlc/mlc.byte "$out/share/mlc/mlc.byte"
+    install -Dm644 ${mlcByteSeed}/share/mlc/compiled-selfhost.mzbc "$out/share/mlc/compiled-selfhost.mzbc"
+  '';
+
+  mlcStage03AstCompiler = pkgs.callPackage ./mlc-stage-03-ast-compiler.nix {
+    inherit stageRun mlcSrc mzvmSeedM2;
+    mlcByte = mlcSrc + "/mlc.byte";
+  };
+
+  cccByteSeed = pkgs.callPackage ./ccc-byte-seed.nix {
+    inherit stageRun cccSrc mzvmSeedM2 mlcByteCommitted testsRoot;
+  };
+
+  cccByteCommitted = pkgs.runCommand "ccc-byte-committed" { } ''
+    cmp ${cccSrc}/ccc.byte ${cccByteSeed}/share/ccc/ccc.byte
+    install -Dm644 ${cccSrc}/ccc.byte "$out/share/ccc/ccc.byte"
+  '';
+
+  tccM1CccSeed = pkgs.runCommand "tcc-m1-ccc-seed" { } ''
+    ${mzvmSeedM2}/bin/mzvm-seed ${cccByteCommitted}/share/ccc/ccc.byte < ${testsRoot}/mescc/scaffold/01-return-0.c > tcc.M1
+    printf 'DEFINE LOADI32_RDI 48C7C7\nDEFINE LOADI32_RAX 48C7C0\nDEFINE SYSCALL 0F05\n\n:_start\n\tLOADI32_RDI %%0\n\tLOADI32_RAX %%60\n\tSYSCALL\n' > expected.M1
+    cmp expected.M1 tcc.M1
+    install -Dm644 tcc.M1 "$out/share/ccc/tcc.M1"
+  '';
+
+  tccBinCccSeed = pkgs.callPackage ./tcc-bin-ccc-seed.nix {
+    runCommand = pkgs.runCommand;
+    inherit mzvmSeedM2 cccByteCommitted tccM1CccSeed testsRoot;
+    mesccTools = minimalBootstrap.stage0-posix.mescc-tools;
+    stage0Src = minimalBootstrap.stage0-posix.src;
+  };
+}

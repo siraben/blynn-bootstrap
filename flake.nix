@@ -629,95 +629,38 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           install -Dm644 host-gc.txt "$out/gc-output.txt"
         '';
 
-        mlcInterpSeedHost = pkgs.callPackage ./nix/mlc-interp-seed-host.nix {
-          inherit mlcSrc;
-        };
-
-        mlcInterpSeedM2 = pkgs.callPackage ./nix/mlc-interp-seed-m2.nix {
-          inherit stageRun minimalBootstrap mlcSrc;
+        mlcCccChain = pkgs.callPackage ./nix/mlc-ccc-chain.nix {
+          inherit
+            pkgs
+            stageRun
+            minimalBootstrap
+            mlcSrc
+            cccSrc
+            mzvmHost
+            mzvmSeedM2
+            ;
+          testsRoot = ./tests;
           scriptsRoot = ./scripts;
         };
-
-        mlcInterpSeedHostVsM2 = pkgs.callPackage ./nix/mlc-interp-seed-host-vs-m2.nix {
-          runCommand = pkgs.runCommand;
-          inherit mlcInterpSeedHost mlcInterpSeedM2;
-        };
-
-        mlcStage00Core = pkgs.callPackage ./nix/mlc-stage-00-core.nix {
-          inherit stageRun mlcSrc mlcInterpSeedM2;
-        };
-
-        mlcStage01Parenthetical = pkgs.callPackage ./nix/mlc-stage-01-parenthetical.nix {
-          inherit stageRun mlcSrc mlcInterpSeedM2 mzvmSeedM2;
-        };
-
-        mlcStage02Ml0Compiler = pkgs.callPackage ./nix/mlc-stage-02-ml0-compiler.nix {
-          inherit stageRun mlcSrc mlcInterpSeedM2 mzvmSeedM2;
-          testsMlc = ./tests/mlc;
-        };
-
-        mlcSeedHost = pkgs.callPackage ./nix/mlc-seed-host.nix {
-          inherit mlcSrc mzvmHost;
-          testsMlc = ./tests/mlc;
-        };
-
-        mlcSeedM2 = pkgs.callPackage ./nix/mlc-seed-m2.nix {
-          inherit stageRun minimalBootstrap mlcSrc mzvmSeedM2;
-          scriptsRoot = ./scripts;
-          testsMlc = ./tests/mlc;
-        };
-
-        mlcSeedHostVsM2 = pkgs.callPackage ./nix/mlc-seed-host-vs-m2.nix {
-          runCommand = pkgs.runCommand;
-          inherit mlcSeedHost mlcSeedM2;
-        };
-
-        mlcByteSeed = pkgs.callPackage ./nix/mlc-byte-seed.nix {
-          inherit stageRun mlcSrc mlcStage02Ml0Compiler mzvmSeedM2;
-          diffutils = pkgs.diffutils;
-          testsRoot = ./tests;
-        };
-
-        mlcByteCommitted = pkgs.runCommand "mlc-byte-committed" { } ''
-          cmp ${./mlc/mlc.byte} ${mlcByteSeed}/share/mlc/mlc.byte
-          install -Dm644 ${./mlc/mlc.byte} "$out/share/mlc/mlc.byte"
-        '';
-
-        mlcByteSelfhost = pkgs.runCommand "mlc-byte-selfhost" { } ''
-          cmp ${mlcByteSeed}/share/mlc/mlc.byte ${mlcByteSeed}/share/mlc/compiled-selfhost.mzbc
-          install -Dm644 ${mlcByteSeed}/share/mlc/mlc.byte "$out/share/mlc/mlc.byte"
-          install -Dm644 ${mlcByteSeed}/share/mlc/compiled-selfhost.mzbc "$out/share/mlc/compiled-selfhost.mzbc"
-        '';
-
-        mlcStage03AstCompiler = pkgs.callPackage ./nix/mlc-stage-03-ast-compiler.nix {
-          inherit stageRun mlcSrc mzvmSeedM2;
-          mlcByte = ./mlc/mlc.byte;
-        };
-
-        cccByteSeed = pkgs.callPackage ./nix/ccc-byte-seed.nix {
-          inherit stageRun cccSrc mzvmSeedM2 mlcByteCommitted;
-          testsRoot = ./tests;
-        };
-
-        cccByteCommitted = pkgs.runCommand "ccc-byte-committed" { } ''
-          cmp ${./ccc/ccc.byte} ${cccByteSeed}/share/ccc/ccc.byte
-          install -Dm644 ${./ccc/ccc.byte} "$out/share/ccc/ccc.byte"
-        '';
-
-        tccM1CccSeed = pkgs.runCommand "tcc-m1-ccc-seed" { } ''
-          ${mzvmSeedM2}/bin/mzvm-seed ${cccByteCommitted}/share/ccc/ccc.byte < ${./tests/mescc/scaffold/01-return-0.c} > tcc.M1
-          printf 'DEFINE LOADI32_RDI 48C7C7\nDEFINE LOADI32_RAX 48C7C0\nDEFINE SYSCALL 0F05\n\n:_start\n\tLOADI32_RDI %%0\n\tLOADI32_RAX %%60\n\tSYSCALL\n' > expected.M1
-          cmp expected.M1 tcc.M1
-          install -Dm644 tcc.M1 "$out/share/ccc/tcc.M1"
-        '';
-
-        tccBinCccSeed = pkgs.callPackage ./nix/tcc-bin-ccc-seed.nix {
-          runCommand = pkgs.runCommand;
-          inherit mzvmSeedM2 cccByteCommitted tccM1CccSeed;
-          mesccTools = minimalBootstrap.stage0-posix.mescc-tools;
-          stage0Src = minimalBootstrap.stage0-posix.src;
-          testsRoot = ./tests;
-        };
+        inherit (mlcCccChain)
+          mlcInterpSeedHost
+          mlcInterpSeedM2
+          mlcInterpSeedHostVsM2
+          mlcStage00Core
+          mlcStage01Parenthetical
+          mlcStage02Ml0Compiler
+          mlcSeedHost
+          mlcSeedM2
+          mlcSeedHostVsM2
+          mlcByteSeed
+          mlcByteCommitted
+          mlcByteSelfhost
+          mlcStage03AstCompiler
+          cccByteSeed
+          cccByteCommitted
+          tccM1CccSeed
+          tccBinCccSeed
+          ;
 
         hccHostGhcNative = pkgs.callPackage ./nix/hcc-ghc.nix {
           stdenv = pkgs.stdenv;
