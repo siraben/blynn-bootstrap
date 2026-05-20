@@ -249,15 +249,19 @@ static unsigned read_u8(void)
 
 static long read_u32(void)
 {
-  unsigned long b0;
-  unsigned long b1;
-  unsigned long b2;
-  unsigned long b3;
+  long b0;
+  long b1;
+  long b2;
+  long b3;
   if (pc + 4 > code_len) die("truncated instruction");
-  b0 = byte_at(code, pc);
-  b1 = byte_at(code, pc + 1);
-  b2 = byte_at(code, pc + 2);
-  b3 = byte_at(code, pc + 3);
+  b0 = code[pc];
+  b1 = code[pc + 1];
+  b2 = code[pc + 2];
+  b3 = code[pc + 3];
+  if (b0 < 0) b0 = b0 + 256;
+  if (b1 < 0) b1 = b1 + 256;
+  if (b2 < 0) b2 = b2 + 256;
+  if (b3 < 0) b3 = b3 + 256;
   pc = pc + 4;
   return (long)(b0 | (b1 << 8) | (b2 << 16) | (b3 << 24));
 }
