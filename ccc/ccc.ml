@@ -1,5 +1,6 @@
 type func_summary = FuncConst of int | FuncArg | FuncNotArg | FuncAddArgs | FuncCmpArgs | FuncArgEqAny of int
 type parse_reply = ParseOk of int | ParseErr
+type pos_option = PosSome of int | PosNone
 
 let rec is_space ch =
   if ch == ' ' then 1 else
@@ -111,11 +112,20 @@ let rec p_try_string state =
   let pos = skip_space (src, pos0) in
   p_try_string_loop (want, (len, (src, (pos, 0))))
 in
+let rec p_optional state =
+  match state with
+    ParseOk pos -> PosSome pos
+  | ParseErr -> PosNone
+in
+let rec p_option_pos state =
+  let (option, pos0) = state in
+  match option with
+    PosSome pos -> (1, pos)
+  | PosNone -> (0, pos0)
+in
 let rec p_optional_pos state =
   let (reply, pos0) = state in
-  match reply with
-    ParseOk pos -> (1, pos)
-  | ParseErr -> (0, pos0)
+  p_option_pos (p_optional reply, pos0)
 in
 let rec p_need_string state =
   p_force (p_try_string state)
