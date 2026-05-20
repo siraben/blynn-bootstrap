@@ -6,7 +6,7 @@ type expr_more2 = EMul of expr | EDiv of expr | EEq of expr | EMore3 of expr_mor
 type expr_more3 = ENe of expr | ELt of expr | ELe of expr | EMore4 of expr_more4
 type expr_more4 = EGt of expr | EGe of expr | EIf of expr | EMore5 of expr_more5
 type expr_more5 = ELet of expr | EPair of expr | ELetPair of expr | EMore6 of expr_more6
-type expr_more6 = ESeq of expr | EDebugByte of expr | EReadByte | EMore7 of expr_more7
+type expr_more6 = ESeq of expr | EDebugByte of expr | EExit of expr | EReadByte | EMore7 of expr_more7
 type expr_more7 = EString of int | EStringLength of expr | EBytesCreate of expr | EMore8 of expr_more8
 type expr_more8 = EBytesLength of expr | EIndex of expr | ESetIndex of expr | EMore9 of expr_more9
 type expr_more9 = EDebugInt of expr | EUnit | EMore10 of expr_more10
@@ -140,6 +140,12 @@ let rec emit_call_debug_int emit =
   let _ = emit_byte_if (emit, 14) in
   let _ = emit_u32_if (emit, 1) in
   let _ = emit_u32_if (emit, 4) in
+  9
+in
+let rec emit_call_exit emit =
+  let _ = emit_byte_if (emit, 14) in
+  let _ = emit_u32_if (emit, 1) in
+  let _ = emit_u32_if (emit, 2) in
   9
 in
 let rec emit_call_read_byte emit =
@@ -361,6 +367,10 @@ let rec is_read_byte_at state =
   let (src, pos0) = state in
   p_keyword_at (src, (pos0, "read_byte"))
 in
+let rec is_exit_at state =
+  let (src, pos0) = state in
+  p_keyword_at (src, (pos0, "exit"))
+in
 let rec is_string_length_at state =
   let (src, pos0) = state in
   p_string_at (src, (pos0, "String.length"))
@@ -446,6 +456,10 @@ in
 let rec need_read_byte state =
   let (src, pos0) = state in
   p_need_keyword (src, (pos0, "read_byte"))
+in
+let rec need_exit state =
+  let (src, pos0) = state in
+  p_need_keyword (src, (pos0, "exit"))
 in
 let rec need_string_length state =
   let (src, pos0) = state in
@@ -562,6 +576,9 @@ in
 let rec read_byte_expr unit =
   let _ = unit in
   EMore (EMore2 (EMore3 (EMore4 (EMore5 (EMore6 EReadByte)))))
+in
+let rec exit_expr expr =
+  EMore (EMore2 (EMore3 (EMore4 (EMore5 (EMore6 (EExit expr))))))
 in
 let rec seq_expr state =
   let (left, right) = state in
@@ -965,6 +982,11 @@ let rec parse_expr_prec state =
         parse_cell_set_expr (src, pos)
       else if is_read_byte_at (src, pos) then
         p_return (need_read_byte (src, pos), read_byte_expr 0)
+      else if is_exit_at (src, pos) then
+        let expr_pos = need_exit (src, pos) in
+        let expr = parse_expr_prec (src, (expr_pos, (0, (0, (0, EInt 0))))) in
+        let (expr_ast, expr_end) = expr in
+        (exit_expr expr_ast, expr_end)
       else
         let peeked = p_peek (src, pos) in
         let (ch, atom_pos) = peeked in
@@ -1255,6 +1277,9 @@ let rec infer state =
                           | EDebugByte expr ->
                               let _ = need_ty (infer (src, (env, expr)), TyInt) in
                               TyUnit
+                          | EExit expr ->
+                              let _ = need_ty (infer (src, (env, expr)), TyInt) in
+                              TyUnit
                             | EReadByte -> TyInt
                             | EMore7 more7 ->
                                 match more7 with
@@ -1526,6 +1551,10 @@ let rec emit_expr state =
                           | EDebugByte expr ->
                               let expr_len = emit_expr (expr, (src, (env, emit))) in
                               let call_len = emit_call_debug_byte emit in
+                              expr_len + call_len
+                          | EExit expr ->
+                              let expr_len = emit_expr (expr, (src, (env, emit))) in
+                              let call_len = emit_call_exit emit in
                               expr_len + call_len
                             | EReadByte -> emit_call_read_byte emit
                             | EMore7 more7 ->

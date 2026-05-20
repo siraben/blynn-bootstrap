@@ -20,6 +20,13 @@ stageRun {
         printf 'write_byte read_byte' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-read-byte.mzbc
         actual="$(printf O | ${mzvmSeedM2}/bin/mzvm-seed 03-read-byte.mzbc)"
         test "$actual" = O
+        printf 'exit 7' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-exit.mzbc
+        if ${mzvmSeedM2}/bin/mzvm-seed 03-exit.mzbc; then
+          exit 1
+        else
+          status=$?
+          test "$status" = 7
+        fi
         printf 'write_string "OK"' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-write-string.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-write-string.mzbc)"
         test "$actual" = OK
@@ -177,6 +184,12 @@ stageRun {
         if printf 'write_byte "OK"' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-string-write-byte-type-error.mzbc; then
           exit 1
         fi
+        if printf 'exit "OK"' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-exit-type-error.mzbc; then
+          exit 1
+        fi
+        if printf 'write_byte (exit 1)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-exit-result-type-error.mzbc; then
+          exit 1
+        fi
         if printf 'let s = 79\nwrite_byte (String.length s)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-string-length-var-type-error.mzbc; then
           exit 1
         fi
@@ -210,6 +223,7 @@ stageRun {
     install -Dm644 03-ast-compiler.mzbc "$out/share/mlc/stages/03-ast-compiler.mzbc"
     install -Dm644 03-direct.mzbc "$out/share/mlc/stages/03-direct.mzbc"
     install -Dm644 03-read-byte.mzbc "$out/share/mlc/stages/03-read-byte.mzbc"
+    install -Dm644 03-exit.mzbc "$out/share/mlc/stages/03-exit.mzbc"
     install -Dm644 03-write-string.mzbc "$out/share/mlc/stages/03-write-string.mzbc"
     install -Dm644 03-string-length-literal.mzbc "$out/share/mlc/stages/03-string-length-literal.mzbc"
     install -Dm644 03-empty-string-length-literal.mzbc "$out/share/mlc/stages/03-empty-string-length-literal.mzbc"

@@ -106,7 +106,7 @@ Current stages:
   bytes, `read_byte`, literal `write_string`, arithmetic `Bytes.create` sizes,
   arithmetic index and byte-value expressions for `b.[i]` / `b.[i] <- ch`,
   stderr-only `debug_byte` / `debug_string` / decimal `debug_int`, char
-  literals including escapes, `()`,
+  literals including escapes, typed `exit`, `()`,
   precedence-aware integer `+` / `-` / `*` / `/`, unary integer `-`, boolean
   `!`, ML-style `=` plus transitional `==`, integer comparisons, sequencing,
   bool literals, conditionals whose
