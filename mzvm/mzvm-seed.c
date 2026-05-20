@@ -261,8 +261,19 @@ static long read_u32(void)
 
 static long read_s32(void)
 {
-  long u = read_u32();
+  long b0;
+  long b1;
+  long b2;
+  long b3;
+  long u;
   long max = 2147483647;
+  if (pc + 4 > code_len) die("truncated instruction");
+  b0 = code[pc] & 255;
+  b1 = code[pc + 1] & 255;
+  b2 = code[pc + 2] & 255;
+  b3 = code[pc + 3] & 255;
+  pc = pc + 4;
+  u = (long)(b0 | (b1 << 8) | (b2 << 16) | (b3 << 24));
   if (u > max) return (u - max) - max - 2;
   return (long)u;
 }
