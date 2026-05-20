@@ -163,11 +163,12 @@ call sites, and ADT values are rejected where an `int` is required.
 Type equality is recursive for nested pair, cell, array, and ADT element types.
 The first stage-03 pattern slice parses two-arm constructor `match`
 expressions for nullary cases, unary payload binders, direct tuple payload
-binders, wildcard fallback arms, and default-variable fallback arms. It checks
-both arms against the scrutinee ADT type and a shared result type, rejects
-missing or extra payload binders, and lowers the branch to `GETTAG` tests plus
-field extraction for payloads. Exhaustiveness checks, nested payload patterns,
-and decision trees remain later stage-03 work.
+binders with wildcard fields, unary wildcard payload binders, wildcard
+fallback arms, and default-variable fallback arms. It checks both arms against
+the scrutinee ADT type and a shared result type, rejects missing or extra
+payload binders, and lowers the branch to `GETTAG` tests plus field extraction
+for payloads. Exhaustiveness checks, nested payload patterns, and decision
+trees remain later stage-03 work.
 
 The older `mlc-seed.c` is deliberately smaller than the full language and is
 now transitional. It is a tiny recursive-descent compiler for `let` bindings,

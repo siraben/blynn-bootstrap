@@ -1561,6 +1561,12 @@ let rec need_ty state =
   let (got, want) = state in
   if same_ty (got, want) == 1 then 0 else fail 0
 in
+let rec extend_tenv_if_named state =
+  let (src, pair0) = state in
+  let (name, pair1) = pair0 in
+  let (typ, env) = pair1 in
+  if is_wild_name (src, name) == 1 then env else extend_tenv (name, (typ, env))
+in
 let rec match_case_tenv state =
   let (src, pair0) = state in
   let (env, pair1) = pair0 in
@@ -1581,14 +1587,15 @@ let rec match_case_tenv state =
                     TyPair arg_ret ->
                       let (arg_ty, ret_ty) = arg_ret in
                       let _ = need_ty (ret_ty, scrutinee_ty) in
-                      if bind_kind == 1 then extend_tenv (bind_name, (arg_ty, env)) else
+                      if bind_kind == 1 then extend_tenv_if_named (src, (bind_name, (arg_ty, env))) else
                       if bind_kind == 2 then
                         (match arg_ty with
                           TyMore arg_more ->
                             (match arg_more with
                               TyPair pair_ty ->
                                 let (left_ty, right_ty) = pair_ty in
-                                extend_tenv (bind_name2, (right_ty, extend_tenv (bind_name, (left_ty, env))))
+                                let env1 = extend_tenv_if_named (src, (bind_name, (left_ty, env))) in
+                                extend_tenv_if_named (src, (bind_name2, (right_ty, env1)))
                             | _ -> fail 0)
                         | _ -> fail 0)
                       else fail 0
@@ -1986,14 +1993,27 @@ let rec lookup_fenv state =
   if name < 0 then fail 0 else
   if ident_eq (src, (name, want)) == 1 then target else lookup_fenv (src, (tail, want))
 in
+let rec bind_env_at_if_named state =
+  let (src, pair0) = state in
+  let (name, pair1) = pair0 in
+  let (depth, env) = pair1 in
+  if is_wild_name (src, name) == 1 then env else (name, (depth, env))
+in
 let rec match_case_env state =
-  let (has_arg, pair0) = state in
+  let (src, pair00) = state in
+  let (has_arg, pair0) = pair00 in
   let (bind_kind, pair) = pair0 in
   let (bind_name, pair2) = pair in
   let (bind_name2, env) = pair2 in
   if has_arg == 1 then
-    if bind_kind == 1 then extend_env (bind_name, shift_env env) else
-    if bind_kind == 2 then extend_env (bind_name2, extend_env (bind_name, shift_env (shift_env env))) else fail 0
+    if bind_kind == 1 then
+      if is_wild_name (src, bind_name) == 1 then shift_env (shift_env env) else extend_env (bind_name, shift_env env)
+    else
+    if bind_kind == 2 then
+      let base = shift_env (shift_env (shift_env (shift_env env))) in
+      let env1 = bind_env_at_if_named (src, (bind_name, (1, base))) in
+      bind_env_at_if_named (src, (bind_name2, (0, env1)))
+    else fail 0
   else
     let _ = if bind_kind == 0 then 0 else fail 0 in
     shift_env env
@@ -2421,13 +2441,13 @@ let rec emit_expr state =
                                                       let case2_found = find_ctor (src, (ctors, case2_name)) in
                                                       let case1_has_arg = ctor_has_arg case1_ctor in
                                                       let case2_has_arg = if case2_found < 0 then 0 else ctor_has_arg case2_found in
-                                                      let case1_env = match_case_env (case1_has_arg, (case1_bind_kind, (case1_bind, (case1_bind2, env)))) in
+                                                      let case1_env = match_case_env (src, (case1_has_arg, (case1_bind_kind, (case1_bind, (case1_bind2, env))))) in
                                                       let case2_env =
                                                         if case2_found < 0 then
                                                           let _ = if case2_bind_kind == 0 then 0 else fail 0 in
                                                           match_fallback_env (src, (case2_name, env))
                                                         else
-                                                          match_case_env (case2_has_arg, (case2_bind_kind, (case2_bind, (case2_bind2, env))))
+                                                          match_case_env (src, (case2_has_arg, (case2_bind_kind, (case2_bind, (case2_bind2, env)))))
                                                       in
                                                       let scrutinee_len = emit_expr (scrutinee, (src, (env, (ctors, (funcs, (base_pos, emit)))))) in
                                                       let push_scrutinee = emit_push emit in

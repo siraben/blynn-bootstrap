@@ -202,6 +202,15 @@ stageRun {
         printf 'type pair = Empty | Pair of int * int\nlet z = 1 in write_byte (match Pair (39, 39) with | Empty -> 88 | Pair (x, y) -> x + y + z)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-match-tuple-env.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-adt-match-tuple-env.mzbc)"
         test "$actual" = O
+        printf 'type pair = Pair of int * int | Empty\nwrite_byte (match Pair (40, 39) with | Pair (_, y) -> y + 40 | Empty -> 88)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-match-tuple-wildcard-left.mzbc
+        actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-adt-match-tuple-wildcard-left.mzbc)"
+        test "$actual" = O
+        printf 'type pair = Pair of int * int | Empty\nwrite_byte (match Pair (40, 39) with | Pair (x, _) -> x + 39 | Empty -> 88)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-match-tuple-wildcard-right.mzbc
+        actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-adt-match-tuple-wildcard-right.mzbc)"
+        test "$actual" = O
+        printf 'type byte = Byte of int | Empty\nwrite_byte (match Byte 88 with | Byte _ -> 79 | Empty -> 88)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-match-payload-wildcard.mzbc
+        actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-adt-match-payload-wildcard.mzbc)"
+        test "$actual" = O
         printf 'let (x, y) = (40, 39) in write_byte (x + y)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-pair-let.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-pair-let.mzbc)"
         test "$actual" = O
@@ -343,6 +352,9 @@ stageRun {
         if printf 'type pair = Pair of int * int | Empty\nlet v = Pair 79 in write_byte 79' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-pair-payload-type-error.mzbc; then
           exit 1
         fi
+        if printf 'type pair = Pair of int * int | Empty\nwrite_byte (match Pair (40, 39) with | Pair (_, y) -> _ | Empty -> 88)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-match-wildcard-not-bound-error.mzbc; then
+          exit 1
+        fi
   '';
   installScript = ''
     install -Dm644 03-ast-compiler.ml "$out/share/mlc/stages/03-ast-compiler.ml"
@@ -406,6 +418,9 @@ stageRun {
     install -Dm644 03-adt-match-tuple-first.mzbc "$out/share/mlc/stages/03-adt-match-tuple-first.mzbc"
     install -Dm644 03-adt-match-tuple-second.mzbc "$out/share/mlc/stages/03-adt-match-tuple-second.mzbc"
     install -Dm644 03-adt-match-tuple-env.mzbc "$out/share/mlc/stages/03-adt-match-tuple-env.mzbc"
+    install -Dm644 03-adt-match-tuple-wildcard-left.mzbc "$out/share/mlc/stages/03-adt-match-tuple-wildcard-left.mzbc"
+    install -Dm644 03-adt-match-tuple-wildcard-right.mzbc "$out/share/mlc/stages/03-adt-match-tuple-wildcard-right.mzbc"
+    install -Dm644 03-adt-match-payload-wildcard.mzbc "$out/share/mlc/stages/03-adt-match-payload-wildcard.mzbc"
     install -Dm644 03-pair-let.mzbc "$out/share/mlc/stages/03-pair-let.mzbc"
     install -Dm644 03-top-pair-def.mzbc "$out/share/mlc/stages/03-top-pair-def.mzbc"
     install -Dm644 03-sequence.mzbc "$out/share/mlc/stages/03-sequence.mzbc"
