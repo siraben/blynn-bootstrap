@@ -12,6 +12,7 @@ type expr_more8 = EBytesLength of expr | EIndex of expr | ESetIndex of expr | EM
 type expr_more9 = EDebugInt of expr | EUnit
 type parse_reply = ParseOk of int | ParseErr
 type expr_option = ExprSome of expr | ExprNone
+type pos_option = PosSome of int | PosNone
 
 let rec byte n =
   n - ((n / 256) * 256)
@@ -269,11 +270,20 @@ let rec p_try_keyword state =
   let pos = skip_space (src, pos0) in
   if p_keyword_at (src, (pos, text)) == 1 then ParseOk (pos + String.length text) else ParseErr
 in
+let rec p_optional state =
+  match state with
+    ParseOk pos -> PosSome pos
+  | ParseErr -> PosNone
+in
+let rec p_option_pos state =
+  let (option, pos0) = state in
+  match option with
+    PosSome pos -> (1, pos)
+  | PosNone -> (0, pos0)
+in
 let rec p_optional_pos state =
   let (reply, pos0) = state in
-  match reply with
-    ParseOk pos -> (1, pos)
-  | ParseErr -> (0, pos0)
+  p_option_pos (p_optional reply, pos0)
 in
 let rec p_need_keyword state =
   p_force (p_try_keyword state)

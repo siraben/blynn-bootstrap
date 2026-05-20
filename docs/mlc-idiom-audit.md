@@ -64,6 +64,10 @@ These can move directly into `mlc.ml` because stage 02 already compiles them:
   fixed `with` / `->` match syntax, direct `write_byte`, top-level
   `write_string`, debug/exit/read primitives, dotted `String.length` /
   `Bytes.*`, and `Cell.*` advances.
+- Stage 03 now splits optional parser replies into a real `PosSome` /
+  `PosNone` option layer plus `p_option_pos` / `p_optional_pos` state
+  projection. This is the ADT-backed Parsec-style shape that `mlc.ml` should
+  inherit once ADTs are promoted into its previous producer.
 - Raw local `exit 1` parse failures in `mlc.ml` are centralized through
   `parse_fail`, and the char literal, identifier, keyword/lookahead,
   record/type declaration delimiter paths, record literal delimiters, pattern
@@ -86,7 +90,9 @@ These need a stronger previous stage before they should become required by
 - ADT-backed Parsec-style parser replies in `mlc.ml`. Stage 02 supports the
   tuple-encoded `p_ok` / `p_err` layer now used by `mlc.ml`, but proper
   `ParseOk` / `ParseErr` constructors in the compiler implementation require
-  promoting ADTs into the previous stage first.
+  promoting ADTs into the previous stage first. The target option-state shape
+  now lives in stage 03 as `PosSome` / `PosNone`; keep the fixed-point compiler
+  on tuple-encoded options until its producer can compile those constructors.
 - Higher-order parser `bind` in `mlc.ml`. Stage 02 can compile closures, but
   the current fixed-point `mlc.ml` compiler cannot compile dynamic function
   application in its own source yet; keep the active parser layer first-order
@@ -107,6 +113,8 @@ These need a stronger previous stage before they should become required by
    current primitive/module-name advances.
 4. Keep moving `mlc.ml` parser branches from nested delimiter checks to
    `p_try_*` / `p_need_*`, with `parse_fail` as the only raw process-exit
-   boundary.
+   boundary. Stage 03 now has the target `PosSome` / `PosNone` option-state
+   shape; the fixed-point compiler should adopt it after the predecessor can
+   compile ADTs in its own source.
 5. Promote ADTs into the previous stage, then replace the tuple-encoded parser
    replies with proper `ParseOk` / `ParseErr` constructors.
