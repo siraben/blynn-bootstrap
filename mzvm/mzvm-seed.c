@@ -397,7 +397,13 @@ static void run(void)
 {
   int running = 1;
   while (running) {
-    unsigned op = read_u8();
+    long raw_op;
+    unsigned op;
+    if (pc >= code_len) die("truncated instruction");
+    raw_op = code[pc];
+    if (raw_op < 0) raw_op = raw_op + 256;
+    op = (unsigned)raw_op;
+    pc = pc + 1;
     last_pc = pc - 1;
     current_op = op;
     if (op == OP_PUSH) {
