@@ -572,7 +572,7 @@ in
 let rec ident_eq state =
   let (src, pair) = state in
   let (left, right) = pair in
-  if left == right then 1 else ident_eq_loop (src, (left, right))
+  ident_eq_loop (src, (left, right))
 in
 let rec p_try_ident state =
   let (src, pos0) = state in
@@ -1290,7 +1290,6 @@ let rec lookup_tenv state =
   let (head, rest) = env in
   let (typ, tail) = rest in
   if head < 0 then fail 0 else
-  if head == name then typ else
   if ident_eq (src, (head, name)) == 1 then typ else lookup_tenv (src, (tail, name))
 in
 let rec same_ty state =
@@ -1625,7 +1624,6 @@ let rec lookup_env state =
   let (name, rest) = env in
   let (depth, tail) = rest in
   if name < 0 then fail 0 else
-  if name == want then depth else
   if ident_eq (src, (name, want)) == 1 then depth else lookup_env (src, (tail, want))
 in
 let rec empty_fenv unit =
@@ -1643,7 +1641,6 @@ let rec lookup_fenv state =
   let (name, rest) = funcs in
   let (target, tail) = rest in
   if name < 0 then fail 0 else
-  if name == want then target else
   if ident_eq (src, (name, want)) == 1 then target else lookup_fenv (src, (tail, want))
 in
 let rec emit_string_tail state =

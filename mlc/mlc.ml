@@ -266,7 +266,7 @@ in
 let rec ident_eq state =
   let (src, pair) = state in
   let (left, right) = pair in
-  if left == right then 1 else ident_eq_loop (src, (left, right))
+  ident_eq_loop (src, (left, right))
 in
 let rec ident_named_loop state =
   let (src, pair) = state in
@@ -306,7 +306,6 @@ let rec find_ctor state =
   let (head, rest) = ctors in
   let (packed, tail) = rest in
   if head < 0 then 0 - 1 else
-  if head == name then packed else
   if ident_eq (src, (head, name)) == 1 then packed else find_ctor (src, (tail, name))
 in
 let rec lookup_ctor state =
@@ -332,7 +331,6 @@ let rec find_func state =
   let _ = param in
   let _ = body_start in
   if name < 0 then 0 else
-  if name == want then 1 else
   if ident_eq (src, (name, want)) == 1 then 1 else find_func (src, (tail, want))
 in
 let rec func_param state =
@@ -343,7 +341,6 @@ let rec func_param state =
   let (body_start, tail) = pair in
   let _ = body_start in
   if name < 0 then parse_fail 0 else
-  if name == want then param else
   if ident_eq (src, (name, want)) == 1 then param else func_param (src, (tail, want))
 in
 let rec func_body_start state =
@@ -354,7 +351,6 @@ let rec func_body_start state =
   let (body_start, tail) = pair in
   let _ = param in
   if name < 0 then parse_fail 0 else
-  if name == want then body_start else
   if ident_eq (src, (name, want)) == 1 then body_start else func_body_start (src, (tail, want))
 in
 let rec string_at_loop state =
@@ -725,7 +721,6 @@ let rec find_env input =
   let (name, rest) = env in
   let (depth, tail) = rest in
   if name < 0 then 0 - 1 else
-  if name == want then depth else
   if ident_eq (src, (name, want)) == 1 then depth else find_env (src, (tail, want))
 in
 let rec lookup_env input =
