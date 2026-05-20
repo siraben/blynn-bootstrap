@@ -53,7 +53,11 @@ rec {
   };
 
   mlcByteSeed = pkgs.callPackage ./mlc-byte-seed.nix {
-    inherit stageRun mlcSrc mlcStage02Ml0Compiler mzvmSeedM2 testsRoot;
+    inherit stageRun mlcSrc mlcStage02Ml0Compiler mzvmSeedM2;
+  };
+
+  mlcByteCorpus = pkgs.callPackage ./mlc-byte-corpus.nix {
+    inherit stageRun testsRoot mlcByteSeed mzvmSeedM2;
     diffutils = pkgs.diffutils;
   };
 
@@ -63,9 +67,10 @@ rec {
   '';
 
   mlcByteSelfhost = pkgs.runCommand "mlc-byte-selfhost" { } ''
-    cmp ${mlcByteSeed}/share/mlc/mlc.byte ${mlcByteSeed}/share/mlc/compiled-selfhost.mzbc
+    ${mzvmSeedM2}/bin/mzvm-seed ${mlcByteSeed}/share/mlc/mlc.byte < ${mlcSrc}/mlc.ml > compiled-selfhost.mzbc
+    cmp ${mlcByteSeed}/share/mlc/mlc.byte compiled-selfhost.mzbc
     install -Dm644 ${mlcByteSeed}/share/mlc/mlc.byte "$out/share/mlc/mlc.byte"
-    install -Dm644 ${mlcByteSeed}/share/mlc/compiled-selfhost.mzbc "$out/share/mlc/compiled-selfhost.mzbc"
+    install -Dm644 compiled-selfhost.mzbc "$out/share/mlc/compiled-selfhost.mzbc"
   '';
 
   mlcStage03AstCompiler = pkgs.callPackage ./mlc-stage-03-ast-compiler.nix {

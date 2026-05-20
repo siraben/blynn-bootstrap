@@ -653,6 +653,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           mlcSeedM2
           mlcSeedHostVsM2
           mlcByteSeed
+          mlcByteCorpus
           mlcByteCommitted
           mlcByteSelfhost
           mlcStage03AstCompiler
@@ -1300,6 +1301,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             seed.host = mlcSeedHost;
             seed.m2 = mlcSeedM2;
             byte.seed = mlcByteSeed;
+            byte.corpus = mlcByteCorpus;
             byte.committed = mlcByteCommitted;
             byte.selfhost = mlcByteSelfhost;
           };
@@ -1368,6 +1370,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             mlc.stage.astCompiler03 = mlcStage03AstCompiler;
             mlc.seed.host-vs-m2 = mlcSeedHostVsM2;
             mlc.byte.seed = mlcByteSeed;
+            mlc.byte.corpus = mlcByteCorpus;
             mlc.byte.committed = mlcByteCommitted;
             mlc.byte.selfhost = mlcByteSelfhost;
             ccc.byte.seed = cccByteSeed;
@@ -1392,6 +1395,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           mlc-seed-m2 = mlcSeedM2;
           mlc-seed-host-vs-m2 = mlcSeedHostVsM2;
           mlc-byte-seed = mlcByteSeed;
+          mlc-byte-corpus = mlcByteCorpus;
           mlc-byte-committed = mlcByteCommitted;
           mlc-byte-selfhost = mlcByteSelfhost;
           ccc-byte-seed = cccByteSeed;
