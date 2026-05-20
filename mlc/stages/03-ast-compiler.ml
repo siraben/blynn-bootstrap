@@ -13,6 +13,9 @@ type expr_more9 = EDebugInt of expr | EUnit
 type parse_reply = ParseOk of int | ParseErr
 type expr_option = ExprSome of expr | ExprNone
 type pos_option = PosSome of int | PosNone
+type value_reply = ValueOk of int | ValueErr
+type value_option = ValueSome of int | ValueNone
+type expr_reply = ExprOk of expr | ExprErr
 
 let rec byte n =
   n - ((n / 256) * 256)
@@ -211,6 +214,21 @@ let rec p_force reply =
   match reply with
     ParseOk pos -> pos
   | ParseErr -> fail 0
+in
+let rec p_force_value reply =
+  match reply with
+    ValueOk parsed -> parsed
+  | ValueErr -> fail 0
+in
+let rec p_optional_value reply =
+  match reply with
+    ValueOk parsed -> ValueSome parsed
+  | ValueErr -> ValueNone
+in
+let rec p_force_expr reply =
+  match reply with
+    ExprOk parsed -> parsed
+  | ExprErr -> fail 0
 in
 let rec p_return state =
   let (pos, value) = state in
@@ -428,11 +446,14 @@ let rec parse_number_loop state =
   let ch = src.[pos] in
   if is_digit ch then parse_number_loop (src, (pos + 1, (acc * 10) + ch - '0')) else (EInt acc, pos)
 in
-let rec parse_number state =
+let rec p_try_number state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
   let ch = src.[pos] in
-  if is_digit ch then parse_number_loop (src, (pos + 1, ch - '0')) else fail 0
+  if is_digit ch then ExprOk (parse_number_loop (src, (pos + 1, ch - '0'))) else ExprErr
+in
+let rec parse_number state =
+  p_force_expr (p_try_number state)
 in
 let rec ident_hash n =
   n - ((n / 1000000007) * 1000000007)
@@ -443,11 +464,14 @@ let rec parse_ident_loop state =
   let ch = src.[pos] in
   if is_ident ch then parse_ident_loop (src, (pos + 1, ident_hash ((acc * 131) + ch))) else (acc, pos)
 in
-let rec parse_ident state =
+let rec p_try_ident state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
   let ch = src.[pos] in
-  if is_alpha ch then parse_ident_loop (src, (pos + 1, ch)) else fail 0
+  if is_alpha ch then ValueOk (parse_ident_loop (src, (pos + 1, ch))) else ValueErr
+in
+let rec parse_ident state =
+  p_force_value (p_try_ident state)
 in
 let rec unit_expr dummy =
   let _ = dummy in
@@ -652,9 +676,11 @@ let rec parse_value_arg state =
   else if is_digit ch then
     parse_number (src, pos)
   else
-    let ident = parse_ident (src, pos) in
-    let (name, name_end) = ident in
-    (EVar name, name_end)
+    match p_optional_value (p_try_ident (src, pos)) with
+      ValueSome ident ->
+        let (name, name_end) = ident in
+        (EVar name, name_end)
+    | ValueNone -> fail 0
 in
 let rec parse_index_binop state =
   let (src, pos0) = state in
