@@ -1585,7 +1585,10 @@ in
 let rec emit_expr state =
   let (ast, pair) = state in
   let (src, pair_src) = pair in
-  let (env, emit) = pair_src in
+  let (env, pair_env) = pair_src in
+  let (call_name, pair_call) = pair_env in
+  let (call_target, pair_target) = pair_call in
+  let (base_pos, emit) = pair_target in
   match ast with
     EInt value -> emit_const (emit, value)
   | EVar name -> emit_acc (emit, lookup_env (src, (env, name)))
@@ -1593,119 +1596,119 @@ let rec emit_expr state =
   | EMore more ->
       match more with
         EWriteByte expr ->
-          let expr_len = emit_expr (expr, (src, (env, emit))) in
+          let expr_len = emit_expr (expr, (src, (env, (call_name, (call_target, (base_pos, emit)))))) in
           let call_len = emit_call_write_byte emit in
           expr_len + call_len
       | EAdd pair2 ->
           let (left, right) = pair2 in
-          let left_len = emit_expr (left, (src, (env, emit))) in
+          let left_len = emit_expr (left, (src, (env, (call_name, (call_target, (base_pos, emit)))))) in
           let push_len = emit_push emit in
-          let right_len = emit_expr (right, (src, (shift_env env, emit))) in
+          let right_len = emit_expr (right, (src, (shift_env env, (call_name, (call_target, (base_pos, emit)))))) in
           let add_len = emit_add emit in
           left_len + push_len + right_len + add_len
       | ESub pair2 ->
           let (left, right) = pair2 in
-          let left_len = emit_expr (left, (src, (env, emit))) in
+          let left_len = emit_expr (left, (src, (env, (call_name, (call_target, (base_pos, emit)))))) in
           let push_len = emit_push emit in
-          let right_len = emit_expr (right, (src, (shift_env env, emit))) in
+          let right_len = emit_expr (right, (src, (shift_env env, (call_name, (call_target, (base_pos, emit)))))) in
           let sub_len = emit_sub emit in
           left_len + push_len + right_len + sub_len
       | EMore2 more2 ->
           match more2 with
             EMul pair2 ->
               let (left, right) = pair2 in
-              let left_len = emit_expr (left, (src, (env, emit))) in
+              let left_len = emit_expr (left, (src, (env, (call_name, (call_target, (base_pos, emit)))))) in
               let push_len = emit_push emit in
-              let right_len = emit_expr (right, (src, (shift_env env, emit))) in
+              let right_len = emit_expr (right, (src, (shift_env env, (call_name, (call_target, (base_pos, emit)))))) in
               let mul_len = emit_mul emit in
               left_len + push_len + right_len + mul_len
           | EDiv pair2 ->
               let (left, right) = pair2 in
-              let left_len = emit_expr (left, (src, (env, emit))) in
+              let left_len = emit_expr (left, (src, (env, (call_name, (call_target, (base_pos, emit)))))) in
               let push_len = emit_push emit in
-              let right_len = emit_expr (right, (src, (shift_env env, emit))) in
+              let right_len = emit_expr (right, (src, (shift_env env, (call_name, (call_target, (base_pos, emit)))))) in
               let div_len = emit_div emit in
               left_len + push_len + right_len + div_len
           | EEq pair2 ->
               let (left, right) = pair2 in
-              let left_len = emit_expr (left, (src, (env, emit))) in
+              let left_len = emit_expr (left, (src, (env, (call_name, (call_target, (base_pos, emit)))))) in
               let push_len = emit_push emit in
-              let right_len = emit_expr (right, (src, (shift_env env, emit))) in
+              let right_len = emit_expr (right, (src, (shift_env env, (call_name, (call_target, (base_pos, emit)))))) in
               let eq_len = emit_eq emit in
               left_len + push_len + right_len + eq_len
           | EMore3 more3 ->
               match more3 with
                 ENe pair2 ->
                   let (left, right) = pair2 in
-                  let left_len = emit_expr (left, (src, (env, emit))) in
+                  let left_len = emit_expr (left, (src, (env, (call_name, (call_target, (base_pos, emit)))))) in
                   let push_len = emit_push emit in
-                  let right_len = emit_expr (right, (src, (shift_env env, emit))) in
+                  let right_len = emit_expr (right, (src, (shift_env env, (call_name, (call_target, (base_pos, emit)))))) in
                   let ne_len = emit_ne emit in
                   left_len + push_len + right_len + ne_len
               | ELt pair2 ->
                   let (left, right) = pair2 in
-                  let left_len = emit_expr (left, (src, (env, emit))) in
+                  let left_len = emit_expr (left, (src, (env, (call_name, (call_target, (base_pos, emit)))))) in
                   let push_len = emit_push emit in
-                  let right_len = emit_expr (right, (src, (shift_env env, emit))) in
+                  let right_len = emit_expr (right, (src, (shift_env env, (call_name, (call_target, (base_pos, emit)))))) in
                   let lt_len = emit_lt emit in
                   left_len + push_len + right_len + lt_len
                 | ELe pair2 ->
                     let (left, right) = pair2 in
-                    let left_len = emit_expr (left, (src, (env, emit))) in
+                    let left_len = emit_expr (left, (src, (env, (call_name, (call_target, (base_pos, emit)))))) in
                     let push_len = emit_push emit in
-                    let right_len = emit_expr (right, (src, (shift_env env, emit))) in
+                    let right_len = emit_expr (right, (src, (shift_env env, (call_name, (call_target, (base_pos, emit)))))) in
                     let le_len = emit_le emit in
                     left_len + push_len + right_len + le_len
               | EMore4 more4 ->
                   match more4 with
                     EGt pair2 ->
                       let (left, right) = pair2 in
-                      let left_len = emit_expr (left, (src, (env, emit))) in
+                      let left_len = emit_expr (left, (src, (env, (call_name, (call_target, (base_pos, emit)))))) in
                       let push_len = emit_push emit in
-                      let right_len = emit_expr (right, (src, (shift_env env, emit))) in
+                      let right_len = emit_expr (right, (src, (shift_env env, (call_name, (call_target, (base_pos, emit)))))) in
                       let gt_len = emit_gt emit in
                       left_len + push_len + right_len + gt_len
                   | EGe pair2 ->
                       let (left, right) = pair2 in
-                      let left_len = emit_expr (left, (src, (env, emit))) in
+                      let left_len = emit_expr (left, (src, (env, (call_name, (call_target, (base_pos, emit)))))) in
                       let push_len = emit_push emit in
-                      let right_len = emit_expr (right, (src, (shift_env env, emit))) in
+                      let right_len = emit_expr (right, (src, (shift_env env, (call_name, (call_target, (base_pos, emit)))))) in
                       let ge_len = emit_ge emit in
                       left_len + push_len + right_len + ge_len
                   | EIf parts ->
                       let (cond, branches) = parts in
                       let (yes, no) = branches in
-                      let cond_len = emit_expr (cond, (src, (env, 0))) in
-                      let yes_len = emit_expr (yes, (src, (env, 0))) in
-                      let no_len = emit_expr (no, (src, (env, 0))) in
-                      let _ = if emit == 1 then emit_expr (cond, (src, (env, 1))) else 0 in
+                      let cond_len = emit_expr (cond, (src, (env, (call_name, (call_target, (base_pos, 0)))))) in
+                      let yes_len = emit_expr (yes, (src, (env, (call_name, (call_target, (base_pos, 0)))))) in
+                      let no_len = emit_expr (no, (src, (env, (call_name, (call_target, (base_pos, 0)))))) in
+                      let _ = if emit == 1 then emit_expr (cond, (src, (env, (call_name, (call_target, (base_pos, 1)))))) else 0 in
                       let _ = emit_branch_if_not (emit, yes_len + 5) in
-                      let _ = if emit == 1 then emit_expr (yes, (src, (env, 1))) else 0 in
+                      let _ = if emit == 1 then emit_expr (yes, (src, (env, (call_name, (call_target, (base_pos, 1)))))) else 0 in
                       let _ = emit_branch (emit, no_len) in
-                      let _ = if emit == 1 then emit_expr (no, (src, (env, 1))) else 0 in
+                      let _ = if emit == 1 then emit_expr (no, (src, (env, (call_name, (call_target, (base_pos, 1)))))) else 0 in
                       cond_len + 5 + yes_len + 5 + no_len
                   | EMore5 more5 ->
                       match more5 with
                         ELet parts ->
                           let (name, body_pair) = parts in
                           let (rhs, body) = body_pair in
-                          let rhs_len = emit_expr (rhs, (src, (env, emit))) in
+                          let rhs_len = emit_expr (rhs, (src, (env, (call_name, (call_target, (base_pos, emit)))))) in
                           let push_len = emit_push emit in
-                          let body_len = emit_expr (body, (src, (extend_env (name, env), emit))) in
+                          let body_len = emit_expr (body, (src, (extend_env (name, env), (call_name, (call_target, (base_pos + rhs_len + push_len, emit)))))) in
                           let pop_len = emit_pop1 emit in
                           rhs_len + push_len + body_len + pop_len
                       | EPair parts ->
                           let (left, right) = parts in
-                          let left_len = emit_expr (left, (src, (env, emit))) in
+                          let left_len = emit_expr (left, (src, (env, (call_name, (call_target, (base_pos, emit)))))) in
                           let push_len = emit_push emit in
-                          let right_len = emit_expr (right, (src, (shift_env env, emit))) in
+                          let right_len = emit_expr (right, (src, (shift_env env, (call_name, (call_target, (base_pos, emit)))))) in
                           let pair_len = emit_makeblock_pair emit in
                           left_len + push_len + right_len + pair_len
                       | ELetPair parts ->
                           let (name1, rest1) = parts in
                           let (name2, rest2) = rest1 in
                           let (rhs, body) = rest2 in
-                          let rhs_len = emit_expr (rhs, (src, (env, emit))) in
+                          let rhs_len = emit_expr (rhs, (src, (env, (call_name, (call_target, (base_pos, emit)))))) in
                           let save_pair = emit_push emit in
                           let acc_pair0 = emit_acc (emit, 0) in
                           let get_left = emit_getfield (emit, 0) in
@@ -1714,22 +1717,22 @@ let rec emit_expr state =
                           let get_right = emit_getfield (emit, 1) in
                           let push_right = emit_push emit in
                           let body_env = extend_env (name2, extend_env (name1, shift_env env)) in
-                          let body_len = emit_expr (body, (src, (body_env, emit))) in
+                          let body_len = emit_expr (body, (src, (body_env, (call_name, (call_target, (base_pos + rhs_len + save_pair + acc_pair0 + get_left + push_left + acc_pair1 + get_right + push_right, emit)))))) in
                           let pop_len = emit_pop (emit, 3) in
                           rhs_len + save_pair + acc_pair0 + get_left + push_left + acc_pair1 + get_right + push_right + body_len + pop_len
                       | EMore6 more6 ->
                           match more6 with
                             ESeq parts ->
                               let (left, right) = parts in
-                              let left_len = emit_expr (left, (src, (env, emit))) in
-                              let right_len = emit_expr (right, (src, (env, emit))) in
+                              let left_len = emit_expr (left, (src, (env, (call_name, (call_target, (base_pos, emit)))))) in
+                              let right_len = emit_expr (right, (src, (env, (call_name, (call_target, (base_pos, emit)))))) in
                               left_len + right_len
                           | EDebugByte expr ->
-                              let expr_len = emit_expr (expr, (src, (env, emit))) in
+                              let expr_len = emit_expr (expr, (src, (env, (call_name, (call_target, (base_pos, emit)))))) in
                               let call_len = emit_call_debug_byte emit in
                               expr_len + call_len
                           | EExit expr ->
-                              let expr_len = emit_expr (expr, (src, (env, emit))) in
+                              let expr_len = emit_expr (expr, (src, (env, (call_name, (call_target, (base_pos, emit)))))) in
                               let call_len = emit_call_exit emit in
                               expr_len + call_len
                             | EReadByte -> emit_call_read_byte emit
@@ -1737,11 +1740,11 @@ let rec emit_expr state =
                                 match more7 with
                                   EString pos -> emit_string_literal (src, (pos, emit))
                                   | EStringLength expr ->
-                                      let expr_len = emit_expr (expr, (src, (env, emit))) in
+                                      let expr_len = emit_expr (expr, (src, (env, (call_name, (call_target, (base_pos, emit)))))) in
                                       let size_len = emit_blocksize emit in
                                       expr_len + size_len
                                   | EBytesCreate expr ->
-                                      let expr_len = emit_expr (expr, (src, (env, emit))) in
+                                      let expr_len = emit_expr (expr, (src, (env, (call_name, (call_target, (base_pos, emit)))))) in
                                       let push_len = emit_push emit in
                                       let const_len = emit_const (emit, 0) in
                                       let block_len = emit_makeblock_dyn emit in
@@ -1749,82 +1752,87 @@ let rec emit_expr state =
                                   | EMore8 more8 ->
                                       match more8 with
                                         EBytesLength expr ->
-                                          let expr_len = emit_expr (expr, (src, (env, emit))) in
+                                          let expr_len = emit_expr (expr, (src, (env, (call_name, (call_target, (base_pos, emit)))))) in
                                           let size_len = emit_blocksize emit in
                                           expr_len + size_len
                                       | EIndex parts ->
                                           let (base, index) = parts in
-                                          let base_len = emit_expr (base, (src, (env, emit))) in
+                                          let base_len = emit_expr (base, (src, (env, (call_name, (call_target, (base_pos, emit)))))) in
                                           let push_base = emit_push emit in
-                                          let index_len = emit_expr (index, (src, (shift_env env, emit))) in
+                                          let index_len = emit_expr (index, (src, (shift_env env, (call_name, (call_target, (base_pos, emit)))))) in
                                           let get_len = emit_getfield_dyn emit in
                                           base_len + push_base + index_len + get_len
                                       | ESetIndex parts ->
                                           let (base, rest) = parts in
                                           let (index, value) = rest in
-                                          let base_len = emit_expr (base, (src, (env, emit))) in
+                                          let base_len = emit_expr (base, (src, (env, (call_name, (call_target, (base_pos, emit)))))) in
                                           let push_base = emit_push emit in
-                                          let index_len = emit_expr (index, (src, (shift_env env, emit))) in
+                                          let index_len = emit_expr (index, (src, (shift_env env, (call_name, (call_target, (base_pos, emit)))))) in
                                           let push_index = emit_push emit in
-                                          let value_len = emit_expr (value, (src, (shift_env (shift_env env), emit))) in
+                                          let value_len = emit_expr (value, (src, (shift_env (shift_env env), (call_name, (call_target, (base_pos, emit)))))) in
                                           let set_len = emit_setfield_dyn emit in
                                           base_len + push_base + index_len + push_index + value_len + set_len
                                       | EMore9 more9 ->
                                           match more9 with
                                             EDebugInt expr ->
-                                              let expr_len = emit_expr (expr, (src, (env, emit))) in
+                                              let expr_len = emit_expr (expr, (src, (env, (call_name, (call_target, (base_pos, emit)))))) in
                                               let call_len = emit_call_debug_int emit in
                                               expr_len + call_len
                                           | EUnit -> emit_const (emit, 0)
                                           | EMore10 more10 ->
                                               match more10 with
                                                 ECellCreate expr ->
-                                                  let expr_len = emit_expr (expr, (src, (env, emit))) in
+                                                  let expr_len = emit_expr (expr, (src, (env, (call_name, (call_target, (base_pos, emit)))))) in
                                                   let block_len = emit_makeblock (emit, 1) in
                                                   expr_len + block_len
                                               | ECellGet expr ->
-                                                  let expr_len = emit_expr (expr, (src, (env, emit))) in
+                                                  let expr_len = emit_expr (expr, (src, (env, (call_name, (call_target, (base_pos, emit)))))) in
                                                   let field_len = emit_getfield (emit, 0) in
                                                   expr_len + field_len
                                               | ECellSet parts ->
                                                   let (cell, value) = parts in
-                                                  let cell_len = emit_expr (cell, (src, (env, emit))) in
+                                                  let cell_len = emit_expr (cell, (src, (env, (call_name, (call_target, (base_pos, emit)))))) in
                                                   let push_cell = emit_push emit in
-                                                  let value_len = emit_expr (value, (src, (shift_env env, emit))) in
+                                                  let value_len = emit_expr (value, (src, (shift_env env, (call_name, (call_target, (base_pos, emit)))))) in
                                                   let set_len = emit_setfield (emit, 0) in
                                                   cell_len + push_cell + value_len + set_len
                                               | EArrayCreate parts ->
                                                   let (size, init) = parts in
-                                                  let size_len = emit_expr (size, (src, (env, emit))) in
+                                                  let size_len = emit_expr (size, (src, (env, (call_name, (call_target, (base_pos, emit)))))) in
                                                   let push_len = emit_push emit in
-                                                  let init_len = emit_expr (init, (src, (shift_env env, emit))) in
+                                                  let init_len = emit_expr (init, (src, (shift_env env, (call_name, (call_target, (base_pos, emit)))))) in
                                                   let block_len = emit_makeblock_dyn emit in
                                                   size_len + push_len + init_len + block_len
                                               | ELetRec parts ->
                                                   let (name, rest1) = parts in
                                                   let (param, rest2) = rest1 in
                                                   let (fn_body, body) = rest2 in
-                                                  let _ = name in
                                                   let fn_env = extend_env (param, env) in
-                                                  let fn_body_len = emit_expr (fn_body, (src, (fn_env, 0))) in
+                                                  let target = base_pos + 5 in
+                                                  let fn_body_len = emit_expr (fn_body, (src, (fn_env, (name, (target, (target + 1, 0)))))) in
                                                   let fn_total = 1 + fn_body_len + 5 + 1 in
-                                                  let body_len = emit_expr (body, (src, (env, 0))) in
+                                                  let body_len = emit_expr (body, (src, (env, (name, (target, (base_pos + 5 + fn_total, 0)))))) in
                                                   let _ =
                                                     if emit == 1 then
                                                       let _ = emit_branch (1, fn_total) in
                                                       let _ = emit_push 1 in
-                                                      let _ = emit_expr (fn_body, (src, (fn_env, 1))) in
+                                                      let _ = emit_expr (fn_body, (src, (fn_env, (name, (target, (target + 1, 1)))))) in
                                                       let _ = emit_pop1 1 in
                                                       let _ = emit_return 1 in
-                                                      emit_expr (body, (src, (env, 1)))
+                                                      emit_expr (body, (src, (env, (name, (target, (base_pos + 5 + fn_total, 1))))))
                                                     else 0
                                                   in
                                                   5 + fn_total + body_len
                                               | ECall parts ->
                                                   let (name, arg) = parts in
-                                                  let _ = name in
-                                                  let arg_len = emit_expr (arg, (src, (env, emit))) in
-                                                  let call_len = emit_call (emit, 5) in
+                                                  let arg_len = emit_expr (arg, (src, (env, (call_name, (call_target, (base_pos, emit)))))) in
+                                                  let target =
+                                                    if emit == 1 then
+                                                      let _ = if ident_eq (src, (call_name, name)) == 1 then 0 else fail 0 in
+                                                      call_target
+                                                    else 0
+                                                  in
+                                                  let call_len = emit_call (emit, target) in
                                                   arg_len + call_len
 in
 let rec emit_program src =
@@ -1833,9 +1841,9 @@ let rec emit_program src =
   let done_pos = skip_space (src, pos) in
   let _ = if src.[done_pos] == 0 then 0 else fail 0 in
   let _ = need_ty (infer (src, (empty_tenv 0, ast)), TyUnit) in
-  let code_len = emit_expr (ast, (src, (empty_env 0, 0))) in
+  let code_len = emit_expr (ast, (src, (empty_env 0, (0 - 1, (0, (0, 0)))))) in
   let _ = emit_header (code_len + 1) in
-  let _ = emit_expr (ast, (src, (empty_env 0, 1))) in
+  let _ = emit_expr (ast, (src, (empty_env 0, (0 - 1, (0, (0, 1)))))) in
   write_byte 0
 in
 let rec read_all state =

@@ -145,6 +145,9 @@ stageRun {
         printf 'let rec dec n = if n = 0 then 79 else dec (n - 1)\nwrite_byte (dec 3)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-let-rec-direct.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-let-rec-direct.mzbc)"
         test "$actual" = O
+        printf 'let seed = 3\nlet rec dec n = if n = 0 then 79 else dec (n - 1)\nwrite_byte (dec seed)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-let-rec-after-let.mzbc
+        actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-let-rec-after-let.mzbc)"
+        test "$actual" = O
         printf 'type byte = Byte of int | Empty\nwrite_byte 79' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-leading-type.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-leading-type.mzbc)"
         test "$actual" = O
@@ -297,6 +300,7 @@ stageRun {
     install -Dm644 03-top-let.mzbc "$out/share/mlc/stages/03-top-let.mzbc"
     install -Dm644 03-top-defs.mzbc "$out/share/mlc/stages/03-top-defs.mzbc"
     install -Dm644 03-let-rec-direct.mzbc "$out/share/mlc/stages/03-let-rec-direct.mzbc"
+    install -Dm644 03-let-rec-after-let.mzbc "$out/share/mlc/stages/03-let-rec-after-let.mzbc"
     install -Dm644 03-leading-type.mzbc "$out/share/mlc/stages/03-leading-type.mzbc"
     install -Dm644 03-leading-types.mzbc "$out/share/mlc/stages/03-leading-types.mzbc"
     install -Dm644 03-pair-let.mzbc "$out/share/mlc/stages/03-pair-let.mzbc"
