@@ -402,43 +402,96 @@ static void run(void)
     current_op = op;
     if (op == OP_HALT) {
       running = 0;
-    } else if (op == OP_CONST) {
-      acc = val_int(read_s32());
     } else if (op == OP_PUSH) {
       stack_push(acc);
-    } else if (op == OP_POP) {
-      stack_drop(read_u32());
     } else if (op == OP_ACC) {
       acc = stack_acc(read_u32());
-    } else if (op == OP_ADDINT) {
-      acc = val_int(int_val(stack_pop()) + int_val(acc));
-    } else if (op == OP_SUBINT) {
-      acc = val_int(int_val(stack_pop()) - int_val(acc));
-    } else if (op == OP_MULINT) {
-      acc = val_int(int_val(stack_pop()) * int_val(acc));
-    } else if (op == OP_DIVINT) {
-      long rhs = int_val(acc);
-      if (rhs == 0) die("division by zero");
-      acc = val_int(int_val(stack_pop()) / rhs);
-    } else if (op == OP_EQ) {
-      acc = val_int(stack_pop() == acc);
-    } else if (op == OP_LT) {
-      acc = val_int(int_val(stack_pop()) < int_val(acc));
-    } else if (op == OP_NE) {
-      acc = val_int(stack_pop() != acc);
-    } else if (op == OP_LE) {
-      acc = val_int(int_val(stack_pop()) <= int_val(acc));
-    } else if (op == OP_GT) {
-      acc = val_int(int_val(stack_pop()) > int_val(acc));
-    } else if (op == OP_GE) {
-      acc = val_int(int_val(stack_pop()) >= int_val(acc));
+    } else if (op == OP_MAKEBLOCK) {
+      long tag = read_u32();
+      long size = read_u32();
+      value_t *block = alloc_block(tag, size);
+      long i = size - 1;
+      if (size > 0) {
+        block[2 + i] = acc;
+        while (i > 0) {
+          i = i - 1;
+          block[2 + i] = stack_pop();
+        }
+      }
+      acc = (value_t)block;
+    } else if (op == OP_CONST) {
+      acc = val_int(read_s32());
+    } else if (op == OP_POP) {
+      stack_drop(read_u32());
     } else if (op == OP_CALL) {
       long target = read_u32();
       if (target < 0 || target >= code_len) die("call target out of range");
       return_push(pc);
       pc = target;
+    } else if (op == OP_GETFIELD) {
+      long index = read_u32();
+      value_t *block = block_val(acc);
+      if (index < 0 || index >= block[1]) die("field access out of range");
+      acc = block[2 + index];
+    } else if (op == OP_ADDINT) {
+      acc = val_int(int_val(stack_pop()) + int_val(acc));
+    } else if (op == OP_BRANCH) {
+      branch_relative(read_s32());
+    } else if (op == OP_BRANCHIFNOT) {
+      long offset = read_s32();
+      if (!truthy(acc)) branch_relative(offset);
+    } else if (op == OP_EQ) {
+      acc = val_int(stack_pop() == acc);
     } else if (op == OP_RETURN) {
       pc = return_pop();
+    } else if (op == OP_GETFIELD_DYN) {
+      long index = int_val(acc);
+      value_t *block = block_val(stack_pop());
+      if (index < 0 || index >= block[1]) die("field access out of range");
+      acc = block[2 + index];
+    } else if (op == OP_SUBINT) {
+      acc = val_int(int_val(stack_pop()) - int_val(acc));
+    } else if (op == OP_LT) {
+      acc = val_int(int_val(stack_pop()) < int_val(acc));
+    } else if (op == OP_C_CALL) {
+      long argc = read_u32();
+      long prim = read_u32();
+      call_prim(argc, prim);
+    } else if (op == OP_MULINT) {
+      acc = val_int(int_val(stack_pop()) * int_val(acc));
+    } else if (op == OP_LE) {
+      acc = val_int(int_val(stack_pop()) <= int_val(acc));
+    } else if (op == OP_DIVINT) {
+      long rhs = int_val(acc);
+      if (rhs == 0) die("division by zero");
+      acc = val_int(int_val(stack_pop()) / rhs);
+    } else if (op == OP_BLOCKSIZE) {
+      value_t *block = block_val(acc);
+      acc = val_int(block[1]);
+    } else if (op == OP_GE) {
+      acc = val_int(int_val(stack_pop()) >= int_val(acc));
+    } else if (op == OP_GT) {
+      acc = val_int(int_val(stack_pop()) > int_val(acc));
+    } else if (op == OP_SETFIELD_DYN) {
+      long index = int_val(stack_pop());
+      value_t *block = block_val(stack_pop());
+      if (index < 0 || index >= block[1]) die("field write out of range");
+      block[2 + index] = acc;
+      acc = val_int(0);
+    } else if (op == OP_MAKEBLOCK_DYN) {
+      long tag = read_u32();
+      long size = int_val(stack_pop());
+      value_t *block;
+      long i = 0;
+      if (size < 0) die("negative block size");
+      block = alloc_block(tag, size);
+      while (i < size) {
+        block[2 + i] = acc;
+        i = i + 1;
+      }
+      acc = (value_t)block;
+    } else if (op == OP_NE) {
+      acc = val_int(stack_pop() != acc);
     } else if (op == OP_CLOSURE) {
       long target = read_u32();
       value_t *block;
@@ -518,68 +571,15 @@ static void run(void)
       long frame = return_pop();
       stack_drop(frame);
       pc = return_pop();
-    } else if (op == OP_BRANCH) {
-      branch_relative(read_s32());
     } else if (op == OP_BRANCHIF) {
       long offset = read_s32();
       if (truthy(acc)) branch_relative(offset);
-    } else if (op == OP_BRANCHIFNOT) {
-      long offset = read_s32();
-      if (!truthy(acc)) branch_relative(offset);
-    } else if (op == OP_C_CALL) {
-      long argc = read_u32();
-      long prim = read_u32();
-      call_prim(argc, prim);
-    } else if (op == OP_MAKEBLOCK) {
-      long tag = read_u32();
-      long size = read_u32();
-      value_t *block = alloc_block(tag, size);
-      long i = size - 1;
-      if (size > 0) {
-        block[2 + i] = acc;
-        while (i > 0) {
-          i = i - 1;
-          block[2 + i] = stack_pop();
-        }
-      }
-      acc = (value_t)block;
-    } else if (op == OP_MAKEBLOCK_DYN) {
-      long tag = read_u32();
-      long size = int_val(stack_pop());
-      value_t *block;
-      long i = 0;
-      if (size < 0) die("negative block size");
-      block = alloc_block(tag, size);
-      while (i < size) {
-        block[2 + i] = acc;
-        i = i + 1;
-      }
-      acc = (value_t)block;
-    } else if (op == OP_GETFIELD) {
-      long index = read_u32();
-      value_t *block = block_val(acc);
-      if (index < 0 || index >= block[1]) die("field access out of range");
-      acc = block[2 + index];
     } else if (op == OP_SETFIELD) {
       long index = read_u32();
       value_t *block = block_val(stack_pop());
       if (index < 0 || index >= block[1]) die("field write out of range");
       block[2 + index] = acc;
       acc = val_int(0);
-    } else if (op == OP_GETFIELD_DYN) {
-      long index = int_val(acc);
-      value_t *block = block_val(stack_pop());
-      if (index < 0 || index >= block[1]) die("field access out of range");
-      acc = block[2 + index];
-    } else if (op == OP_SETFIELD_DYN) {
-      long index = int_val(stack_pop());
-      value_t *block = block_val(stack_pop());
-      if (index < 0 || index >= block[1]) die("field write out of range");
-      block[2 + index] = acc;
-      acc = val_int(0);
-    } else if (op == OP_BLOCKSIZE) {
-      value_t *block = block_val(acc);
-      acc = val_int(block[1]);
     } else if (op == OP_GETTAG) {
       value_t *block = block_val(acc);
       acc = val_int(block[0]);
