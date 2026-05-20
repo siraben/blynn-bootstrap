@@ -1,5 +1,5 @@
 type ty = TyInt | TyUnit | TyBool | TyMore of ty_more
-type ty_more = TyString | TyBytes | TyPair of ty
+type ty_more = TyString | TyBytes | TyPair of ty | TyCell of ty
 type expr = EInt of int | EVar of int | EBool of int | EMore of expr_more
 type expr_more = EWriteByte of expr | EAdd of expr | ESub of expr | EMore2 of expr_more2
 type expr_more2 = EMul of expr | EDiv of expr | EEq of expr | EMore3 of expr_more3
@@ -9,7 +9,8 @@ type expr_more5 = ELet of expr | EPair of expr | ELetPair of expr | EMore6 of ex
 type expr_more6 = ESeq of expr | EDebugByte of expr | EReadByte | EMore7 of expr_more7
 type expr_more7 = EString of int | EStringLength of expr | EBytesCreate of expr | EMore8 of expr_more8
 type expr_more8 = EBytesLength of expr | EIndex of expr | ESetIndex of expr | EMore9 of expr_more9
-type expr_more9 = EDebugInt of expr | EUnit
+type expr_more9 = EDebugInt of expr | EUnit | EMore10 of expr_more10
+type expr_more10 = ECellCreate of expr | ECellGet of expr | ECellSet of expr
 type parse_reply = ParseOk of int | ParseErr
 type expr_option = ExprSome of expr | ExprNone
 type pos_option = PosSome of int | PosNone
@@ -174,6 +175,12 @@ in
 let rec emit_setfield_dyn emit =
   let _ = emit_byte_if (emit, 26) in
   1
+in
+let rec emit_setfield state =
+  let (emit, index) = state in
+  let _ = emit_byte_if (emit, 17) in
+  let _ = emit_u32_if (emit, index) in
+  5
 in
 let rec emit_blocksize emit =
   let _ = emit_byte_if (emit, 27) in
@@ -366,6 +373,18 @@ let rec is_bytes_length_at state =
   let (src, pos0) = state in
   p_string_at (src, (pos0, "Bytes.length"))
 in
+let rec is_cell_create_at state =
+  let (src, pos0) = state in
+  p_string_at (src, (pos0, "Cell.create"))
+in
+let rec is_cell_get_at state =
+  let (src, pos0) = state in
+  p_string_at (src, (pos0, "Cell.get"))
+in
+let rec is_cell_set_at state =
+  let (src, pos0) = state in
+  p_string_at (src, (pos0, "Cell.set"))
+in
 let rec is_true_at state =
   let (src, pos0) = state in
   p_keyword_at (src, (pos0, "true"))
@@ -439,6 +458,18 @@ in
 let rec need_bytes_length state =
   let (src, pos0) = state in
   p_need_string (src, (pos0, "Bytes.length"))
+in
+let rec need_cell_create state =
+  let (src, pos0) = state in
+  p_need_string (src, (pos0, "Cell.create"))
+in
+let rec need_cell_get state =
+  let (src, pos0) = state in
+  p_need_string (src, (pos0, "Cell.get"))
+in
+let rec need_cell_set state =
+  let (src, pos0) = state in
+  p_need_string (src, (pos0, "Cell.set"))
 in
 let rec parse_number_loop state =
   let (src, pair) = state in
@@ -517,6 +548,16 @@ let rec set_index_expr state =
   let (base, rest) = state in
   let (index, value) = rest in
   EMore (EMore2 (EMore3 (EMore4 (EMore5 (EMore6 (EMore7 (EMore8 (ESetIndex (base, (index, value))))))))))
+in
+let rec cell_create_expr expr =
+  EMore (EMore2 (EMore3 (EMore4 (EMore5 (EMore6 (EMore7 (EMore8 (EMore9 (EMore10 (ECellCreate expr))))))))))
+in
+let rec cell_get_expr expr =
+  EMore (EMore2 (EMore3 (EMore4 (EMore5 (EMore6 (EMore7 (EMore8 (EMore9 (EMore10 (ECellGet expr))))))))))
+in
+let rec cell_set_expr state =
+  let (cell, value) = state in
+  EMore (EMore2 (EMore3 (EMore4 (EMore5 (EMore6 (EMore7 (EMore8 (EMore9 (EMore10 (ECellSet (cell, value)))))))))))
 in
 let rec read_byte_expr unit =
   let _ = unit in
@@ -758,6 +799,29 @@ let rec parse_bytes_length_expr state =
   let (arg_ast, done_pos) = parsed_arg in
   (bytes_length_expr arg_ast, done_pos)
 in
+let rec parse_cell_create_expr state =
+  let (src, pos0) = state in
+  let arg_pos = need_cell_create (src, pos0) in
+  let parsed_arg = parse_index_expr (src, arg_pos) in
+  let (arg_ast, done_pos) = parsed_arg in
+  (cell_create_expr arg_ast, done_pos)
+in
+let rec parse_cell_get_expr state =
+  let (src, pos0) = state in
+  let arg_pos = need_cell_get (src, pos0) in
+  let parsed_arg = parse_value_arg (src, arg_pos) in
+  let (arg_ast, done_pos) = parsed_arg in
+  (cell_get_expr arg_ast, done_pos)
+in
+let rec parse_cell_set_expr state =
+  let (src, pos0) = state in
+  let cell_pos = need_cell_set (src, pos0) in
+  let parsed_cell = parse_value_arg (src, cell_pos) in
+  let (cell_ast, value_pos) = parsed_cell in
+  let parsed_value = parse_index_expr (src, value_pos) in
+  let (value_ast, done_pos) = parsed_value in
+  (cell_set_expr (cell_ast, value_ast), done_pos)
+in
 let rec parse_index_suffix state =
   let (src, pair) = state in
   let (base, pos0) = pair in
@@ -893,6 +957,12 @@ let rec parse_expr_prec state =
         parse_bytes_create_expr (src, pos)
       else if is_bytes_length_at (src, pos) then
         parse_bytes_length_expr (src, pos)
+      else if is_cell_create_at (src, pos) then
+        parse_cell_create_expr (src, pos)
+      else if is_cell_get_at (src, pos) then
+        parse_cell_get_expr (src, pos)
+      else if is_cell_set_at (src, pos) then
+        parse_cell_set_expr (src, pos)
       else if is_read_byte_at (src, pos) then
         p_return (need_read_byte (src, pos), read_byte_expr 0)
       else
@@ -1046,6 +1116,11 @@ let rec lookup_tenv state =
   if head == name then typ else
   if ident_eq (src, (head, name)) == 1 then typ else lookup_tenv (src, (tail, name))
 in
+let rec is_cell_ty ty =
+  match ty with
+    TyMore more -> (match more with TyCell inner -> let _ = inner in 1 | _ -> 0)
+  | _ -> 0
+in
 let rec same_ty state =
   let (left, right) = state in
   match left with
@@ -1056,6 +1131,9 @@ let rec same_ty state =
       match left_more with
         TyString -> (match right with TyMore right_more -> (match right_more with TyString -> 1 | _ -> 0) | _ -> 0)
       | TyBytes -> (match right with TyMore right_more -> (match right_more with TyBytes -> 1 | _ -> 0) | _ -> 0)
+      | TyCell left_inner ->
+          let _ = left_inner in
+          is_cell_ty right
       | TyPair left_pair ->
           match right with
             TyMore right_more ->
@@ -1163,7 +1241,8 @@ let rec infer state =
                                   let (left_ty, right_ty) = pair_ty in
                                   infer (src, (extend_tenv (name2, (right_ty, extend_tenv (name1, (left_ty, env)))), body))
                               | TyString -> fail 0
-                              | TyBytes -> fail 0)
+                              | TyBytes -> fail 0
+                              | TyCell inner -> let _ = inner in fail 0)
                           | TyInt -> fail 0
                           | TyUnit -> fail 0
                           | TyBool -> fail 0)
@@ -1200,7 +1279,8 @@ let rec infer state =
                                           (match more with
                                             TyString -> TyInt
                                           | TyBytes -> TyInt
-                                          | TyPair pair_ty -> let _ = pair_ty in fail 0)
+                                          | TyPair pair_ty -> let _ = pair_ty in fail 0
+                                          | TyCell inner -> let _ = inner in fail 0)
                                       | TyInt -> fail 0
                                       | TyUnit -> fail 0
                                       | TyBool -> fail 0)
@@ -1217,6 +1297,37 @@ let rec infer state =
                                           let _ = need_ty (infer (src, (env, expr)), TyInt) in
                                           TyUnit
                                       | EUnit -> TyUnit
+                                      | EMore10 more10 ->
+                                          match more10 with
+                                            ECellCreate expr ->
+                                              TyMore (TyCell (infer (src, (env, expr))))
+                                          | ECellGet expr ->
+                                              let cell_ty = infer (src, (env, expr)) in
+                                              (match cell_ty with
+                                                TyMore more ->
+                                                  (match more with
+                                                    TyCell inner -> inner
+                                                  | TyString -> fail 0
+                                                  | TyBytes -> fail 0
+                                                  | TyPair pair_ty -> let _ = pair_ty in fail 0)
+                                              | TyInt -> fail 0
+                                              | TyUnit -> fail 0
+                                              | TyBool -> fail 0)
+                                          | ECellSet parts ->
+                                              let (cell, value) = parts in
+                                              let cell_ty = infer (src, (env, cell)) in
+                                              (match cell_ty with
+                                                TyMore more ->
+                                                  (match more with
+                                                    TyCell inner ->
+                                                      let _ = need_ty (infer (src, (env, value)), inner) in
+                                                      TyUnit
+                                                  | TyString -> fail 0
+                                                  | TyBytes -> fail 0
+                                                  | TyPair pair_ty -> let _ = pair_ty in fail 0)
+                                              | TyInt -> fail 0
+                                              | TyUnit -> fail 0
+                                              | TyBool -> fail 0)
 in
 let rec empty_env unit =
   let _ = unit in
@@ -1460,6 +1571,23 @@ let rec emit_expr state =
                                               let call_len = emit_call_debug_int emit in
                                               expr_len + call_len
                                           | EUnit -> emit_const (emit, 0)
+                                          | EMore10 more10 ->
+                                              match more10 with
+                                                ECellCreate expr ->
+                                                  let expr_len = emit_expr (expr, (src, (env, emit))) in
+                                                  let block_len = emit_makeblock (emit, 1) in
+                                                  expr_len + block_len
+                                              | ECellGet expr ->
+                                                  let expr_len = emit_expr (expr, (src, (env, emit))) in
+                                                  let field_len = emit_getfield (emit, 0) in
+                                                  expr_len + field_len
+                                              | ECellSet parts ->
+                                                  let (cell, value) = parts in
+                                                  let cell_len = emit_expr (cell, (src, (env, emit))) in
+                                                  let push_cell = emit_push emit in
+                                                  let value_len = emit_expr (value, (src, (shift_env env, emit))) in
+                                                  let set_len = emit_setfield (emit, 0) in
+                                                  cell_len + push_cell + value_len + set_len
 in
 let rec emit_program src =
   let parsed = parse_program (src, 0) in

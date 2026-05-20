@@ -112,8 +112,9 @@ Current stages:
   bool literals, conditionals whose
   guards must type as `bool`, expression-level `let ... in ...`,
   declaration-style top-level `let` bindings, pair construction, pair
-  destructuring, top-level pair destructuring, full-input consumption, and
-  static type errors.
+  destructuring, top-level pair destructuring, typed imperative cells via
+  `Cell.create` / `Cell.get` / `Cell.set`, full-input consumption, and static
+  type errors.
 
 Planned stages:
 
