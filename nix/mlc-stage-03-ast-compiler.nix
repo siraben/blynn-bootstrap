@@ -151,6 +151,12 @@ stageRun {
         printf 'let rec id n = n\nlet rec out n = if n = 0 then id 79 else out (n - 1)\nwrite_byte (out 2)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-let-rec-nested-call.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-let-rec-nested-call.mzbc)"
         test "$actual" = O
+        printf 'let rec even n = if n = 0 then 79 else odd (n - 1)\nand odd n = if n = 0 then 88 else even (n - 1)\nin\nwrite_byte (even 4); write_byte (odd 3)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-let-rec-and.mzbc
+        actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-let-rec-and.mzbc)"
+        test "$actual" = OO
+        printf 'let rec first n = if n = 0 then 79 else second (n - 1)\nand second n = if n = 0 then 88 else third (n - 1)\nand third n = if n = 0 then 75 else first (n - 1)\nin\nwrite_byte (first 3); write_byte (third 0)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-let-rec-and-three.mzbc
+        actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-let-rec-and-three.mzbc)"
+        test "$actual" = OK
         printf 'type byte = Byte of int | Empty\nwrite_byte 79' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-leading-type.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-leading-type.mzbc)"
         test "$actual" = O
@@ -305,6 +311,8 @@ stageRun {
     install -Dm644 03-let-rec-direct.mzbc "$out/share/mlc/stages/03-let-rec-direct.mzbc"
     install -Dm644 03-let-rec-after-let.mzbc "$out/share/mlc/stages/03-let-rec-after-let.mzbc"
     install -Dm644 03-let-rec-nested-call.mzbc "$out/share/mlc/stages/03-let-rec-nested-call.mzbc"
+    install -Dm644 03-let-rec-and.mzbc "$out/share/mlc/stages/03-let-rec-and.mzbc"
+    install -Dm644 03-let-rec-and-three.mzbc "$out/share/mlc/stages/03-let-rec-and-three.mzbc"
     install -Dm644 03-leading-type.mzbc "$out/share/mlc/stages/03-leading-type.mzbc"
     install -Dm644 03-leading-types.mzbc "$out/share/mlc/stages/03-leading-types.mzbc"
     install -Dm644 03-pair-let.mzbc "$out/share/mlc/stages/03-pair-let.mzbc"

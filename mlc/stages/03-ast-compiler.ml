@@ -425,11 +425,16 @@ let rec is_rec_at state =
   let (src, pos0) = state in
   p_keyword_at (src, (pos0, "rec"))
 in
+let rec is_and_at state =
+  let (src, pos0) = state in
+  p_keyword_at (src, (pos0, "and"))
+in
 let rec is_reserved_expr_at state =
   let (src, pos0) = state in
   if is_if_at (src, pos0) then 1 else
   if is_let_at (src, pos0) then 1 else
   if is_rec_at (src, pos0) then 1 else
+  if is_and_at (src, pos0) then 1 else
   if is_in_at (src, pos0) then 1 else
   if is_then_at (src, pos0) then 1 else
   if is_else_at (src, pos0) then 1 else
@@ -626,11 +631,17 @@ let rec array_create_expr state =
   let (size, init) = state in
   EMore (EMore2 (EMore3 (EMore4 (EMore5 (EMore6 (EMore7 (EMore8 (EMore9 (EMore10 (EArrayCreate (size, init)))))))))))
 in
+let rec more10_expr expr =
+  EMore (EMore2 (EMore3 (EMore4 (EMore5 (EMore6 (EMore7 (EMore8 (EMore9 (EMore10 expr)))))))))
+in
 let rec let_rec_expr state =
-  let (name, rest1) = state in
-  let (param, rest2) = rest1 in
-  let (fn_body, body) = rest2 in
-  EMore (EMore2 (EMore3 (EMore4 (EMore5 (EMore6 (EMore7 (EMore8 (EMore9 (EMore10 (ELetRec (name, (param, (fn_body, body)))))))))))))
+  more10_expr (ELetRec (1, state))
+in
+let rec let_rec2_expr state =
+  more10_expr (ELetRec (2, state))
+in
+let rec let_rec3_expr state =
+  more10_expr (ELetRec (3, state))
 in
 let rec call_expr state =
   let (name, arg) = state in
@@ -1205,10 +1216,38 @@ and parse_top_let_binding state =
       let fn_body = parse_expr_flag (src, (eq_pos, 0)) in
       let (fn_body_ast, fn_body_end) = fn_body in
       let after_fn = skip_space (src, fn_body_end) in
-      let body_pos = if is_in_at (src, after_fn) then need_in (src, fn_body_end) else after_fn in
-      let body = parse_program (src, body_pos) in
-      let (body_ast, body_end) = body in
-      ExprSome (let_rec_expr (fname_pos, (param_pos, (fn_body_ast, body_ast))), body_end)
+      if is_and_at (src, after_fn) == 1 then
+        let sname = parse_ident (src, after_fn + 3) in
+        let (sname_pos, sname_end) = sname in
+        let sparam = parse_ident (src, sname_end) in
+        let (sparam_pos, sparam_end) = sparam in
+        let seq_pos = need_char (src, (sparam_end, '=')) in
+        let s_body = parse_expr_flag (src, (seq_pos, 0)) in
+        let (s_body_ast, s_body_end) = s_body in
+        let after_s = skip_space (src, s_body_end) in
+        if is_and_at (src, after_s) == 1 then
+          let tname = parse_ident (src, after_s + 3) in
+          let (tname_pos, tname_end) = tname in
+          let tparam = parse_ident (src, tname_end) in
+          let (tparam_pos, tparam_end) = tparam in
+          let teq_pos = need_char (src, (tparam_end, '=')) in
+          let t_body = parse_expr_flag (src, (teq_pos, 0)) in
+          let (t_body_ast, t_body_end) = t_body in
+          let after_t = skip_space (src, t_body_end) in
+          let body_pos = if is_in_at (src, after_t) then need_in (src, t_body_end) else after_t in
+          let body = parse_program (src, body_pos) in
+          let (body_ast, body_end) = body in
+          ExprSome (let_rec3_expr (fname_pos, (param_pos, (fn_body_ast, (sname_pos, (sparam_pos, (s_body_ast, (tname_pos, (tparam_pos, (t_body_ast, body_ast))))))))), body_end)
+        else
+          let body_pos = if is_in_at (src, after_s) then need_in (src, s_body_end) else after_s in
+          let body = parse_program (src, body_pos) in
+          let (body_ast, body_end) = body in
+          ExprSome (let_rec2_expr (fname_pos, (param_pos, (fn_body_ast, (sname_pos, (sparam_pos, (s_body_ast, body_ast)))))), body_end)
+      else
+        let body_pos = if is_in_at (src, after_fn) then need_in (src, fn_body_end) else after_fn in
+        let body = parse_program (src, body_pos) in
+        let (body_ast, body_end) = body in
+        ExprSome (let_rec_expr (fname_pos, (param_pos, (fn_body_ast, body_ast))), body_end)
     else if src.[bind_pos] == '(' then
       let name1 = parse_ident (src, bind_pos + 1) in
       let (name1_pos, name1_end0) = name1 in
@@ -1503,14 +1542,51 @@ let rec infer state =
                                               let _ = need_ty (infer (src, (env, size)), TyInt) in
                                               TyMore (TyArray (infer (src, (env, init))))
                                           | ELetRec parts ->
-                                              let (name, rest1) = parts in
-                                              let (param, rest2) = rest1 in
-                                              let (fn_body, body) = rest2 in
                                               let fn_sig = TyMore (TyFun (TyMore (TyPair (TyInt, TyInt)))) in
-                                              let fn_env = extend_tenv (name, (fn_sig, env)) in
-                                              let body_env = extend_tenv (param, (TyInt, fn_env)) in
-                                              let _ = need_ty (infer (src, (body_env, fn_body)), TyInt) in
-                                              infer (src, (fn_env, body))
+                                              let (count, payload) = parts in
+                                              if count == 1 then
+                                                let (name, rest1) = payload in
+                                                let (param, rest2) = rest1 in
+                                                let (fn_body, body) = rest2 in
+                                                let fn_env = extend_tenv (name, (fn_sig, env)) in
+                                                let body_env = extend_tenv (param, (TyInt, fn_env)) in
+                                                let _ = need_ty (infer (src, (body_env, fn_body)), TyInt) in
+                                                infer (src, (fn_env, body))
+                                              else if count == 2 then
+                                                let (name1, rest1) = payload in
+                                                let (param1, rest2) = rest1 in
+                                                let (body1, rest3) = rest2 in
+                                                let (name2, rest4) = rest3 in
+                                                let (param2, rest5) = rest4 in
+                                                let (body2, final) = rest5 in
+                                                let fn_env1 = extend_tenv (name1, (fn_sig, env)) in
+                                                let fn_env = extend_tenv (name2, (fn_sig, fn_env1)) in
+                                                let body_env1 = extend_tenv (param1, (TyInt, fn_env)) in
+                                                let body_env2 = extend_tenv (param2, (TyInt, fn_env)) in
+                                                let _ = need_ty (infer (src, (body_env1, body1)), TyInt) in
+                                                let _ = need_ty (infer (src, (body_env2, body2)), TyInt) in
+                                                infer (src, (fn_env, final))
+                                              else if count == 3 then
+                                                let (name1, rest1) = payload in
+                                                let (param1, rest2) = rest1 in
+                                                let (body1, rest3) = rest2 in
+                                                let (name2, rest4) = rest3 in
+                                                let (param2, rest5) = rest4 in
+                                                let (body2, rest6) = rest5 in
+                                                let (name3, rest7) = rest6 in
+                                                let (param3, rest8) = rest7 in
+                                                let (body3, final) = rest8 in
+                                                let fn_env1 = extend_tenv (name1, (fn_sig, env)) in
+                                                let fn_env2 = extend_tenv (name2, (fn_sig, fn_env1)) in
+                                                let fn_env = extend_tenv (name3, (fn_sig, fn_env2)) in
+                                                let body_env1 = extend_tenv (param1, (TyInt, fn_env)) in
+                                                let body_env2 = extend_tenv (param2, (TyInt, fn_env)) in
+                                                let body_env3 = extend_tenv (param3, (TyInt, fn_env)) in
+                                                let _ = need_ty (infer (src, (body_env1, body1)), TyInt) in
+                                                let _ = need_ty (infer (src, (body_env2, body2)), TyInt) in
+                                                let _ = need_ty (infer (src, (body_env3, body3)), TyInt) in
+                                                infer (src, (fn_env, final))
+                                              else fail 0
                                           | ECall parts ->
                                               let (name, arg) = parts in
                                               let fn_ty = lookup_tenv (src, (env, name)) in
@@ -1821,26 +1897,107 @@ let rec emit_expr state =
                                                   let block_len = emit_makeblock_dyn emit in
                                                   size_len + push_len + init_len + block_len
                                               | ELetRec parts ->
-                                                  let (name, rest1) = parts in
-                                                  let (param, rest2) = rest1 in
-                                                  let (fn_body, body) = rest2 in
-                                                  let fn_env = extend_env (param, env) in
-                                                  let target = base_pos + 5 in
-                                                  let next_funcs = extend_fenv (name, (target, funcs)) in
-                                                  let fn_body_len = emit_expr (fn_body, (src, (fn_env, (next_funcs, (target + 1, 0))))) in
-                                                  let fn_total = 1 + fn_body_len + 5 + 1 in
-                                                  let body_len = emit_expr (body, (src, (env, (next_funcs, (base_pos + 5 + fn_total, 0))))) in
-                                                  let _ =
-                                                    if emit == 1 then
-                                                      let _ = emit_branch (1, fn_total) in
-                                                      let _ = emit_push 1 in
-                                                      let _ = emit_expr (fn_body, (src, (fn_env, (next_funcs, (target + 1, 1))))) in
-                                                      let _ = emit_pop1 1 in
-                                                      let _ = emit_return 1 in
-                                                      emit_expr (body, (src, (env, (next_funcs, (base_pos + 5 + fn_total, 1)))))
-                                                    else 0
-                                                  in
-                                                  5 + fn_total + body_len
+                                                  let (count, payload) = parts in
+                                                  if count == 1 then
+                                                    let (name, rest1) = payload in
+                                                    let (param, rest2) = rest1 in
+                                                    let (fn_body, body) = rest2 in
+                                                    let fn_env = extend_env (param, env) in
+                                                    let target = base_pos + 5 in
+                                                    let next_funcs = extend_fenv (name, (target, funcs)) in
+                                                    let fn_body_len = emit_expr (fn_body, (src, (fn_env, (next_funcs, (target + 1, 0))))) in
+                                                    let fn_total = 1 + fn_body_len + 5 + 1 in
+                                                    let body_len = emit_expr (body, (src, (env, (next_funcs, (base_pos + 5 + fn_total, 0))))) in
+                                                    let _ =
+                                                      if emit == 1 then
+                                                        let _ = emit_branch (1, fn_total) in
+                                                        let _ = emit_push 1 in
+                                                        let _ = emit_expr (fn_body, (src, (fn_env, (next_funcs, (target + 1, 1))))) in
+                                                        let _ = emit_pop1 1 in
+                                                        let _ = emit_return 1 in
+                                                        emit_expr (body, (src, (env, (next_funcs, (base_pos + 5 + fn_total, 1)))))
+                                                      else 0
+                                                    in
+                                                    5 + fn_total + body_len
+                                                  else if count == 2 then
+                                                    let (name1, rest1) = payload in
+                                                    let (param1, rest2) = rest1 in
+                                                    let (body1, rest3) = rest2 in
+                                                    let (name2, rest4) = rest3 in
+                                                    let (param2, rest5) = rest4 in
+                                                    let (body2, final) = rest5 in
+                                                    let env1 = extend_env (param1, env) in
+                                                    let env2 = extend_env (param2, env) in
+                                                    let target1 = base_pos + 5 in
+                                                    let funcs1 = extend_fenv (name1, (target1, funcs)) in
+                                                    let body1_len = emit_expr (body1, (src, (env1, (funcs1, (target1 + 1, 0))))) in
+                                                    let total1 = 1 + body1_len + 5 + 1 in
+                                                    let target2 = target1 + total1 in
+                                                    let next_funcs = extend_fenv (name2, (target2, funcs1)) in
+                                                    let body2_len = emit_expr (body2, (src, (env2, (next_funcs, (target2 + 1, 0))))) in
+                                                    let total2 = 1 + body2_len + 5 + 1 in
+                                                    let final_len = emit_expr (final, (src, (env, (next_funcs, (base_pos + 5 + total1 + total2, 0))))) in
+                                                    let _ =
+                                                      if emit == 1 then
+                                                        let _ = emit_branch (1, total1 + total2) in
+                                                        let _ = emit_push 1 in
+                                                        let _ = emit_expr (body1, (src, (env1, (next_funcs, (target1 + 1, 1))))) in
+                                                        let _ = emit_pop1 1 in
+                                                        let _ = emit_return 1 in
+                                                        let _ = emit_push 1 in
+                                                        let _ = emit_expr (body2, (src, (env2, (next_funcs, (target2 + 1, 1))))) in
+                                                        let _ = emit_pop1 1 in
+                                                        let _ = emit_return 1 in
+                                                        emit_expr (final, (src, (env, (next_funcs, (base_pos + 5 + total1 + total2, 1)))))
+                                                      else 0
+                                                    in
+                                                    5 + total1 + total2 + final_len
+                                                  else if count == 3 then
+                                                    let (name1, rest1) = payload in
+                                                    let (param1, rest2) = rest1 in
+                                                    let (body1, rest3) = rest2 in
+                                                    let (name2, rest4) = rest3 in
+                                                    let (param2, rest5) = rest4 in
+                                                    let (body2, rest6) = rest5 in
+                                                    let (name3, rest7) = rest6 in
+                                                    let (param3, rest8) = rest7 in
+                                                    let (body3, final) = rest8 in
+                                                    let env1 = extend_env (param1, env) in
+                                                    let env2 = extend_env (param2, env) in
+                                                    let env3 = extend_env (param3, env) in
+                                                    let target1 = base_pos + 5 in
+                                                    let funcs1 = extend_fenv (name1, (target1, funcs)) in
+                                                    let body1_len = emit_expr (body1, (src, (env1, (funcs1, (target1 + 1, 0))))) in
+                                                    let total1 = 1 + body1_len + 5 + 1 in
+                                                    let target2 = target1 + total1 in
+                                                    let funcs2 = extend_fenv (name2, (target2, funcs1)) in
+                                                    let body2_len = emit_expr (body2, (src, (env2, (funcs2, (target2 + 1, 0))))) in
+                                                    let total2 = 1 + body2_len + 5 + 1 in
+                                                    let target3 = target2 + total2 in
+                                                    let next_funcs = extend_fenv (name3, (target3, funcs2)) in
+                                                    let body3_len = emit_expr (body3, (src, (env3, (next_funcs, (target3 + 1, 0))))) in
+                                                    let total3 = 1 + body3_len + 5 + 1 in
+                                                    let final_len = emit_expr (final, (src, (env, (next_funcs, (base_pos + 5 + total1 + total2 + total3, 0))))) in
+                                                    let _ =
+                                                      if emit == 1 then
+                                                        let _ = emit_branch (1, total1 + total2 + total3) in
+                                                        let _ = emit_push 1 in
+                                                        let _ = emit_expr (body1, (src, (env1, (next_funcs, (target1 + 1, 1))))) in
+                                                        let _ = emit_pop1 1 in
+                                                        let _ = emit_return 1 in
+                                                        let _ = emit_push 1 in
+                                                        let _ = emit_expr (body2, (src, (env2, (next_funcs, (target2 + 1, 1))))) in
+                                                        let _ = emit_pop1 1 in
+                                                        let _ = emit_return 1 in
+                                                        let _ = emit_push 1 in
+                                                        let _ = emit_expr (body3, (src, (env3, (next_funcs, (target3 + 1, 1))))) in
+                                                        let _ = emit_pop1 1 in
+                                                        let _ = emit_return 1 in
+                                                        emit_expr (final, (src, (env, (next_funcs, (base_pos + 5 + total1 + total2 + total3, 1)))))
+                                                      else 0
+                                                    in
+                                                    5 + total1 + total2 + total3 + final_len
+                                                  else fail 0
                                               | ECall parts ->
                                                   let (name, arg) = parts in
                                                   let arg_len = emit_expr (arg, (src, (env, (funcs, (base_pos, emit))))) in
