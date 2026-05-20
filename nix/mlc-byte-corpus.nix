@@ -27,6 +27,21 @@ stageRun {
     printf 'write_string "OK"' | ${mzvmSeedM2}/bin/mzvm-seed mlc.byte > compiled-string.mzbc
     actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-string.mzbc)"
     test "$actual" = OK
+    if printf 'write_byte "OK"' | ${mzvmSeedM2}/bin/mzvm-seed mlc.byte > bad-write-byte-string.mzbc; then
+      exit 1
+    else
+      :
+    fi
+    if printf 'write_byte (String.length 79)' | ${mzvmSeedM2}/bin/mzvm-seed mlc.byte > bad-string-length-int.mzbc; then
+      exit 1
+    else
+      :
+    fi
+    if printf 'write_byte (Bytes.length "OK")' | ${mzvmSeedM2}/bin/mzvm-seed mlc.byte > bad-bytes-length-string.mzbc; then
+      exit 1
+    else
+      :
+    fi
     printf 'let _ = debug_byte 84 in write_byte 79' | ${mzvmSeedM2}/bin/mzvm-seed mlc.byte > compiled-debug-byte.mzbc
     actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-debug-byte.mzbc 2> debug-byte.err)"
     test "$actual" = O

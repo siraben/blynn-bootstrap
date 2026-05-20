@@ -589,6 +589,19 @@ let rec is_bytes_length_at input =
   let (src, pos0) = input in
   p_is_ok (p_try_keyword (src, (pos0, "Bytes.length")))
 in
+let rec starts_string_literal_expr input =
+  let (src, pos0) = input in
+  let pos = skip_space (src, pos0) in
+  if src.[pos] == '"' then 1 else
+  if src.[pos] == '(' then starts_string_literal_expr (src, pos + 1) else 0
+in
+let rec starts_int_literal_expr input =
+  let (src, pos0) = input in
+  let pos = skip_space (src, pos0) in
+  if is_digit (src.[pos]) then 1 else
+  if src.[pos] == '\'' then 1 else
+  if src.[pos] == '(' then starts_int_literal_expr (src, pos + 1) else 0
+in
 let rec is_string_length_at input =
   let (src, pos0) = input in
   p_is_ok (p_try_keyword (src, (pos0, "String.length")))
@@ -1195,12 +1208,16 @@ let rec compile_expr input =
     compile_string_literal (src, (pos, emit))
   else if is_string_length_at (src, pos) then
     let after_string_length = need_keyword (src, (pos, "String.length")) in
+    let arg_pos = skip_space (src, after_string_length) in
+    let _ = if starts_int_literal_expr (src, arg_pos) == 1 then parse_fail 0 else 0 in
     let expr = compile_arg_expr (src, (after_string_length, (env, (ctors, (funcs, emit))))) in
     let (expr_len, done_pos) = expr in
     let size_len = emit_blocksize emit in
     (expr_len + size_len, done_pos)
   else if is_bytes_length_at (src, pos) then
     let after_bytes_length = need_keyword (src, (pos, "Bytes.length")) in
+    let arg_pos = skip_space (src, after_bytes_length) in
+    let _ = if starts_string_literal_expr (src, arg_pos) == 1 then parse_fail 0 else 0 in
     let expr = compile_arg_expr (src, (after_bytes_length, (env, (ctors, (funcs, emit))))) in
     let (expr_len, done_pos) = expr in
     let size_len = emit_blocksize emit in
@@ -1253,6 +1270,7 @@ let rec compile_expr input =
         parse_fail 0
   else if is_write_byte_at (src, pos) then
     let p = skip_space (src, pos + 10) in
+    let _ = if starts_string_literal_expr (src, p) == 1 then parse_fail 0 else 0 in
     let expr = compile_expr (src, (p, (env, (ctors, (funcs, emit))))) in
     let (expr_len, done_pos) = expr in
     let call_len = emit_call_write_byte (emit) in
