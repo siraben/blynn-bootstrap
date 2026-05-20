@@ -154,7 +154,8 @@ the first typed direct unary `let rec f x = ...` / `f arg` slice for
 `int -> int` functions, including direct-call targets after earlier top-level
 bindings, a function-target environment for nested direct `let rec` calls,
 bounded `let rec ... and ...` groups up to three functions, and pair
-destructuring, by lowering them to the same checked expression AST.
+destructuring with wildcard binders, by lowering them to the same checked
+expression AST.
 Leading variant `type` declarations now build a constructor environment for
 typed nullary, unary, and `*` pair payload constructors. Constructor
 expressions lower to tagged VM blocks, constructor payloads are statically

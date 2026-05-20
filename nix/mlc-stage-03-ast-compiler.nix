@@ -214,9 +214,21 @@ stageRun {
         printf 'let (x, y) = (40, 39) in write_byte (x + y)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-pair-let.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-pair-let.mzbc)"
         test "$actual" = O
+        printf 'let (_, y) = (88, 79) in write_byte y' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-pair-let-wildcard-left.mzbc
+        actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-pair-let-wildcard-left.mzbc)"
+        test "$actual" = O
+        printf 'let (x, _) = (79, 88) in write_byte x' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-pair-let-wildcard-right.mzbc
+        actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-pair-let-wildcard-right.mzbc)"
+        test "$actual" = O
+        printf 'let _ = write_byte 79 in write_byte 75' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-let-wildcard.mzbc
+        actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-let-wildcard.mzbc)"
+        test "$actual" = OK
         printf 'let (x, y) = (40, 39)\nwrite_byte (x + y)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-top-pair-def.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-top-pair-def.mzbc)"
         test "$actual" = O
+        printf 'let _ = write_byte 79\nwrite_byte 75' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-top-let-wildcard.mzbc
+        actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-top-let-wildcard.mzbc)"
+        test "$actual" = OK
         printf 'write_byte 79; write_byte 75; write_byte 10' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-sequence.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-sequence.mzbc)"
         test "$actual" = OK
@@ -245,6 +257,12 @@ stageRun {
           exit 1
         fi
         if printf 'let (x, y) = 79 in write_byte x' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-pair-type-error.mzbc; then
+          exit 1
+        fi
+        if printf 'let _ = 79 in write_byte _' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-let-wildcard-not-bound-error.mzbc; then
+          exit 1
+        fi
+        if printf 'let (_, y) = (40, 39) in write_byte _' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-pair-let-wildcard-not-bound-error.mzbc; then
           exit 1
         fi
         if printf 'let x = true\nwrite_byte x' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-top-def-type-error.mzbc; then
@@ -422,7 +440,11 @@ stageRun {
     install -Dm644 03-adt-match-tuple-wildcard-right.mzbc "$out/share/mlc/stages/03-adt-match-tuple-wildcard-right.mzbc"
     install -Dm644 03-adt-match-payload-wildcard.mzbc "$out/share/mlc/stages/03-adt-match-payload-wildcard.mzbc"
     install -Dm644 03-pair-let.mzbc "$out/share/mlc/stages/03-pair-let.mzbc"
+    install -Dm644 03-pair-let-wildcard-left.mzbc "$out/share/mlc/stages/03-pair-let-wildcard-left.mzbc"
+    install -Dm644 03-pair-let-wildcard-right.mzbc "$out/share/mlc/stages/03-pair-let-wildcard-right.mzbc"
+    install -Dm644 03-let-wildcard.mzbc "$out/share/mlc/stages/03-let-wildcard.mzbc"
     install -Dm644 03-top-pair-def.mzbc "$out/share/mlc/stages/03-top-pair-def.mzbc"
+    install -Dm644 03-top-let-wildcard.mzbc "$out/share/mlc/stages/03-top-let-wildcard.mzbc"
     install -Dm644 03-sequence.mzbc "$out/share/mlc/stages/03-sequence.mzbc"
   '';
 }

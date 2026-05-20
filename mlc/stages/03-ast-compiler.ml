@@ -1713,7 +1713,7 @@ let rec infer state =
                           let (name, body_pair) = parts in
                           let (rhs, body) = body_pair in
                           let rhs_ty = infer (src, (env, rhs)) in
-                          infer (src, (extend_tenv (name, (rhs_ty, env)), body))
+                          infer (src, (extend_tenv_if_named (src, (name, (rhs_ty, env))), body))
                         | EPair parts ->
                             let (left, right) = parts in
                             TyMore (TyPair (infer (src, (env, left)), infer (src, (env, right))))
@@ -1727,7 +1727,8 @@ let rec infer state =
                               (match more with
                                 TyPair pair_ty ->
                                   let (left_ty, right_ty) = pair_ty in
-                                  infer (src, (extend_tenv (name2, (right_ty, extend_tenv (name1, (left_ty, env)))), body))
+                                  let env1 = extend_tenv_if_named (src, (name1, (left_ty, env))) in
+                                  infer (src, (extend_tenv_if_named (src, (name2, (right_ty, env1))), body))
                               | TyString -> fail 0
                               | TyBytes -> fail 0
                               | TyCell inner -> let _ = inner in fail 0
@@ -2194,7 +2195,8 @@ let rec emit_expr state =
                           let (rhs, body) = body_pair in
                           let rhs_len = emit_expr (rhs, (src, (env, (ctors, (funcs, (base_pos, emit)))))) in
                           let push_len = emit_push emit in
-                          let body_len = emit_expr (body, (src, (extend_env (name, env), (ctors, (funcs, (base_pos + rhs_len + push_len, emit)))))) in
+                          let body_env = bind_env_at_if_named (src, (name, (0, shift_env env))) in
+                          let body_len = emit_expr (body, (src, (body_env, (ctors, (funcs, (base_pos + rhs_len + push_len, emit)))))) in
                           let pop_len = emit_pop1 emit in
                           rhs_len + push_len + body_len + pop_len
                       | EPair parts ->
@@ -2216,7 +2218,9 @@ let rec emit_expr state =
                           let acc_pair1 = emit_acc (emit, 1) in
                           let get_right = emit_getfield (emit, 1) in
                           let push_right = emit_push emit in
-                          let body_env = extend_env (name2, extend_env (name1, shift_env env)) in
+                          let body_base = shift_env (shift_env (shift_env env)) in
+                          let body_env1 = bind_env_at_if_named (src, (name1, (1, body_base))) in
+                          let body_env = bind_env_at_if_named (src, (name2, (0, body_env1))) in
                           let body_len = emit_expr (body, (src, (body_env, (ctors, (funcs, (base_pos + rhs_len + save_pair + acc_pair0 + get_left + push_left + acc_pair1 + get_right + push_right, emit)))))) in
                           let pop_len = emit_pop (emit, 3) in
                           rhs_len + save_pair + acc_pair0 + get_left + push_left + acc_pair1 + get_right + push_right + body_len + pop_len

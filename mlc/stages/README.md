@@ -117,9 +117,10 @@ Current stages:
   position-aware direct `CALL` targets after earlier bindings, a direct
   function-target environment for nested `let rec` calls, and bounded
   `let rec ... and ...` groups up to three functions, pair construction, pair
-  destructuring, top-level pair destructuring, typed imperative arrays/cells via
-  `Cell.create` / `Cell.get` / `Cell.set`, leading variant `type`
-  declarations with typed nullary, unary, and `*` pair payload constructors,
+  destructuring with wildcard binders, top-level pair destructuring, typed
+  imperative arrays/cells via `Cell.create` / `Cell.get` / `Cell.set`,
+  leading variant `type` declarations with typed nullary, unary, and `*` pair
+  payload constructors,
   direct parenthesized pair payload construction, constructor payload type
   rejection, two-arm constructor `match` expressions for nullary, unary
   payload, unary wildcard payload, tuple payload, tuple wildcard payload,
