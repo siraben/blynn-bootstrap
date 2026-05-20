@@ -238,7 +238,6 @@ static long byte_at(char *bytes, long off)
 static unsigned read_u8(void)
 {
   long out;
-  if (pc >= code_len) die("truncated instruction");
   out = code[pc] & 255;
   pc = pc + 1;
   return (unsigned)out;
@@ -250,7 +249,6 @@ static long read_u32(void)
   long b1;
   long b2;
   long b3;
-  if (pc + 4 > code_len) die("truncated instruction");
   b0 = code[pc] & 255;
   b1 = code[pc + 1] & 255;
   b2 = code[pc + 2] & 255;
@@ -267,7 +265,6 @@ static long read_s32(void)
   long b3;
   long u;
   long max = 2147483647;
-  if (pc + 4 > code_len) die("truncated instruction");
   b0 = code[pc] & 255;
   b1 = code[pc + 1] & 255;
   b2 = code[pc + 2] & 255;
@@ -403,7 +400,6 @@ static void run(void)
   while (running) {
     long raw_op;
     unsigned op;
-    if (pc >= code_len) die("truncated instruction");
     raw_op = code[pc] & 255;
     op = (unsigned)raw_op;
     pc = pc + 1;
