@@ -120,13 +120,24 @@ let rec is_ident ch =
     0
 in
 let rec id_nil tag =
-  if tag = 0 then 1 else 0
+  if tag = 0 then 1 else
+  if tag = 3 then 0 else 0
+in
+let rec id_cons_len ch =
+  fun tail ->
+  fun len ->
+  fun tag ->
+  if tag = 0 then 0 else
+  if tag = 1 then ch else
+  if tag = 2 then tail else
+  if tag = 3 then len else tail
+in
+let rec id_len ident =
+  ident 3
 in
 let rec id_cons ch =
   fun tail ->
-  fun tag ->
-  if tag = 0 then 0 else
-  if tag = 1 then ch else tail
+  id_cons_len ch tail (id_len tail + 1)
 in
 let rec id_is_nil ident =
   ident 0
@@ -137,13 +148,19 @@ in
 let rec id_tail ident =
   ident 2
 in
-let rec ident_eq left =
+let rec ident_eq_chars left =
   fun right ->
   if id_is_nil left = 1 then id_is_nil right else
   if id_is_nil right = 1 then 0 else
   let left_ch = id_head left in
   let right_ch = id_head right in
-  if left_ch = right_ch then ident_eq (id_tail left) (id_tail right) else 0
+  if left_ch = right_ch then ident_eq_chars (id_tail left) (id_tail right) else 0
+in
+let rec ident_eq left =
+  fun right ->
+  let left_len = id_len left in
+  let right_len = id_len right in
+  if left_len = right_len then ident_eq_chars left right else 0
 in
 let rec id_of3 a =
   fun b ->
