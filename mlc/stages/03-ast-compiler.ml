@@ -964,11 +964,17 @@ let rec parse_call_arg state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
   if src.[pos] == '(' then
-    let inner = parse_index_expr (src, pos + 1) in
+    let inner_pos = skip_space (src, pos + 1) in
+    let inner =
+      if src.[inner_pos] == '(' then parse_call_arg (src, inner_pos) else parse_index_expr (src, inner_pos)
+    in
     let (inner_ast, inner_end) = inner in
     let after_first = skip_space (src, inner_end) in
     if src.[after_first] == ',' then
-      let right = parse_index_expr (src, after_first + 1) in
+      let right_pos = skip_space (src, after_first + 1) in
+      let right =
+        if src.[right_pos] == '(' then parse_call_arg (src, right_pos) else parse_index_expr (src, right_pos)
+      in
       let (right_ast, right_end) = right in
       (EMore (EMore2 (EMore3 (EMore4 (EMore5 (EPair (inner_ast, right_ast)))))), p_need_char (src, (right_end, ')')))
     else
@@ -1443,6 +1449,14 @@ let rec parse_type_atom state =
   let (src, pair) = state in
   let (pos0, type_id) = pair in
   let pos = skip_space (src, pos0) in
+  if src.[pos] == '(' then
+    let left = parse_type_atom (src, (pos + 1, type_id)) in
+    let (left_ty, left_end) = left in
+    let star = need_char (src, (left_end, '*')) in
+    let right = parse_type_atom (src, (star, type_id)) in
+    let (right_ty, right_end) = right in
+    (TyMore (TyPair (left_ty, right_ty)), need_char (src, (right_end, ')')))
+  else
   if p_keyword_at (src, (pos, "int")) == 1 then (TyInt, p_need_keyword (src, (pos, "int"))) else
   if p_keyword_at (src, (pos, "bool")) == 1 then (TyBool, p_need_keyword (src, (pos, "bool"))) else
   if p_keyword_at (src, (pos, "string")) == 1 then (TyMore TyString, p_need_keyword (src, (pos, "string"))) else
@@ -1554,7 +1568,12 @@ let rec same_ty state =
       | TyPair left_pair ->
           match right with
             TyMore right_more ->
-              (match right_more with TyPair right_pair -> same_ty (left_pair, right_pair) | _ -> 0)
+              (match right_more with
+                TyPair right_pair ->
+                  let (left1, left2) = left_pair in
+                  let (right1, right2) = right_pair in
+                  if same_ty (left1, right1) == 1 then same_ty (left2, right2) else 0
+              | _ -> 0)
           | _ -> 0
 in
 let rec need_ty state =

@@ -160,7 +160,9 @@ Leading variant `type` declarations now build a constructor environment for
 typed nullary, unary, and `*` pair payload constructors. Constructor
 expressions lower to tagged VM blocks, constructor payloads are statically
 checked, parenthesized pair payload arguments can be constructed directly at
-call sites, and ADT values are rejected where an `int` is required.
+call sites, nested pair payloads can use parenthesized tuple types and direct
+nested tuple construction, and ADT values are rejected where an `int` is
+required.
 Type equality is recursive for nested pair, cell, array, and ADT element types.
 The first stage-03 pattern slice parses two-arm constructor `match`
 expressions for nullary cases, unary payload binders, direct tuple payload

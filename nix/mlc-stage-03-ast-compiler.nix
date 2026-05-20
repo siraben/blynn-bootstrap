@@ -211,6 +211,9 @@ stageRun {
         printf 'type byte = Byte of int | Empty\nwrite_byte (match Byte 88 with | Byte _ -> 79 | Empty -> 88)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-match-payload-wildcard.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-adt-match-payload-wildcard.mzbc)"
         test "$actual" = O
+        printf 'type expr = ELeft of (int * int) * int | ERight of int * (int * int) | EBad\nlet left = match ELeft ((40, 88), 39) with | ELeft pair -> let (nested, rhs) = pair in let (lhs, _) = nested in lhs + rhs | _ -> 88\nlet right = match ERight (40, (88, 35)) with | ERight pair -> let (lhs, nested) = pair in let (_, rhs) = nested in lhs + rhs | _ -> 88\nwrite_byte left; write_byte right' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-nested-pair-payload.mzbc
+        actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-adt-nested-pair-payload.mzbc)"
+        test "$actual" = OK
         printf 'let (x, y) = (40, 39) in write_byte (x + y)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-pair-let.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-pair-let.mzbc)"
         test "$actual" = O
@@ -370,6 +373,9 @@ stageRun {
         if printf 'type pair = Pair of int * int | Empty\nlet v = Pair 79 in write_byte 79' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-pair-payload-type-error.mzbc; then
           exit 1
         fi
+        if printf 'type expr = ELeft of (int * int) * int | EBad\nlet v = ELeft (40, 39) in write_byte 79' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-nested-pair-payload-type-error.mzbc; then
+          exit 1
+        fi
         if printf 'type pair = Pair of int * int | Empty\nwrite_byte (match Pair (40, 39) with | Pair (_, y) -> _ | Empty -> 88)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-match-wildcard-not-bound-error.mzbc; then
           exit 1
         fi
@@ -439,6 +445,7 @@ stageRun {
     install -Dm644 03-adt-match-tuple-wildcard-left.mzbc "$out/share/mlc/stages/03-adt-match-tuple-wildcard-left.mzbc"
     install -Dm644 03-adt-match-tuple-wildcard-right.mzbc "$out/share/mlc/stages/03-adt-match-tuple-wildcard-right.mzbc"
     install -Dm644 03-adt-match-payload-wildcard.mzbc "$out/share/mlc/stages/03-adt-match-payload-wildcard.mzbc"
+    install -Dm644 03-adt-nested-pair-payload.mzbc "$out/share/mlc/stages/03-adt-nested-pair-payload.mzbc"
     install -Dm644 03-pair-let.mzbc "$out/share/mlc/stages/03-pair-let.mzbc"
     install -Dm644 03-pair-let-wildcard-left.mzbc "$out/share/mlc/stages/03-pair-let-wildcard-left.mzbc"
     install -Dm644 03-pair-let-wildcard-right.mzbc "$out/share/mlc/stages/03-pair-let-wildcard-right.mzbc"
