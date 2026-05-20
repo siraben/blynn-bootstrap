@@ -966,7 +966,13 @@ let rec parse_call_arg state =
   if src.[pos] == '(' then
     let inner = parse_index_expr (src, pos + 1) in
     let (inner_ast, inner_end) = inner in
-    (inner_ast, p_need_char (src, (inner_end, ')')))
+    let after_first = skip_space (src, inner_end) in
+    if src.[after_first] == ',' then
+      let right = parse_index_expr (src, after_first + 1) in
+      let (right_ast, right_end) = right in
+      (EMore (EMore2 (EMore3 (EMore4 (EMore5 (EPair (inner_ast, right_ast)))))), p_need_char (src, (right_end, ')')))
+    else
+      (inner_ast, p_need_char (src, (inner_end, ')')))
   else
     parse_value_arg (src, pos)
 in

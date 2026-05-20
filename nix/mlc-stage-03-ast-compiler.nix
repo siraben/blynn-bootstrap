@@ -193,13 +193,13 @@ stageRun {
         printf 'type byte = Byte of int | Empty\nwrite_byte (match Empty with | Byte x -> x | other -> 79)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-match-default-var.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-adt-match-default-var.mzbc)"
         test "$actual" = O
-        printf 'type pair = Pair of int * int | Empty\nlet p = (40, 39) in let v = Pair p in write_byte (match v with | Pair (x, y) -> x + y | Empty -> 88)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-match-tuple-first.mzbc
+        printf 'type pair = Pair of int * int | Empty\nwrite_byte (match Pair (40, 39) with | Pair (x, y) -> x + y | Empty -> 88)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-match-tuple-first.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-adt-match-tuple-first.mzbc)"
         test "$actual" = O
-        printf 'type pair = Empty | Pair of int * int\nlet p = (40, 39) in let v = Pair p in write_byte (match v with | Empty -> 88 | Pair (x, y) -> x + y)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-match-tuple-second.mzbc
+        printf 'type pair = Empty | Pair of int * int\nwrite_byte (match Pair (40, 39) with | Empty -> 88 | Pair (x, y) -> x + y)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-match-tuple-second.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-adt-match-tuple-second.mzbc)"
         test "$actual" = O
-        printf 'type pair = Empty | Pair of int * int\nlet z = 1 in let p = (39, 39) in let v = Pair p in write_byte (match v with | Empty -> 88 | Pair (x, y) -> x + y + z)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-match-tuple-env.mzbc
+        printf 'type pair = Empty | Pair of int * int\nlet z = 1 in write_byte (match Pair (39, 39) with | Empty -> 88 | Pair (x, y) -> x + y + z)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-match-tuple-env.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-adt-match-tuple-env.mzbc)"
         test "$actual" = O
         printf 'let (x, y) = (40, 39) in write_byte (x + y)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-pair-let.mzbc
