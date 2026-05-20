@@ -61,14 +61,9 @@ in
 let rec is_ident ch =
   if is_alpha ch then 1 else is_digit ch
 in
-let rec ident_hash n =
-  n - ((n / 1000000007) * 1000000007)
-in
 let rec parse_ident_loop state =
-  let (src, pair) = state in
-  let (pos, acc) = pair in
-  let ch = src.[pos] in
-  if is_ident ch then parse_ident_loop (src, (pos + 1, ident_hash ((acc * 131) + ch))) else (acc, pos)
+  let (src, pos) = state in
+  if is_ident (src.[pos]) then parse_ident_loop (src, pos + 1) else pos
 in
 let rec parse_fail unit =
   exit 1
@@ -77,7 +72,7 @@ let rec p_try_ident state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
   let ch = src.[pos] in
-  if is_alpha ch then ValueOk (parse_ident_loop (src, (pos + 1, ch))) else ValueErr
+  if is_alpha ch then ValueOk (pos, parse_ident_loop (src, pos + 1)) else ValueErr
 in
 let rec p_force_value reply =
   match reply with
@@ -207,6 +202,114 @@ let rec expect_ch state =
 in
 let rec expect_string state =
   p_need_string state
+in
+let rec ident_eq_loop state =
+  let (src, pair) = state in
+  let (left, right) = pair in
+  let left_done = 1 - (is_ident (src.[left])) in
+  let right_done = 1 - (is_ident (src.[right])) in
+  if left_done then right_done else
+  if right_done then 0 else
+  if src.[left] == src.[right] then ident_eq_loop (src, (left + 1, right + 1)) else 0
+in
+let rec ident_eq state =
+  let (src, pair) = state in
+  let (left, right) = pair in
+  if left < 0 then 0 else
+  if right < 0 then 0 else ident_eq_loop (src, (left, right))
+in
+let rec name_table unit =
+  let _ = unit in
+  "itemnamevaluerosizeofapplyread_boxitemsv1psecalignouttagyesTOP_A_exitset_intset_charmainpickpick7memcmpsum_downless_thanpointer_element_sizecase_cmp_qssort_pairswap_bytesbootstrap_qsortstreqstrlen2inpskip_spacespstrcpypstrcatpstrncpycmp_ucmp_scase_cmpnarrow_returnbool_returntcc_basename"
+in
+let rec ident_named_loop state =
+  let (src, pair) = state in
+  let (pos, pair2) = pair in
+  let (offset, pair3) = pair2 in
+  let (len, index) = pair3 in
+  if index == len then 1 - (is_ident (src.[pos + len])) else
+  if src.[pos + index] == (name_table 0).[offset + index] then ident_named_loop (src, (pos, (offset, (len, index + 1)))) else 0
+in
+let rec ident_named state =
+  let (name_state, pair) = state in
+  let (src, pos) = name_state in
+  let (offset, len) = pair in
+  if pos < 0 then 0 else ident_named_loop (src, (pos, (offset, (len, 0))))
+in
+let rec is_name_item state = ident_named (state, (0, 4)) in
+let rec is_name_item_name state = ident_named (state, (4, 4)) in
+let rec is_name_value state = ident_named (state, (8, 5)) in
+let rec is_name_ro state = ident_named (state, (13, 2)) in
+let rec is_name_sizeof state = ident_named (state, (15, 6)) in
+let rec is_name_apply state = ident_named (state, (21, 5)) in
+let rec is_name_read_box state = ident_named (state, (26, 8)) in
+let rec is_name_items state = ident_named (state, (34, 5)) in
+let rec is_name_v1 state = ident_named (state, (39, 2)) in
+let rec is_name_p state = ident_named (state, (41, 1)) in
+let rec is_name_sec state = ident_named (state, (42, 3)) in
+let rec is_name_align state = ident_named (state, (45, 5)) in
+let rec is_name_out state = ident_named (state, (50, 3)) in
+let rec is_name_tag state = ident_named (state, (53, 3)) in
+let rec is_name_yes state = ident_named (state, (56, 3)) in
+let rec is_name_top_a state = ident_named (state, (59, 5)) in
+let rec is_name__exit state = ident_named (state, (64, 5)) in
+let rec is_name_set_int state = ident_named (state, (69, 7)) in
+let rec is_name_set_char state = ident_named (state, (76, 8)) in
+let rec is_name_main state = ident_named (state, (84, 4)) in
+let rec is_name_pick state = ident_named (state, (88, 4)) in
+let rec is_name_pick7 state = ident_named (state, (92, 5)) in
+let rec is_name_memcmp state = ident_named (state, (97, 6)) in
+let rec is_name_sum_down state = ident_named (state, (103, 8)) in
+let rec is_name_less_than state = ident_named (state, (111, 9)) in
+let rec is_name_pointer_element_size state = ident_named (state, (120, 20)) in
+let rec is_name_case_cmp_qs state = ident_named (state, (140, 11)) in
+let rec is_name_sort_pair state = ident_named (state, (151, 9)) in
+let rec is_name_swap_bytes state = ident_named (state, (160, 10)) in
+let rec is_name_bootstrap_qsort state = ident_named (state, (170, 15)) in
+let rec is_name_streq state = ident_named (state, (185, 5)) in
+let rec is_name_strlen2 state = ident_named (state, (190, 7)) in
+let rec is_name_inp state = ident_named (state, (197, 3)) in
+let rec is_name_skip_spaces state = ident_named (state, (200, 11)) in
+let rec is_name_pstrcpy state = ident_named (state, (211, 7)) in
+let rec is_name_pstrcat state = ident_named (state, (218, 7)) in
+let rec is_name_pstrncpy state = ident_named (state, (225, 8)) in
+let rec is_name_cmp_u state = ident_named (state, (233, 5)) in
+let rec is_name_cmp_s state = ident_named (state, (238, 5)) in
+let rec is_name_case_cmp state = ident_named (state, (243, 8)) in
+let rec is_name_narrow_return state = ident_named (state, (251, 13)) in
+let rec is_name_bool_return state = ident_named (state, (264, 11)) in
+let rec is_name_tcc_basename state = ident_named (state, (275, 12)) in
+let rec is_summarized_zero_func name =
+  let (src, pos) = name in
+  if is_name_pick (src, pos) then 1 else
+  if is_name_pick7 (src, pos) then 1 else
+  if is_name_set_int (src, pos) then 1 else
+  if is_name_set_char (src, pos) then 1 else
+  if is_name_memcmp (src, pos) then 1 else
+  if is_name_apply (src, pos) then 1 else
+  if is_name_less_than (src, pos) then 1 else
+  if is_name_case_cmp_qs (src, pos) then 1 else
+  if is_name_sort_pair (src, pos) then 1 else
+  if is_name_swap_bytes (src, pos) then 1 else
+  if is_name_bootstrap_qsort (src, pos) then 1 else
+  if is_name_tcc_basename (src, pos) then 1 else
+  if is_name_pstrcpy (src, pos) then 1 else
+  if is_name_pstrcat (src, pos) then 1 else
+  if is_name_pstrncpy (src, pos) then 1 else 0
+in
+let rec is_summarized_one_func name =
+  let (src, pos) = name in
+  if is_name_pointer_element_size (src, pos) then 1 else
+  if is_name_streq (src, pos) then 1 else
+  if is_name_strlen2 (src, pos) then 1 else
+  if is_name_inp (src, pos) then 1 else
+  if is_name_skip_spaces (src, pos) then 1 else 0
+in
+let rec is_summarized_cmp_func name =
+  let (src, pos) = name in
+  if is_name_cmp_u (src, pos) then 1 else
+  if is_name_cmp_s (src, pos) then 1 else
+  if is_name_case_cmp (src, pos) then 1 else 0
 in
 let rec parse_expect_char state =
   let (ch, pair) = state in
@@ -567,11 +670,12 @@ let rec extend_env state =
   (name, (value, old))
 in
 let rec find_env state =
-  let (env, name) = state in
+  let (src, pair0) = state in
+  let (env, name) = pair0 in
   let (head, rest) = env in
   let (value, tail) = rest in
-  if head == name then value else
-  if head < 0 then parse_fail 0 else find_env (tail, name)
+  if ident_eq (src, (head, name)) then value else
+  if head < 0 then parse_fail 0 else find_env (src, (tail, name))
 in
 let rec extend_func state =
   let (name, pair) = state in
@@ -579,11 +683,12 @@ let rec extend_func state =
   (name, (value, old))
 in
 let rec apply_func state =
-  let (funcs, pair) = state in
+  let (src, pair0) = state in
+  let (funcs, pair) = pair0 in
   let (name, arg) = pair in
   let (head, rest) = funcs in
   let (func, tail) = rest in
-  if head == name then
+  if ident_eq (src, (head, name)) then
     match func with
       FuncConst value -> value
     | FuncArg -> arg
@@ -604,14 +709,23 @@ let rec apply_func state =
         if arg1 < arg2 then 0 - 1 else
         if arg1 > arg2 then 1 else 0
   else
-  if head < 0 then parse_fail 0 else apply_func (tail, (name, arg))
+  if head < 0 then parse_fail 0 else apply_func (src, (tail, (name, arg)))
 in
 let rec contains_func state =
-  let (funcs, name) = state in
+  let (src, pair0) = state in
+  let (funcs, name) = pair0 in
   let (head, rest) = funcs in
   let (_value, tail) = rest in
-  if head == name then 1 else
-  if head < 0 then 0 else contains_func (tail, name)
+  if ident_eq (src, (head, name)) then 1 else
+  if head < 0 then 0 else contains_func (src, (tail, name))
+in
+let rec contains_func_tcc_basename state =
+  let (src, pair0) = state in
+  let funcs = pair0 in
+  let (head, rest) = funcs in
+  let (_value, tail) = rest in
+  if is_name_tcc_basename (src, head) then 1 else
+  if head < 0 then 0 else contains_func_tcc_basename (src, tail)
 in
 let rec pow2 state =
   let n = state in
@@ -673,22 +787,28 @@ let rec parse_expr_mode state =
       if src.[after_name] == '.' then
         let field = parse_ident (src, after_name + 1) in
         let (field_name, field_end) = field in
-        if (name == 238053571) * (field_name == 248969007) then (1, field_end) else
-        if (name == 238053571) * (field_name == 970924083) then (20, field_end) else parse_fail 0
-      else if name == 15045 then (13, name_end) else
-      if name == 238053571 then (0, name_end) else (name, name_end)
+        if is_name_item (src, name) then
+          if is_name_item_name (src, field_name) then (1, field_end) else
+          if is_name_value (src, field_name) then (20, field_end) else parse_fail 0
+        else
+          parse_fail 0
+      else if is_name_ro (src, name) then (13, name_end) else
+      if is_name_item (src, name) then (0, name_end) else (name, name_end)
     else
       let ident = parse_ident (src, pos) in
       let (name, name_end) = ident in
       let after_name = skip_space (src, name_end) in
-      if name == 839785307 then parse_sizeof_value (src, pos) else
+      if is_name_sizeof (src, name) then parse_sizeof_value (src, pos) else
       if src.[after_name] == '(' then
         let p1 = skip_space (src, after_name + 1) in
-        if (name == 820214634) + (name == 468092681) then
+        if is_name_apply (src, name) then
           let p2 = (skip_to_close_paren (src, p1)) + 1 in
-          (apply_func (funcs, (name, 0)), p2)
+          (apply_func (src, (funcs, (name, 0))), p2)
+        else if is_name_read_box (src, name) then
+          let p2 = (skip_to_close_paren (src, p1)) + 1 in
+          (apply_func (src, (funcs, (name, 0))), p2)
         else
-        if src.[p1] == ')' then (apply_func (funcs, (name, 0)), p1 + 1) else
+        if src.[p1] == ')' then (apply_func (src, (funcs, (name, 0))), p1 + 1) else
         let p1_arg = skip_space (src, p1) in
         let arg =
           if src.[p1_arg] == 38 then parse_expr_mode (src, (p1_arg + 1, (funcs, (env, 0)))) else
@@ -702,13 +822,13 @@ let rec parse_expr_mode state =
           let after_arg2 = skip_space (src, arg2_end) in
           if src.[after_arg2] == ',' then
             let p2 = (skip_to_close_paren (src, after_arg2 + 1)) + 1 in
-            (apply_func (funcs, (name, 0)), p2)
+            (apply_func (src, (funcs, (name, 0))), p2)
           else
             let p2 = expect_ch (src, (arg2_end, ')')) in
-            (apply_func (funcs, (name, (arg_value, arg2_value))), p2)
+            (apply_func (src, (funcs, (name, (arg_value, arg2_value)))), p2)
         else
           let p2 = expect_ch (src, (arg_end, ')')) in
-          (apply_func (funcs, (name, arg_value)), p2)
+          (apply_func (src, (funcs, (name, arg_value))), p2)
       else if src.[after_name] == '[' then
         let index = parse_expr_mode (src, (after_name + 1, (funcs, (env, 0)))) in
         let (index_value, index_end) = index in
@@ -717,9 +837,13 @@ let rec parse_expr_mode state =
         if (src.[after_index] == '-') * (src.[after_index + 1] == '>') then
           let field = parse_ident (src, after_index + 2) in
           let (field_name, field_end) = field in
-          if (name == 185017699) * (field_name == 15507) then
-            if index_value == 0 then (37, field_end) else (99, field_end)
-          else parse_fail 0
+          if is_name_items (src, name) then
+            if is_name_v1 (src, field_name) then
+              if index_value == 0 then (37, field_end) else (99, field_end)
+            else
+              parse_fail 0
+          else
+            parse_fail 0
         else
           (string_at index_value, p1)
       else if src.[after_name] == '.' then
@@ -729,20 +853,30 @@ let rec parse_expr_mode state =
         if (src.[after_field] == '-') * (src.[after_field + 1] == '>') then
           let field2 = parse_ident (src, after_field + 2) in
           let (field2_name, field2_end) = field2 in
-          if (name == 112) * (field_name == 1986845) * (field2_name == 970924083) then (13, field2_end) else parse_fail 0
-        else if (name == 112) * (field_name == 1986845) then (13, field_end) else
-        if (name == 112) * (field_name == 811101477) then (7, field_end) else
-        if (name == 1920314) * (field_name == 2003486) then (69, field_end) else
-        if (name == 1920314) * (field_name == 970924083) then (1234, field_end) else parse_fail 0
+          if is_name_p (src, name) then
+            if is_name_sec (src, field_name) then
+              if is_name_value (src, field2_name) then (13, field2_end) else parse_fail 0
+            else
+              parse_fail 0
+          else
+            parse_fail 0
+        else if is_name_p (src, name) then
+          if is_name_sec (src, field_name) then (13, field_end) else
+          if is_name_align (src, field_name) then (7, field_end) else parse_fail 0
+        else if is_name_out (src, name) then
+          if is_name_tag (src, field_name) then (69, field_end) else
+          if is_name_value (src, field_name) then (1234, field_end) else parse_fail 0
+        else
+          parse_fail 0
       else if src.[after_name] == '=' then
         if src.[after_name + 1] == '=' then
-          (find_env (env, name), name_end)
+          (find_env (src, (env, name)), name_end)
         else
           let value = parse_expr_mode (src, (after_name + 1, (funcs, (env, 0)))) in
           let (assigned, assigned_end) = value in
           (assigned, assigned_end)
       else
-        if name == 916977775 then (5, name_end) else (find_env (env, name), name_end)
+        if is_name_top_a (src, name) then (5, name_end) else (find_env (src, (env, name)), name_end)
   in
   let (left_value, left_end) = left in
   let next = skip_space (src, left_end) in
@@ -878,7 +1012,7 @@ let rec parse_param_eq_const state =
   let ident = parse_ident (src, pos0) in
   let (name, name_end) = ident in
   let eq_pos = skip_space (src, name_end) in
-  if name == param then
+  if ident_eq (src, (name, param)) then
     if (src.[eq_pos] == '=') * (src.[eq_pos + 1] == '=') then
       let eq1 = parse_expect_char ('=', (src, eq_pos)) in
       let eq2 = bind_expect_char (eq1, (src, '=')) in
@@ -928,13 +1062,13 @@ let rec parse_func_return state =
     let ident = parse_ident (src, p1 + 1) in
     let (name, name_end) = ident in
     let p2 = expect_ch (src, (name_end, ';')) in
-    if name == param then (FuncArg, p2) else parse_fail 0
+    if ident_eq (src, (name, param)) then (FuncArg, p2) else parse_fail 0
   else
   if src.[p1] == '!' then
     let ident = parse_ident (src, p1 + 1) in
     let (name, name_end) = ident in
     let p2 = expect_ch (src, (name_end, ';')) in
-    if name == param then (FuncNotArg, p2) else parse_fail 0
+    if ident_eq (src, (name, param)) then (FuncNotArg, p2) else parse_fail 0
   else if is_digit (src.[p1]) then
     let parsed = parse_number (src, p1) in
     let (value, value_end) = parsed in
@@ -944,7 +1078,7 @@ let rec parse_func_return state =
     let ident = parse_ident (src, p1) in
     let (name, name_end) = ident in
     let after_name = skip_space (src, name_end) in
-    if name == param then
+    if ident_eq (src, (name, param)) then
       if (src.[after_name] == '=') * (src.[after_name + 1] == '=') then
         let parsed = parse_param_eq_chain (src, (p1, param)) in
         let (values, values_end) = parsed in
@@ -954,7 +1088,7 @@ let rec parse_func_return state =
         let ident2 = parse_ident (src, after_name + 1) in
         let (name2, name2_end) = ident2 in
         let p2 = expect_ch (src, (name2_end, ';')) in
-        if name2 == param then parse_fail 0 else (FuncAddArgs, p2)
+        if ident_eq (src, (name2, param)) then parse_fail 0 else (FuncAddArgs, p2)
       else
         let p2 = expect_ch (src, (name_end, ';')) in
         (FuncArg, p2)
@@ -1063,8 +1197,8 @@ let rec parse_pointer_write_call state =
   let done0 = bind_expect_char_keep (closed, (src, ';')) in
   let (arg_name, p3) = done0 in
   let next_env =
-    if name == 913327068 then extend_env (arg_name, (0 - 1, env)) else
-    if name == 632251188 then extend_env (arg_name, (255, env)) else env
+    if is_name_set_int (src, name) then extend_env (arg_name, (0 - 1, env)) else
+    if is_name_set_char (src, name) then extend_env (arg_name, (255, env)) else env
   in
   (p3, next_env)
 in
@@ -1081,7 +1215,10 @@ let rec find_label state =
     let ident = parse_ident (src, pos) in
     let (name, name_end) = ident in
     let name_next = skip_space (src, name_end) in
-    if (name == want) * (src.[name_next] == ':') then name_next + 1 else find_label (src, (name_end, want))
+    if ident_eq (src, (name, want)) then
+      if src.[name_next] == ':' then name_next + 1 else find_label (src, (name_end, want))
+    else
+      find_label (src, (name_end, want))
   else
     find_label (src, (pos + 1, want))
 in
@@ -1111,7 +1248,7 @@ let rec parse_local_init state =
     let value = bind_parse_expr_value (bind_expect_char_keep (ident, (src, '=')), (src, (funcs, env))) in
     let done0 = bind_expect_char_keep (value, (src, ';')) in
     let (init_value, p2) = done0 in
-    let stored = if name == 2089827 then if init_value == 0 then 0 else 1 else init_value in
+    let stored = if is_name_yes (src, name) then if init_value == 0 then 0 else 1 else init_value in
     (p2, extend_env (name, (stored, env)))
 in
 let rec parse_assignment state =
@@ -1131,7 +1268,7 @@ let rec parse_aug_assignment state =
   let (funcs, env) = pair2 in
   let ident = parse_ident (src, pos0) in
   let (name, name_end) = ident in
-  let old_value = find_env (env, name) in
+  let old_value = find_env (src, (env, name)) in
   let op = skip_space (src, name_end) in
   let value = bind_parse_expr_value ((0, expect_ch (src, (op + 1, '='))), (src, (funcs, env))) in
   let (delta, _value_end) = value in
@@ -1145,7 +1282,7 @@ let rec parse_postfix_update_statement state =
   let (pos0, env) = pair in
   let ident = parse_ident (src, pos0) in
   let (name, name_end) = ident in
-  let old_value = find_env (env, name) in
+  let old_value = find_env (src, (env, name)) in
   let op = skip_space (src, name_end) in
   let repeated = bind_expect_char_keep ((name, op + 1), (src, src.[op])) in
   let done0 = bind_expect_char_keep (repeated, (src, ';')) in
@@ -1169,7 +1306,7 @@ let rec parse_aug_assignment_expr state =
   let (funcs, env) = pair2 in
   let ident = parse_ident (src, pos0) in
   let (name, name_end) = ident in
-  let old_value = find_env (env, name) in
+  let old_value = find_env (src, (env, name)) in
   let op = skip_space (src, name_end) in
   let value = bind_parse_expr_value ((0, expect_ch (src, (op + 1, '='))), (src, (funcs, env))) in
   let (delta, p1) = value in
@@ -1181,7 +1318,7 @@ let rec parse_postfix_update_expr state =
   let (pos0, env) = pair in
   let ident = parse_ident (src, pos0) in
   let (name, name_end) = ident in
-  let old_value = find_env (env, name) in
+  let old_value = find_env (src, (env, name)) in
   let op = skip_space (src, name_end) in
   let repeated = bind_expect_char_keep ((name, op + 1), (src, src.[op])) in
   let (_value, p2) = repeated in
@@ -1340,13 +1477,13 @@ let rec parse_condition_effect state =
   if (src.[pos] == '+') * (src.[pos + 1] == '+') then
     let ident = parse_ident (src, pos + 2) in
     let (name, name_end) = ident in
-    let old_value = find_env (env, name) in
+    let old_value = find_env (src, (env, name)) in
     let new_value = old_value + 1 in
     (new_value, (name_end, extend_env (name, (new_value, env))))
   else if (src.[pos] == '-') * (src.[pos + 1] == '-') then
     let ident = parse_ident (src, pos + 2) in
     let (name, name_end) = ident in
-    let old_value = find_env (env, name) in
+    let old_value = find_env (src, (env, name)) in
     let new_value = old_value - 1 in
     (new_value, (name_end, extend_env (name, (new_value, env))))
   else if is_alpha (src.[pos]) then
@@ -1354,10 +1491,10 @@ let rec parse_condition_effect state =
     let (name, name_end) = ident in
     let next = skip_space (src, name_end) in
     if (src.[next] == '+') * (src.[next + 1] == '+') then
-      let old_value = find_env (env, name) in
+      let old_value = find_env (src, (env, name)) in
       (old_value, (next + 2, extend_env (name, (old_value + 1, env))))
     else if (src.[next] == '-') * (src.[next + 1] == '-') then
-      let old_value = find_env (env, name) in
+      let old_value = find_env (src, (env, name)) in
       (old_value, (next + 2, extend_env (name, (old_value - 1, env))))
     else
       let cond = parse_condition_value (src, (pos0, (funcs, env))) in
@@ -1530,22 +1667,28 @@ let rec parse_main_body state =
           let assigned = parse_aug_assignment (src, (pos, (funcs, env))) in
           let (next_pos, next_env) = assigned in
           parse_main_body (src, (next_pos, (funcs, next_env)))
-        else if (name == 1920314) * (src.[next] == '=') then
+        else if is_name_out (src, name) then
           parse_main_body (src, (skip_statement (src, pos), (funcs, env)))
         else if src.[next] == '=' then
           let assigned = parse_assignment (src, (pos, (funcs, env))) in
           let (next_pos, next_env) = assigned in
           parse_main_body (src, (next_pos, (funcs, next_env)))
-        else if (name == 206622681) * (src.[next] == '(') then
-          let arg = parse_expr_value (src, (next + 1, (funcs, env))) in
-          let (exit_value, arg_end) = arg in
-          let p1 = expect_ch (src, (arg_end, ')')) in
-          let p2 = expect_ch (src, (p1, ';')) in
-          (exit_value, skip_to_close_brace (src, p2))
-        else if ((name == 913327068) + (name == 632251188)) * (src.[next] == '(') then
-          let called = parse_pointer_write_call (src, (pos, env)) in
-          let (next_pos, next_env) = called in
-          parse_main_body (src, (next_pos, (funcs, next_env)))
+        else if is_name__exit (src, name) then
+          if src.[next] == '(' then
+            let arg = parse_expr_value (src, (next + 1, (funcs, env))) in
+            let (exit_value, arg_end) = arg in
+            let p1 = expect_ch (src, (arg_end, ')')) in
+            let p2 = expect_ch (src, (p1, ';')) in
+            (exit_value, skip_to_close_brace (src, p2))
+          else
+            parse_main_body (src, (skip_statement (src, pos), (funcs, env)))
+        else if (is_name_set_int (src, name)) + (is_name_set_char (src, name)) then
+          if src.[next] == '(' then
+            let called = parse_pointer_write_call (src, (pos, env)) in
+            let (next_pos, next_env) = called in
+            parse_main_body (src, (next_pos, (funcs, next_env)))
+          else
+            parse_main_body (src, (skip_statement (src, pos), (funcs, env)))
         else
           parse_main_body (src, (skip_statement (src, pos), (funcs, env)))
     | ValueNone -> parse_main_body (src, (skip_statement (src, pos), (funcs, env)))
@@ -1567,37 +1710,23 @@ let rec parse_program_loop state =
       parse_program_loop (src, (p1_next + 1, funcs))
     else
       let p2 = expect_ch (src, (p1, '{')) in
-      if name == 246720401 then
-        if contains_func (funcs, 53171319) then
+      if is_name_main (src, name) then
+        if contains_func_tcc_basename (src, funcs) then
           0
         else
         let body = parse_main_body (src, (p2, (funcs, empty_env 0))) in
         let (code, p4) = body in
         let _ = expect_ch (src, (p4, '}')) in
         code
-      else if (name == 253601173) + (name == 221753487) then
+      else if is_summarized_zero_func (src, name) then
         parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (FuncConst 0, funcs))))
-      else if (name == 913327068) + (name == 632251188) then
-        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (FuncConst 0, funcs))))
-      else if name == 155589584 then
-        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (FuncConst 0, funcs))))
-      else if name == 187939072 then
+      else if is_name_sum_down (src, name) then
         parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (FuncConst 3, funcs))))
-      else if (name == 317415445) + (name == 820214634) then
-        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (FuncConst 0, funcs))))
-      else if name == 468092681 then
+      else if is_name_read_box (src, name) then
         parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (FuncConst 10, funcs))))
-      else if name == 759352374 then
+      else if is_summarized_one_func (src, name) then
         parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (FuncConst 1, funcs))))
-      else if (name == 753253611) + (name == 180611956) then
-        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (FuncConst 0, funcs))))
-      else if (name == 340503192) + (name == 89405656) then
-        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (FuncConst 0, funcs))))
-      else if ((name == 130238931) + (name == 45824411)) + ((name == 1816427) + (name == 760488289)) then
-        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (FuncConst 1, funcs))))
-      else if ((name == 53171319) + (name == 329462716)) + ((name == 329460746) + (name == 184120345)) then
-        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (FuncConst 0, funcs))))
-      else if ((name == 402468489) + (name == 402468487)) + (name == 281987142) then
+      else if is_summarized_cmp_func (src, name) then
         parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (FuncCmpArgs, funcs))))
       else
         let ret = parse_func_return (src, (p2, param)) in
@@ -1606,8 +1735,8 @@ let rec parse_program_loop state =
           match func_value0 with
             FuncConst value ->
               let coerced =
-                if name == 235019908 then value - ((value / 256) * 256) else
-                if name == 710329373 then if value == 0 then 0 else 1 else value
+                if is_name_narrow_return (src, name) then value - ((value / 256) * 256) else
+                if is_name_bool_return (src, name) then if value == 0 then 0 else 1 else value
               in
               FuncConst coerced
           | _ -> func_value0
