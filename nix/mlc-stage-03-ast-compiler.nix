@@ -75,6 +75,9 @@ stageRun {
         printf 'let c = Cell.create 0\nCell.set c 40 + 39; write_byte (Cell.get c)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-cell-set-expr.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-cell-set-expr.mzbc)"
         test "$actual" = O
+        printf 'let inner = Cell.create 88\nlet c = Cell.create inner\nCell.set inner 79; let got = Cell.get c in write_byte (Cell.get got)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-nested-cell.mzbc
+        actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-nested-cell.mzbc)"
+        test "$actual" = O
         printf 'debug_string "TRACE"; write_byte 79' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-debug-string.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-debug-string.mzbc 2> 03-debug-string.err)"
         test "$actual" = O
@@ -214,6 +217,12 @@ stageRun {
         if printf 'let a = Array.create 1 79\na.(0) <- "x"' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-array-set-type-error.mzbc; then
           exit 1
         fi
+        if printf 'let c = Cell.create (Cell.create 79)\nCell.set c (Cell.create "x")' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-nested-cell-set-type-error.mzbc; then
+          exit 1
+        fi
+        if printf 'let a = Array.create 1 (Cell.create 79)\na.(0) <- Cell.create "x"' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-nested-array-set-type-error.mzbc; then
+          exit 1
+        fi
         if printf 'let s = "OK"\ns.[0] <- 79' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-string-index-set-type-error.mzbc; then
           exit 1
         fi
@@ -255,6 +264,7 @@ stageRun {
     install -Dm644 03-bytes-set-char.mzbc "$out/share/mlc/stages/03-bytes-set-char.mzbc"
     install -Dm644 03-cell.mzbc "$out/share/mlc/stages/03-cell.mzbc"
     install -Dm644 03-cell-set-expr.mzbc "$out/share/mlc/stages/03-cell-set-expr.mzbc"
+    install -Dm644 03-nested-cell.mzbc "$out/share/mlc/stages/03-nested-cell.mzbc"
     install -Dm644 03-debug-string.mzbc "$out/share/mlc/stages/03-debug-string.mzbc"
     install -Dm644 03-debug-byte.mzbc "$out/share/mlc/stages/03-debug-byte.mzbc"
     install -Dm644 03-debug-int.mzbc "$out/share/mlc/stages/03-debug-int.mzbc"

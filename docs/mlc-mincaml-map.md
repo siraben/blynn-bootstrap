@@ -141,15 +141,17 @@ Stage 03 also type-checks sequencing with `;`, requiring the left expression to
 have type `unit` before emitting the right expression. Its typed integer core
 now covers `read_byte`, literal `write_string`, string literals as immutable
 blocks, `String.length` over literal and bound strings, `Bytes.create` with
-arithmetic size expressions, `Bytes.length`, `s.[i]`, `b.[i]`, arithmetic
-index expressions, `b.[i] <- ch`, arithmetic and char-literal byte-value
-expressions, stderr-only `debug_byte` / `debug_string` / decimal `debug_int` /
+arithmetic size expressions, `Bytes.length`, typed `Array.create`,
+`s.[i]`, `b.[i]`, `a.(i)`, arithmetic index expressions, `b.[i] <- ch`,
+`a.(i) <- value`, arithmetic and char-literal byte-value expressions,
+stderr-only `debug_byte` / `debug_string` / decimal `debug_int` /
 one-integer `debug_printf`,
 raw and escaped char literals, `()`,
 `+`, `-`, `*`, `/`, unary `-`, boolean `!`, ML-style `=` plus transitional
 `==`, `!=`, `<`, `<=`, `>`, and `>=`, and its program parser accepts
 ignored leading `type` declaration lines, declaration-style top-level `let`,
 and pair destructuring by lowering them to the same checked expression AST.
+Type equality is recursive for nested pair, cell, and array element types.
 The ignored type preamble is a parser-entry checkpoint toward compiling
 compiler-shaped sources with real ADTs later; constructors and patterns are
 not typed in stage 03 yet.

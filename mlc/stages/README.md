@@ -114,8 +114,8 @@ Current stages:
   guards must type as `bool`, expression-level `let ... in ...`,
   declaration-style top-level `let` bindings, pair construction, pair
   destructuring, top-level pair destructuring, typed imperative arrays/cells via
-  `Cell.create` / `Cell.get` / `Cell.set`, full-input consumption, and static
-  type errors.
+  `Cell.create` / `Cell.get` / `Cell.set`, recursive equality for nested
+  array/cell element types, full-input consumption, and static type errors.
 
 Planned stages:
 

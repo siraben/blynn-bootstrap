@@ -1163,16 +1163,6 @@ let rec lookup_tenv state =
   if head == name then typ else
   if ident_eq (src, (head, name)) == 1 then typ else lookup_tenv (src, (tail, name))
 in
-let rec is_cell_ty ty =
-  match ty with
-    TyMore more -> (match more with TyCell inner -> let _ = inner in 1 | _ -> 0)
-  | _ -> 0
-in
-let rec is_array_ty ty =
-  match ty with
-    TyMore more -> (match more with TyArray inner -> let _ = inner in 1 | _ -> 0)
-  | _ -> 0
-in
 let rec same_ty state =
   let (left, right) = state in
   match left with
@@ -1184,11 +1174,15 @@ let rec same_ty state =
         TyString -> (match right with TyMore right_more -> (match right_more with TyString -> 1 | _ -> 0) | _ -> 0)
       | TyBytes -> (match right with TyMore right_more -> (match right_more with TyBytes -> 1 | _ -> 0) | _ -> 0)
       | TyCell left_inner ->
-          let _ = left_inner in
-          is_cell_ty right
+          (match right with
+            TyMore right_more ->
+              (match right_more with TyCell right_inner -> same_ty (left_inner, right_inner) | _ -> 0)
+          | _ -> 0)
       | TyArray left_inner ->
-          let _ = left_inner in
-          is_array_ty right
+          (match right with
+            TyMore right_more ->
+              (match right_more with TyArray right_inner -> same_ty (left_inner, right_inner) | _ -> 0)
+          | _ -> 0)
       | TyPair left_pair ->
           match right with
             TyMore right_more ->

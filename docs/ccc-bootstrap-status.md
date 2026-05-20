@@ -24,7 +24,9 @@ plan requirement.
 
 Stage 4a also currently gates typed `Array.create`, `a.(i)` reads, and
 `a.(i) <- value` writes, including static rejection when array values are used
-as bytes or element writes use the wrong type.
+as bytes or element writes use the wrong type. Its type equality is recursive
+for nested array/cell element types, with checks for nested cell and nested
+array write mismatches.
 
 ## Supporting Artifacts
 
