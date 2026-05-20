@@ -473,7 +473,7 @@ in
 let rec ident_eq state =
   let (src, pair) = state in
   let (left, right) = pair in
-  ident_eq_loop (src, (left, right))
+  if left == right then 1 else ident_eq_loop (src, (left, right))
 in
 let rec p_try_ident state =
   let (src, pos0) = state in
@@ -839,10 +839,10 @@ let rec parse_expr_prec state =
         let bind_pos = skip_space (src, pos + 3) in
         if src.[bind_pos] == '(' then
           let name1 = parse_ident (src, bind_pos + 1) in
-          let (name1_hash, name1_end0) = name1 in
+          let (name1_pos, name1_end0) = name1 in
           let comma = need_char (src, (name1_end0, ',')) in
           let name2 = parse_ident (src, comma) in
-          let (name2_hash, name2_end0) = name2 in
+          let (name2_pos, name2_end0) = name2 in
           let after_names = need_char (src, (name2_end0, ')')) in
           let eq_pos = need_char (src, (after_names, '=')) in
           let rhs = parse_expr_prec (src, (eq_pos, (1, (0, (0, EInt 0))))) in
@@ -850,7 +850,7 @@ let rec parse_expr_prec state =
           let body_pos = need_in (src, rhs_end) in
           let body = parse_expr_prec (src, (body_pos, (1, (0, (0, EInt 0))))) in
           let (body_ast, body_end) = body in
-          (EMore (EMore2 (EMore3 (EMore4 (EMore5 (ELetPair (name1_hash, (name2_hash, (rhs_ast, body_ast)))))))), body_end)
+          (EMore (EMore2 (EMore3 (EMore4 (EMore5 (ELetPair (name1_pos, (name2_pos, (rhs_ast, body_ast)))))))), body_end)
         else
           let ident = parse_ident (src, bind_pos) in
           let (name, name_end) = ident in
@@ -1003,10 +1003,10 @@ and parse_top_let_binding state =
   let (let_pos, bind_pos) = pair in
     if src.[bind_pos] == '(' then
       let name1 = parse_ident (src, bind_pos + 1) in
-      let (name1_hash, name1_end0) = name1 in
+      let (name1_pos, name1_end0) = name1 in
       let comma = need_char (src, (name1_end0, ',')) in
       let name2 = parse_ident (src, comma) in
-      let (name2_hash, name2_end0) = name2 in
+      let (name2_pos, name2_end0) = name2 in
       let after_names = need_char (src, (name2_end0, ')')) in
       let eq_pos = need_char (src, (after_names, '=')) in
       let rhs = parse_expr_flag (src, (eq_pos, 0)) in
@@ -1015,7 +1015,7 @@ and parse_top_let_binding state =
       if is_in_at (src, after_rhs) then ExprSome (parse_expr (src, let_pos)) else
         let body = parse_program (src, after_rhs) in
         let (body_ast, body_end) = body in
-        ExprSome (let_pair_expr (name1_hash, (name2_hash, (rhs_ast, body_ast))), body_end)
+        ExprSome (let_pair_expr (name1_pos, (name2_pos, (rhs_ast, body_ast))), body_end)
     else
       let ident = parse_ident (src, bind_pos) in
       let (name, name_end) = ident in
@@ -1043,6 +1043,7 @@ let rec lookup_tenv state =
   let (head, rest) = env in
   let (typ, tail) = rest in
   if head < 0 then fail 0 else
+  if head == name then typ else
   if ident_eq (src, (head, name)) == 1 then typ else lookup_tenv (src, (tail, name))
 in
 let rec same_ty state =
@@ -1236,6 +1237,7 @@ let rec lookup_env state =
   let (name, rest) = env in
   let (depth, tail) = rest in
   if name < 0 then fail 0 else
+  if name == want then depth else
   if ident_eq (src, (name, want)) == 1 then depth else lookup_env (src, (tail, want))
 in
 let rec emit_string_tail state =
