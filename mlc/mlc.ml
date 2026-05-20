@@ -2316,6 +2316,6 @@ let rec compile_program src =
 	  else
     emit_byte_source (src, pos)
 in
-let source = Bytes.create 131072 in
+let source = Bytes.create 196608 in
 let _ = read_all (source, 0) in
 compile_program source

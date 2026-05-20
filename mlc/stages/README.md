@@ -123,7 +123,7 @@ Current stages:
   payload constructors and self-recursive/earlier named ADT payload references,
   direct parenthesized pair and nested pair payload construction,
   parenthesized tuple payload types, constructor payload type rejection,
-  two-arm constructor `match` expressions for nullary, unary
+  two- and three-arm constructor `match` expressions for nullary, unary
   payload, unary wildcard payload, tuple payload, tuple wildcard payload,
   nested tuple payload, wildcard, and default-variable fallback patterns
   lowered to tag tests, field extraction, and branches, recursive equality for

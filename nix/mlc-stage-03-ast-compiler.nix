@@ -163,7 +163,7 @@ stageRun {
         printf 'type left = L | LL of int\ntype right = R | RR of int\nlet x = 79\nwrite_byte x' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-leading-types.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-leading-types.mzbc)"
         test "$actual" = O
-        printf 'type maybe = None | Some of int\ntype box = Box of maybe | Empty\nwrite_byte (match Box (Some 79) with | Box value -> match value with | Some ch -> ch | None -> 88 | Empty -> 88)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-cross-adt-payload.mzbc
+        printf 'type maybe = None | Some of int\ntype box = Box of maybe | Empty\nwrite_byte (match Box (Some 79) with | Box value -> (match value with | Some ch -> ch | None -> 88) | Empty -> 88)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-cross-adt-payload.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-cross-adt-payload.mzbc)"
         test "$actual" = O
         printf 'type byte = Byte of int | Empty\nlet x = Byte 79\nwrite_byte 79' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-unary-ctor.mzbc
@@ -180,6 +180,12 @@ stageRun {
         test "$actual" = O
         printf "type flag = Yes | No\nlet y = 'O' in write_byte (match No with | Yes -> 'X' | No -> y)" | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-match-env.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-adt-match-env.mzbc)"
+        test "$actual" = O
+        printf 'type letter = A | B | C\nwrite_byte (match C with | A -> 88 | B -> 88 | C -> 79)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-match-three.mzbc
+        actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-adt-match-three.mzbc)"
+        test "$actual" = O
+        printf 'type byte = Byte of int | Empty | Other\nwrite_byte (match Byte 79 with | Empty -> 88 | Byte x -> x | _ -> 88)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-match-three-payload.mzbc
+        actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-adt-match-three-payload.mzbc)"
         test "$actual" = O
         printf 'type byte = Byte of int | Empty\nwrite_byte (match Byte 79 with | Byte x -> x | Empty -> 88)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-match-payload-first.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-adt-match-payload-first.mzbc)"
@@ -373,6 +379,9 @@ stageRun {
         if printf 'type byte = Byte of int | Empty\nwrite_byte (match Empty with | Byte x -> x | other y -> 79)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-match-default-extra-bind-error.mzbc; then
           exit 1
         fi
+        if printf 'type letter = A | B | C\nwrite_byte (match B with | A -> 88 | other -> 79 | B -> 88)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-match-nonfinal-default-error.mzbc; then
+          exit 1
+        fi
         if printf 'type byte = Byte of int | Empty\nwrite_byte (match Empty with | Byte x -> x | Missing -> 79)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-match-unknown-ctor-error.mzbc; then
           exit 1
         fi
@@ -453,6 +462,8 @@ stageRun {
     install -Dm644 03-adt-match-yes.mzbc "$out/share/mlc/stages/03-adt-match-yes.mzbc"
     install -Dm644 03-adt-match-no.mzbc "$out/share/mlc/stages/03-adt-match-no.mzbc"
     install -Dm644 03-adt-match-env.mzbc "$out/share/mlc/stages/03-adt-match-env.mzbc"
+    install -Dm644 03-adt-match-three.mzbc "$out/share/mlc/stages/03-adt-match-three.mzbc"
+    install -Dm644 03-adt-match-three-payload.mzbc "$out/share/mlc/stages/03-adt-match-three-payload.mzbc"
     install -Dm644 03-adt-match-payload-first.mzbc "$out/share/mlc/stages/03-adt-match-payload-first.mzbc"
     install -Dm644 03-adt-match-payload-second.mzbc "$out/share/mlc/stages/03-adt-match-payload-second.mzbc"
     install -Dm644 03-adt-match-payload-env.mzbc "$out/share/mlc/stages/03-adt-match-payload-env.mzbc"

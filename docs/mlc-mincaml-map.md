@@ -165,13 +165,14 @@ call sites, nested pair payloads can use parenthesized tuple types and direct
 nested tuple construction, and ADT values are rejected where an `int` is
 required.
 Type equality is recursive for nested pair, cell, array, and ADT element types.
-The first stage-03 pattern slice parses two-arm constructor `match`
+The first stage-03 pattern slice parses two- and three-arm constructor `match`
 expressions for nullary cases, unary payload binders, direct tuple payload
 binders with wildcard fields, direct nested tuple payload binders on either
 side of a pair payload, unary wildcard payload binders, wildcard fallback arms,
-and default-variable fallback arms. It checks both arms against the scrutinee
-ADT type and a shared result type, rejects missing or extra payload binders,
-and lowers the branch to `GETTAG` tests plus field extraction for payloads.
+and default-variable fallback arms. It checks arms against the scrutinee ADT
+type and a shared result type, rejects missing or extra payload binders, rejects
+non-final default arms in three-arm matches, and lowers branches to `GETTAG`
+tests plus field extraction for payloads.
 Exhaustiveness checks and general decision trees remain later stage-03 work.
 
 The older `mlc-seed.c` is deliberately smaller than the full language and is
