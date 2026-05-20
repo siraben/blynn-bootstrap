@@ -241,8 +241,9 @@ static unsigned read_u8(void)
 {
   long out;
   if (pc >= code_len) die("truncated instruction");
+  out = code[pc];
+  if (out < 0) out = out + 256;
   pc = pc + 1;
-  out = byte_at(code, pc - 1);
   return (unsigned)out;
 }
 
