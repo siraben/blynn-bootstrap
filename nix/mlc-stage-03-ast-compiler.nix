@@ -163,6 +163,12 @@ stageRun {
         printf 'type left = L | LL of int\ntype right = R | RR of int\nlet x = 79\nwrite_byte x' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-leading-types.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-leading-types.mzbc)"
         test "$actual" = O
+        printf 'type byte = Byte of int | Empty\nlet x = Byte 79\nwrite_byte 79' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-unary-ctor.mzbc
+        actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-adt-unary-ctor.mzbc)"
+        test "$actual" = O
+        printf 'type byte = Byte of int | Empty\nlet x = Empty\nwrite_byte 79' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-nullary-ctor.mzbc
+        actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-adt-nullary-ctor.mzbc)"
+        test "$actual" = O
         printf 'let (x, y) = (40, 39) in write_byte (x + y)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-pair-let.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-pair-let.mzbc)"
         test "$actual" = O
@@ -265,6 +271,12 @@ stageRun {
         if printf '79; write_byte 75' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-sequence-type-error.mzbc; then
           exit 1
         fi
+        if printf 'type byte = Byte of int | Empty\nwrite_byte (Byte 79)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-write-byte-type-error.mzbc; then
+          exit 1
+        fi
+        if printf 'type byte = Byte of int | Empty\nlet x = Byte "x"\nwrite_byte 79' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-payload-type-error.mzbc; then
+          exit 1
+        fi
   '';
   installScript = ''
     install -Dm644 03-ast-compiler.ml "$out/share/mlc/stages/03-ast-compiler.ml"
@@ -315,6 +327,8 @@ stageRun {
     install -Dm644 03-let-rec-and-three.mzbc "$out/share/mlc/stages/03-let-rec-and-three.mzbc"
     install -Dm644 03-leading-type.mzbc "$out/share/mlc/stages/03-leading-type.mzbc"
     install -Dm644 03-leading-types.mzbc "$out/share/mlc/stages/03-leading-types.mzbc"
+    install -Dm644 03-adt-unary-ctor.mzbc "$out/share/mlc/stages/03-adt-unary-ctor.mzbc"
+    install -Dm644 03-adt-nullary-ctor.mzbc "$out/share/mlc/stages/03-adt-nullary-ctor.mzbc"
     install -Dm644 03-pair-let.mzbc "$out/share/mlc/stages/03-pair-let.mzbc"
     install -Dm644 03-top-pair-def.mzbc "$out/share/mlc/stages/03-top-pair-def.mzbc"
     install -Dm644 03-sequence.mzbc "$out/share/mlc/stages/03-sequence.mzbc"

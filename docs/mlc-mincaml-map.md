@@ -149,16 +149,18 @@ one-integer `debug_printf`,
 raw and escaped char literals, `()`,
 `+`, `-`, `*`, `/`, unary `-`, boolean `!`, ML-style `=` plus transitional
 `==`, `!=`, `<`, `<=`, `>`, and `>=`, and its program parser accepts
-ignored leading `type` declaration lines, declaration-style top-level `let`,
+leading variant `type` declarations, declaration-style top-level `let`,
 the first typed direct unary `let rec f x = ...` / `f arg` slice for
 `int -> int` functions, including direct-call targets after earlier top-level
 bindings, a function-target environment for nested direct `let rec` calls,
 bounded `let rec ... and ...` groups up to three functions, and pair
 destructuring, by lowering them to the same checked expression AST.
-Type equality is recursive for nested pair, cell, and array element types.
-The ignored type preamble is a parser-entry checkpoint toward compiling
-compiler-shaped sources with real ADTs later; constructors and patterns are
-not typed in stage 03 yet.
+Leading variant `type` declarations now build a constructor environment for
+typed nullary and unary constructors. Constructor expressions lower to tagged
+VM blocks, constructor payloads are statically checked, and ADT values are
+rejected where an `int` is required.
+Type equality is recursive for nested pair, cell, array, and ADT element types.
+Pattern syntax is still a later stage-03 gap.
 
 The older `mlc-seed.c` is deliberately smaller than the full language and is
 now transitional. It is a tiny recursive-descent compiler for `let` bindings,
