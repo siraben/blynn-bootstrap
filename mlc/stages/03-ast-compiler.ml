@@ -455,20 +455,31 @@ in
 let rec parse_number state =
   p_force_expr (p_try_number state)
 in
-let rec ident_hash n =
-  n - ((n / 1000000007) * 1000000007)
-in
 let rec parse_ident_loop state =
   let (src, pair) = state in
-  let (pos, acc) = pair in
+  let (start, pos) = pair in
   let ch = src.[pos] in
-  if is_ident ch then parse_ident_loop (src, (pos + 1, ident_hash ((acc * 131) + ch))) else (acc, pos)
+  if is_ident ch then parse_ident_loop (src, (start, pos + 1)) else (start, pos)
+in
+let rec ident_eq_loop state =
+  let (src, pair) = state in
+  let (left, right) = pair in
+  if is_ident (src.[left]) == 0 then
+    if is_ident (src.[right]) == 1 then 0 else 1
+  else
+  if is_ident (src.[right]) == 0 then 0 else
+  if src.[left] == src.[right] then ident_eq_loop (src, (left + 1, right + 1)) else 0
+in
+let rec ident_eq state =
+  let (src, pair) = state in
+  let (left, right) = pair in
+  ident_eq_loop (src, (left, right))
 in
 let rec p_try_ident state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
   let ch = src.[pos] in
-  if is_alpha ch then ValueOk (parse_ident_loop (src, (pos + 1, ch))) else ValueErr
+  if is_alpha ch then ValueOk (parse_ident_loop (src, (pos, pos + 1))) else ValueErr
 in
 let rec parse_ident state =
   p_force_value (p_try_ident state)
@@ -1027,11 +1038,12 @@ let rec extend_tenv state =
   (name, (typ, env))
 in
 let rec lookup_tenv state =
-  let (env, name) = state in
+  let (src, pair) = state in
+  let (env, name) = pair in
   let (head, rest) = env in
   let (typ, tail) = rest in
-  if head == name then typ else
-  if head < 0 then fail 0 else lookup_tenv (tail, name)
+  if head < 0 then fail 0 else
+  if ident_eq (src, (head, name)) == 1 then typ else lookup_tenv (src, (tail, name))
 in
 let rec same_ty state =
   let (left, right) = state in
@@ -1054,100 +1066,101 @@ let rec need_ty state =
   if same_ty (got, want) == 1 then 0 else fail 0
 in
 let rec infer state =
-  let (env, ast) = state in
+  let (src, pair0) = state in
+  let (env, ast) = pair0 in
   match ast with
     EInt value -> let _ = value in TyInt
-  | EVar name -> lookup_tenv (env, name)
+  | EVar name -> lookup_tenv (src, (env, name))
   | EBool value -> let _ = value in TyBool
   | EMore more ->
       match more with
         EWriteByte expr ->
-          let _ = need_ty (infer (env, expr), TyInt) in
+          let _ = need_ty (infer (src, (env, expr)), TyInt) in
           TyUnit
       | EAdd pair ->
           let (left, right) = pair in
-          let _ = need_ty (infer (env, left), TyInt) in
-          let _ = need_ty (infer (env, right), TyInt) in
+          let _ = need_ty (infer (src, (env, left)), TyInt) in
+          let _ = need_ty (infer (src, (env, right)), TyInt) in
           TyInt
       | ESub pair ->
           let (left, right) = pair in
-          let _ = need_ty (infer (env, left), TyInt) in
-          let _ = need_ty (infer (env, right), TyInt) in
+          let _ = need_ty (infer (src, (env, left)), TyInt) in
+          let _ = need_ty (infer (src, (env, right)), TyInt) in
           TyInt
       | EMore2 more2 ->
           match more2 with
             EMul pair ->
               let (left, right) = pair in
-              let _ = need_ty (infer (env, left), TyInt) in
-              let _ = need_ty (infer (env, right), TyInt) in
+              let _ = need_ty (infer (src, (env, left)), TyInt) in
+              let _ = need_ty (infer (src, (env, right)), TyInt) in
               TyInt
           | EDiv pair ->
               let (left, right) = pair in
-              let _ = need_ty (infer (env, left), TyInt) in
-              let _ = need_ty (infer (env, right), TyInt) in
+              let _ = need_ty (infer (src, (env, left)), TyInt) in
+              let _ = need_ty (infer (src, (env, right)), TyInt) in
               TyInt
           | EEq pair2 ->
               let (left, right) = pair2 in
-              let left_ty = infer (env, left) in
-              let _ = need_ty (infer (env, right), left_ty) in
+              let left_ty = infer (src, (env, left)) in
+              let _ = need_ty (infer (src, (env, right)), left_ty) in
               TyBool
           | EMore3 more3 ->
               match more3 with
                 ENe pair2 ->
                   let (left, right) = pair2 in
-                  let left_ty = infer (env, left) in
-                  let _ = need_ty (infer (env, right), left_ty) in
+                  let left_ty = infer (src, (env, left)) in
+                  let _ = need_ty (infer (src, (env, right)), left_ty) in
                   TyBool
               | ELt pair ->
                   let (left, right) = pair in
-                  let _ = need_ty (infer (env, left), TyInt) in
-                  let _ = need_ty (infer (env, right), TyInt) in
+                  let _ = need_ty (infer (src, (env, left)), TyInt) in
+                  let _ = need_ty (infer (src, (env, right)), TyInt) in
                   TyBool
               | ELe pair ->
                   let (left, right) = pair in
-                  let _ = need_ty (infer (env, left), TyInt) in
-                  let _ = need_ty (infer (env, right), TyInt) in
+                  let _ = need_ty (infer (src, (env, left)), TyInt) in
+                  let _ = need_ty (infer (src, (env, right)), TyInt) in
                   TyBool
               | EMore4 more4 ->
                   match more4 with
                     EGt pair ->
                       let (left, right) = pair in
-                      let _ = need_ty (infer (env, left), TyInt) in
-                      let _ = need_ty (infer (env, right), TyInt) in
+                      let _ = need_ty (infer (src, (env, left)), TyInt) in
+                      let _ = need_ty (infer (src, (env, right)), TyInt) in
                       TyBool
                   | EGe pair ->
                       let (left, right) = pair in
-                      let _ = need_ty (infer (env, left), TyInt) in
-                      let _ = need_ty (infer (env, right), TyInt) in
+                      let _ = need_ty (infer (src, (env, left)), TyInt) in
+                      let _ = need_ty (infer (src, (env, right)), TyInt) in
                       TyBool
                   | EIf parts ->
                       let (cond, branches) = parts in
                       let (yes, no) = branches in
-                      let _ = need_ty (infer (env, cond), TyBool) in
-                      let yes_ty = infer (env, yes) in
-                      let _ = need_ty (infer (env, no), yes_ty) in
+                      let _ = need_ty (infer (src, (env, cond)), TyBool) in
+                      let yes_ty = infer (src, (env, yes)) in
+                      let _ = need_ty (infer (src, (env, no)), yes_ty) in
                       yes_ty
                   | EMore5 more5 ->
                       match more5 with
                         ELet parts ->
                           let (name, body_pair) = parts in
                           let (rhs, body) = body_pair in
-                          let rhs_ty = infer (env, rhs) in
-                          infer (extend_tenv (name, (rhs_ty, env)), body)
+                          let rhs_ty = infer (src, (env, rhs)) in
+                          infer (src, (extend_tenv (name, (rhs_ty, env)), body))
                         | EPair parts ->
                             let (left, right) = parts in
-                            TyMore (TyPair (infer (env, left), infer (env, right)))
+                            TyMore (TyPair (infer (src, (env, left)), infer (src, (env, right))))
                       | ELetPair parts ->
                           let (name1, rest1) = parts in
                           let (name2, rest2) = rest1 in
                           let (rhs, body) = rest2 in
-                          let rhs_ty = infer (env, rhs) in
+                          let rhs_ty = infer (src, (env, rhs)) in
                           (match rhs_ty with
                             TyMore more ->
                               (match more with
                                 TyPair pair_ty ->
                                   let (left_ty, right_ty) = pair_ty in
-                                  infer (extend_tenv (name2, (right_ty, extend_tenv (name1, (left_ty, env)))), body)
+                                  infer (src, (extend_tenv (name2, (right_ty, extend_tenv (name1, (left_ty, env)))), body))
                               | TyString -> fail 0
                               | TyBytes -> fail 0)
                           | TyInt -> fail 0
@@ -1157,30 +1170,30 @@ let rec infer state =
                           match more6 with
                             ESeq parts ->
                               let (left, right) = parts in
-                              let _ = need_ty (infer (env, left), TyUnit) in
-                              infer (env, right)
+                              let _ = need_ty (infer (src, (env, left)), TyUnit) in
+                              infer (src, (env, right))
                           | EDebugByte expr ->
-                              let _ = need_ty (infer (env, expr), TyInt) in
+                              let _ = need_ty (infer (src, (env, expr)), TyInt) in
                               TyUnit
                             | EReadByte -> TyInt
                             | EMore7 more7 ->
                                 match more7 with
                                   EString pos -> let _ = pos in TyMore TyString
                                 | EStringLength expr ->
-                                    let _ = need_ty (infer (env, expr), TyMore TyString) in
+                                    let _ = need_ty (infer (src, (env, expr)), TyMore TyString) in
                                     TyInt
                                 | EBytesCreate expr ->
-                                    let _ = need_ty (infer (env, expr), TyInt) in
+                                    let _ = need_ty (infer (src, (env, expr)), TyInt) in
                                     TyMore TyBytes
                                 | EMore8 more8 ->
                                     match more8 with
                                     EBytesLength expr ->
-                                      let _ = need_ty (infer (env, expr), TyMore TyBytes) in
+                                      let _ = need_ty (infer (src, (env, expr)), TyMore TyBytes) in
                                       TyInt
                                   | EIndex parts ->
                                       let (base, index) = parts in
-                                      let base_ty = infer (env, base) in
-                                      let _ = need_ty (infer (env, index), TyInt) in
+                                      let base_ty = infer (src, (env, base)) in
+                                      let _ = need_ty (infer (src, (env, index)), TyInt) in
                                       (match base_ty with
                                         TyMore more ->
                                           (match more with
@@ -1193,14 +1206,14 @@ let rec infer state =
                                   | ESetIndex parts ->
                                       let (base, rest) = parts in
                                       let (index, value) = rest in
-                                      let _ = need_ty (infer (env, base), TyMore TyBytes) in
-                                      let _ = need_ty (infer (env, index), TyInt) in
-                                      let _ = need_ty (infer (env, value), TyInt) in
+                                      let _ = need_ty (infer (src, (env, base)), TyMore TyBytes) in
+                                      let _ = need_ty (infer (src, (env, index)), TyInt) in
+                                      let _ = need_ty (infer (src, (env, value)), TyInt) in
                                       TyUnit
                                   | EMore9 more9 ->
                                       match more9 with
                                         EDebugInt expr ->
-                                          let _ = need_ty (infer (env, expr), TyInt) in
+                                          let _ = need_ty (infer (src, (env, expr)), TyInt) in
                                           TyUnit
                                       | EUnit -> TyUnit
 in
@@ -1218,11 +1231,12 @@ let rec extend_env state =
   (name, (0, shift_env env))
 in
 let rec lookup_env state =
-  let (env, want) = state in
+  let (src, pair) = state in
+  let (env, want) = pair in
   let (name, rest) = env in
   let (depth, tail) = rest in
-  if name == want then depth else
-  if name < 0 then fail 0 else lookup_env (tail, want)
+  if name < 0 then fail 0 else
+  if ident_eq (src, (name, want)) == 1 then depth else lookup_env (src, (tail, want))
 in
 let rec emit_string_tail state =
   let (src, pair) = state in
@@ -1260,7 +1274,7 @@ let rec emit_expr state =
   let (env, emit) = pair_src in
   match ast with
     EInt value -> emit_const (emit, value)
-  | EVar name -> emit_acc (emit, lookup_env (env, name))
+  | EVar name -> emit_acc (emit, lookup_env (src, (env, name)))
   | EBool value -> emit_const (emit, value)
   | EMore more ->
       match more with
@@ -1450,7 +1464,7 @@ let rec emit_program src =
   let (ast, pos) = parsed in
   let done_pos = skip_space (src, pos) in
   let _ = if src.[done_pos] == 0 then 0 else fail 0 in
-  let _ = need_ty (infer (empty_tenv 0, ast), TyUnit) in
+  let _ = need_ty (infer (src, (empty_tenv 0, ast)), TyUnit) in
   let code_len = emit_expr (ast, (src, (empty_env 0, 0))) in
   let _ = emit_header (code_len + 1) in
   let _ = emit_expr (ast, (src, (empty_env 0, 1))) in

@@ -247,15 +247,40 @@ let rec parse_number input =
   if is_digit ch then parse_number_loop (src, (ch - '0', pos + 1))
   else parse_fail 0
 in
-let rec ident_hash n =
-  n - ((n / 1000000007) * 1000000007)
-in
 let rec parse_ident_loop state =
   let (src, pair) = state in
-  let (acc, pos) = pair in
+  let (start, pos) = pair in
   let ch = src.[pos] in
-  if is_ident ch then parse_ident_loop (src, (ident_hash ((acc * 131) + ch), pos + 1))
-  else (acc, pos)
+  if is_ident ch then parse_ident_loop (src, (start, pos + 1))
+  else (start, pos)
+in
+let rec ident_eq_loop state =
+  let (src, pair) = state in
+  let (left, right) = pair in
+  if is_ident (src.[left]) == 0 then
+    if is_ident (src.[right]) == 1 then 0 else 1
+  else
+  if is_ident (src.[right]) == 0 then 0 else
+  if src.[left] == src.[right] then ident_eq_loop (src, (left + 1, right + 1)) else 0
+in
+let rec ident_eq state =
+  let (src, pair) = state in
+  let (left, right) = pair in
+  ident_eq_loop (src, (left, right))
+in
+let rec ident_named_loop state =
+  let (src, pair) = state in
+  let (pos, pair2) = pair in
+  let (text, index) = pair2 in
+  if index == String.length text then
+    if is_ident (src.[pos]) == 1 then 0 else 1
+  else
+  if src.[pos] == text.[index] then ident_named_loop (src, (pos + 1, (text, index + 1))) else 0
+in
+let rec ident_named state =
+  let (src, pair) = state in
+  let (name, text) = pair in
+  ident_named_loop (src, (name, (text, 0)))
 in
 let rec pack_ctor state =
   let (tag, has_arg) = state in
@@ -276,11 +301,12 @@ let rec extend_ctor state =
   (name, (packed, old))
 in
 let rec find_ctor state =
-  let (ctors, name) = state in
+  let (src, pair0) = state in
+  let (ctors, name) = pair0 in
   let (head, rest) = ctors in
   let (packed, tail) = rest in
-  if head == name then packed else
-  if head < 0 then 0 - 1 else find_ctor (tail, name)
+  if head < 0 then 0 - 1 else
+  if ident_eq (src, (head, name)) == 1 then packed else find_ctor (src, (tail, name))
 in
 let rec lookup_ctor state =
   let packed = find_ctor state in
@@ -297,32 +323,35 @@ let rec extend_func state =
   (name, (param, (body_start, old)))
 in
 let rec find_func state =
-  let (funcs, want) = state in
+  let (src, pair0) = state in
+  let (funcs, want) = pair0 in
   let (name, rest) = funcs in
   let (param, pair) = rest in
   let (body_start, tail) = pair in
   let _ = param in
   let _ = body_start in
-  if name == want then 1 else
-  if name < 0 then 0 else find_func (tail, want)
+  if name < 0 then 0 else
+  if ident_eq (src, (name, want)) == 1 then 1 else find_func (src, (tail, want))
 in
 let rec func_param state =
-  let (funcs, want) = state in
+  let (src, pair0) = state in
+  let (funcs, want) = pair0 in
   let (name, rest) = funcs in
   let (param, pair) = rest in
   let (body_start, tail) = pair in
   let _ = body_start in
-  if name == want then param else
-  if name < 0 then parse_fail 0 else func_param (tail, want)
+  if name < 0 then parse_fail 0 else
+  if ident_eq (src, (name, want)) == 1 then param else func_param (src, (tail, want))
 in
 let rec func_body_start state =
-  let (funcs, want) = state in
+  let (src, pair0) = state in
+  let (funcs, want) = pair0 in
   let (name, rest) = funcs in
   let (param, pair) = rest in
   let (body_start, tail) = pair in
   let _ = param in
-  if name == want then body_start else
-  if name < 0 then parse_fail 0 else func_body_start (tail, want)
+  if name < 0 then parse_fail 0 else
+  if ident_eq (src, (name, want)) == 1 then body_start else func_body_start (src, (tail, want))
 in
 let rec string_at_loop state =
   let (src, pair) = state in
@@ -449,7 +478,7 @@ let rec p_try_ident input =
   let pos = skip_space (src, pos0) in
   let ch = src.[pos] in
   if is_ident ch then
-    let parsed = parse_ident_loop (src, (ch, pos + 1)) in
+    let parsed = parse_ident_loop (src, (pos, pos + 1)) in
     let (name, done_pos) = parsed in
     p_ok (name, done_pos)
   else
@@ -674,15 +703,17 @@ let rec shift_env env =
   if name < 0 then env else (name, (depth + 1, shift_env (tail)))
 in
 let rec find_env input =
-  let (env, want) = input in
+  let (src, pair0) = input in
+  let (env, want) = pair0 in
   let (name, rest) = env in
   let (depth, tail) = rest in
-  if name == want then depth else
-  if name < 0 then 0 - 1 else find_env (tail, want)
+  if name < 0 then 0 - 1 else
+  if ident_eq (src, (name, want)) == 1 then depth else find_env (src, (tail, want))
 in
 let rec lookup_env input =
-  let (env, want) = input in
-  let found = find_env (env, want) in
+  let (src, pair0) = input in
+  let (env, want) = pair0 in
+  let found = find_env (src, (env, want)) in
   if found < 0 then parse_fail 0 else found
 in
 let rec extend_env input =
@@ -690,9 +721,10 @@ let rec extend_env input =
   (name, (0, shift_env (env)))
 in
 let rec bind_if_named state =
-  let (name, pair) = state in
+  let (src, pair0) = state in
+  let (name, pair) = pair0 in
   let (depth, env) = pair in
-  if name == 95 then env else (name, (depth, env))
+  if ident_named (src, (name, "_")) == 1 then env else (name, (depth, env))
 in
 let rec shift5 env =
   shift_env (shift_env (shift_env (shift_env (shift_env env))))
@@ -749,7 +781,8 @@ let rec case_payload_len input =
   if has_arg == 1 then 11 else 0
 in
 let rec case_payload_env input =
-  let (has_arg, pair) = input in
+  let (src, pair0) = input in
+  let (has_arg, pair) = pair0 in
   let (tuple, pair2) = pair in
   let (nested, pair3) = pair2 in
   let (bind1, pair4) = pair3 in
@@ -758,25 +791,26 @@ let rec case_payload_env input =
   if tuple == 1 then
     if nested == 1 then
       let base = shift5 case_env in
-      let env1 = bind_if_named (bind3, (0, base)) in
-      let env2 = bind_if_named (bind2, (1, env1)) in
-      bind_if_named (bind1, (2, env2))
+      let env1 = bind_if_named (src, (bind3, (0, base))) in
+      let env2 = bind_if_named (src, (bind2, (1, env1))) in
+      bind_if_named (src, (bind1, (2, env2)))
     else if nested == 2 then
       let base = shift5 case_env in
-      let env1 = bind_if_named (bind3, (0, base)) in
-      let env2 = bind_if_named (bind2, (1, env1)) in
-      bind_if_named (bind1, (3, env2))
+      let env1 = bind_if_named (src, (bind3, (0, base))) in
+      let env2 = bind_if_named (src, (bind2, (1, env1))) in
+      bind_if_named (src, (bind1, (3, env2)))
     else
       let base = shift_env (shift_env (shift_env case_env)) in
-      let env1 = bind_if_named (bind2, (0, base)) in
-      bind_if_named (bind1, (1, env1))
+      let env1 = bind_if_named (src, (bind2, (0, base))) in
+      bind_if_named (src, (bind1, (1, env1)))
   else if has_arg == 1 then
     extend_env (bind1, case_env)
   else
     case_env
 in
 let rec case_default_env input =
-  let (is_wild, pair) = input in
+  let (src, pair0) = input in
+  let (is_wild, pair) = pair0 in
   let (name, case_env) = pair in
   if is_wild == 1 then case_env else extend_env (name, case_env)
 in
@@ -860,12 +894,12 @@ let rec compile_simple_atom input =
   else
     let ident = parse_ident (src, pos) in
     let (name, done_pos) = ident in
-    let depth = find_env (env, name) in
+    let depth = find_env (src, (env, name)) in
     if depth >= 0 then
       let len = emit_acc (emit, depth) in
       (len, done_pos)
     else
-      let ctor = lookup_ctor (ctors, name) in
+      let ctor = lookup_ctor (src, (ctors, name)) in
       let tag = ctor_tag ctor in
       if ctor_has_arg ctor == 0 then
         let block_len = emit_makeblock (emit, (tag, 0)) in
@@ -926,7 +960,7 @@ let rec compile_simple_expr input =
 	      else
 	        let field = parse_ident (src, next1 + 1) in
 	        let (field_name, field_end) = field in
-	        let index = lookup_field (ctors, field_name) in
+	        let index = lookup_field (src, (ctors, field_name)) in
 	        let field_len = emit_getfield (emit, index) in
 	        (left_len0 + field_len, field_end)
 	    else
@@ -1139,7 +1173,7 @@ let rec compile_arg_expr input =
     else
       let field = parse_ident (src, next1 + 1) in
       let (field_name, field_end) = field in
-      let index = lookup_field (ctors, field_name) in
+      let index = lookup_field (src, (ctors, field_name)) in
       let field_len = emit_getfield (emit, index) in
       (left_len0 + field_len, field_end)
   else
@@ -1169,14 +1203,14 @@ let rec compile_expr input =
   else if src.[pos] == '{' then
     let field1 = parse_ident (src, pos + 1) in
     let (field1_name, field1_end) = field1 in
-    let field1_index = lookup_field (ctors, field1_name) in
+    let field1_index = lookup_field (src, (ctors, field1_name)) in
     let after_eq1 = p_need_char (src, (field1_end, '=')) in
     let value1 = compile_expr (src, (after_eq1, (env, (ctors, (funcs, emit))))) in
     let (value1_len, value1_end) = value1 in
     let after_semi1 = p_need_char (src, (value1_end, ';')) in
     let field2 = parse_ident (src, after_semi1) in
     let (field2_name, field2_end) = field2 in
-    let field2_index = lookup_field (ctors, field2_name) in
+    let field2_index = lookup_field (src, (ctors, field2_name)) in
     let after_eq2 = p_need_char (src, (field2_end, '=')) in
     let push_len = emit_push emit in
     let value2 = compile_expr (src, (after_eq2, (shift_env env, (ctors, (funcs, emit))))) in
@@ -1195,7 +1229,7 @@ let rec compile_expr input =
       let after_semi2 = p_need_char (src, (value2_end, ';')) in
       let field3 = parse_ident (src, after_semi2) in
       let (field3_name, field3_end) = field3 in
-      let field3_index = lookup_field (ctors, field3_name) in
+      let field3_index = lookup_field (src, (ctors, field3_name)) in
       let after_eq3 = p_need_char (src, (field3_end, '=')) in
       let push_len2 = emit_push emit in
       let value3 = compile_expr (src, (after_eq3, (shift_env (shift_env env), (ctors, (funcs, emit))))) in
@@ -1376,7 +1410,7 @@ let rec compile_expr input =
     let case1_pos = if src.[case1_pos1] == '|' then skip_space (src, case1_pos1 + 1) else case1_pos1 in
     let case1_pat = parse_ident (src, case1_pos) in
     let (case1_name, case1_pat_end0) = case1_pat in
-    let case1_ctor = lookup_ctor (ctors, case1_name) in
+    let case1_ctor = lookup_ctor (src, (ctors, case1_name)) in
     let case1_has_arg = ctor_has_arg case1_ctor in
     let case1_payload = parse_case_payload (src, (case1_pat_end0, case1_has_arg)) in
     let (case1_tuple, case1_payload2) = case1_payload in
@@ -1385,7 +1419,7 @@ let rec compile_expr input =
     let (case1_bind_right, case1_payload5) = case1_payload4 in
     let (case1_bind_third, case1_arrow) = case1_payload5 in
     let case1_body_start = expect_arrow (src, case1_arrow) in
-    let case1_env = case_payload_env (case1_has_arg, (case1_tuple, (case1_nested, (case1_bind, (case1_bind_right, (case1_bind_third, case_env)))))) in
+    let case1_env = case_payload_env (src, (case1_has_arg, (case1_tuple, (case1_nested, (case1_bind, (case1_bind_right, (case1_bind_third, case_env))))))) in
     let case1_body0 = compile_expr (src, (case1_body_start, (case1_env, (ctors, (funcs, 0))))) in
     let (case1_body_len, case1_body_end) = case1_body0 in
 	    let case2_pos = skip_space (src, p_need_char (src, (case1_body_end, '|'))) in
@@ -1394,7 +1428,7 @@ let rec compile_expr input =
       if case2_is_wild == 1 then (0 - 1, case2_pos + 1) else parse_ident (src, case2_pos)
     in
     let (case2_name, case2_pat_end0) = case2_pat in
-    let case2_found_ctor = if case2_is_wild == 1 then 0 else find_ctor (ctors, case2_name) in
+    let case2_found_ctor = if case2_is_wild == 1 then 0 else find_ctor (src, (ctors, case2_name)) in
     let case2_is_default_var = if case2_is_wild == 1 then 0 else if case2_found_ctor < 0 then is_lower_ident_start (src.[case2_pos]) else 0 in
     let case2_is_default = if case2_is_wild == 1 then 1 else case2_is_default_var in
     let case2_ctor = if case2_is_default == 1 then 0 else if case2_found_ctor < 0 then parse_fail 0 else case2_found_ctor in
@@ -1407,8 +1441,8 @@ let rec compile_expr input =
     let (case2_bind_third, case2_arrow) = case2_payload5 in
     let case2_body_start = expect_arrow (src, case2_arrow) in
     let case2_env =
-      if case2_is_default == 1 then case_default_env (case2_is_wild, (case2_name, case_env)) else
-        case_payload_env (case2_has_arg, (case2_tuple, (case2_nested, (case2_bind, (case2_bind_right, (case2_bind_third, case_env))))))
+      if case2_is_default == 1 then case_default_env (src, (case2_is_wild, (case2_name, case_env))) else
+        case_payload_env (src, (case2_has_arg, (case2_tuple, (case2_nested, (case2_bind, (case2_bind_right, (case2_bind_third, case_env)))))))
     in
     let case2_body0 = compile_expr (src, (case2_body_start, (case2_env, (ctors, (funcs, 0))))) in
     let (case2_body_len, case2_body_end) = case2_body0 in
@@ -1420,7 +1454,7 @@ let rec compile_expr input =
       if case3_is_wild == 1 then (0 - 1, case3_pos + 1) else parse_ident (src, case3_pos)
     in
     let (case3_name, case3_pat_end0) = case3_pat in
-    let case3_found_ctor = if case3_is_wild == 1 then 0 else find_ctor (ctors, case3_name) in
+    let case3_found_ctor = if case3_is_wild == 1 then 0 else find_ctor (src, (ctors, case3_name)) in
     let case3_is_default_var = if case3_is_wild == 1 then 0 else if case3_found_ctor < 0 then is_lower_ident_start (src.[case3_pos]) else 0 in
     let case3_is_default = if case3_is_wild == 1 then 1 else case3_is_default_var in
     let case3_ctor = if case3_is_default == 1 then 0 else if case3_found_ctor < 0 then parse_fail 0 else case3_found_ctor in
@@ -1433,8 +1467,8 @@ let rec compile_expr input =
     let (case3_bind_third, case3_arrow) = case3_payload5 in
     let case3_body_start = if has_case3 == 1 then expect_arrow (src, case3_arrow) else case2_body_end in
     let case3_env =
-      if case3_is_default == 1 then case_default_env (case3_is_wild, (case3_name, case_env)) else
-        case_payload_env (case3_has_arg, (case3_tuple, (case3_nested, (case3_bind, (case3_bind_right, (case3_bind_third, case_env))))))
+      if case3_is_default == 1 then case_default_env (src, (case3_is_wild, (case3_name, case_env))) else
+        case_payload_env (src, (case3_has_arg, (case3_tuple, (case3_nested, (case3_bind, (case3_bind_right, (case3_bind_third, case_env)))))))
     in
     let case3_body0 =
       if has_case3 == 1 then compile_expr (src, (case3_body_start, (case3_env, (ctors, (funcs, 0))))) else (0, case2_body_end)
@@ -1448,7 +1482,7 @@ let rec compile_expr input =
       if case4_is_wild == 1 then (0 - 1, case4_pos + 1) else parse_ident (src, case4_pos)
     in
     let (case4_name, case4_pat_end0) = case4_pat in
-    let case4_found_ctor = if case4_is_wild == 1 then 0 else find_ctor (ctors, case4_name) in
+    let case4_found_ctor = if case4_is_wild == 1 then 0 else find_ctor (src, (ctors, case4_name)) in
     let case4_is_default_var = if case4_is_wild == 1 then 0 else if case4_found_ctor < 0 then is_lower_ident_start (src.[case4_pos]) else 0 in
     let case4_is_default = if case4_is_wild == 1 then 1 else case4_is_default_var in
     let case4_ctor = if case4_is_default == 1 then 0 else if case4_found_ctor < 0 then parse_fail 0 else case4_found_ctor in
@@ -1461,8 +1495,8 @@ let rec compile_expr input =
     let (case4_bind_third, case4_arrow) = case4_payload5 in
     let case4_body_start = if has_case4 == 1 then expect_arrow (src, case4_arrow) else case3_body_end in
     let case4_env =
-      if case4_is_default == 1 then case_default_env (case4_is_wild, (case4_name, case_env)) else
-        case_payload_env (case4_has_arg, (case4_tuple, (case4_nested, (case4_bind, (case4_bind_right, (case4_bind_third, case_env))))))
+      if case4_is_default == 1 then case_default_env (src, (case4_is_wild, (case4_name, case_env))) else
+        case_payload_env (src, (case4_has_arg, (case4_tuple, (case4_nested, (case4_bind, (case4_bind_right, (case4_bind_third, case_env)))))))
     in
 	    let case4_body0 =
 	      if has_case4 == 1 then compile_expr (src, (case4_body_start, (case4_env, (ctors, (funcs, 0))))) else (0, case3_body_end)
@@ -1476,7 +1510,7 @@ let rec compile_expr input =
 	      if case5_is_wild == 1 then (0 - 1, case5_pos + 1) else parse_ident (src, case5_pos)
 	    in
 	    let (case5_name, case5_pat_end0) = case5_pat in
-	    let case5_found_ctor = if case5_is_wild == 1 then 0 else find_ctor (ctors, case5_name) in
+	    let case5_found_ctor = if case5_is_wild == 1 then 0 else find_ctor (src, (ctors, case5_name)) in
 	    let case5_is_default_var = if case5_is_wild == 1 then 0 else if case5_found_ctor < 0 then is_lower_ident_start (src.[case5_pos]) else 0 in
 	    let case5_is_default = if case5_is_wild == 1 then 1 else case5_is_default_var in
 	    let case5_ctor = if case5_is_default == 1 then 0 else if case5_found_ctor < 0 then parse_fail 0 else case5_found_ctor in
@@ -1489,8 +1523,8 @@ let rec compile_expr input =
 	    let (case5_bind_third, case5_arrow) = case5_payload5 in
 	    let case5_body_start = if has_case5 == 1 then expect_arrow (src, case5_arrow) else case4_body_end in
 	    let case5_env =
-	      if case5_is_default == 1 then case_default_env (case5_is_wild, (case5_name, case_env)) else
-	        case_payload_env (case5_has_arg, (case5_tuple, (case5_nested, (case5_bind, (case5_bind_right, (case5_bind_third, case_env))))))
+	      if case5_is_default == 1 then case_default_env (src, (case5_is_wild, (case5_name, case_env))) else
+        case_payload_env (src, (case5_has_arg, (case5_tuple, (case5_nested, (case5_bind, (case5_bind_right, (case5_bind_third, case_env)))))))
 	    in
 	    let case5_body0 =
 	      if has_case5 == 1 then compile_expr (src, (case5_body_start, (case5_env, (ctors, (funcs, 0))))) else (0, case4_body_end)
@@ -1504,7 +1538,7 @@ let rec compile_expr input =
 	      if case6_is_wild == 1 then (0 - 1, case6_pos + 1) else parse_ident (src, case6_pos)
 	    in
 	    let (case6_name, case6_pat_end0) = case6_pat in
-	    let case6_found_ctor = if case6_is_wild == 1 then 0 else find_ctor (ctors, case6_name) in
+	    let case6_found_ctor = if case6_is_wild == 1 then 0 else find_ctor (src, (ctors, case6_name)) in
 	    let case6_is_default_var = if case6_is_wild == 1 then 0 else if case6_found_ctor < 0 then is_lower_ident_start (src.[case6_pos]) else 0 in
 	    let case6_is_default = if case6_is_wild == 1 then 1 else case6_is_default_var in
 	    let case6_ctor = if case6_is_default == 1 then 0 else if case6_found_ctor < 0 then parse_fail 0 else case6_found_ctor in
@@ -1517,8 +1551,8 @@ let rec compile_expr input =
 	    let (case6_bind_third, case6_arrow) = case6_payload5 in
 	    let case6_body_start = if has_case6 == 1 then expect_arrow (src, case6_arrow) else case5_body_end in
 	    let case6_env =
-	      if case6_is_default == 1 then case_default_env (case6_is_wild, (case6_name, case_env)) else
-	        case_payload_env (case6_has_arg, (case6_tuple, (case6_nested, (case6_bind, (case6_bind_right, (case6_bind_third, case_env))))))
+	      if case6_is_default == 1 then case_default_env (src, (case6_is_wild, (case6_name, case_env))) else
+        case_payload_env (src, (case6_has_arg, (case6_tuple, (case6_nested, (case6_bind, (case6_bind_right, (case6_bind_third, case_env)))))))
 	    in
 	    let case6_body0 =
 	      if has_case6 == 1 then compile_expr (src, (case6_body_start, (case6_env, (ctors, (funcs, 0))))) else (0, case5_body_end)
@@ -1638,8 +1672,8 @@ let rec compile_expr input =
   else if is_ident (src.[pos]) then
     let parsed = parse_ident (src, pos) in
     let (name, name_end) = parsed in
-    let depth = find_env (env, name) in
-    let found_func = if depth < 0 then find_func (funcs, name) else 0 in
+    let depth = find_env (src, (env, name)) in
+    let found_func = if depth < 0 then find_func (src, (funcs, name)) else 0 in
     if found_func == 1 then
       let arg_pos = skip_space (src, name_end) in
       let arg =
@@ -1663,7 +1697,7 @@ let rec compile_expr input =
           compile_atom (src, (arg_pos, (env, (ctors, emit))))
       in
       let (arg_len, arg_end) = arg in
-      let target = func_body_start (funcs, name) in
+      let target = func_body_start (src, (funcs, name)) in
       let call_len = emit_call (emit, target) in
       let left_len = arg_len + call_len in
       let next = skip_space (src, arg_end) in
@@ -1738,7 +1772,7 @@ let rec compile_expr input =
       else
         (left_len, arg_end)
     else
-    let ctor = if depth < 0 then find_ctor (ctors, name) else 0 - 1 in
+    let ctor = if depth < 0 then find_ctor (src, (ctors, name)) else 0 - 1 in
     if ctor >= 0 then
       let tag = ctor_tag ctor in
       if ctor_is_field ctor then
@@ -1808,7 +1842,7 @@ let rec compile_expr input =
 	          else
 	            let field = parse_ident (src, next1 + 1) in
 	            let (field_name, field_end) = field in
-	            let index = lookup_field (ctors, field_name) in
+	            let index = lookup_field (src, (ctors, field_name)) in
 	            let field_len = emit_getfield (emit, index) in
 	            (left_len0 + field_len, field_end)
 	        else
@@ -1943,7 +1977,7 @@ let rec compile_expr input =
 	      else
 	        let field = parse_ident (src, next1 + 1) in
 	        let (field_name, field_end) = field in
-	        let index = lookup_field (ctors, field_name) in
+	        let index = lookup_field (src, (ctors, field_name)) in
 	        let field_len = emit_getfield (emit, index) in
 	        (left_len0 + field_len, field_end)
 	    else
