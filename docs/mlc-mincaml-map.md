@@ -160,11 +160,12 @@ typed nullary and unary constructors. Constructor expressions lower to tagged
 VM blocks, constructor payloads are statically checked, and ADT values are
 rejected where an `int` is required.
 Type equality is recursive for nested pair, cell, array, and ADT element types.
-The first stage-03 pattern slice parses two-arm nullary-constructor `match`
-expressions, checks both arms against the scrutinee ADT type and a shared result
-type, rejects unary constructor patterns, and lowers the branch to `GETTAG`
-tests. Payload patterns, defaults, exhaustiveness checks, and decision trees
-remain later stage-03 work.
+The first stage-03 pattern slice parses two-arm constructor `match`
+expressions for nullary cases and unary payload binders, checks both arms
+against the scrutinee ADT type and a shared result type, rejects missing or
+extra payload binders, and lowers the branch to `GETTAG` tests plus field
+extraction for unary payloads. Defaults, exhaustiveness checks, tuple/nested
+payload patterns, and decision trees remain later stage-03 work.
 
 The older `mlc-seed.c` is deliberately smaller than the full language and is
 now transitional. It is a tiny recursive-descent compiler for `let` bindings,

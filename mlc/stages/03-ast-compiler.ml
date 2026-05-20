@@ -631,6 +631,11 @@ in
 let rec parse_ident state =
   p_force_value (p_try_ident state)
 in
+let rec parse_match_bind state =
+  let (src, pos0) = state in
+  let pos = skip_space (src, pos0) in
+  if (src.[pos] == '-') * (src.[pos + 1] == '>') then (0 - 1, pos) else parse_ident (src, pos)
+in
 let rec unit_expr dummy =
   let _ = dummy in
   EMore (EMore2 (EMore3 (EMore4 (EMore5 (EMore6 (EMore7 (EMore8 (EMore9 EUnit))))))))
@@ -1160,14 +1165,18 @@ let rec parse_expr_prec state =
         let case1_bar = need_char (src, (need_with (src, scrutinee_end), '|')) in
         let case1_pat = parse_ident (src, case1_bar) in
         let (case1_name, case1_pat_end) = case1_pat in
-        let case1_body = parse_expr_prec (src, (need_arrow (src, case1_pat_end), (0, (0, (0, EInt 0))))) in
+        let case1_bind = parse_match_bind (src, case1_pat_end) in
+        let (case1_bind_name, case1_pat_done) = case1_bind in
+        let case1_body = parse_expr_prec (src, (need_arrow (src, case1_pat_done), (0, (0, (0, EInt 0))))) in
         let (case1_body_ast, case1_body_end) = case1_body in
         let case2_bar = need_char (src, (case1_body_end, '|')) in
         let case2_pat = parse_ident (src, case2_bar) in
         let (case2_name, case2_pat_end) = case2_pat in
-        let case2_body = parse_expr_prec (src, (need_arrow (src, case2_pat_end), (0, (0, (0, EInt 0))))) in
+        let case2_bind = parse_match_bind (src, case2_pat_end) in
+        let (case2_bind_name, case2_pat_done) = case2_bind in
+        let case2_body = parse_expr_prec (src, (need_arrow (src, case2_pat_done), (0, (0, (0, EInt 0))))) in
         let (case2_body_ast, case2_body_end) = case2_body in
-        (match_expr (scrutinee_ast, (case1_name, (case1_body_ast, (case2_name, case2_body_ast)))), case2_body_end)
+        (match_expr (scrutinee_ast, (case1_name, (case1_bind_name, (case1_body_ast, (case2_name, (case2_bind_name, case2_body_ast)))))), case2_body_end)
       else
         let peeked = p_peek (src, pos) in
         let (ch, atom_pos) = peeked in
@@ -1513,6 +1522,41 @@ let rec need_ty state =
   let (got, want) = state in
   if same_ty (got, want) == 1 then 0 else fail 0
 in
+let rec match_case_tenv state =
+  let (src, pair0) = state in
+  let (env, pair1) = pair0 in
+  let (scrutinee_ty, pair2) = pair1 in
+  let (ctor_name, bind_name) = pair2 in
+  let ctor_ty = lookup_tenv (src, (env, ctor_name)) in
+  match ctor_ty with
+    TyMore more ->
+      (match more with
+        TyMore2 more2 ->
+          (match more2 with
+            TyFun fn_pair ->
+              (match fn_pair with
+                TyMore fn_more ->
+                  (match fn_more with
+                    TyPair arg_ret ->
+                      let (arg_ty, ret_ty) = arg_ret in
+                      let _ = need_ty (ret_ty, scrutinee_ty) in
+                      if bind_name < 0 then fail 0 else extend_tenv (bind_name, (arg_ty, env))
+                  | _ -> fail 0)
+              | _ -> fail 0)
+          | TyAdt id ->
+              let _ = id in
+              let _ = if bind_name < 0 then 0 else fail 0 in
+              let _ = need_ty (ctor_ty, scrutinee_ty) in
+              env)
+      | _ ->
+          let _ = if bind_name < 0 then 0 else fail 0 in
+          let _ = need_ty (ctor_ty, scrutinee_ty) in
+          env)
+  | _ ->
+      let _ = if bind_name < 0 then 0 else fail 0 in
+      let _ = need_ty (ctor_ty, scrutinee_ty) in
+      env
+in
 let rec infer state =
   let (src, pair0) = state in
   let (env, ast) = pair0 in
@@ -1821,13 +1865,15 @@ let rec infer state =
                                               | EMatch parts ->
                                                   let (scrutinee, rest1) = parts in
                                                   let (case1_name, rest2) = rest1 in
-                                                  let (case1_body, rest3) = rest2 in
-                                                  let (case2_name, case2_body) = rest3 in
+                                                  let (case1_bind, rest3) = rest2 in
+                                                  let (case1_body, rest4) = rest3 in
+                                                  let (case2_name, rest5) = rest4 in
+                                                  let (case2_bind, case2_body) = rest5 in
                                                   let scrutinee_ty = infer (src, (env, scrutinee)) in
-                                                  let _ = need_ty (lookup_tenv (src, (env, case1_name)), scrutinee_ty) in
-                                                  let _ = need_ty (lookup_tenv (src, (env, case2_name)), scrutinee_ty) in
-                                                  let case1_ty = infer (src, (env, case1_body)) in
-                                                  let _ = need_ty (infer (src, (env, case2_body)), case1_ty) in
+                                                  let case1_env = match_case_tenv (src, (env, (scrutinee_ty, (case1_name, case1_bind)))) in
+                                                  let case2_env = match_case_tenv (src, (env, (scrutinee_ty, (case2_name, case2_bind)))) in
+                                                  let case1_ty = infer (src, (case1_env, case1_body)) in
+                                                  let _ = need_ty (infer (src, (case2_env, case2_body)), case1_ty) in
                                                   case1_ty
 in
 let rec empty_env unit =
@@ -1867,6 +1913,28 @@ let rec lookup_fenv state =
   let (target, tail) = rest in
   if name < 0 then fail 0 else
   if ident_eq (src, (name, want)) == 1 then target else lookup_fenv (src, (tail, want))
+in
+let rec match_case_env state =
+  let (has_arg, pair) = state in
+  let (bind_name, env) = pair in
+  if has_arg == 1 then
+    if bind_name < 0 then fail 0 else extend_env (bind_name, shift_env env)
+  else
+    let _ = if bind_name < 0 then 0 else fail 0 in
+    shift_env env
+in
+let rec emit_match_payload state =
+  let (emit, has_arg) = state in
+  if has_arg == 1 then
+    let _ = emit_acc (emit, 0) in
+    let _ = emit_getfield (emit, 0) in
+    let _ = emit_push emit in
+    11
+  else 0
+in
+let rec emit_match_pop state =
+  let (emit, has_arg) = state in
+  if has_arg == 1 then emit_pop (emit, 2) else emit_pop1 emit
 in
 let rec emit_string_tail state =
   let (src, pair) = state in
@@ -2245,16 +2313,26 @@ let rec emit_expr state =
                                                   | EMatch parts ->
                                                       let (scrutinee, rest1) = parts in
                                                       let (case1_name, rest2) = rest1 in
-                                                      let (case1_body, rest3) = rest2 in
-                                                      let (case2_name, case2_body) = rest3 in
+                                                      let (case1_bind, rest3) = rest2 in
+                                                      let (case1_body, rest4) = rest3 in
+                                                      let (case2_name, rest5) = rest4 in
+                                                      let (case2_bind, case2_body) = rest5 in
                                                       let case1_ctor = lookup_ctor (src, (ctors, case1_name)) in
                                                       let case2_ctor = lookup_ctor (src, (ctors, case2_name)) in
-                                                      let _ = if ctor_has_arg case1_ctor == 1 then fail 0 else 0 in
-                                                      let _ = if ctor_has_arg case2_ctor == 1 then fail 0 else 0 in
+                                                      let case1_has_arg = ctor_has_arg case1_ctor in
+                                                      let case2_has_arg = ctor_has_arg case2_ctor in
+                                                      let case1_env = match_case_env (case1_has_arg, (case1_bind, env)) in
+                                                      let case2_env = match_case_env (case2_has_arg, (case2_bind, env)) in
                                                       let scrutinee_len = emit_expr (scrutinee, (src, (env, (ctors, (funcs, (base_pos, emit)))))) in
                                                       let push_scrutinee = emit_push emit in
-                                                      let case1_len = emit_expr (case1_body, (src, (shift_env env, (ctors, (funcs, (base_pos + scrutinee_len + push_scrutinee + 18, 0)))))) in
-                                                      let case2_len = emit_expr (case2_body, (src, (shift_env env, (ctors, (funcs, (base_pos + scrutinee_len + push_scrutinee + 18 + case1_len + 5 + 5, 0)))))) in
+                                                      let case1_payload_len = emit_match_payload (0, case1_has_arg) in
+                                                      let case1_body_len = emit_expr (case1_body, (src, (case1_env, (ctors, (funcs, (base_pos + scrutinee_len + push_scrutinee + 18 + case1_payload_len, 0)))))) in
+                                                      let case1_pop_len = emit_match_pop (0, case1_has_arg) in
+                                                      let case1_total = case1_payload_len + case1_body_len + case1_pop_len in
+                                                      let case2_payload_len = emit_match_payload (0, case2_has_arg) in
+                                                      let case2_body_len = emit_expr (case2_body, (src, (case2_env, (ctors, (funcs, (base_pos + scrutinee_len + push_scrutinee + 18 + case1_total + 5 + case2_payload_len, 0)))))) in
+                                                      let case2_pop_len = emit_match_pop (0, case2_has_arg) in
+                                                      let case2_total = case2_payload_len + case2_body_len + case2_pop_len in
                                                       let _ =
                                                         if emit == 1 then
                                                           let _ = emit_acc (1, 0) in
@@ -2262,15 +2340,17 @@ let rec emit_expr state =
                                                           let _ = emit_push 1 in
                                                           let _ = emit_const (1, ctor_tag case1_ctor) in
                                                           let _ = emit_eq 1 in
-                                                          let _ = emit_branch_if_not (1, case1_len + 5 + 5) in
-                                                          let _ = emit_expr (case1_body, (src, (shift_env env, (ctors, (funcs, (base_pos + scrutinee_len + push_scrutinee + 18, 1)))))) in
-                                                          let _ = emit_pop1 1 in
-                                                          let _ = emit_branch (1, case2_len + 5) in
-                                                          let _ = emit_expr (case2_body, (src, (shift_env env, (ctors, (funcs, (base_pos + scrutinee_len + push_scrutinee + 18 + case1_len + 5 + 5, 1)))))) in
-                                                          emit_pop1 1
+                                                          let _ = emit_branch_if_not (1, case1_total + 5) in
+                                                          let _ = emit_match_payload (1, case1_has_arg) in
+                                                          let _ = emit_expr (case1_body, (src, (case1_env, (ctors, (funcs, (base_pos + scrutinee_len + push_scrutinee + 18 + case1_payload_len, 1)))))) in
+                                                          let _ = emit_match_pop (1, case1_has_arg) in
+                                                          let _ = emit_branch (1, case2_total) in
+                                                          let _ = emit_match_payload (1, case2_has_arg) in
+                                                          let _ = emit_expr (case2_body, (src, (case2_env, (ctors, (funcs, (base_pos + scrutinee_len + push_scrutinee + 18 + case1_total + 5 + case2_payload_len, 1)))))) in
+                                                          emit_match_pop (1, case2_has_arg)
                                                         else 0
                                                       in
-                                                      scrutinee_len + push_scrutinee + 18 + case1_len + 5 + 5 + case2_len + 5
+                                                      scrutinee_len + push_scrutinee + 18 + case1_total + 5 + case2_total
 in
 let rec emit_program src =
   let parsed_types = parse_type_decls (src, (0, (0, (empty_tenv 0, empty_ctors 0)))) in

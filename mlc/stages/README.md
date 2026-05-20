@@ -120,9 +120,10 @@ Current stages:
   destructuring, top-level pair destructuring, typed imperative arrays/cells via
   `Cell.create` / `Cell.get` / `Cell.set`, leading variant `type`
   declarations with typed nullary and unary constructors, constructor payload
-  type rejection, two-arm nullary-constructor `match` expressions lowered to
-  tag tests and branches, recursive equality for nested array/cell/ADT element
-  types, full-input consumption, and static type errors.
+  type rejection, two-arm constructor `match` expressions for nullary and unary
+  payload patterns lowered to tag tests, field extraction, and branches,
+  recursive equality for nested array/cell/ADT element types, full-input
+  consumption, and static type errors.
 
 Planned stages:
 
