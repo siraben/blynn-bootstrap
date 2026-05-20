@@ -10,15 +10,9 @@
 #define MZVM_STACK_CAP 2097152
 #endif
 
-#ifndef MZVM_STACK_CHUNK_COUNT
-#define MZVM_STACK_CHUNK_COUNT 64
-#endif
-
 enum {
   MZBC_VERSION = 1,
   STACK_CAP = MZVM_STACK_CAP,
-  STACK_CHUNK_SIZE = 32768,
-  STACK_CHUNK_COUNT = MZVM_STACK_CHUNK_COUNT,
 
   OP_HALT = 0,
   OP_CONST = 1,
@@ -65,8 +59,8 @@ static long pc;
 static long last_pc;
 static long current_op;
 static value_t acc;
-static value_t *stack_chunks[STACK_CHUNK_COUNT];
-static long *return_stack_chunks[STACK_CHUNK_COUNT];
+static value_t *stack;
+static long *return_stack;
 static long sp;
 static long rp;
 static long prim_count;
@@ -201,8 +195,7 @@ static void collect(long needed_words)
   acc = copy_value(acc);
   i = 0;
   while (i < sp) {
-    stack_chunks[i / STACK_CHUNK_SIZE][i - (i / STACK_CHUNK_SIZE) * STACK_CHUNK_SIZE] =
-      copy_value(stack_chunks[i / STACK_CHUNK_SIZE][i - (i / STACK_CHUNK_SIZE) * STACK_CHUNK_SIZE]);
+    stack[i] = copy_value(stack[i]);
     i = i + 1;
   }
   scan = 0;
@@ -232,13 +225,9 @@ static void init_heap(void)
 
 static void init_stacks(void)
 {
-  long i = 0;
-  while (i < STACK_CHUNK_COUNT) {
-    stack_chunks[i] = (value_t *)malloc(sizeof(value_t) * STACK_CHUNK_SIZE);
-    return_stack_chunks[i] = (long *)malloc(sizeof(long) * STACK_CHUNK_SIZE);
-    if (!stack_chunks[i] || !return_stack_chunks[i]) die("out of memory");
-    i = i + 1;
-  }
+  stack = (value_t *)malloc(sizeof(value_t) * STACK_CAP);
+  return_stack = (long *)malloc(sizeof(long) * STACK_CAP);
+  if (!stack || !return_stack) die("out of memory");
 }
 
 static long byte_at(char *bytes, long off)
@@ -286,7 +275,7 @@ static long file_u32(char *bytes, long off)
 static void stack_push(value_t x)
 {
   if (sp >= STACK_CAP) die("stack overflow");
-  stack_chunks[sp / STACK_CHUNK_SIZE][sp - (sp / STACK_CHUNK_SIZE) * STACK_CHUNK_SIZE] = x;
+  stack[sp] = x;
   sp = sp + 1;
 }
 
@@ -294,7 +283,7 @@ static value_t stack_pop(void)
 {
   if (sp <= 0) die("stack underflow");
   sp = sp - 1;
-  return stack_chunks[sp / STACK_CHUNK_SIZE][sp - (sp / STACK_CHUNK_SIZE) * STACK_CHUNK_SIZE];
+  return stack[sp];
 }
 
 static value_t stack_acc(long n)
@@ -302,7 +291,7 @@ static value_t stack_acc(long n)
   long index;
   if (n < 0 || n >= sp) die("stack access out of range");
   index = sp - 1 - n;
-  return stack_chunks[index / STACK_CHUNK_SIZE][index - (index / STACK_CHUNK_SIZE) * STACK_CHUNK_SIZE];
+  return stack[index];
 }
 
 static void stack_drop(long n)
@@ -314,7 +303,7 @@ static void stack_drop(long n)
 static void return_push(long x)
 {
   if (rp >= STACK_CAP) die("return stack overflow");
-  return_stack_chunks[rp / STACK_CHUNK_SIZE][rp - (rp / STACK_CHUNK_SIZE) * STACK_CHUNK_SIZE] = x;
+  return_stack[rp] = x;
   rp = rp + 1;
 }
 
@@ -322,7 +311,7 @@ static long return_pop(void)
 {
   if (rp <= 0) die("return stack underflow");
   rp = rp - 1;
-  return return_stack_chunks[rp / STACK_CHUNK_SIZE][rp - (rp / STACK_CHUNK_SIZE) * STACK_CHUNK_SIZE];
+  return return_stack[rp];
 }
 
 static value_t *alloc_block(long tag, long size)
