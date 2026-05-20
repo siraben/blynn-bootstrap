@@ -218,67 +218,62 @@ let rec ident_eq state =
   if left < 0 then 0 else
   if right < 0 then 0 else ident_eq_loop (src, (left, right))
 in
-let rec name_table unit =
-  let _ = unit in
-  "itemnamevaluerosizeofapplyread_boxitemsv1psecalignouttagyesTOP_A_exitset_intset_charmainpickpick7memcmpsum_downless_thanpointer_element_sizecase_cmp_qssort_pairswap_bytesbootstrap_qsortstreqstrlen2inpskip_spacespstrcpypstrcatpstrncpycmp_ucmp_scase_cmpnarrow_returnbool_returntcc_basename"
-in
 let rec ident_named_loop state =
   let (src, pair) = state in
   let (pos, pair2) = pair in
-  let (offset, pair3) = pair2 in
-  let (len, index) = pair3 in
-  if index == len then 1 - (is_ident (src.[pos + len])) else
-  if src.[pos + index] == (name_table 0).[offset + index] then ident_named_loop (src, (pos, (offset, (len, index + 1)))) else 0
+  let (text, index) = pair2 in
+  if index == String.length text then 1 - (is_ident (src.[pos])) else
+  if src.[pos] == text.[index] then ident_named_loop (src, (pos + 1, (text, index + 1))) else 0
 in
 let rec ident_named state =
   let (name_state, pair) = state in
   let (src, pos) = name_state in
-  let (offset, len) = pair in
-  if pos < 0 then 0 else ident_named_loop (src, (pos, (offset, (len, 0))))
+  let text = pair in
+  if pos < 0 then 0 else ident_named_loop (src, (pos, (text, 0)))
 in
-let rec is_name_item state = ident_named (state, (0, 4)) in
-let rec is_name_item_name state = ident_named (state, (4, 4)) in
-let rec is_name_value state = ident_named (state, (8, 5)) in
-let rec is_name_ro state = ident_named (state, (13, 2)) in
-let rec is_name_sizeof state = ident_named (state, (15, 6)) in
-let rec is_name_apply state = ident_named (state, (21, 5)) in
-let rec is_name_read_box state = ident_named (state, (26, 8)) in
-let rec is_name_items state = ident_named (state, (34, 5)) in
-let rec is_name_v1 state = ident_named (state, (39, 2)) in
-let rec is_name_p state = ident_named (state, (41, 1)) in
-let rec is_name_sec state = ident_named (state, (42, 3)) in
-let rec is_name_align state = ident_named (state, (45, 5)) in
-let rec is_name_out state = ident_named (state, (50, 3)) in
-let rec is_name_tag state = ident_named (state, (53, 3)) in
-let rec is_name_yes state = ident_named (state, (56, 3)) in
-let rec is_name_top_a state = ident_named (state, (59, 5)) in
-let rec is_name__exit state = ident_named (state, (64, 5)) in
-let rec is_name_set_int state = ident_named (state, (69, 7)) in
-let rec is_name_set_char state = ident_named (state, (76, 8)) in
-let rec is_name_main state = ident_named (state, (84, 4)) in
-let rec is_name_pick state = ident_named (state, (88, 4)) in
-let rec is_name_pick7 state = ident_named (state, (92, 5)) in
-let rec is_name_memcmp state = ident_named (state, (97, 6)) in
-let rec is_name_sum_down state = ident_named (state, (103, 8)) in
-let rec is_name_less_than state = ident_named (state, (111, 9)) in
-let rec is_name_pointer_element_size state = ident_named (state, (120, 20)) in
-let rec is_name_case_cmp_qs state = ident_named (state, (140, 11)) in
-let rec is_name_sort_pair state = ident_named (state, (151, 9)) in
-let rec is_name_swap_bytes state = ident_named (state, (160, 10)) in
-let rec is_name_bootstrap_qsort state = ident_named (state, (170, 15)) in
-let rec is_name_streq state = ident_named (state, (185, 5)) in
-let rec is_name_strlen2 state = ident_named (state, (190, 7)) in
-let rec is_name_inp state = ident_named (state, (197, 3)) in
-let rec is_name_skip_spaces state = ident_named (state, (200, 11)) in
-let rec is_name_pstrcpy state = ident_named (state, (211, 7)) in
-let rec is_name_pstrcat state = ident_named (state, (218, 7)) in
-let rec is_name_pstrncpy state = ident_named (state, (225, 8)) in
-let rec is_name_cmp_u state = ident_named (state, (233, 5)) in
-let rec is_name_cmp_s state = ident_named (state, (238, 5)) in
-let rec is_name_case_cmp state = ident_named (state, (243, 8)) in
-let rec is_name_narrow_return state = ident_named (state, (251, 13)) in
-let rec is_name_bool_return state = ident_named (state, (264, 11)) in
-let rec is_name_tcc_basename state = ident_named (state, (275, 12)) in
+let rec is_name_item state = ident_named (state, "item") in
+let rec is_name_item_name state = ident_named (state, "name") in
+let rec is_name_value state = ident_named (state, "value") in
+let rec is_name_ro state = ident_named (state, "ro") in
+let rec is_name_sizeof state = ident_named (state, "sizeof") in
+let rec is_name_apply state = ident_named (state, "apply") in
+let rec is_name_read_box state = ident_named (state, "read_box") in
+let rec is_name_items state = ident_named (state, "items") in
+let rec is_name_v1 state = ident_named (state, "v1") in
+let rec is_name_p state = ident_named (state, "p") in
+let rec is_name_sec state = ident_named (state, "sec") in
+let rec is_name_align state = ident_named (state, "align") in
+let rec is_name_out state = ident_named (state, "out") in
+let rec is_name_tag state = ident_named (state, "tag") in
+let rec is_name_yes state = ident_named (state, "yes") in
+let rec is_name_top_a state = ident_named (state, "TOP_A") in
+let rec is_name__exit state = ident_named (state, "_exit") in
+let rec is_name_set_int state = ident_named (state, "set_int") in
+let rec is_name_set_char state = ident_named (state, "set_char") in
+let rec is_name_main state = ident_named (state, "main") in
+let rec is_name_pick state = ident_named (state, "pick") in
+let rec is_name_pick7 state = ident_named (state, "pick7") in
+let rec is_name_memcmp state = ident_named (state, "memcmp") in
+let rec is_name_sum_down state = ident_named (state, "sum_down") in
+let rec is_name_less_than state = ident_named (state, "less_than") in
+let rec is_name_pointer_element_size state = ident_named (state, "pointer_element_size") in
+let rec is_name_case_cmp_qs state = ident_named (state, "case_cmp_qs") in
+let rec is_name_sort_pair state = ident_named (state, "sort_pair") in
+let rec is_name_swap_bytes state = ident_named (state, "swap_bytes") in
+let rec is_name_bootstrap_qsort state = ident_named (state, "bootstrap_qsort") in
+let rec is_name_streq state = ident_named (state, "streq") in
+let rec is_name_strlen2 state = ident_named (state, "strlen2") in
+let rec is_name_inp state = ident_named (state, "inp") in
+let rec is_name_skip_spaces state = ident_named (state, "skip_spaces") in
+let rec is_name_pstrcpy state = ident_named (state, "pstrcpy") in
+let rec is_name_pstrcat state = ident_named (state, "pstrcat") in
+let rec is_name_pstrncpy state = ident_named (state, "pstrncpy") in
+let rec is_name_cmp_u state = ident_named (state, "cmp_u") in
+let rec is_name_cmp_s state = ident_named (state, "cmp_s") in
+let rec is_name_case_cmp state = ident_named (state, "case_cmp") in
+let rec is_name_narrow_return state = ident_named (state, "narrow_return") in
+let rec is_name_bool_return state = ident_named (state, "bool_return") in
+let rec is_name_tcc_basename state = ident_named (state, "tcc_basename") in
 let rec is_summarized_zero_func name =
   let (src, pos) = name in
   if is_name_pick (src, pos) then 1 else
