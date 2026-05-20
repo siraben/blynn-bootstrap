@@ -152,8 +152,8 @@ raw and escaped char literals, `()`,
 ignored leading `type` declaration lines, declaration-style top-level `let`,
 the first typed direct unary `let rec f x = ...` / `f arg` slice for
 `int -> int` functions, including direct-call targets after earlier top-level
-bindings, and pair destructuring by lowering them to the same checked
-expression AST.
+bindings and a function-target environment for nested direct `let rec` calls,
+and pair destructuring by lowering them to the same checked expression AST.
 Type equality is recursive for nested pair, cell, and array element types.
 The ignored type preamble is a parser-entry checkpoint toward compiling
 compiler-shaped sources with real ADTs later; constructors and patterns are

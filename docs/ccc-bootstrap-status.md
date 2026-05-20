@@ -28,8 +28,9 @@ as bytes or element writes use the wrong type. Its type equality is recursive
 for nested array/cell element types, with checks for nested cell and nested
 array write mismatches. It also gates the first typed direct unary
 `let rec f x = ...` / `f arg` slice for `int -> int` functions, including
-position-aware direct-call targets after earlier top-level bindings, bad
-argument, bad return, and unknown direct-call rejection.
+position-aware direct-call targets after earlier top-level bindings, nested
+direct `let rec` calls through a function-target environment, bad argument,
+bad return, and unknown direct-call rejection.
 
 ## Supporting Artifacts
 
