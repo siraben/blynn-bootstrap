@@ -118,5 +118,6 @@ runCommand "tcc-bin-ccc-seed" {
   build_and_run ${testsRoot}/hcc/m1-smoke/examples/pointer-to-pointer-callback.c 0 hcc-pointer-to-pointer-callback
   build_and_run ${testsRoot}/hcc/m1-smoke/examples/bootstrap-qsort-pointer.c 0 hcc-bootstrap-qsort-pointer
   build_and_run ${testsRoot}/hcc/m1-smoke/examples/sizeof-member-array-bound.c 0 hcc-sizeof-member-array-bound
+  build_and_run ${testsRoot}/hcc/m1-smoke/examples/do-while.c 3 hcc-do-while
   build_and_run ${testsRoot}/hcc/scalar-immediate-smoke.c 0 hcc-scalar-immediate-smoke
 ''

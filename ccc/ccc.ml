@@ -1,6 +1,8 @@
 type func_summary = FuncConst of int | FuncArg | FuncNotArg | FuncAddArgs | FuncCmpArgs | FuncArgEqAny of int
 type parse_reply = ParseOk of int | ParseErr
 type pos_option = PosSome of int | PosNone
+type value_reply = ValueOk of int | ValueErr
+type value_option = ValueSome of int | ValueNone
 
 let rec is_space ch =
   if ch == ' ' then 1 else
@@ -71,16 +73,37 @@ in
 let rec parse_fail unit =
   exit 1
 in
-let rec parse_ident state =
+let rec p_try_ident state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
   let ch = src.[pos] in
-  if is_alpha ch then parse_ident_loop (src, (pos + 1, ch)) else parse_fail 0
+  if is_alpha ch then ValueOk (parse_ident_loop (src, (pos + 1, ch))) else ValueErr
+in
+let rec p_force_value reply =
+  match reply with
+    ValueOk parsed -> parsed
+  | ValueErr -> parse_fail 0
+in
+let rec p_optional_value state =
+  match state with
+    ValueOk parsed -> ValueSome parsed
+  | ValueErr -> ValueNone
+in
+let rec parse_ident state =
+  p_force_value (p_try_ident state)
 in
 let rec p_force reply =
   match reply with
     ParseOk pos -> pos
   | ParseErr -> parse_fail 0
+in
+let rec p_return state =
+  ParseOk state
+in
+let rec p_is_ok state =
+  match state with
+    ParseOk pos -> let _ = pos in 1
+  | ParseErr -> 0
 in
 let rec p_peek state =
   let (src, pos0) = state in
@@ -112,6 +135,26 @@ let rec p_try_string state =
   let pos = skip_space (src, pos0) in
   p_try_string_loop (want, (len, (src, (pos, 0))))
 in
+let rec p_string_at state =
+  p_is_ok (p_try_string state)
+in
+let rec p_keyword_at state =
+  let (want, pair) = state in
+  let (len, pair2) = pair in
+  let (src, pos0) = pair2 in
+  let pos = skip_space (src, pos0) in
+  let reply = p_try_string_loop (want, (len, (src, (pos, 0)))) in
+  match reply with
+    ParseOk end_pos -> 1 - (is_ident (src.[end_pos]))
+  | ParseErr -> 0
+in
+let rec p_try_keyword state =
+  let (want, pair) = state in
+  let (len, pair2) = pair in
+  let (src, pos0) = pair2 in
+  let pos = skip_space (src, pos0) in
+  if p_keyword_at (want, (len, (src, pos))) == 1 then ParseOk (pos + len) else ParseErr
+in
 let rec p_optional state =
   match state with
     ParseOk pos -> PosSome pos
@@ -130,11 +173,31 @@ in
 let rec p_need_string state =
   p_force (p_try_string state)
 in
+let rec p_need_keyword state =
+  p_force (p_try_keyword state)
+in
 let rec is_string_at state =
-  let reply = p_try_string state in
-  match reply with
-    ParseOk pos -> let _ = pos in 1
-  | ParseErr -> 0
+  p_string_at state
+in
+let rec is_keyword_at state =
+  p_keyword_at state
+in
+let rec p_eat_char state =
+  let (src, pair) = state in
+  let (pos0, ch) = pair in
+  p_optional_pos (p_try_char (src, (pos0, ch)), pos0)
+in
+let rec p_eat_string state =
+  let (want, pair) = state in
+  let (len, pair2) = pair in
+  let (src, pos0) = pair2 in
+  p_optional_pos (p_try_string (want, (len, (src, pos0))), pos0)
+in
+let rec p_eat_keyword state =
+  let (want, pair) = state in
+  let (len, pair2) = pair in
+  let (src, pos0) = pair2 in
+  p_optional_pos (p_try_keyword (want, (len, (src, pos0))), pos0)
 in
 let rec expect_char state =
   p_need_char state
@@ -189,7 +252,7 @@ in
 let rec skip_const_qualifiers state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
-  let parsed = p_optional_pos (p_try_string ("const", (5, (src, pos))), pos) in
+  let parsed = p_eat_keyword ("const", (5, (src, pos))) in
   let (has_const, after_const) = parsed in
   if has_const == 1 then skip_const_qualifiers (src, after_const) else pos
 in
@@ -269,39 +332,43 @@ let rec parse_type_token state =
 in
 let rec is_return_at state =
   let (src, pos0) = state in
-  is_string_at ("return", (6, (src, pos0)))
+  is_keyword_at ("return", (6, (src, pos0)))
 in
 let rec is_if_at state =
   let (src, pos0) = state in
-  is_string_at ("if", (2, (src, pos0)))
+  is_keyword_at ("if", (2, (src, pos0)))
 in
 let rec is_typedef_at state =
   let (src, pos0) = state in
-  is_string_at ("typedef", (7, (src, pos0)))
+  is_keyword_at ("typedef", (7, (src, pos0)))
 in
 let rec is_enum_at state =
   let (src, pos0) = state in
-  is_string_at ("enum", (4, (src, pos0)))
+  is_keyword_at ("enum", (4, (src, pos0)))
 in
 let rec is_struct_at state =
   let (src, pos0) = state in
-  is_string_at ("struct", (6, (src, pos0)))
+  is_keyword_at ("struct", (6, (src, pos0)))
 in
 let rec is_else_at state =
   let (src, pos0) = state in
-  is_string_at ("else", (4, (src, pos0)))
+  is_keyword_at ("else", (4, (src, pos0)))
 in
 let rec is_goto_at state =
   let (src, pos0) = state in
-  is_string_at ("goto", (4, (src, pos0)))
+  is_keyword_at ("goto", (4, (src, pos0)))
 in
 let rec is_while_at state =
   let (src, pos0) = state in
-  is_string_at ("while", (5, (src, pos0)))
+  is_keyword_at ("while", (5, (src, pos0)))
 in
 let rec is_for_at state =
   let (src, pos0) = state in
-  is_string_at ("for", (3, (src, pos0)))
+  is_keyword_at ("for", (3, (src, pos0)))
+in
+let rec is_do_at state =
+  let (src, pos0) = state in
+  is_keyword_at ("do", (2, (src, pos0)))
 in
 let rec expect_main state =
   let (src, pos0) = state in
@@ -309,7 +376,7 @@ let rec expect_main state =
 in
 let rec expect_return state =
   let (src, pos0) = state in
-  expect_string ("return", (6, (src, pos0)))
+  p_need_keyword ("return", (6, (src, pos0)))
 in
 let rec parse_number_loop state =
   let (src, pair) = state in
@@ -340,15 +407,18 @@ let rec parse_octal_escape_loop state =
   else
     (acc, pos)
 in
-let rec parse_number state =
+let rec p_try_number state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
-  if (src.[pos] == 48) * (src.[pos + 1] == 120) then parse_hex_loop (src, (pos + 2, 0)) else
+  if (src.[pos] == 48) * (src.[pos + 1] == 120) then ValueOk (parse_hex_loop (src, (pos + 2, 0))) else
   if is_digit (src.[pos]) then
     let parsed = parse_number_loop (src, (pos, 0)) in
     let (value, value_end) = parsed in
-    (value, skip_int_suffix (src, value_end))
-  else parse_fail 0
+    ValueOk (value, skip_int_suffix (src, value_end))
+  else ValueErr
+in
+let rec parse_number state =
+  p_force_value (p_try_number state)
 in
 let rec parse_signed_number state =
   let (src, pos0) = state in
@@ -1152,18 +1222,20 @@ let rec parse_for_body_once state =
   let (funcs, env) = pair2 in
   let pos = skip_space (src, pos0) in
   if is_local_type_at (src, pos) then parse_local_init (src, (pos, (funcs, env))) else
-    let ident = parse_ident (src, pos) in
-    let (name, name_end) = ident in
-    let _ = name in
-    let next = skip_space (src, name_end) in
-    if ((src.[next] == '+') + (src.[next] == '-')) * (src.[next + 1] == '=') then
-      parse_aug_assignment (src, (pos, (funcs, env)))
-    else if ((src.[next] == '+') * (src.[next + 1] == '+')) + ((src.[next] == '-') * (src.[next + 1] == '-')) then
-      parse_postfix_update_statement (src, (pos, env))
-    else if src.[next] == '=' then
-      parse_assignment (src, (pos, (funcs, env)))
-    else
-      (skip_statement (src, pos), env)
+    match p_optional_value (p_try_ident (src, pos)) with
+      ValueSome ident ->
+        let (name, name_end) = ident in
+        let _ = name in
+        let next = skip_space (src, name_end) in
+        if ((src.[next] == '+') + (src.[next] == '-')) * (src.[next + 1] == '=') then
+          parse_aug_assignment (src, (pos, (funcs, env)))
+        else if ((src.[next] == '+') * (src.[next + 1] == '+')) + ((src.[next] == '-') * (src.[next + 1] == '-')) then
+          parse_postfix_update_statement (src, (pos, env))
+        else if src.[next] == '=' then
+          parse_assignment (src, (pos, (funcs, env)))
+        else
+          (skip_statement (src, pos), env)
+    | ValueNone -> (skip_statement (src, pos), env)
 in
 let rec skip_for_body state =
   let (src, pos0) = state in
@@ -1181,16 +1253,18 @@ let rec parse_main_prefix state =
     let (next_pos, next_env) = local in
     parse_main_prefix (src, (next_pos, (funcs, next_env)))
   else
-    let ident = parse_ident (src, pos) in
-    let (name, name_end) = ident in
-    let _ = name in
-    let next = skip_space (src, name_end) in
-    if src.[next] == '=' then
-      let assigned = parse_assignment (src, (pos, (funcs, env))) in
-      let (next_pos, next_env) = assigned in
-      parse_main_prefix (src, (next_pos, (funcs, next_env)))
-    else
-      parse_main_prefix (src, (skip_statement (src, pos), (funcs, env)))
+    match p_optional_value (p_try_ident (src, pos)) with
+      ValueSome ident ->
+        let (name, name_end) = ident in
+        let _ = name in
+        let next = skip_space (src, name_end) in
+        if src.[next] == '=' then
+          let assigned = parse_assignment (src, (pos, (funcs, env))) in
+          let (next_pos, next_env) = assigned in
+          parse_main_prefix (src, (next_pos, (funcs, next_env)))
+        else
+          parse_main_prefix (src, (skip_statement (src, pos), (funcs, env)))
+    | ValueNone -> parse_main_prefix (src, (skip_statement (src, pos), (funcs, env)))
 in
 let rec parse_condition_value state =
   let (src, pair) = state in
@@ -1349,6 +1423,22 @@ let rec parse_for_statement state =
   let body_pos = skip_space (src, close_pos + 1) in
   parse_for_loop (src, (cond_pos, (update_pos, (body_pos, (funcs, init_env)))))
 in
+let rec parse_do_loop state =
+  let (src, pair) = state in
+  let (pos0, pair2) = pair in
+  let (funcs, env) = pair2 in
+  let body_pos = skip_space (src, pos0 + 2) in
+  let body = parse_for_body_once (src, (body_pos, (funcs, env))) in
+  let (body_end, body_env) = body in
+  let while_pos = skip_space (src, body_end) in
+  let after_while = p_need_keyword ("while", (5, (src, while_pos))) in
+  let opened = expect_ch (src, (after_while, '(')) in
+  let cond = parse_condition_value (src, (opened, (funcs, body_env))) in
+  let (cond_value, cond_end) = cond in
+  let closed = expect_ch (src, (cond_end, ')')) in
+  let done_pos = expect_ch (src, (closed, ';')) in
+  if cond_value == 0 then (done_pos, body_env) else parse_do_loop (src, (pos0, (funcs, body_env)))
+in
 let rec parse_main_body state =
   let (src, pair) = state in
   let (pos0, pair2) = pair in
@@ -1420,39 +1510,45 @@ let rec parse_main_body state =
     let loop = parse_for_statement (src, (pos, (funcs, env))) in
     let (next_pos, next_env) = loop in
     parse_main_body (src, (next_pos, (funcs, next_env)))
+  else if is_do_at (src, pos) then
+    let loop = parse_do_loop (src, (pos, (funcs, env))) in
+    let (next_pos, next_env) = loop in
+    parse_main_body (src, (next_pos, (funcs, next_env)))
   else if is_local_type_at (src, pos) then
     let local = parse_local_init (src, (pos, (funcs, env))) in
     let (next_pos, next_env) = local in
     parse_main_body (src, (next_pos, (funcs, next_env)))
   else
-    let ident = parse_ident (src, pos) in
-    let (name, name_end) = ident in
-    let _ = name in
-    let next = skip_space (src, name_end) in
-    if src.[next] == ':' then
-      parse_main_body (src, (next + 1, (funcs, env)))
-    else if ((src.[next] == '+') + (src.[next] == '-')) * (src.[next + 1] == '=') then
-      let assigned = parse_aug_assignment (src, (pos, (funcs, env))) in
-      let (next_pos, next_env) = assigned in
-      parse_main_body (src, (next_pos, (funcs, next_env)))
-    else if (name == 1920314) * (src.[next] == '=') then
-      parse_main_body (src, (skip_statement (src, pos), (funcs, env)))
-    else if src.[next] == '=' then
-      let assigned = parse_assignment (src, (pos, (funcs, env))) in
-      let (next_pos, next_env) = assigned in
-      parse_main_body (src, (next_pos, (funcs, next_env)))
-    else if (name == 206622681) * (src.[next] == '(') then
-      let arg = parse_expr_value (src, (next + 1, (funcs, env))) in
-      let (exit_value, arg_end) = arg in
-      let p1 = expect_ch (src, (arg_end, ')')) in
-      let p2 = expect_ch (src, (p1, ';')) in
-      (exit_value, skip_to_close_brace (src, p2))
-    else if ((name == 913327068) + (name == 632251188)) * (src.[next] == '(') then
-      let called = parse_pointer_write_call (src, (pos, env)) in
-      let (next_pos, next_env) = called in
-      parse_main_body (src, (next_pos, (funcs, next_env)))
-    else
-      parse_main_body (src, (skip_statement (src, pos), (funcs, env)))
+    match p_optional_value (p_try_ident (src, pos)) with
+      ValueSome ident ->
+        let (name, name_end) = ident in
+        let _ = name in
+        let next = skip_space (src, name_end) in
+        if src.[next] == ':' then
+          parse_main_body (src, (next + 1, (funcs, env)))
+        else if ((src.[next] == '+') + (src.[next] == '-')) * (src.[next + 1] == '=') then
+          let assigned = parse_aug_assignment (src, (pos, (funcs, env))) in
+          let (next_pos, next_env) = assigned in
+          parse_main_body (src, (next_pos, (funcs, next_env)))
+        else if (name == 1920314) * (src.[next] == '=') then
+          parse_main_body (src, (skip_statement (src, pos), (funcs, env)))
+        else if src.[next] == '=' then
+          let assigned = parse_assignment (src, (pos, (funcs, env))) in
+          let (next_pos, next_env) = assigned in
+          parse_main_body (src, (next_pos, (funcs, next_env)))
+        else if (name == 206622681) * (src.[next] == '(') then
+          let arg = parse_expr_value (src, (next + 1, (funcs, env))) in
+          let (exit_value, arg_end) = arg in
+          let p1 = expect_ch (src, (arg_end, ')')) in
+          let p2 = expect_ch (src, (p1, ';')) in
+          (exit_value, skip_to_close_brace (src, p2))
+        else if ((name == 913327068) + (name == 632251188)) * (src.[next] == '(') then
+          let called = parse_pointer_write_call (src, (pos, env)) in
+          let (next_pos, next_env) = called in
+          parse_main_body (src, (next_pos, (funcs, next_env)))
+        else
+          parse_main_body (src, (skip_statement (src, pos), (funcs, env)))
+    | ValueNone -> parse_main_body (src, (skip_statement (src, pos), (funcs, env)))
 in
 let rec parse_program_loop state =
   let (src, pair) = state in
