@@ -177,8 +177,9 @@ function wrappers while syntactic calls keep the direct `CALL` / `RETURN`
 path. Its streaming parser carries one token of lookahead for expression
 terminators, so application parsing can distinguish identifier arguments from
 `in` / `then` / `else` without relying on first-letter heuristics. Identifier
-hashes are kept within the VM's signed 32-bit immediate range so the same
-parser logic runs under both the C tree-walking root and self-compiled MZBC.
+names are carried as source spans and compared by spelling, avoiding the older
+numeric dispatch while still running under both the C tree-walking root and
+self-compiled MZBC.
 Its tokenizer, delimiter checks, keyword spelling, and MZBC magic emission use
 char literals instead of raw ASCII integers. Stage 02 compiles
 `expect_string` calls into ordinary bytecode comparisons and `read_byte`
@@ -195,8 +196,8 @@ writes, stderr-only `debug_byte` / `debug_string` / decimal `debug_int` /
 one-integer `debug_printf`,
 imperative `Cell.create` / `Cell.get` / `Cell.set`, record declarations,
 record literals up to three fields, field reads, declaration-style top-level `let` /
-`let rec`, arbitrary final direct calls, bounded keyword lookahead with capped
-identifier hashes, and the first ADT/pattern slice. The `mlc.byte.selfhost`
+`let rec`, arbitrary final direct calls, bounded keyword lookahead with
+source-span identifier comparisons, and the first ADT/pattern slice. The `mlc.byte.selfhost`
 target compiles `mlc/mlc.ml` with committed `mlc.byte` and compares the result
 byte-for-byte with the committed compiler artifact.
 Direct unary recursive functions also support groups up to three functions, such as
