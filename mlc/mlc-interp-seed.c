@@ -35,6 +35,7 @@ enum {
 static char *src;
 static long src_len;
 static long pos;
+static long input_pos;
 
 static long node_count;
 static long kind[MAX_NODES];
@@ -65,6 +66,13 @@ static void die(const char *msg)
 {
   fputs("mlc-interp-seed: ", stderr);
   fputs(msg, stderr);
+  fputs(" at ", stderr);
+  fputc('0' + (int)((pos / 100000) % 10), stderr);
+  fputc('0' + (int)((pos / 10000) % 10), stderr);
+  fputc('0' + (int)((pos / 1000) % 10), stderr);
+  fputc('0' + (int)((pos / 100) % 10), stderr);
+  fputc('0' + (int)((pos / 10) % 10), stderr);
+  fputc('0' + (int)(pos % 10), stderr);
   fputc('\n', stderr);
   exit(1);
 }
@@ -667,8 +675,18 @@ static long eval(long node, long env)
   if (k == N_SUB) return val_int(int_val(eval(left[node], env)) - int_val(eval(right[node], env)));
   if (k == N_MUL) return val_int(int_val(eval(left[node], env)) * int_val(eval(right[node], env)));
   if (k == N_DIV) return val_int(int_val(eval(left[node], env)) / int_val(eval(right[node], env)));
-  if (k == N_EQ) return val_int(int_val(eval(left[node], env)) == int_val(eval(right[node], env)));
-  if (k == N_NE) return val_int(int_val(eval(left[node], env)) != int_val(eval(right[node], env)));
+  if (k == N_EQ) {
+    a = eval(left[node], env);
+    closure = eval(right[node], env);
+    if ((a & 1) != 0 && (closure & 1) != 0) return val_int(int_val(a) == int_val(closure));
+    return val_int(a == closure);
+  }
+  if (k == N_NE) {
+    a = eval(left[node], env);
+    closure = eval(right[node], env);
+    if ((a & 1) != 0 && (closure & 1) != 0) return val_int(int_val(a) != int_val(closure));
+    return val_int(a != closure);
+  }
   if (k == N_LT) return val_int(int_val(eval(left[node], env)) < int_val(eval(right[node], env)));
   if (k == N_LE) return val_int(int_val(eval(left[node], env)) <= int_val(eval(right[node], env)));
   if (k == N_GT) return val_int(int_val(eval(left[node], env)) > int_val(eval(right[node], env)));
@@ -721,8 +739,30 @@ static long eval(long node, long env)
     end = offset + name_len[node];
     while (offset < end) {
       c = string_next_char(&offset, end);
-      if (a != c) die("expect_string mismatch");
+      if (a != c) {
+        fputs("mlc-interp-seed: expect_string mismatch got ", stderr);
+        fputc((int)(a & 255), stderr);
+        fputs(" want ", stderr);
+        fputc((int)(c & 255), stderr);
+        fputs(" at ", stderr);
+        fputc('0' + (int)((pos / 100000) % 10), stderr);
+        fputc('0' + (int)((pos / 10000) % 10), stderr);
+        fputc('0' + (int)((pos / 1000) % 10), stderr);
+        fputc('0' + (int)((pos / 100) % 10), stderr);
+        fputc('0' + (int)((pos / 10) % 10), stderr);
+        fputc('0' + (int)(pos % 10), stderr);
+        fputs(" input ", stderr);
+        fputc('0' + (int)((input_pos / 100000) % 10), stderr);
+        fputc('0' + (int)((input_pos / 10000) % 10), stderr);
+        fputc('0' + (int)((input_pos / 1000) % 10), stderr);
+        fputc('0' + (int)((input_pos / 100) % 10), stderr);
+        fputc('0' + (int)((input_pos / 10) % 10), stderr);
+        fputc('0' + (int)(input_pos % 10), stderr);
+        fputc('\n', stderr);
+        exit(1);
+      }
       a = fgetc(stdin);
+      input_pos = input_pos + 1;
       if (a == EOF) a = -1;
     }
     return val_int(a);
@@ -733,6 +773,7 @@ static long eval(long node, long env)
   }
   if (k == N_READ_BYTE) {
     c = fgetc(stdin);
+    input_pos = input_pos + 1;
     if (c == EOF) c = -1;
     return val_int((long)c);
   }

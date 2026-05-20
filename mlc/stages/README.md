@@ -33,7 +33,9 @@ Current stages:
   Its tokenizer, delimiter checks, keyword spelling, and MZBC magic emission use
   char literals rather than raw ASCII integers. Repeated parser spelling checks
   go through the early `expect_string "..." ch` primitive, which is interpreted
-  by the C root and compiled by stage 02 into ordinary bytecode checks. The
+  by the C root and compiled by stage 02 into ordinary bytecode checks. Streamed
+  identifiers inside the stage 02 compiler are closure-encoded character lists
+  and are compared by spelling instead of hash values. The
   parser helpers are moving to the monadic shape `ch -> kon -> result`, with
   Parsec-style primitive names (`p_peek`, `p_need_char`, `p_return`, `p_bind`)
   threading the one-character lookahead through staged parsers. This mirrors

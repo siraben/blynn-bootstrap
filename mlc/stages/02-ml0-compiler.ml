@@ -119,6 +119,73 @@ let rec is_ident ch =
   else
     0
 in
+let rec id_nil tag =
+  if tag = 0 then 1 else 0
+in
+let rec id_cons ch =
+  fun tail ->
+  fun tag ->
+  if tag = 0 then 0 else
+  if tag = 1 then ch else tail
+in
+let rec id_is_nil ident =
+  ident 0
+in
+let rec id_head ident =
+  ident 1
+in
+let rec id_tail ident =
+  ident 2
+in
+let rec ident_eq left =
+  fun right ->
+  if id_is_nil left = 1 then id_is_nil right else
+  if id_is_nil right = 1 then 0 else
+  let left_ch = id_head left in
+  let right_ch = id_head right in
+  if left_ch = right_ch then ident_eq (id_tail left) (id_tail right) else 0
+in
+let rec id_of3 a =
+  fun b ->
+  fun c ->
+  id_cons c (id_cons b (id_cons a id_nil))
+in
+let rec id_else dummy =
+  id_cons 'e' (id_cons 's' (id_cons 'l' (id_cons 'e' id_nil)))
+in
+let rec id_expect_string dummy =
+  id_cons 'g' (id_cons 'n' (id_cons 'i' (id_cons 'r' (id_cons 't' (id_cons 's' (id_cons '_' (id_cons 't' (id_cons 'c' (id_cons 'e' (id_cons 'p' (id_cons 'x' (id_cons 'e' id_nil))))))))))))
+in
+let rec id_exit dummy =
+  id_cons 't' (id_cons 'i' (id_cons 'x' (id_cons 'e' id_nil)))
+in
+let rec id_fun dummy =
+  id_of3 'f' 'u' 'n'
+in
+let rec id_if dummy =
+  id_cons 'f' (id_cons 'i' id_nil)
+in
+let rec id_in dummy =
+  id_cons 'n' (id_cons 'i' id_nil)
+in
+let rec id_let dummy =
+  id_of3 'l' 'e' 't'
+in
+let rec id_read_byte dummy =
+  id_cons 'e' (id_cons 't' (id_cons 'y' (id_cons 'b' (id_cons '_' (id_cons 'd' (id_cons 'a' (id_cons 'e' (id_cons 'r' id_nil))))))))
+in
+let rec id_rec dummy =
+  id_of3 'r' 'e' 'c'
+in
+let rec id_then dummy =
+  id_cons 'n' (id_cons 'e' (id_cons 'h' (id_cons 't' id_nil)))
+in
+let rec id_write_byte dummy =
+  id_cons 'e' (id_cons 't' (id_cons 'y' (id_cons 'b' (id_cons '_' (id_cons 'e' (id_cons 't' (id_cons 'i' (id_cons 'r' (id_cons 'w' id_nil)))))))))
+in
+let rec id_write_string dummy =
+  id_cons 'g' (id_cons 'n' (id_cons 'i' (id_cons 'r' (id_cons 't' (id_cons 's' (id_cons '_' (id_cons 'e' (id_cons 't' (id_cons 'i' (id_cons 'r' (id_cons 'w' id_nil)))))))))))
+in
 let rec skip_space ch =
   if is_space ch then skip_space read_byte else ch
 in
@@ -181,7 +248,7 @@ let rec ident_loop acc =
   fun ch ->
   fun kon ->
   if is_ident ch then
-    ident_loop ((acc * 131 + ch) - ((acc * 131 + ch) / 1073741824) * 1073741824) read_byte kon
+    ident_loop (id_cons ch acc) read_byte kon
   else
     kon acc ch
 in
@@ -189,7 +256,7 @@ let rec ident ch =
   fun kon ->
   let ch = skip_space ch in
   if is_ident ch then
-    ident_loop ch read_byte kon
+    ident_loop (id_cons ch id_nil) read_byte kon
   else
     exit 1
 in
@@ -202,7 +269,7 @@ let rec extend_env key =
   fun query ->
   if query = (0 - 3) then old query + 1 else
   if query = (0 - 4) then old query else
-  if query = key then 0 else
+  if ident_eq query key = 1 then 0 else
   let found = old query in
   if found < 0 then -1 else found + 1
 in
@@ -233,7 +300,7 @@ let rec extend_func key =
   fun captures ->
   fun old ->
   fun query ->
-  if query = key then pack_func target captures else old query
+  if ident_eq query key = 1 then pack_func target captures else old query
 in
 let rec atom_start ch =
   let ch = skip_space ch in
@@ -319,7 +386,7 @@ let rec compile mode =
     fun ident_kon ->
     let ch = skip_space ch in
     let packed = funcs word in
-    if word = 218666133 then
+    if ident_eq word (id_read_byte 0) = 1 then
       ident_kon 14 (emit2 (emit_const 0) (emit_call_prim 0)) ch
     else if packed < 0 then
       let depth = parse_env word in
@@ -343,15 +410,15 @@ let rec compile mode =
     let ch = skip_space ch in
     if ch = 'e' then
       ident ch (fun word -> fun ch ->
-      if word = 228925745 then stop_kon (pack_token 3 ch)
+      if ident_eq word (id_else 0) = 1 then stop_kon (pack_token 3 ch)
       else compile_known_ident word ch parse_env arg_base arg_kon)
     else if ch = 'i' then
       ident ch (fun word -> fun ch ->
-      if word = 13865 then stop_kon (pack_token 1 ch)
+      if ident_eq word (id_in 0) = 1 then stop_kon (pack_token 1 ch)
       else compile_known_ident word ch parse_env arg_base arg_kon)
     else if ch = 't' then
       ident ch (fun word -> fun ch ->
-      if word = 262576641 then stop_kon (pack_token 2 ch)
+      if ident_eq word (id_then 0) = 1 then stop_kon (pack_token 2 ch)
       else compile_known_ident word ch parse_env arg_base arg_kon)
     else if atom_start ch then
       compile 6 ch parse_env funcs arg_base arg_kon
@@ -447,7 +514,7 @@ let rec compile mode =
       else
         kon left_len left_emit ch)
     in
-    if word = 218666133 then
+    if ident_eq word (id_read_byte 0) = 1 then
       tail 14 (emit2 (emit_const 0) (emit_call_prim 0)) ch
     else if packed < 0 then
       let depth = env word in
@@ -479,7 +546,7 @@ let rec compile mode =
     let ch = skip_space ch in
     if ch = 'l' then
       ident ch (fun word -> fun ch ->
-      if word = 1866735 then
+      if ident_eq word (id_let 0) = 1 then
       let ch = skip_space ch in
       if ch = '(' then
         ident read_byte (fun name1 -> fun ch ->
@@ -501,7 +568,7 @@ let rec compile mode =
           ch))))
       else
       ident ch (fun name -> fun ch ->
-      if name = 1969684 then
+      if ident_eq name (id_rec 0) = 1 then
         ident ch (fun fname -> fun ch ->
         ident ch (fun param -> fun ch ->
         let ch = p_need_char '=' (p_peek ch) in
@@ -534,7 +601,7 @@ let rec compile mode =
         finish_ident word ch)
     else if ch = 'i' then
       ident ch (fun word -> fun ch ->
-      if word = 13857 then
+      if ident_eq word (id_if 0) = 1 then
       compile 0 ch env funcs base (fun cond_len -> fun cond_emit -> fun ch ->
       let ch = expect_then ch in
       compile 0 ch env funcs (base + cond_len + 5) (fun then_len -> fun then_emit -> fun ch ->
@@ -548,7 +615,7 @@ let rec compile mode =
         finish_ident word ch)
     else if ch = 'f' then
       ident ch (fun word -> fun ch ->
-      if word = 1765859 then
+      if ident_eq word (id_fun 0) = 1 then
       ident ch (fun param -> fun ch ->
       let ch = p_need_char '-' (p_peek ch) in
       let ch = expect '>' ch in
@@ -565,10 +632,10 @@ let rec compile mode =
         finish_ident word ch)
     else if ch = 'w' then
       ident ch (fun word -> fun ch ->
-      if word = 137000532 then
+      if ident_eq word (id_write_byte 0) = 1 then
         compile 2 ch env funcs base (fun expr_len -> fun expr_emit -> fun ch ->
         kon (expr_len + 9) (emit2 expr_emit emit_call_write_byte) ch)
-      else if word = 37175713 then
+      else if ident_eq word (id_write_string 0) = 1 then
         let ch = p_need_char '"' (p_peek ch) in
         let rec string_out total_len =
           fun total_emit ->
@@ -584,10 +651,10 @@ let rec compile mode =
         finish_ident word ch)
     else if ch = 'e' then
       ident ch (fun word -> fun ch ->
-      if word = 229130382 then
+      if ident_eq word (id_exit 0) = 1 then
         compile 2 ch env funcs base (fun expr_len -> fun expr_emit -> fun ch ->
         kon (expr_len + 9) (emit2 expr_emit emit_call_exit) ch)
-      else if word = 431126343 then
+      else if ident_eq word (id_expect_string 0) = 1 then
         let ch = p_need_char '"' (p_peek ch) in
         let rec expect_string_loop total_len =
           fun total_emit ->

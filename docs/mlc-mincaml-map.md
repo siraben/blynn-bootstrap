@@ -110,7 +110,9 @@ The C root also exposes an early `expect_string "..." ch` parser primitive so
 handoff stages can consume fixed spellings without long chains of single-byte
 expectations. Stage 02 begins the monadic parser transition by spelling parser
 steps as `ch -> kon -> result` values and using `parse_bind` to thread the
-one-character lookahead state.
+one-character lookahead state. Its own streaming identifiers are represented as
+closure-encoded character lists and compared by spelling, so the stage no
+longer relies on arithmetic identifier hashes.
 The next checked successor, `mlc/stages/03-ast-compiler.ml`, is compiled by
 the committed fixed-point `mlc.byte` and deliberately introduces a MinCaml-like
 front-end split: parse source into ML ADT nodes, run a small static type check,
