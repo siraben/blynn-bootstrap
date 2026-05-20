@@ -277,35 +277,46 @@ let rec ident ch =
   else
     exit 1
 in
-let rec empty_env key =
+let rec empty_env query_len =
+  fun key ->
   if key = (0 - 3) then 0 else
   if key = (0 - 4) then 0 else -1
 in
 let rec extend_env key =
+  let key_len = id_len key in
   fun old ->
+  fun query_len ->
   fun query ->
-  if query = (0 - 3) then old query + 1 else
-  if query = (0 - 4) then old query else
-  if ident_eq query key = 1 then 0 else
-  let found = old query in
+  if query = (0 - 3) then old 0 query + 1 else
+  if query = (0 - 4) then old 0 query else
+  if query_len = key_len then
+    if ident_eq_chars query key = 1 then 0 else
+    let found = old query_len query in
+    if found < 0 then -1 else found + 1
+  else
+  let found = old query_len query in
   if found < 0 then -1 else found + 1
 in
 let rec shift_env env =
+  fun query_len ->
   fun query ->
-  if query = (0 - 3) then env query else
-  if query = (0 - 4) then env query + 1 else
-  let found = env query in
+  if query = (0 - 3) then env 0 query else
+  if query = (0 - 4) then env 0 query + 1 else
+  let found = env query_len query in
   if found < 0 then -1 else found + 1
 in
 let rec unshift_env env =
-  let shifts = env (0 - 4) in
+  let shifts = env 0 (0 - 4) in
+  fun query_len ->
   fun query ->
-  if query = (0 - 3) then env query else
+  if query = (0 - 3) then env 0 query else
   if query = (0 - 4) then 0 else
-  let found = env query in
+  let found = env query_len query in
   if found < 0 then -1 else found - shifts
 in
-let rec empty_funcs key = -1 in
+let rec empty_funcs query_len =
+  fun key -> -1
+in
 let rec pack_func target =
   fun captures ->
   target * 1000 + captures
@@ -313,11 +324,16 @@ in
 let rec func_target packed = packed / 1000 in
 let rec func_captures packed = packed - (packed / 1000) * 1000 in
 let rec extend_func key =
+  let key_len = id_len key in
   fun target ->
   fun captures ->
   fun old ->
+  fun query_len ->
   fun query ->
-  if ident_eq query key = 1 then pack_func target captures else old query
+  if query_len = key_len then
+    if ident_eq_chars query key = 1 then pack_func target captures else old query_len query
+  else
+    old query_len query
 in
 let rec atom_start ch =
   let ch = skip_space ch in
@@ -402,11 +418,11 @@ let rec compile mode =
     fun arg_base ->
     fun ident_kon ->
     let ch = skip_space ch in
-    let packed = funcs word in
+    let packed = funcs (id_len word) word in
     if ident_eq word (id_read_byte 0) = 1 then
       ident_kon 14 (emit2 (emit_const 0) (emit_call_prim 0)) ch
     else if packed < 0 then
-      let depth = parse_env word in
+      let depth = parse_env (id_len word) word in
       if depth < 0 then exit 1 else
       ident_kon 5 (emit_acc depth) ch
     else
@@ -415,8 +431,8 @@ let rec compile mode =
       if captures = 0 then
         ident_kon 5 (emit_function target) ch
       else
-        let shifts = parse_env (0 - 4) in
-        let size = parse_env (0 - 3) in
+        let shifts = parse_env 0 (0 - 4) in
+        let size = parse_env 0 (0 - 3) in
         ident_kon 13 (emit_closure_skip target captures (shifts + size - captures)) ch
   in
   let rec compile_arg_or_stop ch =
@@ -445,7 +461,7 @@ let rec compile mode =
   let rec finish_ident word =
     fun ch ->
     let ch = skip_space ch in
-    let packed = funcs word in
+    let packed = funcs (id_len word) word in
     let rec tail left_len =
       fun left_emit ->
       fun ch ->
@@ -534,7 +550,7 @@ let rec compile mode =
     if ident_eq word (id_read_byte 0) = 1 then
       tail 14 (emit2 (emit_const 0) (emit_call_prim 0)) ch
     else if packed < 0 then
-      let depth = env word in
+      let depth = env (id_len word) word in
       if depth < 0 then exit 1 else
       tail 5 (emit_acc depth) ch
     else
@@ -547,8 +563,8 @@ let rec compile mode =
           (fun ch ->
           tail 5 (emit_function target) ch)
       else
-        let shifts = env (0 - 4) in
-        let size = env (0 - 3) in
+        let shifts = env 0 (0 - 4) in
+        let size = env 0 (0 - 3) in
         tail 13 (emit_closure_skip target captures (shifts + size - captures)) ch
   in
   if mode = 0 then
@@ -591,7 +607,7 @@ let rec compile mode =
         let ch = p_need_char '=' (p_peek ch) in
         let target = base + 5 in
         let close_env = unshift_env env in
-        let captures = close_env (0 - 3) in
+        let captures = close_env 0 (0 - 3) in
         let rec_funcs = extend_func fname target captures funcs in
         let body_base = if captures = 0 then target + 1 else target in
         compile 0 ch (extend_env param close_env) rec_funcs body_base (fun fn_body_len -> fun fn_body_emit -> fun ch ->
@@ -638,8 +654,8 @@ let rec compile mode =
       let ch = expect '>' ch in
       let target = base + 5 in
       let close_env = unshift_env env in
-      let captures = close_env (0 - 3) in
-      let shifts = env (0 - 4) in
+      let captures = close_env 0 (0 - 3) in
+      let shifts = env 0 (0 - 4) in
       compile 0 ch (extend_env param close_env) funcs target (fun body_len -> fun body_emit -> fun ch ->
       kon
         (5 + body_len + 1 + 13)
