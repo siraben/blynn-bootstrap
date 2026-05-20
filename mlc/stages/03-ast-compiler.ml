@@ -12,7 +12,7 @@ type expr_more7 = EString of int | EStringLength of expr | EBytesCreate of expr 
 type expr_more8 = EBytesLength of expr | EIndex of expr | ESetIndex of expr | EMore9 of expr_more9
 type expr_more9 = EDebugInt of expr | EUnit | EMore10 of expr_more10
 type expr_more10 = ECellCreate of expr | ECellGet of expr | ECellSet of expr | EArrayCreate of expr | ELetRec of expr | EMore11 of expr_more11
-type expr_more11 = ECall of expr | EConstr of int | EConstrArg of expr
+type expr_more11 = ECall of expr | EConstr of int | EConstrArg of expr | EMatch of expr
 type parse_reply = ParseOk of int | ParseErr
 type expr_option = ExprSome of expr | ExprNone
 type pos_option = PosSome of int | PosNone
@@ -207,6 +207,10 @@ let rec emit_setfield state =
   let _ = emit_byte_if (emit, 17) in
   let _ = emit_u32_if (emit, index) in
   5
+in
+let rec emit_gettag emit =
+  let _ = emit_byte_if (emit, 18) in
+  1
 in
 let rec emit_blocksize emit =
   let _ = emit_byte_if (emit, 27) in
@@ -434,6 +438,14 @@ let rec is_type_at state =
   let (src, pos0) = state in
   p_keyword_at (src, (pos0, "type"))
 in
+let rec is_match_at state =
+  let (src, pos0) = state in
+  p_keyword_at (src, (pos0, "match"))
+in
+let rec is_with_at state =
+  let (src, pos0) = state in
+  p_keyword_at (src, (pos0, "with"))
+in
 let rec is_of_at state =
   let (src, pos0) = state in
   p_keyword_at (src, (pos0, "of"))
@@ -458,6 +470,8 @@ let rec is_reserved_expr_at state =
   if is_true_at (src, pos0) then 1 else
   if is_false_at (src, pos0) then 1 else
   if is_type_at (src, pos0) then 1 else
+  if is_match_at (src, pos0) then 1 else
+  if is_with_at (src, pos0) then 1 else
   if is_write_byte_at (src, pos0) then 1 else
   if is_write_string_at (src, pos0) then 1 else
   if is_debug_byte_at (src, pos0) then 1 else
@@ -492,6 +506,14 @@ in
 let rec need_of state =
   let (src, pos0) = state in
   p_need_keyword (src, (pos0, "of"))
+in
+let rec need_with state =
+  let (src, pos0) = state in
+  p_need_keyword (src, (pos0, "with"))
+in
+let rec need_arrow state =
+  let (src, pos0) = state in
+  p_need_string (src, (pos0, "->"))
 in
 let rec need_then state =
   let (src, pos0) = state in
@@ -666,6 +688,9 @@ in
 let rec constr_arg_expr state =
   let (name, arg) = state in
   more10_expr (EMore11 (EConstrArg (name, arg)))
+in
+let rec match_expr state =
+  more10_expr (EMore11 (EMatch state))
 in
 let rec let_rec_expr state =
   more10_expr (ELetRec (1, state))
@@ -1129,6 +1154,20 @@ let rec parse_expr_prec state =
         let expr = parse_expr_prec (src, (expr_pos, (0, (0, (0, EInt 0))))) in
         let (expr_ast, expr_end) = expr in
         (exit_expr expr_ast, expr_end)
+      else if is_match_at (src, pos) then
+        let scrutinee = parse_expr_prec (src, (pos + 5, (0, (0, (0, EInt 0))))) in
+        let (scrutinee_ast, scrutinee_end) = scrutinee in
+        let case1_bar = need_char (src, (need_with (src, scrutinee_end), '|')) in
+        let case1_pat = parse_ident (src, case1_bar) in
+        let (case1_name, case1_pat_end) = case1_pat in
+        let case1_body = parse_expr_prec (src, (need_arrow (src, case1_pat_end), (0, (0, (0, EInt 0))))) in
+        let (case1_body_ast, case1_body_end) = case1_body in
+        let case2_bar = need_char (src, (case1_body_end, '|')) in
+        let case2_pat = parse_ident (src, case2_bar) in
+        let (case2_name, case2_pat_end) = case2_pat in
+        let case2_body = parse_expr_prec (src, (need_arrow (src, case2_pat_end), (0, (0, (0, EInt 0))))) in
+        let (case2_body_ast, case2_body_end) = case2_body in
+        (match_expr (scrutinee_ast, (case1_name, (case1_body_ast, (case2_name, case2_body_ast)))), case2_body_end)
       else
         let peeked = p_peek (src, pos) in
         let (ch, atom_pos) = peeked in
@@ -1779,6 +1818,17 @@ let rec infer state =
                                                           | TyAdt id -> let _ = id in fail 0)
                                                       | _ -> fail 0)
                                                   | _ -> fail 0)
+                                              | EMatch parts ->
+                                                  let (scrutinee, rest1) = parts in
+                                                  let (case1_name, rest2) = rest1 in
+                                                  let (case1_body, rest3) = rest2 in
+                                                  let (case2_name, case2_body) = rest3 in
+                                                  let scrutinee_ty = infer (src, (env, scrutinee)) in
+                                                  let _ = need_ty (lookup_tenv (src, (env, case1_name)), scrutinee_ty) in
+                                                  let _ = need_ty (lookup_tenv (src, (env, case2_name)), scrutinee_ty) in
+                                                  let case1_ty = infer (src, (env, case1_body)) in
+                                                  let _ = need_ty (infer (src, (env, case2_body)), case1_ty) in
+                                                  case1_ty
 in
 let rec empty_env unit =
   let _ = unit in
@@ -2192,6 +2242,35 @@ let rec emit_expr state =
                                                         let arg_len = emit_expr (arg, (src, (env, (ctors, (funcs, (base_pos, emit)))))) in
                                                         let block_len = emit_makeblock_tag (emit, (ctor_tag packed, 1)) in
                                                         arg_len + block_len
+                                                  | EMatch parts ->
+                                                      let (scrutinee, rest1) = parts in
+                                                      let (case1_name, rest2) = rest1 in
+                                                      let (case1_body, rest3) = rest2 in
+                                                      let (case2_name, case2_body) = rest3 in
+                                                      let case1_ctor = lookup_ctor (src, (ctors, case1_name)) in
+                                                      let case2_ctor = lookup_ctor (src, (ctors, case2_name)) in
+                                                      let _ = if ctor_has_arg case1_ctor == 1 then fail 0 else 0 in
+                                                      let _ = if ctor_has_arg case2_ctor == 1 then fail 0 else 0 in
+                                                      let scrutinee_len = emit_expr (scrutinee, (src, (env, (ctors, (funcs, (base_pos, emit)))))) in
+                                                      let push_scrutinee = emit_push emit in
+                                                      let case1_len = emit_expr (case1_body, (src, (shift_env env, (ctors, (funcs, (base_pos + scrutinee_len + push_scrutinee + 18, 0)))))) in
+                                                      let case2_len = emit_expr (case2_body, (src, (shift_env env, (ctors, (funcs, (base_pos + scrutinee_len + push_scrutinee + 18 + case1_len + 5 + 5, 0)))))) in
+                                                      let _ =
+                                                        if emit == 1 then
+                                                          let _ = emit_acc (1, 0) in
+                                                          let _ = emit_gettag 1 in
+                                                          let _ = emit_push 1 in
+                                                          let _ = emit_const (1, ctor_tag case1_ctor) in
+                                                          let _ = emit_eq 1 in
+                                                          let _ = emit_branch_if_not (1, case1_len + 5 + 5) in
+                                                          let _ = emit_expr (case1_body, (src, (shift_env env, (ctors, (funcs, (base_pos + scrutinee_len + push_scrutinee + 18, 1)))))) in
+                                                          let _ = emit_pop1 1 in
+                                                          let _ = emit_branch (1, case2_len + 5) in
+                                                          let _ = emit_expr (case2_body, (src, (shift_env env, (ctors, (funcs, (base_pos + scrutinee_len + push_scrutinee + 18 + case1_len + 5 + 5, 1)))))) in
+                                                          emit_pop1 1
+                                                        else 0
+                                                      in
+                                                      scrutinee_len + push_scrutinee + 18 + case1_len + 5 + 5 + case2_len + 5
 in
 let rec emit_program src =
   let parsed_types = parse_type_decls (src, (0, (0, (empty_tenv 0, empty_ctors 0)))) in

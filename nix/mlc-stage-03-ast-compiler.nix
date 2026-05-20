@@ -169,6 +169,15 @@ stageRun {
         printf 'type byte = Byte of int | Empty\nlet x = Empty\nwrite_byte 79' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-nullary-ctor.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-adt-nullary-ctor.mzbc)"
         test "$actual" = O
+        printf "type flag = Yes | No\nwrite_byte (match Yes with | Yes -> 'O' | No -> 'X')" | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-match-yes.mzbc
+        actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-adt-match-yes.mzbc)"
+        test "$actual" = O
+        printf "type flag = Yes | No\nwrite_byte (match No with | Yes -> 'X' | No -> 'O')" | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-match-no.mzbc
+        actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-adt-match-no.mzbc)"
+        test "$actual" = O
+        printf "type flag = Yes | No\nlet y = 'O' in write_byte (match No with | Yes -> 'X' | No -> y)" | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-match-env.mzbc
+        actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-adt-match-env.mzbc)"
+        test "$actual" = O
         printf 'let (x, y) = (40, 39) in write_byte (x + y)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-pair-let.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-pair-let.mzbc)"
         test "$actual" = O
@@ -277,6 +286,12 @@ stageRun {
         if printf 'type byte = Byte of int | Empty\nlet x = Byte "x"\nwrite_byte 79' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-payload-type-error.mzbc; then
           exit 1
         fi
+        if printf 'type flag = Yes | No\nwrite_byte (match Yes with | Yes -> 79 | No -> true)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-match-branch-type-error.mzbc; then
+          exit 1
+        fi
+        if printf "type byte = Byte of int | Empty\nwrite_byte (match Empty with | Byte -> 'X' | Empty -> 'O')" | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-match-unary-pattern-error.mzbc; then
+          exit 1
+        fi
   '';
   installScript = ''
     install -Dm644 03-ast-compiler.ml "$out/share/mlc/stages/03-ast-compiler.ml"
@@ -329,6 +344,9 @@ stageRun {
     install -Dm644 03-leading-types.mzbc "$out/share/mlc/stages/03-leading-types.mzbc"
     install -Dm644 03-adt-unary-ctor.mzbc "$out/share/mlc/stages/03-adt-unary-ctor.mzbc"
     install -Dm644 03-adt-nullary-ctor.mzbc "$out/share/mlc/stages/03-adt-nullary-ctor.mzbc"
+    install -Dm644 03-adt-match-yes.mzbc "$out/share/mlc/stages/03-adt-match-yes.mzbc"
+    install -Dm644 03-adt-match-no.mzbc "$out/share/mlc/stages/03-adt-match-no.mzbc"
+    install -Dm644 03-adt-match-env.mzbc "$out/share/mlc/stages/03-adt-match-env.mzbc"
     install -Dm644 03-pair-let.mzbc "$out/share/mlc/stages/03-pair-let.mzbc"
     install -Dm644 03-top-pair-def.mzbc "$out/share/mlc/stages/03-top-pair-def.mzbc"
     install -Dm644 03-sequence.mzbc "$out/share/mlc/stages/03-sequence.mzbc"
