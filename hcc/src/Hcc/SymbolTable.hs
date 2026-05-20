@@ -19,7 +19,7 @@ data Color = R | B
 
 data Tree a
   = E
-  | N Color String Int (Maybe a) (Tree a) (Tree a)
+  | N Color String (Maybe a) (Tree a) (Tree a)
 
 data SymbolMap a = SymbolMap (Tree a)
 
@@ -56,14 +56,11 @@ symbolSetDelete :: String -> SymbolSet -> SymbolSet
 symbolSetDelete k (SymbolSet t) = SymbolSet (deleteT k t)
 
 lookupT :: String -> Tree a -> Maybe a
-lookupT k = lookupH k (hash k)
-
-lookupH :: String -> Int -> Tree a -> Maybe a
-lookupH _ _ E = Nothing
-lookupH k kh (N _ x xh v l r) = case cmpHash k kh x xh of
-  Lt -> lookupH k kh l
+lookupT _ E = Nothing
+lookupT k (N _ x v l r) = case cmpString k x of
+  Lt -> lookupT k l
   Eq -> v
-  Gt -> lookupH k kh r
+  Gt -> lookupT k r
 
 insertT :: String -> a -> Tree a -> Tree a
 insertT k v = alterT k (Just v)
@@ -72,63 +69,51 @@ deleteT :: String -> Tree a -> Tree a
 deleteT k = alterT k Nothing
 
 alterT :: String -> Maybe a -> Tree a -> Tree a
-alterT k v t = blacken (go (hash k) t) where
-  go kh u = case u of
-    E -> N R k kh v E E
-    N c x xh old l r -> case cmpHash k kh x xh of
-      Lt -> bal c x xh old (go kh l) r
-      Eq -> N c k kh v l r
-      Gt -> bal c x xh old l (go kh r)
+alterT k v t = blacken (go t) where
+  go u = case u of
+    E -> N R k v E E
+    N c x old l r -> case cmpString k x of
+      Lt -> bal c x old (go l) r
+      Eq -> N c k v l r
+      Gt -> bal c x old l (go r)
 
 blacken :: Tree a -> Tree a
 blacken E = E
-blacken (N _ x xh v l r) = N B x xh v l r
+blacken (N _ x v l r) = N B x v l r
 
-bal :: Color -> String -> Int -> Maybe a -> Tree a -> Tree a -> Tree a
-bal R x xh v l r = N R x xh v l r
-bal B x xh v l r = balL x xh v l r
+bal :: Color -> String -> Maybe a -> Tree a -> Tree a -> Tree a
+bal R x v l r = N R x v l r
+bal B x v l r = balL x v l r
 
-balL :: String -> Int -> Maybe a -> Tree a -> Tree a -> Tree a
-balL x xh v l r = case l of
-  N R lx lxh lv ll lr -> case ll of
-    N R llx llxh llv lll llr ->
-      N R lx lxh lv
-        (N B llx llxh llv lll llr)
-        (N B x xh v lr r)
+balL :: String -> Maybe a -> Tree a -> Tree a -> Tree a
+balL x v l r = case l of
+  N R lx lv ll lr -> case ll of
+    N R llx llv lll llr ->
+      N R lx lv
+        (N B llx llv lll llr)
+        (N B x v lr r)
     _ -> case lr of
-      N R lrx lrxh lrv lrl lrr ->
-        N R lrx lrxh lrv
-          (N B lx lxh lv ll lrl)
-          (N B x xh v lrr r)
-      _ -> balR x xh v l r
-  _ -> balR x xh v l r
+      N R lrx lrv lrl lrr ->
+        N R lrx lrv
+          (N B lx lv ll lrl)
+          (N B x v lrr r)
+      _ -> balR x v l r
+  _ -> balR x v l r
 
-balR :: String -> Int -> Maybe a -> Tree a -> Tree a -> Tree a
-balR x xh v l r = case r of
-  N R rx rxh rv rl rr -> case rl of
-    N R rlx rlxh rlv rll rlr ->
-      N R rlx rlxh rlv
-        (N B x xh v l rll)
-        (N B rx rxh rv rlr rr)
+balR :: String -> Maybe a -> Tree a -> Tree a -> Tree a
+balR x v l r = case r of
+  N R rx rv rl rr -> case rl of
+    N R rlx rlv rll rlr ->
+      N R rlx rlv
+        (N B x v l rll)
+        (N B rx rv rlr rr)
     _ -> case rr of
-      N R rrx rrxh rrv rrl rrr ->
-        N R rx rxh rv
-          (N B x xh v l rl)
-          (N B rrx rrxh rrv rrl rrr)
-      _ -> N B x xh v l r
-  _ -> N B x xh v l r
-
-hash :: String -> Int
-hash = go 5381 where
-  go h [] = h
-  go h (c:cs) = case ((h * 33) + fromEnum c) `mod` 2147483647 of
-    h' -> go h' cs
-
-cmpHash :: String -> Int -> String -> Int -> Cmp
-cmpHash l lh r rh
-  | lh < rh = Lt
-  | lh > rh = Gt
-  | otherwise = cmpString l r
+      N R rrx rrv rrl rrr ->
+        N R rx rv
+          (N B x v l rl)
+          (N B rrx rrv rrl rrr)
+      _ -> N B x v l r
+  _ -> N B x v l r
 
 data Cmp
   = Lt

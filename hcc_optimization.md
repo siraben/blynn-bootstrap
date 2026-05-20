@@ -197,7 +197,7 @@ Current top `hcc1` cost centres:
 ```text
 ParseLite >>=             5.9% time, 3.3% alloc
 hccWriteBufferedText      5.5% time, 3.5% alloc
-SymbolTable.hash.go       4.5% time, 4.4% alloc
+SymbolTable.lookup.go     4.5% time, 4.4% alloc
 IntTable.incrementT.go    4.4% time, 3.5% alloc
 CompileM >>=              3.6% time, 1.3% alloc
 readRuntimeResult.go      2.8% time, 3.8% alloc
@@ -305,7 +305,7 @@ IntTable.lookupT                        4.5% time, 0.0% alloc
 Parser.removeEnumConstant               3.5% time, 1.9% alloc
 hccWriteHandleLines.writeTextBuffered   3.5% time, 3.4% alloc
 lexerIsSpace                            3.3% time, 4.0% alloc
-SymbolTable.hash.go                     3.2% time, 4.0% alloc
+SymbolTable.lookup.go                   3.2% time, 4.0% alloc
 IntTable.insertT.go                     2.6% time, 3.0% alloc
 CompileM >>=                            2.4% time, 1.2% alloc
 readRuntimeResult.go                    2.4% time, 3.5% alloc
@@ -1059,7 +1059,7 @@ Changes:
   `csStructSizes` for aggregate sizes and `csStructMembers` for member offset/type lookups.
 - Changed `RegAlloc` from one `IntMap Location` keyed by every temp to a chunked dense `LocationTable`.
   Chunks hold 32 temp locations, so lookup still uses a tree but over chunk IDs instead of every individual temp.
-- Changed `SymbolTable` tree nodes to store a per-key hash. Lookups compute the query hash once and compare hashes before falling back to character-by-character `String` comparison.
+- `SymbolTable` now orders keys directly by character-by-character `String` comparison; it does not store or compare per-key hashes.
 - Changed function-like macro argument substitution from association-list lookup to a `SymbolMap MacroArg`.
 - Made `readHandle` tail-recursive in `HccSystem`.
 
@@ -1107,7 +1107,7 @@ tinycc-boot-hcc-gcc-precisely-tcc:
 
 Remaining larger migrations:
 
-- Replace `String` tokens/AST names with explicit symbol objects rather than hash-accelerated string tree keys.
+- Replace `String` tokens/AST names with explicit symbol objects rather than repeatedly comparing string tree keys.
 - Replace list-backed token streams with cursor/index streams.
 - Replace whole-source `String` lexing with slice-oriented text buffers.
 - Replace `[String]` output lines with direct output builders that can flush chunks without materializing line lists.
