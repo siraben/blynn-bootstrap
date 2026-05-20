@@ -187,6 +187,12 @@ stageRun {
         printf 'type byte = Empty | Byte of int\nlet y = 1 in write_byte (match Byte 78 with | Empty -> 88 | Byte x -> x + y)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-match-payload-env.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-adt-match-payload-env.mzbc)"
         test "$actual" = O
+        printf 'type byte = Byte of int | Empty | Other\nwrite_byte (match Other with | Byte x -> x | _ -> 79)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-match-wildcard.mzbc
+        actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-adt-match-wildcard.mzbc)"
+        test "$actual" = O
+        printf 'type byte = Byte of int | Empty\nwrite_byte (match Empty with | Byte x -> x | other -> 79)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-match-default-var.mzbc
+        actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-adt-match-default-var.mzbc)"
+        test "$actual" = O
         printf 'let (x, y) = (40, 39) in write_byte (x + y)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-pair-let.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-pair-let.mzbc)"
         test "$actual" = O
@@ -310,6 +316,15 @@ stageRun {
         if printf 'type byte = Byte of int | Empty\nwrite_byte (match 79 with | Byte x -> x | Empty -> 79)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-match-scrutinee-type-error.mzbc; then
           exit 1
         fi
+        if printf 'type byte = Byte of int | Empty\nwrite_byte (match Empty with | Byte x -> x | other -> other)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-match-default-result-type-error.mzbc; then
+          exit 1
+        fi
+        if printf 'type byte = Byte of int | Empty\nwrite_byte (match Empty with | Byte x -> x | other y -> 79)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-match-default-extra-bind-error.mzbc; then
+          exit 1
+        fi
+        if printf 'type byte = Byte of int | Empty\nwrite_byte (match Empty with | Byte x -> x | Missing -> 79)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-match-unknown-ctor-error.mzbc; then
+          exit 1
+        fi
   '';
   installScript = ''
     install -Dm644 03-ast-compiler.ml "$out/share/mlc/stages/03-ast-compiler.ml"
@@ -368,6 +383,8 @@ stageRun {
     install -Dm644 03-adt-match-payload-first.mzbc "$out/share/mlc/stages/03-adt-match-payload-first.mzbc"
     install -Dm644 03-adt-match-payload-second.mzbc "$out/share/mlc/stages/03-adt-match-payload-second.mzbc"
     install -Dm644 03-adt-match-payload-env.mzbc "$out/share/mlc/stages/03-adt-match-payload-env.mzbc"
+    install -Dm644 03-adt-match-wildcard.mzbc "$out/share/mlc/stages/03-adt-match-wildcard.mzbc"
+    install -Dm644 03-adt-match-default-var.mzbc "$out/share/mlc/stages/03-adt-match-default-var.mzbc"
     install -Dm644 03-pair-let.mzbc "$out/share/mlc/stages/03-pair-let.mzbc"
     install -Dm644 03-top-pair-def.mzbc "$out/share/mlc/stages/03-top-pair-def.mzbc"
     install -Dm644 03-sequence.mzbc "$out/share/mlc/stages/03-sequence.mzbc"
