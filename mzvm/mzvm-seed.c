@@ -232,17 +232,14 @@ static void init_stacks(void)
 
 static long byte_at(char *bytes, long off)
 {
-  long out = bytes[off];
-  if (out < 0) out = out + 256;
-  return out;
+  return bytes[off] & 255;
 }
 
 static unsigned read_u8(void)
 {
   long out;
   if (pc >= code_len) die("truncated instruction");
-  out = code[pc];
-  if (out < 0) out = out + 256;
+  out = code[pc] & 255;
   pc = pc + 1;
   return (unsigned)out;
 }
@@ -254,14 +251,10 @@ static long read_u32(void)
   long b2;
   long b3;
   if (pc + 4 > code_len) die("truncated instruction");
-  b0 = code[pc];
-  b1 = code[pc + 1];
-  b2 = code[pc + 2];
-  b3 = code[pc + 3];
-  if (b0 < 0) b0 = b0 + 256;
-  if (b1 < 0) b1 = b1 + 256;
-  if (b2 < 0) b2 = b2 + 256;
-  if (b3 < 0) b3 = b3 + 256;
+  b0 = code[pc] & 255;
+  b1 = code[pc + 1] & 255;
+  b2 = code[pc + 2] & 255;
+  b3 = code[pc + 3] & 255;
   pc = pc + 4;
   return (long)(b0 | (b1 << 8) | (b2 << 16) | (b3 << 24));
 }
@@ -400,8 +393,7 @@ static void run(void)
     long raw_op;
     unsigned op;
     if (pc >= code_len) die("truncated instruction");
-    raw_op = code[pc];
-    if (raw_op < 0) raw_op = raw_op + 256;
+    raw_op = code[pc] & 255;
     op = (unsigned)raw_op;
     pc = pc + 1;
     last_pc = pc - 1;
