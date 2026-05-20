@@ -45,6 +45,12 @@ stageRun {
         printf 'let b = Bytes.create 1 + 1\nb.[0] <- 79; b.[1] <- 75; write_byte b.[0]; write_byte b.[1]' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-bytes-create-expr.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-bytes-create-expr.mzbc)"
         test "$actual" = OK
+        printf 'let a = Array.create 2 88\na.(0) <- 79; a.(1) <- 75; write_byte a.(0); write_byte a.(1)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-array-create-index-set.mzbc
+        actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-array-create-index-set.mzbc)"
+        test "$actual" = OK
+        printf 'let n = 2\nlet init = 88\nlet a = Array.create n init\na.(0) <- 79; a.(1) <- 75; write_byte a.(0); write_byte a.(1)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-array-create-var.mzbc
+        actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-array-create-var.mzbc)"
+        test "$actual" = OK
         printf 'let s = "OK"\nwrite_byte s.[1]' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-string-index.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-string-index.mzbc)"
         test "$actual" = K
@@ -199,6 +205,15 @@ stageRun {
         if printf 'write_byte (Bytes.length "OK")' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-bytes-length-type-error.mzbc; then
           exit 1
         fi
+        if printf 'write_byte (Array.create 1 79)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-array-create-type-error.mzbc; then
+          exit 1
+        fi
+        if printf 'let a = Array.create 1 "x"\nwrite_byte a.(0)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-array-index-type-error.mzbc; then
+          exit 1
+        fi
+        if printf 'let a = Array.create 1 79\na.(0) <- "x"' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-array-set-type-error.mzbc; then
+          exit 1
+        fi
         if printf 'let s = "OK"\ns.[0] <- 79' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-string-index-set-type-error.mzbc; then
           exit 1
         fi
@@ -230,6 +245,8 @@ stageRun {
     install -Dm644 03-string-binding-length.mzbc "$out/share/mlc/stages/03-string-binding-length.mzbc"
     install -Dm644 03-bytes-create-length.mzbc "$out/share/mlc/stages/03-bytes-create-length.mzbc"
     install -Dm644 03-bytes-create-expr.mzbc "$out/share/mlc/stages/03-bytes-create-expr.mzbc"
+    install -Dm644 03-array-create-index-set.mzbc "$out/share/mlc/stages/03-array-create-index-set.mzbc"
+    install -Dm644 03-array-create-var.mzbc "$out/share/mlc/stages/03-array-create-var.mzbc"
     install -Dm644 03-string-index.mzbc "$out/share/mlc/stages/03-string-index.mzbc"
     install -Dm644 03-bytes-index-set.mzbc "$out/share/mlc/stages/03-bytes-index-set.mzbc"
     install -Dm644 03-bytes-index-var.mzbc "$out/share/mlc/stages/03-bytes-index-var.mzbc"

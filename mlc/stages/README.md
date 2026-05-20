@@ -104,6 +104,7 @@ Current stages:
   as arbitrary expressions whose final type must be `unit`, so the top-level
   no longer has a special `write_byte` wrapper. The flake gate checks direct
   bytes, `read_byte`, literal `write_string`, arithmetic `Bytes.create` sizes,
+  typed `Array.create` with `a.(i)` reads and `a.(i) <- value` writes,
   arithmetic index and byte-value expressions for `b.[i]` / `b.[i] <- ch`,
   stderr-only `debug_byte` / `debug_string` / decimal `debug_int`, char
   literals including escapes, typed `exit`, `()`,
@@ -112,7 +113,7 @@ Current stages:
   bool literals, conditionals whose
   guards must type as `bool`, expression-level `let ... in ...`,
   declaration-style top-level `let` bindings, pair construction, pair
-  destructuring, top-level pair destructuring, typed imperative cells via
+  destructuring, top-level pair destructuring, typed imperative arrays/cells via
   `Cell.create` / `Cell.get` / `Cell.set`, full-input consumption, and static
   type errors.
 

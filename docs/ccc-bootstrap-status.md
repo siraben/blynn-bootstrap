@@ -22,6 +22,10 @@ plan requirement.
 | 9 | `gcc46.m2.ccc.m2` | none | missing |
 | 10 | `gccLatest.m2.ccc.m2` | none | missing |
 
+Stage 4a also currently gates typed `Array.create`, `a.(i)` reads, and
+`a.(i) <- value` writes, including static rejection when array values are used
+as bytes or element writes use the wrong type.
+
 ## Supporting Artifacts
 
 - `.mzbc` header and opcode ABI: `docs/ccc-bytecode.md`
