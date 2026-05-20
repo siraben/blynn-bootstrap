@@ -640,13 +640,38 @@ let rec parse_match_bind state =
   let pos = skip_space (src, pos0) in
   if (src.[pos] == '-') * (src.[pos + 1] == '>') then (0, (0 - 1, (0 - 1, pos))) else
   if src.[pos] == '(' then
-    let name1 = parse_ident (src, pos + 1) in
-    let (name1_pos, name1_end) = name1 in
-    let comma = need_char (src, (name1_end, ',')) in
-    let name2 = parse_ident (src, comma) in
-    let (name2_pos, name2_end) = name2 in
-    let done_pos = need_char (src, (name2_end, ')')) in
-    (2, (name1_pos, (name2_pos, done_pos)))
+    let first_pos = skip_space (src, pos + 1) in
+    if src.[first_pos] == '(' then
+      let name1 = parse_ident (src, first_pos + 1) in
+      let (name1_pos, name1_end) = name1 in
+      let comma1 = need_char (src, (name1_end, ',')) in
+      let name2 = parse_ident (src, comma1) in
+      let (name2_pos, name2_end) = name2 in
+      let close_pair = need_char (src, (name2_end, ')')) in
+      let comma2 = need_char (src, (close_pair, ',')) in
+      let name3 = parse_ident (src, comma2) in
+      let (name3_pos, name3_end) = name3 in
+      let done_pos = need_char (src, (name3_end, ')')) in
+      (3, (name1_pos, ((name2_pos, name3_pos), done_pos)))
+    else
+      let name1 = parse_ident (src, first_pos) in
+      let (name1_pos, name1_end) = name1 in
+      let comma = need_char (src, (name1_end, ',')) in
+      let second_pos = skip_space (src, comma) in
+      if src.[second_pos] == '(' then
+        let name2 = parse_ident (src, second_pos + 1) in
+        let (name2_pos, name2_end) = name2 in
+        let comma2 = need_char (src, (name2_end, ',')) in
+        let name3 = parse_ident (src, comma2) in
+        let (name3_pos, name3_end) = name3 in
+        let close_pair = need_char (src, (name3_end, ')')) in
+        let done_pos = need_char (src, (close_pair, ')')) in
+        (4, (name1_pos, ((name2_pos, name3_pos), done_pos)))
+      else
+        let name2 = parse_ident (src, second_pos) in
+        let (name2_pos, name2_end) = name2 in
+        let done_pos = need_char (src, (name2_end, ')')) in
+        (2, (name1_pos, (name2_pos, done_pos)))
   else
     let name = parse_ident (src, pos) in
     let (name_pos, done_pos) = name in
@@ -1617,6 +1642,44 @@ let rec match_case_tenv state =
                                 extend_tenv_if_named (src, (bind_name2, (right_ty, env1)))
                             | _ -> fail 0)
                         | _ -> fail 0)
+                      else if bind_kind == 3 then
+                        (match arg_ty with
+                          TyMore arg_more ->
+                            (match arg_more with
+                              TyPair pair_ty ->
+                                let (nested_ty, right_ty) = pair_ty in
+                                (match nested_ty with
+                                  TyMore nested_more ->
+                                    (match nested_more with
+                                      TyPair nested_pair_ty ->
+                                        let (left_ty, middle_ty) = nested_pair_ty in
+                                        let (middle_name, right_name) = bind_name2 in
+                                        let env1 = extend_tenv_if_named (src, (bind_name, (left_ty, env))) in
+                                        let env2 = extend_tenv_if_named (src, (middle_name, (middle_ty, env1))) in
+                                        extend_tenv_if_named (src, (right_name, (right_ty, env2)))
+                                    | _ -> fail 0)
+                                | _ -> fail 0)
+                            | _ -> fail 0)
+                        | _ -> fail 0)
+                      else if bind_kind == 4 then
+                        (match arg_ty with
+                          TyMore arg_more ->
+                            (match arg_more with
+                              TyPair pair_ty ->
+                                let (left_ty, nested_ty) = pair_ty in
+                                (match nested_ty with
+                                  TyMore nested_more ->
+                                    (match nested_more with
+                                      TyPair nested_pair_ty ->
+                                        let (middle_ty, right_ty) = nested_pair_ty in
+                                        let (middle_name, right_name) = bind_name2 in
+                                        let env1 = extend_tenv_if_named (src, (bind_name, (left_ty, env))) in
+                                        let env2 = extend_tenv_if_named (src, (middle_name, (middle_ty, env1))) in
+                                        extend_tenv_if_named (src, (right_name, (right_ty, env2)))
+                                    | _ -> fail 0)
+                                | _ -> fail 0)
+                            | _ -> fail 0)
+                        | _ -> fail 0)
                       else fail 0
                   | _ -> fail 0)
               | _ -> fail 0)
@@ -2033,6 +2096,20 @@ let rec match_case_env state =
       let base = shift_env (shift_env (shift_env (shift_env env))) in
       let env1 = bind_env_at_if_named (src, (bind_name, (1, base))) in
       bind_env_at_if_named (src, (bind_name2, (0, env1)))
+    else
+    if bind_kind == 3 then
+      let base = shift_env (shift_env (shift_env (shift_env (shift_env (shift_env env))))) in
+      let (middle_name, right_name) = bind_name2 in
+      let env1 = bind_env_at_if_named (src, (bind_name, (2, base))) in
+      let env2 = bind_env_at_if_named (src, (middle_name, (1, env1))) in
+      bind_env_at_if_named (src, (right_name, (0, env2)))
+    else
+    if bind_kind == 4 then
+      let base = shift_env (shift_env (shift_env (shift_env (shift_env (shift_env env))))) in
+      let (middle_name, right_name) = bind_name2 in
+      let env1 = bind_env_at_if_named (src, (bind_name, (3, base))) in
+      let env2 = bind_env_at_if_named (src, (middle_name, (1, env1))) in
+      bind_env_at_if_named (src, (right_name, (0, env2)))
     else fail 0
   else
     let _ = if bind_kind == 0 then 0 else fail 0 in
@@ -2047,7 +2124,41 @@ let rec emit_match_payload state =
   let (emit, pair) = state in
   let (has_arg, bind_kind) = pair in
   if has_arg == 1 then
-    if bind_kind == 2 then
+    if bind_kind == 3 then
+      let _ = emit_acc (emit, 0) in
+      let _ = emit_getfield (emit, 0) in
+      let _ = emit_push emit in
+      let _ = emit_acc (emit, 0) in
+      let _ = emit_getfield (emit, 0) in
+      let _ = emit_push emit in
+      let _ = emit_acc (emit, 0) in
+      let _ = emit_getfield (emit, 0) in
+      let _ = emit_push emit in
+      let _ = emit_acc (emit, 1) in
+      let _ = emit_getfield (emit, 1) in
+      let _ = emit_push emit in
+      let _ = emit_acc (emit, 3) in
+      let _ = emit_getfield (emit, 1) in
+      let _ = emit_push emit in
+      55
+    else if bind_kind == 4 then
+      let _ = emit_acc (emit, 0) in
+      let _ = emit_getfield (emit, 0) in
+      let _ = emit_push emit in
+      let _ = emit_acc (emit, 0) in
+      let _ = emit_getfield (emit, 0) in
+      let _ = emit_push emit in
+      let _ = emit_acc (emit, 1) in
+      let _ = emit_getfield (emit, 1) in
+      let _ = emit_push emit in
+      let _ = emit_acc (emit, 0) in
+      let _ = emit_getfield (emit, 0) in
+      let _ = emit_push emit in
+      let _ = emit_acc (emit, 1) in
+      let _ = emit_getfield (emit, 1) in
+      let _ = emit_push emit in
+      55
+    else if bind_kind == 2 then
       let _ = emit_acc (emit, 0) in
       let _ = emit_getfield (emit, 0) in
       let _ = emit_push emit in
@@ -2069,6 +2180,7 @@ let rec emit_match_pop state =
   let (emit, pair) = state in
   let (has_arg, bind_kind) = pair in
   if has_arg == 1 then
+    if (bind_kind == 3) + (bind_kind == 4) then emit_pop (emit, 6) else
     if bind_kind == 2 then emit_pop (emit, 4) else emit_pop (emit, 2)
   else emit_pop1 emit
 in

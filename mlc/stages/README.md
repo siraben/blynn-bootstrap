@@ -125,9 +125,10 @@ Current stages:
   parenthesized tuple payload types, constructor payload type rejection,
   two-arm constructor `match` expressions for nullary, unary
   payload, unary wildcard payload, tuple payload, tuple wildcard payload,
-  wildcard, and default-variable fallback patterns lowered to tag tests, field
-  extraction, and branches, recursive equality for nested array/cell/ADT
-  element types, full-input consumption, and static type errors.
+  nested tuple payload, wildcard, and default-variable fallback patterns
+  lowered to tag tests, field extraction, and branches, recursive equality for
+  nested array/cell/ADT element types, full-input consumption, and static type
+  errors.
 
 Planned stages:
 
