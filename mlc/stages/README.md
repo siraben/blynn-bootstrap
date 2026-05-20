@@ -119,11 +119,12 @@ Current stages:
   `let rec ... and ...` groups up to three functions, pair construction, pair
   destructuring, top-level pair destructuring, typed imperative arrays/cells via
   `Cell.create` / `Cell.get` / `Cell.set`, leading variant `type`
-  declarations with typed nullary and unary constructors, constructor payload
-  type rejection, two-arm constructor `match` expressions for nullary, unary
-  payload, wildcard, and default-variable fallback patterns lowered to tag
-  tests, field extraction, and branches, recursive equality for nested
-  array/cell/ADT element types, full-input consumption, and static type errors.
+  declarations with typed nullary, unary, and `*` pair payload constructors,
+  constructor payload type rejection, two-arm constructor `match` expressions
+  for nullary, unary payload, tuple payload, wildcard, and default-variable
+  fallback patterns lowered to tag tests, field extraction, and branches,
+  recursive equality for nested array/cell/ADT element types, full-input
+  consumption, and static type errors.
 
 Planned stages:
 
