@@ -1,5 +1,5 @@
 type ty = TyInt | TyUnit | TyBool | TyMore of ty_more
-type ty_more = TyString | TyBytes | TyPair of ty | TyCell of ty | TyArray of ty
+type ty_more = TyString | TyBytes | TyPair of ty | TyCell of ty | TyArray of ty | TyFun of ty
 type expr = EInt of int | EVar of int | EBool of int | EMore of expr_more
 type expr_more = EWriteByte of expr | EAdd of expr | ESub of expr | EMore2 of expr_more2
 type expr_more2 = EMul of expr | EDiv of expr | EEq of expr | EMore3 of expr_more3
@@ -10,7 +10,7 @@ type expr_more6 = ESeq of expr | EDebugByte of expr | EExit of expr | EReadByte 
 type expr_more7 = EString of int | EStringLength of expr | EBytesCreate of expr | EMore8 of expr_more8
 type expr_more8 = EBytesLength of expr | EIndex of expr | ESetIndex of expr | EMore9 of expr_more9
 type expr_more9 = EDebugInt of expr | EUnit | EMore10 of expr_more10
-type expr_more10 = ECellCreate of expr | ECellGet of expr | ECellSet of expr | EArrayCreate of expr
+type expr_more10 = ECellCreate of expr | ECellGet of expr | ECellSet of expr | EArrayCreate of expr | ELetRec of expr | ECall of expr
 type parse_reply = ParseOk of int | ParseErr
 type expr_option = ExprSome of expr | ExprNone
 type pos_option = PosSome of int | PosNone
@@ -154,6 +154,16 @@ let rec emit_call_read_byte emit =
   let _ = emit_u32_if (emit, 1) in
   let _ = emit_u32_if (emit, 0) in
   const_len + 9
+in
+let rec emit_call state =
+  let (emit, target) = state in
+  let _ = emit_byte_if (emit, 23) in
+  let _ = emit_u32_if (emit, target) in
+  5
+in
+let rec emit_return emit =
+  let _ = emit_byte_if (emit, 24) in
+  1
 in
 let rec emit_makeblock_pair emit =
   let _ = emit_byte_if (emit, 15) in
@@ -411,6 +421,37 @@ let rec is_type_at state =
   let (src, pos0) = state in
   p_keyword_at (src, (pos0, "type"))
 in
+let rec is_rec_at state =
+  let (src, pos0) = state in
+  p_keyword_at (src, (pos0, "rec"))
+in
+let rec is_reserved_expr_at state =
+  let (src, pos0) = state in
+  if is_if_at (src, pos0) then 1 else
+  if is_let_at (src, pos0) then 1 else
+  if is_rec_at (src, pos0) then 1 else
+  if is_in_at (src, pos0) then 1 else
+  if is_then_at (src, pos0) then 1 else
+  if is_else_at (src, pos0) then 1 else
+  if is_true_at (src, pos0) then 1 else
+  if is_false_at (src, pos0) then 1 else
+  if is_type_at (src, pos0) then 1 else
+  if is_write_byte_at (src, pos0) then 1 else
+  if is_write_string_at (src, pos0) then 1 else
+  if is_debug_byte_at (src, pos0) then 1 else
+  if is_debug_string_at (src, pos0) then 1 else
+  if is_debug_printf_at (src, pos0) then 1 else
+  if is_debug_int_at (src, pos0) then 1 else
+  if is_exit_at (src, pos0) then 1 else
+  if is_read_byte_at (src, pos0) then 1 else
+  if is_string_length_at (src, pos0) then 1 else
+  if is_bytes_create_at (src, pos0) then 1 else
+  if is_array_create_at (src, pos0) then 1 else
+  if is_bytes_length_at (src, pos0) then 1 else
+  if is_cell_create_at (src, pos0) then 1 else
+  if is_cell_get_at (src, pos0) then 1 else
+  if is_cell_set_at (src, pos0) then 1 else 0
+in
 let rec skip_line state =
   let (src, pos) = state in
   if src.[pos] == 0 then pos else
@@ -584,6 +625,16 @@ in
 let rec array_create_expr state =
   let (size, init) = state in
   EMore (EMore2 (EMore3 (EMore4 (EMore5 (EMore6 (EMore7 (EMore8 (EMore9 (EMore10 (EArrayCreate (size, init)))))))))))
+in
+let rec let_rec_expr state =
+  let (name, rest1) = state in
+  let (param, rest2) = rest1 in
+  let (fn_body, body) = rest2 in
+  EMore (EMore2 (EMore3 (EMore4 (EMore5 (EMore6 (EMore7 (EMore8 (EMore9 (EMore10 (ELetRec (name, (param, (fn_body, body)))))))))))))
+in
+let rec call_expr state =
+  let (name, arg) = state in
+  EMore (EMore2 (EMore3 (EMore4 (EMore5 (EMore6 (EMore7 (EMore8 (EMore9 (EMore10 (ECall (name, arg)))))))))))
 in
 let rec read_byte_expr unit =
   let _ = unit in
@@ -763,6 +814,18 @@ let rec parse_value_arg state =
         (EVar name, name_end)
     | ValueNone -> fail 0
 in
+let rec starts_call_arg state =
+  let (src, pos0) = state in
+  let pos = skip_space (src, pos0) in
+  let ch = src.[pos] in
+  if ch == '(' then 1 else
+  if ch == '"' then 1 else
+  if ch == '\'' then 1 else
+  if is_digit ch then 1 else
+  if is_alpha ch then
+    if is_reserved_expr_at (src, pos) == 1 then 0 else 1
+  else 0
+in
 let rec parse_index_binop state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
@@ -806,6 +869,16 @@ in
 let rec parse_index_expr state =
   let (src, pos0) = state in
   parse_index_expr_prec (src, (pos0, (0, (0, EInt 0))))
+in
+let rec parse_call_arg state =
+  let (src, pos0) = state in
+  let pos = skip_space (src, pos0) in
+  if src.[pos] == '(' then
+    let inner = parse_index_expr (src, pos + 1) in
+    let (inner_ast, inner_end) = inner in
+    (inner_ast, p_need_char (src, (inner_end, ')')))
+  else
+    parse_value_arg (src, pos)
 in
 let rec parse_string_length_expr state =
   let (src, pos0) = state in
@@ -1052,7 +1125,12 @@ let rec parse_expr_prec state =
         else
           let ident = parse_ident (src, atom_pos) in
           let (name, name_end) = ident in
-          parse_index_suffix (src, (EVar name, name_end))
+          if starts_call_arg (src, name_end) == 1 then
+            let arg = parse_call_arg (src, name_end) in
+            let (arg_ast, arg_end) = arg in
+            parse_index_suffix (src, (call_expr (name, arg_ast), arg_end))
+          else
+            parse_index_suffix (src, (EVar name, name_end))
     in
     let (left_ast, left_end) = left in
     parse_expr_prec (src, (left_end, (allow_seq, (min_prec, (1, left_ast)))))
@@ -1118,7 +1196,20 @@ and parse_top_let state =
 and parse_top_let_binding state =
   let (src, pair) = state in
   let (let_pos, bind_pos) = pair in
-    if src.[bind_pos] == '(' then
+    if is_rec_at (src, bind_pos) == 1 then
+      let fname = parse_ident (src, bind_pos + 3) in
+      let (fname_pos, fname_end) = fname in
+      let param = parse_ident (src, fname_end) in
+      let (param_pos, param_end) = param in
+      let eq_pos = need_char (src, (param_end, '=')) in
+      let fn_body = parse_expr_flag (src, (eq_pos, 0)) in
+      let (fn_body_ast, fn_body_end) = fn_body in
+      let after_fn = skip_space (src, fn_body_end) in
+      let body_pos = if is_in_at (src, after_fn) then need_in (src, fn_body_end) else after_fn in
+      let body = parse_program (src, body_pos) in
+      let (body_ast, body_end) = body in
+      ExprSome (let_rec_expr (fname_pos, (param_pos, (fn_body_ast, body_ast))), body_end)
+    else if src.[bind_pos] == '(' then
       let name1 = parse_ident (src, bind_pos + 1) in
       let (name1_pos, name1_end0) = name1 in
       let comma = need_char (src, (name1_end0, ',')) in
@@ -1182,6 +1273,11 @@ let rec same_ty state =
           (match right with
             TyMore right_more ->
               (match right_more with TyArray right_inner -> same_ty (left_inner, right_inner) | _ -> 0)
+          | _ -> 0)
+      | TyFun left_fun ->
+          (match right with
+            TyMore right_more ->
+              (match right_more with TyFun right_fun -> same_ty (left_fun, right_fun) | _ -> 0)
           | _ -> 0)
       | TyPair left_pair ->
           match right with
@@ -1292,7 +1388,8 @@ let rec infer state =
                               | TyString -> fail 0
                               | TyBytes -> fail 0
                               | TyCell inner -> let _ = inner in fail 0
-                              | TyArray inner -> let _ = inner in fail 0)
+                              | TyArray inner -> let _ = inner in fail 0
+                              | TyFun fn_ty -> let _ = fn_ty in fail 0)
                           | TyInt -> fail 0
                           | TyUnit -> fail 0
                           | TyBool -> fail 0)
@@ -1334,7 +1431,8 @@ let rec infer state =
                                           | TyBytes -> TyInt
                                           | TyArray inner -> inner
                                           | TyPair pair_ty -> let _ = pair_ty in fail 0
-                                          | TyCell inner -> let _ = inner in fail 0)
+                                          | TyCell inner -> let _ = inner in fail 0
+                                          | TyFun fn_ty -> let _ = fn_ty in fail 0)
                                       | TyInt -> fail 0
                                       | TyUnit -> fail 0
                                       | TyBool -> fail 0)
@@ -1354,7 +1452,8 @@ let rec infer state =
                                               TyUnit
                                           | TyString -> fail 0
                                           | TyPair pair_ty -> let _ = pair_ty in fail 0
-                                          | TyCell inner -> let _ = inner in fail 0)
+                                          | TyCell inner -> let _ = inner in fail 0
+                                          | TyFun fn_ty -> let _ = fn_ty in fail 0)
                                       | TyInt -> fail 0
                                       | TyUnit -> fail 0
                                       | TyBool -> fail 0)
@@ -1377,7 +1476,8 @@ let rec infer state =
                                                   | TyString -> fail 0
                                                   | TyBytes -> fail 0
                                                   | TyPair pair_ty -> let _ = pair_ty in fail 0
-                                                  | TyArray inner -> let _ = inner in fail 0)
+                                                  | TyArray inner -> let _ = inner in fail 0
+                                                  | TyFun fn_ty -> let _ = fn_ty in fail 0)
                                               | TyInt -> fail 0
                                               | TyUnit -> fail 0
                                               | TyBool -> fail 0)
@@ -1393,7 +1493,8 @@ let rec infer state =
                                                   | TyString -> fail 0
                                                   | TyBytes -> fail 0
                                                   | TyPair pair_ty -> let _ = pair_ty in fail 0
-                                                  | TyArray inner -> let _ = inner in fail 0)
+                                                  | TyArray inner -> let _ = inner in fail 0
+                                                  | TyFun fn_ty -> let _ = fn_ty in fail 0)
                                               | TyInt -> fail 0
                                               | TyUnit -> fail 0
                                               | TyBool -> fail 0)
@@ -1401,6 +1502,33 @@ let rec infer state =
                                               let (size, init) = parts in
                                               let _ = need_ty (infer (src, (env, size)), TyInt) in
                                               TyMore (TyArray (infer (src, (env, init))))
+                                          | ELetRec parts ->
+                                              let (name, rest1) = parts in
+                                              let (param, rest2) = rest1 in
+                                              let (fn_body, body) = rest2 in
+                                              let fn_sig = TyMore (TyFun (TyMore (TyPair (TyInt, TyInt)))) in
+                                              let fn_env = extend_tenv (name, (fn_sig, env)) in
+                                              let body_env = extend_tenv (param, (TyInt, fn_env)) in
+                                              let _ = need_ty (infer (src, (body_env, fn_body)), TyInt) in
+                                              infer (src, (fn_env, body))
+                                          | ECall parts ->
+                                              let (name, arg) = parts in
+                                              let fn_ty = lookup_tenv (src, (env, name)) in
+                                              (match fn_ty with
+                                                TyMore more ->
+                                                  (match more with
+                                                    TyFun fn_pair ->
+                                                      (match fn_pair with
+                                                        TyMore fn_more ->
+                                                          (match fn_more with
+                                                            TyPair arg_ret ->
+                                                              let (arg_ty, ret_ty) = arg_ret in
+                                                              let _ = need_ty (infer (src, (env, arg)), arg_ty) in
+                                                              ret_ty
+                                                          | _ -> fail 0)
+                                                      | _ -> fail 0)
+                                                  | _ -> fail 0)
+                                              | _ -> fail 0)
 in
 let rec empty_env unit =
   let _ = unit in
@@ -1672,6 +1800,32 @@ let rec emit_expr state =
                                                   let init_len = emit_expr (init, (src, (shift_env env, emit))) in
                                                   let block_len = emit_makeblock_dyn emit in
                                                   size_len + push_len + init_len + block_len
+                                              | ELetRec parts ->
+                                                  let (name, rest1) = parts in
+                                                  let (param, rest2) = rest1 in
+                                                  let (fn_body, body) = rest2 in
+                                                  let _ = name in
+                                                  let fn_env = extend_env (param, env) in
+                                                  let fn_body_len = emit_expr (fn_body, (src, (fn_env, 0))) in
+                                                  let fn_total = 1 + fn_body_len + 5 + 1 in
+                                                  let body_len = emit_expr (body, (src, (env, 0))) in
+                                                  let _ =
+                                                    if emit == 1 then
+                                                      let _ = emit_branch (1, fn_total) in
+                                                      let _ = emit_push 1 in
+                                                      let _ = emit_expr (fn_body, (src, (fn_env, 1))) in
+                                                      let _ = emit_pop1 1 in
+                                                      let _ = emit_return 1 in
+                                                      emit_expr (body, (src, (env, 1)))
+                                                    else 0
+                                                  in
+                                                  5 + fn_total + body_len
+                                              | ECall parts ->
+                                                  let (name, arg) = parts in
+                                                  let _ = name in
+                                                  let arg_len = emit_expr (arg, (src, (env, emit))) in
+                                                  let call_len = emit_call (emit, 5) in
+                                                  arg_len + call_len
 in
 let rec emit_program src =
   let parsed = parse_program (src, 0) in

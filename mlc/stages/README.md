@@ -112,7 +112,8 @@ Current stages:
   `!`, ML-style `=` plus transitional `==`, integer comparisons, sequencing,
   bool literals, conditionals whose
   guards must type as `bool`, expression-level `let ... in ...`,
-  declaration-style top-level `let` bindings, pair construction, pair
+  declaration-style top-level `let` bindings, the first typed direct unary
+  `let rec f x = ...` / `f arg` slice for `int -> int` functions, pair construction, pair
   destructuring, top-level pair destructuring, typed imperative arrays/cells via
   `Cell.create` / `Cell.get` / `Cell.set`, recursive equality for nested
   array/cell element types, full-input consumption, and static type errors.
