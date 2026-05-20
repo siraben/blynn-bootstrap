@@ -991,14 +991,36 @@ let rec parse_call_arg state =
   if src.[pos] == '(' then
     let inner_pos = skip_space (src, pos + 1) in
     let inner =
-      if src.[inner_pos] == '(' then parse_call_arg (src, inner_pos) else parse_index_expr (src, inner_pos)
+      if src.[inner_pos] == '(' then parse_call_arg (src, inner_pos) else
+      if is_upper (src.[inner_pos]) == 1 then
+        let ctor = parse_ident (src, inner_pos) in
+        let (name, name_end) = ctor in
+        if starts_call_arg (src, name_end) == 1 then
+          let arg = parse_call_arg (src, name_end) in
+          let (arg_ast, arg_end) = arg in
+          (constr_arg_expr (name, arg_ast), arg_end)
+        else
+          (constr_expr name, name_end)
+      else
+        parse_index_expr (src, inner_pos)
     in
     let (inner_ast, inner_end) = inner in
     let after_first = skip_space (src, inner_end) in
     if src.[after_first] == ',' then
       let right_pos = skip_space (src, after_first + 1) in
       let right =
-        if src.[right_pos] == '(' then parse_call_arg (src, right_pos) else parse_index_expr (src, right_pos)
+        if src.[right_pos] == '(' then parse_call_arg (src, right_pos) else
+        if is_upper (src.[right_pos]) == 1 then
+          let ctor = parse_ident (src, right_pos) in
+          let (name, name_end) = ctor in
+          if starts_call_arg (src, name_end) == 1 then
+            let arg = parse_call_arg (src, name_end) in
+            let (arg_ast, arg_end) = arg in
+            (constr_arg_expr (name, arg_ast), arg_end)
+          else
+            (constr_expr name, name_end)
+        else
+          parse_index_expr (src, right_pos)
       in
       let (right_ast, right_end) = right in
       (EMore (EMore2 (EMore3 (EMore4 (EMore5 (EPair (inner_ast, right_ast)))))), p_need_char (src, (right_end, ')')))
@@ -1470,15 +1492,33 @@ let rec lookup_ctor state =
   let packed = find_ctor state in
   if packed < 0 then fail 0 else packed
 in
+let rec empty_tnames unit =
+  let _ = unit in
+  (0 - 1, (0, 0))
+in
+let rec extend_tname state =
+  let (name, pair) = state in
+  let (type_id, names) = pair in
+  (name, (type_id, names))
+in
+let rec lookup_tname state =
+  let (src, pair) = state in
+  let (names, want) = pair in
+  let (name, rest) = names in
+  let (type_id, tail) = rest in
+  if name < 0 then fail 0 else
+  if ident_eq (src, (name, want)) == 1 then type_id else lookup_tname (src, (tail, want))
+in
 let rec parse_type_atom state =
   let (src, pair) = state in
-  let (pos0, type_id) = pair in
+  let (pos0, pair0) = pair in
+  let (type_id, type_names) = pair0 in
   let pos = skip_space (src, pos0) in
   if src.[pos] == '(' then
-    let left = parse_type_atom (src, (pos + 1, type_id)) in
+    let left = parse_type_atom (src, (pos + 1, (type_id, type_names))) in
     let (left_ty, left_end) = left in
     let star = need_char (src, (left_end, '*')) in
-    let right = parse_type_atom (src, (star, type_id)) in
+    let right = parse_type_atom (src, (star, (type_id, type_names))) in
     let (right_ty, right_end) = right in
     (TyMore (TyPair (left_ty, right_ty)), need_char (src, (right_end, ')')))
   else
@@ -1488,17 +1528,17 @@ let rec parse_type_atom state =
   if p_keyword_at (src, (pos, "bytes")) == 1 then (TyMore TyBytes, p_need_keyword (src, (pos, "bytes"))) else
     let parsed = parse_ident (src, pos) in
     let (name, done_pos) = parsed in
-    let _ = name in
-    (TyMore (TyMore2 (TyAdt type_id)), done_pos)
+    (TyMore (TyMore2 (TyAdt (lookup_tname (src, (type_names, name))))), done_pos)
 in
 let rec parse_type_expr state =
   let (src, pair) = state in
-  let (pos0, type_id) = pair in
-  let left = parse_type_atom (src, (pos0, type_id)) in
+  let (pos0, pair0) = pair in
+  let (type_id, type_names) = pair0 in
+  let left = parse_type_atom (src, (pos0, (type_id, type_names))) in
   let (left_ty, left_end) = left in
   let next = skip_space (src, left_end) in
   if src.[next] == '*' then
-    let right = parse_type_expr (src, (next + 1, type_id)) in
+    let right = parse_type_expr (src, (next + 1, (type_id, type_names))) in
     let (right_ty, done_pos) = right in
     (TyMore (TyPair (left_ty, right_ty)), done_pos)
   else
@@ -1508,8 +1548,9 @@ let rec parse_type_ctors state =
   let (src, pair) = state in
   let (pos0, pair2) = pair in
   let (type_id, pair3) = pair2 in
-  let (tag, pair4) = pair3 in
-  let (tenv, ctors) = pair4 in
+  let (type_names, pair4) = pair3 in
+  let (tag, pair5) = pair4 in
+  let (tenv, ctors) = pair5 in
   let pos1 = skip_space (src, pos0) in
   let pos = if src.[pos1] == '|' then skip_space (src, pos1 + 1) else pos1 in
   let parsed_name = parse_ident (src, pos) in
@@ -1517,7 +1558,7 @@ let rec parse_type_ctors state =
   let after_name = skip_space (src, name_end) in
   let parsed_ctor =
     if is_of_at (src, after_name) == 1 then
-      let arg_ty = parse_type_expr (src, (need_of (src, after_name), type_id)) in
+      let arg_ty = parse_type_expr (src, (need_of (src, after_name), (type_id, type_names))) in
       let (inner_ty, done_pos) = arg_ty in
       let result_ty = TyMore (TyMore2 (TyAdt type_id)) in
       let ctor_ty = TyMore (TyMore2 (TyFun (TyMore (TyPair (inner_ty, result_ty))))) in
@@ -1530,25 +1571,26 @@ let rec parse_type_ctors state =
   let next_tenv = extend_tenv (name, (ctor_ty, tenv)) in
   let next_ctors = extend_ctor (name, (pack_ctor (tag, has_arg), ctors)) in
   let next = skip_inline_space (src, done_pos) in
-  if src.[next] == '|' then parse_type_ctors (src, (next, (type_id, (tag + 1, (next_tenv, next_ctors))))) else
+  if src.[next] == '|' then parse_type_ctors (src, (next, (type_id, (type_names, (tag + 1, (next_tenv, next_ctors)))))) else
     (next, (next_tenv, next_ctors))
 in
 let rec parse_type_decls state =
   let (src, pair) = state in
   let (pos0, pair2) = pair in
   let (type_id, pair3) = pair2 in
-  let (tenv, ctors) = pair3 in
+  let (type_names, pair4) = pair3 in
+  let (tenv, ctors) = pair4 in
   let pos = skip_space (src, pos0) in
   if is_type_at (src, pos) == 1 then
     let type_pos = p_need_keyword (src, (pos, "type")) in
     let type_name = parse_ident (src, type_pos) in
     let (type_name_pos, type_name_end) = type_name in
-    let _ = type_name_pos in
+    let next_type_names = extend_tname (type_name_pos, (type_id, type_names)) in
     let eq_pos = need_char (src, (type_name_end, '=')) in
-    let parsed = parse_type_ctors (src, (eq_pos, (type_id, (0, (tenv, ctors))))) in
+    let parsed = parse_type_ctors (src, (eq_pos, (type_id, (next_type_names, (0, (tenv, ctors)))))) in
     let (next_pos, next_envs) = parsed in
     let (next_tenv, next_ctors) = next_envs in
-    parse_type_decls (src, (next_pos, (type_id + 1, (next_tenv, next_ctors))))
+    parse_type_decls (src, (next_pos, (type_id + 1, (next_type_names, (next_tenv, next_ctors)))))
   else
     (pos, (tenv, ctors))
 in
@@ -2614,7 +2656,7 @@ let rec emit_expr state =
                                                       scrutinee_len + push_scrutinee + 18 + case1_total + 5 + case2_total
 in
 let rec emit_program src =
-  let parsed_types = parse_type_decls (src, (0, (0, (empty_tenv 0, empty_ctors 0)))) in
+  let parsed_types = parse_type_decls (src, (0, (0, (empty_tnames 0, (empty_tenv 0, empty_ctors 0))))) in
   let (body_pos, envs) = parsed_types in
   let (tenv, ctors) = envs in
   let parsed = parse_program (src, body_pos) in

@@ -120,7 +120,7 @@ Current stages:
   destructuring with wildcard binders, top-level pair destructuring, typed
   imperative arrays/cells via `Cell.create` / `Cell.get` / `Cell.set`,
   leading variant `type` declarations with typed nullary, unary, and `*` pair
-  payload constructors,
+  payload constructors and self-recursive/earlier named ADT payload references,
   direct parenthesized pair and nested pair payload construction,
   parenthesized tuple payload types, constructor payload type rejection,
   two-arm constructor `match` expressions for nullary, unary

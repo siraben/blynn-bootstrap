@@ -157,7 +157,8 @@ bounded `let rec ... and ...` groups up to three functions, and pair
 destructuring with wildcard binders, by lowering them to the same checked
 expression AST.
 Leading variant `type` declarations now build a constructor environment for
-typed nullary, unary, and `*` pair payload constructors. Constructor
+typed nullary, unary, and `*` pair payload constructors, plus a type-name
+environment for self-recursive and earlier ADT payload references. Constructor
 expressions lower to tagged VM blocks, constructor payloads are statically
 checked, parenthesized pair payload arguments can be constructed directly at
 call sites, nested pair payloads can use parenthesized tuple types and direct

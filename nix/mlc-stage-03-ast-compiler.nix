@@ -163,6 +163,9 @@ stageRun {
         printf 'type left = L | LL of int\ntype right = R | RR of int\nlet x = 79\nwrite_byte x' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-leading-types.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-leading-types.mzbc)"
         test "$actual" = O
+        printf 'type maybe = None | Some of int\ntype box = Box of maybe | Empty\nwrite_byte (match Box (Some 79) with | Box value -> match value with | Some ch -> ch | None -> 88 | Empty -> 88)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-cross-adt-payload.mzbc
+        actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-cross-adt-payload.mzbc)"
+        test "$actual" = O
         printf 'type byte = Byte of int | Empty\nlet x = Byte 79\nwrite_byte 79' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-unary-ctor.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-adt-unary-ctor.mzbc)"
         test "$actual" = O
@@ -346,6 +349,9 @@ stageRun {
         if printf 'type byte = Byte of int | Empty\nlet x = Byte "x"\nwrite_byte 79' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-payload-type-error.mzbc; then
           exit 1
         fi
+        if printf 'type box = Box of missing | Empty\nwrite_byte 79' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-unknown-payload-type-error.mzbc; then
+          exit 1
+        fi
         if printf 'type flag = Yes | No\nwrite_byte (match Yes with | Yes -> 79 | No -> true)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-match-branch-type-error.mzbc; then
           exit 1
         fi
@@ -441,6 +447,7 @@ stageRun {
     install -Dm644 03-let-rec-and-three.mzbc "$out/share/mlc/stages/03-let-rec-and-three.mzbc"
     install -Dm644 03-leading-type.mzbc "$out/share/mlc/stages/03-leading-type.mzbc"
     install -Dm644 03-leading-types.mzbc "$out/share/mlc/stages/03-leading-types.mzbc"
+    install -Dm644 03-cross-adt-payload.mzbc "$out/share/mlc/stages/03-cross-adt-payload.mzbc"
     install -Dm644 03-adt-unary-ctor.mzbc "$out/share/mlc/stages/03-adt-unary-ctor.mzbc"
     install -Dm644 03-adt-nullary-ctor.mzbc "$out/share/mlc/stages/03-adt-nullary-ctor.mzbc"
     install -Dm644 03-adt-match-yes.mzbc "$out/share/mlc/stages/03-adt-match-yes.mzbc"
