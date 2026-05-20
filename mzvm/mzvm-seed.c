@@ -401,25 +401,51 @@ static void run(void)
     last_pc = pc - 1;
     current_op = op;
     if (op == OP_PUSH) {
-      stack_push(acc);
+      if (sp >= STACK_CAP) die("stack overflow");
+      stack[sp] = acc;
+      sp = sp + 1;
     } else if (op == OP_ACC) {
-      acc = stack_acc(read_u32());
+      long n = read_u32();
+      long index;
+      if (n < 0 || n >= sp) die("stack access out of range");
+      index = sp - 1 - n;
+      acc = stack[index];
     } else if (op == OP_CONST) {
       acc = val_int(read_s32());
     } else if (op == OP_POP) {
-      stack_drop(read_u32());
+      long n = read_u32();
+      if (n < 0 || n > sp) die("stack pop out of range");
+      sp = sp - n;
     } else if (op == OP_BRANCHIFNOT) {
       long offset = read_s32();
-      if (!truthy(acc)) branch_relative(offset);
+      if ((acc & 1) == 0) die("expected int");
+      if ((acc >> 1) == 0) {
+        long target = pc + offset;
+        if (target < 0 || target > code_len) die("branch target out of range");
+        pc = target;
+      }
     } else if (op == OP_GETFIELD) {
       long index = read_u32();
-      value_t *block = block_val(acc);
+      value_t *block;
+      if ((acc & 1) != 0) die("expected block");
+      if (acc == 0) die("null block");
+      block = (value_t *)acc;
       if (index < 0 || index >= block[1]) die("field access out of range");
       acc = block[2 + index];
     } else if (op == OP_EQ) {
-      acc = val_int(stack_pop() == acc);
+      value_t lhs;
+      if (sp <= 0) die("stack underflow");
+      sp = sp - 1;
+      lhs = stack[sp];
+      acc = val_int(lhs == acc);
     } else if (op == OP_LE) {
-      acc = val_int(int_val(stack_pop()) <= int_val(acc));
+      value_t lhs;
+      if (sp <= 0) die("stack underflow");
+      sp = sp - 1;
+      lhs = stack[sp];
+      if ((lhs & 1) == 0) die("expected int");
+      if ((acc & 1) == 0) die("expected int");
+      acc = val_int((lhs >> 1) <= (acc >> 1));
     } else if (op == OP_MAKEBLOCK) {
       long tag = read_u32();
       long size = read_u32();
@@ -436,21 +462,47 @@ static void run(void)
     } else if (op == OP_CALL) {
       long target = read_u32();
       if (target < 0 || target >= code_len) die("call target out of range");
-      return_push(pc);
+      if (rp >= STACK_CAP) die("return stack overflow");
+      return_stack[rp] = pc;
+      rp = rp + 1;
       pc = target;
     } else if (op == OP_RETURN) {
-      pc = return_pop();
+      if (rp <= 0) die("return stack underflow");
+      rp = rp - 1;
+      pc = return_stack[rp];
     } else if (op == OP_BRANCH) {
-      branch_relative(read_s32());
+      long offset = read_s32();
+      long target = pc + offset;
+      if (target < 0 || target > code_len) die("branch target out of range");
+      pc = target;
     } else if (op == OP_GETFIELD_DYN) {
       long index = int_val(acc);
-      value_t *block = block_val(stack_pop());
+      value_t block_value;
+      value_t *block;
+      if (sp <= 0) die("stack underflow");
+      sp = sp - 1;
+      block_value = stack[sp];
+      if ((block_value & 1) != 0) die("expected block");
+      if (block_value == 0) die("null block");
+      block = (value_t *)block_value;
       if (index < 0 || index >= block[1]) die("field access out of range");
       acc = block[2 + index];
     } else if (op == OP_ADDINT) {
-      acc = val_int(int_val(stack_pop()) + int_val(acc));
+      value_t lhs;
+      if (sp <= 0) die("stack underflow");
+      sp = sp - 1;
+      lhs = stack[sp];
+      if ((lhs & 1) == 0) die("expected int");
+      if ((acc & 1) == 0) die("expected int");
+      acc = val_int((lhs >> 1) + (acc >> 1));
     } else if (op == OP_LT) {
-      acc = val_int(int_val(stack_pop()) < int_val(acc));
+      value_t lhs;
+      if (sp <= 0) die("stack underflow");
+      sp = sp - 1;
+      lhs = stack[sp];
+      if ((lhs & 1) == 0) die("expected int");
+      if ((acc & 1) == 0) die("expected int");
+      acc = val_int((lhs >> 1) < (acc >> 1));
     } else if (op == OP_BLOCKSIZE) {
       value_t *block = block_val(acc);
       acc = val_int(block[1]);
