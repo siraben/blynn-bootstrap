@@ -765,18 +765,32 @@ let rec parse_octal_escape_loop state =
   else
     (acc, pos)
 in
-let rec p_try_number state =
-  let (src, pos0) = state in
-  let pos = skip_space (src, pos0) in
-  if (src.[pos] == '0') * (src.[pos + 1] == 'x') then ValueOk (parse_hex_loop (src, (pos + 2, 0))) else
+let rec p_try_number_parser state =
+  let (src, parser_state0) = state in
+  let pos = skip_space (src, parser_pos parser_state0) in
+  if (src.[pos] == '0') * (src.[pos + 1] == 'x') then
+    let parsed = parse_hex_loop (src, (pos + 2, 0)) in
+    let (value, value_end) = parsed in
+    p_consumed_ok ((value, value_end), parser_at value_end)
+  else
   if is_digit (src.[pos]) then
     let parsed = parse_number_loop (src, (pos, 0)) in
     let (value, value_end) = parsed in
-    ValueOk (value, skip_int_suffix (src, value_end))
-  else ValueErr
+    let after_suffix = skip_int_suffix (src, value_end) in
+    p_consumed_ok ((value, after_suffix), parser_at after_suffix)
+  else p_unconsumed_err 0
+in
+let rec p_try_number state =
+  let (src, pos0) = state in
+  match force_consumed (p_try_number_parser (src, parser_at pos0)) with
+    ParserOk parsed -> let (number, _parser_state) = parsed in ValueOk number
+  | ParserErr -> ValueErr
 in
 let rec parse_number state =
-  p_force_value (p_try_number state)
+  let (src, pos0) = state in
+  let parsed = p_force_reply (p_try_number_parser (src, parser_at pos0)) in
+  let (number, _parser_state) = parsed in
+  number
 in
 let rec parse_signed_number state =
   let (src, pos0) = state in
