@@ -36,6 +36,15 @@ let rec skip_space state =
   else
     pos
 in
+let rec skip_space_no_directive state =
+  let (src, pos) = state in
+  if is_space (src.[pos]) then skip_space_no_directive (src, pos + 1) else
+  if src.[pos] == '/' then
+    if src.[pos + 1] == '*' then skip_space_no_directive (src, skip_block_comment (src, pos + 2)) else
+    if src.[pos + 1] == '/' then skip_space_no_directive (src, skip_line_comment (src, pos + 2)) else pos
+  else
+    pos
+in
 let rec is_digit ch =
   if ch < '0' then 0 else if ch < ':' then 1 else 0
 in
@@ -2027,25 +2036,86 @@ let rec collect_define_at state =
   else
     defs
 in
-let rec collect_defines_loop state =
-  let (src, pair) = state in
-  let (pos, defs) = pair in
-  if src.[pos] == 0 then defs else
-  if src.[pos] == '#' then
-    let next_defs = collect_define_at (src, (pos, defs)) in
-    collect_defines_loop (src, (skip_line (src, pos + 1), next_defs))
-  else
-    collect_defines_loop (src, (pos + 1, defs))
+let rec directive_keyword_at state =
+  let (want, pair) = state in
+  let (len, pair2) = pair in
+  let (src, pos0) = pair2 in
+  if src.[pos0] == '#' then is_keyword_at (want, (len, (src, pos0 + 1))) else 0
 in
-let rec collect_defines src =
-  collect_defines_loop (src, (0, empty_env 0))
+let rec skip_inactive_ifdef_loop state =
+  let (src, pair) = state in
+  let (pos, depth) = pair in
+  if src.[pos] == 0 then pos else
+  if src.[pos] == '#' then
+    if (directive_keyword_at ("ifdef", (5, (src, pos)))) + (directive_keyword_at ("ifndef", (6, (src, pos)))) then
+      skip_inactive_ifdef_loop (src, (skip_line (src, pos + 1), depth + 1))
+    else if directive_keyword_at ("endif", (5, (src, pos))) then
+      if depth == 0 then skip_line (src, pos + 1) else
+        skip_inactive_ifdef_loop (src, (skip_line (src, pos + 1), depth - 1))
+    else if directive_keyword_at ("else", (4, (src, pos))) then
+      if depth == 0 then skip_line (src, pos + 1) else
+        skip_inactive_ifdef_loop (src, (skip_line (src, pos + 1), depth))
+    else
+      skip_inactive_ifdef_loop (src, (skip_line (src, pos + 1), depth))
+  else
+    skip_inactive_ifdef_loop (src, (pos + 1, depth))
+in
+let rec skip_active_else_loop state =
+  let (src, pair) = state in
+  let (pos, depth) = pair in
+  if src.[pos] == 0 then pos else
+  if src.[pos] == '#' then
+    if (directive_keyword_at ("ifdef", (5, (src, pos)))) + (directive_keyword_at ("ifndef", (6, (src, pos)))) then
+      skip_active_else_loop (src, (skip_line (src, pos + 1), depth + 1))
+    else if directive_keyword_at ("endif", (5, (src, pos))) then
+      if depth == 0 then skip_line (src, pos + 1) else
+        skip_active_else_loop (src, (skip_line (src, pos + 1), depth - 1))
+    else
+      skip_active_else_loop (src, (skip_line (src, pos + 1), depth))
+  else
+    skip_active_else_loop (src, (pos + 1, depth))
+in
+let rec directive_name_after state =
+  let (src, pair) = state in
+  let (pos0, pair2) = pair in
+  let (word, len) = pair2 in
+  let after_word = p_need_keyword (word, (len, (src, pos0 + 1))) in
+  parse_ident (src, after_word)
 in
 let rec parse_program_loop state =
   let (src, pair) = state in
   let (pos0, pair2) = pair in
   let (funcs, defs) = pair2 in
-  let pos = skip_space (src, pos0) in
+  let pos = skip_space_no_directive (src, pos0) in
   if src.[pos] == 0 then 0 else
+  if directive_keyword_at ("define", (6, (src, pos))) then
+    let next_defs = collect_define_at (src, (pos, defs)) in
+    parse_program_loop (src, (skip_line (src, pos + 1), (funcs, next_defs)))
+  else if directive_keyword_at ("ifdef", (5, (src, pos))) then
+    let named = directive_name_after (src, (pos, ("ifdef", 5))) in
+    let (name, _name_end) = named in
+    let found = find_env_optional (src, (defs, name)) in
+    let (has_define, _value) = found in
+    if has_define == 1 then
+      parse_program_loop (src, (skip_line (src, pos + 1), (funcs, defs)))
+    else
+      parse_program_loop (src, (skip_inactive_ifdef_loop (src, (skip_line (src, pos + 1), 0)), (funcs, defs)))
+  else if directive_keyword_at ("ifndef", (6, (src, pos))) then
+    let named = directive_name_after (src, (pos, ("ifndef", 6))) in
+    let (name, _name_end) = named in
+    let found = find_env_optional (src, (defs, name)) in
+    let (has_define, _value) = found in
+    if has_define == 0 then
+      parse_program_loop (src, (skip_line (src, pos + 1), (funcs, defs)))
+    else
+      parse_program_loop (src, (skip_inactive_ifdef_loop (src, (skip_line (src, pos + 1), 0)), (funcs, defs)))
+  else if directive_keyword_at ("else", (4, (src, pos))) then
+    parse_program_loop (src, (skip_active_else_loop (src, (skip_line (src, pos + 1), 0)), (funcs, defs)))
+  else if directive_keyword_at ("endif", (5, (src, pos))) then
+    parse_program_loop (src, (skip_line (src, pos + 1), (funcs, defs)))
+  else if src.[pos] == '#' then
+    parse_program_loop (src, (skip_line (src, pos + 1), (funcs, defs)))
+  else
   if is_typedef_at (src, pos) then parse_program_loop (src, (skip_struct_declaration (src, pos), (funcs, defs))) else
   if is_enum_at (src, pos) then parse_program_loop (src, (skip_statement (src, pos), (funcs, defs))) else
   if is_struct_at (src, pos) then parse_program_loop (src, (skip_struct_declaration (src, pos), (funcs, defs))) else
@@ -2093,7 +2163,7 @@ let rec parse_program_loop state =
         parse_program_loop (src, (p4, (extend_func (name, (func_value, funcs)), defs)))
 in
 let rec parse_program src =
-  parse_program_loop (src, (0, (empty_funcs 0, collect_defines src)))
+  parse_program_loop (src, (0, (empty_funcs 0, empty_env 0)))
 in
 let rec read_all state =
   let (src, pos) = state in
