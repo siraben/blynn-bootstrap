@@ -4,6 +4,7 @@ type parser = Parser of int
 type parser_reply = ParserOk of int | ParserErr
 type consumed_reply = Consumed of parser_reply | Unconsumed of parser_reply
 type parser_option = ParserSome of int | ParserNone
+type parser_step = StepIdent | StepChar of int | StepString of int
 
 let rec is_space ch =
   if ch == ' ' then 1 else
@@ -239,91 +240,82 @@ let rec p_optional_ident state =
     ParserSome value -> let (ident, _next_parser) = value in IdentSome ident
   | ParserNone -> IdentNone
 in
-let rec p_bind_parse_ident_parser state =
-  let (reply, src) = state in
+let rec p_run_step_parser state =
+  let (src, pair) = state in
+  let (parser_state, step) = pair in
+  match step with
+    StepIdent -> p_try_ident_parser (src, parser_state)
+  | StepChar ch -> p_expect_char_parser (src, (parser_state, ch))
+  | StepString payload ->
+      let (want, len) = payload in
+      p_expect_string_parser (want, (len, (src, parser_state)))
+in
+let rec p_keep_reply_value state =
+  let (value, reply) = state in
+  match reply with
+    ParserOk parsed ->
+      let (_got, next_parser) = parsed in
+      p_reply_ok (value, next_parser)
+  | ParserErr -> p_reply_err 0
+in
+let rec p_bind_step_parser state =
+  let (reply, pair) = state in
+  let (src, step) = pair in
   match reply with
     Consumed inner ->
       (match inner with
         ParserOk parsed ->
           let (_value, parser_state) = parsed in
-          let next = p_try_ident_parser (src, parser_state) in
+          let next = p_run_step_parser (src, (parser_state, step)) in
           Consumed (force_consumed next)
       | ParserErr -> Consumed (p_reply_err 0))
   | Unconsumed inner ->
       (match inner with
         ParserOk parsed ->
           let (_value, parser_state) = parsed in
-          p_try_ident_parser (src, parser_state)
+          p_run_step_parser (src, (parser_state, step))
       | ParserErr -> Unconsumed (p_reply_err 0))
+in
+let rec p_bind_keep_step_parser state =
+  let (reply, pair) = state in
+  let (src, step) = pair in
+  match reply with
+    Consumed inner ->
+      (match inner with
+        ParserOk parsed ->
+          let (value, parser_state) = parsed in
+          let next = p_run_step_parser (src, (parser_state, step)) in
+          Consumed (p_keep_reply_value (value, force_consumed next))
+      | ParserErr -> Consumed (p_reply_err 0))
+  | Unconsumed inner ->
+      (match inner with
+        ParserOk parsed ->
+          let (value, parser_state) = parsed in
+          let next = p_run_step_parser (src, (parser_state, step)) in
+          (match next with
+            Consumed next_inner -> Consumed (p_keep_reply_value (value, next_inner))
+          | Unconsumed next_inner -> Unconsumed (p_keep_reply_value (value, next_inner)))
+      | ParserErr -> Unconsumed (p_reply_err 0))
+in
+let rec p_bind_parse_ident_parser state =
+  let (reply, src) = state in
+  p_bind_step_parser (reply, (src, StepIdent))
 in
 let rec p_bind_expect_char_parser state =
   let (reply, pair) = state in
   let (src, ch) = pair in
-  match reply with
-    Consumed inner ->
-      (match inner with
-        ParserOk parsed ->
-          let (_value, parser_state) = parsed in
-          let next = p_expect_char_parser (src, (parser_state, ch)) in
-          Consumed (force_consumed next)
-      | ParserErr -> Consumed (p_reply_err 0))
-  | Unconsumed inner ->
-      (match inner with
-        ParserOk parsed ->
-          let (_value, parser_state) = parsed in
-          p_expect_char_parser (src, (parser_state, ch))
-      | ParserErr -> Unconsumed (p_reply_err 0))
+  p_bind_step_parser (reply, (src, StepChar ch))
 in
 let rec p_bind_expect_char_keep_parser state =
   let (reply, pair) = state in
   let (src, ch) = pair in
-  match reply with
-    Consumed inner ->
-      (match inner with
-        ParserOk parsed ->
-          let (value, parser_state) = parsed in
-          let next = p_expect_char_parser (src, (parser_state, ch)) in
-          let kept =
-            match force_consumed next with
-              ParserOk next_parsed -> let (_got, next_parser) = next_parsed in p_reply_ok (value, next_parser)
-            | ParserErr -> p_reply_err 0
-          in
-          Consumed kept
-      | ParserErr -> Consumed (p_reply_err 0))
-  | Unconsumed inner ->
-      (match inner with
-        ParserOk parsed ->
-          let (value, parser_state) = parsed in
-          let next = p_expect_char_parser (src, (parser_state, ch)) in
-          (match next with
-            Consumed next_inner ->
-              (match next_inner with
-                ParserOk next_parsed -> let (_got, next_parser) = next_parsed in Consumed (p_reply_ok (value, next_parser))
-              | ParserErr -> Consumed (p_reply_err 0))
-          | Unconsumed next_inner ->
-              (match next_inner with
-                ParserOk next_parsed -> let (_got, next_parser) = next_parsed in Unconsumed (p_reply_ok (value, next_parser))
-              | ParserErr -> Unconsumed (p_reply_err 0)))
-      | ParserErr -> Unconsumed (p_reply_err 0))
+  p_bind_keep_step_parser (reply, (src, StepChar ch))
 in
 let rec p_bind_expect_string_parser state =
   let (reply, pair) = state in
   let (want, pair2) = pair in
   let (len, src) = pair2 in
-  match reply with
-    Consumed inner ->
-      (match inner with
-        ParserOk parsed ->
-          let (_value, parser_state) = parsed in
-          let next = p_expect_string_parser (want, (len, (src, parser_state))) in
-          Consumed (force_consumed next)
-      | ParserErr -> Consumed (p_reply_err 0))
-  | Unconsumed inner ->
-      (match inner with
-        ParserOk parsed ->
-          let (_value, parser_state) = parsed in
-          p_expect_string_parser (want, (len, (src, parser_state)))
-      | ParserErr -> Unconsumed (p_reply_err 0))
+  p_bind_step_parser (reply, (src, StepString (want, len)))
 in
 let rec p_need_string state =
   let (want, pair) = state in
