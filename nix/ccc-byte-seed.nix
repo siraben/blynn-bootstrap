@@ -125,6 +125,18 @@ DEFINE SYSCALL 0F05
     check_return ifndef-defined-else.c 42
     printf '%s\n' '#ifdef LATER' 'int main(void) { return 1; }' '#else' 'int main(void) { return 42; }' '#endif' '#define LATER 1' > define-after-ifdef.c
     check_return define-after-ifdef.c 42
+    printf '%s\n' 'int main(voidx) { return 0; }' > keyword-prefix-param.c
+    if ${mzvmSeedM2}/bin/mzvm-seed ccc.byte < keyword-prefix-param.c > keyword-prefix-param.M1; then
+      exit 1
+    else
+      :
+    fi
+    printf '%s\n' 'int main(void) { return sizeof(shorter); }' > keyword-prefix-sizeof.c
+    if ${mzvmSeedM2}/bin/mzvm-seed ccc.byte < keyword-prefix-sizeof.c > keyword-prefix-sizeof.M1; then
+      exit 1
+    else
+      :
+    fi
     if ${mzvmSeedM2}/bin/mzvm-seed ccc.byte < ${testsRoot}/hcc/diagnostics/unknown-identifier.c > unknown-identifier.M1; then
       exit 1
     else

@@ -874,44 +874,64 @@ in
 let rec is_unsigned_char_cast state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
-  let p1 =
-    if is_string_at ("unsigned", (8, (src, pos))) then
-      skip_space (src, pos + 8)
-    else
-      0 - 1
-  in
-  if p1 < 0 then 0 else
-  is_string_at ("char", (4, (src, p1)))
+  let unsigned = p_eat_keyword ("unsigned", (8, (src, pos))) in
+  let (has_unsigned, after_unsigned) = unsigned in
+  if has_unsigned == 0 then 0 else
+    let char_type = p_eat_keyword ("char", (4, (src, after_unsigned))) in
+    let (has_char, _after_char) = char_type in
+    has_char
 in
 let rec is_char_cast state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
-  is_string_at ("char", (4, (src, pos)))
+  is_keyword_at ("char", (4, (src, pos)))
 in
 let rec expect_unsigned_char_cast state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
-  let p1 = skip_space (src, pos + 8) in
-  if is_string_at ("char", (4, (src, p1))) then p1 + 4 else parse_fail 0
+  let after_unsigned = p_need_keyword ("unsigned", (8, (src, pos))) in
+  p_need_keyword ("char", (4, (src, after_unsigned)))
 in
 let rec parse_sizeof_type state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
-  if is_string_at ("ArchiveHeader", (13, (src, pos))) then (60, pos + 13) else
-  if is_string_at ("short", (5, (src, pos))) then (2, pos + 5) else
-  if is_string_at ("_Bool", (5, (src, pos))) then (1, pos + 5) else
-  if is_string_at ("double", (6, (src, pos))) then (8, pos + 6) else
-  if is_string_at ("outer_t", (7, (src, pos))) then (4, pos + 7) else
-  if is_string_at ("long", (4, (src, pos))) then
-    let p1 = skip_space (src, pos + 4) in
-    if is_string_at ("long", (4, (src, p1))) then (8, p1 + 4) else
-    if is_string_at ("double", (6, (src, p1))) then (16, p1 + 6) else (8, pos + 4)
-  else if is_string_at ("unsigned", (8, (src, pos))) then
-    let p1 = skip_space (src, pos + 8) in
-    if is_string_at ("short", (5, (src, p1))) then (2, p1 + 5) else
-    if is_string_at ("long", (4, (src, p1))) then
-      let p2 = skip_space (src, p1 + 4) in
-      if is_string_at ("long", (4, (src, p2))) then (8, p2 + 4) else (8, p1 + 4)
+  let archive = p_eat_keyword ("ArchiveHeader", (13, (src, pos))) in
+  let (has_archive, after_archive) = archive in
+  if has_archive == 1 then (60, after_archive) else
+  let short_type = p_eat_keyword ("short", (5, (src, pos))) in
+  let (has_short, after_short) = short_type in
+  if has_short == 1 then (2, after_short) else
+  let bool_type = p_eat_keyword ("_Bool", (5, (src, pos))) in
+  let (has_bool, after_bool) = bool_type in
+  if has_bool == 1 then (1, after_bool) else
+  let double_type = p_eat_keyword ("double", (6, (src, pos))) in
+  let (has_double, after_double) = double_type in
+  if has_double == 1 then (8, after_double) else
+  let outer_type = p_eat_keyword ("outer_t", (7, (src, pos))) in
+  let (has_outer, after_outer) = outer_type in
+  if has_outer == 1 then (4, after_outer) else
+  let long_type = p_eat_keyword ("long", (4, (src, pos))) in
+  let (has_long, after_long) = long_type in
+  if has_long == 1 then
+    let long_tail = p_eat_keyword ("long", (4, (src, after_long))) in
+    let (has_long_tail, after_long_tail) = long_tail in
+    if has_long_tail == 1 then (8, after_long_tail) else
+    let double_tail = p_eat_keyword ("double", (6, (src, after_long))) in
+    let (has_double_tail, after_double_tail) = double_tail in
+    if has_double_tail == 1 then (16, after_double_tail) else (8, after_long)
+  else
+  let unsigned_type = p_eat_keyword ("unsigned", (8, (src, pos))) in
+  let (has_unsigned, after_unsigned) = unsigned_type in
+  if has_unsigned == 1 then
+    let short_tail = p_eat_keyword ("short", (5, (src, after_unsigned))) in
+    let (has_short_tail, after_short_tail) = short_tail in
+    if has_short_tail == 1 then (2, after_short_tail) else
+    let long_tail = p_eat_keyword ("long", (4, (src, after_unsigned))) in
+    let (has_long_tail, after_long_tail) = long_tail in
+    if has_long_tail == 1 then
+      let long_long_tail = p_eat_keyword ("long", (4, (src, after_long_tail))) in
+      let (has_long_long_tail, after_long_long_tail) = long_long_tail in
+      if has_long_long_tail == 1 then (8, after_long_long_tail) else (8, after_long_tail)
     else
       parse_fail 0
   else
@@ -931,8 +951,10 @@ in
 let rec expect_char_cast state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
-  if is_string_at ("char", (4, (src, pos))) then
-    let p1 = skip_space (src, pos + 4) in
+  let char_type = p_eat_keyword ("char", (4, (src, pos))) in
+  let (has_char, after_char) = char_type in
+  if has_char == 1 then
+    let p1 = skip_space (src, after_char) in
     if src.[p1] == '*' then skip_space (src, p1 + 1) else p1
   else parse_fail 0
 in
@@ -1423,9 +1445,9 @@ let rec parse_params state =
   let (_open_ch, p0) = open_paren in
   let p1 = skip_space (src, p0) in
   if src.[p1] == ')' then (0 - 1, p1 + 1) else
-  if is_string_at ("void", (4, (src, p1))) then
-    let void_parsed = parse_expect_string ("void", (4, (src, p1))) in
-    let (_void_kw, p1_void) = void_parsed in
+  let void_type = p_eat_keyword ("void", (4, (src, p1))) in
+  let (has_void, p1_void) = void_type in
+  if has_void == 1 then
     let p1_next = skip_space (src, p1_void) in
     if src.[p1_next] == ')' then (0 - 1, p1_next + 1) else
       let p2_next = if src.[p1_next] == '*' then skip_space (src, p1_next + 1) else p1_next in
@@ -1441,7 +1463,9 @@ let rec parse_params state =
       (param_name, p3)
   else
     let type_parsed =
-      if is_string_at ("char", (4, (src, p1))) then parse_expect_string ("char", (4, (src, p1))) else
+      let char_type = p_eat_keyword ("char", (4, (src, p1))) in
+      let (has_char, after_char) = char_type in
+      if has_char == 1 then (0, after_char) else
         (0, expect_int (src, p1))
     in
     let type_after_ptr0 = bind_skip_pointer_keep (type_parsed, src) in
