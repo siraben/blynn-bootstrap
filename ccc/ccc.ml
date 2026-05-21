@@ -535,71 +535,133 @@ in
 let rec expect_int state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
-  if is_string_at ("char", (4, (src, pos))) then expect_string ("char", (4, (src, pos))) else
-  if is_string_at ("void", (4, (src, pos))) then expect_string ("void", (4, (src, pos))) else
-  if is_string_at ("const", (5, (src, pos))) then expect_int (src, expect_string ("const", (5, (src, pos)))) else
-  if is_string_at ("struct", (6, (src, pos))) then
-    let ident = parse_ident (src, expect_string ("struct", (6, (src, pos)))) in
+  let char_type = p_eat_keyword ("char", (4, (src, pos))) in
+  let (has_char, after_char) = char_type in
+  if has_char == 1 then after_char else
+  let void_type = p_eat_keyword ("void", (4, (src, pos))) in
+  let (has_void, after_void) = void_type in
+  if has_void == 1 then after_void else
+  let const_type = p_eat_keyword ("const", (5, (src, pos))) in
+  let (has_const, after_const) = const_type in
+  if has_const == 1 then expect_int (src, after_const) else
+  let struct_type = p_eat_keyword ("struct", (6, (src, pos))) in
+  let (has_struct, after_struct) = struct_type in
+  if has_struct == 1 then
+    let ident = parse_ident (src, after_struct) in
     let (_name, name_end) = ident in
     name_end
   else
-  if is_string_at ("int", (3, (src, pos))) then expect_string ("int", (3, (src, pos))) else
-  if is_string_at ("long", (4, (src, pos))) then expect_string ("long", (4, (src, pos))) else
-  if is_string_at ("Compare", (7, (src, pos))) then expect_string ("Compare", (7, (src, pos))) else
-  if is_string_at ("Box", (3, (src, pos))) then expect_string ("Box", (3, (src, pos))) else
-  if is_string_at ("unsigned", (8, (src, pos))) then
-    let p1 = expect_string ("unsigned", (8, (src, pos))) in
-    if is_string_at ("char", (4, (src, p1))) then expect_string ("char", (4, (src, p1))) else p1
+  let int_type = p_eat_keyword ("int", (3, (src, pos))) in
+  let (has_int, after_int) = int_type in
+  if has_int == 1 then after_int else
+  let long_type = p_eat_keyword ("long", (4, (src, pos))) in
+  let (has_long, after_long) = long_type in
+  if has_long == 1 then after_long else
+  let compare_type = p_eat_keyword ("Compare", (7, (src, pos))) in
+  let (has_compare, after_compare) = compare_type in
+  if has_compare == 1 then after_compare else
+  let box_type = p_eat_keyword ("Box", (3, (src, pos))) in
+  let (has_box, after_box) = box_type in
+  if has_box == 1 then after_box else
+  let unsigned_type = p_eat_keyword ("unsigned", (8, (src, pos))) in
+  let (has_unsigned, after_unsigned) = unsigned_type in
+  if has_unsigned == 1 then
+    let char_tail = p_eat_keyword ("char", (4, (src, after_unsigned))) in
+    let (has_char_tail, after_char_tail) = char_tail in
+    if has_char_tail == 1 then after_char_tail else after_unsigned
   else
-  if is_string_at ("uint64_t", (8, (src, pos))) then expect_string ("uint64_t", (8, (src, pos))) else parse_fail 0
+  let uint64_type = p_eat_keyword ("uint64_t", (8, (src, pos))) in
+  let (has_uint64, after_uint64) = uint64_type in
+  if has_uint64 == 1 then after_uint64 else parse_fail 0
 in
 let rec expect_local_type state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
-  if is_string_at ("int", (3, (src, pos))) then expect_string ("int", (3, (src, pos))) else
-  if is_string_at ("char", (4, (src, pos))) then expect_string ("char", (4, (src, pos))) else
-  if is_string_at ("signed", (6, (src, pos))) then
-    let p1 = expect_string ("signed", (6, (src, pos))) in
-    if is_string_at ("char", (4, (src, p1))) then expect_string ("char", (4, (src, p1))) else
-    if is_string_at ("short", (5, (src, p1))) then expect_string ("short", (5, (src, p1))) else parse_fail 0
-  else if is_string_at ("unsigned", (8, (src, pos))) then
-    let p1 = expect_string ("unsigned", (8, (src, pos))) in
-    if is_string_at ("char", (4, (src, p1))) then expect_string ("char", (4, (src, p1))) else
-    if is_string_at ("short", (5, (src, p1))) then expect_string ("short", (5, (src, p1))) else
-    if is_string_at ("long", (4, (src, p1))) then
-      let p2 = expect_string ("long", (4, (src, p1))) in
-      if is_string_at ("long", (4, (src, p2))) then expect_string ("long", (4, (src, p2))) else p2
-    else pos + 8
-  else if is_string_at ("long", (4, (src, pos))) then
-    let p1 = expect_string ("long", (4, (src, pos))) in
-    if is_string_at ("long", (4, (src, p1))) then expect_string ("long", (4, (src, p1))) else p1
-  else if is_string_at ("_Bool", (5, (src, pos))) then expect_string ("_Bool", (5, (src, pos))) else
-  if is_string_at ("outer_t", (7, (src, pos))) then expect_string ("outer_t", (7, (src, pos)))
-  else parse_fail 0
+  let int_type = p_eat_keyword ("int", (3, (src, pos))) in
+  let (has_int, after_int) = int_type in
+  if has_int == 1 then after_int else
+  let char_type = p_eat_keyword ("char", (4, (src, pos))) in
+  let (has_char, after_char) = char_type in
+  if has_char == 1 then after_char else
+  let signed_type = p_eat_keyword ("signed", (6, (src, pos))) in
+  let (has_signed, after_signed) = signed_type in
+  if has_signed == 1 then
+    let char_tail = p_eat_keyword ("char", (4, (src, after_signed))) in
+    let (has_char_tail, after_char_tail) = char_tail in
+    if has_char_tail == 1 then after_char_tail else
+    let short_tail = p_eat_keyword ("short", (5, (src, after_signed))) in
+    let (has_short_tail, after_short_tail) = short_tail in
+    if has_short_tail == 1 then after_short_tail else parse_fail 0
+  else
+  let unsigned_type = p_eat_keyword ("unsigned", (8, (src, pos))) in
+  let (has_unsigned, after_unsigned) = unsigned_type in
+  if has_unsigned == 1 then
+    let char_tail = p_eat_keyword ("char", (4, (src, after_unsigned))) in
+    let (has_char_tail, after_char_tail) = char_tail in
+    if has_char_tail == 1 then after_char_tail else
+    let short_tail = p_eat_keyword ("short", (5, (src, after_unsigned))) in
+    let (has_short_tail, after_short_tail) = short_tail in
+    if has_short_tail == 1 then after_short_tail else
+    let long_tail = p_eat_keyword ("long", (4, (src, after_unsigned))) in
+    let (has_long_tail, after_long_tail) = long_tail in
+    if has_long_tail == 1 then
+      let long_long_tail = p_eat_keyword ("long", (4, (src, after_long_tail))) in
+      let (has_long_long_tail, after_long_long_tail) = long_long_tail in
+      if has_long_long_tail == 1 then after_long_long_tail else after_long_tail
+    else after_unsigned
+  else
+  let long_type = p_eat_keyword ("long", (4, (src, pos))) in
+  let (has_long, after_long) = long_type in
+  if has_long == 1 then
+    let long_tail = p_eat_keyword ("long", (4, (src, after_long))) in
+    let (has_long_tail, after_long_tail) = long_tail in
+    if has_long_tail == 1 then after_long_tail else after_long
+  else
+  let bool_type = p_eat_keyword ("_Bool", (5, (src, pos))) in
+  let (has_bool, after_bool) = bool_type in
+  if has_bool == 1 then after_bool else
+  let outer_type = p_eat_keyword ("outer_t", (7, (src, pos))) in
+  let (has_outer, after_outer) = outer_type in
+  if has_outer == 1 then after_outer else parse_fail 0
 in
 let rec is_local_type_at state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
-  (is_string_at ("int", (3, (src, pos)))) +
-  (is_string_at ("char", (4, (src, pos)))) +
-  (is_string_at ("signed", (6, (src, pos)))) +
-  (is_string_at ("unsigned", (8, (src, pos)))) +
-  (is_string_at ("long", (4, (src, pos)))) +
-  (is_string_at ("_Bool", (5, (src, pos)))) +
-  (is_string_at ("outer_t", (7, (src, pos))))
+  (is_keyword_at ("int", (3, (src, pos)))) +
+  (is_keyword_at ("char", (4, (src, pos)))) +
+  (is_keyword_at ("signed", (6, (src, pos)))) +
+  (is_keyword_at ("unsigned", (8, (src, pos)))) +
+  (is_keyword_at ("long", (4, (src, pos)))) +
+  (is_keyword_at ("_Bool", (5, (src, pos)))) +
+  (is_keyword_at ("outer_t", (7, (src, pos))))
 in
 let rec expect_type state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
-  if is_string_at ("static", (6, (src, pos))) then expect_type (src, expect_string ("static", (6, (src, pos)))) else
-  if is_string_at ("const", (5, (src, pos))) then expect_type (src, expect_string ("const", (5, (src, pos)))) else
-  if is_string_at ("int", (3, (src, pos))) then expect_string ("int", (3, (src, pos))) else
-  if is_string_at ("char", (4, (src, pos))) then expect_string ("char", (4, (src, pos))) else
-  if is_string_at ("void", (4, (src, pos))) then expect_string ("void", (4, (src, pos))) else
-  if is_string_at ("_Bool", (5, (src, pos))) then expect_string ("_Bool", (5, (src, pos))) else
-  if is_string_at ("unsigned", (8, (src, pos))) then
-    let p1 = expect_string ("unsigned", (8, (src, pos))) in
-    if is_string_at ("char", (4, (src, p1))) then expect_string ("char", (4, (src, p1))) else p1
+  let static_type = p_eat_keyword ("static", (6, (src, pos))) in
+  let (has_static, after_static) = static_type in
+  if has_static == 1 then expect_type (src, after_static) else
+  let const_type = p_eat_keyword ("const", (5, (src, pos))) in
+  let (has_const, after_const) = const_type in
+  if has_const == 1 then expect_type (src, after_const) else
+  let int_type = p_eat_keyword ("int", (3, (src, pos))) in
+  let (has_int, after_int) = int_type in
+  if has_int == 1 then after_int else
+  let char_type = p_eat_keyword ("char", (4, (src, pos))) in
+  let (has_char, after_char) = char_type in
+  if has_char == 1 then after_char else
+  let void_type = p_eat_keyword ("void", (4, (src, pos))) in
+  let (has_void, after_void) = void_type in
+  if has_void == 1 then after_void else
+  let bool_type = p_eat_keyword ("_Bool", (5, (src, pos))) in
+  let (has_bool, after_bool) = bool_type in
+  if has_bool == 1 then after_bool else
+  let unsigned_type = p_eat_keyword ("unsigned", (8, (src, pos))) in
+  let (has_unsigned, after_unsigned) = unsigned_type in
+  if has_unsigned == 1 then
+    let char_tail = p_eat_keyword ("char", (4, (src, after_unsigned))) in
+    let (has_char_tail, after_char_tail) = char_tail in
+    if has_char_tail == 1 then after_char_tail else after_unsigned
   else parse_fail 0
 in
 let rec parse_type_token state =
