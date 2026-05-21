@@ -1,6 +1,4 @@
 type func_summary = FuncConst of int | FuncArg | FuncNotArg | FuncAddArgs | FuncCmpArgs | FuncArgEqAny of int
-type parse_reply = ParseOk of int | ParseErr
-type pos_option = PosSome of int | PosNone
 type ident_option = IdentSome of int | IdentNone
 type parser = Parser of int
 type parser_reply = ParserOk of int | ParserErr
@@ -71,14 +69,6 @@ in
 let rec parse_fail unit =
   exit 1
 in
-let rec p_force reply =
-  match reply with
-    ParseOk pos -> pos
-  | ParseErr -> parse_fail 0
-in
-let rec p_return state =
-  ParseOk state
-in
 let rec parser_pos parser_state =
   match parser_state with
     Parser pos -> pos
@@ -118,23 +108,6 @@ let rec p_force_reply reply =
     ParserOk parsed -> parsed
   | ParserErr -> parse_fail 0
 in
-let rec p_reply_is_ok reply =
-  match force_consumed reply with
-    ParserOk parsed -> let _ = parsed in 1
-  | ParserErr -> 0
-in
-let rec p_bind_consumed state =
-  let (left, right) = state in
-  match left with
-    Consumed inner ->
-      (match inner with
-        ParserOk parsed -> let _ = parsed in Consumed (force_consumed right)
-      | ParserErr -> Consumed (p_reply_err 0))
-  | Unconsumed inner ->
-      (match inner with
-        ParserOk parsed -> let _ = parsed in right
-      | ParserErr -> Unconsumed (p_reply_err 0))
-in
 let rec p_optional_parser state =
   let (reply, parser_state0) = state in
   match reply with
@@ -156,11 +129,6 @@ let rec p_option_pos_parser state =
     ParserSome value -> let (_got, next_parser) = value in (1, parser_pos next_parser)
   | ParserNone -> (0, parser_pos parser_state)
 in
-let rec p_is_ok state =
-  match state with
-    ParseOk pos -> let _ = pos in 1
-  | ParseErr -> 0
-in
 let rec p_peek state =
   let (src, pos0) = state in
   let pos = skip_space (src, pos0) in
@@ -170,26 +138,12 @@ let rec p_peek_parser state =
   let (src, parser_state) = state in
   p_peek (src, parser_pos parser_state)
 in
-let rec p_take_char state =
-  let (src, parser_state) = state in
-  let peeked = p_peek_parser (src, parser_state) in
-  let (got, pos) = peeked in
-  p_consumed_ok (got, parser_at (pos + 1))
-in
 let rec p_expect_char_parser state =
   let (src, pair) = state in
   let (parser_state, ch) = pair in
   let peeked = p_peek_parser (src, parser_state) in
   let (got, pos) = peeked in
   if got == ch then p_consumed_ok (got, parser_at (pos + 1)) else p_unconsumed_err 0
-in
-let rec p_try_char state =
-  let (src, pair) = state in
-  let (pos0, ch) = pair in
-  let parsed = p_expect_char_parser (src, (parser_at pos0, ch)) in
-  match force_consumed parsed with
-    ParserOk value -> let (_ch, parser_state) = value in ParseOk (parser_pos parser_state)
-  | ParserErr -> ParseErr
 in
 let rec p_need_char state =
   let (src, pair) = state in
@@ -214,16 +168,6 @@ let rec p_expect_string_loop state =
   else
     p_unconsumed_err 0
 in
-let rec p_try_string_loop state =
-  let (want, pair) = state in
-  let (len, pair2) = pair in
-  let (src, pair3) = pair2 in
-  let (pos, index) = pair3 in
-  let parsed = p_expect_string_loop (want, (len, (src, (parser_at pos, index)))) in
-  match force_consumed parsed with
-    ParserOk value -> let (_text, parser_state) = value in ParseOk (parser_pos parser_state)
-  | ParserErr -> ParseErr
-in
 let rec p_expect_string_parser state =
   let (want, pair) = state in
   let (len, pair2) = pair in
@@ -231,34 +175,24 @@ let rec p_expect_string_parser state =
   let pos = skip_space (src, parser_pos parser_state0) in
   p_expect_string_loop (want, (len, (src, (parser_at pos, 0))))
 in
-let rec p_try_string state =
+let rec p_string_at state =
   let (want, pair) = state in
   let (len, pair2) = pair in
   let (src, pos0) = pair2 in
-  let parsed = p_expect_string_parser (want, (len, (src, parser_at pos0))) in
-  match force_consumed parsed with
-    ParserOk value -> let (_text, parser_state) = value in ParseOk (parser_pos parser_state)
-  | ParserErr -> ParseErr
-in
-let rec p_string_at state =
-  p_is_ok (p_try_string state)
+  match force_consumed (p_expect_string_parser (want, (len, (src, parser_at pos0)))) with
+    ParserOk parsed -> let _ = parsed in 1
+  | ParserErr -> 0
 in
 let rec p_keyword_at state =
   let (want, pair) = state in
   let (len, pair2) = pair in
   let (src, pos0) = pair2 in
-  let pos = skip_space (src, pos0) in
-  let reply = p_try_string_loop (want, (len, (src, (pos, 0)))) in
-  match reply with
-    ParseOk end_pos -> 1 - (is_ident (src.[end_pos]))
-  | ParseErr -> 0
-in
-let rec p_try_keyword state =
-  let (want, pair) = state in
-  let (len, pair2) = pair in
-  let (src, pos0) = pair2 in
-  let pos = skip_space (src, pos0) in
-  if p_keyword_at (want, (len, (src, pos))) == 1 then ParseOk (pos + len) else ParseErr
+  match force_consumed (p_expect_string_parser (want, (len, (src, parser_at pos0)))) with
+    ParserOk parsed ->
+      let (_text, parser_state) = parsed in
+      let end_pos = parser_pos parser_state in
+      1 - (is_ident (src.[end_pos]))
+  | ParserErr -> 0
 in
 let rec p_try_keyword_parser state =
   let (want, pair) = state in
@@ -381,21 +315,6 @@ let rec p_bind_expect_string_parser state =
           p_expect_string_parser (want, (len, (src, parser_state)))
       | ParserErr -> Unconsumed (p_reply_err 0))
 in
-let rec p_optional state =
-  match state with
-    ParseOk pos -> PosSome pos
-  | ParseErr -> PosNone
-in
-let rec p_option_pos state =
-  let (option, pos0) = state in
-  match option with
-    PosSome pos -> (1, pos)
-  | PosNone -> (0, pos0)
-in
-let rec p_optional_pos state =
-  let (reply, pos0) = state in
-  p_option_pos (p_optional reply, pos0)
-in
 let rec p_need_string state =
   let (want, pair) = state in
   let (len, pair2) = pair in
@@ -405,7 +324,12 @@ let rec p_need_string state =
   parser_pos parser_state
 in
 let rec p_need_keyword state =
-  p_force (p_try_keyword state)
+  let (want, pair) = state in
+  let (len, pair2) = pair in
+  let (src, pos0) = pair2 in
+  let parsed = p_force_reply (p_try_keyword_parser (want, (len, (src, parser_at pos0)))) in
+  let (_text, parser_state) = parsed in
+  parser_pos parser_state
 in
 let rec is_string_at state =
   p_string_at state
