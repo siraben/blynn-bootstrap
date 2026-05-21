@@ -816,19 +816,36 @@ let rec parse_escape_value state =
   in
   (value, pos + 1)
 in
-let rec parse_char_value state =
-  let (src, pos0) = state in
-  let pos = skip_space (src, pos0) in
+let rec p_try_char_literal_parser state =
+  let (src, parser_state0) = state in
+  let pos = skip_space (src, parser_pos parser_state0) in
   if src.[pos] == '\'' then
     if src.[pos + 1] == '\\' then
       let escaped = parse_escape_value (src, pos + 2) in
       let (value, value_end) = escaped in
-      let p1 = expect_ch (src, (value_end, '\'')) in
-      (value, p1)
+      let closed = p_expect_char_parser (src, (parser_at value_end, '\'')) in
+      (match force_consumed closed with
+        ParserOk parsed ->
+          let (_got, parser_state) = parsed in
+          let end_pos = parser_pos parser_state in
+          p_consumed_ok ((value, end_pos), parser_state)
+      | ParserErr -> p_consumed_err 0)
     else
-      (src.[pos + 1], pos + 3)
+      let closed = p_expect_char_parser (src, (parser_at (pos + 2), '\'')) in
+      (match force_consumed closed with
+        ParserOk parsed ->
+          let (_got, parser_state) = parsed in
+          let end_pos = parser_pos parser_state in
+          p_consumed_ok ((src.[pos + 1], end_pos), parser_state)
+      | ParserErr -> p_consumed_err 0)
   else
-    parse_fail 0
+    p_unconsumed_err 0
+in
+let rec parse_char_value state =
+  let (src, pos0) = state in
+  let parsed = p_force_reply (p_try_char_literal_parser (src, parser_at pos0)) in
+  let (value, _parser_state) = parsed in
+  value
 in
 let rec skip_string_literal state =
   let (src, pos) = state in
