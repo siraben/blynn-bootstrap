@@ -187,6 +187,15 @@ stageRun {
         printf 'type byte = Byte of int | Empty | Other\nwrite_byte (match Byte 79 with | Empty -> 88 | Byte x -> x | _ -> 88)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-match-three-payload.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-adt-match-three-payload.mzbc)"
         test "$actual" = O
+        printf 'type letter = A | B | C | D\nwrite_byte (match D with | A -> 88 | B -> 88 | C -> 88 | D -> 79)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-match-four.mzbc
+        actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-adt-match-four.mzbc)"
+        test "$actual" = O
+        printf 'type letter = A | B of int | C | D of int | E | F of int\nwrite_byte (match F 79 with | A -> 88 | B x -> x | C -> 88 | D y -> y | E -> 88 | F z -> z)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-match-six-payload.mzbc
+        actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-adt-match-six-payload.mzbc)"
+        test "$actual" = O
+        printf 'type letter = A | B | C | D | E | F | G\nwrite_byte (match G with | A -> 88 | B -> 88 | C -> 88 | D -> 88 | E -> 88 | F -> 88 | G -> 79)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-match-seven.mzbc
+        actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-adt-match-seven.mzbc)"
+        test "$actual" = O
         printf 'type byte = Byte of int | Empty\nwrite_byte (match Byte 79 with | Byte x -> x | Empty -> 88)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-match-payload-first.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-adt-match-payload-first.mzbc)"
         test "$actual" = O
@@ -464,6 +473,9 @@ stageRun {
     install -Dm644 03-adt-match-env.mzbc "$out/share/mlc/stages/03-adt-match-env.mzbc"
     install -Dm644 03-adt-match-three.mzbc "$out/share/mlc/stages/03-adt-match-three.mzbc"
     install -Dm644 03-adt-match-three-payload.mzbc "$out/share/mlc/stages/03-adt-match-three-payload.mzbc"
+    install -Dm644 03-adt-match-four.mzbc "$out/share/mlc/stages/03-adt-match-four.mzbc"
+    install -Dm644 03-adt-match-six-payload.mzbc "$out/share/mlc/stages/03-adt-match-six-payload.mzbc"
+    install -Dm644 03-adt-match-seven.mzbc "$out/share/mlc/stages/03-adt-match-seven.mzbc"
     install -Dm644 03-adt-match-payload-first.mzbc "$out/share/mlc/stages/03-adt-match-payload-first.mzbc"
     install -Dm644 03-adt-match-payload-second.mzbc "$out/share/mlc/stages/03-adt-match-payload-second.mzbc"
     install -Dm644 03-adt-match-payload-env.mzbc "$out/share/mlc/stages/03-adt-match-payload-env.mzbc"

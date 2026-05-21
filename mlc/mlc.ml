@@ -366,11 +366,16 @@ let rec string_at input =
   let pos = skip_space (src, pos0) in
   string_at_loop (src, (pos, (text, 0)))
 in
+let rec keyword_start input =
+  let (src, pos) = input in
+  if pos == 0 then 1 else 1 - (is_ident (src.[pos - 1]))
+in
 let rec keyword_at input =
   let (src, pair) = input in
   let (pos0, text) = pair in
   let pos = skip_space (src, pos0) in
   let len = String.length text in
+  if keyword_start (src, pos) == 0 then 0 else
   if string_at_loop (src, (pos, (text, 0))) == 1 then 1 - (is_ident (src.[pos + len])) else 0
 in
 let rec p_ok state =
@@ -2117,14 +2122,24 @@ let rec skip_char_pos input =
   if src.[pos0] == '\\' then skip_char_pos (src, pos0 + 2) else
   if src.[pos0] == '\'' then pos0 + 1 else skip_char_pos (src, pos0 + 1)
 in
-let rec find_and_pos input =
-  let (src, pos0) = input in
+let rec find_and_pos_depth input =
+  let (src, pair) = input in
+  let (pos0, depth) = pair in
   let pos = skip_space (src, pos0) in
   if src.[pos] == 0 then 0 - 1 else
-  if src.[pos] == '"' then find_and_pos (src, skip_string_pos (src, pos + 1)) else
-  if src.[pos] == '\'' then find_and_pos (src, skip_char_pos (src, pos + 1)) else
-  if is_in_at (src, pos) == 1 then 0 - 1 else
-  if is_and_at (src, pos) == 1 then pos else find_and_pos (src, pos + 1)
+  if src.[pos] == '"' then find_and_pos_depth (src, (skip_string_pos (src, pos + 1), depth)) else
+  if src.[pos] == '\'' then find_and_pos_depth (src, (skip_char_pos (src, pos + 1), depth)) else
+  if is_let_at (src, pos) == 1 then find_and_pos_depth (src, (pos + 3, depth + 1)) else
+  if is_in_at (src, pos) == 1 then
+    if depth == 0 then 0 - 1 else find_and_pos_depth (src, (pos + 2, depth - 1))
+  else
+  if is_and_at (src, pos) == 1 then
+    if depth == 0 then pos else find_and_pos_depth (src, (pos + 3, depth))
+  else find_and_pos_depth (src, (pos + 1, depth))
+in
+let rec find_and_pos input =
+  let (src, pos0) = input in
+  find_and_pos_depth (src, (pos0, 0))
 in
 let rec compile_byte_code input =
   let (src, pair) = input in
