@@ -6,6 +6,7 @@ type value_option = ValueSome of int | ValueNone
 type parser = Parser of int
 type parser_reply = ParserOk of int | ParserErr
 type consumed_reply = Consumed of parser_reply | Unconsumed of parser_reply
+type parser_option = ParserSome of int | ParserNone
 
 let rec is_space ch =
   if ch == ' ' then 1 else
@@ -142,6 +143,39 @@ let rec p_reply_is_ok reply =
     ParserOk parsed -> let _ = parsed in 1
   | ParserErr -> 0
 in
+let rec p_bind_consumed state =
+  let (left, right) = state in
+  match left with
+    Consumed inner ->
+      (match inner with
+        ParserOk parsed -> let _ = parsed in Consumed (force_consumed right)
+      | ParserErr -> Consumed (p_reply_err 0))
+  | Unconsumed inner ->
+      (match inner with
+        ParserOk parsed -> let _ = parsed in right
+      | ParserErr -> Unconsumed (p_reply_err 0))
+in
+let rec p_optional_parser state =
+  let (reply, parser_state0) = state in
+  match reply with
+    Unconsumed inner ->
+      (match inner with
+        ParserOk parsed -> let (_value, next_parser) = parsed in Unconsumed (p_reply_ok (ParserSome parsed, next_parser))
+      | ParserErr -> Unconsumed (p_reply_ok (ParserNone, parser_state0)))
+  | Consumed inner ->
+      (match inner with
+        ParserOk parsed -> let (_value, next_parser) = parsed in Consumed (p_reply_ok (ParserSome parsed, next_parser))
+      | ParserErr -> Consumed (p_reply_err 0))
+in
+let rec p_option_pos_parser state =
+  let (reply, parser_state0) = state in
+  let optional = p_optional_parser (reply, parser_state0) in
+  let parsed = p_force_reply optional in
+  let (option, parser_state) = parsed in
+  match option with
+    ParserSome value -> let (_got, next_parser) = value in (1, parser_pos next_parser)
+  | ParserNone -> (0, parser_pos parser_state)
+in
 let rec p_is_ok state =
   match state with
     ParseOk pos -> let _ = pos in 1
@@ -246,6 +280,85 @@ let rec p_try_keyword state =
   let pos = skip_space (src, pos0) in
   if p_keyword_at (want, (len, (src, pos))) == 1 then ParseOk (pos + len) else ParseErr
 in
+let rec p_try_keyword_parser state =
+  let (want, pair) = state in
+  let (len, pair2) = pair in
+  let (src, parser_state0) = pair2 in
+  let pos = skip_space (src, parser_pos parser_state0) in
+  if p_keyword_at (want, (len, (src, pos))) == 1 then
+    p_consumed_ok (want, parser_at (pos + len))
+  else
+    p_unconsumed_err 0
+in
+let rec p_bind_expect_char_parser state =
+  let (reply, pair) = state in
+  let (src, ch) = pair in
+  match reply with
+    Consumed inner ->
+      (match inner with
+        ParserOk parsed ->
+          let (_value, parser_state) = parsed in
+          let next = p_expect_char_parser (src, (parser_state, ch)) in
+          Consumed (force_consumed next)
+      | ParserErr -> Consumed (p_reply_err 0))
+  | Unconsumed inner ->
+      (match inner with
+        ParserOk parsed ->
+          let (_value, parser_state) = parsed in
+          p_expect_char_parser (src, (parser_state, ch))
+      | ParserErr -> Unconsumed (p_reply_err 0))
+in
+let rec p_bind_expect_char_keep_parser state =
+  let (reply, pair) = state in
+  let (src, ch) = pair in
+  match reply with
+    Consumed inner ->
+      (match inner with
+        ParserOk parsed ->
+          let (value, parser_state) = parsed in
+          let next = p_expect_char_parser (src, (parser_state, ch)) in
+          let kept =
+            match force_consumed next with
+              ParserOk next_parsed -> let (_got, next_parser) = next_parsed in p_reply_ok (value, next_parser)
+            | ParserErr -> p_reply_err 0
+          in
+          Consumed kept
+      | ParserErr -> Consumed (p_reply_err 0))
+  | Unconsumed inner ->
+      (match inner with
+        ParserOk parsed ->
+          let (value, parser_state) = parsed in
+          let next = p_expect_char_parser (src, (parser_state, ch)) in
+          (match next with
+            Consumed next_inner ->
+              (match next_inner with
+                ParserOk next_parsed -> let (_got, next_parser) = next_parsed in Consumed (p_reply_ok (value, next_parser))
+              | ParserErr -> Consumed (p_reply_err 0))
+          | Unconsumed next_inner ->
+              (match next_inner with
+                ParserOk next_parsed -> let (_got, next_parser) = next_parsed in Unconsumed (p_reply_ok (value, next_parser))
+              | ParserErr -> Unconsumed (p_reply_err 0)))
+      | ParserErr -> Unconsumed (p_reply_err 0))
+in
+let rec p_bind_expect_string_parser state =
+  let (reply, pair) = state in
+  let (want, pair2) = pair in
+  let (len, src) = pair2 in
+  match reply with
+    Consumed inner ->
+      (match inner with
+        ParserOk parsed ->
+          let (_value, parser_state) = parsed in
+          let next = p_expect_string_parser (want, (len, (src, parser_state))) in
+          Consumed (force_consumed next)
+      | ParserErr -> Consumed (p_reply_err 0))
+  | Unconsumed inner ->
+      (match inner with
+        ParserOk parsed ->
+          let (_value, parser_state) = parsed in
+          p_expect_string_parser (want, (len, (src, parser_state)))
+      | ParserErr -> Unconsumed (p_reply_err 0))
+in
 let rec p_optional state =
   match state with
     ParseOk pos -> PosSome pos
@@ -281,19 +394,19 @@ in
 let rec p_eat_char state =
   let (src, pair) = state in
   let (pos0, ch) = pair in
-  p_optional_pos (p_try_char (src, (pos0, ch)), pos0)
+  p_option_pos_parser (p_expect_char_parser (src, (parser_at pos0, ch)), parser_at pos0)
 in
 let rec p_eat_string state =
   let (want, pair) = state in
   let (len, pair2) = pair in
   let (src, pos0) = pair2 in
-  p_optional_pos (p_try_string (want, (len, (src, pos0))), pos0)
+  p_option_pos_parser (p_expect_string_parser (want, (len, (src, parser_at pos0))), parser_at pos0)
 in
 let rec p_eat_keyword state =
   let (want, pair) = state in
   let (len, pair2) = pair in
   let (src, pos0) = pair2 in
-  p_optional_pos (p_try_keyword (want, (len, (src, pos0))), pos0)
+  p_option_pos_parser (p_try_keyword_parser (want, (len, (src, parser_at pos0))), parser_at pos0)
 in
 let rec expect_char state =
   p_need_char state
@@ -424,23 +537,30 @@ let rec parse_expect_string state =
 in
 let rec bind_expect_char state =
   let (parsed, pair) = state in
-  let (_value, pos) = parsed in
+  let (value, pos) = parsed in
   let (src, ch) = pair in
-  parse_expect_char (ch, (src, pos))
+  let reply = p_unconsumed_ok (value, parser_at pos) in
+  let next = p_force_reply (p_bind_expect_char_parser (reply, (src, ch))) in
+  let (got, parser_state) = next in
+  (got, parser_pos parser_state)
 in
 let rec bind_expect_string state =
   let (parsed, pair) = state in
-  let (_value, pos) = parsed in
+  let (value, pos) = parsed in
   let (src, pair2) = pair in
   let (want, len) = pair2 in
-  parse_expect_string (want, (len, (src, pos)))
+  let reply = p_unconsumed_ok (value, parser_at pos) in
+  let next = p_force_reply (p_bind_expect_string_parser (reply, (want, (len, src)))) in
+  let (got, parser_state) = next in
+  (got, parser_pos parser_state)
 in
 let rec bind_expect_char_keep state =
   let (parsed, pair) = state in
   let (value, pos) = parsed in
   let (src, ch) = pair in
-  let next = p_force_reply (p_expect_char_parser (src, (parser_at pos, ch))) in
-  let (_got, parser_state) = next in
+  let reply = p_unconsumed_ok (value, parser_at pos) in
+  let next = p_force_reply (p_bind_expect_char_keep_parser (reply, (src, ch))) in
+  let (_value, parser_state) = next in
   (value, parser_pos parser_state)
 in
 let rec bind_parse_ident state =
