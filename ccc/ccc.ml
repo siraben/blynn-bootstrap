@@ -72,12 +72,6 @@ in
 let rec parse_fail unit =
   exit 1
 in
-let rec p_try_ident state =
-  let (src, pos0) = state in
-  let pos = skip_space (src, pos0) in
-  let ch = src.[pos] in
-  if is_alpha ch then ValueOk (pos, parse_ident_loop (src, pos + 1)) else ValueErr
-in
 let rec p_force_value reply =
   match reply with
     ValueOk parsed -> parsed
@@ -87,9 +81,6 @@ let rec p_optional_value state =
   match state with
     ValueOk parsed -> ValueSome parsed
   | ValueErr -> ValueNone
-in
-let rec parse_ident state =
-  p_force_value (p_try_ident state)
 in
 let rec p_force reply =
   match reply with
@@ -289,6 +280,45 @@ let rec p_try_keyword_parser state =
     p_consumed_ok (want, parser_at (pos + len))
   else
     p_unconsumed_err 0
+in
+let rec p_try_ident_parser state =
+  let (src, parser_state0) = state in
+  let pos = skip_space (src, parser_pos parser_state0) in
+  let ch = src.[pos] in
+  if is_alpha ch then
+    let end_pos = parse_ident_loop (src, pos + 1) in
+    p_consumed_ok ((pos, end_pos), parser_at end_pos)
+  else
+    p_unconsumed_err 0
+in
+let rec p_try_ident state =
+  let (src, pos0) = state in
+  match force_consumed (p_try_ident_parser (src, parser_at pos0)) with
+    ParserOk parsed -> let (ident, _parser_state) = parsed in ValueOk ident
+  | ParserErr -> ValueErr
+in
+let rec parse_ident state =
+  let (src, pos0) = state in
+  let parsed = p_force_reply (p_try_ident_parser (src, parser_at pos0)) in
+  let (ident, _parser_state) = parsed in
+  ident
+in
+let rec p_bind_parse_ident_parser state =
+  let (reply, src) = state in
+  match reply with
+    Consumed inner ->
+      (match inner with
+        ParserOk parsed ->
+          let (_value, parser_state) = parsed in
+          let next = p_try_ident_parser (src, parser_state) in
+          Consumed (force_consumed next)
+      | ParserErr -> Consumed (p_reply_err 0))
+  | Unconsumed inner ->
+      (match inner with
+        ParserOk parsed ->
+          let (_value, parser_state) = parsed in
+          p_try_ident_parser (src, parser_state)
+      | ParserErr -> Unconsumed (p_reply_err 0))
 in
 let rec p_bind_expect_char_parser state =
   let (reply, pair) = state in
@@ -565,8 +595,11 @@ let rec bind_expect_char_keep state =
 in
 let rec bind_parse_ident state =
   let (parsed, src) = state in
-  let (_value, pos) = parsed in
-  parse_ident (src, pos)
+  let (value, pos) = parsed in
+  let reply = p_unconsumed_ok (value, parser_at pos) in
+  let next = p_force_reply (p_bind_parse_ident_parser (reply, src)) in
+  let (ident, _parser_state) = next in
+  ident
 in
 let rec bind_skip_pointer_keep state =
   let (parsed, src) = state in
