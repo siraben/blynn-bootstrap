@@ -232,13 +232,13 @@ tuple payload expressions allocate VM blocks, tuple destructuring extracts
 fields, and simple constructor/wildcard/default-variable `match` forms lower to tag tests and
 branches, including multi-declaration, `match-three.ml`,
 `match-four.ml`,
-`match-six.ml`,
+`match-six.ml`, an inline seven-arm fixed-point gate,
 `match-bind-default.ml`,
 `adt-tuple-payload.ml`, direct tuple payload patterns in
 `adt-pattern-tuple.ml`, tuple payload wildcards in
 `adt-pattern-tuple-wildcard.ml`, nested tuple payload patterns in
 `adt-pattern-nested-tuple.ml`, and recursive `adt-recursion.ml` cases. The next
-meaningful step is to extend that ML-side parser/lowerer to recursive and
-general decision-tree patterns, then promote the AST/type-checking stage until
+meaningful step is to extend that ML-side parser/lowerer beyond recursive
+constructor case lists into general decision-tree patterns, then promote the AST/type-checking stage until
 it can compile itself and the following compiler source. After that, retire the
 transitional direct C bytecode compiler from the critical path.

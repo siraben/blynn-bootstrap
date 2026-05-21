@@ -69,8 +69,8 @@ Current stages:
   with `<`, `==`, `!=`, `<=`, `>`, and `>=`. It now also parses leading
   `type` declarations into a constructor environment, uses bounded keyword
   lookahead for expression-level terminators and keyword-prefix identifiers, and
-  lowers the first constructor/wildcard/default-variable `match` forms with up
-  to four arms, including tuple payload construction,
+  lowers recursive constructor/wildcard/default-variable `match` case lists,
+  including tuple payload construction,
   direct tuple payload patterns in `adt-pattern-tuple.ml`, tuple payload
   wildcards in `adt-pattern-tuple-wildcard.ml`, destructuring in
   `adt-tuple-payload.ml`, nested tuple payload patterns in

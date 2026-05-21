@@ -158,6 +158,9 @@ stageRun {
     ${mzvmSeedM2}/bin/mzvm-seed mlc.byte < ${testsRoot}/mlc/match-six.ml > compiled-match-six.mzbc
     actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-match-six.mzbc)"
     test "$actual" = O
+    printf 'type letter = A | B | C | D | E | F | G\nwrite_byte (match G with A -> 88 | B -> 88 | C -> 88 | D -> 88 | E -> 88 | F -> 88 | G -> 79)' | ${mzvmSeedM2}/bin/mzvm-seed mlc.byte > compiled-match-seven.mzbc
+    actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-match-seven.mzbc)"
+    test "$actual" = O
     ${mzvmSeedM2}/bin/mzvm-seed mlc.byte < ${testsRoot}/mlc/adt-tuple-payload.ml > compiled-adt-tuple-payload.mzbc
     actual="$(${mzvmSeedM2}/bin/mzvm-seed compiled-adt-tuple-payload.mzbc)"
     test "$actual" = OK
@@ -244,6 +247,7 @@ stageRun {
     install -Dm644 compiled-match-three-direct.mzbc "$out/share/mlc/compiled-match-three-direct.mzbc"
     install -Dm644 compiled-match-three.mzbc "$out/share/mlc/compiled-match-three.mzbc"
     install -Dm644 compiled-match-six.mzbc "$out/share/mlc/compiled-match-six.mzbc"
+    install -Dm644 compiled-match-seven.mzbc "$out/share/mlc/compiled-match-seven.mzbc"
     install -Dm644 compiled-adt-tuple-payload.mzbc "$out/share/mlc/compiled-adt-tuple-payload.mzbc"
     install -Dm644 compiled-adt-pattern-tuple.mzbc "$out/share/mlc/compiled-adt-pattern-tuple.mzbc"
     install -Dm644 compiled-adt-pattern-tuple-wildcard.mzbc "$out/share/mlc/compiled-adt-pattern-tuple-wildcard.mzbc"
