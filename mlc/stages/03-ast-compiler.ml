@@ -14,6 +14,9 @@ type expr_more9 = EDebugInt of expr | EUnit | EMore10 of expr_more10
 type expr_more10 = ECellCreate of expr | ECellGet of expr | ECellSet of expr | EArrayCreate of expr | ELetRec of expr | EMore11 of expr_more11
 type expr_more11 = ECall of expr | EConstr of int | EConstrArg of expr | EMatch of expr | ERecord of expr | ERecord3 of expr | EField of expr
 type match_cases = MatchCase of expr | MatchEnd
+type parser = Parser of int
+type parser_reply = ParserOk of int | ParserErr
+type consumed_reply = Consumed of parser_reply | Unconsumed of parser_reply
 type parse_reply = ParseOk of int | ParseErr
 type expr_option = ExprSome of expr | ExprNone
 type pos_option = PosSome of int | PosNone
@@ -251,6 +254,44 @@ in
 let rec fail unit =
   exit 1
 in
+let rec parser_at pos =
+  Parser pos
+in
+let rec parser_pos parser =
+  match parser with
+    Parser pos -> pos
+in
+let rec p_reply_ok state =
+  ParserOk state
+in
+let rec p_reply_err unit =
+  let _ = unit in
+  ParserErr
+in
+let rec p_consumed_ok state =
+  Consumed (p_reply_ok state)
+in
+let rec p_unconsumed_ok state =
+  Unconsumed (p_reply_ok state)
+in
+let rec p_consumed_err unit =
+  let _ = unit in
+  Consumed (p_reply_err 0)
+in
+let rec p_unconsumed_err unit =
+  let _ = unit in
+  Unconsumed (p_reply_err 0)
+in
+let rec force_consumed consumed =
+  match consumed with
+    Consumed inner -> inner
+  | Unconsumed inner -> inner
+in
+let rec p_force_parser_reply reply =
+  match reply with
+    ParserOk parsed -> parsed
+  | ParserErr -> fail 0
+in
 let rec p_force reply =
   match reply with
     ParseOk pos -> pos
@@ -280,12 +321,23 @@ let rec p_peek state =
   let pos = skip_space (src, pos0) in
   (src.[pos], pos)
 in
+let rec p_peek_parser state =
+  let (src, parser_state) = state in
+  p_peek (src, parser_pos parser_state)
+in
+let rec p_expect_char_parser state =
+  let (src, pair) = state in
+  let (parser_state, want) = pair in
+  let peeked = p_peek_parser (src, parser_state) in
+  let (got, pos) = peeked in
+  if got == want then p_consumed_ok (got, parser_at (pos + 1)) else p_unconsumed_err 0
+in
 let rec p_try_char state =
   let (src, pair) = state in
   let (pos0, want) = pair in
-  let peeked = p_peek (src, pos0) in
-  let (got, pos) = peeked in
-  if got == want then ParseOk (pos + 1) else ParseErr
+  match force_consumed (p_expect_char_parser (src, (parser_at pos0, want))) with
+    ParserOk parsed -> let (_got, next_parser) = parsed in ParseOk (parser_pos next_parser)
+  | ParserErr -> ParseErr
 in
 let rec p_need_char state =
   p_force (p_try_char state)
@@ -300,11 +352,32 @@ let rec p_try_string_loop state =
   if index == String.length text then ParseOk (pos + index) else
   if src.[pos + index] == text.[index] then p_try_string_loop (src, (pos, (text, index + 1))) else ParseErr
 in
+let rec p_expect_string_loop_parser state =
+  let (src, pair) = state in
+  let (parser_state, pair2) = pair in
+  let (text, index) = pair2 in
+  if index == String.length text then p_unconsumed_ok (text, parser_state) else
+    let pos = parser_pos parser_state in
+    if src.[pos] == text.[index] then
+      let tail = p_expect_string_loop_parser (src, (parser_at (pos + 1), (text, index + 1))) in
+      match tail with
+        Consumed inner -> Consumed inner
+      | Unconsumed inner -> Consumed inner
+    else
+      p_unconsumed_err 0
+in
+let rec p_expect_string_parser state =
+  let (src, pair) = state in
+  let (parser_state0, text) = pair in
+  let pos = skip_space (src, parser_pos parser_state0) in
+  p_expect_string_loop_parser (src, (parser_at pos, (text, 0)))
+in
 let rec p_try_string state =
   let (src, pair) = state in
   let (pos0, text) = pair in
-  let pos = skip_space (src, pos0) in
-  p_try_string_loop (src, (pos, (text, 0)))
+  match force_consumed (p_expect_string_parser (src, (parser_at pos0, text))) with
+    ParserOk parsed -> let (_text, next_parser) = parsed in ParseOk (parser_pos next_parser)
+  | ParserErr -> ParseErr
 in
 let rec p_string_at state =
   match p_try_string state with
@@ -627,11 +700,22 @@ let rec is_wild_name state =
   let (src, name) = state in
   if src.[name] == '_' then 1 - (is_ident (src.[name + 1])) else 0
 in
+let rec p_try_ident_parser state =
+  let (src, parser_state0) = state in
+  let pos = skip_space (src, parser_pos parser_state0) in
+  let ch = src.[pos] in
+  if is_alpha ch then
+    let parsed = parse_ident_loop (src, (pos, pos + 1)) in
+    let (_start, end_pos) = parsed in
+    p_consumed_ok (parsed, parser_at end_pos)
+  else
+    p_unconsumed_err 0
+in
 let rec p_try_ident state =
   let (src, pos0) = state in
-  let pos = skip_space (src, pos0) in
-  let ch = src.[pos] in
-  if is_alpha ch then ValueOk (parse_ident_loop (src, (pos, pos + 1))) else ValueErr
+  match force_consumed (p_try_ident_parser (src, parser_at pos0)) with
+    ParserOk parsed -> let (ident, _next_parser) = parsed in ValueOk ident
+  | ParserErr -> ValueErr
 in
 let rec parse_ident state =
   p_force_value (p_try_ident state)

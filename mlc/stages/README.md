@@ -85,13 +85,13 @@ Current stages:
   and `int` / `bool` / `unit` / pair type nodes represented as ML variants
   rather than C-side tags. Its
   parser uses the executable subset of the HCC `ParseLite` shape available to
-  this compiler: explicit `ParseOk` / `ParseErr` replies, `p_force`,
-  `p_peek`, `p_try_char`, `p_need_char`, `p_return`, `p_try_string`,
-  `p_string_at`, `p_keyword_at`, `p_try_keyword`, `p_need_string`, and
-  `p_need_keyword`, plus `p_optional_pos` for state-preserving optional
-  keyword probes. Top-level definition parsing now returns an explicit option
-  reply (`ExprSome` / `ExprNone`) and falls back through one parser handoff
-  point instead of branching directly into the expression parser.
+  this compiler: explicit `Parser` state, `ParserOk` / `ParserErr` replies,
+  `Consumed` / `Unconsumed` wrappers, `force_consumed`, parser-returning
+  character/string/identifier primitives, plus legacy `ParseOk` / `ParseErr`
+  and `ValueOk` adapters while the larger parsers migrate. Top-level
+  definition parsing now returns an explicit option reply (`ExprSome` /
+  `ExprNone`) and falls back through one parser handoff point instead of
+  branching directly into the expression parser.
   Failed parser, type, and environment checks now pass
   through one local failure boundary instead of scattering raw process exits
   through the stage source.
