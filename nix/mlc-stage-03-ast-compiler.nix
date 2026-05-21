@@ -160,6 +160,15 @@ stageRun {
         printf 'let rec id n = n\nlet rec out n = if n = 0 then id 79 else out (n - 1)\nwrite_byte (out 2)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-let-rec-nested-call.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-let-rec-nested-call.mzbc)"
         test "$actual" = O
+        printf 'let rec out n = write_byte n in out 79' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-let-rec-unit-return.mzbc
+        actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-let-rec-unit-return.mzbc)"
+        test "$actual" = O
+        printf 'let rec out state = let (left, right) = state in write_byte (left + right) in out (40, 39)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-let-rec-pair-param.mzbc
+        actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-let-rec-pair-param.mzbc)"
+        test "$actual" = O
+        printf 'let rec out state = let (base, pair) = state in let (left, right) = pair in write_byte (base + left + right) in out (20, (20, 39))' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-let-rec-nested-pair-param.mzbc
+        actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-let-rec-nested-pair-param.mzbc)"
+        test "$actual" = O
         printf 'let rec even n = if n = 0 then 79 else odd (n - 1)\nand odd n = if n = 0 then 88 else even (n - 1)\nin\nwrite_byte (even 4); write_byte (odd 3)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-let-rec-and.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-let-rec-and.mzbc)"
         test "$actual" = OO
@@ -174,6 +183,9 @@ stageRun {
         test "$actual" = O
         printf 'type maybe = None | Some of int\ntype box = Box of maybe | Empty\nwrite_byte (match Box (Some 79) with | Box value -> (match value with | Some ch -> ch | None -> 88) | Empty -> 88)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-cross-adt-payload.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-cross-adt-payload.mzbc)"
+        test "$actual" = O
+        printf 'type box = Box of payload | Empty\ntype payload = Payload of int\nwrite_byte (match Box (Payload 79) with | Box p -> (match p with | Payload ch -> ch) | Empty -> 88)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-forward-adt-payload.mzbc
+        actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-forward-adt-payload.mzbc)"
         test "$actual" = O
         printf 'type byte = Byte of int | Empty\nlet x = Byte 79\nwrite_byte 79' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-adt-unary-ctor.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-adt-unary-ctor.mzbc)"
@@ -317,6 +329,9 @@ stageRun {
           exit 1
         fi
         if printf 'let rec id n = n\nwrite_byte (id "x")' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-let-rec-arg-type-error.mzbc; then
+          exit 1
+        fi
+        if printf 'let rec out n = write_byte n\nwrite_byte (out 79)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-let-rec-unit-as-int-error.mzbc; then
           exit 1
         fi
         if printf 'write_byte (missing 1)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-direct-call-name-error.mzbc; then
@@ -482,11 +497,15 @@ stageRun {
     install -Dm644 03-let-rec-direct.mzbc "$out/share/mlc/stages/03-let-rec-direct.mzbc"
     install -Dm644 03-let-rec-after-let.mzbc "$out/share/mlc/stages/03-let-rec-after-let.mzbc"
     install -Dm644 03-let-rec-nested-call.mzbc "$out/share/mlc/stages/03-let-rec-nested-call.mzbc"
+    install -Dm644 03-let-rec-unit-return.mzbc "$out/share/mlc/stages/03-let-rec-unit-return.mzbc"
+    install -Dm644 03-let-rec-pair-param.mzbc "$out/share/mlc/stages/03-let-rec-pair-param.mzbc"
+    install -Dm644 03-let-rec-nested-pair-param.mzbc "$out/share/mlc/stages/03-let-rec-nested-pair-param.mzbc"
     install -Dm644 03-let-rec-and.mzbc "$out/share/mlc/stages/03-let-rec-and.mzbc"
     install -Dm644 03-let-rec-and-three.mzbc "$out/share/mlc/stages/03-let-rec-and-three.mzbc"
     install -Dm644 03-leading-type.mzbc "$out/share/mlc/stages/03-leading-type.mzbc"
     install -Dm644 03-leading-types.mzbc "$out/share/mlc/stages/03-leading-types.mzbc"
     install -Dm644 03-cross-adt-payload.mzbc "$out/share/mlc/stages/03-cross-adt-payload.mzbc"
+    install -Dm644 03-forward-adt-payload.mzbc "$out/share/mlc/stages/03-forward-adt-payload.mzbc"
     install -Dm644 03-adt-unary-ctor.mzbc "$out/share/mlc/stages/03-adt-unary-ctor.mzbc"
     install -Dm644 03-adt-nullary-ctor.mzbc "$out/share/mlc/stages/03-adt-nullary-ctor.mzbc"
     install -Dm644 03-adt-match-yes.mzbc "$out/share/mlc/stages/03-adt-match-yes.mzbc"

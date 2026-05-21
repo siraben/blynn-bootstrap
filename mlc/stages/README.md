@@ -113,7 +113,8 @@ Current stages:
   bool literals, conditionals whose
   guards must type as `bool`, expression-level `let ... in ...`,
   declaration-style top-level `let` bindings, the first typed direct unary
-  `let rec f x = ...` / `f arg` slice for `int -> int` functions with
+  `let rec f x = ...` / `f arg` slice for `int -> int`, `int -> unit`, and
+  immediate `(int * int)` / `int * (int * int)` state-parameter functions with
   position-aware direct `CALL` targets after earlier bindings, a direct
   function-target environment for nested `let rec` calls, and bounded
   `let rec ... and ...` groups up to three functions, pair construction, pair
@@ -122,7 +123,8 @@ Current stages:
   leading record `type` declarations with typed two- and three-field records,
   record literals, typed field reads,
   leading variant `type` declarations with typed nullary, unary, and `*` pair
-  payload constructors and self-recursive/earlier named ADT payload references,
+  payload constructors, self-recursive/earlier named ADT payload references,
+  and forward references across leading type declarations,
   direct parenthesized pair and nested pair payload construction,
   parenthesized tuple payload types, constructor payload type rejection,
   constructor `match` expressions represented as a recursive case-list AST

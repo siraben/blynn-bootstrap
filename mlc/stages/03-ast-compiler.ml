@@ -45,11 +45,11 @@ let rec emit_header len =
 in
 let rec emit_byte_if state =
   let (emit, value) = state in
-  if emit == 1 then write_byte value else 0
+  if emit == 1 then let _ = write_byte value in 0 else 0
 in
 let rec emit_u32_if state =
   let (emit, value) = state in
-  if emit == 1 then emit_u32 value else 0
+  if emit == 1 then let _ = emit_u32 value in 0 else 0
 in
 let rec emit_const state =
   let (emit, value) = state in
@@ -1651,6 +1651,20 @@ let rec lookup_tname state =
   if name < 0 then fail 0 else
   if ident_eq (src, (name, want)) == 1 then type_id else lookup_tname (src, (tail, want))
 in
+let rec collect_type_names state =
+  let (src, pair) = state in
+  let (pos0, pair2) = pair in
+  let (type_id, type_names) = pair2 in
+  let pos = skip_space (src, pos0) in
+  if is_type_at (src, pos) == 1 then
+    let type_pos = p_need_keyword (src, (pos, "type")) in
+    let type_name = parse_ident (src, type_pos) in
+    let (type_name_pos, type_name_end) = type_name in
+    let _ = need_char (src, (type_name_end, '=')) in
+    collect_type_names (src, (skip_line (src, type_name_end), (type_id + 1, extend_tname (type_name_pos, (type_id, type_names)))))
+  else
+    (pos, (type_id, type_names))
+in
 let rec parse_type_atom state =
   let (src, pair) = state in
   let (pos0, pair0) = pair in
@@ -1820,6 +1834,66 @@ in
 let rec need_ty state =
   let (got, want) = state in
   if same_ty (got, want) == 1 then 0 else fail 0
+in
+let rec direct_param_ty state =
+  let (src, pair) = state in
+  let (param, body) = pair in
+  match body with
+    EMore more ->
+      (match more with
+        EMore2 more2 ->
+          (match more2 with
+            EMore3 more3 ->
+              (match more3 with
+                EMore4 more4 ->
+                  (match more4 with
+                    EMore5 more5 ->
+                      (match more5 with
+                        ELetPair parts ->
+                          let (name1, rest1) = parts in
+                          let (name2, rest2) = rest1 in
+                          let (rhs, _body) = rest2 in
+                          (match rhs with
+                            EVar name ->
+                              if ident_eq (src, (name, param)) == 1 then
+                                (match _body with
+                                  EMore body_more ->
+                                    (match body_more with
+                                      EMore2 body_more2 ->
+                                        (match body_more2 with
+                                          EMore3 body_more3 ->
+                                            (match body_more3 with
+                                              EMore4 body_more4 ->
+                                                (match body_more4 with
+                                                  EMore5 body_more5 ->
+                                                    (match body_more5 with
+                                                      ELetPair nested_parts ->
+                                                        let (_nested1, nested_rest1) = nested_parts in
+                                                        let (_nested2, nested_rest2) = nested_rest1 in
+                                                        let (nested_rhs, _nested_body) = nested_rest2 in
+                                                        (match nested_rhs with
+                                                          EVar nested_name ->
+                                                            if ident_eq (src, (nested_name, name2)) == 1 then
+                                                              TyMore (TyPair (TyInt, TyMore (TyPair (TyInt, TyInt))))
+                                                            else if ident_eq (src, (nested_name, name1)) == 1 then
+                                                              TyMore (TyPair (TyMore (TyPair (TyInt, TyInt)), TyInt))
+                                                            else
+                                                              TyMore (TyPair (TyInt, TyInt))
+                                                        | _ -> TyMore (TyPair (TyInt, TyInt)))
+                                                    | _ -> TyMore (TyPair (TyInt, TyInt)))
+                                                | _ -> TyMore (TyPair (TyInt, TyInt)))
+                                            | _ -> TyMore (TyPair (TyInt, TyInt)))
+                                        | _ -> TyMore (TyPair (TyInt, TyInt)))
+                                    | _ -> TyMore (TyPair (TyInt, TyInt)))
+                                | _ -> TyMore (TyPair (TyInt, TyInt)))
+                              else TyInt
+                          | _ -> TyInt)
+                      | _ -> TyInt)
+                  | _ -> TyInt)
+              | _ -> TyInt)
+          | _ -> TyInt)
+      | _ -> TyInt)
+  | _ -> TyInt
 in
 let rec field_record_ty ty =
   match ty with
@@ -2183,16 +2257,18 @@ let rec infer state =
                                               let _ = need_ty (infer (src, (env, size)), TyInt) in
                                               TyMore (TyArray (infer (src, (env, init))))
                                           | ELetRec parts ->
-                                              let fn_sig = TyMore (TyMore2 (TyFun (TyMore (TyPair (TyInt, TyInt))))) in
                                               let (count, payload) = parts in
                                               if count == 1 then
                                                 let (name, rest1) = payload in
                                                 let (param, rest2) = rest1 in
                                                 let (fn_body, body) = rest2 in
-                                                let fn_env = extend_tenv (name, (fn_sig, env)) in
-                                                let body_env = extend_tenv (param, (TyInt, fn_env)) in
-                                                let _ = need_ty (infer (src, (body_env, fn_body)), TyInt) in
-                                                infer (src, (fn_env, body))
+                                                let param_ty = direct_param_ty (src, (param, fn_body)) in
+                                                let provisional_sig = TyMore (TyMore2 (TyFun (TyMore (TyPair (param_ty, TyInt))))) in
+                                                let provisional_env = extend_tenv (name, (provisional_sig, env)) in
+                                                let body_env = extend_tenv (param, (param_ty, provisional_env)) in
+                                                let ret_ty = infer (src, (body_env, fn_body)) in
+                                                let fn_sig = TyMore (TyMore2 (TyFun (TyMore (TyPair (param_ty, ret_ty))))) in
+                                                infer (src, (extend_tenv (name, (fn_sig, env)), body))
                                               else if count == 2 then
                                                 let (name1, rest1) = payload in
                                                 let (param1, rest2) = rest1 in
@@ -2200,12 +2276,20 @@ let rec infer state =
                                                 let (name2, rest4) = rest3 in
                                                 let (param2, rest5) = rest4 in
                                                 let (body2, final) = rest5 in
-                                                let fn_env1 = extend_tenv (name1, (fn_sig, env)) in
-                                                let fn_env = extend_tenv (name2, (fn_sig, fn_env1)) in
-                                                let body_env1 = extend_tenv (param1, (TyInt, fn_env)) in
-                                                let body_env2 = extend_tenv (param2, (TyInt, fn_env)) in
-                                                let _ = need_ty (infer (src, (body_env1, body1)), TyInt) in
-                                                let _ = need_ty (infer (src, (body_env2, body2)), TyInt) in
+                                                let param_ty1 = direct_param_ty (src, (param1, body1)) in
+                                                let param_ty2 = direct_param_ty (src, (param2, body2)) in
+                                                let provisional_sig1 = TyMore (TyMore2 (TyFun (TyMore (TyPair (param_ty1, TyInt))))) in
+                                                let provisional_sig2 = TyMore (TyMore2 (TyFun (TyMore (TyPair (param_ty2, TyInt))))) in
+                                                let provisional_env1 = extend_tenv (name1, (provisional_sig1, env)) in
+                                                let provisional_env = extend_tenv (name2, (provisional_sig2, provisional_env1)) in
+                                                let body_env1 = extend_tenv (param1, (param_ty1, provisional_env)) in
+                                                let body_env2 = extend_tenv (param2, (param_ty2, provisional_env)) in
+                                                let ret_ty1 = infer (src, (body_env1, body1)) in
+                                                let ret_ty2 = infer (src, (body_env2, body2)) in
+                                                let fn_sig1 = TyMore (TyMore2 (TyFun (TyMore (TyPair (param_ty1, ret_ty1))))) in
+                                                let fn_sig2 = TyMore (TyMore2 (TyFun (TyMore (TyPair (param_ty2, ret_ty2))))) in
+                                                let fn_env1 = extend_tenv (name1, (fn_sig1, env)) in
+                                                let fn_env = extend_tenv (name2, (fn_sig2, fn_env1)) in
                                                 infer (src, (fn_env, final))
                                               else if count == 3 then
                                                 let (name1, rest1) = payload in
@@ -2217,15 +2301,27 @@ let rec infer state =
                                                 let (name3, rest7) = rest6 in
                                                 let (param3, rest8) = rest7 in
                                                 let (body3, final) = rest8 in
-                                                let fn_env1 = extend_tenv (name1, (fn_sig, env)) in
-                                                let fn_env2 = extend_tenv (name2, (fn_sig, fn_env1)) in
-                                                let fn_env = extend_tenv (name3, (fn_sig, fn_env2)) in
-                                                let body_env1 = extend_tenv (param1, (TyInt, fn_env)) in
-                                                let body_env2 = extend_tenv (param2, (TyInt, fn_env)) in
-                                                let body_env3 = extend_tenv (param3, (TyInt, fn_env)) in
-                                                let _ = need_ty (infer (src, (body_env1, body1)), TyInt) in
-                                                let _ = need_ty (infer (src, (body_env2, body2)), TyInt) in
-                                                let _ = need_ty (infer (src, (body_env3, body3)), TyInt) in
+                                                let param_ty1 = direct_param_ty (src, (param1, body1)) in
+                                                let param_ty2 = direct_param_ty (src, (param2, body2)) in
+                                                let param_ty3 = direct_param_ty (src, (param3, body3)) in
+                                                let provisional_sig1 = TyMore (TyMore2 (TyFun (TyMore (TyPair (param_ty1, TyInt))))) in
+                                                let provisional_sig2 = TyMore (TyMore2 (TyFun (TyMore (TyPair (param_ty2, TyInt))))) in
+                                                let provisional_sig3 = TyMore (TyMore2 (TyFun (TyMore (TyPair (param_ty3, TyInt))))) in
+                                                let provisional_env1 = extend_tenv (name1, (provisional_sig1, env)) in
+                                                let provisional_env2 = extend_tenv (name2, (provisional_sig2, provisional_env1)) in
+                                                let provisional_env = extend_tenv (name3, (provisional_sig3, provisional_env2)) in
+                                                let body_env1 = extend_tenv (param1, (param_ty1, provisional_env)) in
+                                                let body_env2 = extend_tenv (param2, (param_ty2, provisional_env)) in
+                                                let body_env3 = extend_tenv (param3, (param_ty3, provisional_env)) in
+                                                let ret_ty1 = infer (src, (body_env1, body1)) in
+                                                let ret_ty2 = infer (src, (body_env2, body2)) in
+                                                let ret_ty3 = infer (src, (body_env3, body3)) in
+                                                let fn_sig1 = TyMore (TyMore2 (TyFun (TyMore (TyPair (param_ty1, ret_ty1))))) in
+                                                let fn_sig2 = TyMore (TyMore2 (TyFun (TyMore (TyPair (param_ty2, ret_ty2))))) in
+                                                let fn_sig3 = TyMore (TyMore2 (TyFun (TyMore (TyPair (param_ty3, ret_ty3))))) in
+                                                let fn_env1 = extend_tenv (name1, (fn_sig1, env)) in
+                                                let fn_env2 = extend_tenv (name2, (fn_sig2, fn_env1)) in
+                                                let fn_env = extend_tenv (name3, (fn_sig3, fn_env2)) in
                                                 infer (src, (fn_env, final))
                                               else fail 0
                                           | EMore11 more11 ->
@@ -2987,7 +3083,10 @@ and emit_match_cases state =
         18 + case_total + 5 + tail_len
 in
 let rec emit_program src =
-  let parsed_types = parse_type_decls (src, (0, (0, (empty_tnames 0, (empty_tenv 0, empty_ctors 0))))) in
+  let collected_types = collect_type_names (src, (0, (0, empty_tnames 0))) in
+  let (_body_start, type_state) = collected_types in
+  let (_type_count, type_names) = type_state in
+  let parsed_types = parse_type_decls (src, (0, (0, (type_names, (empty_tenv 0, empty_ctors 0))))) in
   let (body_pos, envs) = parsed_types in
   let (tenv, ctors) = envs in
   let parsed = parse_program (src, body_pos) in
