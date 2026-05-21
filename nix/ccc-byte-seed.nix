@@ -94,6 +94,16 @@ DEFINE SYSCALL 0F05
     check_return ${testsRoot}/hcc/m1-smoke/examples/do-while.c 3
     check_return ${testsRoot}/hcc/scalar-immediate-smoke.c 0
     check_return ${testsRoot}/hcc/parse-smoke.c 0
+    printf '%s\n' \
+      "int accept(int ch) { return ch == 'A' || ch == 'B' || ch == 'C'; }" \
+      "int main(void) {" \
+      "  if (!accept('A')) return 1;" \
+      "  if (!accept('B')) return 2;" \
+      "  if (!accept('C')) return 3;" \
+      "  if (accept('D')) return 4;" \
+      "  return 0;" \
+      "}" > param-eq-three.c
+    check_return param-eq-three.c 0
     if ${mzvmSeedM2}/bin/mzvm-seed ccc.byte < ${testsRoot}/hcc/m1-smoke/examples/float-literals.c > float-literals.M1; then
       exit 1
     fi

@@ -1019,30 +1019,42 @@ let rec parse_param_eq_const state =
   else
     parse_fail 0
 in
+let rec missing_eq_value unit =
+  0 - 1000000
+in
+let rec empty_eq_values unit =
+  let missing = missing_eq_value 0 in
+  (missing, (missing, (missing, missing)))
+in
+let rec set_eq_value state =
+  let (slot, pair) = state in
+  let (value, values) = pair in
+  let (value1, rest1) = values in
+  let (value2, rest2) = rest1 in
+  let (value3, value4) = rest2 in
+  if slot == 0 then (value, (value2, (value3, value4))) else
+  if slot == 1 then (value1, (value, (value3, value4))) else
+  if slot == 2 then (value1, (value2, (value, value4))) else
+  if slot == 3 then (value1, (value2, (value3, value))) else parse_fail 0
+in
+let rec parse_param_eq_chain_loop state =
+  let (src, pair) = state in
+  let (pos0, pair2) = pair in
+  let (param, pair3) = pair2 in
+  let (slot, values) = pair3 in
+  let parsed = parse_param_eq_const (src, (pos0, param)) in
+  let (value, parsed_end) = parsed in
+  let next_values = set_eq_value (slot, (value, values)) in
+  let next = skip_space (src, parsed_end) in
+  if (src.[next] == '|') * (src.[next + 1] == '|') then
+    parse_param_eq_chain_loop (src, (next + 2, (param, (slot + 1, next_values))))
+  else
+    (next_values, parsed_end)
+in
 let rec parse_param_eq_chain state =
   let (src, pair) = state in
   let (pos0, param) = pair in
-  let first = parse_param_eq_const (src, (pos0, param)) in
-  let (value1, end1) = first in
-  let or1 = skip_space (src, end1) in
-  if (src.[or1] == '|') * (src.[or1 + 1] == '|') then
-    let second = parse_param_eq_const (src, (or1 + 2, param)) in
-    let (value2, end2) = second in
-    let or2 = skip_space (src, end2) in
-    if (src.[or2] == '|') * (src.[or2 + 1] == '|') then
-      let third = parse_param_eq_const (src, (or2 + 2, param)) in
-      let (value3, end3) = third in
-      let or3 = skip_space (src, end3) in
-      if (src.[or3] == '|') * (src.[or3 + 1] == '|') then
-        let fourth = parse_param_eq_const (src, (or3 + 2, param)) in
-        let (value4, end4) = fourth in
-        (((value1, (value2, (value3, value4))), end4))
-      else
-        (((value1, (value2, (value3, 0 - 1000000))), end3))
-    else
-      (((value1, (value2, (0 - 1000000, 0 - 1000000))), end2))
-  else
-    (((value1, (0 - 1000000, (0 - 1000000, 0 - 1000000))), end1))
+  parse_param_eq_chain_loop (src, (pos0, (param, (0, empty_eq_values 0))))
 in
 let rec parse_func_return state =
   let (src, pair) = state in
