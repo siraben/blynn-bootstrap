@@ -115,6 +115,10 @@ DEFINE SYSCALL 0F05
     check_return define-char-return.c 65
     printf '%s\n' '#define VALUE 42' 'int main(void) { int VALUE = 7; return VALUE; }' > define-shadow.c
     check_return define-shadow.c 7
+    printf '%s\n' '#define VALUE 42' 'int value_func(void) { return VALUE; }' 'int main(void) { return value_func(); }' > define-helper-return.c
+    check_return define-helper-return.c 42
+    printf '%s\n' "int letter_func(void) { return 'A'; }" 'int main(void) { return letter_func(); }' > helper-char-return.c
+    check_return helper-char-return.c 65
     if ${mzvmSeedM2}/bin/mzvm-seed ccc.byte < ${testsRoot}/hcc/diagnostics/unknown-identifier.c > unknown-identifier.M1; then
       exit 1
     else

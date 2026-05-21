@@ -948,6 +948,14 @@ let rec find_env state =
   if ident_eq (src, (head, name)) then value else
   if head < 0 then parse_fail 0 else find_env (src, (tail, name))
 in
+let rec find_env_optional state =
+  let (src, pair0) = state in
+  let (env, name) = pair0 in
+  let (head, rest) = env in
+  let (value, tail) = rest in
+  if head < 0 then (0, 0) else
+  if ident_eq (src, (head, name)) then (1, value) else find_env_optional (src, (tail, name))
+in
 let rec extend_func state =
   let (name, pair) = state in
   let (value, old) = pair in
@@ -1334,7 +1342,8 @@ let rec parse_param_eq_chain state =
 in
 let rec parse_func_return state =
   let (src, pair) = state in
-  let (pos0, param) = pair in
+  let (pos0, pair2) = pair in
+  let (param, defs) = pair2 in
   let start = skip_space (src, pos0) in
   if src.[start] == '}' then (FuncConst 0, start) else
   if is_return_at (src, start) then
@@ -1354,6 +1363,11 @@ let rec parse_func_return state =
     if ident_eq (src, (name, param)) then (FuncNotArg, p2) else parse_fail 0
   else if is_digit (src.[p1]) then
     let parsed = parse_number (src, p1) in
+    let (value, value_end) = parsed in
+    let p2 = expect_ch (src, (value_end, ';')) in
+    (FuncConst value, p2)
+  else if src.[p1] == '\'' then
+    let parsed = parse_char_value (src, p1) in
     let (value, value_end) = parsed in
     let p2 = expect_ch (src, (value_end, ';')) in
     (FuncConst value, p2)
@@ -1382,7 +1396,9 @@ let rec parse_func_return state =
       (FuncAddArgs, p2)
     else
       let p2 = expect_ch (src, (name_end, ';')) in
-      parse_fail 0
+      let found = find_env_optional (src, (defs, name)) in
+      let (has_value, value) = found in
+      if has_value == 1 then (FuncConst value, p2) else parse_fail 0
   else if is_alpha (src.[start]) then
     let label = parse_ident (src, start) in
     let (label_name, label_end) = label in
@@ -2061,7 +2077,7 @@ let rec parse_program_loop state =
       else if is_summarized_cmp_func (src, name) then
         parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, (extend_func (name, (FuncCmpArgs, funcs)), defs)))
       else
-        let ret = parse_func_return (src, (p2, param)) in
+        let ret = parse_func_return (src, (p2, (param, defs))) in
         let (func_value0, p3) = ret in
         let func_value =
           match func_value0 with
