@@ -198,11 +198,21 @@ let rec p_try_keyword_parser state =
   let (want, pair) = state in
   let (len, pair2) = pair in
   let (src, parser_state0) = pair2 in
-  let pos = skip_space (src, parser_pos parser_state0) in
-  if p_keyword_at (want, (len, (src, pos))) == 1 then
-    p_consumed_ok (want, parser_at (pos + len))
-  else
-    p_unconsumed_err 0
+  match p_expect_string_parser (want, (len, (src, parser_state0))) with
+    Consumed inner ->
+      (match inner with
+        ParserOk parsed ->
+          let (_text, parser_state) = parsed in
+          let end_pos = parser_pos parser_state in
+          if is_ident (src.[end_pos]) then p_unconsumed_err 0 else p_consumed_ok (want, parser_state)
+      | ParserErr -> p_unconsumed_err 0)
+  | Unconsumed inner ->
+      (match inner with
+        ParserOk parsed ->
+          let (_text, parser_state) = parsed in
+          let end_pos = parser_pos parser_state in
+          if is_ident (src.[end_pos]) then p_unconsumed_err 0 else p_unconsumed_ok (want, parser_state)
+      | ParserErr -> p_unconsumed_err 0)
 in
 let rec p_try_ident_parser state =
   let (src, parser_state0) = state in
