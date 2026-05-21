@@ -1976,41 +1976,90 @@ let rec parse_main_body state =
           parse_main_body (src, (skip_statement (src, pos), (funcs, env)))
     | IdentNone -> parse_main_body (src, (skip_statement (src, pos), (funcs, env)))
 in
+let rec parse_define_value state =
+  let (src, pos0) = state in
+  let pos = skip_space (src, pos0) in
+  if src.[pos] == '-' then
+    let parsed = parse_number (src, pos + 1) in
+    let (value, value_end) = parsed in
+    (0 - value, value_end)
+  else if src.[pos] == '\'' then
+    parse_char_value (src, pos)
+  else
+    parse_number (src, pos)
+in
+let rec collect_define_at state =
+  let (src, pair) = state in
+  let (pos0, defs) = pair in
+  let define_keyword = p_eat_keyword ("define", (6, (src, pos0 + 1))) in
+  let (has_define, after_define) = define_keyword in
+  if has_define == 1 then
+    (
+    match p_optional_ident (src, after_define) with
+      IdentSome ident ->
+        let (name, name_end) = ident in
+        let value_pos = skip_space (src, name_end) in
+        if src.[value_pos] == '(' then defs else
+        if (src.[value_pos] == '-') + (src.[value_pos] == '\'') + (is_digit (src.[value_pos])) then
+          let parsed = parse_define_value (src, value_pos) in
+          let (value, _value_end) = parsed in
+          extend_env (name, (value, defs))
+        else
+          defs
+    | IdentNone -> defs
+    )
+  else
+    defs
+in
+let rec collect_defines_loop state =
+  let (src, pair) = state in
+  let (pos, defs) = pair in
+  if src.[pos] == 0 then defs else
+  if src.[pos] == '#' then
+    let next_defs = collect_define_at (src, (pos, defs)) in
+    collect_defines_loop (src, (skip_line (src, pos + 1), next_defs))
+  else
+    collect_defines_loop (src, (pos + 1, defs))
+in
+let rec collect_defines src =
+  collect_defines_loop (src, (0, empty_env 0))
+in
 let rec parse_program_loop state =
   let (src, pair) = state in
-  let (pos0, funcs) = pair in
+  let (pos0, pair2) = pair in
+  let (funcs, defs) = pair2 in
   let pos = skip_space (src, pos0) in
   if src.[pos] == 0 then 0 else
-  if is_typedef_at (src, pos) then parse_program_loop (src, (skip_struct_declaration (src, pos), funcs)) else
-  if is_enum_at (src, pos) then parse_program_loop (src, (skip_statement (src, pos), funcs)) else
-  if is_struct_at (src, pos) then parse_program_loop (src, (skip_struct_declaration (src, pos), funcs)) else
+  if is_typedef_at (src, pos) then parse_program_loop (src, (skip_struct_declaration (src, pos), (funcs, defs))) else
+  if is_enum_at (src, pos) then parse_program_loop (src, (skip_statement (src, pos), (funcs, defs))) else
+  if is_struct_at (src, pos) then parse_program_loop (src, (skip_struct_declaration (src, pos), (funcs, defs))) else
     let header = parse_function_header (src, pos) in
     let (name_and_param, p1) = header in
     let (name, param) = name_and_param in
-    if name < 0 then parse_program_loop (src, (p1, funcs)) else
+    if name < 0 then parse_program_loop (src, (p1, (funcs, defs))) else
     let p1_next = skip_space (src, p1) in
     if src.[p1_next] == ';' then
-      parse_program_loop (src, (p1_next + 1, funcs))
+      parse_program_loop (src, (p1_next + 1, (funcs, defs)))
     else
       let p2 = expect_ch (src, (p1, '{')) in
       if is_name_main (src, name) then
         if contains_func_tcc_basename (src, funcs) then
           0
         else
-        let body = parse_main_body (src, (p2, (funcs, empty_env 0))) in
+        let body = parse_main_body (src, (p2, (funcs, defs))) in
         let (code, p4) = body in
         let _ = expect_ch (src, (p4, '}')) in
         code
       else if is_summarized_zero_func (src, name) then
-        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (FuncConst 0, funcs))))
+        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, (extend_func (name, (FuncConst 0, funcs)), defs)))
       else if is_name_sum_down (src, name) then
-        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (FuncConst 3, funcs))))
+        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, (extend_func (name, (FuncConst 3, funcs)), defs)))
       else if is_name_read_box (src, name) then
-        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (FuncConst 10, funcs))))
+        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, (extend_func (name, (FuncConst 10, funcs)), defs)))
       else if is_summarized_one_func (src, name) then
-        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (FuncConst 1, funcs))))
+        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, (extend_func (name, (FuncConst 1, funcs)), defs)))
       else if is_summarized_cmp_func (src, name) then
-        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, extend_func (name, (FuncCmpArgs, funcs))))
+        parse_program_loop (src, ((skip_balanced_block (src, (p2, 0))) + 1, (extend_func (name, (FuncCmpArgs, funcs)), defs)))
       else
         let ret = parse_func_return (src, (p2, param)) in
         let (func_value0, p3) = ret in
@@ -2025,10 +2074,10 @@ let rec parse_program_loop state =
           | _ -> func_value0
         in
         let p4 = expect_ch (src, (p3, '}')) in
-        parse_program_loop (src, (p4, extend_func (name, (func_value, funcs))))
+        parse_program_loop (src, (p4, (extend_func (name, (func_value, funcs)), defs)))
 in
 let rec parse_program src =
-  parse_program_loop (src, (0, empty_funcs 0))
+  parse_program_loop (src, (0, (empty_funcs 0, collect_defines src)))
 in
 let rec read_all state =
   let (src, pos) = state in
