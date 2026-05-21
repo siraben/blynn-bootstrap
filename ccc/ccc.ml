@@ -1,8 +1,7 @@
 type func_summary = FuncConst of int | FuncArg | FuncNotArg | FuncAddArgs | FuncCmpArgs | FuncArgEqAny of int
 type parse_reply = ParseOk of int | ParseErr
 type pos_option = PosSome of int | PosNone
-type value_reply = ValueOk of int | ValueErr
-type value_option = ValueSome of int | ValueNone
+type ident_option = IdentSome of int | IdentNone
 type parser = Parser of int
 type parser_reply = ParserOk of int | ParserErr
 type consumed_reply = Consumed of parser_reply | Unconsumed of parser_reply
@@ -71,16 +70,6 @@ let rec parse_ident_loop state =
 in
 let rec parse_fail unit =
   exit 1
-in
-let rec p_force_value reply =
-  match reply with
-    ValueOk parsed -> parsed
-  | ValueErr -> parse_fail 0
-in
-let rec p_optional_value state =
-  match state with
-    ValueOk parsed -> ValueSome parsed
-  | ValueErr -> ValueNone
 in
 let rec p_force reply =
   match reply with
@@ -291,17 +280,20 @@ let rec p_try_ident_parser state =
   else
     p_unconsumed_err 0
 in
-let rec p_try_ident state =
-  let (src, pos0) = state in
-  match force_consumed (p_try_ident_parser (src, parser_at pos0)) with
-    ParserOk parsed -> let (ident, _parser_state) = parsed in ValueOk ident
-  | ParserErr -> ValueErr
-in
 let rec parse_ident state =
   let (src, pos0) = state in
   let parsed = p_force_reply (p_try_ident_parser (src, parser_at pos0)) in
   let (ident, _parser_state) = parsed in
   ident
+in
+let rec p_optional_ident state =
+  let (src, pos0) = state in
+  let optional = p_optional_parser (p_try_ident_parser (src, parser_at pos0), parser_at pos0) in
+  let parsed = p_force_reply optional in
+  let (option, _parser_state) = parsed in
+  match option with
+    ParserSome value -> let (ident, _next_parser) = value in IdentSome ident
+  | ParserNone -> IdentNone
 in
 let rec p_bind_parse_ident_parser state =
   let (reply, src) = state in
@@ -779,12 +771,6 @@ let rec p_try_number_parser state =
     let after_suffix = skip_int_suffix (src, value_end) in
     p_consumed_ok ((value, after_suffix), parser_at after_suffix)
   else p_unconsumed_err 0
-in
-let rec p_try_number state =
-  let (src, pos0) = state in
-  match force_consumed (p_try_number_parser (src, parser_at pos0)) with
-    ParserOk parsed -> let (number, _parser_state) = parsed in ValueOk number
-  | ParserErr -> ValueErr
 in
 let rec parse_number state =
   let (src, pos0) = state in
@@ -1668,8 +1654,8 @@ let rec parse_for_body_once state =
   let (funcs, env) = pair2 in
   let pos = skip_space (src, pos0) in
   if is_local_type_at (src, pos) then parse_local_init (src, (pos, (funcs, env))) else
-    match p_optional_value (p_try_ident (src, pos)) with
-      ValueSome ident ->
+    match p_optional_ident (src, pos) with
+      IdentSome ident ->
         let (name, name_end) = ident in
         let _ = name in
         let next = skip_space (src, name_end) in
@@ -1681,7 +1667,7 @@ let rec parse_for_body_once state =
           parse_assignment (src, (pos, (funcs, env)))
         else
           (skip_statement (src, pos), env)
-    | ValueNone -> (skip_statement (src, pos), env)
+    | IdentNone -> (skip_statement (src, pos), env)
 in
 let rec skip_for_body state =
   let (src, pos0) = state in
@@ -1699,8 +1685,8 @@ let rec parse_main_prefix state =
     let (next_pos, next_env) = local in
     parse_main_prefix (src, (next_pos, (funcs, next_env)))
   else
-    match p_optional_value (p_try_ident (src, pos)) with
-      ValueSome ident ->
+    match p_optional_ident (src, pos) with
+      IdentSome ident ->
         let (name, name_end) = ident in
         let _ = name in
         let next = skip_space (src, name_end) in
@@ -1710,7 +1696,7 @@ let rec parse_main_prefix state =
           parse_main_prefix (src, (next_pos, (funcs, next_env)))
         else
           parse_main_prefix (src, (skip_statement (src, pos), (funcs, env)))
-    | ValueNone -> parse_main_prefix (src, (skip_statement (src, pos), (funcs, env)))
+    | IdentNone -> parse_main_prefix (src, (skip_statement (src, pos), (funcs, env)))
 in
 let rec parse_condition_value state =
   let (src, pair) = state in
@@ -1965,8 +1951,8 @@ let rec parse_main_body state =
     let (next_pos, next_env) = local in
     parse_main_body (src, (next_pos, (funcs, next_env)))
   else
-    match p_optional_value (p_try_ident (src, pos)) with
-      ValueSome ident ->
+    match p_optional_ident (src, pos) with
+      IdentSome ident ->
         let (name, name_end) = ident in
         let _ = name in
         let next = skip_space (src, name_end) in
@@ -2000,7 +1986,7 @@ let rec parse_main_body state =
             parse_main_body (src, (skip_statement (src, pos), (funcs, env)))
         else
           parse_main_body (src, (skip_statement (src, pos), (funcs, env)))
-    | ValueNone -> parse_main_body (src, (skip_statement (src, pos), (funcs, env)))
+    | IdentNone -> parse_main_body (src, (skip_statement (src, pos), (funcs, env)))
 in
 let rec parse_program_loop state =
   let (src, pair) = state in
