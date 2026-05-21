@@ -142,6 +142,15 @@ stageRun {
         printf 'let x = 40\nlet y = 39\nwrite_byte (x + y)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-top-defs.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-top-defs.mzbc)"
         test "$actual" = O
+        printf 'type point = { x: int; y: int }\nlet p = { x = 40; y = 39 }\nwrite_byte (p.x + p.y)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-record-two.mzbc
+        actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-record-two.mzbc)"
+        test "$actual" = O
+        printf 'type triple = { a: int; b: int; c: int }\nlet t = { a = 40; b = 35; c = 4 }\nwrite_byte (t.a + t.b + t.c)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-record-three.mzbc
+        actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-record-three.mzbc)"
+        test "$actual" = O
+        printf 'type flagged = { yes: bool; value: int }\nlet f = { yes = true; value = 79 }\nwrite_byte (if f.yes then f.value else 88)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-record-bool-field.mzbc
+        actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-record-bool-field.mzbc)"
+        test "$actual" = O
         printf 'let rec dec n = if n = 0 then 79 else dec (n - 1)\nwrite_byte (dec 3)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-let-rec-direct.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-let-rec-direct.mzbc)"
         test "$actual" = O
@@ -293,6 +302,15 @@ stageRun {
           exit 1
         fi
         if printf 'let x = true\nwrite_byte x' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-top-def-type-error.mzbc; then
+          exit 1
+        fi
+        if printf 'type point = { x: int; y: int }\nlet p = { x = true; y = 39 }\nwrite_byte p.y' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-record-field-type-error.mzbc; then
+          exit 1
+        fi
+        if printf 'type left = { x: int; y: int }\ntype right = { a: int; b: int }\nlet p = { x = 40; b = 39 }\nwrite_byte p.x' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-record-mixed-fields-error.mzbc; then
+          exit 1
+        fi
+        if printf 'type point = { x: int; y: int }\nlet p = { x = 40; y = 39 }\nwrite_byte p.z' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-record-unknown-field-error.mzbc; then
           exit 1
         fi
         if printf 'let rec bad n = true\nwrite_byte (bad 0)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-let-rec-return-type-error.mzbc; then
@@ -458,6 +476,9 @@ stageRun {
     install -Dm644 03-let.mzbc "$out/share/mlc/stages/03-let.mzbc"
     install -Dm644 03-top-let.mzbc "$out/share/mlc/stages/03-top-let.mzbc"
     install -Dm644 03-top-defs.mzbc "$out/share/mlc/stages/03-top-defs.mzbc"
+    install -Dm644 03-record-two.mzbc "$out/share/mlc/stages/03-record-two.mzbc"
+    install -Dm644 03-record-three.mzbc "$out/share/mlc/stages/03-record-three.mzbc"
+    install -Dm644 03-record-bool-field.mzbc "$out/share/mlc/stages/03-record-bool-field.mzbc"
     install -Dm644 03-let-rec-direct.mzbc "$out/share/mlc/stages/03-let-rec-direct.mzbc"
     install -Dm644 03-let-rec-after-let.mzbc "$out/share/mlc/stages/03-let-rec-after-let.mzbc"
     install -Dm644 03-let-rec-nested-call.mzbc "$out/share/mlc/stages/03-let-rec-nested-call.mzbc"

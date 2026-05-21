@@ -119,6 +119,8 @@ Current stages:
   `let rec ... and ...` groups up to three functions, pair construction, pair
   destructuring with wildcard binders, top-level pair destructuring, typed
   imperative arrays/cells via `Cell.create` / `Cell.get` / `Cell.set`,
+  leading record `type` declarations with typed two- and three-field records,
+  record literals, typed field reads,
   leading variant `type` declarations with typed nullary, unary, and `*` pair
   payload constructors and self-recursive/earlier named ADT payload references,
   direct parenthesized pair and nested pair payload construction,

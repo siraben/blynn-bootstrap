@@ -12,7 +12,7 @@ type expr_more7 = EString of int | EStringLength of expr | EBytesCreate of expr 
 type expr_more8 = EBytesLength of expr | EIndex of expr | ESetIndex of expr | EMore9 of expr_more9
 type expr_more9 = EDebugInt of expr | EUnit | EMore10 of expr_more10
 type expr_more10 = ECellCreate of expr | ECellGet of expr | ECellSet of expr | EArrayCreate of expr | ELetRec of expr | EMore11 of expr_more11
-type expr_more11 = ECall of expr | EConstr of int | EConstrArg of expr | EMatch of expr
+type expr_more11 = ECall of expr | EConstr of int | EConstrArg of expr | EMatch of expr | ERecord of expr | ERecord3 of expr | EField of expr
 type match_cases = MatchCase of expr | MatchEnd
 type parse_reply = ParseOk of int | ParseErr
 type expr_option = ExprSome of expr | ExprNone
@@ -739,6 +739,15 @@ in
 let rec match_expr state =
   more10_expr (EMore11 (EMatch state))
 in
+let rec record_expr state =
+  more10_expr (EMore11 (ERecord state))
+in
+let rec record3_expr state =
+  more10_expr (EMore11 (ERecord3 state))
+in
+let rec field_expr state =
+  more10_expr (EMore11 (EField state))
+in
 let rec match_case_expr state =
   let (case_name, rest1) = state in
   let (case_bind_kind, rest2) = rest1 in
@@ -1113,7 +1122,9 @@ let rec parse_index_suffix state =
       else
         (index_expr (base, index_ast), close)
     else
-      (base, pos0)
+      let field = parse_ident (src, pos + 1) in
+      let (field_name, field_end) = field in
+      (field_expr (base, field_name), field_end)
   else
     (base, pos0)
 in
@@ -1279,6 +1290,31 @@ let rec parse_expr_prec state =
           p_return (atom_pos + 4, EBool 1)
         else if is_false_at (src, atom_pos) then
           p_return (atom_pos + 5, EBool 0)
+        else if ch == '{' then
+          let field1 = parse_ident (src, atom_pos + 1) in
+          let (field1_name, field1_end) = field1 in
+          let eq1 = p_need_char (src, (field1_end, '=')) in
+          let value1 = parse_expr_prec (src, (eq1, (0, (0, (0, EInt 0))))) in
+          let (value1_ast, value1_end) = value1 in
+          let semi1 = p_need_char (src, (value1_end, ';')) in
+          let field2 = parse_ident (src, semi1) in
+          let (field2_name, field2_end) = field2 in
+          let eq2 = p_need_char (src, (field2_end, '=')) in
+          let value2 = parse_expr_prec (src, (eq2, (0, (0, (0, EInt 0))))) in
+          let (value2_ast, value2_end) = value2 in
+          let maybe_close = p_optional_pos (p_try_char (src, (value2_end, '}')), value2_end) in
+          let (has_close, after_value2) = maybe_close in
+          if has_close == 1 then
+            (record_expr (field1_name, (value1_ast, (field2_name, value2_ast))), after_value2)
+          else
+            let semi2 = p_need_char (src, (value2_end, ';')) in
+            let field3 = parse_ident (src, semi2) in
+            let (field3_name, field3_end) = field3 in
+            let eq3 = p_need_char (src, (field3_end, '=')) in
+            let value3 = parse_expr_prec (src, (eq3, (0, (0, (0, EInt 0))))) in
+            let (value3_ast, value3_end) = value3 in
+            let done_pos = p_need_char (src, (value3_end, '}')) in
+            (record3_expr (field1_name, (value1_ast, (field2_name, (value2_ast, (field3_name, value3_ast))))), done_pos)
         else if ch == '\'' then
           parse_char_literal (src, atom_pos)
         else if ch == '"' then
@@ -1478,14 +1514,24 @@ let rec empty_ctors unit =
   (0 - 1, (0, 0))
 in
 let rec pack_ctor state =
-  let (tag, has_arg) = state in
-  (tag * 2) + has_arg
+  let (tag, kind) = state in
+  (tag * 4) + kind
 in
 let rec ctor_tag packed =
-  packed / 2
+  packed / 4
+in
+let rec ctor_kind packed =
+  packed - ((packed / 4) * 4)
 in
 let rec ctor_has_arg packed =
-  packed - ((packed / 2) * 2)
+  if ctor_kind packed == 1 then 1 else 0
+in
+let rec ctor_is_field packed =
+  if ctor_kind packed == 2 then 1 else 0
+in
+let rec field_index packed =
+  let tag = ctor_tag packed in
+  tag - ((tag / 8) * 8)
 in
 let rec extend_ctor state =
   let (name, pair) = state in
@@ -1586,6 +1632,32 @@ let rec parse_type_ctors state =
   if src.[next] == '|' then parse_type_ctors (src, (next, (type_id, (type_names, (tag + 1, (next_tenv, next_ctors)))))) else
     (next, (next_tenv, next_ctors))
 in
+let rec parse_record_fields state =
+  let (src, pair) = state in
+  let (pos0, pair2) = pair in
+  let (type_id, pair3) = pair2 in
+  let (type_names, pair4) = pair3 in
+  let (index, pair5) = pair4 in
+  let (tenv, ctors) = pair5 in
+  let pos = skip_space (src, pos0) in
+  if src.[pos] == '}' then (pos + 1, (tenv, ctors)) else
+    let field = parse_ident (src, pos) in
+    let (field_name, field_end) = field in
+    let colon = p_need_char (src, (field_end, ':')) in
+    let parsed_type = parse_type_expr (src, (colon, (type_id, type_names))) in
+    let (field_ty, field_type_end) = parsed_type in
+    let record_ty = TyMore (TyMore2 (TyAdt type_id)) in
+    let field_sig = TyMore (TyMore2 (TyFun (TyMore (TyPair (record_ty, field_ty))))) in
+    let next_tenv = extend_tenv (field_name, (field_sig, tenv)) in
+    let next_ctors = extend_ctor (field_name, (pack_ctor (((type_id * 8) + index), 2), ctors)) in
+    let next = skip_space (src, field_type_end) in
+    if src.[next] == ';' then
+      parse_record_fields (src, (next + 1, (type_id, (type_names, (index + 1, (next_tenv, next_ctors))))))
+    else if src.[next] == '}' then
+      (next + 1, (next_tenv, next_ctors))
+    else
+      fail 0
+in
 let rec parse_type_decls state =
   let (src, pair) = state in
   let (pos0, pair2) = pair in
@@ -1599,7 +1671,13 @@ let rec parse_type_decls state =
     let (type_name_pos, type_name_end) = type_name in
     let next_type_names = extend_tname (type_name_pos, (type_id, type_names)) in
     let eq_pos = need_char (src, (type_name_end, '=')) in
-    let parsed = parse_type_ctors (src, (eq_pos, (type_id, (next_type_names, (0, (tenv, ctors)))))) in
+    let after_eq = skip_space (src, eq_pos) in
+    let parsed =
+      if src.[after_eq] == '{' then
+        parse_record_fields (src, (after_eq + 1, (type_id, (next_type_names, (0, (tenv, ctors))))))
+      else
+        parse_type_ctors (src, (eq_pos, (type_id, (next_type_names, (0, (tenv, ctors))))))
+    in
     let (next_pos, next_envs) = parsed in
     let (next_tenv, next_ctors) = next_envs in
     parse_type_decls (src, (next_pos, (type_id + 1, (next_type_names, (next_tenv, next_ctors)))))
@@ -1658,6 +1736,44 @@ in
 let rec need_ty state =
   let (got, want) = state in
   if same_ty (got, want) == 1 then 0 else fail 0
+in
+let rec field_record_ty ty =
+  match ty with
+    TyMore more ->
+      (match more with
+        TyMore2 more2 ->
+          (match more2 with
+            TyFun fn_pair ->
+              (match fn_pair with
+                TyMore fn_more ->
+                  (match fn_more with
+                    TyPair arg_ret ->
+                      let (record_ty, _field_ty) = arg_ret in
+                      record_ty
+                  | _ -> fail 0)
+              | _ -> fail 0)
+          | _ -> fail 0)
+      | _ -> fail 0)
+  | _ -> fail 0
+in
+let rec field_value_ty ty =
+  match ty with
+    TyMore more ->
+      (match more with
+        TyMore2 more2 ->
+          (match more2 with
+            TyFun fn_pair ->
+              (match fn_pair with
+                TyMore fn_more ->
+                  (match fn_more with
+                    TyPair arg_ret ->
+                      let (_record_ty, field_ty) = arg_ret in
+                      field_ty
+                  | _ -> fail 0)
+              | _ -> fail 0)
+          | _ -> fail 0)
+      | _ -> fail 0)
+  | _ -> fail 0
 in
 let rec extend_tenv_if_named state =
   let (src, pair0) = state in
@@ -2078,6 +2194,38 @@ let rec infer state =
                                                   let (scrutinee, cases) = parts in
                                                   let scrutinee_ty = infer (src, (env, scrutinee)) in
                                                   infer_match_cases (src, (env, (scrutinee_ty, cases)))
+                                              | ERecord parts ->
+                                                  let (field1, rest1) = parts in
+                                                  let (value1, rest2) = rest1 in
+                                                  let (field2, value2) = rest2 in
+                                                  let field1_ty = lookup_tenv (src, (env, field1)) in
+                                                  let field2_ty = lookup_tenv (src, (env, field2)) in
+                                                  let record_ty = field_record_ty field1_ty in
+                                                  let _ = need_ty (field_record_ty field2_ty, record_ty) in
+                                                  let _ = need_ty (infer (src, (env, value1)), field_value_ty field1_ty) in
+                                                  let _ = need_ty (infer (src, (env, value2)), field_value_ty field2_ty) in
+                                                  record_ty
+                                              | ERecord3 parts ->
+                                                  let (field1, rest1) = parts in
+                                                  let (value1, rest2) = rest1 in
+                                                  let (field2, rest3) = rest2 in
+                                                  let (value2, rest4) = rest3 in
+                                                  let (field3, value3) = rest4 in
+                                                  let field1_ty = lookup_tenv (src, (env, field1)) in
+                                                  let field2_ty = lookup_tenv (src, (env, field2)) in
+                                                  let field3_ty = lookup_tenv (src, (env, field3)) in
+                                                  let record_ty = field_record_ty field1_ty in
+                                                  let _ = need_ty (field_record_ty field2_ty, record_ty) in
+                                                  let _ = need_ty (field_record_ty field3_ty, record_ty) in
+                                                  let _ = need_ty (infer (src, (env, value1)), field_value_ty field1_ty) in
+                                                  let _ = need_ty (infer (src, (env, value2)), field_value_ty field2_ty) in
+                                                  let _ = need_ty (infer (src, (env, value3)), field_value_ty field3_ty) in
+                                                  record_ty
+                                              | EField parts ->
+                                                  let (base, field) = parts in
+                                                  let field_ty = lookup_tenv (src, (env, field)) in
+                                                  let _ = need_ty (infer (src, (env, base)), field_record_ty field_ty) in
+                                                  field_value_ty field_ty
 and infer_match_cases state =
   let (src, pair0) = state in
   let (env, pair1) = pair0 in
@@ -2099,6 +2247,7 @@ and infer_match_cases state =
         if is_final == 1 then
           match_case2_tenv (src, (env, (scrutinee_ty, (case_name, (case_bind_kind, (case_bind, case_bind2))))))
         else
+          let _ = if is_upper (src.[case_name]) == 1 then 0 else fail 0 in
           match_case_tenv (src, (env, (scrutinee_ty, (case_name, (case_bind_kind, (case_bind, case_bind2))))))
       in
       let case_ty = infer (src, (case_env, case_body)) in
@@ -2638,6 +2787,50 @@ let rec emit_expr state =
                                                       let push_scrutinee = emit_push emit in
                                                       let cases_len = emit_match_cases (cases, (src, (env, (ctors, (funcs, (base_pos + scrutinee_len + push_scrutinee, emit)))))) in
                                                       scrutinee_len + push_scrutinee + cases_len
+                                                  | ERecord parts ->
+                                                      let (field1, rest1) = parts in
+                                                      let (value1, rest2) = rest1 in
+                                                      let (field2, value2) = rest2 in
+                                                      let field1_info = lookup_ctor (src, (ctors, field1)) in
+                                                      let field2_info = lookup_ctor (src, (ctors, field2)) in
+                                                      let _ = if ctor_is_field field1_info == 1 then 0 else fail 0 in
+                                                      let _ = if ctor_is_field field2_info == 1 then 0 else fail 0 in
+                                                      let _ = if field_index field1_info == 0 then 0 else fail 0 in
+                                                      let _ = if field_index field2_info == 1 then 0 else fail 0 in
+                                                      let value1_len = emit_expr (value1, (src, (env, (ctors, (funcs, (base_pos, emit)))))) in
+                                                      let push1 = emit_push emit in
+                                                      let value2_len = emit_expr (value2, (src, (shift_env env, (ctors, (funcs, (base_pos, emit)))))) in
+                                                      let block_len = emit_makeblock (emit, 2) in
+                                                      value1_len + push1 + value2_len + block_len
+                                                  | ERecord3 parts ->
+                                                      let (field1, rest1) = parts in
+                                                      let (value1, rest2) = rest1 in
+                                                      let (field2, rest3) = rest2 in
+                                                      let (value2, rest4) = rest3 in
+                                                      let (field3, value3) = rest4 in
+                                                      let field1_info = lookup_ctor (src, (ctors, field1)) in
+                                                      let field2_info = lookup_ctor (src, (ctors, field2)) in
+                                                      let field3_info = lookup_ctor (src, (ctors, field3)) in
+                                                      let _ = if ctor_is_field field1_info == 1 then 0 else fail 0 in
+                                                      let _ = if ctor_is_field field2_info == 1 then 0 else fail 0 in
+                                                      let _ = if ctor_is_field field3_info == 1 then 0 else fail 0 in
+                                                      let _ = if field_index field1_info == 0 then 0 else fail 0 in
+                                                      let _ = if field_index field2_info == 1 then 0 else fail 0 in
+                                                      let _ = if field_index field3_info == 2 then 0 else fail 0 in
+                                                      let value1_len = emit_expr (value1, (src, (env, (ctors, (funcs, (base_pos, emit)))))) in
+                                                      let push1 = emit_push emit in
+                                                      let value2_len = emit_expr (value2, (src, (shift_env env, (ctors, (funcs, (base_pos, emit)))))) in
+                                                      let push2 = emit_push emit in
+                                                      let value3_len = emit_expr (value3, (src, (shift_env (shift_env env), (ctors, (funcs, (base_pos, emit)))))) in
+                                                      let block_len = emit_makeblock (emit, 3) in
+                                                      value1_len + push1 + value2_len + push2 + value3_len + block_len
+                                                  | EField parts ->
+                                                      let (base, field) = parts in
+                                                      let field_info = lookup_ctor (src, (ctors, field)) in
+                                                      let _ = if ctor_is_field field_info == 1 then 0 else fail 0 in
+                                                      let base_len = emit_expr (base, (src, (env, (ctors, (funcs, (base_pos, emit)))))) in
+                                                      let get_len = emit_getfield (emit, field_index field_info) in
+                                                      base_len + get_len
 and emit_match_cases state =
   let (cases, rest0) = state in
   let (src, rest1) = rest0 in
@@ -2659,7 +2852,10 @@ and emit_match_cases state =
         | MatchCase tail_parts -> let _ = tail_parts in 0
       in
       let case_found =
-        if is_final == 1 then find_ctor (src, (ctors, case_name)) else lookup_ctor (src, (ctors, case_name))
+        if is_final == 1 then
+          if is_upper (src.[case_name]) == 1 then find_ctor (src, (ctors, case_name)) else 0 - 1
+        else
+          if is_upper (src.[case_name]) == 1 then lookup_ctor (src, (ctors, case_name)) else fail 0
       in
       let case_has_arg = if case_found < 0 then 0 else ctor_has_arg case_found in
       let case_env =
