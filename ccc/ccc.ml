@@ -851,9 +851,9 @@ let rec skip_string_literal state =
   let (src, pos) = state in
   if src.[pos] == '"' then pos + 1 else skip_string_literal (src, pos + 1)
 in
-let rec parse_string_value state =
-  let (src, pos0) = state in
-  let pos = skip_space (src, pos0) in
+let rec p_try_string_literal_value_parser state =
+  let (src, parser_state0) = state in
+  let pos = skip_space (src, parser_pos parser_state0) in
   if src.[pos] == '"' then
     let first =
       if src.[pos + 1] == '\\' then parse_escape_value (src, pos + 2) else (src.[pos + 1], pos + 2)
@@ -865,11 +865,22 @@ let rec parse_string_value state =
     if src.[after_literal] == '[' then
       let index = parse_number (src, after_literal + 1) in
       let (index_value, index_end) = index in
-      let p1 = expect_ch (src, (index_end, ']')) in
-      if index_value == 0 then (first_value, p1) else (0, p1)
+      let closed = p_expect_char_parser (src, (parser_at index_end, ']')) in
+      (match force_consumed closed with
+        ParserOk parsed ->
+          let (_got, parser_state) = parsed in
+          let p1 = parser_pos parser_state in
+          if index_value == 0 then p_consumed_ok ((first_value, p1), parser_state) else p_consumed_ok ((0, p1), parser_state)
+      | ParserErr -> p_consumed_err 0)
     else
-      (1000, literal_end)
-  else parse_fail 0
+      p_consumed_ok ((1000, literal_end), parser_at literal_end)
+  else p_unconsumed_err 0
+in
+let rec parse_string_value state =
+  let (src, pos0) = state in
+  let parsed = p_force_reply (p_try_string_literal_value_parser (src, parser_at pos0)) in
+  let (value, _parser_state) = parsed in
+  value
 in
 let rec string_at state =
   let index = state in
