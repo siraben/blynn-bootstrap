@@ -169,6 +169,9 @@ stageRun {
         printf 'let rec out state = let (base, pair) = state in let (left, right) = pair in write_byte (base + left + right) in out (20, (20, 39))' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-let-rec-nested-pair-param.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-let-rec-nested-pair-param.mzbc)"
         test "$actual" = O
+        printf 'let rec at state = let (src, pos) = state in src.[pos] in let b = Bytes.create 1 in b.[0] <- 79; write_byte (at (b, 0))' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-let-rec-bytes-state-param.mzbc
+        actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-let-rec-bytes-state-param.mzbc)"
+        test "$actual" = O
         printf 'let rec even n = if n = 0 then 79 else odd (n - 1)\nand odd n = if n = 0 then 88 else even (n - 1)\nin\nwrite_byte (even 4); write_byte (odd 3)' | ${mzvmSeedM2}/bin/mzvm-seed 03-ast-compiler.mzbc > 03-let-rec-and.mzbc
         actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-let-rec-and.mzbc)"
         test "$actual" = OO
@@ -500,6 +503,7 @@ stageRun {
     install -Dm644 03-let-rec-unit-return.mzbc "$out/share/mlc/stages/03-let-rec-unit-return.mzbc"
     install -Dm644 03-let-rec-pair-param.mzbc "$out/share/mlc/stages/03-let-rec-pair-param.mzbc"
     install -Dm644 03-let-rec-nested-pair-param.mzbc "$out/share/mlc/stages/03-let-rec-nested-pair-param.mzbc"
+    install -Dm644 03-let-rec-bytes-state-param.mzbc "$out/share/mlc/stages/03-let-rec-bytes-state-param.mzbc"
     install -Dm644 03-let-rec-and.mzbc "$out/share/mlc/stages/03-let-rec-and.mzbc"
     install -Dm644 03-let-rec-and-three.mzbc "$out/share/mlc/stages/03-let-rec-and-three.mzbc"
     install -Dm644 03-leading-type.mzbc "$out/share/mlc/stages/03-leading-type.mzbc"

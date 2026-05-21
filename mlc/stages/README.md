@@ -114,7 +114,8 @@ Current stages:
   guards must type as `bool`, expression-level `let ... in ...`,
   declaration-style top-level `let` bindings, the first typed direct unary
   `let rec f x = ...` / `f arg` slice for `int -> int`, `int -> unit`, and
-  immediate `(int * int)` / `int * (int * int)` state-parameter functions with
+  immediate `(int * int)` / `(bytes * int)` / `int * (int * int)`
+  state-parameter functions with
   position-aware direct `CALL` targets after earlier bindings, a direct
   function-target environment for nested `let rec` calls, and bounded
   `let rec ... and ...` groups up to three functions, pair construction, pair

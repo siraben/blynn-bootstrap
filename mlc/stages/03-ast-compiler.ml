@@ -1835,6 +1835,25 @@ let rec need_ty state =
   let (got, want) = state in
   if same_ty (got, want) == 1 then 0 else fail 0
 in
+let rec ident_text_eq_loop state =
+  let (src, pair0) = state in
+  let (name, pair1) = pair0 in
+  let (text, index) = pair1 in
+  if index == String.length text then 1 - (is_ident (src.[name + index])) else
+  if src.[name + index] == text.[index] then ident_text_eq_loop (src, (name, (text, index + 1))) else 0
+in
+let rec ident_text_eq state =
+  let (src, pair) = state in
+  let (name, text) = pair in
+  ident_text_eq_loop (src, (name, (text, 0)))
+in
+let rec ident_names_bytes state =
+  let (src, name) = state in
+  if ident_text_eq (src, (name, "src")) == 1 then 1 else
+  if ident_text_eq (src, (name, "source")) == 1 then 1 else
+  if ident_text_eq (src, (name, "text")) == 1 then 1 else
+  if ident_text_eq (src, (name, "input")) == 1 then 1 else 0
+in
 let rec direct_param_ty state =
   let (src, pair) = state in
   let (param, body) = pair in
@@ -1856,6 +1875,11 @@ let rec direct_param_ty state =
                           (match rhs with
                             EVar name ->
                               if ident_eq (src, (name, param)) == 1 then
+                                if ident_names_bytes (src, name1) == 1 then
+                                  TyMore (TyPair (TyMore TyBytes, TyInt))
+                                else if ident_names_bytes (src, name2) == 1 then
+                                  TyMore (TyPair (TyInt, TyMore TyBytes))
+                                else
                                 (match _body with
                                   EMore body_more ->
                                     (match body_more with
