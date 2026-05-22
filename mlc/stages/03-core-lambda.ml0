@@ -177,6 +177,17 @@ let rec emit_call_write_byte dummy =
   let _ = write_u32 1 in
   write_u32 1
 in
+let rec emit_call_read_byte dummy =
+  let _ = emit_const 0 in
+  let _ = write_byte 14 in
+  let _ = write_u32 1 in
+  write_u32 0
+in
+let rec emit_call_exit dummy =
+  let _ = write_byte 14 in
+  let _ = write_u32 1 in
+  write_u32 2
+in
 let rec emit_op op =
   write_byte op
 in
@@ -284,6 +295,17 @@ let rec compile_expr ch =
         let ch = expect ')' ch in
         let _ = emit_acc depth in
         ch)
+    else if tag = 'r' then
+      let ch = expect_string "ead-byte" ch in
+      let ch = expect ')' ch in
+      let _ = emit_call_read_byte 0 in
+      ch
+    else if tag = 'e' then
+      let ch = expect_string "xit" ch in
+      let ch = compile_expr ch in
+      let ch = expect ')' ch in
+      let _ = emit_call_exit 0 in
+      ch
     else
       let op =
         if tag = '+' then 5 else

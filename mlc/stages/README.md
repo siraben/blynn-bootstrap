@@ -58,7 +58,7 @@ Current stages:
   `p_literal`, `p_form_tag`, `p_need`, and `expect_string` as the first
   compositional parser surface.
   The accepted core is deliberately tiny: integer and char literals,
-  literal `write-string`, `write-byte`, `seq`, de Bruijn `(var n)`,
+  literal `write-string`, `write-byte`, `read-byte`, `exit`, `seq`, de Bruijn `(var n)`,
   `(let rhs body)`, streamed `(if then-len else-len cond yes no)`, unary
   `(fun target body-len body)` closures, `(app fn arg)`, and prefix `+`,
   `-`, `*`, `/`, `=`, and `<`. It has no named variables, ADTs, records,
