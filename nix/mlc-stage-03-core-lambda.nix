@@ -35,6 +35,9 @@ stageRun {
     actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-core-seq.mzbc)"
     test "$actual" = OK
 
+    printf '%s' "(81 (seq (write-u32 '\079') (write-byte 'K')))" | ${mzvmSeedM2}/bin/mzvm-seed 03-core-lambda.mzbc > 03-core-write-u32.mzbc
+    ${mzvmSeedM2}/bin/mzvm-seed 03-core-write-u32.mzbc > /dev/null
+
     printf '(34 (write-byte (+ (= 1 1) 78)))' | ${mzvmSeedM2}/bin/mzvm-seed 03-core-lambda.mzbc > 03-core-eq.mzbc
     actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-core-eq.mzbc)"
     test "$actual" = O
@@ -87,6 +90,7 @@ stageRun {
     install -Dm644 03-core-string.mzbc "$out/share/mlc/stages/03-core-string.mzbc"
     install -Dm644 03-core-add.mzbc "$out/share/mlc/stages/03-core-add.mzbc"
     install -Dm644 03-core-seq.mzbc "$out/share/mlc/stages/03-core-seq.mzbc"
+    install -Dm644 03-core-write-u32.mzbc "$out/share/mlc/stages/03-core-write-u32.mzbc"
     install -Dm644 03-core-eq.mzbc "$out/share/mlc/stages/03-core-eq.mzbc"
     install -Dm644 03-core-let-var.mzbc "$out/share/mlc/stages/03-core-let-var.mzbc"
     install -Dm644 03-core-let-shadow.mzbc "$out/share/mlc/stages/03-core-let-shadow.mzbc"

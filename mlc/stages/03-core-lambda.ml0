@@ -192,6 +192,20 @@ let rec emit_call_exit dummy =
   let _ = write_u32 1 in
   write_u32 2
 in
+let rec emit_write_u32_literal value =
+  let n1 = div256 value in
+  let n2 = div256 n1 in
+  let n3 = div256 n2 in
+  let _ = emit_const (byte_u value) in
+  let _ = emit_call_write_byte 0 in
+  let _ = emit_const (byte_u n1) in
+  let _ = emit_call_write_byte 0 in
+  let _ = emit_const (byte_u n2) in
+  let _ = emit_call_write_byte 0 in
+  let _ = emit_const (byte_u n3) in
+  let _ = emit_call_write_byte 0 in
+  emit_const 0
+in
 let rec emit_op op =
   write_byte op
 in
@@ -244,6 +258,13 @@ let rec compile_expr ch =
         let ch = expect ')' ch in
         let _ = emit_call_write_byte 0 in
         let _ = emit_const 0 in
+        ch
+      else if next = 'u' then
+        let ch = expect_string "32" read_byte in
+        let parsed = p_need p_literal ch in
+        let (value, ch) = parsed in
+        let ch = expect ')' ch in
+        let _ = emit_write_u32_literal value in
         ch
       else if next = 's' then
         let ch = expect_string "tring" read_byte in
