@@ -124,6 +124,14 @@ in
 let rec emit_op op =
   write_byte op
 in
+let rec emit_branch offset =
+  let _ = write_byte 11 in
+  write_u32 offset
+in
+let rec emit_branch_if_not offset =
+  let _ = write_byte 13 in
+  write_u32 offset
+in
 let rec string_loop ch =
   if ch = '"' then
     read_byte
@@ -184,6 +192,16 @@ let rec compile_expr ch =
       let ch = expect ')' ch in
       let _ = emit_pop1 0 in
       ch
+    else if tag = 'i' then
+      let ch = expect 'f' read_byte in
+      number ch (fun then_len -> fun ch ->
+        number ch (fun else_len -> fun ch ->
+          let ch = compile_expr ch in
+          let _ = emit_branch_if_not (then_len + 5) in
+          let ch = compile_expr ch in
+          let _ = emit_branch else_len in
+          let ch = compile_expr ch in
+          expect ')' ch))
     else if tag = 'v' then
       let ch = expect 'a' read_byte in
       let ch = expect 'r' ch in
