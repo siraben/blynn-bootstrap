@@ -70,31 +70,41 @@ let rec expect want =
   let (_value, next_ch) = parsed in
   next_ch
 in
-let rec expect_string_loop text =
+let rec p_string_loop text =
   fun index ->
   fun ch ->
-  if index = String.length text then ch else
-    expect_string_loop text (index + 1) (expect text.[index] ch)
+  if index = String.length text then (1, (text, ch)) else
+    p_bind (p_char text.[index]) (fun _ -> p_string_loop text (index + 1)) ch
+in
+let rec p_string text =
+  fun ch ->
+  p_string_loop text 0 ch
 in
 let rec expect_string text =
   fun ch ->
-  expect_string_loop text 0 ch
+  let parsed = p_need (p_string text) ch in
+  let (_value, next_ch) = parsed in
+  next_ch
 in
-let rec number_loop acc =
+let rec p_number_loop acc =
   fun ch ->
-  fun kont ->
   if is_digit ch = 1 then
-    number_loop (acc * 10 + ch - '0') read_byte kont
+    p_number_loop (acc * 10 + ch - '0') read_byte
   else
-    kont acc ch
+    (1, (acc, ch))
+in
+let rec p_number ch =
+  let start = skip_space ch in
+  if is_digit start = 1 then
+    p_number_loop (start - '0') read_byte
+  else
+    (0, (0, ch))
 in
 let rec number ch =
   fun kont ->
-  let start = skip_space ch in
-  if is_digit start = 1 then
-    number_loop (start - '0') read_byte kont
-  else
-    exit 1
+  let parsed = p_need p_number ch in
+  let (value, next_ch) = parsed in
+  kont value next_ch
 in
 let rec escaped_char ch =
   if ch = 'n' then 10 else
