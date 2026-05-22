@@ -95,13 +95,22 @@ let rec p_string text =
   fun ch ->
   p_string_loop text 0 ch
 in
+let rec p_left left =
+  fun right ->
+  fun ch ->
+  p_bind left (fun value -> fun ch ->
+    p_bind right (fun _ -> p_return value) ch) ch
+in
+let rec p_right left =
+  fun right ->
+  fun ch ->
+  p_bind left (fun _ -> right) ch
+in
 let rec p_between left =
   fun inner ->
   fun right ->
   fun ch ->
-  p_bind left (fun _ -> fun ch ->
-    p_bind inner (fun value -> fun ch ->
-      p_bind right (fun _ -> p_return value) ch) ch) ch
+  p_right left (p_left inner right) ch
 in
 let rec expect_string text =
   fun ch ->
@@ -165,7 +174,7 @@ let rec p_literal ch =
   p_alt p_char_lit p_number ch
 in
 let rec p_form_tag ch =
-  p_bind (p_char '(') (fun _ -> p_token_char) ch
+  p_right (p_char '(') p_token_char ch
 in
 let rec emit_const value =
   let _ = write_byte 1 in
