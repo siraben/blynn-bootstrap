@@ -224,18 +224,20 @@ let rec compile_expr ch =
         let ch = compile_expr ch in
         let ch = expect ')' ch in
         let _ = emit_call_write_byte 0 in
+        let _ = emit_const 0 in
         ch
       else if next = 's' then
         let ch = expect_string "tring" read_byte in
         let ch = expect '"' ch in
         let ch = string_loop ch in
-        expect ')' ch
+        let ch = expect ')' ch in
+        let _ = emit_const 0 in
+        ch
       else
         exit 1
     else if tag = 's' then
       let ch = expect_string "eq" ch in
       let ch = compile_expr ch in
-      let _ = emit_pop1 0 in
       let ch = compile_expr ch in
       expect ')' ch
     else if tag = 'l' then

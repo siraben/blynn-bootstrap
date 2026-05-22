@@ -1,4 +1,3 @@
-(72
-  (seq
-    (app (fun 5 21 (write-byte (+ (var 0) 39))) 40)
-    (write-byte (read-byte))))
+(686
+  (let (read-byte)
+    (seq (write-byte 'M') (seq (write-byte 'Z') (seq (write-byte 'B') (seq (write-byte 'C') (seq (write-byte 1) (seq (write-byte 0) (seq (write-byte 0) (seq (write-byte 0) (seq (write-byte 15) (seq (write-byte 0) (seq (write-byte 0) (seq (write-byte 0) (seq (write-byte 5) (seq (write-byte 0) (seq (write-byte 0) (seq (write-byte 0) (seq (write-byte 0) (seq (write-byte 0) (seq (write-byte 0) (seq (write-byte 0) (seq (write-byte 1) (seq (write-byte (var 0)) (seq (write-byte 0) (seq (write-byte 0) (seq (write-byte 0) (seq (write-byte 14) (seq (write-byte 1) (seq (write-byte 0) (seq (write-byte 0) (seq (write-byte 0) (seq (write-byte 1) (seq (write-byte 0) (seq (write-byte 0) (seq (write-byte 0) (write-byte 0)))))))))))))))))))))))))))))))))))))

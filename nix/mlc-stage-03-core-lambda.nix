@@ -15,47 +15,47 @@ stageRun {
     cp ${mlcSrc}/stages/03-core-lambda.ml0 03-core-lambda.ml0
     ${mzvmSeedM2}/bin/mzvm-seed ${mlcStage02Ml0Compiler}/share/mlc/stages/02-self.mzbc < 03-core-lambda.ml0 > 03-core-lambda.mzbc
 
-    printf "(15 (write-byte 'O'))" | ${mzvmSeedM2}/bin/mzvm-seed 03-core-lambda.mzbc > 03-core-byte.mzbc
+    printf "(20 (write-byte 'O'))" | ${mzvmSeedM2}/bin/mzvm-seed 03-core-lambda.mzbc > 03-core-byte.mzbc
     actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-core-byte.mzbc)"
     test "$actual" = O
 
-    printf '(29 (write-string "OK"))' | ${mzvmSeedM2}/bin/mzvm-seed 03-core-lambda.mzbc > 03-core-string.mzbc
+    printf '(34 (write-string "OK"))' | ${mzvmSeedM2}/bin/mzvm-seed 03-core-lambda.mzbc > 03-core-string.mzbc
     actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-core-string.mzbc)"
     test "$actual" = OK
 
-    printf '(22 (write-byte (+ 40 39)))' | ${mzvmSeedM2}/bin/mzvm-seed 03-core-lambda.mzbc > 03-core-add.mzbc
+    printf '(27 (write-byte (+ 40 39)))' | ${mzvmSeedM2}/bin/mzvm-seed 03-core-lambda.mzbc > 03-core-add.mzbc
     actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-core-add.mzbc)"
     test "$actual" = O
 
-    printf '(34 (seq (write-byte 79) (write-byte 75)))' | ${mzvmSeedM2}/bin/mzvm-seed 03-core-lambda.mzbc > 03-core-seq.mzbc
+    printf '(39 (seq (write-byte 79) (write-byte 75)))' | ${mzvmSeedM2}/bin/mzvm-seed 03-core-lambda.mzbc > 03-core-seq.mzbc
     actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-core-seq.mzbc)"
     test "$actual" = OK
 
-    printf '(29 (write-byte (+ (= 1 1) 78)))' | ${mzvmSeedM2}/bin/mzvm-seed 03-core-lambda.mzbc > 03-core-eq.mzbc
+    printf '(34 (write-byte (+ (= 1 1) 78)))' | ${mzvmSeedM2}/bin/mzvm-seed 03-core-lambda.mzbc > 03-core-eq.mzbc
     actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-core-eq.mzbc)"
     test "$actual" = O
 
-    printf '(33 (let 40 (write-byte (+ (var 0) 39))))' | ${mzvmSeedM2}/bin/mzvm-seed 03-core-lambda.mzbc > 03-core-let-var.mzbc
+    printf '(38 (let 40 (write-byte (+ (var 0) 39))))' | ${mzvmSeedM2}/bin/mzvm-seed 03-core-lambda.mzbc > 03-core-let-var.mzbc
     actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-core-let-var.mzbc)"
     test "$actual" = O
 
-    printf '(44 (let 88 (let 40 (write-byte (+ (var 0) 39)))))' | ${mzvmSeedM2}/bin/mzvm-seed 03-core-lambda.mzbc > 03-core-let-shadow.mzbc
+    printf '(49 (let 88 (let 40 (write-byte (+ (var 0) 39)))))' | ${mzvmSeedM2}/bin/mzvm-seed 03-core-lambda.mzbc > 03-core-let-shadow.mzbc
     actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-core-let-shadow.mzbc)"
     test "$actual" = O
 
-    printf "(51 (if 14 14 (= 1 1) (write-byte 'O') (write-byte 88)))" | ${mzvmSeedM2}/bin/mzvm-seed 03-core-lambda.mzbc > 03-core-if-true.mzbc
+    printf "(61 (if 19 19 (= 1 1) (write-byte 'O') (write-byte 88)))" | ${mzvmSeedM2}/bin/mzvm-seed 03-core-lambda.mzbc > 03-core-if-true.mzbc
     actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-core-if-true.mzbc)"
     test "$actual" = O
 
-    printf "(51 (if 14 14 (< 2 1) (write-byte 88) (write-byte 'K')))" | ${mzvmSeedM2}/bin/mzvm-seed 03-core-lambda.mzbc > 03-core-if-false.mzbc
+    printf "(61 (if 19 19 (< 2 1) (write-byte 88) (write-byte 'K')))" | ${mzvmSeedM2}/bin/mzvm-seed 03-core-lambda.mzbc > 03-core-if-false.mzbc
     actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-core-if-false.mzbc)"
     test "$actual" = K
 
-    printf "(44 (app (fun 5 21 (write-byte (+ (var 0) 39))) 40))" | ${mzvmSeedM2}/bin/mzvm-seed 03-core-lambda.mzbc > 03-core-app-fun.mzbc
+    printf "(49 (app (fun 5 26 (write-byte (+ (var 0) 39))) 40))" | ${mzvmSeedM2}/bin/mzvm-seed 03-core-lambda.mzbc > 03-core-app-fun.mzbc
     actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-core-app-fun.mzbc)"
     test "$actual" = O
 
-    printf '(24 (write-byte (read-byte)))' | ${mzvmSeedM2}/bin/mzvm-seed 03-core-lambda.mzbc > 03-core-read-byte.mzbc
+    printf '(29 (write-byte (read-byte)))' | ${mzvmSeedM2}/bin/mzvm-seed 03-core-lambda.mzbc > 03-core-read-byte.mzbc
     actual="$(printf O | ${mzvmSeedM2}/bin/mzvm-seed 03-core-read-byte.mzbc)"
     test "$actual" = O
 
