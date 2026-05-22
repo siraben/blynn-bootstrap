@@ -14,11 +14,11 @@ stageRun {
   buildScript = ''
     cp ${mlcSrc}/stages/04-core-handoff.core 04-core-handoff.core
     ${mzvmSeedM2}/bin/mzvm-seed ${mlcStage03CoreLambda}/share/mlc/stages/03-core-lambda.mzbc < 04-core-handoff.core > 04-core-handoff.mzbc
-    printf O | ${mzvmSeedM2}/bin/mzvm-seed 04-core-handoff.mzbc > 04-byte-output.mzbc
+    printf '(byte O)' | ${mzvmSeedM2}/bin/mzvm-seed 04-core-handoff.mzbc > 04-byte-output.mzbc
     actual="$(${mzvmSeedM2}/bin/mzvm-seed 04-byte-output.mzbc)"
     test "$actual" = O
 
-    printf K | ${mzvmSeedM2}/bin/mzvm-seed 04-core-handoff.mzbc > 04-byte-output-k.mzbc
+    printf '(byte K)' | ${mzvmSeedM2}/bin/mzvm-seed 04-core-handoff.mzbc > 04-byte-output-k.mzbc
     actual="$(${mzvmSeedM2}/bin/mzvm-seed 04-byte-output-k.mzbc)"
     test "$actual" = K
   '';
