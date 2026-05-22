@@ -56,9 +56,10 @@ Current stages:
   Its parser state is a single lookahead character, with `p_return`,
   `p_bind`, `p_char`, and `p_need` as the first compositional parser surface.
   The accepted core is deliberately tiny: integer and char literals,
-  literal `write-string`, `write-byte`, `seq`, and prefix `+`, `-`, `*`, `/`,
-  `=`, and `<`. It has no variables, lambdas, ADTs, records, inference, or
-  pattern compilation yet.
+  literal `write-string`, `write-byte`, `seq`, de Bruijn `(var n)`,
+  `(let rhs body)`, and prefix `+`, `-`, `*`, `/`, `=`, and `<`. It has no
+  named variables, lambdas, ADTs, records, inference, or pattern compilation
+  yet.
 - `mlc/mlc.ml` is also compiled by `02-ml0-compiler.ml` in the current gate;
   the emitted bytecode runs under `mzvm-seed` as a tiny compiler with a
   one-lookahead expression parser. It emits real bytecode for constants, chars,

@@ -112,6 +112,10 @@ let rec emit_pop1 dummy =
   let _ = write_byte 3 in
   write_u32 1
 in
+let rec emit_acc depth =
+  let _ = write_byte 4 in
+  write_u32 depth
+in
 let rec emit_call_write_byte dummy =
   let _ = write_byte 14 in
   let _ = write_u32 1 in
@@ -171,6 +175,22 @@ let rec compile_expr ch =
       let _ = emit_pop1 0 in
       let ch = compile_expr ch in
       expect ')' ch
+    else if tag = 'l' then
+      let ch = expect 'e' read_byte in
+      let ch = expect 't' ch in
+      let ch = compile_expr ch in
+      let _ = emit_push 0 in
+      let ch = compile_expr ch in
+      let ch = expect ')' ch in
+      let _ = emit_pop1 0 in
+      ch
+    else if tag = 'v' then
+      let ch = expect 'a' read_byte in
+      let ch = expect 'r' ch in
+      number ch (fun depth -> fun ch ->
+        let ch = expect ')' ch in
+        let _ = emit_acc depth in
+        ch)
     else
       let op =
         if tag = '+' then 5 else

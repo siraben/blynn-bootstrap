@@ -34,6 +34,14 @@ stageRun {
     printf '(29 (write-byte (+ (= 1 1) 78)))' | ${mzvmSeedM2}/bin/mzvm-seed 03-core-lambda.mzbc > 03-core-eq.mzbc
     actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-core-eq.mzbc)"
     test "$actual" = O
+
+    printf '(33 (let 40 (write-byte (+ (var 0) 39))))' | ${mzvmSeedM2}/bin/mzvm-seed 03-core-lambda.mzbc > 03-core-let-var.mzbc
+    actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-core-let-var.mzbc)"
+    test "$actual" = O
+
+    printf '(44 (let 88 (let 40 (write-byte (+ (var 0) 39)))))' | ${mzvmSeedM2}/bin/mzvm-seed 03-core-lambda.mzbc > 03-core-let-shadow.mzbc
+    actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-core-let-shadow.mzbc)"
+    test "$actual" = O
   '';
   installScript = ''
     install -Dm644 03-core-lambda.ml0 "$out/share/mlc/stages/03-core-lambda.ml0"
@@ -43,5 +51,7 @@ stageRun {
     install -Dm644 03-core-add.mzbc "$out/share/mlc/stages/03-core-add.mzbc"
     install -Dm644 03-core-seq.mzbc "$out/share/mlc/stages/03-core-seq.mzbc"
     install -Dm644 03-core-eq.mzbc "$out/share/mlc/stages/03-core-eq.mzbc"
+    install -Dm644 03-core-let-var.mzbc "$out/share/mlc/stages/03-core-let-var.mzbc"
+    install -Dm644 03-core-let-shadow.mzbc "$out/share/mlc/stages/03-core-let-shadow.mzbc"
   '';
 }
