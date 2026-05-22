@@ -1,0 +1,47 @@
+{
+  stageRun,
+  mlcSrc,
+  mlcStage02Ml0Compiler,
+  mzvmSeedM2,
+}:
+
+stageRun {
+  pname = "mlc-stage-03-core-lambda";
+  nativeBuildInputs = [
+    mzvmSeedM2
+  ];
+  description = "Tiny streamed parenthetical core compiler produced by stage 02";
+  buildScript = ''
+    cp ${mlcSrc}/stages/03-core-lambda.ml0 03-core-lambda.ml0
+    ${mzvmSeedM2}/bin/mzvm-seed ${mlcStage02Ml0Compiler}/share/mlc/stages/02-self.mzbc < 03-core-lambda.ml0 > 03-core-lambda.mzbc
+
+    printf "(15 (write-byte 'O'))" | ${mzvmSeedM2}/bin/mzvm-seed 03-core-lambda.mzbc > 03-core-byte.mzbc
+    actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-core-byte.mzbc)"
+    test "$actual" = O
+
+    printf '(29 (write-string "OK"))' | ${mzvmSeedM2}/bin/mzvm-seed 03-core-lambda.mzbc > 03-core-string.mzbc
+    actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-core-string.mzbc)"
+    test "$actual" = OK
+
+    printf '(22 (write-byte (+ 40 39)))' | ${mzvmSeedM2}/bin/mzvm-seed 03-core-lambda.mzbc > 03-core-add.mzbc
+    actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-core-add.mzbc)"
+    test "$actual" = O
+
+    printf '(34 (seq (write-byte 79) (write-byte 75)))' | ${mzvmSeedM2}/bin/mzvm-seed 03-core-lambda.mzbc > 03-core-seq.mzbc
+    actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-core-seq.mzbc)"
+    test "$actual" = OK
+
+    printf '(29 (write-byte (+ (= 1 1) 78)))' | ${mzvmSeedM2}/bin/mzvm-seed 03-core-lambda.mzbc > 03-core-eq.mzbc
+    actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-core-eq.mzbc)"
+    test "$actual" = O
+  '';
+  installScript = ''
+    install -Dm644 03-core-lambda.ml0 "$out/share/mlc/stages/03-core-lambda.ml0"
+    install -Dm644 03-core-lambda.mzbc "$out/share/mlc/stages/03-core-lambda.mzbc"
+    install -Dm644 03-core-byte.mzbc "$out/share/mlc/stages/03-core-byte.mzbc"
+    install -Dm644 03-core-string.mzbc "$out/share/mlc/stages/03-core-string.mzbc"
+    install -Dm644 03-core-add.mzbc "$out/share/mlc/stages/03-core-add.mzbc"
+    install -Dm644 03-core-seq.mzbc "$out/share/mlc/stages/03-core-seq.mzbc"
+    install -Dm644 03-core-eq.mzbc "$out/share/mlc/stages/03-core-eq.mzbc"
+  '';
+}

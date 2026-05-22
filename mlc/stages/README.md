@@ -49,6 +49,16 @@ Current stages:
   the same self-compiled compiler to compile the next source, `mlc/mlc.ml`.
 - `03-ok.ml0` and `03-char-string.ml0` are small ML0 sources accepted by
   `02-ml0-compiler.ml`.
+- `03-core-lambda.ml0` is the intentionally small next handoff compiled by
+  the self-compiled stage-02 compiler. It follows the early Blynn
+  `parenthetically` discipline: the input language is parenthesized and
+  streamed, supplies its bytecode length up front, and emits MZBC in one pass.
+  Its parser state is a single lookahead character, with `p_return`,
+  `p_bind`, `p_char`, and `p_need` as the first compositional parser surface.
+  The accepted core is deliberately tiny: integer and char literals,
+  literal `write-string`, `write-byte`, `seq`, and prefix `+`, `-`, `*`, `/`,
+  `=`, and `<`. It has no variables, lambdas, ADTs, records, inference, or
+  pattern compilation yet.
 - `mlc/mlc.ml` is also compiled by `02-ml0-compiler.ml` in the current gate;
   the emitted bytecode runs under `mzvm-seed` as a tiny compiler with a
   one-lookahead expression parser. It emits real bytecode for constants, chars,
@@ -79,7 +89,7 @@ Current stages:
   direct calls, field mutation for imperative cells, and branches. Its parser
   helper layer now includes explicit option values and `p_optional` for
   state-threaded optional probes.
-- `03-ast-compiler.ml` is the first successor source compiled by the committed
+- `03-ast-compiler.ml` is a later checked successor source compiled by the committed
   fixed-point `mlc.byte`. It keeps the accepted language intentionally small
   while adding a real parse -> AST -> type-check -> emit boundary, with AST
   and `int` / `bool` / `unit` / pair type nodes represented as ML variants
