@@ -227,6 +227,16 @@ let rec emit_need_acc dummy =
   let _ = emit_const 1 in
   emit_call_exit 0
 in
+let rec emit_read_char_lit dummy =
+  let _ = emit_const '\'' in
+  let _ = emit_need_acc 0 in
+  let _ = emit_call_read_byte 0 in
+  let _ = emit_push 0 in
+  let _ = emit_const '\'' in
+  let _ = emit_need_acc 0 in
+  let _ = emit_acc 0 in
+  emit_pop1 0
+in
 let rec emit_apply dummy =
   write_byte 30
 in
@@ -349,10 +359,20 @@ let rec compile_expr ch =
         let _ = emit_acc depth in
         ch)
     else if tag = 'r' then
-      let ch = expect_string "ead-byte" ch in
-      let ch = expect ')' ch in
-      let _ = emit_call_read_byte 0 in
-      ch
+      let ch = expect_string "ead-" ch in
+      let next = skip_space ch in
+      if next = 'b' then
+        let ch = expect_string "yte" read_byte in
+        let ch = expect ')' ch in
+        let _ = emit_call_read_byte 0 in
+        ch
+      else if next = 'c' then
+        let ch = expect_string "har" read_byte in
+        let ch = expect ')' ch in
+        let _ = emit_read_char_lit 0 in
+        ch
+      else
+        exit 1
     else if tag = 'n' then
       let ch = expect_string "eed-" ch in
       let next = skip_space ch in

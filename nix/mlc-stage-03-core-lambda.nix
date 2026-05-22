@@ -66,6 +66,10 @@ stageRun {
     actual="$(printf O | ${mzvmSeedM2}/bin/mzvm-seed 03-core-read-byte.mzbc)"
     test "$actual" = O
 
+    printf '(140 (write-byte (read-char)))' | ${mzvmSeedM2}/bin/mzvm-seed 03-core-lambda.mzbc > 03-core-read-char.mzbc
+    actual="$(printf '\047O\047' | ${mzvmSeedM2}/bin/mzvm-seed 03-core-read-char.mzbc)"
+    test "$actual" = O
+
     printf "(51 (need-byte 'O'))" | ${mzvmSeedM2}/bin/mzvm-seed 03-core-lambda.mzbc > 03-core-need-byte.mzbc
     actual="$(printf O | ${mzvmSeedM2}/bin/mzvm-seed 03-core-need-byte.mzbc)"
     test "$actual" = ""
@@ -107,6 +111,7 @@ stageRun {
     install -Dm644 03-core-if-false.mzbc "$out/share/mlc/stages/03-core-if-false.mzbc"
     install -Dm644 03-core-app-fun.mzbc "$out/share/mlc/stages/03-core-app-fun.mzbc"
     install -Dm644 03-core-read-byte.mzbc "$out/share/mlc/stages/03-core-read-byte.mzbc"
+    install -Dm644 03-core-read-char.mzbc "$out/share/mlc/stages/03-core-read-char.mzbc"
     install -Dm644 03-core-need-byte.mzbc "$out/share/mlc/stages/03-core-need-byte.mzbc"
     install -Dm644 03-core-need-string.mzbc "$out/share/mlc/stages/03-core-need-string.mzbc"
     install -Dm644 03-core-exit.mzbc "$out/share/mlc/stages/03-core-exit.mzbc"

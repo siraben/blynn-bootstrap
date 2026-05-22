@@ -1,12 +1,12 @@
-(1753
+(1975
   (seq
     (need-byte '(')
     (let (read-byte)
-      (if 830 830
+      (if 941 941
         (= (var 0) 'b')
         (seq
           (need-string "yte ")
-          (let (read-byte)
+          (let (read-char)
             (seq
               (need-byte ')')
               (seq
@@ -38,7 +38,7 @@
                                         (write-byte '\000')))))))))))))))))
         (seq
           (need-string "xit ")
-          (let (read-byte)
+          (let (read-char)
             (seq
               (need-byte ')')
               (seq

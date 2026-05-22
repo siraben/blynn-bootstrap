@@ -60,16 +60,17 @@ Current stages:
   The accepted core is deliberately tiny: integer and char literals, including
   three-digit escaped byte characters such as `'\000'`, literal
   `write-string`, `write-byte`, literal `write-u32`, `read-byte`,
-  `need-byte`, literal `need-string`, `exit`, `seq`, de Bruijn `(var n)`,
-  `(let rhs body)`, streamed
+  `read-char`, `need-byte`, literal `need-string`, `exit`, `seq`, de Bruijn
+  `(var n)`, `(let rhs body)`, streamed
   `(if then-len else-len cond yes no)`, unary
   `(fun target body-len body)` closures, `(app fn arg)`, and prefix `+`,
   `-`, `*`, `/`, `=`, and `<`. It has no named variables, ADTs, records,
   inference, or pattern compilation yet.
 - `04-core-handoff.core` is the first explicit source compiled by the
   stage-03 streamed core compiler. It is a tiny form compiler: it parses
-  `(byte X)` and `(exit X)` using `need-string` for fixed token tails, then
-  emits runnable MZBC programs that either write `X` or exit with code `X`.
+  `(byte 'X')` and `(exit 'X')` using `need-string` for fixed token tails and
+  `read-char` for quoted source characters, then emits runnable MZBC programs
+  that either write `X` or exit with code `X`.
   Its emitted MZBC words use `write-string` / `write-u32`, and bytes are
   written as char literals where possible, avoiding raw numeric byte constants
   in the source. This keeps the handoff executable while staying in the small
