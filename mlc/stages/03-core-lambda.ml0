@@ -75,6 +75,9 @@ in
 let rec p_token_char ch =
   p_token_if (fun _ -> 1) ch
 in
+let rec p_digit ch =
+  p_token_if is_digit ch
+in
 let rec p_need parser =
   fun ch ->
   let reply = parser ch in
@@ -128,9 +131,11 @@ let rec p_number_loop acc =
     (1, (acc, ch))
 in
 let rec p_number ch =
-  let start = skip_space ch in
-  if is_digit start = 1 then
-    p_number_loop (start - '0') read_byte
+  let first = p_digit ch in
+  let (ok, rest) = first in
+  if ok = 1 then
+    let (digit, next_ch) = rest in
+    p_number_loop (digit - '0') next_ch
   else
     (0, (0, ch))
 in
