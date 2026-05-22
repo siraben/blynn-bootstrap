@@ -1,2 +1,70 @@
-(931
-  (seq (need-byte '(') (seq (need-string "byte ") (let (read-byte) (seq (need-byte ')') (seq (write-string "MZBC") (seq (write-u32 '\001') (seq (write-u32 '\015') (seq (write-u32 '\005') (seq (write-u32 '\000') (seq (write-byte '\001') (seq (write-byte (var 0)) (seq (write-byte '\000') (seq (write-byte '\000') (seq (write-byte '\000') (seq (write-byte '\014') (seq (write-u32 '\001') (seq (write-u32 '\001') (write-byte '\000')))))))))))))))))))
+(1753
+  (seq
+    (need-byte '(')
+    (let (read-byte)
+      (if 830 830
+        (= (var 0) 'b')
+        (seq
+          (need-string "yte ")
+          (let (read-byte)
+            (seq
+              (need-byte ')')
+              (seq
+                (write-string "MZBC")
+                (seq
+                  (write-u32 '\001')
+                  (seq
+                    (write-u32 '\015')
+                    (seq
+                      (write-u32 '\005')
+                      (seq
+                        (write-u32 '\000')
+                        (seq
+                          (write-byte '\001')
+                          (seq
+                            (write-byte (var 0))
+                            (seq
+                              (write-byte '\000')
+                              (seq
+                                (write-byte '\000')
+                                (seq
+                                  (write-byte '\000')
+                                  (seq
+                                    (write-byte '\014')
+                                    (seq
+                                      (write-u32 '\001')
+                                      (seq
+                                        (write-u32 '\001')
+                                        (write-byte '\000')))))))))))))))))
+        (seq
+          (need-string "xit ")
+          (let (read-byte)
+            (seq
+              (need-byte ')')
+              (seq
+                (write-string "MZBC")
+                (seq
+                  (write-u32 '\001')
+                  (seq
+                    (write-u32 '\015')
+                    (seq
+                      (write-u32 '\005')
+                      (seq
+                        (write-u32 '\000')
+                        (seq
+                          (write-byte '\001')
+                          (seq
+                            (write-byte (var 0))
+                            (seq
+                              (write-byte '\000')
+                              (seq
+                                (write-byte '\000')
+                                (seq
+                                  (write-byte '\000')
+                                  (seq
+                                    (write-byte '\014')
+                                    (seq
+                                      (write-u32 '\001')
+                                      (seq
+                                        (write-u32 '\002')
+                                        (write-byte '\000'))))))))))))))))))))))
