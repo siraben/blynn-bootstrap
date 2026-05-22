@@ -95,6 +95,14 @@ let rec p_string text =
   fun ch ->
   p_string_loop text 0 ch
 in
+let rec p_between left =
+  fun inner ->
+  fun right ->
+  fun ch ->
+  p_bind left (fun _ -> fun ch ->
+    p_bind inner (fun value -> fun ch ->
+      p_bind right (fun _ -> p_return value) ch) ch) ch
+in
 let rec expect_string text =
   fun ch ->
   let parsed = p_need (p_string text) ch in
@@ -151,9 +159,7 @@ let rec p_char_lit_value ch =
     p_raw_char ch
 in
 let rec p_char_lit ch =
-  p_bind (p_char '\'') (fun _ -> fun ch ->
-    p_bind p_char_lit_value (fun value -> fun ch ->
-      p_bind (p_char '\'') (fun _ -> p_return value) ch) ch) ch
+  p_between (p_char '\'') p_char_lit_value (p_char '\'') ch
 in
 let rec p_literal ch =
   p_alt p_char_lit p_number ch
