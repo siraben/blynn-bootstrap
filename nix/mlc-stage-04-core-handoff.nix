@@ -14,7 +14,7 @@ stageRun {
   buildScript = ''
     cp ${mlcSrc}/stages/04-core-handoff.core 04-core-handoff.core
     ${mzvmSeedM2}/bin/mzvm-seed ${mlcStage03CoreLambda}/share/mlc/stages/03-core-lambda.mzbc < 04-core-handoff.core > 04-core-handoff.mzbc
-    actual="$(${mzvmSeedM2}/bin/mzvm-seed 04-core-handoff.mzbc)"
+    actual="$(printf K | ${mzvmSeedM2}/bin/mzvm-seed 04-core-handoff.mzbc)"
     test "$actual" = OK
   '';
   installScript = ''
