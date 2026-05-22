@@ -47,6 +47,10 @@ rec {
     inherit stageRun mlcSrc mlcStage03CoreLambda mzvmSeedM2;
   };
 
+  mlcStage05Ok = pkgs.callPackage ./mlc-stage-05-ok.nix {
+    inherit stageRun mlcSrc mlcStage04CoreHandoff mzvmSeedM2;
+  };
+
   mlcSeedHost = pkgs.callPackage ./mlc-seed-host.nix {
     inherit mlcSrc mzvmHost testsMlc;
   };

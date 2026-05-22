@@ -80,6 +80,9 @@ Current stages:
   written as char literals where possible, avoiding raw numeric byte constants
   in the source. This keeps the handoff executable while staying in the small
   parenthetical core.
+- `05-ok.core` is a named next source for the stage-04 compiler. It stays
+  intentionally tiny, using `(byte2 'O' 'K')`, and the `mlc-stage-05-ok` gate
+  checks that stage 04 compiles it to a runnable MZBC program.
 - `mlc/mlc.ml` is also compiled by `02-ml0-compiler.ml` in the current gate;
   the emitted bytecode runs under `mzvm-seed` as a tiny compiler with a
   one-lookahead expression parser. It emits real bytecode for constants, chars,

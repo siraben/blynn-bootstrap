@@ -651,6 +651,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           mlcStage02Ml0Compiler
           mlcStage03CoreLambda
           mlcStage04CoreHandoff
+          mlcStage05Ok
           mlcSeedHost
           mlcSeedM2
           mlcSeedHostVsM2
@@ -1301,6 +1302,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             stage.ml0Compiler02 = mlcStage02Ml0Compiler;
             stage.coreLambda03 = mlcStage03CoreLambda;
             stage.coreHandoff04 = mlcStage04CoreHandoff;
+            stage.ok05 = mlcStage05Ok;
             stage.astCompiler03 = mlcStage03AstCompiler;
             seed.host = mlcSeedHost;
             seed.m2 = mlcSeedM2;
@@ -1316,6 +1318,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           mlc-stage-02-ml0-compiler = mlcStage02Ml0Compiler;
           mlc-stage-03-core-lambda = mlcStage03CoreLambda;
           mlc-stage-04-core-handoff = mlcStage04CoreHandoff;
+          mlc-stage-05-ok = mlcStage05Ok;
           mlc-stage-03-ast-compiler = mlcStage03AstCompiler;
           mlc-seed.host = mlcSeedHost;
           mlc-seed.m2 = mlcSeedM2;
@@ -1399,6 +1402,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           mlc-stage-02-ml0-compiler = mlcStage02Ml0Compiler;
           mlc-stage-03-core-lambda = mlcStage03CoreLambda;
           mlc-stage-04-core-handoff = mlcStage04CoreHandoff;
+          mlc-stage-05-ok = mlcStage05Ok;
           mlc-stage-03-ast-compiler = mlcStage03AstCompiler;
           mlc-seed-m2 = mlcSeedM2;
           mlc-seed-host-vs-m2 = mlcSeedHostVsM2;
