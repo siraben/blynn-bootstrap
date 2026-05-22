@@ -69,6 +69,10 @@ in
 let rec p_raw_char ch =
   (1, (ch, read_byte))
 in
+let rec p_token_char ch0 =
+  let ch = skip_space ch0 in
+  (1, (ch, read_byte))
+in
 let rec p_need parser =
   fun ch ->
   let reply = parser ch in
@@ -136,14 +140,7 @@ let rec p_literal ch =
   p_alt p_char_lit p_number ch
 in
 let rec p_form_tag ch =
-  let opened = p_char '(' ch in
-  let (ok, rest) = opened in
-  if ok = 1 then
-    let (_open, next_ch) = rest in
-    let tag = skip_space next_ch in
-    (1, (tag, read_byte))
-  else
-    opened
+  p_bind (p_char '(') (fun _ -> p_token_char) ch
 in
 let rec emit_const value =
   let _ = write_byte 1 in
