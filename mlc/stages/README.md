@@ -60,7 +60,8 @@ Current stages:
   The accepted core is deliberately tiny: integer and char literals, including
   three-digit escaped byte characters such as `'\000'`, literal
   `write-string`, `write-byte`, literal `write-u32`, `read-byte`,
-  `read-char`, `need-byte`, literal `need-string`, `exit`, `seq`, de Bruijn
+  `read-char` over quoted source characters with simple `'\n'` / `'\t'`
+  escapes, `need-byte`, literal `need-string`, `exit`, `seq`, de Bruijn
   `(var n)`, `(let rhs body)`, streamed
   `(if then-len else-len cond yes no)`, unary
   `(fun target body-len body)` closures, `(app fn arg)`, and prefix `+`,
@@ -71,7 +72,7 @@ Current stages:
   `(byte 'X')`, `(exit 'X')`, and `(debug 'X')` using `need-string` for fixed
   token tails and `read-char` for quoted source characters, then emits
   runnable MZBC programs that write `X`, exit with code `X`, or write `X` to
-  stderr.
+  stderr. Its gate also checks an escaped tab source form, `(byte '\t')`.
   The parsed form tag is lowered to a primitive index first, so the emitted
   bytecode body is shared instead of duplicated across parser branches.
   Its emitted MZBC words use `write-string` / `write-u32`, and bytes are
