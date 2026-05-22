@@ -287,6 +287,19 @@ let rec compile_expr ch =
       let ch = expect ')' ch in
       let _ = emit_call_read_byte 0 in
       ch
+    else if tag = 'n' then
+      let ch = expect_string "eed-byte" ch in
+      let ch = compile_expr ch in
+      let ch = expect ')' ch in
+      let _ = emit_push 0 in
+      let _ = emit_call_read_byte 0 in
+      let _ = emit_op 9 in
+      let _ = emit_branch_if_not 10 in
+      let _ = emit_const 0 in
+      let _ = emit_branch 14 in
+      let _ = emit_const 1 in
+      let _ = emit_call_exit 0 in
+      ch
     else if tag = 'e' then
       let ch = expect_string "xit" ch in
       let ch = compile_expr ch in
