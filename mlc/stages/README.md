@@ -57,7 +57,9 @@ Current stages:
   `p_bind`, `p_alt`, `p_char`, `p_raw_char`, `p_token_char`, `p_string`,
   `p_left`, `p_right`, `p_between`, `p_number`, `p_char_lit`, `p_literal`,
   `p_form_tag`, `p_need`, and `expect_string` as the first compositional
-  parser surface.
+  parser surface. Fixed-string token parsing and form-tag parsing both use the
+  same left/right sequencing helpers rather than spelling their bind structure
+  independently.
   The accepted core is deliberately tiny: integer and char literals, including
   three-digit escaped byte characters such as `'\000'`, literal
   `write-string`, `write-byte`, literal `write-u32`, `read-byte`,
