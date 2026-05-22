@@ -71,6 +71,8 @@ Current stages:
   `(byte 'X')` and `(exit 'X')` using `need-string` for fixed token tails and
   `read-char` for quoted source characters, then emits runnable MZBC programs
   that either write `X` or exit with code `X`.
+  The parsed form tag is lowered to a primitive index first, so the emitted
+  bytecode body is shared instead of duplicated across parser branches.
   Its emitted MZBC words use `write-string` / `write-u32`, and bytes are
   written as char literals where possible, avoiding raw numeric byte constants
   in the source. This keeps the handoff executable while staying in the small

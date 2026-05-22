@@ -1,70 +1,45 @@
-(1975
+(1265
   (seq
     (need-byte '(')
-    (let (read-byte)
-      (if 941 941
-        (= (var 0) 'b')
+    (let
+      (let (read-byte)
+        (if 205 205
+          (= (var 0) 'b')
+          (seq (need-string "yte ") '\001')
+          (seq (need-string "xit ") '\002')))
+      (let (read-char)
         (seq
-          (need-string "yte ")
-          (let (read-char)
+          (need-byte ')')
+          (seq
+            (write-string "MZBC")
             (seq
-              (need-byte ')')
+              (write-u32 '\001')
               (seq
-                (write-string "MZBC")
+                (write-u32 '\015')
                 (seq
-                  (write-u32 '\001')
+                  (write-u32 '\005')
                   (seq
-                    (write-u32 '\015')
+                    (write-u32 '\000')
                     (seq
-                      (write-u32 '\005')
+                      (write-byte '\001')
                       (seq
-                        (write-u32 '\000')
+                        (write-byte (var 0))
                         (seq
-                          (write-byte '\001')
+                          (write-byte '\000')
                           (seq
-                            (write-byte (var 0))
+                            (write-byte '\000')
                             (seq
                               (write-byte '\000')
                               (seq
-                                (write-byte '\000')
+                                (write-byte '\014')
                                 (seq
-                                  (write-byte '\000')
+                                  (write-u32 '\001')
                                   (seq
-                                    (write-byte '\014')
+                                    (write-byte (var 1))
                                     (seq
-                                      (write-u32 '\001')
+                                      (write-byte '\000')
                                       (seq
-                                        (write-u32 '\001')
-                                        (write-byte '\000')))))))))))))))))
-        (seq
-          (need-string "xit ")
-          (let (read-char)
-            (seq
-              (need-byte ')')
-              (seq
-                (write-string "MZBC")
-                (seq
-                  (write-u32 '\001')
-                  (seq
-                    (write-u32 '\015')
-                    (seq
-                      (write-u32 '\005')
-                      (seq
-                        (write-u32 '\000')
-                        (seq
-                          (write-byte '\001')
-                          (seq
-                            (write-byte (var 0))
-                            (seq
-                              (write-byte '\000')
-                              (seq
-                                (write-byte '\000')
-                                (seq
-                                  (write-byte '\000')
-                                  (seq
-                                    (write-byte '\014')
-                                    (seq
-                                      (write-u32 '\001')
-                                      (seq
-                                        (write-u32 '\002')
-                                        (write-byte '\000'))))))))))))))))))))))
+                                        (write-byte '\000')
+                                        (seq
+                                          (write-byte '\000')
+                                          (write-byte '\000'))))))))))))))))))))))
