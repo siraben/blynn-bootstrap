@@ -57,9 +57,10 @@ Current stages:
   `p_bind`, `p_char`, and `p_need` as the first compositional parser surface.
   The accepted core is deliberately tiny: integer and char literals,
   literal `write-string`, `write-byte`, `seq`, de Bruijn `(var n)`,
-  `(let rhs body)`, streamed `(if then-len else-len cond yes no)`, and prefix
-  `+`, `-`, `*`, `/`, `=`, and `<`. It has no named variables, lambdas,
-  ADTs, records, inference, or pattern compilation yet.
+  `(let rhs body)`, streamed `(if then-len else-len cond yes no)`, unary
+  `(fun target body-len body)` closures, `(app fn arg)`, and prefix `+`,
+  `-`, `*`, `/`, `=`, and `<`. It has no named variables, ADTs, records,
+  inference, or pattern compilation yet.
 - `mlc/mlc.ml` is also compiled by `02-ml0-compiler.ml` in the current gate;
   the emitted bytecode runs under `mzvm-seed` as a tiny compiler with a
   one-lookahead expression parser. It emits real bytecode for constants, chars,

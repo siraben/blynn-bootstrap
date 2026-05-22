@@ -50,6 +50,10 @@ stageRun {
     printf "(51 (if 14 14 (< 2 1) (write-byte 88) (write-byte 'K')))" | ${mzvmSeedM2}/bin/mzvm-seed 03-core-lambda.mzbc > 03-core-if-false.mzbc
     actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-core-if-false.mzbc)"
     test "$actual" = K
+
+    printf "(44 (app (fun 5 21 (write-byte (+ (var 0) 39))) 40))" | ${mzvmSeedM2}/bin/mzvm-seed 03-core-lambda.mzbc > 03-core-app-fun.mzbc
+    actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-core-app-fun.mzbc)"
+    test "$actual" = O
   '';
   installScript = ''
     install -Dm644 03-core-lambda.ml0 "$out/share/mlc/stages/03-core-lambda.ml0"
@@ -63,5 +67,6 @@ stageRun {
     install -Dm644 03-core-let-shadow.mzbc "$out/share/mlc/stages/03-core-let-shadow.mzbc"
     install -Dm644 03-core-if-true.mzbc "$out/share/mlc/stages/03-core-if-true.mzbc"
     install -Dm644 03-core-if-false.mzbc "$out/share/mlc/stages/03-core-if-false.mzbc"
+    install -Dm644 03-core-app-fun.mzbc "$out/share/mlc/stages/03-core-app-fun.mzbc"
   '';
 }
