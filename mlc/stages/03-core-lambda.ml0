@@ -149,6 +149,12 @@ let rec p_number ch =
   else
     (0, (0, ch))
 in
+let rec p_escaped_byte ch =
+  p_bind p_raw_digit (fun d1 -> fun ch ->
+    p_bind p_raw_digit (fun d2 -> fun ch ->
+      p_bind p_raw_digit (fun d3 ->
+        p_return ((d1 - '0') * 100 + (d2 - '0') * 10 + d3 - '0')) ch) ch) ch
+in
 let rec number ch =
   fun kont ->
   let parsed = p_need p_number ch in
@@ -165,16 +171,7 @@ let rec p_escaped_char_lit ch =
   else if ch = 't' then
     p_return 9 read_byte
   else if is_digit ch = 1 then
-    let d1 = ch - '0' in
-    let c2 = read_byte in
-    let c3 = read_byte in
-    if is_digit c2 = 1 then
-      if is_digit c3 = 1 then
-        (1, (d1 * 100 + (c2 - '0') * 10 + c3 - '0', read_byte))
-      else
-        (0, (0, ch))
-    else
-      (0, (0, ch))
+    p_escaped_byte ch
   else
     p_raw_char ch
 in
