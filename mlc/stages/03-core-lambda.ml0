@@ -110,16 +110,34 @@ let rec escaped_char ch =
   if ch = 'n' then 10 else
   if ch = 't' then 9 else ch
 in
-let rec char_lit ch =
-  let ch = expect '\'' ch in
-  if ch = '\\' then
-    let value = escaped_char read_byte in
-    let ch = expect '\'' read_byte in
-    (value, ch)
+let rec p_char_lit ch =
+  let opened = p_char '\'' ch in
+  let (ok, rest) = opened in
+  if ok = 1 then
+    let (_quote, next_ch) = rest in
+    if next_ch = '\\' then
+      let value = escaped_char read_byte in
+      let closed = p_char '\'' read_byte in
+      let (closed_ok, closed_rest) = closed in
+      if closed_ok = 1 then
+        let (_close, done_ch) = closed_rest in
+        (1, (value, done_ch))
+      else
+        closed
+    else
+      let value = next_ch in
+      let closed = p_char '\'' read_byte in
+      let (closed_ok, closed_rest) = closed in
+      if closed_ok = 1 then
+        let (_close, done_ch) = closed_rest in
+        (1, (value, done_ch))
+      else
+        closed
   else
-    let value = ch in
-    let ch = expect '\'' read_byte in
-    (value, ch)
+    opened
+in
+let rec char_lit ch =
+  p_need p_char_lit ch
 in
 let rec emit_const value =
   let _ = write_byte 1 in
