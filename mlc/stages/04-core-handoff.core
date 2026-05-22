@@ -1,12 +1,15 @@
-(1265
+(1542
   (seq
     (need-byte '(')
     (let
       (let (read-byte)
-        (if 205 205
+        (if 205 482
           (= (var 0) 'b')
           (seq (need-string "yte ") '\001')
-          (seq (need-string "xit ") '\002')))
+          (if 205 255
+            (= (var 0) 'e')
+            (seq (need-string "xit ") '\002')
+            (seq (need-string "ebug ") '\003'))))
       (let (read-char)
         (seq
           (need-byte ')')

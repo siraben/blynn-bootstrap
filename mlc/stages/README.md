@@ -68,9 +68,10 @@ Current stages:
   inference, or pattern compilation yet.
 - `04-core-handoff.core` is the first explicit source compiled by the
   stage-03 streamed core compiler. It is a tiny form compiler: it parses
-  `(byte 'X')` and `(exit 'X')` using `need-string` for fixed token tails and
-  `read-char` for quoted source characters, then emits runnable MZBC programs
-  that either write `X` or exit with code `X`.
+  `(byte 'X')`, `(exit 'X')`, and `(debug 'X')` using `need-string` for fixed
+  token tails and `read-char` for quoted source characters, then emits
+  runnable MZBC programs that write `X`, exit with code `X`, or write `X` to
+  stderr.
   The parsed form tag is lowered to a primitive index first, so the emitted
   bytecode body is shared instead of duplicated across parser branches.
   Its emitted MZBC words use `write-string` / `write-u32`, and bytes are
