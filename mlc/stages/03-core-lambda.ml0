@@ -125,9 +125,28 @@ let rec escaped_char ch =
   if ch = 'n' then 10 else
   if ch = 't' then 9 else ch
 in
+let rec p_escaped_char_lit ch =
+  if ch = 'n' then
+    p_return 10 read_byte
+  else if ch = 't' then
+    p_return 9 read_byte
+  else if is_digit ch = 1 then
+    let d1 = ch - '0' in
+    let c2 = read_byte in
+    let c3 = read_byte in
+    if is_digit c2 = 1 then
+      if is_digit c3 = 1 then
+        (1, (d1 * 100 + (c2 - '0') * 10 + c3 - '0', read_byte))
+      else
+        (0, (0, ch))
+    else
+      (0, (0, ch))
+  else
+    p_raw_char ch
+in
 let rec p_char_lit_value ch =
   if ch = '\\' then
-    p_bind p_raw_char (fun value -> p_return (escaped_char value)) read_byte
+    p_escaped_char_lit read_byte
   else
     p_raw_char ch
 in

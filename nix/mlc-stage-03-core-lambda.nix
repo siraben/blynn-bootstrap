@@ -19,6 +19,10 @@ stageRun {
     actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-core-byte.mzbc)"
     test "$actual" = O
 
+    printf '%s' "(20 (write-byte '\079'))" | ${mzvmSeedM2}/bin/mzvm-seed 03-core-lambda.mzbc > 03-core-byte-escape.mzbc
+    actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-core-byte-escape.mzbc)"
+    test "$actual" = O
+
     printf '(34 (write-string "OK"))' | ${mzvmSeedM2}/bin/mzvm-seed 03-core-lambda.mzbc > 03-core-string.mzbc
     actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-core-string.mzbc)"
     test "$actual" = OK
@@ -79,6 +83,7 @@ stageRun {
     install -Dm644 03-core-lambda.ml0 "$out/share/mlc/stages/03-core-lambda.ml0"
     install -Dm644 03-core-lambda.mzbc "$out/share/mlc/stages/03-core-lambda.mzbc"
     install -Dm644 03-core-byte.mzbc "$out/share/mlc/stages/03-core-byte.mzbc"
+    install -Dm644 03-core-byte-escape.mzbc "$out/share/mlc/stages/03-core-byte-escape.mzbc"
     install -Dm644 03-core-string.mzbc "$out/share/mlc/stages/03-core-string.mzbc"
     install -Dm644 03-core-add.mzbc "$out/share/mlc/stages/03-core-add.mzbc"
     install -Dm644 03-core-seq.mzbc "$out/share/mlc/stages/03-core-seq.mzbc"
