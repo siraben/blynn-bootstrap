@@ -53,6 +53,14 @@ let rec p_bind parser =
   else
     reply
 in
+let rec p_alt left =
+  fun right ->
+  fun ch ->
+  let reply = left ch in
+  let (ok, rest) = reply in
+  let _ = rest in
+  if ok = 1 then reply else right ch
+in
 let rec p_char want =
   fun ch0 ->
   let ch = skip_space ch0 in
@@ -136,8 +144,8 @@ let rec p_char_lit ch =
   else
     opened
 in
-let rec char_lit ch =
-  p_need p_char_lit ch
+let rec p_literal ch =
+  p_alt p_char_lit p_number ch
 in
 let rec p_form_tag ch =
   let opened = p_char '(' ch in
@@ -291,15 +299,11 @@ let rec compile_expr ch =
       let ch = expect ')' ch in
       let _ = emit_op op in
       ch
-  else if ch = '\'' then
-    let parsed = char_lit ch in
+  else
+    let parsed = p_need p_literal ch in
     let (value, next_ch) = parsed in
     let _ = emit_const value in
     next_ch
-  else
-    number ch (fun value -> fun next_ch ->
-      let _ = emit_const value in
-      next_ch)
 in
 let rec program ch =
   let ch = expect '(' (skip_space ch) in
