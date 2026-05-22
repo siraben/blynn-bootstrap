@@ -60,17 +60,19 @@ Current stages:
   The accepted core is deliberately tiny: integer and char literals, including
   three-digit escaped byte characters such as `'\000'`, literal
   `write-string`, `write-byte`, literal `write-u32`, `read-byte`,
-  `need-byte`, `exit`, `seq`, de Bruijn `(var n)`, `(let rhs body)`, streamed
+  `need-byte`, literal `need-string`, `exit`, `seq`, de Bruijn `(var n)`,
+  `(let rhs body)`, streamed
   `(if then-len else-len cond yes no)`, unary
   `(fun target body-len body)` closures, `(app fn arg)`, and prefix `+`,
   `-`, `*`, `/`, `=`, and `<`. It has no named variables, ADTs, records,
   inference, or pattern compilation yet.
 - `04-core-handoff.core` is the first explicit source compiled by the
   stage-03 streamed core compiler. It is a tiny byte-literal compiler: it
-  parses `(byte X)` and emits a runnable MZBC program that writes `X`. Its
-  emitted MZBC words use `write-u32`, and bytes are written as char literals
-  where possible, avoiding raw numeric byte constants in the source. This keeps
-  the handoff executable while staying in the small parenthetical core.
+  parses `(byte X)` using `need-string` for the fixed token and emits a
+  runnable MZBC program that writes `X`. Its emitted MZBC words use
+  `write-u32`, and bytes are written as char literals where possible, avoiding
+  raw numeric byte constants in the source. This keeps the handoff executable
+  while staying in the small parenthetical core.
 - `mlc/mlc.ml` is also compiled by `02-ml0-compiler.ml` in the current gate;
   the emitted bytecode runs under `mzvm-seed` as a tiny compiler with a
   one-lookahead expression parser. It emits real bytecode for constants, chars,

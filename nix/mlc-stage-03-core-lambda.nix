@@ -75,6 +75,15 @@ stageRun {
     set -e
     test "$status" = 1
 
+    printf '(120 (seq (need-string "OK") (write-byte 89)))' | ${mzvmSeedM2}/bin/mzvm-seed 03-core-lambda.mzbc > 03-core-need-string.mzbc
+    actual="$(printf OK | ${mzvmSeedM2}/bin/mzvm-seed 03-core-need-string.mzbc)"
+    test "$actual" = Y
+    set +e
+    printf NO | ${mzvmSeedM2}/bin/mzvm-seed 03-core-need-string.mzbc
+    status="$?"
+    set -e
+    test "$status" = 1
+
     printf '(15 (exit 42))' | ${mzvmSeedM2}/bin/mzvm-seed 03-core-lambda.mzbc > 03-core-exit.mzbc
     if ${mzvmSeedM2}/bin/mzvm-seed 03-core-exit.mzbc; then
       exit 1
@@ -99,6 +108,7 @@ stageRun {
     install -Dm644 03-core-app-fun.mzbc "$out/share/mlc/stages/03-core-app-fun.mzbc"
     install -Dm644 03-core-read-byte.mzbc "$out/share/mlc/stages/03-core-read-byte.mzbc"
     install -Dm644 03-core-need-byte.mzbc "$out/share/mlc/stages/03-core-need-byte.mzbc"
+    install -Dm644 03-core-need-string.mzbc "$out/share/mlc/stages/03-core-need-string.mzbc"
     install -Dm644 03-core-exit.mzbc "$out/share/mlc/stages/03-core-exit.mzbc"
   '';
 }
