@@ -36,6 +36,10 @@ stageRun {
     printf "%s" "(byte '\t')" | ${mzvmSeedM2}/bin/mzvm-seed 04-core-handoff.mzbc > 04-byte-tab.mzbc
     actual="$(${mzvmSeedM2}/bin/mzvm-seed 04-byte-tab.mzbc)"
     test "$actual" = "$(printf '\t')"
+
+    printf "(byte2 'O' 'K')" | ${mzvmSeedM2}/bin/mzvm-seed 04-core-handoff.mzbc > 04-byte2-output.mzbc
+    actual="$(${mzvmSeedM2}/bin/mzvm-seed 04-byte2-output.mzbc)"
+    test "$actual" = OK
   '';
   installScript = ''
     install -Dm644 04-core-handoff.core "$out/share/mlc/stages/04-core-handoff.core"
@@ -45,5 +49,6 @@ stageRun {
     install -Dm644 04-exit-output.mzbc "$out/share/mlc/stages/04-exit-output.mzbc"
     install -Dm644 04-debug-output.mzbc "$out/share/mlc/stages/04-debug-output.mzbc"
     install -Dm644 04-byte-tab.mzbc "$out/share/mlc/stages/04-byte-tab.mzbc"
+    install -Dm644 04-byte2-output.mzbc "$out/share/mlc/stages/04-byte2-output.mzbc"
   '';
 }
