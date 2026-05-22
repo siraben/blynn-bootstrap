@@ -267,6 +267,14 @@ let rec p_keep_reply_value state =
       p_reply_ok (value, next_parser)
   | ParserErr -> p_reply_err 0
 in
+let rec p_close_value_parser state =
+  let (value, reply) = state in
+  match force_consumed reply with
+    ParserOk parsed ->
+      let (_got, parser_state) = parsed in
+      p_consumed_ok ((value, parser_pos parser_state), parser_state)
+  | ParserErr -> p_consumed_err 0
+in
 let rec p_bind_step_parser state =
   let (reply, pair) = state in
   let (src, step) = pair in
@@ -807,20 +815,10 @@ let rec p_try_char_literal_parser state =
       let escaped = parse_escape_value (src, pos + 2) in
       let (value, value_end) = escaped in
       let closed = p_expect_char_parser (src, (parser_at value_end, '\'')) in
-      (match force_consumed closed with
-        ParserOk parsed ->
-          let (_got, parser_state) = parsed in
-          let end_pos = parser_pos parser_state in
-          p_consumed_ok ((value, end_pos), parser_state)
-      | ParserErr -> p_consumed_err 0)
+      p_close_value_parser (value, closed)
     else
       let closed = p_expect_char_parser (src, (parser_at (pos + 2), '\'')) in
-      (match force_consumed closed with
-        ParserOk parsed ->
-          let (_got, parser_state) = parsed in
-          let end_pos = parser_pos parser_state in
-          p_consumed_ok ((src.[pos + 1], end_pos), parser_state)
-      | ParserErr -> p_consumed_err 0)
+      p_close_value_parser (src.[pos + 1], closed)
   else
     p_unconsumed_err 0
 in
@@ -849,12 +847,7 @@ let rec p_try_string_literal_value_parser state =
       let index = parse_number (src, after_literal + 1) in
       let (index_value, index_end) = index in
       let closed = p_expect_char_parser (src, (parser_at index_end, ']')) in
-      (match force_consumed closed with
-        ParserOk parsed ->
-          let (_got, parser_state) = parsed in
-          let p1 = parser_pos parser_state in
-          if index_value == 0 then p_consumed_ok ((first_value, p1), parser_state) else p_consumed_ok ((0, p1), parser_state)
-      | ParserErr -> p_consumed_err 0)
+      if index_value == 0 then p_close_value_parser (first_value, closed) else p_close_value_parser (0, closed)
     else
       p_consumed_ok ((1000, literal_end), parser_at literal_end)
   else p_unconsumed_err 0
