@@ -54,9 +54,9 @@ Current stages:
   `parenthetically` discipline: the input language is parenthesized and
   streamed, supplies its bytecode length up front, and emits MZBC in one pass.
   Its parser state is a single lookahead character, with `p_return`,
-  `p_bind`, `p_alt`, `p_char`, `p_string`, `p_number`, `p_char_lit`,
-  `p_literal`, `p_form_tag`, `p_need`, and `expect_string` as the first
-  compositional parser surface.
+  `p_bind`, `p_alt`, `p_char`, `p_raw_char`, `p_string`, `p_number`,
+  `p_char_lit`, `p_literal`, `p_form_tag`, `p_need`, and `expect_string` as
+  the first compositional parser surface.
   The accepted core is deliberately tiny: integer and char literals,
   literal `write-string`, `write-byte`, `read-byte`, `exit`, `seq`, de Bruijn `(var n)`,
   `(let rhs body)`, streamed `(if then-len else-len cond yes no)`, unary

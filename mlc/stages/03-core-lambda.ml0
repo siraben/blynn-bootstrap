@@ -66,6 +66,9 @@ let rec p_char want =
   let ch = skip_space ch0 in
   if ch = want then (1, (ch, read_byte)) else (0, (0, ch0))
 in
+let rec p_raw_char ch =
+  (1, (ch, read_byte))
+in
 let rec p_need parser =
   fun ch ->
   let reply = parser ch in
@@ -118,31 +121,16 @@ let rec escaped_char ch =
   if ch = 'n' then 10 else
   if ch = 't' then 9 else ch
 in
-let rec p_char_lit ch =
-  let opened = p_char '\'' ch in
-  let (ok, rest) = opened in
-  if ok = 1 then
-    let (_quote, next_ch) = rest in
-    if next_ch = '\\' then
-      let value = escaped_char read_byte in
-      let closed = p_char '\'' read_byte in
-      let (closed_ok, closed_rest) = closed in
-      if closed_ok = 1 then
-        let (_close, done_ch) = closed_rest in
-        (1, (value, done_ch))
-      else
-        closed
-    else
-      let value = next_ch in
-      let closed = p_char '\'' read_byte in
-      let (closed_ok, closed_rest) = closed in
-      if closed_ok = 1 then
-        let (_close, done_ch) = closed_rest in
-        (1, (value, done_ch))
-      else
-        closed
+let rec p_char_lit_value ch =
+  if ch = '\\' then
+    p_bind p_raw_char (fun value -> p_return (escaped_char value)) read_byte
   else
-    opened
+    p_raw_char ch
+in
+let rec p_char_lit ch =
+  p_bind (p_char '\'') (fun _ -> fun ch ->
+    p_bind p_char_lit_value (fun value -> fun ch ->
+      p_bind (p_char '\'') (fun _ -> p_return value) ch) ch) ch
 in
 let rec p_literal ch =
   p_alt p_char_lit p_number ch
