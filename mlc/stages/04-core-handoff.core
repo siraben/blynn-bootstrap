@@ -1,2 +1,2 @@
-(946
-  (seq (need-byte '(') (seq (need-string "byte ") (let (read-byte) (seq (need-byte ')') (seq (write-byte 'M') (seq (write-byte 'Z') (seq (write-byte 'B') (seq (write-byte 'C') (seq (write-u32 '\001') (seq (write-u32 '\015') (seq (write-u32 '\005') (seq (write-u32 '\000') (seq (write-byte '\001') (seq (write-byte (var 0)) (seq (write-byte '\000') (seq (write-byte '\000') (seq (write-byte '\000') (seq (write-byte '\014') (seq (write-u32 '\001') (seq (write-u32 '\001') (write-byte '\000'))))))))))))))))))))))
+(931
+  (seq (need-byte '(') (seq (need-string "byte ") (let (read-byte) (seq (need-byte ')') (seq (write-string "MZBC") (seq (write-u32 '\001') (seq (write-u32 '\015') (seq (write-u32 '\005') (seq (write-u32 '\000') (seq (write-byte '\001') (seq (write-byte (var 0)) (seq (write-byte '\000') (seq (write-byte '\000') (seq (write-byte '\000') (seq (write-byte '\014') (seq (write-u32 '\001') (seq (write-u32 '\001') (write-byte '\000')))))))))))))))))))

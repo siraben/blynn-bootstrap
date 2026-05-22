@@ -70,9 +70,9 @@ Current stages:
   stage-03 streamed core compiler. It is a tiny byte-literal compiler: it
   parses `(byte X)` using `need-string` for the fixed token and emits a
   runnable MZBC program that writes `X`. Its emitted MZBC words use
-  `write-u32`, and bytes are written as char literals where possible, avoiding
-  raw numeric byte constants in the source. This keeps the handoff executable
-  while staying in the small parenthetical core.
+  `write-string` / `write-u32`, and bytes are written as char literals where
+  possible, avoiding raw numeric byte constants in the source. This keeps the
+  handoff executable while staying in the small parenthetical core.
 - `mlc/mlc.ml` is also compiled by `02-ml0-compiler.ml` in the current gate;
   the emitted bytecode runs under `mzvm-seed` as a tiny compiler with a
   one-lookahead expression parser. It emits real bytecode for constants, chars,
