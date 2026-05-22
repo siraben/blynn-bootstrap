@@ -231,23 +231,46 @@ then the full `ccc`.
 We should mirror Blynn's progression, but not its stage count. Blynn's local
 root script walks from raw `parenthetically` images into native
 `marginally -> methodically -> crossly -> precisely`, and the later party
-script adds parser/type/runtime/compiler bundles in steps. Here that becomes a
-compressed five-stage cap:
+script adds parser/type/runtime/compiler bundles in steps. The important rule
+to port is not “many stages”; it is that each stage has one small job and a
+real handoff artifact.
 
-1. `mlc-interp-seed.c`: weak C tree-walking root for the core lambda/let/IO
-   language only.
-2. `01-parenthetical.ml`: parenthesized bytecode assembly handoff.
-3. `02-ml0-compiler.ml`: first real ML-to-VM compiler, still tiny but
-   self/next-source checked.
-4. `mlc.ml`: the practical compiler dialect, with proper ADTs, `match`,
-   parser/lowerer/emitter support, and enough expression/function support for
-   compiler implementation.
-5. `ccc.ml`: the C compiler written in that dialect and compiled by
-   committed `mlc.byte`.
+Do **not** make the first AST compiler a nearly-full ML. The early stages
+should stay closer to a strict untyped lambda calculus with byte/string
+primitives than to OCaml:
 
-If a feature does not help stage 4 compile `ccc.ml`, it should wait. If it is
-needed for `ccc.ml`, it belongs in `mlc.ml` or its immediate staged successor,
-not in the C root.
+1. `mlc-interp-seed.c`: weak C tree-walking root for a tiny strict core:
+   variables, literals, `if`, `let` / `let rec`, lambdas or direct unary
+   functions, application, tuples only where needed for state, bytes/strings,
+   and primitive I/O. No ADT declarations, pattern compiler, records, modules,
+   or type inference.
+2. `01-parenthetical.ml`: parenthesized bytecode assembly handoff. This is
+   Blynn-style `parenthetically`: a tiny parser that fully parses a tiny next
+   source language and emits the next runnable image.
+3. `02-ml0-compiler.ml`: first real ML-to-VM compiler. Keep it untyped or
+   minimally checked, AST-oriented, and lambda/conditional focused. Its parser
+   should be a small one-lookahead parser with explicit state replies rather
+   than nested `let ... fail` code. The invariant is that it compiles itself
+   and the next source, not that it accepts all later ML.
+4. `03-core-ast-compiler.ml`: typed core compiler. Add a small AST, a real
+   parse/type/emit boundary, char and string literals, top-level defines,
+   direct `let rec`, tuples, arrays/bytes/cells as needed, and a Parsec-style
+   parser result type such as `Consumed | Empty` plus `Ok (value, state) |
+   Err`. This is where monadic parser combinators become the normal spelling.
+5. `04-ml-compiler.ml` or `mlc.ml`: full compiler dialect for compiler work.
+   Add ADTs, records, proper pattern matching, cells, mutually
+   recursive definitions, and type inference. Pattern matching is compiled
+   generically here, not hand-spanned in C or encoded as user-visible tags.
+6. `ccc.ml`: the C compiler written in that dialect and compiled by committed
+   `mlc.byte`.
+
+If keeping this within five ML handoff stages forces a stage to become
+contrived or huge, add one more ML stage. The constraint is reviewable
+progression, not an exact number.
+
+If a feature does not help the full-ML compiler compile `ccc.ml`, it should
+wait. If it is needed for `ccc.ml`, it belongs in `mlc.ml` or its immediate
+staged successor, not in the C root.
 Every promoted compiler stage must eventually satisfy the handoff invariant:
 it compiles its own source and the next compiler source. Smoke stages may exist
 to grow the dialect, but they are not treated as self-hosting stages until that

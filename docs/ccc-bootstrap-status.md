@@ -48,15 +48,12 @@ return, unit-as-int, and unknown direct-call rejection.
 2. Promote a compiler stage only when it can compile its own source and the
    next stage source. Stage 02 now compiles both its own source and
    `mlc/mlc.ml`; `mlc.byte.selfhost` now covers fixed-point byte equality for
-   the committed compiler artifact. Stage 03 establishes the AST/type-check
-   boundary but is not yet a promoted self-compiling stage.
-3. Continue growing ADT declarations, pattern parsing, and pattern compilation
-   in `mlc.ml`; the current committed bytecode covers simple constructor,
-   wildcard, default-variable, multi-declaration, recursive case-list matches, tuple payload expressions,
-   direct tuple payload patterns, tuple payload wildcards, imperative cells,
-   record literals up to three fields, declaration-style top-level definitions, and runtime
-   unary direct-function calls over recursive ADTs but not general nested
-   decision trees yet.
+   the committed compiler artifact. Stage 03 is a checked successor handoff,
+   not the place to force the whole full-ML dialect.
+3. Re-slice successor work into smaller Blynn-style handoffs: untyped
+   lambda/core AST and one-lookahead monadic parser first, typed core next,
+   then ADTs, records, generic pattern compilation, and inference in the
+   full-ML compiler used for `ccc.ml`.
 4. Split tests into seed-core fixtures and full-language ADT/pattern fixtures
    as `mlc.byte` grows past the current smoke set.
 5. Continue growing `ccc.ml` from `int main(){return N;}` toward the HCC/TCC

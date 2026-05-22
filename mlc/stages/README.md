@@ -149,13 +149,16 @@ Planned stages:
   byte-equality target. `03-ast-compiler.ml` is not promoted yet; it is a
   checked successor handoff stage that establishes the AST/type-check boundary
   before the next self-compiling source grows the language.
-- The remaining parser/compiler growth is concentrated in `mlc.ml` and, only
-  if needed, one immediate successor; the path should stay within the
-  five-stage cap documented in `plan.md`.
-- Later pattern stages extend the current `mlc.ml` ADT/match/direct-function
-  slice from constructor, wildcard, default-variable, direct tuple payload,
-  tuple-wildcard, and nested tuple payload patterns to recursive and general
-  decision-tree patterns in ML, not in C.
+- The remaining parser/compiler growth should proceed in smaller Blynn-style
+  handoffs. Early successors should be closer to a strict untyped
+  lambda/core-AST compiler than to full OCaml: one-lookahead parsing, explicit
+  parser state replies, char/string literals, lambdas or direct unary
+  functions, conditionals, top-level defines, and bytecode emission. Typed core
+  comes next; ADTs, records, proper pattern matching, and inference belong in
+  the later full-ML compiler stage used for `ccc.ml`.
+- Pattern compilation must be generic in ML, not hand-spanned case emission and
+  not source-level tag encodings. The current `mlc.ml` ADT/match fixtures are
+  stepping stones toward that later full compiler dialect.
 - `mlc.ml` emits MZBC and replaces the transitional direct C bytecode compiler
   for normal bootstrap use as its parser/lowerer reaches the dialect needed by
   `ccc.ml`.
