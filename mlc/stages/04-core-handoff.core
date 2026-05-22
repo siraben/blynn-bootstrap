@@ -1,0 +1,4 @@
+(99
+  (seq
+    (app (fun 5 21 (write-byte (+ (var 0) 39))) 40)
+    (if 14 14 (= 1 1) (write-byte 'K') (write-byte 88))))

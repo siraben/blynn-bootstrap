@@ -61,6 +61,10 @@ Current stages:
   `(fun target body-len body)` closures, `(app fn arg)`, and prefix `+`,
   `-`, `*`, `/`, `=`, and `<`. It has no named variables, ADTs, records,
   inference, or pattern compilation yet.
+- `04-core-handoff.core` is the first explicit source compiled by the
+  stage-03 streamed core compiler. It exercises the small core handoff surface
+  together: function application, de Bruijn variables, sequencing, arithmetic,
+  conditionals, and byte output.
 - `mlc/mlc.ml` is also compiled by `02-ml0-compiler.ml` in the current gate;
   the emitted bytecode runs under `mzvm-seed` as a tiny compiler with a
   one-lookahead expression parser. It emits real bytecode for constants, chars,
