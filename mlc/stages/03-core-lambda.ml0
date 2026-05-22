@@ -70,6 +70,16 @@ let rec expect want =
   let (_value, next_ch) = parsed in
   next_ch
 in
+let rec expect_string_loop text =
+  fun index ->
+  fun ch ->
+  if index = String.length text then ch else
+    expect_string_loop text (index + 1) (expect text.[index] ch)
+in
+let rec expect_string text =
+  fun ch ->
+  expect_string_loop text 0 ch
+in
 let rec number_loop acc =
   fun ch ->
   fun kont ->
@@ -163,41 +173,29 @@ let rec compile_expr ch =
   if ch = '(' then
     let tag = skip_space read_byte in
     if tag = 'w' then
-      let ch = expect 'r' read_byte in
-      let ch = expect 'i' ch in
-      let ch = expect 't' ch in
-      let ch = expect 'e' ch in
-      let ch = expect '-' ch in
+      let ch = expect_string "rite-" read_byte in
       let next = skip_space ch in
       if next = 'b' then
-        let ch = expect 'y' read_byte in
-        let ch = expect 't' ch in
-        let ch = expect 'e' ch in
+        let ch = expect_string "yte" read_byte in
         let ch = compile_expr ch in
         let ch = expect ')' ch in
         let _ = emit_call_write_byte 0 in
         ch
       else if next = 's' then
-        let ch = expect 't' read_byte in
-        let ch = expect 'r' ch in
-        let ch = expect 'i' ch in
-        let ch = expect 'n' ch in
-        let ch = expect 'g' ch in
+        let ch = expect_string "tring" read_byte in
         let ch = expect '"' ch in
         let ch = string_loop ch in
         expect ')' ch
       else
         exit 1
     else if tag = 's' then
-      let ch = expect 'e' read_byte in
-      let ch = expect 'q' ch in
+      let ch = expect_string "eq" read_byte in
       let ch = compile_expr ch in
       let _ = emit_pop1 0 in
       let ch = compile_expr ch in
       expect ')' ch
     else if tag = 'l' then
-      let ch = expect 'e' read_byte in
-      let ch = expect 't' ch in
+      let ch = expect_string "et" read_byte in
       let ch = compile_expr ch in
       let _ = emit_push 0 in
       let ch = compile_expr ch in
@@ -205,7 +203,7 @@ let rec compile_expr ch =
       let _ = emit_pop1 0 in
       ch
     else if tag = 'i' then
-      let ch = expect 'f' read_byte in
+      let ch = expect_string "f" read_byte in
       number ch (fun then_len -> fun ch ->
         number ch (fun else_len -> fun ch ->
           let ch = compile_expr ch in
@@ -215,8 +213,7 @@ let rec compile_expr ch =
           let ch = compile_expr ch in
           expect ')' ch))
     else if tag = 'f' then
-      let ch = expect 'u' read_byte in
-      let ch = expect 'n' ch in
+      let ch = expect_string "un" read_byte in
       number ch (fun target -> fun ch ->
         number ch (fun body_len -> fun ch ->
           let _ = emit_branch (body_len + 1) in
@@ -226,8 +223,7 @@ let rec compile_expr ch =
           let _ = emit_closure_n target 0 in
           ch))
     else if tag = 'a' then
-      let ch = expect 'p' read_byte in
-      let ch = expect 'p' ch in
+      let ch = expect_string "pp" read_byte in
       let ch = compile_expr ch in
       let _ = emit_push 0 in
       let ch = compile_expr ch in
@@ -235,8 +231,7 @@ let rec compile_expr ch =
       let _ = emit_apply 0 in
       ch
     else if tag = 'v' then
-      let ch = expect 'a' read_byte in
-      let ch = expect 'r' ch in
+      let ch = expect_string "ar" read_byte in
       number ch (fun depth -> fun ch ->
         let ch = expect ')' ch in
         let _ = emit_acc depth in
