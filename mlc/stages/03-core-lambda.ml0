@@ -141,13 +141,8 @@ let rec p_number_loop acc =
     (1, (acc, ch))
 in
 let rec p_number ch =
-  let first = p_digit ch in
-  let (ok, rest) = first in
-  if ok = 1 then
-    let (digit, next_ch) = rest in
-    p_number_loop (digit - '0') next_ch
-  else
-    (0, (0, ch))
+  p_bind p_digit (fun digit ->
+    p_number_loop (digit - '0')) ch
 in
 let rec p_escaped_byte ch =
   p_bind p_raw_digit (fun d1 -> fun ch ->
