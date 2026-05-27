@@ -248,7 +248,9 @@ type stmt =
 
 type func = { name : string; params : string list; body : stmt list; ret_type : c_type }
 type global_decl = { global_type : c_type; global_name : string; global_init : expr option; global_array_size : expr option }
-type program = { constants : (string * int) list; structs : (string * string list) list; globals : global_decl list; funcs : func list }
+type field_layout = { field_name : string; field_size : int; field_offset : int }
+type struct_layout = { struct_name : string; struct_fields : field_layout list; struct_size : int }
+type program = { constants : (string * int) list; structs : struct_layout list; globals : global_decl list; funcs : func list }
 
 let has_suffix suffix text =
   let suffix_len = String.length suffix in
@@ -258,6 +260,9 @@ let has_suffix suffix text =
 let has_prefix prefix text =
   let prefix_len = String.length prefix in
   String.length text >= prefix_len && String.sub text 0 prefix_len = prefix
+
+let align_up value align =
+  if align <= 1 then value else ((value + align - 1) / align) * align
 
 let starts_uppercase name =
   String.length name > 0 && 'A' <= name.[0] && name.[0] <= 'Z'
@@ -507,6 +512,37 @@ and parse_binop_tail min_prec lhs state =
           parse_binop_tail min_prec (EBinary (op, lhs, rhs)) state2
       | _ -> (lhs, state))
   | _ -> (lhs, state)
+
+let layout_scalar_size = function
+  | TChar | TSignedChar | TUnsignedChar | TBool -> 1
+  | TShort | TUnsignedShort -> 2
+  | TInt | TUnsigned | TOther _ -> 4
+  | TLong | TLongLong | TUnsignedLong | TUnsignedLongLong | TPtr _ -> 8
+  | TDouble -> 8
+  | TLongDouble -> 16
+  | TVoid -> 1
+
+let layout_align ty =
+  min 8 (layout_scalar_size ty)
+
+let const_expr_int = function
+  | EInt n -> n
+  | EUnary (Neg, EInt n) -> -n
+  | _ -> 1
+
+let layout_field_size ty array_size =
+  let count = match array_size with Some expr -> const_expr_int expr | None -> 1 in
+  layout_scalar_size ty * count
+
+let build_struct_layout name fields =
+  let rec loop offset acc = function
+    | [] -> { struct_name = name; struct_fields = List.rev acc; struct_size = offset }
+    | (field_name, ty, array_size) :: rest ->
+        let offset = align_up offset (layout_align ty) in
+        let field_size = layout_field_size ty array_size in
+        loop (offset + field_size) ({ field_name; field_size; field_offset = offset } :: acc) rest
+  in
+  loop 0 [] fields
 
 let parse_enum_decl state =
   let state =
@@ -814,24 +850,24 @@ let parse_struct_definition state =
     | Sym "}" ->
         let st = advance st in
         let st = match expect_sym ";" st with Ok ((), st') -> st' | Error msg -> raise (Parse_error msg) in
-        (name, List.rev acc, st)
+        (build_struct_layout name (List.rev acc), st)
     | _ ->
-        let _ty, st = parse_type st in
+        let ty, st = parse_type st in
         let field =
           match peek st with
           | Ident name -> name
           | _ -> raise (Parse_error "expected field name")
         in
-        let st =
+        let array_size, st =
           match peek (advance st) with
           | Sym "[" ->
               let st = advance (advance st) in
-              let st = if peek st = Sym "]" then st else snd (parse_expr st) in
-              (match expect_sym "]" st with Ok ((), st') -> st' | Error msg -> raise (Parse_error msg))
-          | _ -> advance st
+              let array_size, st = if peek st = Sym "]" then (None, st) else let expr, st = parse_expr st in (Some expr, st) in
+              (match expect_sym "]" st with Ok ((), st') -> (array_size, st') | Error msg -> raise (Parse_error msg))
+          | _ -> (None, advance st)
         in
         let st = match expect_sym ";" st with Ok ((), st') -> st' | Error msg -> raise (Parse_error msg) in
-        loop st (field :: acc)
+        loop st ((field, ty, array_size) :: acc)
   in
   loop state []
 
@@ -857,14 +893,22 @@ let parse_typedef_struct_definition state =
     match peek st with
     | Sym "}" -> (List.rev acc, advance st)
     | _ ->
-        let _ty, st = parse_type st in
+        let ty, st = parse_type st in
         let field =
           match peek st with
           | Ident name -> name
           | _ -> raise (Parse_error "expected field name")
         in
-        let st = match expect_sym ";" (advance st) with Ok ((), st') -> st' | Error msg -> raise (Parse_error msg) in
-        fields st (field :: acc)
+        let array_size, st =
+          match peek (advance st) with
+          | Sym "[" ->
+              let st = advance (advance st) in
+              let array_size, st = if peek st = Sym "]" then (None, st) else let expr, st = parse_expr st in (Some expr, st) in
+              (match expect_sym "]" st with Ok ((), st') -> (array_size, st') | Error msg -> raise (Parse_error msg))
+          | _ -> (None, advance st)
+        in
+        let st = match expect_sym ";" st with Ok ((), st') -> st' | Error msg -> raise (Parse_error msg) in
+        fields st ((field, ty, array_size) :: acc)
   in
   let fields, state = fields state [] in
   let alias =
@@ -873,7 +917,9 @@ let parse_typedef_struct_definition state =
     | _ -> raise (Parse_error "expected typedef alias")
   in
   let state = match expect_sym ";" (advance state) with Ok ((), st) -> st | Error msg -> raise (Parse_error msg) in
-  (tag, alias, fields, state)
+  let layout = build_struct_layout alias fields in
+  let tag_layout = if tag = "" then None else Some { layout with struct_name = tag } in
+  (tag_layout, layout, state)
 
 let rec assoc_int name = function
   | [] -> fail ("unknown enum constant: " ^ name)
@@ -916,8 +962,8 @@ let parse_program tokens =
         else
           loop { state with pos = skip_decl state.tokens state.pos 0 } constants structs globals funcs
     | Ident "struct" when (match peek (advance state) with Ident _ -> peek (advance (advance state)) = Sym "{" | _ -> false) ->
-        let name, fields, state = parse_struct_definition state in
-        loop state constants ((name, fields) :: structs) globals funcs
+        let layout, state = parse_struct_definition state in
+        loop state constants (layout :: structs) globals funcs
     | Ident "typedef"
       when (match peek (advance state) with
       | Ident "struct" -> (
@@ -926,9 +972,9 @@ let parse_program tokens =
           | Sym "{" -> true
           | _ -> false)
       | _ -> false) ->
-        let tag, alias, fields, state = parse_typedef_struct_definition state in
-        let structs = (alias, fields) :: structs in
-        let structs = if tag = "" then structs else (tag, fields) :: structs in
+        let tag_layout, alias_layout, state = parse_typedef_struct_definition state in
+        let structs = alias_layout :: structs in
+        let structs = match tag_layout with Some layout -> layout :: structs | None -> structs in
         loop state constants structs globals funcs
     | Ident "typedef" ->
         loop { state with pos = skip_decl state.tokens state.pos 0 } constants structs globals funcs
@@ -962,6 +1008,7 @@ type value =
   | VInt of int
   | VPtr of binding
   | VArrayPtr of binding * int
+  | VFieldPtr of binding * int
   | VStringPtr of string * int
   | VFunc of string
 
@@ -978,7 +1025,7 @@ type env = binding list
 
 let int_of_value = function
   | VInt value -> value
-  | VPtr _ | VArrayPtr _ | VStringPtr _ | VFunc _ -> fail "pointer used as integer"
+  | VPtr _ | VArrayPtr _ | VFieldPtr _ | VStringPtr _ | VFunc _ -> fail "pointer used as integer"
 
 let coerce_int ty value =
   match ty with
@@ -993,7 +1040,7 @@ let coerce_int ty value =
 
 let coerce_value ty = function
   | VInt value -> VInt (coerce_int ty value)
-  | (VPtr _ | VArrayPtr _ | VStringPtr _ | VFunc _) as ptr -> ptr
+  | (VPtr _ | VArrayPtr _ | VFieldPtr _ | VStringPtr _ | VFunc _) as ptr -> ptr
 
 let rec find_binding name = function
   | [] -> fail ("unknown variable: " ^ name)
@@ -1053,6 +1100,7 @@ let rec write_binding_index binding index value =
 let read_pointer = function
   | VPtr target -> !(target.bind_value)
   | VArrayPtr (target, offset) -> read_binding_index target offset
+  | VFieldPtr _ -> fail "cannot read raw struct byte pointer"
   | VStringPtr (text, offset) -> VInt (string_byte text offset)
   | VInt _ | VFunc _ -> fail "not a pointer"
 
@@ -1062,6 +1110,7 @@ let write_pointer ptr value =
       target.bind_value := coerce_value target.bind_type value;
       value
   | VArrayPtr (target, offset) -> write_binding_index target offset value
+  | VFieldPtr _ -> fail "cannot write raw struct byte pointer"
   | VStringPtr _ -> fail "cannot write through string literal pointer"
   | VInt _ | VFunc _ -> fail "not a pointer"
 
@@ -1069,6 +1118,7 @@ let add_to_value value delta =
   match value with
   | VInt n -> VInt (n + delta)
   | VArrayPtr (target, offset) -> VArrayPtr (target, offset + delta)
+  | VFieldPtr (target, offset) -> VFieldPtr (target, offset + delta)
   | VStringPtr (text, offset) -> VStringPtr (text, offset + delta)
   | VPtr _ | VFunc _ -> fail "unsupported pointer arithmetic"
 
@@ -1094,20 +1144,47 @@ let struct_fields structs ty =
   match struct_name_of_type ty with
   | None -> []
   | Some name -> (
-      match List.find_opt (fun (struct_name, _) -> struct_name = name) structs with
-      | Some (_, fields) -> fields
+      match List.find_opt (fun layout -> layout.struct_name = name) structs with
+      | Some layout -> List.map (fun field -> field.field_name) layout.struct_fields
       | None -> [])
+
+let struct_size structs ty =
+  match struct_name_of_type ty with
+  | None -> None
+  | Some name -> (
+      match List.find_opt (fun layout -> layout.struct_name = name) structs with
+      | Some layout -> Some layout.struct_size
+      | None -> None)
+
+let struct_field_offset structs ty field_name =
+  match struct_name_of_type ty with
+  | None -> None
+  | Some name -> (
+      match List.find_opt (fun layout -> layout.struct_name = name) structs with
+      | None -> None
+      | Some layout -> (
+          match List.find_opt (fun field -> field.field_name = field_name) layout.struct_fields with
+          | Some field -> Some field.field_offset
+          | None -> None))
 
 let value_equal a b =
   match (a, b) with
   | VInt x, VInt y -> x = y
   | VPtr x, VPtr y -> x == y
   | VArrayPtr (x, ix), VArrayPtr (y, iy) -> x == y && ix = iy
+  | VFieldPtr (x, ix), VFieldPtr (y, iy) -> x == y && ix = iy
   | VStringPtr (x, ix), VStringPtr (y, iy) -> x = y && ix = iy
   | VFunc x, VFunc y -> x = y
-  | VInt 0, (VPtr _ | VArrayPtr _ | VStringPtr _ | VFunc _) -> false
-  | (VPtr _ | VArrayPtr _ | VStringPtr _ | VFunc _), VInt 0 -> false
+  | VInt 0, (VPtr _ | VArrayPtr _ | VFieldPtr _ | VStringPtr _ | VFunc _) -> false
+  | (VPtr _ | VArrayPtr _ | VFieldPtr _ | VStringPtr _ | VFunc _), VInt 0 -> false
   | _ -> false
+
+let pointer_delta a b =
+  match (a, b) with
+  | VFieldPtr (x, ix), VFieldPtr (y, iy) when x == y -> Some (ix - iy)
+  | VArrayPtr (x, ix), VArrayPtr (y, iy) when x == y -> Some (ix - iy)
+  | VStringPtr (x, ix), VStringPtr (y, iy) when x = y -> Some (ix - iy)
+  | _ -> None
 
 let rec eval_value funcs structs globals env = function
   | EInt n -> VInt n
@@ -1119,12 +1196,15 @@ let rec eval_value funcs structs globals env = function
       | None when List.exists (fun fn -> fn.name = name) funcs -> VFunc name
       | None -> fail ("unknown variable: " ^ name))
   | ESizeof (TOther name) -> (
-      try VInt (assoc_find name env) with Compile_error _ -> VInt 4)
-  | ESizeof ty -> VInt (sizeof_type ty)
+      match struct_size structs (TOther name) with
+      | Some size -> VInt size
+      | None -> (
+          try VInt (assoc_find name env) with Compile_error _ -> VInt 4))
+  | ESizeof ty -> VInt (match struct_size structs ty with Some size -> size | None -> sizeof_type ty)
   | ESizeofExpr expr -> (
       match eval_value funcs structs globals env expr with
       | VInt _ -> VInt 4
-      | VPtr _ | VArrayPtr _ | VStringPtr _ | VFunc _ -> VInt 8)
+      | VPtr _ | VArrayPtr _ | VFieldPtr _ | VStringPtr _ | VFunc _ -> VInt 8)
   | EIndex (base, index) ->
       let index_value = eval_expr funcs structs globals env index in
       let value =
@@ -1141,6 +1221,7 @@ let rec eval_value funcs structs globals env = function
         | EUnary (Deref, ptr) -> (
             match eval_value funcs structs globals env ptr with
             | VPtr target -> target
+            | VFieldPtr (target, 0) -> target
             | _ -> fail "not a struct pointer")
         | _ -> fail "unsupported member expression"
       in
@@ -1170,6 +1251,7 @@ let rec eval_value funcs structs globals env = function
         | EUnary (Deref, ptr) -> (
             match eval_value funcs structs globals env ptr with
             | VPtr target -> target
+            | VFieldPtr (target, 0) -> target
             | _ -> fail "not a struct pointer")
         | _ -> fail "unsupported member expression"
       in
@@ -1188,10 +1270,20 @@ let rec eval_value funcs structs globals env = function
   | ECond (cond, yes, no) ->
       if truth (eval_expr funcs structs globals env cond) then eval_value funcs structs globals env yes else eval_value funcs structs globals env no
   | EUnary (Deref, e) -> read_pointer (eval_value funcs structs globals env e)
-  | EUnary (Addr, EVar name) -> VPtr (find_binding name env)
+  | EUnary (Addr, EVar name) ->
+      let binding = find_binding name env in
+      (match binding.bind_fields with Some _ -> VFieldPtr (binding, 0) | None -> VPtr binding)
   | EUnary (Addr, EIndex (base, index)) ->
       let index_value = eval_expr funcs structs globals env index in
       add_to_value (eval_value funcs structs globals env base) index_value
+  | EUnary (Addr, EMember (EVar name, field)) ->
+      let binding = find_binding name env in
+      let offset =
+        match struct_field_offset structs binding.bind_type field with
+        | Some offset -> offset
+        | None -> 0
+      in
+      VFieldPtr (binding, offset)
   | EUnary (Addr, _) -> fail "unsupported address expression"
   | ECast (ty, e) ->
       coerce_value ty (eval_value funcs structs globals env e)
@@ -1203,6 +1295,12 @@ let rec eval_value funcs structs globals env = function
       VInt (bool_int (value_equal (eval_value funcs structs globals env a) (eval_value funcs structs globals env b)))
   | EBinary (Ne, a, b) ->
       VInt (bool_int (not (value_equal (eval_value funcs structs globals env a) (eval_value funcs structs globals env b))))
+  | EBinary (Sub, a, b) -> (
+      let av = eval_value funcs structs globals env a in
+      let bv = eval_value funcs structs globals env b in
+      match pointer_delta av bv with
+      | Some delta -> VInt delta
+      | None -> VInt (int_of_value av - int_of_value bv))
   | EBinary (op, a, b) ->
       let x = eval_expr funcs structs globals env a in
       let y = eval_expr funcs structs globals env b in

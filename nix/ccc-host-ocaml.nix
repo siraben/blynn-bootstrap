@@ -94,6 +94,7 @@ DEFINE SYSCALL 0F05
     check_return ${testsRoot}/hcc/m1-smoke/examples/local-aggregate.c 3
     check_return ${testsRoot}/hcc/m1-smoke/examples/function-pointer-call-type.c 0
     check_return ${testsRoot}/hcc/m1-smoke/examples/dynamic-aggregate.c 0
+    check_return ${testsRoot}/hcc/m1-smoke/examples/archive-header-layout.c 0
     check_return ${testsRoot}/hcc/m1-smoke/examples/pointer-to-pointer-callback.c 0
     check_return ${testsRoot}/hcc/m1-smoke/examples/do-while.c 3
     check_return ${testsRoot}/hcc/scalar-immediate-smoke.c 0
