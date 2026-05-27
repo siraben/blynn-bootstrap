@@ -92,6 +92,7 @@ DEFINE SYSCALL 0F05
     check_return ${testsRoot}/hcc/m1-smoke/examples/address-written-scalar.c 0
     check_return ${testsRoot}/hcc/m1-smoke/examples/escaped-string-magic.c 0
     check_return ${testsRoot}/hcc/m1-smoke/examples/local-aggregate.c 3
+    check_return ${testsRoot}/hcc/m1-smoke/examples/dynamic-aggregate.c 0
     check_return ${testsRoot}/hcc/m1-smoke/examples/do-while.c 3
     check_return ${testsRoot}/hcc/scalar-immediate-smoke.c 0
 

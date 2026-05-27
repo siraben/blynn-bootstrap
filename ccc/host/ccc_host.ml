@@ -246,12 +246,17 @@ type stmt =
   | Block of stmt list
 
 type func = { name : string; params : string list; body : stmt list; ret_type : c_type }
-type program = { globals : (string * int) list; funcs : func list }
+type global_decl = { global_type : c_type; global_name : string; global_init : expr option; global_array_size : expr option }
+type program = { constants : (string * int) list; structs : (string * string list) list; globals : global_decl list; funcs : func list }
 
 let has_suffix suffix text =
   let suffix_len = String.length suffix in
   let text_len = String.length text in
   text_len >= suffix_len && String.sub text (text_len - suffix_len) suffix_len = suffix
+
+let has_prefix prefix text =
+  let prefix_len = String.length prefix in
+  String.length text >= prefix_len && String.sub text 0 prefix_len = prefix
 
 let rec starts_type = function
   | Ident ("int" | "char" | "signed" | "unsigned" | "void" | "long" | "short" | "_Bool" | "double" | "static" | "const" | "struct") -> true
@@ -530,14 +535,7 @@ let parse_enum_decl state =
   in
   (constants, state)
 
-let parse_decl_after_type state =
-  let ty, state = parse_type state in
-  let name =
-    match peek state with
-    | Ident name -> name
-    | _ -> raise (Parse_error "expected declaration name")
-  in
-  let state = advance state in
+let parse_decl_suffix name state =
   let array_size, state =
     match peek state with
     | Sym "[" ->
@@ -559,6 +557,19 @@ let parse_decl_after_type state =
         (Some expr, state)
     | _ -> (None, state)
   in
+  (name, init, array_size, state)
+
+let parse_decl_tail state =
+  let name =
+    match peek state with
+    | Ident name -> name
+    | _ -> raise (Parse_error "expected declaration name")
+  in
+  parse_decl_suffix name (advance state)
+
+let parse_decl_after_type state =
+  let ty, state = parse_type state in
+  let name, init, array_size, state = parse_decl_tail state in
   (SDecl (ty, name, init, array_size), state)
 
 let parse_simple_no_semi state =
@@ -751,6 +762,64 @@ let parse_function state =
       (Some { name; params; body; ret_type }, state)
   | _ -> raise (Parse_error "expected function body")
 
+type external_decl = ExternalFunc of func option | ExternalGlobal of global_decl
+
+let parse_external_decl state =
+  let ty, state = parse_type state in
+  let name = match peek state with Ident name -> name | _ -> raise (Parse_error "expected function name") in
+  let state = advance state in
+  match peek state with
+  | Sym "(" ->
+      let params, state = parse_params state in
+      (match peek state with
+      | Sym ";" -> (ExternalFunc None, advance state)
+      | Sym "{" ->
+          let body, state = parse_block (advance state) in
+          (ExternalFunc (Some { name; params; body; ret_type = ty }), state)
+      | _ -> raise (Parse_error "expected function body"))
+  | _ ->
+      let name, init, array_size, state = parse_decl_suffix name state in
+      let state = match expect_sym ";" state with Ok ((), st) -> st | Error msg -> raise (Parse_error msg) in
+      (ExternalGlobal { global_type = ty; global_name = name; global_init = init; global_array_size = array_size }, state)
+
+let parse_struct_definition state =
+  let state =
+    match peek state with
+    | Ident "struct" -> advance state
+    | _ -> raise (Parse_error "expected struct")
+  in
+  let name =
+    match peek state with
+    | Ident name -> name
+    | _ -> raise (Parse_error "expected struct name")
+  in
+  let state = match expect_sym "{" (advance state) with Ok ((), st) -> st | Error msg -> raise (Parse_error msg) in
+  let rec loop st acc =
+    match peek st with
+    | Sym "}" ->
+        let st = advance st in
+        let st = match expect_sym ";" st with Ok ((), st') -> st' | Error msg -> raise (Parse_error msg) in
+        (name, List.rev acc, st)
+    | _ ->
+        let _ty, st = parse_type st in
+        let field =
+          match peek st with
+          | Ident name -> name
+          | _ -> raise (Parse_error "expected field name")
+        in
+        let st =
+          match peek (advance st) with
+          | Sym "[" ->
+              let st = advance (advance st) in
+              let st = if peek st = Sym "]" then st else snd (parse_expr st) in
+              (match expect_sym "]" st with Ok ((), st') -> st' | Error msg -> raise (Parse_error msg))
+          | _ -> advance st
+        in
+        let st = match expect_sym ";" st with Ok ((), st') -> st' | Error msg -> raise (Parse_error msg) in
+        loop st (field :: acc)
+  in
+  loop state []
+
 let rec assoc_int name = function
   | [] -> fail ("unknown enum constant: " ^ name)
   | (key, value) :: rest -> if key = name then value else assoc_int name rest
@@ -773,23 +842,29 @@ let add_enum_constants env constants =
   loop 0 env constants
 
 let parse_program tokens =
-  let rec loop state globals acc =
+  let rec loop state constants structs globals funcs =
     match peek state with
-    | Eof -> { globals; funcs = List.rev acc }
-    | Ident ("typedef" | "struct" | "enum") ->
-        if peek state = Ident "enum" && peek (advance state) = Sym "{" then
-          let constants, state = parse_enum_decl state in
-          let globals = add_enum_constants globals constants in
-          loop state globals acc
+    | Eof -> { constants; structs = List.rev structs; globals = List.rev globals; funcs = List.rev funcs }
+    | Ident "enum" ->
+        if peek (advance state) = Sym "{" then
+          let enum_constants, state = parse_enum_decl state in
+          let constants = add_enum_constants constants enum_constants in
+          loop state constants structs globals funcs
         else
-          loop { state with pos = skip_decl state.tokens state.pos 0 } globals acc
+          loop { state with pos = skip_decl state.tokens state.pos 0 } constants structs globals funcs
+    | Ident "struct" when (match peek (advance state) with Ident _ -> peek (advance (advance state)) = Sym "{" | _ -> false) ->
+        let name, fields, state = parse_struct_definition state in
+        loop state constants ((name, fields) :: structs) globals funcs
+    | Ident "typedef" ->
+        loop { state with pos = skip_decl state.tokens state.pos 0 } constants structs globals funcs
     | tok when starts_type tok -> (
-        match parse_function state with
-        | Some fn, state -> loop state globals (fn :: acc)
-        | None, state -> loop state globals acc)
-    | _ -> loop (advance state) globals acc
+        match parse_external_decl state with
+        | ExternalFunc (Some fn), state -> loop state constants structs globals (fn :: funcs)
+        | ExternalFunc None, state -> loop state constants structs globals funcs
+        | ExternalGlobal global, state -> loop state constants structs (global :: globals) funcs)
+    | _ -> loop (advance state) constants structs globals funcs
   in
-  loop { tokens; pos = 0 } [] []
+  loop { tokens; pos = 0 } [] [] [] []
 
 let truth n = n <> 0
 let bool_int b = if b then 1 else 0
@@ -858,7 +933,7 @@ let assoc_set name value env = assoc_set_value name (VInt value) env
 let assoc_decl ?text ?array ty name value env =
   let fields =
     match ty with
-    | TOther name when has_suffix "struct" name || String.length name >= 7 && String.sub name 0 7 = "struct " -> Some (ref [])
+    | TOther name when has_prefix "struct " name -> Some (ref [])
     | _ -> None
   in
   { bind_name = name; bind_type = ty; bind_value = ref (coerce_value ty value); bind_string = text; bind_array = array; bind_fields = fields }
@@ -924,7 +999,30 @@ let binding_fields binding =
   | Some fields -> fields
   | None -> fail ("not a struct value: " ^ binding.bind_name)
 
-let rec eval_value funcs globals env = function
+let struct_name_of_type = function
+  | TOther name when has_prefix "struct " name -> Some (String.sub name 7 (String.length name - 7))
+  | TOther name -> Some name
+  | _ -> None
+
+let struct_fields structs ty =
+  match struct_name_of_type ty with
+  | None -> []
+  | Some name -> (
+      match List.find_opt (fun (struct_name, _) -> struct_name = name) structs with
+      | Some (_, fields) -> fields
+      | None -> [])
+
+let value_equal a b =
+  match (a, b) with
+  | VInt x, VInt y -> x = y
+  | VPtr x, VPtr y -> x == y
+  | VArrayPtr (x, ix), VArrayPtr (y, iy) -> x == y && ix = iy
+  | VStringPtr (x, ix), VStringPtr (y, iy) -> x = y && ix = iy
+  | VInt 0, (VPtr _ | VArrayPtr _ | VStringPtr _) -> false
+  | (VPtr _ | VArrayPtr _ | VStringPtr _), VInt 0 -> false
+  | _ -> false
+
+let rec eval_value funcs structs globals env = function
   | EInt n -> VInt n
   | EString s -> VStringPtr (s, 0)
   | EInitList _ -> VInt 0
@@ -935,12 +1033,12 @@ let rec eval_value funcs globals env = function
       try VInt (assoc_find name env) with Compile_error _ -> VInt 4)
   | ESizeof ty -> VInt (sizeof_type ty)
   | EIndex (base, index) ->
-      let index_value = eval_expr funcs globals env index in
+      let index_value = eval_expr funcs structs globals env index in
       let value =
         match base with
         | EVar name -> read_binding_index (find_binding name env) index_value
         | EString text -> string_byte text index_value
-        | expr -> read_pointer (add_to_value (eval_value funcs globals env expr) index_value)
+        | expr -> read_pointer (add_to_value (eval_value funcs structs globals env expr) index_value)
       in
       VInt value
   | EMember (base, field) ->
@@ -948,28 +1046,28 @@ let rec eval_value funcs globals env = function
         match base with
         | EVar name -> find_binding name env
         | EUnary (Deref, ptr) -> (
-            match eval_value funcs globals env ptr with
+            match eval_value funcs structs globals env ptr with
             | VPtr target -> target
             | _ -> fail "not a struct pointer")
         | _ -> fail "unsupported member expression"
       in
-      VInt (int_of_value !(field_cell (binding_fields binding) field))
+      !(field_cell (binding_fields binding) field)
   | EPtrMember (base, field) ->
-      eval_value funcs globals env (EMember (EUnary (Deref, base), field))
+      eval_value funcs structs globals env (EMember (EUnary (Deref, base), field))
   | EAssignExpr (name, expr) ->
-      let value = eval_value funcs globals env expr in
+      let value = eval_value funcs structs globals env expr in
       let _ = assoc_set_value name value env in
       !((find_binding name env).bind_value)
   | EAssignDeref (ptr, expr) ->
-      let value = eval_expr funcs globals env expr in
-      VInt (write_pointer (eval_value funcs globals env ptr) value)
+      let value = eval_expr funcs structs globals env expr in
+      VInt (write_pointer (eval_value funcs structs globals env ptr) value)
   | EAssignIndex (base, index, expr) ->
-      let index_value = eval_expr funcs globals env index in
-      let value = eval_expr funcs globals env expr in
+      let index_value = eval_expr funcs structs globals env index in
+      let value = eval_expr funcs structs globals env expr in
       let written =
         match base with
         | EVar name -> write_binding_index (find_binding name env) index_value value
-        | expr -> write_pointer (add_to_value (eval_value funcs globals env expr) index_value) value
+        | expr -> write_pointer (add_to_value (eval_value funcs structs globals env expr) index_value) value
       in
       VInt written
   | EAssignMember (base, field, expr) ->
@@ -977,12 +1075,12 @@ let rec eval_value funcs globals env = function
         match base with
         | EVar name -> find_binding name env
         | EUnary (Deref, ptr) -> (
-            match eval_value funcs globals env ptr with
+            match eval_value funcs structs globals env ptr with
             | VPtr target -> target
             | _ -> fail "not a struct pointer")
         | _ -> fail "unsupported member expression"
       in
-      let value = eval_value funcs globals env expr in
+      let value = eval_value funcs structs globals env expr in
       let cell = field_cell (binding_fields binding) field in
       cell := value;
       value
@@ -992,23 +1090,27 @@ let rec eval_value funcs globals env = function
       let new_value = coerce_value binding.bind_type (add_to_value old_value delta) in
       binding.bind_value := new_value;
       if prefix then new_value else old_value
-  | EUnary (Neg, e) -> VInt (- eval_expr funcs globals env e)
-  | EUnary (Not, e) -> VInt (bool_int (not (truth (eval_expr funcs globals env e))))
+  | EUnary (Neg, e) -> VInt (- eval_expr funcs structs globals env e)
+  | EUnary (Not, e) -> VInt (bool_int (not (truth (eval_expr funcs structs globals env e))))
   | ECond (cond, yes, no) ->
-      if truth (eval_expr funcs globals env cond) then eval_value funcs globals env yes else eval_value funcs globals env no
-  | EUnary (Deref, e) -> VInt (read_pointer (eval_value funcs globals env e))
+      if truth (eval_expr funcs structs globals env cond) then eval_value funcs structs globals env yes else eval_value funcs structs globals env no
+  | EUnary (Deref, e) -> VInt (read_pointer (eval_value funcs structs globals env e))
   | EUnary (Addr, EVar name) -> VPtr (find_binding name env)
   | EUnary (Addr, _) -> fail "unsupported address expression"
   | ECast (ty, e) ->
-      let value = eval_expr funcs globals env e in
+      let value = eval_expr funcs structs globals env e in
       VInt (coerce_int ty value)
   | EBinary (Land, a, b) ->
-      VInt (if truth (eval_expr funcs globals env a) then bool_int (truth (eval_expr funcs globals env b)) else 0)
+      VInt (if truth (eval_expr funcs structs globals env a) then bool_int (truth (eval_expr funcs structs globals env b)) else 0)
   | EBinary (Lor, a, b) ->
-      VInt (if truth (eval_expr funcs globals env a) then 1 else bool_int (truth (eval_expr funcs globals env b)))
+      VInt (if truth (eval_expr funcs structs globals env a) then 1 else bool_int (truth (eval_expr funcs structs globals env b)))
+  | EBinary (Eq, a, b) ->
+      VInt (bool_int (value_equal (eval_value funcs structs globals env a) (eval_value funcs structs globals env b)))
+  | EBinary (Ne, a, b) ->
+      VInt (bool_int (not (value_equal (eval_value funcs structs globals env a) (eval_value funcs structs globals env b))))
   | EBinary (op, a, b) ->
-      let x = eval_expr funcs globals env a in
-      let y = eval_expr funcs globals env b in
+      let x = eval_expr funcs structs globals env a in
+      let y = eval_expr funcs structs globals env b in
       VInt
         (match op with
       | Add -> x + y
@@ -1025,17 +1127,17 @@ let rec eval_value funcs globals env = function
       | Shl -> (x lsl y) land 0xffffffff
       | Shr -> x lsr y
       | Land | Lor -> assert false)
-  | ECall ("_exit", [ arg ]) -> VInt (eval_expr funcs globals env arg)
+  | ECall ("_exit", [ arg ]) -> VInt (eval_expr funcs structs globals env arg)
   | ECall (name, args) ->
-      let values = List.map (call_arg funcs globals env) args in
-      VInt (eval_func funcs globals name values)
+      let values = List.map (call_arg funcs structs globals env) args in
+      VInt (eval_func funcs structs globals name values)
 
-and eval_expr funcs globals env expr = int_of_value (eval_value funcs globals env expr)
+and eval_expr funcs structs globals env expr = int_of_value (eval_value funcs structs globals env expr)
 
-and call_arg funcs globals env = function
-  | expr -> eval_value funcs globals env expr
+and call_arg funcs structs globals env = function
+  | expr -> eval_value funcs structs globals env expr
 
-and eval_func funcs globals name args =
+and eval_func funcs structs globals name args =
   let fn =
     match List.find_opt (fun fn -> fn.name = name) funcs with
     | Some fn -> fn
@@ -1048,43 +1150,61 @@ and eval_func funcs globals name args =
       fn.params args
     @ globals
   in
-  match exec_block funcs globals fn.body env with
+  match exec_block funcs structs globals fn.body env with
   | Returned code -> coerce_int fn.ret_type code
   | Continue _ -> 0
   | Jumped (label, _) -> fail ("unresolved goto: " ^ label)
 
-and exec_simple funcs globals env = function
+and exec_simple funcs structs globals env = function
   | SEmpty -> env
-  | SExpr (ECall ("_exit", [ arg ])) -> raise (Exit_code (eval_expr funcs globals env arg))
+  | SExpr (ECall ("_exit", [ arg ])) -> raise (Exit_code (eval_expr funcs structs globals env arg))
   | SExpr (ECall (name, _)) when List.find_opt (fun fn -> fn.name = name) funcs = None -> env
   | SExpr expr ->
-      let _ = eval_expr funcs globals env expr in
+      let _ = eval_expr funcs structs globals env expr in
       env
   | SDecl (ty, name, init, array_size) ->
       let array =
         match array_size with
         | Some size_expr ->
-            let size = eval_expr funcs globals env size_expr in
+            let size = eval_expr funcs structs globals env size_expr in
             if size < 0 then fail ("negative array size: " ^ name);
             Some (Array.make size 0)
         | None -> None
       in
-      let value = match init with Some expr -> eval_value funcs globals env expr | None -> VInt 0 in
+      let value =
+        match init with
+        | Some (EInitList _) | None -> VInt 0
+        | Some expr -> eval_value funcs structs globals env expr
+      in
       let text = match init with Some (EString text) -> Some text | _ -> None in
-      assoc_decl ?text ?array ty name value env
+      let env = assoc_decl ?text ?array ty name value env in
+      (match init with
+      | Some (EInitList values) ->
+          let binding = find_binding name env in
+          let rec fill fields values =
+            match (fields, values) with
+            | field :: fields, value_expr :: values ->
+                let cell = field_cell (binding_fields binding) field in
+                cell := eval_value funcs structs globals env value_expr;
+                fill fields values
+            | _ -> ()
+          in
+          fill (struct_fields structs ty) values;
+          env
+      | _ -> env)
   | STypeAlias (ty, name) -> assoc_decl TInt name (VInt (sizeof_type ty)) env
   | SEnumDecl constants ->
       let rec loop next_value env = function
         | [] -> env
         | (name, expr) :: rest ->
-            let value = match expr with Some expr -> eval_expr funcs globals env expr | None -> next_value in
+            let value = match expr with Some expr -> eval_expr funcs structs globals env expr | None -> next_value in
             loop (value + 1) (assoc_decl TInt name (VInt value) env) rest
       in
       loop 0 env constants
-  | SAssign (name, expr) -> assoc_set_value name (eval_value funcs globals env expr) env
+  | SAssign (name, expr) -> assoc_set_value name (eval_value funcs structs globals env expr) env
   | SAugAssign (name, op, expr) ->
       let old = assoc_find name env in
-      let delta = eval_expr funcs globals env expr in
+      let delta = eval_expr funcs structs globals env expr in
       let value = match op with Add -> old + delta | Sub -> old - delta | _ -> fail "bad compound assignment" in
       assoc_set name value env
   | SPost (name, delta) ->
@@ -1092,26 +1212,26 @@ and exec_simple funcs globals env = function
       binding.bind_value := coerce_value binding.bind_type (add_to_value !(binding.bind_value) delta);
       env
 
-and exec_stmt funcs globals env = function
+and exec_stmt funcs structs globals env = function
   | Simple simple -> (
-      try Continue (exec_simple funcs globals env simple) with Exit_code code -> Returned code)
+      try Continue (exec_simple funcs structs globals env simple) with Exit_code code -> Returned code)
   | Return None -> Returned 0
-  | Return (Some expr) -> Returned (eval_expr funcs globals env expr)
+  | Return (Some expr) -> Returned (eval_expr funcs structs globals env expr)
   | Goto label -> Jumped (label, env)
   | Label _ -> Continue env
   | Block body -> (
-      match exec_block funcs globals body env with
+      match exec_block funcs structs globals body env with
       | Continue _ -> Continue env
       | Jumped (label, _) -> Jumped (label, env)
       | Returned _ as ret -> ret)
   | If (cond, yes, no) ->
-      if truth (eval_expr funcs globals env cond) then exec_stmt funcs globals env yes
+      if truth (eval_expr funcs structs globals env cond) then exec_stmt funcs structs globals env yes
       else (
-        match no with Some stmt -> exec_stmt funcs globals env stmt | None -> Continue env)
+        match no with Some stmt -> exec_stmt funcs structs globals env stmt | None -> Continue env)
   | While (cond, body) ->
       let rec loop env =
-        if truth (eval_expr funcs globals env cond) then
-          match exec_stmt funcs globals env body with
+        if truth (eval_expr funcs structs globals env cond) then
+          match exec_stmt funcs structs globals env body with
           | Continue env' -> loop env'
           | other -> other
         else Continue env
@@ -1119,26 +1239,26 @@ and exec_stmt funcs globals env = function
       loop env
   | DoWhile (body, cond) ->
       let rec loop env =
-        match exec_stmt funcs globals env body with
-        | Continue env' -> if truth (eval_expr funcs globals env' cond) then loop env' else Continue env'
+        match exec_stmt funcs structs globals env body with
+        | Continue env' -> if truth (eval_expr funcs structs globals env' cond) then loop env' else Continue env'
         | other -> other
       in
       loop env
   | For (init, cond, post, body) ->
-      let env = match init with Some s -> exec_simple funcs globals env s | None -> env in
+      let env = match init with Some s -> exec_simple funcs structs globals env s | None -> env in
       let rec loop env =
-        let go = match cond with Some e -> truth (eval_expr funcs globals env e) | None -> true in
+        let go = match cond with Some e -> truth (eval_expr funcs structs globals env e) | None -> true in
         if go then
-          match exec_stmt funcs globals env body with
+          match exec_stmt funcs structs globals env body with
           | Continue env' ->
-              let env'' = match post with Some s -> exec_simple funcs globals env' s | None -> env' in
+              let env'' = match post with Some s -> exec_simple funcs structs globals env' s | None -> env' in
               loop env''
           | other -> other
         else Continue env
       in
       loop env
 
-and exec_block funcs globals stmts env =
+and exec_block funcs structs globals stmts env =
   let label_index label =
     let rec loop i = function
       | [] -> None
@@ -1151,7 +1271,7 @@ and exec_block funcs globals stmts env =
   let rec run_at i env =
     if i >= Array.length arr then Continue env
     else
-      match exec_stmt funcs globals env arr.(i) with
+      match exec_stmt funcs structs globals env arr.(i) with
       | Continue env' -> run_at (i + 1) env'
       | Jumped (label, env') -> (
           match label_index label with Some j -> run_at j env' | None -> Jumped (label, env'))
@@ -1171,13 +1291,19 @@ let m1_of_exit code =
 let compile src =
   let tokens = lex src in
   let program = parse_program tokens in
-  let globals =
+  let constants =
     List.map
       (fun (name, value) ->
         { bind_name = name; bind_type = TInt; bind_value = ref (VInt value); bind_string = None; bind_array = None; bind_fields = None })
-      program.globals
+      program.constants
   in
-  m1_of_exit (eval_func program.funcs globals "main" [])
+  let globals =
+    List.fold_left
+      (fun env global ->
+        exec_simple program.funcs program.structs env env (SDecl (global.global_type, global.global_name, global.global_init, global.global_array_size)))
+      constants program.globals
+  in
+  m1_of_exit (eval_func program.funcs program.structs globals "main" [])
 
 let read_stdin () =
   let b = Buffer.create 4096 in
