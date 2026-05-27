@@ -445,6 +445,14 @@ let rec p_try_char input =
   let (got, pos) = peeked in
   if got == want then p_ok (got, pos + 1) else p_err pos
 in
+let rec p_bind_char_keep input =
+  let (reply, pair) = input in
+  let (src, want) = pair in
+  if p_is_ok reply == 1 then
+    p_keep_value (p_value reply, p_try_char (src, (p_pos reply, want)))
+  else
+    reply
+in
 let rec p_need_char input =
   p_force_pos (p_try_char input)
 in
@@ -532,8 +540,7 @@ let rec p_try_char_literal input =
       if ch == '\\' then parse_char_escape (src, open_pos + 1) else p_ok (ch, open_pos + 1)
     in
     if p_is_ok parsed == 1 then
-      let closed = p_try_char (src, (p_pos parsed, '\'')) in
-      p_keep_value (p_value parsed, closed)
+      p_bind_char_keep (parsed, (src, '\''))
     else
       parsed
   else
