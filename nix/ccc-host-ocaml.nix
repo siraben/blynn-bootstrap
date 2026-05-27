@@ -95,6 +95,7 @@ DEFINE SYSCALL 0F05
     check_return ${testsRoot}/hcc/m1-smoke/examples/dynamic-aggregate.c 0
     check_return ${testsRoot}/hcc/m1-smoke/examples/do-while.c 3
     check_return ${testsRoot}/hcc/scalar-immediate-smoke.c 0
+    check_return ${testsRoot}/hcc/parse-smoke.c 0
 
     runHook postBuild
   '';

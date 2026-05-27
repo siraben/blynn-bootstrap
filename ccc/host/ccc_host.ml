@@ -841,6 +841,14 @@ let add_enum_constants env constants =
   in
   loop 0 env constants
 
+let external_is_named_function state =
+  try
+    let _ty, state = parse_type state in
+    match peek state with
+    | Ident _ -> peek (advance state) = Sym "("
+    | _ -> false
+  with Parse_error _ -> false
+
 let parse_program tokens =
   let rec loop state constants structs globals funcs =
     match peek state with
@@ -858,10 +866,14 @@ let parse_program tokens =
     | Ident "typedef" ->
         loop { state with pos = skip_decl state.tokens state.pos 0 } constants structs globals funcs
     | tok when starts_type tok -> (
-        match parse_external_decl state with
-        | ExternalFunc (Some fn), state -> loop state constants structs globals (fn :: funcs)
-        | ExternalFunc None, state -> loop state constants structs globals funcs
-        | ExternalGlobal global, state -> loop state constants structs (global :: globals) funcs)
+        try
+          match parse_external_decl state with
+          | ExternalFunc (Some fn), state -> loop state constants structs globals (fn :: funcs)
+          | ExternalFunc None, state -> loop state constants structs globals funcs
+          | ExternalGlobal global, state -> loop state constants structs (global :: globals) funcs
+        with
+        | Parse_error _ when not (external_is_named_function state) ->
+            loop { state with pos = skip_decl state.tokens state.pos 0 } constants structs globals funcs)
     | _ -> loop (advance state) constants structs globals funcs
   in
   loop { tokens; pos = 0 } [] [] [] []
@@ -1303,7 +1315,8 @@ let compile src =
         exec_simple program.funcs program.structs env env (SDecl (global.global_type, global.global_name, global.global_init, global.global_array_size)))
       constants program.globals
   in
-  m1_of_exit (eval_func program.funcs program.structs globals "main" [])
+  if List.exists (fun fn -> fn.name = "main") program.funcs then m1_of_exit (eval_func program.funcs program.structs globals "main" [])
+  else m1_of_exit 0
 
 let read_stdin () =
   let b = Buffer.create 4096 in
