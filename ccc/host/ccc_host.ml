@@ -1100,6 +1100,7 @@ let rec write_binding_index binding index value =
 let read_pointer = function
   | VPtr target -> !(target.bind_value)
   | VArrayPtr (target, offset) -> read_binding_index target offset
+  | VFieldPtr (target, 0) -> VPtr target
   | VFieldPtr _ -> fail "cannot read raw struct byte pointer"
   | VStringPtr (text, offset) -> VInt (string_byte text offset)
   | VInt _ | VFunc _ -> fail "not a pointer"
@@ -1134,6 +1135,19 @@ let binding_fields binding =
   match binding.bind_fields with
   | Some fields -> fields
   | None -> fail ("not a struct value: " ^ binding.bind_name)
+
+let copy_struct_fields target source =
+  let target_fields = binding_fields target in
+  List.iter
+    (fun (field, source_cell) ->
+      let target_cell = field_cell target_fields field in
+      target_cell := !(source_cell))
+    !(binding_fields source)
+
+let struct_binding_from_pointer = function
+  | VPtr binding -> Some binding
+  | VFieldPtr (binding, 0) -> Some binding
+  | _ -> None
 
 let struct_name_of_type = function
   | TOther name when has_prefix "struct " name -> Some (String.sub name 7 (String.length name - 7))
@@ -1229,9 +1243,21 @@ let rec eval_value funcs structs globals env = function
   | EPtrMember (base, field) ->
       eval_value funcs structs globals env (EMember (EUnary (Deref, base), field))
   | EAssignExpr (name, expr) ->
-      let value = eval_value funcs structs globals env expr in
-      let _ = assoc_set_value name value env in
-      !((find_binding name env).bind_value)
+      let target = find_binding name env in
+      (match target.bind_fields, expr with
+      | Some _, EUnary (Deref, ptr_expr) -> (
+          match struct_binding_from_pointer (eval_value funcs structs globals env ptr_expr) with
+          | Some source ->
+              copy_struct_fields target source;
+              VInt 0
+          | None ->
+              let value = eval_value funcs structs globals env expr in
+              let _ = assoc_set_value name value env in
+              !(target.bind_value))
+      | _ ->
+          let value = eval_value funcs structs globals env expr in
+          let _ = assoc_set_value name value env in
+          !(target.bind_value))
   | EAssignDeref (ptr, expr) ->
       let value = eval_value funcs structs globals env expr in
       write_pointer (eval_value funcs structs globals env ptr) value
@@ -1415,7 +1441,16 @@ and exec_simple funcs structs globals env = function
             loop (value + 1) (assoc_decl TInt name (VInt value) env) rest
       in
       loop 0 env constants
-  | SAssign (name, expr) -> assoc_set_value name (eval_value funcs structs globals env expr) env
+  | SAssign (name, expr) ->
+      let target = find_binding name env in
+      (match target.bind_fields, expr with
+      | Some _, EUnary (Deref, ptr_expr) -> (
+          match struct_binding_from_pointer (eval_value funcs structs globals env ptr_expr) with
+          | Some source ->
+              copy_struct_fields target source;
+              env
+          | None -> assoc_set_value name (eval_value funcs structs globals env expr) env)
+      | _ -> assoc_set_value name (eval_value funcs structs globals env expr) env)
   | SAugAssign (name, op, expr) ->
       let old = assoc_find name env in
       let delta = eval_expr funcs structs globals env expr in
