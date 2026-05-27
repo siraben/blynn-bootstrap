@@ -453,6 +453,11 @@ let rec p_bind_char_keep input =
   else
     reply
 in
+let rec bind_expect_char_keep input =
+  let (parsed, pair) = input in
+  let (src, want) = pair in
+  p_force (p_bind_char_keep (p_return parsed, (src, want)))
+in
 let rec p_need_char input =
   p_force_pos (p_try_char input)
 in
@@ -949,9 +954,7 @@ let rec compile_simple_expr input =
   let left =
     if src.[pos] == '(' then
       let inner = compile_simple_expr (src, (pos + 1, (env, (ctors, emit)))) in
-      let (inner_len, inner_end0) = inner in
-      let inner_end = p_need_char (src, (inner_end0, ')')) in
-      (inner_len, inner_end)
+      bind_expect_char_keep (inner, (src, ')'))
     else
       compile_simple_atom (src, (pos, (env, (ctors, emit))))
 	  in
@@ -963,8 +966,8 @@ let rec compile_simple_expr input =
 	      if open_ch == '[' then
 	        let push_base = emit_push (emit) in
 		        let index = compile_simple_expr (src, (next1 + 2, (shift_env env, (ctors, emit)))) in
-		        let (index_len, index_end0) = index in
-		        let index_end = p_need_char (src, (index_end0, ']')) in
+		        let closed_index = bind_expect_char_keep (index, (src, ']')) in
+		        let (index_len, index_end) = closed_index in
 		        let store = p_optional (p_try_string (src, (index_end, "<-"))) in
 		        if opt_is_some (p_value store) == 1 then
 		          let push_index = emit_push (emit) in
@@ -978,8 +981,8 @@ let rec compile_simple_expr input =
 	      else if open_ch == '(' then
 	        let push_base = emit_push (emit) in
 		        let index = compile_simple_expr (src, (next1 + 2, (shift_env env, (ctors, emit)))) in
-		        let (index_len, index_end0) = index in
-		        let index_end = p_need_char (src, (index_end0, ')')) in
+		        let closed_index = bind_expect_char_keep (index, (src, ')')) in
+		        let (index_len, index_end) = closed_index in
 		        let store = p_optional (p_try_string (src, (index_end, "<-"))) in
 		        if opt_is_some (p_value store) == 1 then
 		          let push_index = emit_push (emit) in
@@ -1179,9 +1182,7 @@ let rec compile_arg_expr input =
       compile_string_literal (src, (pos, emit))
     else if src.[pos] == '(' then
       let inner = compile_simple_expr (src, (pos + 1, (env, (ctors, emit)))) in
-      let (inner_len, inner_end0) = inner in
-      let inner_end = p_need_char (src, (inner_end0, ')')) in
-      (inner_len, inner_end)
+      bind_expect_char_keep (inner, (src, ')'))
     else
       compile_simple_atom (src, (pos, (env, (ctors, emit))))
   in
@@ -1192,15 +1193,15 @@ let rec compile_arg_expr input =
     if open_ch == '[' then
       let push_base = emit_push emit in
       let index = compile_simple_expr (src, (next1 + 2, (shift_env env, (ctors, emit)))) in
-      let (index_len, index_end0) = index in
-      let index_end = p_need_char (src, (index_end0, ']')) in
+      let closed_index = bind_expect_char_keep (index, (src, ']')) in
+      let (index_len, index_end) = closed_index in
       let get_len = emit_getfield_dyn emit in
       (left_len0 + push_base + index_len + get_len, index_end)
     else if open_ch == '(' then
       let push_base = emit_push emit in
       let index = compile_simple_expr (src, (next1 + 2, (shift_env env, (ctors, emit)))) in
-      let (index_len, index_end0) = index in
-      let index_end = p_need_char (src, (index_end0, ')')) in
+      let closed_index = bind_expect_char_keep (index, (src, ')')) in
+      let (index_len, index_end) = closed_index in
       let get_len = emit_getfield_dyn emit in
       (left_len0 + push_base + index_len + get_len, index_end)
     else
@@ -1541,13 +1542,12 @@ let rec compile_expr input =
 	          if opt_is_some (p_value comma) == 1 then
 	            let push_len = emit_push emit in
 	            let right = compile_expr (src, (p_pos comma, (shift_env env, (ctors, (funcs, emit))))) in
-	            let (right_len, right_end0) = right in
-	            let done_pos = p_need_char (src, (right_end0, ')')) in
+	            let closed_right = bind_expect_char_keep (right, (src, ')')) in
+	            let (right_len, done_pos) = closed_right in
 	            let block_len = emit_makeblock (emit, (0, 2)) in
 	            (inner_len + push_len + right_len + block_len, done_pos)
 	          else
-	            let done_pos = p_need_char (src, (inner_end0, ')')) in
-	            (inner_len, done_pos)
+	            bind_expect_char_keep (inner, (src, ')'))
         else if src.[arg_pos] == '"' then
           compile_string_literal (src, (arg_pos, emit))
         else
@@ -1651,13 +1651,12 @@ let rec compile_expr input =
 	          if opt_is_some (p_value comma) == 1 then
 	            let push_len = emit_push emit in
 	            let right = compile_expr (src, (p_pos comma, (shift_env env, (ctors, (funcs, emit))))) in
-	            let (right_len, right_end0) = right in
-	            let done_pos = p_need_char (src, (right_end0, ')')) in
+	            let closed_right = bind_expect_char_keep (right, (src, ')')) in
+	            let (right_len, done_pos) = closed_right in
 	            let block_len = emit_makeblock (emit, (0, 2)) in
 	            (inner_len + push_len + right_len + block_len, done_pos)
 	          else
-	            let done_pos = p_need_char (src, (inner_end0, ')')) in
-	            (inner_len, done_pos)
+	            bind_expect_char_keep (inner, (src, ')'))
         else
 	          compile_atom (src, (pos, (env, (ctors, emit))))
 	      in
@@ -1666,11 +1665,11 @@ let rec compile_expr input =
 	      let left =
 	        if src.[next1] == '.' then
 	          let open_ch = src.[next1 + 1] in
-	          if open_ch == 91 then
+	          if open_ch == '[' then
 		            let push_base = emit_push (emit) in
 		            let index = compile_expr (src, (next1 + 2, (shift_env env, (ctors, (funcs, emit))))) in
-		            let (index_len, index_end0) = index in
-		            let index_end = p_need_char (src, (index_end0, ']')) in
+		            let closed_index = bind_expect_char_keep (index, (src, ']')) in
+		            let (index_len, index_end) = closed_index in
 		            let store = p_optional (p_try_string (src, (index_end, "<-"))) in
 		            if opt_is_some (p_value store) == 1 then
 		              let push_index = emit_push (emit) in
@@ -1684,8 +1683,8 @@ let rec compile_expr input =
 	          else if open_ch == '(' then
 		            let push_base = emit_push (emit) in
 		            let index = compile_expr (src, (next1 + 2, (shift_env env, (ctors, (funcs, emit))))) in
-		            let (index_len, index_end0) = index in
-		            let index_end = p_need_char (src, (index_end0, ')')) in
+		            let closed_index = bind_expect_char_keep (index, (src, ')')) in
+		            let (index_len, index_end) = closed_index in
 		            let store = p_optional (p_try_string (src, (index_end, "<-"))) in
 		            if opt_is_some (p_value store) == 1 then
 		              let push_index = emit_push (emit) in
@@ -1786,13 +1785,12 @@ let rec compile_expr input =
 	      if opt_is_some (p_value comma) == 1 then
 	        let push_len = emit_push emit in
 	        let right = compile_expr (src, (p_pos comma, (shift_env env, (ctors, (funcs, emit))))) in
-	        let (right_len, right_end0) = right in
-	        let done_pos = p_need_char (src, (right_end0, ')')) in
+	        let closed_right = bind_expect_char_keep (right, (src, ')')) in
+	        let (right_len, done_pos) = closed_right in
 	        let block_len = emit_makeblock (emit, (0, 2)) in
 	        (inner_len + push_len + right_len + block_len, done_pos)
 	      else
-	        let done_pos = p_need_char (src, (inner_end0, ')')) in
-	        (inner_len, done_pos)
+	        bind_expect_char_keep (inner, (src, ')'))
 	    else
 	      compile_atom (src, (pos, (env, (ctors, emit))))
 	  in
@@ -1801,11 +1799,11 @@ let rec compile_expr input =
 	  let left =
 	    if src.[next1] == '.' then
 	      let open_ch = src.[next1 + 1] in
-	      if open_ch == 91 then
+	      if open_ch == '[' then
 		        let push_base = emit_push (emit) in
 		        let index = compile_expr (src, (next1 + 2, (shift_env env, (ctors, (funcs, emit))))) in
-		        let (index_len, index_end0) = index in
-		        let index_end = p_need_char (src, (index_end0, ']')) in
+		        let closed_index = bind_expect_char_keep (index, (src, ']')) in
+		        let (index_len, index_end) = closed_index in
 		        let store = p_optional (p_try_string (src, (index_end, "<-"))) in
 		        if opt_is_some (p_value store) == 1 then
 		          let push_index = emit_push (emit) in
@@ -1819,8 +1817,8 @@ let rec compile_expr input =
 	      else if open_ch == '(' then
 		        let push_base = emit_push (emit) in
 		        let index = compile_expr (src, (next1 + 2, (shift_env env, (ctors, (funcs, emit))))) in
-		        let (index_len, index_end0) = index in
-		        let index_end = p_need_char (src, (index_end0, ')')) in
+		        let closed_index = bind_expect_char_keep (index, (src, ')')) in
+		        let (index_len, index_end) = closed_index in
 		        let store = p_optional (p_try_string (src, (index_end, "<-"))) in
 		        if opt_is_some (p_value store) == 1 then
 		          let push_index = emit_push (emit) in
