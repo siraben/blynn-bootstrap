@@ -208,10 +208,15 @@ type expr =
   | EInt of int
   | EVar of string
   | EString of string
+  | EInitList of expr list
   | EIndex of expr * expr
+  | EMember of expr * string
+  | EPtrMember of expr * string
   | ESizeof of c_type
   | EAssignExpr of string * expr
   | EAssignDeref of expr * expr
+  | EAssignIndex of expr * expr * expr
+  | EAssignMember of expr * string * expr
   | EUpdateExpr of string * int * bool
   | ECond of expr * expr * expr
   | EUnary of unop * expr
@@ -224,7 +229,7 @@ type simple_stmt =
   | SAssign of string * expr
   | SAugAssign of string * binop * expr
   | SPost of string * int
-  | SDecl of c_type * string * expr option
+  | SDecl of c_type * string * expr option * expr option
   | STypeAlias of c_type * string
   | SEnumDecl of (string * expr option) list
   | SEmpty
@@ -310,6 +315,9 @@ and parse_assignment state =
       match lhs with
       | EVar name -> (EAssignExpr (name, rhs), state)
       | EUnary (Deref, ptr) -> (EAssignDeref (ptr, rhs), state)
+      | EIndex (base, index) -> (EAssignIndex (base, index, rhs), state)
+      | EMember (base, field) -> (EAssignMember (base, field, rhs), state)
+      | EPtrMember (base, field) -> (EAssignMember (EUnary (Deref, base), field, rhs), state)
       | _ -> raise (Parse_error "bad assignment target"))
   | _ -> (lhs, state)
 
@@ -332,6 +340,18 @@ and parse_primary state =
   | Int_lit n -> (EInt n, advance state)
   | Char_lit n -> (EInt n, advance state)
   | String_lit s -> (EString s, advance state)
+  | Sym "{" ->
+      let rec loop st acc =
+        match peek st with
+        | Sym "}" -> (EInitList (List.rev acc), advance st)
+        | _ ->
+            let expr, st = parse_expr st in
+            (match peek st with
+            | Sym "," -> loop (advance st) (expr :: acc)
+            | Sym "}" -> loop st (expr :: acc)
+            | _ -> raise (Parse_error "expected , or } in initializer"))
+      in
+      loop (advance state) []
   | Ident "sizeof" ->
       let state = advance state in
       let state =
@@ -420,6 +440,20 @@ and parse_postfix expr state =
         | Error msg -> raise (Parse_error msg)
       in
       parse_postfix (EIndex (expr, index)) state
+  | _, Sym "." ->
+      let name =
+        match peek (advance state) with
+        | Ident name -> name
+        | _ -> raise (Parse_error "expected field name")
+      in
+      parse_postfix (EMember (expr, name)) (advance (advance state))
+  | _, Sym "->" ->
+      let name =
+        match peek (advance state) with
+        | Ident name -> name
+        | _ -> raise (Parse_error "expected field name")
+      in
+      parse_postfix (EPtrMember (expr, name)) (advance (advance state))
   | _ -> (expr, state)
 
 and binop_of = function
@@ -504,19 +538,19 @@ let parse_decl_after_type state =
     | _ -> raise (Parse_error "expected declaration name")
   in
   let state = advance state in
-  let state =
+  let array_size, state =
     match peek state with
     | Sym "[" ->
         let state = advance state in
-        let state =
+        let array_size, state =
           match peek state with
-          | Sym "]" -> state
+          | Sym "]" -> (None, state)
           | _ ->
-              let _size, state = parse_expr state in
-              state
+              let size, state = parse_expr state in
+              (Some size, state)
         in
-        (match expect_sym "]" state with Ok ((), st) -> st | Error msg -> raise (Parse_error msg))
-    | _ -> state
+        (match expect_sym "]" state with Ok ((), st) -> (array_size, st) | Error msg -> raise (Parse_error msg))
+    | _ -> (None, state)
   in
   let init, state =
     match peek state with
@@ -525,7 +559,7 @@ let parse_decl_after_type state =
         (Some expr, state)
     | _ -> (None, state)
   in
-  (SDecl (ty, name, init), state)
+  (SDecl (ty, name, init, array_size), state)
 
 let parse_simple_no_semi state =
   match peek state with
@@ -550,7 +584,7 @@ let parse_simple_no_semi state =
           let args, st = parse_arg_list (advance state1) in
           (SExpr (ECall (name, args)), st)
       | _ ->
-          let expr, st = parse_binop_tail 1 (EVar name) state1 in
+          let expr, st = parse_expr state in
           (SExpr expr, st))
   | _ ->
       let expr, st = parse_expr state in
@@ -770,13 +804,26 @@ let rec sizeof_type = function
   | TVoid -> 1
   | TOther _ -> 4
 
-type value = VInt of int | VPtr of binding
-and binding = { bind_name : string; bind_type : c_type; bind_value : value ref; bind_string : string option }
+type value =
+  | VInt of int
+  | VPtr of binding
+  | VArrayPtr of binding * int
+  | VStringPtr of string * int
+
+and binding = {
+  bind_name : string;
+  bind_type : c_type;
+  bind_value : value ref;
+  bind_string : string option;
+  bind_array : int array option;
+  bind_fields : (string * value ref) list ref option;
+}
+
 type env = binding list
 
 let int_of_value = function
   | VInt value -> value
-  | VPtr _ -> fail "pointer used as integer"
+  | VPtr _ | VArrayPtr _ | VStringPtr _ -> fail "pointer used as integer"
 
 let coerce_int ty value =
   match ty with
@@ -791,7 +838,7 @@ let coerce_int ty value =
 
 let coerce_value ty = function
   | VInt value -> VInt (coerce_int ty value)
-  | VPtr _ as ptr -> ptr
+  | (VPtr _ | VArrayPtr _ | VStringPtr _) as ptr -> ptr
 
 let rec find_binding name = function
   | [] -> fail ("unknown variable: " ^ name)
@@ -801,76 +848,169 @@ let assoc_find name env =
   let binding = find_binding name env in
   int_of_value !(binding.bind_value)
 
-let assoc_set name value env =
+let assoc_set_value name value env =
   let binding = find_binding name env in
-  binding.bind_value := coerce_value binding.bind_type (VInt value);
+  binding.bind_value := coerce_value binding.bind_type value;
   env
 
-let assoc_decl ?text ty name value env =
-  { bind_name = name; bind_type = ty; bind_value = ref (coerce_value ty (VInt value)); bind_string = text } :: env
+let assoc_set name value env = assoc_set_value name (VInt value) env
+
+let assoc_decl ?text ?array ty name value env =
+  let fields =
+    match ty with
+    | TOther name when has_suffix "struct" name || String.length name >= 7 && String.sub name 0 7 = "struct " -> Some (ref [])
+    | _ -> None
+  in
+  { bind_name = name; bind_type = ty; bind_value = ref (coerce_value ty value); bind_string = text; bind_array = array; bind_fields = fields }
+  :: env
 
 let assoc_decl_value ty name value env =
-  { bind_name = name; bind_type = ty; bind_value = ref (coerce_value ty value); bind_string = None } :: env
+  assoc_decl ty name value env
 
 type control = Continue of env | Returned of int | Jumped of string * env
 
-let ptr_binding env = function
-  | EVar name -> (
-      let binding = find_binding name env in
-      match !(binding.bind_value) with
-      | VPtr target -> target
-      | VInt _ -> fail ("not a pointer: " ^ name))
-  | _ -> fail "unsupported pointer expression"
+let string_byte text pos =
+  if pos < 0 || pos >= String.length text then 0 else Char.code text.[pos]
 
-let rec eval_expr funcs globals env = function
-  | EInt n -> n
-  | EString s -> if String.length s = 0 then 0 else Char.code s.[0]
-  | EVar name -> assoc_find name env
-  | ESizeof (TOther name) -> (
-      try assoc_find name env with Compile_error _ -> 4)
-  | ESizeof ty -> sizeof_type ty
-  | EIndex (EVar name, index) ->
-      let binding = find_binding name env in
-      let index_value = eval_expr funcs globals env index in
-      (match binding.bind_string with
-      | Some text ->
-          if index_value < 0 || index_value >= String.length text then 0 else Char.code text.[index_value]
-      | None -> fail ("not an indexable string: " ^ name))
-  | EIndex _ -> fail "unsupported index expression"
-  | EAssignExpr (name, expr) ->
-      let value = eval_expr funcs globals env expr in
-      let _ = assoc_set name value env in
-      assoc_find name env
-  | EAssignDeref (ptr, expr) ->
-      let target = ptr_binding env ptr in
-      let value = eval_expr funcs globals env expr in
+let read_binding_index binding index =
+  match binding.bind_array, binding.bind_string, !(binding.bind_value) with
+  | Some values, _, _ ->
+      if index < 0 || index >= Array.length values then 0 else values.(index)
+  | None, Some text, _ -> string_byte text index
+  | None, None, VStringPtr (text, base) -> string_byte text (base + index)
+  | None, None, _ -> fail ("not an indexable value: " ^ binding.bind_name)
+
+let write_binding_index binding index value =
+  match binding.bind_array with
+  | Some values ->
+      if index < 0 || index >= Array.length values then fail ("array index out of bounds: " ^ binding.bind_name);
+      let value = coerce_int binding.bind_type value in
+      values.(index) <- value;
+      value
+  | None -> fail ("not a writable array: " ^ binding.bind_name)
+
+let read_pointer = function
+  | VPtr target -> int_of_value !(target.bind_value)
+  | VArrayPtr (target, offset) -> read_binding_index target offset
+  | VStringPtr (text, offset) -> string_byte text offset
+  | VInt _ -> fail "not a pointer"
+
+let write_pointer ptr value =
+  match ptr with
+  | VPtr target ->
       target.bind_value := coerce_value target.bind_type (VInt value);
       value
+  | VArrayPtr (target, offset) -> write_binding_index target offset value
+  | VStringPtr _ -> fail "cannot write through string literal pointer"
+  | VInt _ -> fail "not a pointer"
+
+let add_to_value value delta =
+  match value with
+  | VInt n -> VInt (n + delta)
+  | VArrayPtr (target, offset) -> VArrayPtr (target, offset + delta)
+  | VStringPtr (text, offset) -> VStringPtr (text, offset + delta)
+  | VPtr _ -> fail "unsupported pointer arithmetic"
+
+let field_cell fields name =
+  match List.find_opt (fun (field, _) -> field = name) !(fields) with
+  | Some (_, cell) -> cell
+  | None ->
+      let cell = ref (VInt 0) in
+      fields := !(fields) @ [ (name, cell) ];
+      cell
+
+let binding_fields binding =
+  match binding.bind_fields with
+  | Some fields -> fields
+  | None -> fail ("not a struct value: " ^ binding.bind_name)
+
+let rec eval_value funcs globals env = function
+  | EInt n -> VInt n
+  | EString s -> VStringPtr (s, 0)
+  | EInitList _ -> VInt 0
+  | EVar name ->
+      let binding = find_binding name env in
+      (match binding.bind_array with Some _ -> VArrayPtr (binding, 0) | None -> !(binding.bind_value))
+  | ESizeof (TOther name) -> (
+      try VInt (assoc_find name env) with Compile_error _ -> VInt 4)
+  | ESizeof ty -> VInt (sizeof_type ty)
+  | EIndex (base, index) ->
+      let index_value = eval_expr funcs globals env index in
+      let value =
+        match base with
+        | EVar name -> read_binding_index (find_binding name env) index_value
+        | EString text -> string_byte text index_value
+        | expr -> read_pointer (add_to_value (eval_value funcs globals env expr) index_value)
+      in
+      VInt value
+  | EMember (base, field) ->
+      let binding =
+        match base with
+        | EVar name -> find_binding name env
+        | EUnary (Deref, ptr) -> (
+            match eval_value funcs globals env ptr with
+            | VPtr target -> target
+            | _ -> fail "not a struct pointer")
+        | _ -> fail "unsupported member expression"
+      in
+      VInt (int_of_value !(field_cell (binding_fields binding) field))
+  | EPtrMember (base, field) ->
+      eval_value funcs globals env (EMember (EUnary (Deref, base), field))
+  | EAssignExpr (name, expr) ->
+      let value = eval_value funcs globals env expr in
+      let _ = assoc_set_value name value env in
+      !((find_binding name env).bind_value)
+  | EAssignDeref (ptr, expr) ->
+      let value = eval_expr funcs globals env expr in
+      VInt (write_pointer (eval_value funcs globals env ptr) value)
+  | EAssignIndex (base, index, expr) ->
+      let index_value = eval_expr funcs globals env index in
+      let value = eval_expr funcs globals env expr in
+      let written =
+        match base with
+        | EVar name -> write_binding_index (find_binding name env) index_value value
+        | expr -> write_pointer (add_to_value (eval_value funcs globals env expr) index_value) value
+      in
+      VInt written
+  | EAssignMember (base, field, expr) ->
+      let binding =
+        match base with
+        | EVar name -> find_binding name env
+        | EUnary (Deref, ptr) -> (
+            match eval_value funcs globals env ptr with
+            | VPtr target -> target
+            | _ -> fail "not a struct pointer")
+        | _ -> fail "unsupported member expression"
+      in
+      let value = eval_value funcs globals env expr in
+      let cell = field_cell (binding_fields binding) field in
+      cell := value;
+      value
   | EUpdateExpr (name, delta, prefix) ->
-      let old_value = assoc_find name env in
-      let _ = assoc_set name (old_value + delta) env in
-      if prefix then assoc_find name env else old_value
-  | EUnary (Neg, e) -> - eval_expr funcs globals env e
-  | EUnary (Not, e) -> bool_int (not (truth (eval_expr funcs globals env e)))
+      let binding = find_binding name env in
+      let old_value = !(binding.bind_value) in
+      let new_value = coerce_value binding.bind_type (add_to_value old_value delta) in
+      binding.bind_value := new_value;
+      if prefix then new_value else old_value
+  | EUnary (Neg, e) -> VInt (- eval_expr funcs globals env e)
+  | EUnary (Not, e) -> VInt (bool_int (not (truth (eval_expr funcs globals env e))))
   | ECond (cond, yes, no) ->
-      if truth (eval_expr funcs globals env cond) then eval_expr funcs globals env yes else eval_expr funcs globals env no
-  | EUnary (Deref, e) ->
-      let target = ptr_binding env e in
-      int_of_value !(target.bind_value)
-  | EUnary (Addr, e) ->
-      let _ = eval_expr funcs globals env e in
-      0
+      if truth (eval_expr funcs globals env cond) then eval_value funcs globals env yes else eval_value funcs globals env no
+  | EUnary (Deref, e) -> VInt (read_pointer (eval_value funcs globals env e))
+  | EUnary (Addr, EVar name) -> VPtr (find_binding name env)
+  | EUnary (Addr, _) -> fail "unsupported address expression"
   | ECast (ty, e) ->
       let value = eval_expr funcs globals env e in
-      coerce_int ty value
+      VInt (coerce_int ty value)
   | EBinary (Land, a, b) ->
-      if truth (eval_expr funcs globals env a) then bool_int (truth (eval_expr funcs globals env b)) else 0
+      VInt (if truth (eval_expr funcs globals env a) then bool_int (truth (eval_expr funcs globals env b)) else 0)
   | EBinary (Lor, a, b) ->
-      if truth (eval_expr funcs globals env a) then 1 else bool_int (truth (eval_expr funcs globals env b))
+      VInt (if truth (eval_expr funcs globals env a) then 1 else bool_int (truth (eval_expr funcs globals env b)))
   | EBinary (op, a, b) ->
       let x = eval_expr funcs globals env a in
       let y = eval_expr funcs globals env b in
-      (match op with
+      VInt
+        (match op with
       | Add -> x + y
       | Sub -> x - y
       | Mul -> x * y
@@ -885,14 +1025,15 @@ let rec eval_expr funcs globals env = function
       | Shl -> (x lsl y) land 0xffffffff
       | Shr -> x lsr y
       | Land | Lor -> assert false)
-  | ECall ("_exit", [ arg ]) -> eval_expr funcs globals env arg
+  | ECall ("_exit", [ arg ]) -> VInt (eval_expr funcs globals env arg)
   | ECall (name, args) ->
       let values = List.map (call_arg funcs globals env) args in
-      eval_func funcs globals name values
+      VInt (eval_func funcs globals name values)
+
+and eval_expr funcs globals env expr = int_of_value (eval_value funcs globals env expr)
 
 and call_arg funcs globals env = function
-  | EUnary (Addr, EVar name) -> VPtr (find_binding name env)
-  | expr -> VInt (eval_expr funcs globals env expr)
+  | expr -> eval_value funcs globals env expr
 
 and eval_func funcs globals name args =
   let fn =
@@ -900,7 +1041,13 @@ and eval_func funcs globals name args =
     | Some fn -> fn
     | None -> fail ("unknown function: " ^ name)
   in
-  let env = List.map2 (fun param value -> { bind_name = param; bind_type = TInt; bind_value = ref value; bind_string = None }) fn.params args @ globals in
+  let env =
+    List.map2
+      (fun param value ->
+        { bind_name = param; bind_type = TInt; bind_value = ref value; bind_string = None; bind_array = None; bind_fields = None })
+      fn.params args
+    @ globals
+  in
   match exec_block funcs globals fn.body env with
   | Returned code -> coerce_int fn.ret_type code
   | Continue _ -> 0
@@ -913,28 +1060,37 @@ and exec_simple funcs globals env = function
   | SExpr expr ->
       let _ = eval_expr funcs globals env expr in
       env
-  | SDecl (ty, name, init) ->
-      let value = match init with Some expr -> eval_expr funcs globals env expr | None -> 0 in
+  | SDecl (ty, name, init, array_size) ->
+      let array =
+        match array_size with
+        | Some size_expr ->
+            let size = eval_expr funcs globals env size_expr in
+            if size < 0 then fail ("negative array size: " ^ name);
+            Some (Array.make size 0)
+        | None -> None
+      in
+      let value = match init with Some expr -> eval_value funcs globals env expr | None -> VInt 0 in
       let text = match init with Some (EString text) -> Some text | _ -> None in
-      assoc_decl ?text ty name value env
-  | STypeAlias (ty, name) -> assoc_decl TInt name (sizeof_type ty) env
+      assoc_decl ?text ?array ty name value env
+  | STypeAlias (ty, name) -> assoc_decl TInt name (VInt (sizeof_type ty)) env
   | SEnumDecl constants ->
       let rec loop next_value env = function
         | [] -> env
         | (name, expr) :: rest ->
             let value = match expr with Some expr -> eval_expr funcs globals env expr | None -> next_value in
-            loop (value + 1) (assoc_decl TInt name value env) rest
+            loop (value + 1) (assoc_decl TInt name (VInt value) env) rest
       in
       loop 0 env constants
-  | SAssign (name, expr) -> assoc_set name (eval_expr funcs globals env expr) env
+  | SAssign (name, expr) -> assoc_set_value name (eval_value funcs globals env expr) env
   | SAugAssign (name, op, expr) ->
       let old = assoc_find name env in
       let delta = eval_expr funcs globals env expr in
       let value = match op with Add -> old + delta | Sub -> old - delta | _ -> fail "bad compound assignment" in
       assoc_set name value env
   | SPost (name, delta) ->
-      let old = assoc_find name env in
-      assoc_set name (old + delta) env
+      let binding = find_binding name env in
+      binding.bind_value := coerce_value binding.bind_type (add_to_value !(binding.bind_value) delta);
+      env
 
 and exec_stmt funcs globals env = function
   | Simple simple -> (
@@ -1015,7 +1171,12 @@ let m1_of_exit code =
 let compile src =
   let tokens = lex src in
   let program = parse_program tokens in
-  let globals = List.map (fun (name, value) -> { bind_name = name; bind_type = TInt; bind_value = ref (VInt value); bind_string = None }) program.globals in
+  let globals =
+    List.map
+      (fun (name, value) ->
+        { bind_name = name; bind_type = TInt; bind_value = ref (VInt value); bind_string = None; bind_array = None; bind_fields = None })
+      program.globals
+  in
   m1_of_exit (eval_func program.funcs globals "main" [])
 
 let read_stdin () =
