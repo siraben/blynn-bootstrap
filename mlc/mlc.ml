@@ -240,13 +240,6 @@ let rec parse_number_loop state =
   if is_digit ch then parse_number_loop (src, (((acc * 10) + ch) - '0', pos + 1))
   else (acc, pos)
 in
-let rec parse_number input =
-  let (src, pos) = input in
-  let pos = skip_space (src, pos) in
-  let ch = src.[pos] in
-  if is_digit ch then parse_number_loop (src, (ch - '0', pos + 1))
-  else parse_fail 0
-in
 let rec parse_ident_loop state =
   let (src, pair) = state in
   let (start, pos) = pair in
@@ -466,6 +459,17 @@ let rec p_try_keyword input =
   let (pos0, text) = pair in
   let pos = skip_space (src, pos0) in
   if keyword_at (src, (pos, text)) == 1 then p_ok (0, pos + String.length text) else p_err pos
+in
+let rec p_try_number input =
+  let (src, pos0) = input in
+  let pos = skip_space (src, pos0) in
+  if is_digit (src.[pos]) then
+    p_ok (parse_number_loop (src, (src.[pos] - '0', pos + 1)))
+  else
+    p_err pos
+in
+let rec parse_number input =
+  p_force (p_try_number input)
 in
 let rec p_need_string input =
   p_force_pos (p_try_string input)
