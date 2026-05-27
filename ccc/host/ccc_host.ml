@@ -182,7 +182,7 @@ let run parser tokens =
   | Ok (value, _) -> value
   | Error msg -> raise (Parse_error msg)
 
-type c_type = TInt | TChar | TSignedChar | TUnsignedChar | TUnsigned | TVoid | TOther of string | TPtr of c_type
+type c_type = TInt | TChar | TSignedChar | TUnsignedChar | TUnsigned | TBool | TVoid | TOther of string | TPtr of c_type
 
 type binop = Add | Sub | Mul | Div | Mod | Eq | Ne | Lt | Le | Gt | Ge | Land | Lor | Shl | Shr
 type unop = Neg | Not | Deref | Addr
@@ -191,6 +191,9 @@ type expr =
   | EInt of int
   | EVar of string
   | EString of string
+  | EIndex of expr * expr
+  | EAssignExpr of string * expr
+  | EUpdateExpr of string * int * bool
   | EUnary of unop * expr
   | EBinary of binop * expr * expr
   | ECall of string * expr list
@@ -201,7 +204,7 @@ type simple_stmt =
   | SAssign of string * expr
   | SAugAssign of string * binop * expr
   | SPost of string * int
-  | SDecl of string * expr option
+  | SDecl of c_type * string * expr option
   | SEmpty
 
 type stmt =
@@ -242,7 +245,8 @@ let rec parse_type state =
     | Ident "char" -> (TChar, advance state)
     | Ident "int" -> (TInt, advance state)
     | Ident "void" -> (TVoid, advance state)
-    | Ident ("long" | "short" | "_Bool") as tok ->
+    | Ident "_Bool" -> (TBool, advance state)
+    | Ident ("long" | "short") as tok ->
         (match tok with Ident name -> (TOther name, advance state) | _ -> assert false)
     | Ident "struct" ->
         let st = advance state in
@@ -253,7 +257,17 @@ let rec parse_type state =
   let rec ptr ty st = match peek st with Sym "*" -> ptr (TPtr ty) (advance st) | _ -> (ty, st) in
   ptr base state
 
-let rec parse_expr state = parse_binop 1 state
+let rec parse_expr state = parse_assignment state
+
+and parse_assignment state =
+  let lhs, state = parse_binop 1 state in
+  match peek state with
+  | Sym "=" -> (
+      let rhs, state = parse_assignment (advance state) in
+      match lhs with
+      | EVar name -> (EAssignExpr (name, rhs), state)
+      | _ -> raise (Parse_error "bad assignment target"))
+  | _ -> (lhs, state)
 
 and parse_primary state =
   match peek state with
@@ -300,6 +314,12 @@ and parse_arg_list state =
 
 and parse_unary state =
   match peek state with
+  | Sym "++" ->
+      let name = match peek (advance state) with Ident name -> name | _ -> raise (Parse_error "expected identifier after ++") in
+      (EUpdateExpr (name, 1, true), advance (advance state))
+  | Sym "--" ->
+      let name = match peek (advance state) with Ident name -> name | _ -> raise (Parse_error "expected identifier after --") in
+      (EUpdateExpr (name, -1, true), advance (advance state))
   | Sym "!" ->
       let rhs, st = parse_unary (advance state) in
       (EUnary (Not, rhs), st)
@@ -312,7 +332,23 @@ and parse_unary state =
   | Sym "&" ->
       let rhs, st = parse_unary (advance state) in
       (EUnary (Addr, rhs), st)
-  | _ -> parse_primary state
+  | _ ->
+      let expr, state = parse_primary state in
+      parse_postfix expr state
+
+and parse_postfix expr state =
+  match (expr, peek state) with
+  | EVar name, Sym "++" -> (EUpdateExpr (name, 1, false), advance state)
+  | EVar name, Sym "--" -> (EUpdateExpr (name, -1, false), advance state)
+  | _, Sym "[" ->
+      let index, state = parse_expr (advance state) in
+      let state =
+        match expect_sym "]" state with
+        | Ok ((), st) -> st
+        | Error msg -> raise (Parse_error msg)
+      in
+      parse_postfix (EIndex (expr, index)) state
+  | _ -> (expr, state)
 
 and binop_of = function
   | "||" -> Some (Lor, 1)
@@ -347,6 +383,7 @@ and parse_binop_tail min_prec lhs state =
   | _ -> (lhs, state)
 
 let parse_decl_after_type state =
+  let ty, state = parse_type state in
   let name =
     match peek state with
     | Ident name -> name
@@ -374,13 +411,12 @@ let parse_decl_after_type state =
         (Some expr, state)
     | _ -> (None, state)
   in
-  (SDecl (name, init), state)
+  (SDecl (ty, name, init), state)
 
 let parse_simple_no_semi state =
   match peek state with
   | Sym ")" | Sym ";" -> (SEmpty, state)
   | tok when starts_type tok ->
-      let _ty, state = parse_type state in
       parse_decl_after_type state
   | Ident name -> (
       let state1 = advance state in
@@ -556,18 +592,57 @@ let parse_program tokens =
 let truth n = n <> 0
 let bool_int b = if b then 1 else 0
 
-let rec assoc_find name = function
+type binding = { bind_name : string; bind_type : c_type; bind_value : int ref; bind_string : string option }
+type env = binding list
+
+let coerce_value ty value =
+  match ty with
+  | TUnsignedChar -> value land 255
+  | TSignedChar | TChar ->
+      let b = value land 255 in
+      if b > 127 then b - 256 else b
+  | TUnsigned -> value
+  | TBool -> bool_int (truth value)
+  | _ -> value
+
+let rec find_binding name = function
   | [] -> fail ("unknown variable: " ^ name)
-  | (key, value) :: rest -> if key = name then value else assoc_find name rest
+  | binding :: rest -> if binding.bind_name = name then binding else find_binding name rest
 
-let assoc_set name value env = (name, value) :: List.remove_assoc name env
+let assoc_find name env =
+  let binding = find_binding name env in
+  !(binding.bind_value)
 
-type control = Continue of (string * int) list | Returned of int | Jumped of string * (string * int) list
+let assoc_set name value env =
+  let binding = find_binding name env in
+  binding.bind_value := coerce_value binding.bind_type value;
+  env
+
+let assoc_decl ?text ty name value env =
+  { bind_name = name; bind_type = ty; bind_value = ref (coerce_value ty value); bind_string = text } :: env
+
+type control = Continue of env | Returned of int | Jumped of string * env
 
 let rec eval_expr funcs env = function
   | EInt n -> n
   | EString s -> if String.length s = 0 then 0 else Char.code s.[0]
   | EVar name -> assoc_find name env
+  | EIndex (EVar name, index) ->
+      let binding = find_binding name env in
+      let index_value = eval_expr funcs env index in
+      (match binding.bind_string with
+      | Some text ->
+          if index_value < 0 || index_value >= String.length text then 0 else Char.code text.[index_value]
+      | None -> fail ("not an indexable string: " ^ name))
+  | EIndex _ -> fail "unsupported index expression"
+  | EAssignExpr (name, expr) ->
+      let value = eval_expr funcs env expr in
+      let _ = assoc_set name value env in
+      assoc_find name env
+  | EUpdateExpr (name, delta, prefix) ->
+      let old_value = assoc_find name env in
+      let _ = assoc_set name (old_value + delta) env in
+      if prefix then assoc_find name env else old_value
   | EUnary (Neg, e) -> - eval_expr funcs env e
   | EUnary (Not, e) -> bool_int (not (truth (eval_expr funcs env e)))
   | EUnary (Deref, e) ->
@@ -578,12 +653,7 @@ let rec eval_expr funcs env = function
       0
   | ECast (ty, e) ->
       let value = eval_expr funcs env e in
-      (match ty with
-      | TUnsignedChar -> value land 255
-      | TSignedChar | TChar ->
-          let b = value land 255 in
-          if b > 127 then b - 256 else b
-      | _ -> value)
+      coerce_value ty value
   | EBinary (Land, a, b) ->
       if truth (eval_expr funcs env a) then bool_int (truth (eval_expr funcs env b)) else 0
   | EBinary (Lor, a, b) ->
@@ -603,8 +673,8 @@ let rec eval_expr funcs env = function
       | Le -> bool_int (x <= y)
       | Gt -> bool_int (x > y)
       | Ge -> bool_int (x >= y)
-      | Shl -> x lsl y
-      | Shr -> x asr y
+      | Shl -> (x lsl y) land 0xffffffff
+      | Shr -> x lsr y
       | Land | Lor -> assert false)
   | ECall ("_exit", [ arg ]) -> eval_expr funcs env arg
   | ECall (name, args) ->
@@ -617,9 +687,9 @@ and eval_func funcs name args =
     | Some fn -> fn
     | None -> fail ("unknown function: " ^ name)
   in
-  let env = List.combine fn.params args in
+  let env = List.map2 (fun param value -> { bind_name = param; bind_type = TInt; bind_value = ref value; bind_string = None }) fn.params args in
   match exec_block funcs fn.body env with
-  | Returned code -> code
+  | Returned code -> coerce_value fn.ret_type code
   | Continue _ -> 0
   | Jumped (label, _) -> fail ("unresolved goto: " ^ label)
 
@@ -630,9 +700,10 @@ and exec_simple funcs env = function
   | SExpr expr ->
       let _ = eval_expr funcs env expr in
       env
-  | SDecl (name, init) ->
+  | SDecl (ty, name, init) ->
       let value = match init with Some expr -> eval_expr funcs env expr | None -> 0 in
-      assoc_set name value env
+      let text = match init with Some (EString text) -> Some text | _ -> None in
+      assoc_decl ?text ty name value env
   | SAssign (name, expr) -> assoc_set name (eval_expr funcs env expr) env
   | SAugAssign (name, op, expr) ->
       let old = assoc_find name env in
@@ -650,7 +721,11 @@ and exec_stmt funcs env = function
   | Return (Some expr) -> Returned (eval_expr funcs env expr)
   | Goto label -> Jumped (label, env)
   | Label _ -> Continue env
-  | Block body -> exec_block funcs body env
+  | Block body -> (
+      match exec_block funcs body env with
+      | Continue _ -> Continue env
+      | Jumped (label, _) -> Jumped (label, env)
+      | Returned _ as ret -> ret)
   | If (cond, yes, no) ->
       if truth (eval_expr funcs env cond) then exec_stmt funcs env yes
       else (

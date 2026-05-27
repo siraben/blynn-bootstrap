@@ -55,14 +55,38 @@ DEFINE SYSCALL 0F05
     check_return ${testsRoot}/mescc/scaffold/16-cast.c 0
     check_return ${testsRoot}/mescc/scaffold/16-if-t.c 0
     check_return ${testsRoot}/mescc/scaffold/17-compare-char.c 0
+    check_return ${testsRoot}/mescc/scaffold/17-compare-assign.c 0
+    check_return ${testsRoot}/mescc/scaffold/17-compare-call.c 0
+    check_return ${testsRoot}/mescc/scaffold/17-compare-ge.c 0
+    check_return ${testsRoot}/mescc/scaffold/17-compare-gt.c 0
+    check_return ${testsRoot}/mescc/scaffold/17-compare-le.c 0
+    check_return ${testsRoot}/mescc/scaffold/17-compare-lt.c 0
     check_return ${testsRoot}/mescc/scaffold/17-compare-and.c 0
     check_return ${testsRoot}/mescc/scaffold/17-compare-or.c 0
+    check_return ${testsRoot}/mescc/scaffold/17-compare-rotated.c 0
+    check_return ${testsRoot}/mescc/scaffold/18-assign-shadow.c 0
     check_return ${testsRoot}/mescc/scaffold/20-while.c 0
+    check_return ${testsRoot}/mescc/scaffold/21-char-array-simple.c 0
+    check_return ${testsRoot}/mescc/scaffold/21-char-array.c 0
+    check_return ${testsRoot}/mescc/scaffold/22-while-char-array.c 0
+    check_return ${testsRoot}/mescc/scaffold/30-exit-0.c 0
     check_return ${testsRoot}/mescc/scaffold/30-exit-42.c 42
+    check_return ${testsRoot}/mescc/scaffold/33-and-or.c 0
+    check_return ${testsRoot}/mescc/scaffold/34-pre-post.c 0
+    check_return ${testsRoot}/mescc/scaffold/36-compare-arithmetic.c 0
+    check_return ${testsRoot}/mescc/scaffold/36-compare-arithmetic-negative.c 0
+    check_return ${testsRoot}/mescc/scaffold/37-compare-assign.c 0
+    check_return ${testsRoot}/mescc/scaffold/40-if-else.c 0
+    check_return ${testsRoot}/mescc/scaffold/42-goto-label.c 0
+    check_return ${testsRoot}/mescc/scaffold/45-void-call.c 0
+    check_return ${testsRoot}/mescc/scaffold/70-function-modulo.c 0
     check_return ${testsRoot}/mescc/scaffold/80-for-loop.c 10
     check_return ${testsRoot}/hcc/m1-smoke/examples/ret13.c 13
     check_return ${testsRoot}/hcc/m1-smoke/examples/short-circuit.c 42
     check_return ${testsRoot}/hcc/m1-smoke/examples/call-arg-immediate.c 42
+    check_return ${testsRoot}/hcc/m1-smoke/examples/signed-char-cast.c 0
+    check_return ${testsRoot}/hcc/m1-smoke/examples/return-coercion.c 0
+    check_return ${testsRoot}/hcc/scalar-immediate-smoke.c 0
 
     runHook postBuild
   '';
