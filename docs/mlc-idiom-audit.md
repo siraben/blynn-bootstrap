@@ -26,10 +26,12 @@ that construct and have a check for it.
 - `mlc.ml` now has the stage-02-compatible core of that parser layer:
   tuple-encoded `p_ok` / `p_err` replies, `p_force`, `p_try_char`,
   `p_try_string`, `p_try_keyword`, `p_try_ident`, and corresponding `p_need_*`
-  helpers, plus first-order bind helpers such as `p_bind_char_keep` and
-  `bind_expect_char_keep` for common delimiter continuations. This keeps the
-  parser state explicit while avoiding a dependency on ADT syntax before stage
-  02 can compile ADTs in the compiler implementation.
+  helpers, tuple-position optional helpers (`p_optional_pos`,
+  `p_optional_char_pos`, `p_optional_string_pos`), plus first-order bind
+  helpers such as `p_bind_char_keep` and `bind_expect_char_keep` for common
+  delimiter continuations. This keeps the parser state explicit while avoiding
+  a dependency on ADT syntax before stage 02 can compile ADTs in the compiler
+  implementation.
 - A scan of `mlc/mlc.ml` after the char-literal cleanup found no remaining
   direct `src.[...] == N` ASCII source-character checks; the remaining
   numeric byte writes are VM bytecode opcodes or data bytes rather than parser
@@ -83,6 +85,9 @@ These can move directly into `mlc.ml` because stage 02 already compiles them:
 - Parenthesized expression and dynamic index delimiters now use
   `bind_expect_char_keep`, avoiding repeated unpack/expect/repack code while
   preserving the tuple-encoded parser reply surface.
+- Optional record delimiters, match-case bars, tuple commas, and dynamic store
+  arrows now use `p_optional_char_pos` / `p_optional_string_pos` instead of
+  manually unpacking `p_optional` replies.
 
 ## Promote before use
 
