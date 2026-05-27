@@ -213,6 +213,7 @@ type expr =
   | EMember of expr * string
   | EPtrMember of expr * string
   | ESizeof of c_type
+  | ESizeofExpr of expr
   | EAssignExpr of string * expr
   | EAssignDeref of expr * expr
   | EAssignIndex of expr * expr * expr
@@ -258,9 +259,12 @@ let has_prefix prefix text =
   let prefix_len = String.length prefix in
   String.length text >= prefix_len && String.sub text 0 prefix_len = prefix
 
+let starts_uppercase name =
+  String.length name > 0 && 'A' <= name.[0] && name.[0] <= 'Z'
+
 let rec starts_type = function
   | Ident ("int" | "char" | "signed" | "unsigned" | "void" | "long" | "short" | "_Bool" | "double" | "static" | "const" | "struct") -> true
-  | Ident name -> has_suffix "_t" name
+  | Ident name -> has_suffix "_t" name || starts_uppercase name
   | _ -> false
 
 let rec parse_type state =
@@ -307,7 +311,12 @@ let rec parse_type state =
     | Ident name -> (TOther name, advance state)
     | _ -> raise (Parse_error "expected type")
   in
-  let rec ptr ty st = match peek st with Sym "*" -> ptr (TPtr ty) (advance st) | _ -> (ty, st) in
+  let rec post_ptr_qualifiers st =
+    match peek st with
+    | Ident "const" -> post_ptr_qualifiers (advance st)
+    | _ -> st
+  in
+  let rec ptr ty st = match peek st with Sym "*" -> ptr (TPtr ty) (post_ptr_qualifiers (advance st)) | _ -> (ty, st) in
   ptr base state
 
 let rec parse_expr state = parse_assignment state
@@ -364,13 +373,19 @@ and parse_primary state =
         | Ok ((), st) -> st
         | Error msg -> raise (Parse_error msg)
       in
-      let ty, state = parse_type state in
-      let state =
-        match expect_sym ")" state with
-        | Ok ((), st) -> st
-        | Error msg -> raise (Parse_error msg)
-      in
-      (ESizeof ty, state)
+      if starts_type (peek state) then
+        let ty, state = parse_type state in
+        let state =
+          match expect_sym ")" state with
+          | Ok ((), st) -> st
+          | Error msg -> raise (Parse_error msg)
+        in
+        (ESizeof ty, state)
+      else
+        let expr, state = parse_expr state in
+        (match expect_sym ")" state with
+        | Ok ((), state) -> (ESizeofExpr expr, state)
+        | Error msg -> raise (Parse_error msg))
   | Ident name ->
       let state = advance state in
       (match peek state with
@@ -542,7 +557,7 @@ let parse_decl_suffix name state =
         let state = advance state in
         let array_size, state =
           match peek state with
-          | Sym "]" -> (None, state)
+          | Sym "]" -> (Some (EInt (-1)), state)
           | _ ->
               let size, state = parse_expr state in
               (Some size, state)
@@ -820,6 +835,46 @@ let parse_struct_definition state =
   in
   loop state []
 
+let parse_typedef_struct_definition state =
+  let state =
+    match peek state with
+    | Ident "typedef" -> advance state
+    | _ -> raise (Parse_error "expected typedef")
+  in
+  let state =
+    match peek state with
+    | Ident "struct" -> advance state
+    | _ -> raise (Parse_error "expected struct")
+  in
+  let tag, state =
+    match peek state with
+    | Ident name -> (name, advance state)
+    | Sym "{" -> ("", state)
+    | _ -> raise (Parse_error "expected struct name")
+  in
+  let state = match expect_sym "{" state with Ok ((), st) -> st | Error msg -> raise (Parse_error msg) in
+  let rec fields st acc =
+    match peek st with
+    | Sym "}" -> (List.rev acc, advance st)
+    | _ ->
+        let _ty, st = parse_type st in
+        let field =
+          match peek st with
+          | Ident name -> name
+          | _ -> raise (Parse_error "expected field name")
+        in
+        let st = match expect_sym ";" (advance st) with Ok ((), st') -> st' | Error msg -> raise (Parse_error msg) in
+        fields st (field :: acc)
+  in
+  let fields, state = fields state [] in
+  let alias =
+    match peek state with
+    | Ident name -> name
+    | _ -> raise (Parse_error "expected typedef alias")
+  in
+  let state = match expect_sym ";" (advance state) with Ok ((), st) -> st | Error msg -> raise (Parse_error msg) in
+  (tag, alias, fields, state)
+
 let rec assoc_int name = function
   | [] -> fail ("unknown enum constant: " ^ name)
   | (key, value) :: rest -> if key = name then value else assoc_int name rest
@@ -863,6 +918,18 @@ let parse_program tokens =
     | Ident "struct" when (match peek (advance state) with Ident _ -> peek (advance (advance state)) = Sym "{" | _ -> false) ->
         let name, fields, state = parse_struct_definition state in
         loop state constants ((name, fields) :: structs) globals funcs
+    | Ident "typedef"
+      when (match peek (advance state) with
+      | Ident "struct" -> (
+          match peek (advance (advance state)) with
+          | Ident _ -> peek (advance (advance (advance state))) = Sym "{"
+          | Sym "{" -> true
+          | _ -> false)
+      | _ -> false) ->
+        let tag, alias, fields, state = parse_typedef_struct_definition state in
+        let structs = (alias, fields) :: structs in
+        let structs = if tag = "" then structs else (tag, fields) :: structs in
+        loop state constants structs globals funcs
     | Ident "typedef" ->
         loop { state with pos = skip_decl state.tokens state.pos 0 } constants structs globals funcs
     | tok when starts_type tok -> (
@@ -950,7 +1017,7 @@ let assoc_set name value env = assoc_set_value name (VInt value) env
 let assoc_decl ?text ?array ty name value env =
   let fields =
     match ty with
-    | TOther name when has_prefix "struct " name -> Some (ref [])
+    | TOther _ -> Some (ref [])
     | _ -> None
   in
   { bind_name = name; bind_type = ty; bind_value = ref (coerce_value ty value); bind_string = text; bind_array = array; bind_fields = fields }
@@ -1054,6 +1121,10 @@ let rec eval_value funcs structs globals env = function
   | ESizeof (TOther name) -> (
       try VInt (assoc_find name env) with Compile_error _ -> VInt 4)
   | ESizeof ty -> VInt (sizeof_type ty)
+  | ESizeofExpr expr -> (
+      match eval_value funcs structs globals env expr with
+      | VInt _ -> VInt 4
+      | VPtr _ | VArrayPtr _ | VStringPtr _ | VFunc _ -> VInt 8)
   | EIndex (base, index) ->
       let index_value = eval_expr funcs structs globals env index in
       let value =
@@ -1179,6 +1250,7 @@ and eval_func funcs structs globals name args =
       fn.params args
     @ globals
   in
+  let env = assoc_decl ~text:name (TPtr TChar) "__func__" (VStringPtr (name, 0)) env in
   match exec_block funcs structs globals fn.body env with
   | Returned code -> coerce_int fn.ret_type code
   | Continue _ -> 0
@@ -1195,7 +1267,12 @@ and exec_simple funcs structs globals env = function
       let array =
         match array_size with
         | Some size_expr ->
-            let size = eval_expr funcs structs globals env size_expr in
+            let size =
+              match (size_expr, init) with
+              | EInt (-1), Some (EInitList values) -> List.length values
+              | EInt (-1), _ -> 0
+              | _ -> eval_expr funcs structs globals env size_expr
+            in
             if size < 0 then fail ("negative array size: " ^ name);
             Some (Array.make size (VInt 0))
         | None -> None
@@ -1210,15 +1287,25 @@ and exec_simple funcs structs globals env = function
       (match init with
       | Some (EInitList values) ->
           let binding = find_binding name env in
-          let rec fill fields values =
-            match (fields, values) with
-            | field :: fields, value_expr :: values ->
-                let cell = field_cell (binding_fields binding) field in
-                cell := eval_value funcs structs globals env value_expr;
-                fill fields values
-            | _ -> ()
-          in
-          fill (struct_fields structs ty) values;
+          (match binding.bind_array with
+          | Some array ->
+              let rec fill i = function
+                | [] -> ()
+                | value_expr :: values ->
+                    if i < Array.length array then array.(i) <- coerce_value binding.bind_type (eval_value funcs structs globals env value_expr);
+                    fill (i + 1) values
+              in
+              fill 0 values
+          | None ->
+              let rec fill fields values =
+                match (fields, values) with
+                | field :: fields, value_expr :: values ->
+                    let cell = field_cell (binding_fields binding) field in
+                    cell := eval_value funcs structs globals env value_expr;
+                    fill fields values
+                | _ -> ()
+              in
+              fill (struct_fields structs ty) values);
           env
       | _ -> env)
   | STypeAlias (ty, name) -> assoc_decl TInt name (VInt (sizeof_type ty)) env
@@ -1320,6 +1407,8 @@ let m1_of_exit code =
 let compile src =
   let tokens = lex src in
   let program = parse_program tokens in
+  if not (List.exists (fun fn -> fn.name = "main") program.funcs) then m1_of_exit 0
+  else
   let constants =
     List.map
       (fun (name, value) ->
@@ -1332,8 +1421,7 @@ let compile src =
         exec_simple program.funcs program.structs env env (SDecl (global.global_type, global.global_name, global.global_init, global.global_array_size)))
       constants program.globals
   in
-  if List.exists (fun fn -> fn.name = "main") program.funcs then m1_of_exit (eval_func program.funcs program.structs globals "main" [])
-  else m1_of_exit 0
+  m1_of_exit (eval_func program.funcs program.structs globals "main" [])
 
 let read_stdin () =
   let b = Buffer.create 4096 in
