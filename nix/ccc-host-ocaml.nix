@@ -1,0 +1,81 @@
+{
+  stdenv,
+  lib,
+  ocaml,
+  cccSrc,
+  testsRoot,
+}:
+
+stdenv.mkDerivation {
+  pname = "ccc-host-ocaml";
+  version = "0-unstable-2026-05-27";
+
+  src = cccSrc;
+  nativeBuildInputs = [ ocaml ];
+
+  dontConfigure = true;
+
+  buildPhase = ''
+    runHook preBuild
+
+    ocamlc host/ccc_host.ml -o ccc-host-ocaml
+
+    check_return() {
+      src="$1"
+      expected_code="$2"
+      actual="$(./ccc-host-ocaml < "$src")"
+      expected="DEFINE LOADI32_RDI 48C7C7
+DEFINE LOADI32_RAX 48C7C0
+DEFINE SYSCALL 0F05
+
+:_start
+	LOADI32_RDI %$expected_code
+	LOADI32_RAX %60
+	SYSCALL"
+      test "$actual" = "$expected"
+    }
+
+    check_return ${testsRoot}/mescc/scaffold/01-return-0.c 0
+    check_return ${testsRoot}/mescc/scaffold/02-return-1.c 1
+    check_return ${testsRoot}/mescc/scaffold/03-call.c 0
+    check_return ${testsRoot}/mescc/scaffold/04-call-0.c 0
+    check_return ${testsRoot}/mescc/scaffold/05-call-1.c 1
+    check_return ${testsRoot}/mescc/scaffold/06-call-2.c 0
+    check_return ${testsRoot}/mescc/scaffold/06-call-not-1.c 0
+    check_return ${testsRoot}/mescc/scaffold/06-not-call-1.c 0
+    check_return ${testsRoot}/mescc/scaffold/06-return-void.c 0
+    check_return ${testsRoot}/mescc/scaffold/08-assign.c 0
+    check_return ${testsRoot}/mescc/scaffold/08-assign-negative.c 0
+    check_return ${testsRoot}/mescc/scaffold/10-if-0.c 0
+    check_return ${testsRoot}/mescc/scaffold/11-if-1.c 0
+    check_return ${testsRoot}/mescc/scaffold/12-if-eq.c 0
+    check_return ${testsRoot}/mescc/scaffold/13-if-neq.c 0
+    check_return ${testsRoot}/mescc/scaffold/14-if-goto.c 0
+    check_return ${testsRoot}/mescc/scaffold/15-if-not-f.c 0
+    check_return ${testsRoot}/mescc/scaffold/16-cast.c 0
+    check_return ${testsRoot}/mescc/scaffold/16-if-t.c 0
+    check_return ${testsRoot}/mescc/scaffold/17-compare-char.c 0
+    check_return ${testsRoot}/mescc/scaffold/17-compare-and.c 0
+    check_return ${testsRoot}/mescc/scaffold/17-compare-or.c 0
+    check_return ${testsRoot}/mescc/scaffold/20-while.c 0
+    check_return ${testsRoot}/mescc/scaffold/30-exit-42.c 42
+    check_return ${testsRoot}/mescc/scaffold/80-for-loop.c 10
+    check_return ${testsRoot}/hcc/m1-smoke/examples/ret13.c 13
+    check_return ${testsRoot}/hcc/m1-smoke/examples/short-circuit.c 42
+    check_return ${testsRoot}/hcc/m1-smoke/examples/call-arg-immediate.c 42
+
+    runHook postBuild
+  '';
+
+  installPhase = ''
+    runHook preInstall
+    install -Dm755 ccc-host-ocaml "$out/bin/ccc-host-ocaml"
+    runHook postInstall
+  '';
+
+  meta = {
+    description = "OCaml-hosted development build of the CCC bootstrap C compiler";
+    license = lib.licenses.gpl3Only;
+    platforms = lib.platforms.linux;
+  };
+}

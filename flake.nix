@@ -666,6 +666,11 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           tccBinCccSeed
           ;
 
+        cccHostOcaml = pkgs.callPackage ./nix/ccc-host-ocaml.nix {
+          inherit cccSrc;
+          testsRoot = ./tests;
+        };
+
         hccHostGhcNative = pkgs.callPackage ./nix/hcc-ghc.nix {
           stdenv = pkgs.stdenv;
           pname = "hcc-host-ghc-native";
@@ -1326,6 +1331,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           ccc = {
             byte.seed = cccByteSeed;
             byte.committed = cccByteCommitted;
+            host.ocaml = cccHostOcaml;
           };
 
           tcc.m1.ccc.seed = tccM1CccSeed;
@@ -1412,6 +1418,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           mlc-byte-selfhost = mlcByteSelfhost;
           ccc-byte-seed = cccByteSeed;
           ccc-byte-committed = cccByteCommitted;
+          ccc-host-ocaml = cccHostOcaml;
           tcc-m1-ccc-seed = tccM1CccSeed;
           tcc-bin-ccc-seed = tccBinCccSeed;
         };
@@ -1436,6 +1443,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             pkgs.coreutils
             pkgs.gcc
             pkgs.jq
+            pkgs.ocaml
             pkgs.time
             preciselyGhcDebug
             hccBy.host.ghc.native
