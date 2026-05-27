@@ -211,6 +211,7 @@ type expr =
   | EIndex of expr * expr
   | ESizeof of c_type
   | EAssignExpr of string * expr
+  | EAssignDeref of expr * expr
   | EUpdateExpr of string * int * bool
   | ECond of expr * expr * expr
   | EUnary of unop * expr
@@ -308,6 +309,7 @@ and parse_assignment state =
       let rhs, state = parse_assignment (advance state) in
       match lhs with
       | EVar name -> (EAssignExpr (name, rhs), state)
+      | EUnary (Deref, ptr) -> (EAssignDeref (ptr, rhs), state)
       | _ -> raise (Parse_error "bad assignment target"))
   | _ -> (lhs, state)
 
@@ -768,10 +770,15 @@ let rec sizeof_type = function
   | TVoid -> 1
   | TOther _ -> 4
 
-type binding = { bind_name : string; bind_type : c_type; bind_value : int ref; bind_string : string option }
+type value = VInt of int | VPtr of binding
+and binding = { bind_name : string; bind_type : c_type; bind_value : value ref; bind_string : string option }
 type env = binding list
 
-let coerce_value ty value =
+let int_of_value = function
+  | VInt value -> value
+  | VPtr _ -> fail "pointer used as integer"
+
+let coerce_int ty value =
   match ty with
   | TUnsignedChar -> value land 255
   | TUnsignedShort -> value land 65535
@@ -782,23 +789,38 @@ let coerce_value ty value =
   | TBool -> bool_int (truth value)
   | _ -> value
 
+let coerce_value ty = function
+  | VInt value -> VInt (coerce_int ty value)
+  | VPtr _ as ptr -> ptr
+
 let rec find_binding name = function
   | [] -> fail ("unknown variable: " ^ name)
   | binding :: rest -> if binding.bind_name = name then binding else find_binding name rest
 
 let assoc_find name env =
   let binding = find_binding name env in
-  !(binding.bind_value)
+  int_of_value !(binding.bind_value)
 
 let assoc_set name value env =
   let binding = find_binding name env in
-  binding.bind_value := coerce_value binding.bind_type value;
+  binding.bind_value := coerce_value binding.bind_type (VInt value);
   env
 
 let assoc_decl ?text ty name value env =
-  { bind_name = name; bind_type = ty; bind_value = ref (coerce_value ty value); bind_string = text } :: env
+  { bind_name = name; bind_type = ty; bind_value = ref (coerce_value ty (VInt value)); bind_string = text } :: env
+
+let assoc_decl_value ty name value env =
+  { bind_name = name; bind_type = ty; bind_value = ref (coerce_value ty value); bind_string = None } :: env
 
 type control = Continue of env | Returned of int | Jumped of string * env
+
+let ptr_binding env = function
+  | EVar name -> (
+      let binding = find_binding name env in
+      match !(binding.bind_value) with
+      | VPtr target -> target
+      | VInt _ -> fail ("not a pointer: " ^ name))
+  | _ -> fail "unsupported pointer expression"
 
 let rec eval_expr funcs globals env = function
   | EInt n -> n
@@ -819,6 +841,11 @@ let rec eval_expr funcs globals env = function
       let value = eval_expr funcs globals env expr in
       let _ = assoc_set name value env in
       assoc_find name env
+  | EAssignDeref (ptr, expr) ->
+      let target = ptr_binding env ptr in
+      let value = eval_expr funcs globals env expr in
+      target.bind_value := coerce_value target.bind_type (VInt value);
+      value
   | EUpdateExpr (name, delta, prefix) ->
       let old_value = assoc_find name env in
       let _ = assoc_set name (old_value + delta) env in
@@ -828,14 +855,14 @@ let rec eval_expr funcs globals env = function
   | ECond (cond, yes, no) ->
       if truth (eval_expr funcs globals env cond) then eval_expr funcs globals env yes else eval_expr funcs globals env no
   | EUnary (Deref, e) ->
-      let _ = eval_expr funcs globals env e in
-      0
+      let target = ptr_binding env e in
+      int_of_value !(target.bind_value)
   | EUnary (Addr, e) ->
       let _ = eval_expr funcs globals env e in
       0
   | ECast (ty, e) ->
       let value = eval_expr funcs globals env e in
-      coerce_value ty value
+      coerce_int ty value
   | EBinary (Land, a, b) ->
       if truth (eval_expr funcs globals env a) then bool_int (truth (eval_expr funcs globals env b)) else 0
   | EBinary (Lor, a, b) ->
@@ -860,8 +887,12 @@ let rec eval_expr funcs globals env = function
       | Land | Lor -> assert false)
   | ECall ("_exit", [ arg ]) -> eval_expr funcs globals env arg
   | ECall (name, args) ->
-      let values = List.map (eval_expr funcs globals env) args in
+      let values = List.map (call_arg funcs globals env) args in
       eval_func funcs globals name values
+
+and call_arg funcs globals env = function
+  | EUnary (Addr, EVar name) -> VPtr (find_binding name env)
+  | expr -> VInt (eval_expr funcs globals env expr)
 
 and eval_func funcs globals name args =
   let fn =
@@ -871,7 +902,7 @@ and eval_func funcs globals name args =
   in
   let env = List.map2 (fun param value -> { bind_name = param; bind_type = TInt; bind_value = ref value; bind_string = None }) fn.params args @ globals in
   match exec_block funcs globals fn.body env with
-  | Returned code -> coerce_value fn.ret_type code
+  | Returned code -> coerce_int fn.ret_type code
   | Continue _ -> 0
   | Jumped (label, _) -> fail ("unresolved goto: " ^ label)
 
@@ -984,7 +1015,7 @@ let m1_of_exit code =
 let compile src =
   let tokens = lex src in
   let program = parse_program tokens in
-  let globals = List.map (fun (name, value) -> { bind_name = name; bind_type = TInt; bind_value = ref value; bind_string = None }) program.globals in
+  let globals = List.map (fun (name, value) -> { bind_name = name; bind_type = TInt; bind_value = ref (VInt value); bind_string = None }) program.globals in
   m1_of_exit (eval_func program.funcs globals "main" [])
 
 let read_stdin () =
