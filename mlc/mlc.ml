@@ -433,6 +433,10 @@ in
 let rec p_return state =
   p_ok state
 in
+let rec p_keep_value state =
+  let (value, reply) = state in
+  if p_is_ok reply == 1 then p_ok (value, p_pos reply) else reply
+in
 let rec p_optional reply =
   if p_is_ok reply == 1 then p_ok (opt_some (p_value reply), p_pos reply) else p_ok (opt_none 0, p_pos reply)
 in
@@ -525,7 +529,7 @@ let rec p_try_char_literal input =
     in
     if p_is_ok parsed == 1 then
       let closed = p_try_char (src, (p_pos parsed, '\'')) in
-      if p_is_ok closed == 1 then p_ok (p_value parsed, p_pos closed) else closed
+      p_keep_value (p_value parsed, closed)
     else
       parsed
   else
