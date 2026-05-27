@@ -86,6 +86,10 @@ DEFINE SYSCALL 0F05
     check_return ${testsRoot}/hcc/m1-smoke/examples/call-arg-immediate.c 42
     check_return ${testsRoot}/hcc/m1-smoke/examples/signed-char-cast.c 0
     check_return ${testsRoot}/hcc/m1-smoke/examples/return-coercion.c 0
+    check_return ${testsRoot}/hcc/m1-smoke/examples/wide-integer-types.c 0
+    check_return ${testsRoot}/hcc/m1-smoke/examples/scoped-typedef-enum.c 0
+    check_return ${testsRoot}/hcc/m1-smoke/examples/case-cmp-ternary.c 0
+    check_return ${testsRoot}/hcc/m1-smoke/examples/do-while.c 3
     check_return ${testsRoot}/hcc/scalar-immediate-smoke.c 0
 
     runHook postBuild
