@@ -791,13 +791,33 @@ let parse_params state =
   | Sym ")" -> ([], advance state)
   | Ident "void" when peek (advance state) = Sym ")" -> ([], advance (advance state))
   | _ ->
+      let rec skip_balanced st depth =
+        match peek st with
+        | Eof -> raise (Parse_error "unterminated function pointer parameter")
+        | Sym "(" -> skip_balanced (advance st) (depth + 1)
+        | Sym ")" ->
+            if depth = 1 then advance st else skip_balanced (advance st) (depth - 1)
+        | _ -> skip_balanced (advance st) depth
+      in
+      let parse_name st =
+        match peek st, peek (advance st), peek (advance (advance st)) with
+        | Sym "(", Sym "*", Ident name ->
+            let st = advance (advance (advance st)) in
+            let st = match expect_sym ")" st with Ok ((), st) -> st | Error msg -> raise (Parse_error msg) in
+            let st =
+              match peek st with
+              | Sym "(" -> skip_balanced st 0
+              | _ -> st
+            in
+            (name, st)
+        | _ -> (
+            match peek st with
+            | Ident name -> (name, advance st)
+            | _ -> ("_", st))
+      in
       let rec loop st acc =
         let _ty, st = parse_type st in
-        let name, st =
-          match peek st with
-          | Ident name -> (name, advance st)
-          | _ -> ("_", st)
-        in
+        let name, st = parse_name st in
         match peek st with
         | Sym "," -> loop (advance st) (name :: acc)
         | Sym ")" -> (List.rev (name :: acc), advance st)
@@ -1245,6 +1265,10 @@ let value_equal a b =
   | (VPtr _ | VArrayPtr _ | VFieldPtr _ | VStringPtr _ | VFunc _), VInt 0 -> false
   | _ -> false
 
+let truth_value = function
+  | VInt n -> truth n
+  | VPtr _ | VArrayPtr _ | VFieldPtr _ | VStringPtr _ | VFunc _ -> true
+
 let pointer_delta a b =
   match (a, b) with
   | VFieldPtr (x, ix), VFieldPtr (y, iy) when x == y -> Some (ix - iy)
@@ -1380,9 +1404,9 @@ let rec eval_value funcs structs globals env = function
       cell := new_value;
       if prefix then new_value else old_value
   | EUnary (Neg, e) -> VInt (- eval_expr funcs structs globals env e)
-  | EUnary (Not, e) -> VInt (bool_int (not (truth (eval_expr funcs structs globals env e))))
+  | EUnary (Not, e) -> VInt (bool_int (not (truth_value (eval_value funcs structs globals env e))))
   | ECond (cond, yes, no) ->
-      if truth (eval_expr funcs structs globals env cond) then eval_value funcs structs globals env yes else eval_value funcs structs globals env no
+      if truth_value (eval_value funcs structs globals env cond) then eval_value funcs structs globals env yes else eval_value funcs structs globals env no
   | EUnary (Deref, e) -> read_pointer (eval_value funcs structs globals env e)
   | EUnary (Addr, EVar name) ->
       let binding = find_binding name env in
@@ -1402,9 +1426,9 @@ let rec eval_value funcs structs globals env = function
   | ECast (ty, e) ->
       coerce_value ty (eval_value funcs structs globals env e)
   | EBinary (Land, a, b) ->
-      VInt (if truth (eval_expr funcs structs globals env a) then bool_int (truth (eval_expr funcs structs globals env b)) else 0)
+      VInt (if truth_value (eval_value funcs structs globals env a) then bool_int (truth_value (eval_value funcs structs globals env b)) else 0)
   | EBinary (Lor, a, b) ->
-      VInt (if truth (eval_expr funcs structs globals env a) then 1 else bool_int (truth (eval_expr funcs structs globals env b)))
+      VInt (if truth_value (eval_value funcs structs globals env a) then 1 else bool_int (truth_value (eval_value funcs structs globals env b)))
   | EBinary (Eq, a, b) ->
       VInt (bool_int (value_equal (eval_value funcs structs globals env a) (eval_value funcs structs globals env b)))
   | EBinary (Ne, a, b) ->
@@ -1609,12 +1633,12 @@ and exec_stmt funcs structs globals env = function
       | Broke _ -> Broke env
       | Returned _ as ret -> ret)
   | If (cond, yes, no) ->
-      if truth (eval_expr funcs structs globals env cond) then exec_stmt funcs structs globals env yes
+      if truth_value (eval_value funcs structs globals env cond) then exec_stmt funcs structs globals env yes
       else (
         match no with Some stmt -> exec_stmt funcs structs globals env stmt | None -> Continue env)
   | While (cond, body) ->
       let rec loop env =
-        if truth (eval_expr funcs structs globals env cond) then
+        if truth_value (eval_value funcs structs globals env cond) then
           match exec_stmt funcs structs globals env body with
           | Continue env' -> loop env'
           | Broke env' -> Continue env'
@@ -1625,7 +1649,7 @@ and exec_stmt funcs structs globals env = function
   | DoWhile (body, cond) ->
       let rec loop env =
         match exec_stmt funcs structs globals env body with
-        | Continue env' -> if truth (eval_expr funcs structs globals env' cond) then loop env' else Continue env'
+        | Continue env' -> if truth_value (eval_value funcs structs globals env' cond) then loop env' else Continue env'
         | Broke env' -> Continue env'
         | other -> other
       in
@@ -1633,7 +1657,7 @@ and exec_stmt funcs structs globals env = function
   | For (init, cond, post, body) ->
       let env = match init with Some s -> exec_simple funcs structs globals env s | None -> env in
       let rec loop env =
-        let go = match cond with Some e -> truth (eval_expr funcs structs globals env e) | None -> true in
+        let go = match cond with Some e -> truth_value (eval_value funcs structs globals env e) | None -> true in
         if go then
           match exec_stmt funcs structs globals env body with
           | Continue env' ->
