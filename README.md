@@ -53,6 +53,34 @@ nix build .#gccLatest.m2.precisely.gccm2
 byte-for-byte output checks. Upstream Blynn and Mes sources are fetched by
 fixed-output derivations and patched with `patches/upstreams`.
 
+## Downstream Overlay
+
+Downstream flakes can use `nixpkgsArgs.default` to import nixpkgs with its
+`minimal-bootstrap` and `stdenv` rooted in the stage0/M2 `blynn-bootstrap`
+chain. Normal nixpkgs packages, such as `pkgs.hello`, then use nixpkgs'
+own package expressions:
+
+```nix
+{
+  inputs.blynn-bootstrap.url = "github:siraben/blynn-bootstrap";
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+
+  outputs = { nixpkgs, blynn-bootstrap, ... }:
+    let
+      system = "x86_64-linux";
+      pkgs = import nixpkgs (blynn-bootstrap.nixpkgsArgs.default system);
+    in {
+      packages.${system}.default = pkgs.hello;
+    };
+}
+```
+
+The default args also apply `overlays.default`, which exposes this flake's
+bootstrap package tree at `pkgs.blynn-bootstrap` and replaces nixpkgs'
+`minimal-bootstrap` with `pkgs.blynn-bootstrap.trustRoots.m2.precisely.m2.minimal`.
+If a consumer only wants the namespace and does not want stdenv replacement,
+use `blynn-bootstrap.overlays.packages`.
+
 ## Portable Bootstrap
 
 The repo-owned scripts under `scripts/` are the primary bootstrap interface.
