@@ -49,8 +49,9 @@ optional symbol adapters, and shared C type parsing consumes keyword choices
 through parser adapters instead of raw token advancement. Primary-expression
 parsing now uses value-preserving literal parsers and a local parser-alternative
 list for literals, initializer lists, `sizeof`, identifiers, calls, casts, and
-parenthesized expressions. The source avoids newer OCaml-only conveniences such
-as
+parenthesized expressions, with assignment, ternary, prefix unary, and postfix
+operators routed through optional symbol adapters. The source avoids newer
+OCaml-only conveniences such as
 `List.find_opt` / `Option.is_some` in favor of small local ML helpers. This
 keeps the host compiler easy to run with `ocamlc` while making the code closer
 to the subset that should later be ported into the mini-ML `ccc.ml`.

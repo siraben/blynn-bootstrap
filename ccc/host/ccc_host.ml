@@ -265,6 +265,14 @@ let take_keyword text state =
 let take_ident state =
   take_value expect_ident state
 
+let rec choose_option parsers state =
+  match parsers with
+  | [] -> None
+  | parser :: rest -> (
+      match parser state with
+      | Some result -> Some result
+      | None -> choose_option rest state)
+
 let run parser tokens =
   match parser { tokens; pos = 0 } with
   | Consumed (ParserOk (value, _)) | Unconsumed (ParserOk (value, _)) -> value
@@ -455,9 +463,9 @@ let rec parse_expr state = parse_assignment state
 
 and parse_assignment state =
   let lhs, state = parse_conditional state in
-  match peek state with
-  | Sym "=" -> (
-      let rhs, state = parse_assignment (advance state) in
+  match take_sym "=" state with
+  | Some state -> (
+      let rhs, state = parse_assignment state in
       match lhs with
       | EVar name -> (EAssignExpr (name, rhs), state)
       | EUnary (Deref, ptr) -> (EAssignDeref (ptr, rhs), state)
@@ -465,17 +473,17 @@ and parse_assignment state =
       | EMember (base, field) -> (EAssignMember (base, field, rhs), state)
       | EPtrMember (base, field) -> (EAssignMember (EUnary (Deref, base), field, rhs), state)
       | _ -> raise (Parse_error "bad assignment target"))
-  | _ -> (lhs, state)
+  | None -> (lhs, state)
 
 and parse_conditional state =
   let cond, state = parse_binop 1 state in
-  match peek state with
-  | Sym "?" ->
-      let yes, state = parse_expr (advance state) in
+  match take_sym "?" state with
+  | Some state ->
+      let yes, state = parse_expr state in
       let state = need_sym ":" state in
       let no, state = parse_conditional state in
       (ECond (cond, yes, no), state)
-  | _ -> (cond, state)
+  | None -> (cond, state)
 
 and parse_primary state =
   let int_lit st =
@@ -555,15 +563,11 @@ and parse_primary state =
           let st = need_sym ")" st in
           Some (expr, st)
   in
-  let rec choose parsers st =
-    match parsers with
-    | [] -> None
-    | parser :: rest -> (
-        match parser st with
-        | Some result -> Some result
-        | None -> choose rest st)
-  in
-  match choose [ int_lit; char_lit; string_lit; init_list; sizeof_expr; ident_expr; paren_or_cast ] state with
+  match
+    choose_option
+      [ int_lit; char_lit; string_lit; init_list; sizeof_expr; ident_expr; paren_or_cast ]
+      state
+  with
   | Some result -> result
   | None -> raise (Parse_error "expected expression")
 
@@ -582,44 +586,70 @@ and parse_arg_list state =
       loop state []
 
 and parse_unary state =
-  match peek state with
-  | Sym "++" ->
-      let rhs, st = parse_unary (advance state) in
-      (match rhs with EVar name -> (EUpdateExpr (name, 1, true), st) | _ -> (EUpdateLvalue (rhs, 1, true), st))
-  | Sym "--" ->
-      let rhs, st = parse_unary (advance state) in
-      (match rhs with EVar name -> (EUpdateExpr (name, -1, true), st) | _ -> (EUpdateLvalue (rhs, -1, true), st))
-  | Sym "!" ->
-      let rhs, st = parse_unary (advance state) in
-      (EUnary (Not, rhs), st)
-  | Sym "-" ->
-      let rhs, st = parse_unary (advance state) in
-      (EUnary (Neg, rhs), st)
-  | Sym "*" ->
-      let rhs, st = parse_unary (advance state) in
-      (EUnary (Deref, rhs), st)
-  | Sym "&" ->
-      let rhs, st = parse_unary (advance state) in
-      (EUnary (Addr, rhs), st)
-  | _ ->
+  let prefix_update symbol delta st =
+    match take_sym symbol st with
+    | None -> None
+    | Some st ->
+        let rhs, st = parse_unary st in
+        let expr =
+          match rhs with
+          | EVar name -> EUpdateExpr (name, delta, true)
+          | _ -> EUpdateLvalue (rhs, delta, true)
+        in
+        Some (expr, st)
+  in
+  let prefix_unary symbol op st =
+    match take_sym symbol st with
+    | None -> None
+    | Some st ->
+        let rhs, st = parse_unary st in
+        Some (EUnary (op, rhs), st)
+  in
+  match
+    choose_option
+      [
+        prefix_update "++" 1;
+        prefix_update "--" (-1);
+        prefix_unary "!" Not;
+        prefix_unary "-" Neg;
+        prefix_unary "*" Deref;
+        prefix_unary "&" Addr;
+      ]
+      state
+  with
+  | Some result -> result
+  | None ->
       let expr, state = parse_primary state in
       parse_postfix expr state
 
 and parse_postfix expr state =
-  match (expr, peek state) with
-  | EVar name, Sym "++" -> (EUpdateExpr (name, 1, false), advance state)
-  | EVar name, Sym "--" -> (EUpdateExpr (name, -1, false), advance state)
-  | _, Sym "[" ->
-      let index, state = parse_expr (advance state) in
-      let state = need_sym "]" state in
-      parse_postfix (EIndex (expr, index)) state
-  | _, Sym "." ->
-      let name, state = need_ident (advance state) in
-      parse_postfix (EMember (expr, name)) state
-  | _, Sym "->" ->
-      let name, state = need_ident (advance state) in
-      parse_postfix (EPtrMember (expr, name)) state
-  | _ -> (expr, state)
+  let postfix_tail expr state =
+    match take_sym "[" state with
+    | Some state ->
+        let index, state = parse_expr state in
+        let state = need_sym "]" state in
+        parse_postfix (EIndex (expr, index)) state
+    | None -> (
+        match take_sym "." state with
+        | Some state ->
+            let name, state = need_ident state in
+            parse_postfix (EMember (expr, name)) state
+        | None -> (
+            match take_sym "->" state with
+            | Some state ->
+                let name, state = need_ident state in
+                parse_postfix (EPtrMember (expr, name)) state
+            | None -> (expr, state)))
+  in
+  match expr with
+  | EVar name -> (
+      match take_sym "++" state with
+      | Some state -> (EUpdateExpr (name, 1, false), state)
+      | None -> (
+          match take_sym "--" state with
+          | Some state -> (EUpdateExpr (name, -1, false), state)
+          | None -> postfix_tail expr state))
+  | _ -> postfix_tail expr state
 
 and binop_of op =
   match op with
