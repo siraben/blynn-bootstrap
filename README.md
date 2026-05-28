@@ -37,6 +37,25 @@ Debug alternatives are separate targets:
 
 These are useful for testing but are not seed-only compiler paths.
 
+## Downstream overlay
+
+`nixpkgsArgs.default` selects the stage0/M2 bootstrap compiler and libc for
+nixpkgs' stdenv, while retaining nixpkgs' package expressions:
+
+```nix
+let
+  system = "x86_64-linux";
+  pkgs = import nixpkgs (blynn-bootstrap.nixpkgsArgs.default system);
+in pkgs.hello
+```
+
+The arguments apply `overlays.default`, exposing this flake's package tree
+as `pkgs.blynn-bootstrap` and selecting
+`trustRoots.m2.precisely.m2.minimal` as `minimal-bootstrap`. To expose only
+the package namespace without replacing stdenv, use `overlays.packages`.
+This wiring does not establish an end-to-end downstream build or remove
+the host dependencies below.
+
 ## Trust boundary
 
 The compiler path is not the entire build environment:
