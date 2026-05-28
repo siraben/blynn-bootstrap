@@ -179,6 +179,26 @@ DEFINE SYSCALL 0F05
     check_return va-list-local.c 42
     printf '%s\n' 'int main(void) { int _t = 0xc1; return (_t >= 0xc0 && _t <= 0xcf) ? 42 : 1; }' > suffix-typedef-heuristic-paren.c
     check_return suffix-typedef-heuristic-paren.c 42
+    printf '%s\n' 'int warn(int x) { return x + 40; }' 'int main(void) { return (0, warn)(2); }' > expression-callee-call.c
+    check_return expression-callee-call.c 42
+    printf '%s\n' 'long double unused(void) { return 79228162514264337593543950336.0L; }' 'int main(void) { return 42; }' > long-double-literal-parse.c
+    check_return long-double-literal-parse.c 42
+    printf '%s\n' 'int main(void) { int d = 42; float f = (float)d; return sizeof(float) == 4 ? d : 1; }' > float-type-cast.c
+    check_return float-type-cast.c 42
+    printf '%s\n' 'int strlen2(char *s) { return s[0] + s[1]; }' 'int main(void) { return strlen2("!" "\011"); }' > adjacent-string-literals.c
+    check_return adjacent-string-literals.c 42
+    printf '%s\n' 'int main(void) { static char const names[2][4] = { "Jan", "Feb" }; return sizeof(names) == 8 ? 42 : 1; }' > multidim-local-array.c
+    check_return multidim-local-array.c 42
+    printf '%s\n' 'typedef struct { int x; } init_params;' 'int main(void) { init_params p = { 42 }; return p.x; }' > lowercase-typedef-local.c
+    check_return lowercase-typedef-local.c 42
+    printf '%s\n' 'int main(void) { union { float f; unsigned u; } x1, x2, y; return 42; }' > local-anonymous-union.c
+    check_return local-anonymous-union.c 42
+    printf '%s\n' 'int PUT_R_RET(int x, int y) { return x + y; }' 'int main(void) { return PUT_R_RET(40, 2); }' > uppercase-call-not-typedef.c
+    check_return uppercase-call-not-typedef.c 42
+    printf '%s\n' 'struct outer { int tag; struct inner { int value; } *ptr; };' 'int main(void) { return sizeof(struct outer) > 0 ? 42 : 1; }' > nested-struct-field-type.c
+    check_return nested-struct-field-type.c 42
+    printf '%s\n' 'int main(void) { int ret_t = 0; ret_t = 42; return ret_t; }' > suffix-name-assignment.c
+    check_return suffix-name-assignment.c 42
     printf '%s\n' '#ifdef MISSING' 'int main(void) { return 1; }' '#else' 'int main(void) { return 42; }' '#endif' > ifdef-missing-else.c
     check_return ifdef-missing-else.c 42
     printf '%s\n' '#define VALUE 42' '#ifndef VALUE' 'int main(void) { return 1; }' '#else' 'int main(void) { return VALUE; }' '#endif' > ifndef-defined-else.c

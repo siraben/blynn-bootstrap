@@ -144,6 +144,32 @@ let lex_number src pos =
       | _ -> p
     else p
   in
+  let rec float_suffix p =
+    if p < len then
+      match src.[p] with
+      | 'f' | 'F' | 'l' | 'L' -> float_suffix (p + 1)
+      | _ -> p
+    else p
+  in
+  let rec decimal_digits p =
+    if p < len && is_digit src.[p] then decimal_digits (p + 1) else p
+  in
+  let exponent p =
+    if p < len && (src.[p] = 'e' || src.[p] = 'E') then
+      let p = p + 1 in
+      let p =
+        if p < len && (src.[p] = '+' || src.[p] = '-') then p + 1 else p
+      in
+      decimal_digits p
+    else p
+  in
+  let float_tail p =
+    let after_dot =
+      if p < len && src.[p] = '.' then decimal_digits (p + 1) else p
+    in
+    let after_exp = exponent after_dot in
+    if after_dot <> p || after_exp <> after_dot then Some (float_suffix after_exp) else None
+  in
   if pos + 1 < len && src.[pos] = '0' && (src.[pos + 1] = 'x' || src.[pos + 1] = 'X') then
     let rec loop p acc =
       if p < len && (is_digit src.[p] || ('a' <= src.[p] && src.[p] <= 'f') || ('A' <= src.[p] && src.[p] <= 'F')) then
@@ -155,7 +181,10 @@ let lex_number src pos =
     let rec loop p acc =
       if p < len && is_digit src.[p] then
         loop (p + 1) ((acc * 10) + Char.code src.[p] - Char.code '0')
-      else (Int_lit acc, suffix p)
+      else
+        match float_tail p with
+        | Some p -> (Int_lit 0, p)
+        | None -> (Int_lit acc, suffix p)
     in
     loop pos 0
 
@@ -574,6 +603,7 @@ type c_type =
   | TUnsignedLong
   | TUnsignedLongLong
   | TBool
+  | TFloat
   | TDouble
   | TLongDouble
   | TVoid
@@ -605,6 +635,7 @@ type expr =
   | EBinary of binop * expr * expr
   | EComma of expr * expr
   | ECall of string * expr list
+  | ECallExpr of expr * expr list
   | ECast of c_type * expr
 
 type simple_stmt =
@@ -656,7 +687,7 @@ let starts_uppercase name =
 
 let rec starts_type tok =
   match tok with
-  | Ident ("int" | "char" | "signed" | "unsigned" | "void" | "long" | "short" | "_Bool" | "double" | "static" | "const" | "struct" | "union") -> true
+  | Ident ("int" | "char" | "signed" | "unsigned" | "void" | "long" | "short" | "_Bool" | "float" | "double" | "static" | "const" | "struct" | "union") -> true
   | Ident "va_list" -> true
   | Ident name -> has_suffix "_t" name || starts_uppercase name
   | _ -> false
@@ -671,6 +702,18 @@ let rec take_keyword_type choices state =
       match take_keyword word state with
       | Some state -> Some (ty, state)
       | None -> take_keyword_type rest state)
+
+let skip_braced_tokens state =
+  let state = need_sym "{" state in
+  let rec loop state depth =
+    match peek state with
+    | Eof -> raise (Parse_error "unterminated braced type")
+    | Sym "{" -> loop (advance state) (depth + 1)
+    | Sym "}" ->
+        if depth = 1 then advance state else loop (advance state) (depth - 1)
+    | _ -> loop (advance state) depth
+  in
+  loop state 1
 
 let rec parse_type state =
   let rec qualifiers st =
@@ -710,20 +753,32 @@ let rec parse_type state =
   in
   let struct_type st =
     match take_ident st with
-    | Some (name, st) -> (TOther ("struct " ^ name), st)
-    | None -> (TOther "struct", st)
+    | Some (name, st) ->
+        let st =
+          match peek st with
+          | Sym "{" -> skip_braced_tokens st
+          | _ -> st
+        in
+        (TOther ("struct " ^ name), st)
+    | None -> (
+        match peek st with
+        | Sym "{" -> (TOther "struct", skip_braced_tokens st)
+        | _ -> (TOther "struct", st))
   in
   let union_type st =
     match take_ident st with
     | Some (_, st) -> (TUnion, st)
-    | None -> (TUnion, st)
+    | None -> (
+        match peek st with
+        | Sym "{" -> (TUnion, skip_braced_tokens st)
+        | _ -> (TUnion, st))
   in
   let named_type st =
     let name, st = need_ident st in
     (TOther name, st)
   in
   let plain_type st =
-    match take_keyword_type [ ("char", TChar); ("int", TInt); ("void", TVoid); ("_Bool", TBool); ("short", TShort); ("double", TDouble) ] st with
+    match take_keyword_type [ ("char", TChar); ("int", TInt); ("void", TVoid); ("_Bool", TBool); ("short", TShort); ("float", TFloat); ("double", TDouble) ] st with
     | Some result -> result
     | None -> (
         match take_keyword "long" st with
@@ -832,7 +887,13 @@ and parse_primary state =
   in
   let string_lit st =
     match take_value expect_string_lit st with
-    | Some (s, st) -> Some (EString s, st)
+    | Some (s, st) ->
+        let rec loop acc st =
+          match take_value expect_string_lit st with
+          | Some (next, st) -> loop (acc ^ next) st
+          | None -> Some (EString acc, st)
+        in
+        loop s st
     | None -> None
   in
   let init_list st =
@@ -982,6 +1043,11 @@ and parse_postfix expr state =
         let state = need_sym "]" state in
         parse_postfix (EIndex (expr, index)) state
     | None -> (
+        match take_sym "(" state with
+        | Some state ->
+            let args, state = parse_arg_list state in
+            parse_postfix (ECallExpr (expr, args)) state
+        | None -> (
         match take_sym "." state with
         | Some state ->
             let name, state = need_ident state in
@@ -997,7 +1063,7 @@ and parse_postfix expr state =
                 | None -> (
                     match take_sym "--" state with
                     | Some state -> (update_expr (-1), state)
-                    | None -> (expr, state)))))
+                    | None -> (expr, state))))))
   in
   postfix_tail expr state
 
@@ -1049,7 +1115,7 @@ let layout_scalar_size ty =
   match ty with
   | TChar | TSignedChar | TUnsignedChar | TBool -> 1
   | TShort | TUnsignedShort -> 2
-  | TInt | TUnsigned | TOther _ -> 4
+  | TInt | TUnsigned | TFloat | TOther _ -> 4
   | TLong | TLongLong | TUnsignedLong | TUnsignedLongLong | TPtr _ -> 8
   | TUnion -> 8
   | TDouble -> 8
@@ -1124,9 +1190,23 @@ let parse_array_size state =
             (Some size, state))
     | None -> (None, state)
 
+let parse_array_sizes state =
+  let rec loop state acc =
+    match parse_array_size state with
+    | None, state -> (acc, state)
+    | Some size, state ->
+        let acc =
+          match acc with
+          | None -> Some size
+          | Some prev -> Some (EBinary (Mul, prev, size))
+        in
+        loop state acc
+  in
+  loop state None
+
 let parse_decl_suffix name state =
   let array_size, state =
-    parse_array_size state
+    parse_array_sizes state
   in
   let init, state =
     match take_sym "=" state with
@@ -1182,11 +1262,24 @@ let parse_decl_after_type state =
   in
   rest state [ first ]
 
+let starts_typedef_decl_shape state =
+  match peek state with
+  | Ident _ -> (
+      match peek (advance state) with
+      | Ident _ | Sym "*" -> true
+      | _ -> false)
+  | _ -> false
+
+let starts_statement_decl state =
+  match peek state with
+  | Ident ("struct" | "union") -> starts_type (peek state)
+  | _ -> starts_typedef_decl_shape state
+
 let parse_simple_no_semi state =
   match peek state with
   | Sym ")" | Sym ";" -> (SEmpty, state)
   | tok ->
-      if starts_type tok then parse_decl_after_type state
+      if starts_statement_decl state || starts_typedef_decl_shape state then parse_decl_after_type state
       else
         let expr, state = parse_expr state in
         (SExpr expr, state)
@@ -1558,30 +1651,84 @@ let parse_field_name state =
         | Sym "(" -> skip_balanced_symbols "(" ")" "unterminated function pointer field" state
         | _ -> state
       in
-      (name, state)
+        (name, state)
   | _ -> need_ident state
+
+let starts_aggregate_body state =
+  match peek state, peek (advance state), peek (advance (advance state)) with
+  | Ident ("struct" | "union"), Sym "{", _ -> true
+  | Ident ("struct" | "union"), Ident _, Sym "{" -> true
+  | _ -> false
+
+let parse_aggregate_body_field state =
+  let keyword =
+    match peek state with
+    | Ident name -> name
+    | _ -> raise (Parse_error "expected aggregate field")
+  in
+  let state = advance state in
+  let tag, state =
+    match take_ident state with
+    | Some (name, state) -> (name, state)
+    | None -> ("", state)
+  in
+  let base_ty =
+    if keyword = "struct" then
+      TOther (if tag = "" then "struct" else "struct " ^ tag)
+    else TUnion
+  in
+  let state = skip_braced_type_body state in
+  match take_sym ";" state with
+  | Some state -> ([ ("__anonymous_" ^ keyword, base_ty, None) ], state)
+  | None ->
+      let rec declarators state acc =
+        let ptr_count, state = parse_declarator_pointer state in
+        let ty = add_ptr_type base_ty ptr_count in
+        let field, state = parse_field_name state in
+        let array_size, state = parse_array_size state in
+        match take_sym "," state with
+        | Some state -> declarators state ((field, ty, array_size) :: acc)
+        | None ->
+            let state = need_sym ";" state in
+            (List.rev ((field, ty, array_size) :: acc), state)
+      in
+      declarators state []
 
 let parse_struct_field state =
   match peek state with
-  | Ident "union" ->
-      let state = advance state in
-      let state =
-        match peek state with
-        | Ident _ -> advance state
-        | _ -> state
-      in
-      let state =
-        match peek state with
-        | Sym "{" -> skip_braced_type_body state
-        | _ -> state
-      in
-      (match take_sym ";" state with
-      | Some state -> ([ ("__anonymous_union", TUnion, None) ], state)
-      | None ->
-          let field, state = need_ident state in
+  | Ident ("struct" | "union") ->
+      if starts_aggregate_body state then parse_aggregate_body_field state
+      else
+        let ty, state = parse_type state in
+        let rec skip_declarator_pointer state =
+          match take_sym "*" state with
+          | Some state ->
+              let rec qualifiers state =
+                match take_keyword "const" state with
+                | Some state -> qualifiers state
+                | None -> state
+              in
+              skip_declarator_pointer (qualifiers state)
+          | None -> state
+        in
+        let rec declarators state acc =
+          let state = skip_declarator_pointer state in
+          let field, state = parse_field_name state in
           let array_size, state = parse_array_size state in
-          let state = need_sym ";" state in
-          ([ (field, TUnion, array_size) ], state))
+          let state =
+            match take_sym ":" state with
+            | Some state ->
+                let _width, state = parse_assignment state in
+                state
+            | None -> state
+          in
+          match take_sym "," state with
+          | Some state -> declarators state ((field, ty, array_size) :: acc)
+          | None ->
+              let state = need_sym ";" state in
+              (List.rev ((field, ty, array_size) :: acc), state)
+        in
+        declarators state []
   | _ ->
       let ty, state = parse_type state in
       let rec skip_declarator_pointer state =
@@ -1768,7 +1915,7 @@ let rec sizeof_type ty =
   match ty with
   | TChar | TSignedChar | TUnsignedChar | TBool -> 1
   | TShort | TUnsignedShort -> 2
-  | TInt | TUnsigned -> 4
+  | TInt | TUnsigned | TFloat -> 4
   | TLong | TLongLong | TUnsignedLong | TUnsignedLongLong | TPtr _ -> 8
   | TDouble -> 8
   | TLongDouble -> 16
@@ -2237,6 +2384,14 @@ let rec eval_value funcs structs globals env expr =
         match find_binding_opt name env with
         | Some binding -> (match !(binding.bind_value) with VFunc target -> target | _ -> name)
         | None -> name
+      in
+      eval_func funcs structs globals target values
+  | ECallExpr (callee, args) ->
+      let values = List.map (call_arg funcs structs globals env) args in
+      let target =
+        match eval_value funcs structs globals env callee with
+        | VFunc name -> name
+        | _ -> fail "called expression is not a function"
       in
       eval_func funcs structs globals target values
 

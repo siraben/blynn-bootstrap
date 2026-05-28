@@ -72,8 +72,13 @@ parse-position debugging. The current full TinyCC probe uses HCC's
 bitfields, function-pointer fields, bitwise expressions, compound assignments,
 member postfix updates, local declaration lists, comma expressions, local
 `va_list` declarations, and parenthesized `_t` comparisons without mistaking
-the local for a cast type. It next stops at an expression-callee call of the
-form `(..., _tcc_warning)(...)`.
+the local for a cast type. It also parses expression-callee calls, decimal
+floating constants, `float` casts/declarations, adjacent string literal
+concatenation, multidimensional arrays, lowercase typedef-shaped locals,
+anonymous local unions, uppercase function-like calls, nested tagged struct
+field declarations, and suffix-named assignments. The HCC-expanded TinyCC
+source now reaches evaluation and next stops at `main` argument binding
+(`wrong argument count: main`), not at a parser error.
 
 ## Supporting Artifacts
 
