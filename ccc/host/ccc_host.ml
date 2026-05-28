@@ -155,45 +155,105 @@ let directive_word_at word src pos =
   && String.sub src pos len = word
   && (pos + len >= String.length src || not (is_ident src.[pos + len]))
 
-let collect_define_constants src =
-  let line_end pos =
-    let stop = skip_line src pos in
-    if stop > 0 && src.[stop - 1] = '\n' then stop - 1 else stop
-  in
-  let parse_define pos acc =
-    let pos = skip_hspace src pos in
-    if directive_word_at "define" src pos then
-      let pos = skip_hspace src (pos + 6) in
-      if pos < String.length src && is_alpha src.[pos] then
-        let rec ident_end p = if p < String.length src && is_ident src.[p] then ident_end (p + 1) else p in
-        let stop = ident_end (pos + 1) in
-        let name = String.sub src pos (stop - pos) in
-        let value_pos = skip_hspace src stop in
-        if value_pos < String.length src && src.[value_pos] = '(' then acc
-        else if value_pos < String.length src && src.[value_pos] = '\'' then
-          (match lex_char src value_pos with
-          | Char_lit value, _ -> (name, value) :: acc
-          | _ -> acc)
-        else if value_pos < String.length src && src.[value_pos] = '-' then (
-          match lex_number src (value_pos + 1) with
-          | Int_lit value, _ -> (name, -value) :: acc
-          | _ -> acc)
-        else if value_pos < String.length src && is_digit src.[value_pos] then (
-          match lex_number src value_pos with
-          | Int_lit value, _ -> (name, value) :: acc
-          | _ -> acc)
-        else acc
+let parse_define_constant src pos acc =
+  let pos = skip_hspace src pos in
+  if directive_word_at "define" src pos then
+    let pos = skip_hspace src (pos + 6) in
+    if pos < String.length src && is_alpha src.[pos] then
+      let rec ident_end p = if p < String.length src && is_ident src.[p] then ident_end (p + 1) else p in
+      let stop = ident_end (pos + 1) in
+      let name = String.sub src pos (stop - pos) in
+      let value_pos = skip_hspace src stop in
+      if value_pos < String.length src && src.[value_pos] = '(' then acc
+      else if value_pos < String.length src && src.[value_pos] = '\'' then
+        (match lex_char src value_pos with
+        | Char_lit value, _ -> (name, value) :: acc
+        | _ -> acc)
+      else if value_pos < String.length src && src.[value_pos] = '-' then (
+        match lex_number src (value_pos + 1) with
+        | Int_lit value, _ -> (name, -value) :: acc
+        | _ -> acc)
+      else if value_pos < String.length src && is_digit src.[value_pos] then (
+        match lex_number src value_pos with
+        | Int_lit value, _ -> (name, value) :: acc
+        | _ -> acc)
       else acc
     else acc
-  in
-  let rec loop pos acc =
-    if pos >= String.length src then acc
+  else acc
+
+let rec define_exists name defs =
+  match defs with
+  | [] -> false
+  | (key, _) :: rest -> key = name || define_exists name rest
+
+let directive_name word src hash_pos =
+  let pos = skip_hspace src (hash_pos + 1) in
+  let len = String.length word in
+  if directive_word_at word src pos then
+    let pos = skip_hspace src (pos + len) in
+    if pos < String.length src && is_alpha src.[pos] then
+      let rec ident_end p = if p < String.length src && is_ident src.[p] then ident_end (p + 1) else p in
+      let stop = ident_end (pos + 1) in
+      Some (String.sub src pos (stop - pos))
+    else None
+  else None
+
+let directive_at word src hash_pos =
+  directive_word_at word src (skip_hspace src (hash_pos + 1))
+
+let rec skip_inactive_conditional src pos depth =
+  if pos >= String.length src then pos
+  else
+    let first = skip_hspace src pos in
+    let next = skip_line src pos in
+    if first < String.length src && src.[first] = '#' then
+      if directive_at "ifdef" src first || directive_at "ifndef" src first then
+        skip_inactive_conditional src next (depth + 1)
+      else if directive_at "endif" src first then
+        if depth = 0 then next else skip_inactive_conditional src next (depth - 1)
+      else if directive_at "else" src first && depth = 0 then next
+      else skip_inactive_conditional src next depth
+    else skip_inactive_conditional src next depth
+
+let rec skip_active_else src pos depth =
+  if pos >= String.length src then pos
+  else
+    let first = skip_hspace src pos in
+    let next = skip_line src pos in
+    if first < String.length src && src.[first] = '#' then
+      if directive_at "ifdef" src first || directive_at "ifndef" src first then
+        skip_active_else src next (depth + 1)
+      else if directive_at "endif" src first then
+        if depth = 0 then next else skip_active_else src next (depth - 1)
+      else skip_active_else src next depth
+    else skip_active_else src next depth
+
+let preprocess_source src =
+  let rec loop pos defs acc =
+    if pos >= String.length src then (String.concat "" (List.rev acc), defs)
     else
       let first = skip_hspace src pos in
-      let acc = if first < String.length src && src.[first] = '#' then parse_define (first + 1) acc else acc in
-      loop (skip_line src (line_end pos)) acc
+      let next = skip_line src pos in
+      if first < String.length src && src.[first] = '#' then
+        if directive_at "define" src first then
+          loop next (parse_define_constant src (first + 1) defs) acc
+        else if directive_at "ifdef" src first then (
+          match directive_name "ifdef" src first with
+          | Some name ->
+              if define_exists name defs then loop next defs acc else loop (skip_inactive_conditional src next 0) defs acc
+          | None -> loop next defs acc)
+        else if directive_at "ifndef" src first then (
+          match directive_name "ifndef" src first with
+          | Some name ->
+              if define_exists name defs then loop (skip_inactive_conditional src next 0) defs acc else loop next defs acc
+          | None -> loop next defs acc)
+        else if directive_at "else" src first then
+          loop (skip_active_else src next 0) defs acc
+        else loop next defs acc
+      else
+        loop next defs (String.sub src pos (next - pos) :: acc)
   in
-  loop 0 []
+  loop 0 [] []
 
 let multi_symbols =
   [ "=="; "!="; "<="; ">="; "&&"; "||"; "<<"; ">>"; "++"; "--"; "+="; "-="; "->" ]
@@ -2089,8 +2149,9 @@ let m1_of_exit code =
   \tSYSCALL"
 
 let compile src =
+  let src, constants = preprocess_source src in
   let tokens = lex src in
-  let program = parse_program tokens (collect_define_constants src) in
+  let program = parse_program tokens constants in
   if not (List.exists (fun fn -> fn.name = "main") program.funcs) then m1_of_exit 0
   else
   let constants =

@@ -117,6 +117,12 @@ DEFINE SYSCALL 0F05
     check_return define-char-return.c 65
     printf '%s\n' '#define VALUE 42' 'int main(void) { int VALUE = 7; return VALUE; }' > define-shadow.c
     check_return define-shadow.c 7
+    printf '%s\n' '#ifdef MISSING' 'int main(void) { return 1; }' '#else' 'int main(void) { return 42; }' '#endif' > ifdef-missing-else.c
+    check_return ifdef-missing-else.c 42
+    printf '%s\n' '#define VALUE 42' '#ifndef VALUE' 'int main(void) { return 1; }' '#else' 'int main(void) { return VALUE; }' '#endif' > ifndef-defined-else.c
+    check_return ifndef-defined-else.c 42
+    printf '%s\n' '#ifdef LATER' 'int main(void) { return 1; }' '#else' 'int main(void) { return 42; }' '#endif' '#define LATER 1' > define-after-ifdef.c
+    check_return define-after-ifdef.c 42
 
     runHook postBuild
   '';
