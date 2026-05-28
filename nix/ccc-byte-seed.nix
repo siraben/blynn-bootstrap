@@ -145,6 +145,12 @@ DEFINE SYSCALL 0F05
     check_return if-defined-or.c 42
     printf '%s\n' '#define A 1' '#if !(defined(MISSING) && defined(A))' 'int main(void) { return 42; }' '#else' 'int main(void) { return 1; }' '#endif' > if-paren-not-and.c
     check_return if-paren-not-and.c 42
+    printf '%s\n' '#define A 1' '#if 0' 'int main(void) { return 1; }' '#elif defined(A)' 'int main(void) { return 42; }' '#else' 'int main(void) { return 2; }' '#endif' > elif-defined.c
+    check_return elif-defined.c 42
+    printf '%s\n' '#if 1' 'int main(void) { return 42; }' '#elif 1' 'int main(void) { return 1; }' '#else' 'int main(void) { return 2; }' '#endif' > elif-after-active.c
+    check_return elif-after-active.c 42
+    printf '%s\n' '#if 0' 'int main(void) { return 1; }' '#elif 0' 'int main(void) { return 2; }' '#else' 'int main(void) { return 42; }' '#endif' > elif-fallthrough-else.c
+    check_return elif-fallthrough-else.c 42
     printf '%s\n' 'int main(voidx) { return 0; }' > keyword-prefix-param.c
     if ${mzvmSeedM2}/bin/mzvm-seed ccc.byte < keyword-prefix-param.c > keyword-prefix-param.M1; then
       exit 1

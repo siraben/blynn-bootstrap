@@ -293,6 +293,9 @@ let eval_preprocessor_if defs src pos =
   let value, _ = parse_preprocessor_or defs src pos in
   value
 
+let directive_expr_pos word src hash_pos =
+  skip_hspace src (skip_hspace src (hash_pos + 1) + String.length word)
+
 let rec skip_inactive_conditional src pos depth =
   if pos >= String.length src then pos
   else
@@ -303,9 +306,26 @@ let rec skip_inactive_conditional src pos depth =
         skip_inactive_conditional src next (depth + 1)
       else if directive_at "endif" src first then
         if depth = 0 then next else skip_inactive_conditional src next (depth - 1)
-      else if directive_at "else" src first && depth = 0 then next
+      else if (directive_at "elif" src first || directive_at "else" src first) && depth = 0 then next
       else skip_inactive_conditional src next depth
     else skip_inactive_conditional src next depth
+
+let rec select_inactive_conditional src pos defs depth =
+  if pos >= String.length src then pos
+  else
+    let first = skip_hspace src pos in
+    let next = skip_line src pos in
+    if first < String.length src && src.[first] = '#' then
+      if directive_at "ifdef" src first || directive_at "ifndef" src first || directive_at "if" src first then
+        select_inactive_conditional src next defs (depth + 1)
+      else if directive_at "endif" src first then
+        if depth = 0 then next else select_inactive_conditional src next defs (depth - 1)
+      else if directive_at "elif" src first && depth = 0 then
+        if eval_preprocessor_if defs src (directive_expr_pos "elif" src first) then next
+        else select_inactive_conditional src next defs depth
+      else if directive_at "else" src first && depth = 0 then next
+      else select_inactive_conditional src next defs depth
+    else select_inactive_conditional src next defs depth
 
 let rec skip_active_else src pos depth =
   if pos >= String.length src then pos
@@ -317,6 +337,8 @@ let rec skip_active_else src pos depth =
         skip_active_else src next (depth + 1)
       else if directive_at "endif" src first then
         if depth = 0 then next else skip_active_else src next (depth - 1)
+      else if (directive_at "elif" src first || directive_at "else" src first) && depth = 0 then
+        skip_active_else src next depth
       else skip_active_else src next depth
     else skip_active_else src next depth
 
@@ -336,16 +358,18 @@ let preprocess_source src =
         else if directive_at "ifdef" src first then (
           match directive_name "ifdef" src first with
           | Some name ->
-              if define_exists name defs then loop next defs acc else loop (skip_inactive_conditional src next 0) defs acc
+              if define_exists name defs then loop next defs acc else loop (select_inactive_conditional src next defs 0) defs acc
           | None -> loop next defs acc)
         else if directive_at "ifndef" src first then (
           match directive_name "ifndef" src first with
           | Some name ->
-              if define_exists name defs then loop (skip_inactive_conditional src next 0) defs acc else loop next defs acc
+              if define_exists name defs then loop (select_inactive_conditional src next defs 0) defs acc else loop next defs acc
           | None -> loop next defs acc)
         else if directive_at "if" src first then
           if eval_preprocessor_if defs src (skip_hspace src (first + 1) + 2) then loop next defs acc
-          else loop (skip_inactive_conditional src next 0) defs acc
+          else loop (select_inactive_conditional src next defs 0) defs acc
+        else if directive_at "elif" src first then
+          loop (skip_active_else src next 0) defs acc
         else if directive_at "else" src first then
           loop (skip_active_else src next 0) defs acc
         else loop next defs acc

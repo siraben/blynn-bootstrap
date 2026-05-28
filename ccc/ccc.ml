@@ -2200,6 +2200,32 @@ let rec skip_inactive_ifdef_loop state =
   else
     skip_inactive_ifdef_loop (src, (pos + 1, depth))
 in
+let rec select_inactive_ifdef_loop state =
+  let (src, pair) = state in
+  let (defs, pair2) = pair in
+  let (pos, depth) = pair2 in
+  if src.[pos] == 0 then pos else
+  if src.[pos] == '#' then
+    if directive_is_conditional (src, pos) then
+      select_inactive_ifdef_loop (src, (defs, (skip_line (src, pos + 1), depth + 1)))
+    else if directive_keyword_at ("endif", (5, (src, pos))) then
+      if depth == 0 then skip_line (src, pos + 1) else
+        select_inactive_ifdef_loop (src, (defs, (skip_line (src, pos + 1), depth - 1)))
+    else if directive_keyword_at ("elif", (4, (src, pos))) then
+      if depth == 0 then
+        let after_elif = p_need_keyword ("elif", (4, (src, pos + 1))) in
+        if eval_preprocessor_if (src, (defs, after_elif)) == 1 then skip_line (src, pos + 1) else
+          select_inactive_ifdef_loop (src, (defs, (skip_line (src, pos + 1), depth)))
+      else
+        select_inactive_ifdef_loop (src, (defs, (skip_line (src, pos + 1), depth)))
+    else if directive_keyword_at ("else", (4, (src, pos))) then
+      if depth == 0 then skip_line (src, pos + 1) else
+        select_inactive_ifdef_loop (src, (defs, (skip_line (src, pos + 1), depth)))
+    else
+      select_inactive_ifdef_loop (src, (defs, (skip_line (src, pos + 1), depth)))
+  else
+    select_inactive_ifdef_loop (src, (defs, (pos + 1, depth)))
+in
 let rec skip_active_else_loop state =
   let (src, pair) = state in
   let (pos, depth) = pair in
@@ -2210,6 +2236,9 @@ let rec skip_active_else_loop state =
     else if directive_keyword_at ("endif", (5, (src, pos))) then
       if depth == 0 then skip_line (src, pos + 1) else
         skip_active_else_loop (src, (skip_line (src, pos + 1), depth - 1))
+    else if directive_keyword_at ("elif", (4, (src, pos))) then
+      if depth == 0 then skip_active_else_loop (src, (skip_line (src, pos + 1), depth)) else
+        skip_active_else_loop (src, (skip_line (src, pos + 1), depth))
     else
       skip_active_else_loop (src, (skip_line (src, pos + 1), depth))
   else
@@ -2244,7 +2273,7 @@ let rec parse_program_loop state =
     if has_define == 1 then
       parse_program_loop (src, (skip_line (src, pos + 1), (funcs, defs)))
     else
-      parse_program_loop (src, (skip_inactive_ifdef_loop (src, (skip_line (src, pos + 1), 0)), (funcs, defs)))
+      parse_program_loop (src, (select_inactive_ifdef_loop (src, (defs, (skip_line (src, pos + 1), 0))), (funcs, defs)))
   else if directive_keyword_at ("ifndef", (6, (src, pos))) then
     let named = directive_name_after (src, (pos, ("ifndef", 6))) in
     let (name, _name_end) = named in
@@ -2253,13 +2282,15 @@ let rec parse_program_loop state =
     if has_define == 0 then
       parse_program_loop (src, (skip_line (src, pos + 1), (funcs, defs)))
     else
-      parse_program_loop (src, (skip_inactive_ifdef_loop (src, (skip_line (src, pos + 1), 0)), (funcs, defs)))
+      parse_program_loop (src, (select_inactive_ifdef_loop (src, (defs, (skip_line (src, pos + 1), 0))), (funcs, defs)))
   else if directive_keyword_at ("if", (2, (src, pos))) then
     let after_if = p_need_keyword ("if", (2, (src, pos + 1))) in
     if eval_preprocessor_if (src, (defs, after_if)) == 1 then
       parse_program_loop (src, (skip_line (src, pos + 1), (funcs, defs)))
     else
-      parse_program_loop (src, (skip_inactive_ifdef_loop (src, (skip_line (src, pos + 1), 0)), (funcs, defs)))
+      parse_program_loop (src, (select_inactive_ifdef_loop (src, (defs, (skip_line (src, pos + 1), 0))), (funcs, defs)))
+  else if directive_keyword_at ("elif", (4, (src, pos))) then
+    parse_program_loop (src, (skip_active_else_loop (src, (skip_line (src, pos + 1), 0)), (funcs, defs)))
   else if directive_keyword_at ("else", (4, (src, pos))) then
     parse_program_loop (src, (skip_active_else_loop (src, (skip_line (src, pos + 1), 0)), (funcs, defs)))
   else if directive_keyword_at ("endif", (5, (src, pos))) then
