@@ -31,6 +31,20 @@ let rec strings_of_chars chars =
 let string_of_rev_chars chars =
   String.concat "" (strings_of_chars (List.rev chars))
 
+let unsigned_mod value modulus =
+  let rem = value mod modulus in
+  if rem < 0 then rem + modulus else rem
+
+let rec pow2 count =
+  if count <= 0 then 1 else 2 * pow2 (count - 1)
+
+let rec shift_left_u32 value count =
+  if count <= 0 then unsigned_mod value 4294967296
+  else shift_left_u32 (unsigned_mod (value * 2) 4294967296) (count - 1)
+
+let shift_right_u32 value count =
+  (unsigned_mod value 4294967296) / pow2 count
+
 let char_code_at src pos =
   if pos >= String.length src then 0 else Char.code src.[pos]
 
@@ -123,7 +137,7 @@ let lex_string src pos =
     else if src.[p] = '"' then (String_lit (string_of_rev_chars acc), p + 1)
     else if src.[p] = '\\' then
       let value, next = parse_escape src (p + 1) in
-      loop next (Char.chr (value land 255) :: acc)
+      loop next (Char.chr (unsigned_mod value 256) :: acc)
     else loop (p + 1) (src.[p] :: acc)
   in
   loop (pos + 1) []
@@ -1102,10 +1116,10 @@ let int_of_value value =
 
 let coerce_int ty value =
   match ty with
-  | TUnsignedChar -> value land 255
-  | TUnsignedShort -> value land 65535
+  | TUnsignedChar -> unsigned_mod value 256
+  | TUnsignedShort -> unsigned_mod value 65536
   | TSignedChar | TChar ->
-      let b = value land 255 in
+      let b = unsigned_mod value 256 in
       if b > 127 then b - 256 else b
   | TUnsigned -> value
   | TBool -> bool_int (truth value)
@@ -1519,8 +1533,8 @@ let rec eval_value funcs structs globals env expr =
       | Le -> bool_int (x <= y)
       | Gt -> bool_int (x > y)
       | Ge -> bool_int (x >= y)
-      | Shl -> (x lsl y) land 0xffffffff
-      | Shr -> x lsr y
+      | Shl -> shift_left_u32 x y
+      | Shr -> shift_right_u32 x y
       | Land | Lor -> assert false)
   | ECall ("_exit", [ arg ]) -> VInt (eval_expr funcs structs globals env arg)
   | ECall (name, args) ->

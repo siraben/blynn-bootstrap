@@ -18,7 +18,7 @@ stdenv.mkDerivation {
   buildPhase = ''
     runHook preBuild
 
-    if grep -nE 'List\.find_opt|Option\.is_some|\( let\* \)|Buffer\.|= function|-> function|let [^=]*\?[A-Za-z_]|(^|[^A-Za-z0-9_])when([^A-Za-z0-9_]|$)|~[A-Za-z_][A-Za-z0-9_]*:' host/ccc_host.ml; then
+    if grep -nE 'List\.find_opt|Option\.is_some|\( let\* \)|Buffer\.|= function|-> function|let [^=]*\?[A-Za-z_]|(^|[^A-Za-z0-9_])(when|land|lor|lxor|lsl|lsr|asr)([^A-Za-z0-9_]|$)|~[A-Za-z_][A-Za-z0-9_]*:' host/ccc_host.ml; then
       echo "ccc-host-ocaml should stay within the portable host-ML subset" >&2
       exit 1
     fi
