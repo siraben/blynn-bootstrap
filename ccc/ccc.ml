@@ -980,6 +980,15 @@ let rec find_env_optional state =
   if head < 0 then (0, 0) else
   if ident_eq (src, (head, name)) then (1, value) else find_env_optional (src, (tail, name))
 in
+let rec remove_env_name state =
+  let (src, pair0) = state in
+  let (env, name) = pair0 in
+  let (head, rest) = env in
+  let (value, tail) = rest in
+  if head < 0 then env else
+  if ident_eq (src, (head, name)) then remove_env_name (src, (tail, name)) else
+    extend_env (head, (value, remove_env_name (src, (tail, name))))
+in
 let rec extend_func state =
   let (name, pair) = state in
   let (value, old) = pair in
@@ -2059,12 +2068,80 @@ let rec directive_keyword_at state =
   let (src, pos0) = pair2 in
   if src.[pos0] == '#' then is_keyword_at (want, (len, (src, pos0 + 1))) else 0
 in
+let rec directive_is_conditional state =
+  let (src, pos) = state in
+  (directive_keyword_at ("if", (2, (src, pos)))) +
+  (directive_keyword_at ("ifdef", (5, (src, pos)))) +
+  (directive_keyword_at ("ifndef", (6, (src, pos))))
+in
+let rec define_value state =
+  let (src, pair) = state in
+  let (defs, name) = pair in
+  let found = find_env_optional (src, (defs, name)) in
+  let (has_define, value) = found in
+  if has_define == 1 then value else 0
+in
+let rec eval_defined_expr state =
+  let (src, pair) = state in
+  let (defs, pos0) = pair in
+  let pos = skip_space_no_directive (src, pos0) in
+  let open_paren = p_eat_char (src, (pos, '(')) in
+  let (has_open, after_open) = open_paren in
+  let name_pos = if has_open == 1 then after_open else pos in
+  match p_optional_ident (src, name_pos) with
+    IdentSome ident ->
+      let (name, name_end) = ident in
+      let close_ok =
+        if has_open == 1 then
+          let closed = p_eat_char (src, (name_end, ')')) in
+          let (has_close, _after_close) = closed in
+          has_close
+        else
+          1
+      in
+      if close_ok == 1 then
+        let found = find_env_optional (src, (defs, name)) in
+        let (has_define, _value) = found in
+        has_define
+      else
+        0
+  | IdentNone -> 0
+in
+let rec eval_preprocessor_if state =
+  let (src, pair) = state in
+  let (defs, pos0) = pair in
+  let pos = skip_space_no_directive (src, pos0) in
+  if src.[pos] == '!' then
+    1 - (eval_preprocessor_if (src, (defs, pos + 1)))
+  else
+    let defined = p_eat_keyword ("defined", (7, (src, pos))) in
+    let (has_defined, after_defined) = defined in
+    if has_defined == 1 then eval_defined_expr (src, (defs, after_defined)) else
+    if src.[pos] == '\'' then
+      let parsed = parse_char_value (src, pos) in
+      let (value, _value_end) = parsed in
+      if value == 0 then 0 else 1
+    else if src.[pos] == '-' then
+      let parsed = parse_number (src, pos + 1) in
+      let (value, _value_end) = parsed in
+      if value == 0 then 0 else 1
+    else if is_digit (src.[pos]) then
+      let parsed = parse_number (src, pos) in
+      let (value, _value_end) = parsed in
+      if value == 0 then 0 else 1
+    else
+      match p_optional_ident (src, pos) with
+        IdentSome ident ->
+          let (name, _name_end) = ident in
+          if define_value (src, (defs, name)) == 0 then 0 else 1
+      | IdentNone -> 0
+in
 let rec skip_inactive_ifdef_loop state =
   let (src, pair) = state in
   let (pos, depth) = pair in
   if src.[pos] == 0 then pos else
   if src.[pos] == '#' then
-    if (directive_keyword_at ("ifdef", (5, (src, pos)))) + (directive_keyword_at ("ifndef", (6, (src, pos)))) then
+    if directive_is_conditional (src, pos) then
       skip_inactive_ifdef_loop (src, (skip_line (src, pos + 1), depth + 1))
     else if directive_keyword_at ("endif", (5, (src, pos))) then
       if depth == 0 then skip_line (src, pos + 1) else
@@ -2082,7 +2159,7 @@ let rec skip_active_else_loop state =
   let (pos, depth) = pair in
   if src.[pos] == 0 then pos else
   if src.[pos] == '#' then
-    if (directive_keyword_at ("ifdef", (5, (src, pos)))) + (directive_keyword_at ("ifndef", (6, (src, pos)))) then
+    if directive_is_conditional (src, pos) then
       skip_active_else_loop (src, (skip_line (src, pos + 1), depth + 1))
     else if directive_keyword_at ("endif", (5, (src, pos))) then
       if depth == 0 then skip_line (src, pos + 1) else
@@ -2108,6 +2185,11 @@ let rec parse_program_loop state =
   if directive_keyword_at ("define", (6, (src, pos))) then
     let next_defs = collect_define_at (src, (pos, defs)) in
     parse_program_loop (src, (skip_line (src, pos + 1), (funcs, next_defs)))
+  else if directive_keyword_at ("undef", (5, (src, pos))) then
+    let named = directive_name_after (src, (pos, ("undef", 5))) in
+    let (name, _name_end) = named in
+    let next_defs = remove_env_name (src, (defs, name)) in
+    parse_program_loop (src, (skip_line (src, pos + 1), (funcs, next_defs)))
   else if directive_keyword_at ("ifdef", (5, (src, pos))) then
     let named = directive_name_after (src, (pos, ("ifdef", 5))) in
     let (name, _name_end) = named in
@@ -2123,6 +2205,12 @@ let rec parse_program_loop state =
     let found = find_env_optional (src, (defs, name)) in
     let (has_define, _value) = found in
     if has_define == 0 then
+      parse_program_loop (src, (skip_line (src, pos + 1), (funcs, defs)))
+    else
+      parse_program_loop (src, (skip_inactive_ifdef_loop (src, (skip_line (src, pos + 1), 0)), (funcs, defs)))
+  else if directive_keyword_at ("if", (2, (src, pos))) then
+    let after_if = p_need_keyword ("if", (2, (src, pos + 1))) in
+    if eval_preprocessor_if (src, (defs, after_if)) == 1 then
       parse_program_loop (src, (skip_line (src, pos + 1), (funcs, defs)))
     else
       parse_program_loop (src, (skip_inactive_ifdef_loop (src, (skip_line (src, pos + 1), 0)), (funcs, defs)))
