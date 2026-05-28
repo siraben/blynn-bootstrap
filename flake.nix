@@ -506,8 +506,8 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           };
         };
 
-        preciselyM2Stage0 = rawStdenvNoCC.mkDerivation {
-          pname = "blynn-precisely";
+        blynnPhaseBin = rawStdenvNoCC.mkDerivation {
+          pname = "blynn-phase-bin";
           version = "0-unstable-2026-05-06";
           dontUnpack = true;
           dontConfigure = true;
@@ -516,26 +516,24 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           dontPatchELF = true;
           installPhase = ''
             runHook preInstall
-            mkdir -p "$out/bin" "$out/share/blynn-precisely"
+            mkdir -p "$out/bin" "$out/share/blynn-phase-bin"
             install -Dm555 ${blynnUpstreamStages.party}/bin/party "$out/bin/party"
             install -Dm555 ${blynnUpstreamStages.multiparty}/bin/multiparty "$out/bin/multiparty"
             install -Dm555 ${blynnUpstreamStages.party1}/bin/party1 "$out/bin/party1"
             install -Dm555 ${blynnUpstreamStages.party2}/bin/party2 "$out/bin/party2"
             install -Dm555 ${blynnUpstreamStages.crossly_up}/bin/crossly_up "$out/bin/crossly_up"
             install -Dm555 ${blynnUpstreamStages.crossly1}/bin/crossly1 "$out/bin/crossly1"
-            install -Dm555 ${blynnUpstreamStages.precisely_up}/bin/precisely_up "$out/bin/precisely_up"
-            cp ${blynnShare blynnUpstreamStages.party "party.c"} "$out/share/blynn-precisely/party.c"
-            cp ${blynnShare blynnUpstreamStages.multiparty "multiparty.c"} "$out/share/blynn-precisely/multiparty.c"
-            cp ${blynnShare blynnUpstreamStages.party1 "party1.c"} "$out/share/blynn-precisely/party1.c"
-            cp ${blynnShare blynnUpstreamStages.party2 "party2.c"} "$out/share/blynn-precisely/party2.c"
-            cp ${blynnShare blynnUpstreamStages.crossly_up "crossly_up.c"} "$out/share/blynn-precisely/crossly_up.c"
-            cp ${blynnShare blynnUpstreamStages.crossly1 "crossly1.c"} "$out/share/blynn-precisely/crossly1.c"
-            cp ${blynnShare blynnUpstreamStages.precisely_up "precisely_up.c"} "$out/share/blynn-precisely/precisely_up.c"
+            cp ${blynnShare blynnUpstreamStages.party "party.c"} "$out/share/blynn-phase-bin/party.c"
+            cp ${blynnShare blynnUpstreamStages.multiparty "multiparty.c"} "$out/share/blynn-phase-bin/multiparty.c"
+            cp ${blynnShare blynnUpstreamStages.party1 "party1.c"} "$out/share/blynn-phase-bin/party1.c"
+            cp ${blynnShare blynnUpstreamStages.party2 "party2.c"} "$out/share/blynn-phase-bin/party2.c"
+            cp ${blynnShare blynnUpstreamStages.crossly_up "crossly_up.c"} "$out/share/blynn-phase-bin/crossly_up.c"
+            cp ${blynnShare blynnUpstreamStages.crossly1 "crossly1.c"} "$out/share/blynn-phase-bin/crossly1.c"
             runHook postInstall
           '';
         };
 
-        preciselyGcc = pname: precisely: shareName: description:
+        preciselyGcc = pname: preciselyStage: shareName: description:
         rawStdenvCC.mkDerivation {
           inherit pname;
           version = "0-unstable-2026-05-06";
@@ -547,7 +545,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           buildPhase = ''
             runHook preBuild
             sed -E 's/enum\{TOP=[0-9]+\};/enum{TOP=33554432};/' \
-              ${precisely}/share/blynn-precisely/precisely_up.c > precisely_up.c
+              ${blynnShare preciselyStage "precisely_up.c"} > precisely_up.c
             $CC -O2 precisely_up.c -o precisely_up
             runHook postBuild
           '';
@@ -569,7 +567,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
 
         preciselyGccHost = preciselyGcc
           "precisely-gcc-host"
-          preciselyM2Stage0
+          blynnUpstreamStages.precisely_up
           "precisely-gcc-host"
           "Upstream Blynn precisely binary compiled with the normal GCC C toolchain";
 
@@ -641,7 +639,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           };
 
         preciselyBy = {
-          m2.stage0 = preciselyM2Stage0;
+          m2.stage0 = blynnPhaseBin;
           gcc.host = preciselyGccHost;
           ghc.debug = preciselyGhcDebug;
         };
@@ -1094,10 +1092,11 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           blynnSrc = blynnUpstreamSrc;
         };
         packageTree = {
-          default = preciselyBy.m2.stage0;
+          default = blynnPhaseBin;
 
           blynn = {
             compiler = blynnCompiler;
+            phase-bin = blynnPhaseBin;
             stage = blynnRootStages;
             upstream.stage = blynnUpstreamStages;
           };
