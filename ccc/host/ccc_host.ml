@@ -192,6 +192,13 @@ let rec define_exists name defs =
   | [] -> false
   | (key, _) :: rest -> key = name || define_exists name rest
 
+let rec remove_define name defs =
+  match defs with
+  | [] -> []
+  | (key, value) :: rest ->
+      if key = name then remove_define name rest
+      else (key, value) :: remove_define name rest
+
 let directive_name word src hash_pos =
   let pos = skip_hspace src (hash_pos + 1) in
   let len = String.length word in
@@ -243,6 +250,10 @@ let preprocess_source src =
       if first < String.length src && src.[first] = '#' then
         if directive_at "define" src first then
           loop next (parse_define_constant src (first + 1) defs) acc
+        else if directive_at "undef" src first then (
+          match directive_name "undef" src first with
+          | Some name -> loop next (remove_define name defs) acc
+          | None -> loop next defs acc)
         else if directive_at "ifdef" src first then (
           match directive_name "ifdef" src first with
           | Some name ->

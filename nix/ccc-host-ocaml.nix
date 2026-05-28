@@ -147,6 +147,10 @@ DEFINE SYSCALL 0F05
     check_return ifndef-defined-else.c 42
     printf '%s\n' '#ifdef LATER' 'int main(void) { return 1; }' '#else' 'int main(void) { return 42; }' '#endif' '#define LATER 1' > define-after-ifdef.c
     check_return define-after-ifdef.c 42
+    printf '%s\n' '#define VALUE 1' '#undef VALUE' '#ifdef VALUE' 'int main(void) { return 1; }' '#else' 'int main(void) { return 42; }' '#endif' > undef-before-ifdef.c
+    check_return undef-before-ifdef.c 42
+    printf '%s\n' '#define VALUE 1' '#undef VALUE' '#define VALUE 42' 'int main(void) { return VALUE; }' > undef-redefine.c
+    check_return undef-redefine.c 42
     printf '%s\n' 'int main(voidx) { return 0; }' > keyword-prefix-param.c
     reject_compile keyword-prefix-param.c
     printf '%s\n' 'int main(void) { return sizeof(shorter); }' > keyword-prefix-sizeof.c
