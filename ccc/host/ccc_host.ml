@@ -214,13 +214,55 @@ let directive_name word src hash_pos =
 let directive_at word src hash_pos =
   directive_word_at word src (skip_hspace src (hash_pos + 1))
 
+let rec define_value name defs =
+  match defs with
+  | [] -> 0
+  | (key, value) :: rest -> if key = name then value else define_value name rest
+
+let parse_directive_identifier src pos =
+  let pos = skip_hspace src pos in
+  if pos < String.length src && is_alpha src.[pos] then
+    let rec ident_end p = if p < String.length src && is_ident src.[p] then ident_end (p + 1) else p in
+    let stop = ident_end (pos + 1) in
+    Some (String.sub src pos (stop - pos), stop)
+  else None
+
+let eval_defined_expr defs src pos =
+  let pos = skip_hspace src pos in
+  let pos, close =
+    if pos < String.length src && src.[pos] = '(' then (skip_hspace src (pos + 1), true) else (pos, false)
+  in
+  match parse_directive_identifier src pos with
+  | None -> false
+  | Some (name, pos) ->
+      let pos = skip_hspace src pos in
+      if close && (pos >= String.length src || src.[pos] <> ')') then false
+      else define_exists name defs
+
+let rec eval_preprocessor_if defs src pos =
+  let pos = skip_hspace src pos in
+  if pos < String.length src && src.[pos] = '!' then
+    not (eval_preprocessor_if defs src (pos + 1))
+  else if directive_word_at "defined" src pos then
+    eval_defined_expr defs src (pos + 7)
+  else if pos < String.length src && src.[pos] = '\'' then
+    (match lex_char src pos with Char_lit value, _ -> value <> 0 | _ -> false)
+  else if pos < String.length src && src.[pos] = '-' then (
+    match lex_number src (pos + 1) with Int_lit value, _ -> -value <> 0 | _ -> false)
+  else if pos < String.length src && is_digit src.[pos] then (
+    match lex_number src pos with Int_lit value, _ -> value <> 0 | _ -> false)
+  else
+    match parse_directive_identifier src pos with
+    | Some (name, _) -> define_value name defs <> 0
+    | None -> false
+
 let rec skip_inactive_conditional src pos depth =
   if pos >= String.length src then pos
   else
     let first = skip_hspace src pos in
     let next = skip_line src pos in
     if first < String.length src && src.[first] = '#' then
-      if directive_at "ifdef" src first || directive_at "ifndef" src first then
+      if directive_at "ifdef" src first || directive_at "ifndef" src first || directive_at "if" src first then
         skip_inactive_conditional src next (depth + 1)
       else if directive_at "endif" src first then
         if depth = 0 then next else skip_inactive_conditional src next (depth - 1)
@@ -234,7 +276,7 @@ let rec skip_active_else src pos depth =
     let first = skip_hspace src pos in
     let next = skip_line src pos in
     if first < String.length src && src.[first] = '#' then
-      if directive_at "ifdef" src first || directive_at "ifndef" src first then
+      if directive_at "ifdef" src first || directive_at "ifndef" src first || directive_at "if" src first then
         skip_active_else src next (depth + 1)
       else if directive_at "endif" src first then
         if depth = 0 then next else skip_active_else src next (depth - 1)
@@ -264,6 +306,9 @@ let preprocess_source src =
           | Some name ->
               if define_exists name defs then loop (skip_inactive_conditional src next 0) defs acc else loop next defs acc
           | None -> loop next defs acc)
+        else if directive_at "if" src first then
+          if eval_preprocessor_if defs src (skip_hspace src (first + 1) + 2) then loop next defs acc
+          else loop (skip_inactive_conditional src next 0) defs acc
         else if directive_at "else" src first then
           loop (skip_active_else src next 0) defs acc
         else loop next defs acc

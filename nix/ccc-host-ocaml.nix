@@ -151,6 +151,16 @@ DEFINE SYSCALL 0F05
     check_return undef-before-ifdef.c 42
     printf '%s\n' '#define VALUE 1' '#undef VALUE' '#define VALUE 42' 'int main(void) { return VALUE; }' > undef-redefine.c
     check_return undef-redefine.c 42
+    printf '%s\n' '#if 0' 'int main(void) { return 1; }' '#else' 'int main(void) { return 42; }' '#endif' > if-zero-else.c
+    check_return if-zero-else.c 42
+    printf '%s\n' '#if 1' 'int main(void) { return 42; }' '#else' 'int main(void) { return 1; }' '#endif' > if-one-else.c
+    check_return if-one-else.c 42
+    printf '%s\n' '#define VALUE 1' '#if VALUE' 'int main(void) { return 42; }' '#else' 'int main(void) { return 1; }' '#endif' > if-define-value.c
+    check_return if-define-value.c 42
+    printf '%s\n' '#define VALUE 1' '#if defined(VALUE)' 'int main(void) { return 42; }' '#else' 'int main(void) { return 1; }' '#endif' > if-defined-value.c
+    check_return if-defined-value.c 42
+    printf '%s\n' '#if !defined(MISSING)' 'int main(void) { return 42; }' '#else' 'int main(void) { return 1; }' '#endif' > if-not-defined-missing.c
+    check_return if-not-defined-missing.c 42
     printf '%s\n' 'int main(voidx) { return 0; }' > keyword-prefix-param.c
     reject_compile keyword-prefix-param.c
     printf '%s\n' 'int main(void) { return sizeof(shorter); }' > keyword-prefix-sizeof.c
