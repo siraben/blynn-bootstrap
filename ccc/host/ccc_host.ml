@@ -209,6 +209,9 @@ let expect_sym text =
 let expect_ident =
   satisfy (fun tok -> match tok with Ident name -> Some name | _ -> None) "expected identifier"
 
+let expect_keyword text =
+  satisfy (fun tok -> match tok with Ident got -> if got = text then Some () else None | _ -> None) ("expected " ^ text)
+
 let optional parser state =
   match parser state with
   | Unconsumed (ParserErr _) -> Unconsumed (ParserOk (None, state))
@@ -227,6 +230,12 @@ let need_sym text state =
 
 let need_ident state =
   need expect_ident state
+
+let take_keyword text state =
+  match force_consumed (optional (expect_keyword text) state) with
+  | ParserOk (Some _, state') -> Some state'
+  | ParserOk (None, _) -> None
+  | ParserErr _ -> None
 
 let run parser tokens =
   match parser { tokens; pos = 0 } with
@@ -331,9 +340,12 @@ let option_is_some value =
 
 let rec parse_type state =
   let rec qualifiers st =
-    match peek st with
-    | Ident ("static" | "const") -> qualifiers (advance st)
-    | _ -> st
+    match take_keyword "static" st with
+    | Some st -> qualifiers st
+    | None -> (
+        match take_keyword "const" st with
+        | Some st -> qualifiers st
+        | None -> st)
   in
   let state = qualifiers state in
   let base, state =
@@ -374,9 +386,9 @@ let rec parse_type state =
     | _ -> raise (Parse_error "expected type")
   in
   let rec post_ptr_qualifiers st =
-    match peek st with
-    | Ident "const" -> post_ptr_qualifiers (advance st)
-    | _ -> st
+    match take_keyword "const" st with
+    | Some st -> post_ptr_qualifiers st
+    | None -> st
   in
   let rec ptr ty st = match peek st with Sym "*" -> ptr (TPtr ty) (post_ptr_qualifiers (advance st)) | _ -> (ty, st) in
   ptr base state
