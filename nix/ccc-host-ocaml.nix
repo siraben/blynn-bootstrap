@@ -111,6 +111,12 @@ DEFINE SYSCALL 0F05
     check_return ${testsRoot}/hcc/scalar-immediate-smoke.c 0
     check_return ${testsRoot}/hcc/parse-smoke.c 0
     check_return ${testsRoot}/hcc/pp-smoke.c 0
+    printf '%s\n' '#define VALUE 42' 'int main(void) { return VALUE; }' > define-return.c
+    check_return define-return.c 42
+    printf '%s\n' "#define LETTER 'A'" 'int main(void) { return LETTER; }' > define-char-return.c
+    check_return define-char-return.c 65
+    printf '%s\n' '#define VALUE 42' 'int main(void) { int VALUE = 7; return VALUE; }' > define-shadow.c
+    check_return define-shadow.c 7
 
     runHook postBuild
   '';

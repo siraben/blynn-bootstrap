@@ -64,6 +64,13 @@ let rec skip_line src pos =
   else if src.[pos] = '\n' then pos + 1
   else skip_line src (pos + 1)
 
+let rec skip_hspace src pos =
+  if pos >= String.length src then pos
+  else
+    match src.[pos] with
+    | ' ' | '\t' | '\r' -> skip_hspace src (pos + 1)
+    | _ -> pos
+
 let rec skip_ws src pos =
   if pos >= String.length src then pos
   else if is_space src.[pos] then skip_ws src (pos + 1)
@@ -141,6 +148,52 @@ let lex_string src pos =
     else loop (p + 1) (src.[p] :: acc)
   in
   loop (pos + 1) []
+
+let directive_word_at word src pos =
+  let len = String.length word in
+  pos + len <= String.length src
+  && String.sub src pos len = word
+  && (pos + len >= String.length src || not (is_ident src.[pos + len]))
+
+let collect_define_constants src =
+  let line_end pos =
+    let stop = skip_line src pos in
+    if stop > 0 && src.[stop - 1] = '\n' then stop - 1 else stop
+  in
+  let parse_define pos acc =
+    let pos = skip_hspace src pos in
+    if directive_word_at "define" src pos then
+      let pos = skip_hspace src (pos + 6) in
+      if pos < String.length src && is_alpha src.[pos] then
+        let rec ident_end p = if p < String.length src && is_ident src.[p] then ident_end (p + 1) else p in
+        let stop = ident_end (pos + 1) in
+        let name = String.sub src pos (stop - pos) in
+        let value_pos = skip_hspace src stop in
+        if value_pos < String.length src && src.[value_pos] = '(' then acc
+        else if value_pos < String.length src && src.[value_pos] = '\'' then
+          (match lex_char src value_pos with
+          | Char_lit value, _ -> (name, value) :: acc
+          | _ -> acc)
+        else if value_pos < String.length src && src.[value_pos] = '-' then (
+          match lex_number src (value_pos + 1) with
+          | Int_lit value, _ -> (name, -value) :: acc
+          | _ -> acc)
+        else if value_pos < String.length src && is_digit src.[value_pos] then (
+          match lex_number src value_pos with
+          | Int_lit value, _ -> (name, value) :: acc
+          | _ -> acc)
+        else acc
+      else acc
+    else acc
+  in
+  let rec loop pos acc =
+    if pos >= String.length src then acc
+    else
+      let first = skip_hspace src pos in
+      let acc = if first < String.length src && src.[first] = '#' then parse_define (first + 1) acc else acc in
+      loop (skip_line src (line_end pos)) acc
+  in
+  loop 0 []
 
 let multi_symbols =
   [ "=="; "!="; "<="; ">="; "&&"; "||"; "<<"; ">>"; "++"; "--"; "+="; "-="; "->" ]
@@ -1253,7 +1306,7 @@ let is_typedef_struct_definition_start state =
       | _ -> false)
   | _ -> false
 
-let parse_program tokens =
+let parse_program tokens initial_constants =
   let rec loop state constants structs globals funcs =
     let parse_external_or_skip state constants structs globals funcs =
       try
@@ -1293,7 +1346,7 @@ let parse_program tokens =
           parse_external_or_skip state constants structs globals funcs
         else loop (advance state) constants structs globals funcs
   in
-  loop { tokens; pos = 0 } [] [] [] []
+  loop { tokens; pos = 0 } initial_constants [] [] []
 
 let truth n = n <> 0
 let bool_int b = if b then 1 else 0
@@ -2037,7 +2090,7 @@ let m1_of_exit code =
 
 let compile src =
   let tokens = lex src in
-  let program = parse_program tokens in
+  let program = parse_program tokens (collect_define_constants src) in
   if not (List.exists (fun fn -> fn.name = "main") program.funcs) then m1_of_exit 0
   else
   let constants =
