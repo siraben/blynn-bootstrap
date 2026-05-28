@@ -21,6 +21,13 @@ let rec list_find_opt pred = function
   | [] -> None
   | x :: xs -> if pred x then Some x else list_find_opt pred xs
 
+let rec strings_of_chars = function
+  | [] -> []
+  | ch :: rest -> String.make 1 ch :: strings_of_chars rest
+
+let string_of_rev_chars chars =
+  String.concat "" (strings_of_chars (List.rev chars))
+
 let char_code_at src pos =
   if pos >= String.length src then 0 else Char.code src.[pos]
 
@@ -65,14 +72,15 @@ let parse_escape src pos =
         else (acc, p)
       in
       loop (pos + 1) 0
-  | ch when '0' <= ch && ch <= '7' ->
-      let rec loop p count acc =
-        if count < 3 && p < String.length src && '0' <= src.[p] && src.[p] <= '7' then
-          loop (p + 1) (count + 1) ((acc * 8) + Char.code src.[p] - Char.code '0')
-        else (acc, p)
-      in
-      loop pos 0 0
-  | ch -> (Char.code ch, pos + 1)
+  | ch ->
+      if '0' <= ch && ch <= '7' then
+        let rec loop p count acc =
+          if count < 3 && p < String.length src && '0' <= src.[p] && src.[p] <= '7' then
+            loop (p + 1) (count + 1) ((acc * 8) + Char.code src.[p] - Char.code '0')
+          else (acc, p)
+        in
+        loop pos 0 0
+      else (Char.code ch, pos + 1)
 
 let lex_number src pos =
   let len = String.length src in
@@ -107,19 +115,15 @@ let lex_char src pos =
   (Char_lit value, pos1 + 1)
 
 let lex_string src pos =
-  let b = Buffer.create 16 in
-  let rec loop p =
+  let rec loop p acc =
     if p >= String.length src then fail "unterminated string literal"
-    else if src.[p] = '"' then (String_lit (Buffer.contents b), p + 1)
+    else if src.[p] = '"' then (String_lit (string_of_rev_chars acc), p + 1)
     else if src.[p] = '\\' then
       let value, next = parse_escape src (p + 1) in
-      Buffer.add_char b (Char.chr (value land 255));
-      loop next
-    else (
-      Buffer.add_char b src.[p];
-      loop (p + 1))
+      loop next (Char.chr (value land 255) :: acc)
+    else loop (p + 1) (src.[p] :: acc)
   in
-  loop (pos + 1)
+  loop (pos + 1) []
 
 let multi_symbols =
   [ "=="; "!="; "<="; ">="; "&&"; "||"; "<<"; ">>"; "++"; "--"; "+="; "-="; "->" ]
@@ -182,7 +186,7 @@ let satisfy f expected state =
   | None -> Unconsumed (ParserErr expected)
 
 let expect_sym text =
-  satisfy (function Sym got when got = text -> Some () | _ -> None) ("expected " ^ text)
+  satisfy (function Sym got -> if got = text then Some () else None | _ -> None) ("expected " ^ text)
 
 let expect_ident =
   satisfy (function Ident name -> Some name | _ -> None) "expected identifier"
@@ -519,10 +523,12 @@ and parse_binop_tail min_prec lhs state =
   match peek state with
   | Sym op -> (
       match binop_of op with
-      | Some (op, prec) when prec >= min_prec ->
-          let rhs, state2 = parse_binop (prec + 1) (advance state) in
-          parse_binop_tail min_prec (EBinary (op, lhs, rhs)) state2
-      | _ -> (lhs, state))
+      | Some (op, prec) ->
+          if prec >= min_prec then
+            let rhs, state2 = parse_binop (prec + 1) (advance state) in
+            parse_binop_tail min_prec (EBinary (op, lhs, rhs)) state2
+          else (lhs, state)
+      | None -> (lhs, state))
   | _ -> (lhs, state)
 
 let layout_scalar_size = function
@@ -631,31 +637,33 @@ let parse_decl_after_type state =
 let parse_simple_no_semi state =
   match peek state with
   | Sym ")" | Sym ";" -> (SEmpty, state)
-  | tok when starts_type tok ->
-      parse_decl_after_type state
-  | Ident name -> (
-      let state1 = advance state in
-      match peek state1 with
-      | Sym "=" ->
-          let expr, st = parse_expr (advance state1) in
-          (SAssign (name, expr), st)
-      | Sym "+=" ->
-          let expr, st = parse_expr (advance state1) in
-          (SAugAssign (name, Add, expr), st)
-      | Sym "-=" ->
-          let expr, st = parse_expr (advance state1) in
-          (SAugAssign (name, Sub, expr), st)
-      | Sym "++" -> (SPost (name, 1), advance state1)
-      | Sym "--" -> (SPost (name, -1), advance state1)
-      | Sym "(" ->
-          let args, st = parse_arg_list (advance state1) in
-          (SExpr (ECall (name, args)), st)
-      | _ ->
-          let expr, st = parse_expr state in
-          (SExpr expr, st))
-  | _ ->
-      let expr, st = parse_expr state in
-      (SExpr expr, st)
+  | tok ->
+      if starts_type tok then parse_decl_after_type state
+      else
+        (match tok with
+        | Ident name -> (
+            let state1 = advance state in
+            match peek state1 with
+            | Sym "=" ->
+                let expr, st = parse_expr (advance state1) in
+                (SAssign (name, expr), st)
+            | Sym "+=" ->
+                let expr, st = parse_expr (advance state1) in
+                (SAugAssign (name, Add, expr), st)
+            | Sym "-=" ->
+                let expr, st = parse_expr (advance state1) in
+                (SAugAssign (name, Sub, expr), st)
+            | Sym "++" -> (SPost (name, 1), advance state1)
+            | Sym "--" -> (SPost (name, -1), advance state1)
+            | Sym "(" ->
+                let args, st = parse_arg_list (advance state1) in
+                (SExpr (ECall (name, args)), st)
+            | _ ->
+                let expr, st = parse_expr state in
+                (SExpr expr, st))
+        | _ ->
+            let expr, st = parse_expr state in
+            (SExpr expr, st))
 
 let parse_simple_stmt state =
   let simple, state = parse_simple_no_semi state in
@@ -665,9 +673,9 @@ let parse_simple_stmt state =
 let rec skip_decl tokens pos depth =
   match tokens.(pos) with
   | Eof -> pos
-  | Sym ";" when depth = 0 -> pos + 1
+  | Sym ";" -> if depth = 0 then pos + 1 else skip_decl tokens (pos + 1) depth
   | Sym "{" -> skip_decl tokens (pos + 1) (depth + 1)
-  | Sym "}" when depth > 0 -> skip_decl tokens (pos + 1) (depth - 1)
+  | Sym "}" -> if depth > 0 then skip_decl tokens (pos + 1) (depth - 1) else skip_decl tokens (pos + 1) depth
   | _ -> skip_decl tokens (pos + 1) depth
 
 let rec parse_stmt state =
@@ -786,43 +794,44 @@ and parse_block state =
 
 let parse_params state =
   let state = need_sym "(" state in
+  let rec skip_balanced st depth =
+    match peek st with
+    | Eof -> raise (Parse_error "unterminated function pointer parameter")
+    | Sym "(" -> skip_balanced (advance st) (depth + 1)
+    | Sym ")" ->
+        if depth = 1 then advance st else skip_balanced (advance st) (depth - 1)
+    | _ -> skip_balanced (advance st) depth
+  in
+  let parse_name st =
+    match peek st, peek (advance st), peek (advance (advance st)) with
+    | Sym "(", Sym "*", Ident name ->
+        let st = advance (advance (advance st)) in
+        let st = need_sym ")" st in
+        let st =
+          match peek st with
+          | Sym "(" -> skip_balanced st 0
+          | _ -> st
+        in
+        (name, st)
+    | _ -> (
+        match peek st with
+        | Ident name -> (name, advance st)
+        | _ -> ("_", st))
+  in
+  let rec parse_nonempty st acc =
+    let _ty, st = parse_type st in
+    let name, st = parse_name st in
+    match peek st with
+    | Sym "," -> parse_nonempty (advance st) (name :: acc)
+    | Sym ")" -> (List.rev (name :: acc), advance st)
+    | _ -> raise (Parse_error "expected , or ) in parameter list")
+  in
   match peek state with
   | Sym ")" -> ([], advance state)
-  | Ident "void" when peek (advance state) = Sym ")" -> ([], advance (advance state))
-  | _ ->
-      let rec skip_balanced st depth =
-        match peek st with
-        | Eof -> raise (Parse_error "unterminated function pointer parameter")
-        | Sym "(" -> skip_balanced (advance st) (depth + 1)
-        | Sym ")" ->
-            if depth = 1 then advance st else skip_balanced (advance st) (depth - 1)
-        | _ -> skip_balanced (advance st) depth
-      in
-      let parse_name st =
-        match peek st, peek (advance st), peek (advance (advance st)) with
-        | Sym "(", Sym "*", Ident name ->
-            let st = advance (advance (advance st)) in
-            let st = need_sym ")" st in
-            let st =
-              match peek st with
-              | Sym "(" -> skip_balanced st 0
-              | _ -> st
-            in
-            (name, st)
-        | _ -> (
-            match peek st with
-            | Ident name -> (name, advance st)
-            | _ -> ("_", st))
-      in
-      let rec loop st acc =
-        let _ty, st = parse_type st in
-        let name, st = parse_name st in
-        match peek st with
-        | Sym "," -> loop (advance st) (name :: acc)
-        | Sym ")" -> (List.rev (name :: acc), advance st)
-        | _ -> raise (Parse_error "expected , or ) in parameter list")
-      in
-      loop state []
+  | Ident "void" ->
+      if peek (advance state) = Sym ")" then ([], advance (advance state))
+      else parse_nonempty state []
+  | _ -> parse_nonempty state []
 
 let parse_function state =
   let ret_type, state = parse_type state in
@@ -977,8 +986,40 @@ let external_is_named_function state =
     | _ -> false
   with Parse_error _ -> false
 
+let is_struct_definition_start state =
+  match peek state with
+  | Ident "struct" -> (
+      match peek (advance state) with
+      | Ident _ -> peek (advance (advance state)) = Sym "{"
+      | _ -> false)
+  | _ -> false
+
+let is_typedef_struct_definition_start state =
+  match peek state with
+  | Ident "typedef" -> (
+      match peek (advance state) with
+      | Ident "struct" -> (
+          match peek (advance (advance state)) with
+          | Ident _ -> peek (advance (advance (advance state))) = Sym "{"
+          | Sym "{" -> true
+          | _ -> false)
+      | _ -> false)
+  | _ -> false
+
 let parse_program tokens =
   let rec loop state constants structs globals funcs =
+    let parse_external_or_skip state constants structs globals funcs =
+      try
+        (match parse_external_decl state with
+        | ExternalFunc (Some fn), state -> loop state constants structs globals (fn :: funcs)
+        | ExternalFunc None, state -> loop state constants structs globals funcs
+        | ExternalGlobal global, state -> loop state constants structs (global :: globals) funcs)
+      with
+      | Parse_error msg ->
+          if not (external_is_named_function state) then
+            loop { state with pos = skip_decl state.tokens state.pos 0 } constants structs globals funcs
+          else raise (Parse_error msg)
+    in
     match peek state with
     | Eof -> { constants; structs = List.rev structs; globals = List.rev globals; funcs = List.rev funcs }
     | Ident "enum" ->
@@ -988,33 +1029,22 @@ let parse_program tokens =
           loop state constants structs globals funcs
         else
           loop { state with pos = skip_decl state.tokens state.pos 0 } constants structs globals funcs
-    | Ident "struct" when (match peek (advance state) with Ident _ -> peek (advance (advance state)) = Sym "{" | _ -> false) ->
-        let layout, state = parse_struct_definition state in
-        loop state constants (layout :: structs) globals funcs
-    | Ident "typedef"
-      when (match peek (advance state) with
-      | Ident "struct" -> (
-          match peek (advance (advance state)) with
-          | Ident _ -> peek (advance (advance (advance state))) = Sym "{"
-          | Sym "{" -> true
-          | _ -> false)
-      | _ -> false) ->
-        let tag_layout, alias_layout, state = parse_typedef_struct_definition state in
-        let structs = alias_layout :: structs in
-        let structs = match tag_layout with Some layout -> layout :: structs | None -> structs in
-        loop state constants structs globals funcs
+    | Ident "struct" ->
+        if is_struct_definition_start state then
+          let layout, state = parse_struct_definition state in
+          loop state constants (layout :: structs) globals funcs
+        else parse_external_or_skip state constants structs globals funcs
     | Ident "typedef" ->
-        loop { state with pos = skip_decl state.tokens state.pos 0 } constants structs globals funcs
-    | tok when starts_type tok -> (
-        try
-          match parse_external_decl state with
-          | ExternalFunc (Some fn), state -> loop state constants structs globals (fn :: funcs)
-          | ExternalFunc None, state -> loop state constants structs globals funcs
-          | ExternalGlobal global, state -> loop state constants structs (global :: globals) funcs
-        with
-        | Parse_error _ when not (external_is_named_function state) ->
-            loop { state with pos = skip_decl state.tokens state.pos 0 } constants structs globals funcs)
-    | _ -> loop (advance state) constants structs globals funcs
+        if is_typedef_struct_definition_start state then
+          let tag_layout, alias_layout, state = parse_typedef_struct_definition state in
+          let structs = alias_layout :: structs in
+          let structs = match tag_layout with Some layout -> layout :: structs | None -> structs in
+          loop state constants structs globals funcs
+        else loop { state with pos = skip_decl state.tokens state.pos 0 } constants structs globals funcs
+    | tok ->
+        if starts_type tok then
+          parse_external_or_skip state constants structs globals funcs
+        else loop (advance state) constants structs globals funcs
   in
   loop { tokens; pos = 0 } [] [] [] []
 
@@ -1089,7 +1119,7 @@ let assoc_set_value name value env =
 
 let assoc_set name value env = assoc_set_value name (VInt value) env
 
-let assoc_decl ?text ?array ?bytes ty name value env =
+let assoc_decl_full text array bytes ty name value env =
   let fields =
     match ty with
     | TOther _ -> Some (ref [])
@@ -1099,7 +1129,7 @@ let assoc_decl ?text ?array ?bytes ty name value env =
   :: env
 
 let assoc_decl_value ty name value env =
-  assoc_decl ty name value env
+  assoc_decl_full None None None ty name value env
 
 type control = Continue of env | Returned of value | Jumped of string * env | Broke of env
 
@@ -1204,8 +1234,9 @@ let struct_binding_from_pointer = function
   | _ -> None
 
 let struct_name_of_type = function
-  | TOther name when has_prefix "struct " name -> Some (String.sub name 7 (String.length name - 7))
-  | TOther name -> Some name
+  | TOther name ->
+      if has_prefix "struct " name then Some (String.sub name 7 (String.length name - 7))
+      else Some name
   | _ -> None
 
 let struct_fields structs ty =
@@ -1272,9 +1303,9 @@ let truth_value = function
 
 let pointer_delta a b =
   match (a, b) with
-  | VFieldPtr (x, ix), VFieldPtr (y, iy) when x == y -> Some (ix - iy)
-  | VArrayPtr (x, ix), VArrayPtr (y, iy) when x == y -> Some (ix - iy)
-  | VStringPtr (x, ix), VStringPtr (y, iy) when x = y -> Some (ix - iy)
+  | VFieldPtr (x, ix), VFieldPtr (y, iy) -> if x == y then Some (ix - iy) else None
+  | VArrayPtr (x, ix), VArrayPtr (y, iy) -> if x == y then Some (ix - iy) else None
+  | VStringPtr (x, ix), VStringPtr (y, iy) -> if x = y then Some (ix - iy) else None
   | _ -> None
 
 let pointer_compare a b =
@@ -1303,8 +1334,7 @@ let rec eval_value funcs structs globals env = function
   | EVar name ->
       (match find_binding_opt name env with
       | Some binding -> (match binding.bind_array with Some _ -> VArrayPtr (binding, 0) | None -> !(binding.bind_value))
-      | None when List.exists (fun fn -> fn.name = name) funcs -> VFunc name
-      | None -> fail ("unknown variable: " ^ name))
+      | None -> if List.exists (fun fn -> fn.name = name) funcs then VFunc name else fail ("unknown variable: " ^ name))
   | ESizeof (TOther name) -> (
       match struct_size structs (TOther name) with
       | Some size -> VInt size
@@ -1333,8 +1363,10 @@ let rec eval_value funcs structs globals env = function
         | _ -> fail "unsupported member expression"
       in
       (match struct_field_layout structs binding.bind_type field with
-      | Some layout when layout.field_is_array -> VFieldPtr (binding, layout.field_offset)
-      | _ -> !(field_cell (binding_fields binding) field))
+      | Some layout ->
+          if layout.field_is_array then VFieldPtr (binding, layout.field_offset)
+          else !(field_cell (binding_fields binding) field)
+      | None -> !(field_cell (binding_fields binding) field))
   | EPtrMember (base, field) ->
       eval_value funcs structs globals env (EMember (EUnary (Deref, base), field))
   | EAssignExpr (name, expr) ->
@@ -1526,7 +1558,7 @@ and eval_func funcs structs globals name args =
       fn.params args
     @ globals
   in
-  let env = assoc_decl ~text:name (TPtr TChar) "__func__" (VStringPtr (name, 0)) env in
+  let env = assoc_decl_full (Some name) None None (TPtr TChar) "__func__" (VStringPtr (name, 0)) env in
   match exec_block funcs structs globals fn.body env with
   | Returned value -> coerce_value fn.ret_type value
   | Continue _ -> VInt 0
@@ -1536,7 +1568,11 @@ and eval_func funcs structs globals name args =
 and exec_simple funcs structs globals env = function
   | SEmpty -> env
   | SExpr (ECall ("_exit", [ arg ])) -> raise (Exit_code (eval_expr funcs structs globals env arg))
-  | SExpr (ECall (name, _)) when list_find_opt (fun fn -> fn.name = name) funcs = None -> env
+  | SExpr (ECall (name, _) as expr) ->
+      if list_find_opt (fun fn -> fn.name = name) funcs = None then env
+      else
+        let _ = eval_value funcs structs globals env expr in
+        env
   | SExpr expr ->
       let _ = eval_value funcs structs globals env expr in
       env
@@ -1565,7 +1601,7 @@ and exec_simple funcs structs globals env = function
         | None -> None
       in
       let text = match init with Some (EString text) -> Some text | _ -> None in
-      let env = assoc_decl ?text ?array ?bytes ty name value env in
+      let env = assoc_decl_full text array bytes ty name value env in
       (match init with
       | Some (EInitList values) ->
           let binding = find_binding name env in
@@ -1590,13 +1626,13 @@ and exec_simple funcs structs globals env = function
               fill (struct_fields structs ty) values);
           env
       | _ -> env)
-  | STypeAlias (ty, name) -> assoc_decl TInt name (VInt (sizeof_type ty)) env
+  | STypeAlias (ty, name) -> assoc_decl_value TInt name (VInt (sizeof_type ty)) env
   | SEnumDecl constants ->
       let rec loop next_value env = function
         | [] -> env
         | (name, expr) :: rest ->
             let value = match expr with Some expr -> eval_expr funcs structs globals env expr | None -> next_value in
-            loop (value + 1) (assoc_decl TInt name (VInt value) env) rest
+            loop (value + 1) (assoc_decl_value TInt name (VInt value) env) rest
       in
       loop 0 env constants
   | SAssign (name, expr) ->
@@ -1674,7 +1710,7 @@ and exec_block funcs structs globals stmts env =
   let label_index label =
     let rec loop i = function
       | [] -> None
-      | Label name :: _ when name = label -> Some (i + 1)
+      | Label name :: rest -> if name = label then Some (i + 1) else loop (i + 1) rest
       | _ :: rest -> loop (i + 1) rest
     in
     loop 0 stmts
@@ -1721,13 +1757,13 @@ let compile src =
   m1_of_exit (int_of_value (eval_func program.funcs program.structs globals "main" []))
 
 let read_stdin () =
-  let b = Buffer.create 4096 in
-  (try
-     while true do
-       Buffer.add_channel b stdin 4096
-     done
-   with End_of_file -> ());
-  Buffer.contents b
+  let rec loop acc =
+    let next = try Some (input_char stdin) with End_of_file -> None in
+    match next with
+    | Some ch -> loop (ch :: acc)
+    | None -> string_of_rev_chars acc
+  in
+  loop []
 
 let () =
   try print_string (compile (read_stdin ())) with
