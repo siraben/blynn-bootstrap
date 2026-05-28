@@ -169,6 +169,16 @@ DEFINE SYSCALL 0F05
     check_return bitwise-not.c 42
     printf '%s\n' 'typedef struct { int n; } Box;' 'int main(void) { Box b = { 2 }; Box *p = &b; p->n += 40; return b.n; }' > member-compound-assign.c
     check_return member-compound-assign.c 42
+    printf '%s\n' 'int main(void) { int a = 1, *p = &a, b = 41; return *p + b; }' > local-decl-list.c
+    check_return local-decl-list.c 42
+    printf '%s\n' 'typedef struct TinyAlloc TinyAlloc;' 'int main(void) { TinyAlloc *al = 0; TinyAlloc *bottom = al, *next = al; return bottom == next ? 42 : 1; }' > local-pointer-decl-list.c
+    check_return local-pointer-decl-list.c 42
+    printf '%s\n' 'int main(void) { int a = 1; int b = 0; a = 2, b = 40; return a + b; }' > comma-expression.c
+    check_return comma-expression.c 42
+    printf '%s\n' 'typedef int va_list;' 'int main(void) { va_list v; int len, size = 40; len = 2; return len + size; }' > va-list-local.c
+    check_return va-list-local.c 42
+    printf '%s\n' 'int main(void) { int _t = 0xc1; return (_t >= 0xc0 && _t <= 0xcf) ? 42 : 1; }' > suffix-typedef-heuristic-paren.c
+    check_return suffix-typedef-heuristic-paren.c 42
     printf '%s\n' '#ifdef MISSING' 'int main(void) { return 1; }' '#else' 'int main(void) { return 42; }' '#endif' > ifdef-missing-else.c
     check_return ifdef-missing-else.c 42
     printf '%s\n' '#define VALUE 42' '#ifndef VALUE' 'int main(void) { return 1; }' '#else' 'int main(void) { return VALUE; }' '#endif' > ifndef-defined-else.c

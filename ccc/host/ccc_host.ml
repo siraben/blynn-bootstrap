@@ -603,6 +603,7 @@ type expr =
   | ECond of expr * expr * expr
   | EUnary of unop * expr
   | EBinary of binop * expr * expr
+  | EComma of expr * expr
   | ECall of string * expr list
   | ECast of c_type * expr
 
@@ -612,6 +613,7 @@ type simple_stmt =
   | SAugAssign of string * binop * expr
   | SPost of string * int
   | SDecl of c_type * string * expr option * expr option
+  | SDecls of (c_type * string * expr option * expr option) list
   | STypeAlias of c_type * string
   | SEnumDecl of (string * expr option) list
   | SEmpty
@@ -655,6 +657,7 @@ let starts_uppercase name =
 let rec starts_type tok =
   match tok with
   | Ident ("int" | "char" | "signed" | "unsigned" | "void" | "long" | "short" | "_Bool" | "double" | "static" | "const" | "struct" | "union") -> true
+  | Ident "va_list" -> true
   | Ident name -> has_suffix "_t" name || starts_uppercase name
   | _ -> false
 
@@ -754,7 +757,15 @@ let rec parse_type state =
   in
   ptr base (qualifiers state)
 
-let rec parse_expr state = parse_assignment state
+let rec parse_expr state = parse_comma state
+
+and parse_comma state =
+  let lhs, state = parse_assignment state in
+  match take_sym "," state with
+  | Some state ->
+      let rhs, state = parse_comma state in
+      (EComma (lhs, rhs), state)
+  | None -> (lhs, state)
 
 and parse_assignment state =
   let lhs, state = parse_conditional state in
@@ -832,7 +843,7 @@ and parse_primary state =
           match take_sym "}" st with
           | Some st -> (EInitList (List.rev acc), st)
           | None ->
-              let expr, st = parse_expr st in
+              let expr, st = parse_assignment st in
               (match take_sym "," st with
               | Some st -> loop st (expr :: acc)
               | None ->
@@ -876,15 +887,26 @@ and parse_primary state =
     match take_sym "(" st with
     | None -> None
     | Some st ->
-        if starts_type (peek st) then
-          let ty, st = parse_type st in
-          let st = need_sym ")" st in
-          let rhs, st = parse_unary st in
-          Some (ECast (ty, rhs), st)
-        else
+        let parenthesized st =
           let expr, st = parse_expr st in
           let st = need_sym ")" st in
           Some (expr, st)
+        in
+        if starts_type (peek st) then
+          let cast =
+            try
+              let ty, cast_st = parse_type st in
+              match take_sym ")" cast_st with
+              | Some cast_st ->
+                  let rhs, cast_st = parse_unary cast_st in
+                  Some (ECast (ty, rhs), cast_st)
+              | None -> None
+            with Parse_error _ -> None
+          in
+          match cast with
+          | Some result -> Some result
+          | None -> parenthesized st
+        else parenthesized st
   in
   match
     choose_option
@@ -899,8 +921,8 @@ and parse_arg_list state =
   match take_sym ")" state with
   | Some state -> ([], state)
   | None ->
-      let rec loop st acc =
-        let arg, st = parse_expr st in
+        let rec loop st acc =
+        let arg, st = parse_assignment st in
         match take_sym "," st with
         | Some st -> loop st (arg :: acc)
         | None ->
@@ -1073,7 +1095,7 @@ let parse_enum_after_keyword state =
         let value, st =
           match take_sym "=" st with
           | Some st ->
-              let expr, st = parse_expr st in
+              let expr, st = parse_assignment st in
               (Some expr, st)
           | None -> (None, st)
         in
@@ -1109,7 +1131,7 @@ let parse_decl_suffix name state =
   let init, state =
     match take_sym "=" state with
     | Some state ->
-        let expr, state = parse_expr state in
+        let expr, state = parse_assignment state in
         (Some expr, state)
     | None -> (None, state)
   in
@@ -1119,10 +1141,46 @@ let parse_decl_tail state =
   let name, state = need_ident state in
   parse_decl_suffix name state
 
+let rec strip_ptr_type ty =
+  match ty with
+  | TPtr ty -> strip_ptr_type ty
+  | _ -> ty
+
+let rec add_ptr_type ty count =
+  if count <= 0 then ty else add_ptr_type (TPtr ty) (count - 1)
+
+let parse_declarator_pointer state =
+  let rec qualifiers state =
+    match take_keyword "const" state with
+    | Some state -> qualifiers state
+    | None -> state
+  in
+  let rec loop count state =
+    match take_sym "*" state with
+    | Some state -> loop (count + 1) (qualifiers state)
+    | None -> (count, state)
+  in
+  loop 0 state
+
 let parse_decl_after_type state =
   let ty, state = parse_type state in
   let name, init, array_size, state = parse_decl_tail state in
-  (SDecl (ty, name, init, array_size), state)
+  let base_ty = strip_ptr_type ty in
+  let first = (ty, name, init, array_size) in
+  let rec rest state acc =
+    match take_sym "," state with
+    | Some state ->
+        let ptr_count, state = parse_declarator_pointer state in
+        let item_ty = add_ptr_type base_ty ptr_count in
+        let name, init, array_size, state = parse_decl_tail state in
+        rest state ((item_ty, name, init, array_size) :: acc)
+    | None ->
+        let decls = List.rev acc in
+        (match decls with
+        | [ (ty, name, init, array_size) ] -> (SDecl (ty, name, init, array_size), state)
+        | _ -> (SDecls decls, state))
+  in
+  rest state [ first ]
 
 let parse_simple_no_semi state =
   match peek state with
@@ -1130,61 +1188,8 @@ let parse_simple_no_semi state =
   | tok ->
       if starts_type tok then parse_decl_after_type state
       else
-        let expr_stmt st =
-          let expr, st = parse_expr st in
-          (SExpr expr, st)
-        in
-        match take_ident state with
-        | Some (name, tail_state) ->
-            let assign_tail st =
-              match take_sym "=" st with
-              | Some st ->
-                  let expr, st = parse_expr st in
-                  Some (SAssign (name, expr), st)
-              | None -> None
-            in
-            let aug_tail symbol op st =
-              match take_sym symbol st with
-              | Some st ->
-                  let expr, st = parse_expr st in
-                  Some (SAugAssign (name, op, expr), st)
-              | None -> None
-            in
-            let post_tail symbol delta st =
-              match take_sym symbol st with
-              | Some st -> Some (SPost (name, delta), st)
-              | None -> None
-            in
-            let call_tail st =
-              match take_sym "(" st with
-              | Some st ->
-                  let args, st = parse_arg_list st in
-                  Some (SExpr (ECall (name, args)), st)
-              | None -> None
-            in
-            (match
-               choose_option
-                 [
-                   assign_tail;
-                   aug_tail "+=" Add;
-                   aug_tail "-=" Sub;
-                   aug_tail "*=" Mul;
-                   aug_tail "/=" Div;
-                   aug_tail "%=" Mod;
-                   aug_tail "<<=" Shl;
-                   aug_tail ">>=" Shr;
-                   aug_tail "|=" Bor;
-                   aug_tail "&=" Band;
-                   aug_tail "^=" Bxor;
-                   post_tail "++" 1;
-                   post_tail "--" (-1);
-                   call_tail;
-                 ]
-                 tail_state
-             with
-            | Some result -> result
-            | None -> expr_stmt state)
-        | None -> expr_stmt state
+        let expr, state = parse_expr state in
+        (SExpr expr, state)
 
 let parse_simple_stmt state =
   let simple, state = parse_simple_no_semi state in
@@ -1597,7 +1602,7 @@ let parse_struct_field state =
         let state =
           match take_sym ":" state with
           | Some state ->
-              let _width, state = parse_expr state in
+              let _width, state = parse_assignment state in
               state
           | None -> state
         in
@@ -2178,6 +2183,9 @@ let rec eval_value funcs structs globals env expr =
   | EUnary (Addr, _) -> fail "unsupported address expression"
   | ECast (ty, e) ->
       coerce_value ty (eval_value funcs structs globals env e)
+  | EComma (lhs, rhs) ->
+      let _ = eval_value funcs structs globals env lhs in
+      eval_value funcs structs globals env rhs
   | EBinary (Land, a, b) ->
       VInt (if truth_value (eval_value funcs structs globals env a) then bool_int (truth_value (eval_value funcs structs globals env b)) else 0)
   | EBinary (Lor, a, b) ->
@@ -2354,6 +2362,10 @@ and exec_simple funcs structs globals env simple =
               fill (struct_fields structs ty) values);
           env
       | _ -> env)
+  | SDecls decls ->
+      List.fold_left
+        (fun env (ty, name, init, array_size) -> exec_simple funcs structs globals env (SDecl (ty, name, init, array_size)))
+        env decls
   | STypeAlias (ty, name) -> assoc_decl_value TInt name (VInt (sizeof_type ty)) env
   | SEnumDecl constants ->
       let rec loop next_value env constants =

@@ -70,8 +70,10 @@ The host compiler now has an opt-in `--trace` flag for stderr-only phase and
 parse-position debugging. The current full TinyCC probe uses HCC's
 `tcc-expanded.c` artifact, parses through GNU attributes, anonymous unions,
 bitfields, function-pointer fields, bitwise expressions, compound assignments,
-and member postfix updates, and next stops at a local declaration list of the
-form `TinyAlloc *bottom = al, *next = ...;`.
+member postfix updates, local declaration lists, comma expressions, local
+`va_list` declarations, and parenthesized `_t` comparisons without mistaking
+the local for a cast type. It next stops at an expression-callee call of the
+form `(..., _tcc_warning)(...)`.
 
 ## Supporting Artifacts
 
