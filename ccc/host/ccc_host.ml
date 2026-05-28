@@ -637,20 +637,20 @@ let parse_enum_decl state =
   let state = need_sym ";" state in
   (constants, state)
 
-let parse_decl_suffix name state =
-  let array_size, state =
+let parse_array_size state =
     match take_sym "[" state with
     | Some state ->
-        let array_size, state =
-          match take_sym "]" state with
-          | Some state -> (Some (EInt (-1)), state)
-          | None ->
-              let size, state = parse_expr state in
-              let state = need_sym "]" state in
-              (Some size, state)
-        in
-        (array_size, state)
+        (match take_sym "]" state with
+        | Some state -> (Some (EInt (-1)), state)
+        | None ->
+            let size, state = parse_expr state in
+            let state = need_sym "]" state in
+            (Some size, state))
     | None -> (None, state)
+
+let parse_decl_suffix name state =
+  let array_size, state =
+    parse_array_size state
   in
   let init, state =
     match take_sym "=" state with
@@ -912,13 +912,7 @@ let parse_struct_definition state =
         let ty, st = parse_type st in
         let field, st = need_ident st in
         let array_size, st =
-          match peek st with
-          | Sym "[" ->
-              let st = advance st in
-              let array_size, st = if peek st = Sym "]" then (None, st) else let expr, st = parse_expr st in (Some expr, st) in
-              let st = need_sym "]" st in
-              (array_size, st)
-          | _ -> (None, st)
+          parse_array_size st
         in
         let st = need_sym ";" st in
         loop st ((field, ty, array_size) :: acc)
@@ -950,13 +944,7 @@ let parse_typedef_struct_definition state =
         let ty, st = parse_type st in
         let field, st = need_ident st in
         let array_size, st =
-          match peek st with
-          | Sym "[" ->
-              let st = advance st in
-              let array_size, st = if peek st = Sym "]" then (None, st) else let expr, st = parse_expr st in (Some expr, st) in
-              let st = need_sym "]" st in
-              (array_size, st)
-          | _ -> (None, st)
+          parse_array_size st
         in
         let st = need_sym ";" st in
         fields st ((field, ty, array_size) :: acc)
