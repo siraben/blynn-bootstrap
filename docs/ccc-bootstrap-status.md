@@ -50,8 +50,11 @@ through parser adapters instead of raw token advancement. Primary-expression
 parsing now uses value-preserving literal parsers and a local parser-alternative
 list for literals, initializer lists, `sizeof`, identifiers, calls, casts, and
 parenthesized expressions, with assignment, ternary, prefix unary, and postfix
-operators routed through optional symbol adapters. The source avoids newer
-OCaml-only conveniences such as
+operators routed through optional symbol adapters. Statement parsing is now an
+ordered local parser-alternative list for typedefs, enums, blocks, returns,
+conditionals, loops, gotos, breaks, labels, and empty statements, and simple
+identifier-led statements use shared tail parsers for assignment, update, and
+call forms. The source avoids newer OCaml-only conveniences such as
 `List.find_opt` / `Option.is_some` in favor of small local ML helpers. This
 keeps the host compiler easy to run with `ocamlc` while making the code closer
 to the subset that should later be ported into the mini-ML `ccc.ml`.

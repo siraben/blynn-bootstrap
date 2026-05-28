@@ -720,8 +720,7 @@ let build_struct_layout name fields =
   in
   loop 0 [] fields
 
-let parse_enum_decl state =
-  let state = need_keyword "enum" state in
+let parse_enum_after_keyword state =
   let state =
     match take_ident state with
     | Some (_, state) -> state
@@ -746,7 +745,11 @@ let parse_enum_decl state =
             let st = need_sym "}" st in
             (List.rev ((name, value) :: acc), st))
   in
-  let constants, state = loop state [] in
+  loop state []
+
+let parse_enum_decl state =
+  let state = need_keyword "enum" state in
+  let constants, state = parse_enum_after_keyword state in
   let state = need_sym ";" state in
   (constants, state)
 
@@ -789,40 +792,46 @@ let parse_simple_no_semi state =
   | tok ->
       if starts_type tok then parse_decl_after_type state
       else
-        (match tok with
-        | Ident name -> (
-            let state1 = advance state in
-            match take_sym "=" state1 with
-            | Some st ->
-                let expr, st = parse_expr st in
-                (SAssign (name, expr), st)
-            | None -> (
-                match take_sym "+=" state1 with
-                | Some st ->
-                    let expr, st = parse_expr st in
-                    (SAugAssign (name, Add, expr), st)
-                | None -> (
-                    match take_sym "-=" state1 with
-                    | Some st ->
-                        let expr, st = parse_expr st in
-                        (SAugAssign (name, Sub, expr), st)
-                    | None -> (
-                        match take_sym "++" state1 with
-                        | Some st -> (SPost (name, 1), st)
-                        | None -> (
-                            match take_sym "--" state1 with
-                            | Some st -> (SPost (name, -1), st)
-                            | None -> (
-                                match take_sym "(" state1 with
-                                | Some st ->
-                                    let args, st = parse_arg_list st in
-                                    (SExpr (ECall (name, args)), st)
-                                | None ->
-                                    let expr, st = parse_expr state in
-                                    (SExpr expr, st)))))))
-        | _ ->
-            let expr, st = parse_expr state in
-            (SExpr expr, st))
+        let expr_stmt st =
+          let expr, st = parse_expr st in
+          (SExpr expr, st)
+        in
+        match take_ident state with
+        | Some (name, tail_state) ->
+            let assign_tail st =
+              match take_sym "=" st with
+              | Some st ->
+                  let expr, st = parse_expr st in
+                  Some (SAssign (name, expr), st)
+              | None -> None
+            in
+            let aug_tail symbol op st =
+              match take_sym symbol st with
+              | Some st ->
+                  let expr, st = parse_expr st in
+                  Some (SAugAssign (name, op, expr), st)
+              | None -> None
+            in
+            let post_tail symbol delta st =
+              match take_sym symbol st with
+              | Some st -> Some (SPost (name, delta), st)
+              | None -> None
+            in
+            let call_tail st =
+              match take_sym "(" st with
+              | Some st ->
+                  let args, st = parse_arg_list st in
+                  Some (SExpr (ECall (name, args)), st)
+              | None -> None
+            in
+            (match
+               choose_option
+                 [ assign_tail; aug_tail "+=" Add; aug_tail "-=" Sub; post_tail "++" 1; post_tail "--" (-1); call_tail ]
+                 tail_state
+             with
+            | Some result -> result
+            | None -> expr_stmt state)
+        | None -> expr_stmt state
 
 let parse_simple_stmt state =
   let simple, state = parse_simple_no_semi state in
@@ -838,113 +847,173 @@ let rec skip_decl tokens pos depth =
   | _ -> skip_decl tokens (pos + 1) depth
 
 let rec parse_stmt state =
-  match peek state with
-  | Ident "typedef" ->
-      let ty, state = parse_type (advance state) in
-      let name, state = need_ident state in
-      let state = need_sym ";" state in
-      (Simple (STypeAlias (ty, name)), state)
-  | Ident "enum" ->
-      let constants, state = parse_enum_decl state in
-      (Simple (SEnumDecl constants), state)
-  | Sym "{" ->
-      let body, state = parse_block (advance state) in
-      (Block body, state)
-  | Ident "return" ->
-      let state = advance state in
-      if peek state = Sym ";" then (Return None, advance state)
-      else
-        let expr, state = parse_expr state in
-        let state = need_sym ";" state in
-        (Return (Some expr), state)
-  | Ident "if" ->
-      let state = advance state in
-      let state = need_sym "(" state in
-      let cond, state = parse_expr state in
-      let state = need_sym ")" state in
-      let yes, state = parse_stmt state in
-      let else_part =
-        match peek state with
-        | Ident "else" ->
-            let no, st = parse_stmt (advance state) in
-            (Some no, st)
-        | _ -> (None, state)
-      in
-      let no, state = else_part in
-      (If (cond, yes, no), state)
-  | Ident "while" ->
-      let state = advance state in
-      let state = need_sym "(" state in
-      let cond, state = parse_expr state in
-      let state = need_sym ")" state in
-      let body, state = parse_stmt state in
-      (While (cond, body), state)
-  | Ident "do" ->
-      let body, state = parse_stmt (advance state) in
-      let state =
-        match peek state with
-        | Ident "while" -> advance state
-        | _ -> raise (Parse_error "expected while after do")
-      in
-      let state = need_sym "(" state in
-      let cond, state = parse_expr state in
-      let state = need_sym ")" state in
-      let state = need_sym ";" state in
-      (DoWhile (body, cond), state)
-  | Ident "for" ->
-      let state = advance state in
-      let state = need_sym "(" state in
-      let init, state =
-        if peek state = Sym ";" then (None, advance state)
-        else
-          let s, st = parse_simple_no_semi state in
-          let st = need_sym ";" st in
-          (Some s, st)
-      in
-      let cond, state =
-        if peek state = Sym ";" then (None, advance state)
-        else
-          let e, st = parse_expr state in
-          let st = need_sym ";" st in
-          (Some e, st)
-      in
-      let post, state =
-        if peek state = Sym ")" then (None, advance state)
-        else
-          let s, st = parse_simple_no_semi state in
-          let st = need_sym ")" st in
-          (Some s, st)
-      in
-      let body, state = parse_stmt state in
-      (For (init, cond, post, body), state)
-  | Ident "goto" ->
-      let state = advance state in
-      let name, state = need_ident state in
-      let state = need_sym ";" state in
-      (Goto name, state)
-  | Ident "break" ->
-      let state = advance state in
-      let state = need_sym ";" state in
-      (Break, state)
-  | Ident name -> (
-      match peek (advance state) with
-      | Sym ":" -> (Label name, advance (advance state))
-      | _ ->
-          let simple, state = parse_simple_stmt state in
-          (Simple simple, state))
-  | Sym ";" -> (Simple SEmpty, advance state)
-  | _ ->
+  let typedef_stmt st =
+    match take_keyword "typedef" st with
+    | None -> None
+    | Some st ->
+        let ty, st = parse_type st in
+        let name, st = need_ident st in
+        let st = need_sym ";" st in
+        Some (Simple (STypeAlias (ty, name)), st)
+  in
+  let enum_stmt st =
+    match take_keyword "enum" st with
+    | None -> None
+    | Some st ->
+        let constants, st = parse_enum_after_keyword st in
+        let st = need_sym ";" st in
+        Some (Simple (SEnumDecl constants), st)
+  in
+  let block_stmt st =
+    match take_sym "{" st with
+    | Some st ->
+        let body, st = parse_block st in
+        Some (Block body, st)
+    | None -> None
+  in
+  let return_stmt st =
+    match take_keyword "return" st with
+    | None -> None
+    | Some st -> (
+        match take_sym ";" st with
+        | Some st -> Some (Return None, st)
+        | None ->
+            let expr, st = parse_expr st in
+            let st = need_sym ";" st in
+            Some (Return (Some expr), st))
+  in
+  let if_stmt st =
+    match take_keyword "if" st with
+    | None -> None
+    | Some st ->
+        let st = need_sym "(" st in
+        let cond, st = parse_expr st in
+        let st = need_sym ")" st in
+        let yes, st = parse_stmt st in
+        let no, st =
+          match take_keyword "else" st with
+          | Some st ->
+              let no, st = parse_stmt st in
+              (Some no, st)
+          | None -> (None, st)
+        in
+        Some (If (cond, yes, no), st)
+  in
+  let while_stmt st =
+    match take_keyword "while" st with
+    | None -> None
+    | Some st ->
+        let st = need_sym "(" st in
+        let cond, st = parse_expr st in
+        let st = need_sym ")" st in
+        let body, st = parse_stmt st in
+        Some (While (cond, body), st)
+  in
+  let do_stmt st =
+    match take_keyword "do" st with
+    | None -> None
+    | Some st ->
+        let body, st = parse_stmt st in
+        let st = need_keyword "while" st in
+        let st = need_sym "(" st in
+        let cond, st = parse_expr st in
+        let st = need_sym ")" st in
+        let st = need_sym ";" st in
+        Some (DoWhile (body, cond), st)
+  in
+  let for_stmt st =
+    match take_keyword "for" st with
+    | None -> None
+    | Some st ->
+        let st = need_sym "(" st in
+        let init, st =
+          match take_sym ";" st with
+          | Some st -> (None, st)
+          | None ->
+              let simple, st = parse_simple_no_semi st in
+              let st = need_sym ";" st in
+              (Some simple, st)
+        in
+        let cond, st =
+          match take_sym ";" st with
+          | Some st -> (None, st)
+          | None ->
+              let expr, st = parse_expr st in
+              let st = need_sym ";" st in
+              (Some expr, st)
+        in
+        let post, st =
+          match take_sym ")" st with
+          | Some st -> (None, st)
+          | None ->
+              let simple, st = parse_simple_no_semi st in
+              let st = need_sym ")" st in
+              (Some simple, st)
+        in
+        let body, st = parse_stmt st in
+        Some (For (init, cond, post, body), st)
+  in
+  let goto_stmt st =
+    match take_keyword "goto" st with
+    | None -> None
+    | Some st ->
+        let name, st = need_ident st in
+        let st = need_sym ";" st in
+        Some (Goto name, st)
+  in
+  let break_stmt st =
+    match take_keyword "break" st with
+    | None -> None
+    | Some st ->
+        let st = need_sym ";" st in
+        Some (Break, st)
+  in
+  let label_stmt st =
+    match take_ident st with
+    | Some (name, st1) -> (
+        match take_sym ":" st1 with
+        | Some st -> Some (Label name, st)
+        | None -> None)
+    | None -> None
+  in
+  let empty_stmt st =
+    match take_sym ";" st with
+    | Some st -> Some (Simple SEmpty, st)
+    | None -> None
+  in
+  match
+    choose_option
+      [
+        typedef_stmt;
+        enum_stmt;
+        block_stmt;
+        return_stmt;
+        if_stmt;
+        while_stmt;
+        do_stmt;
+        for_stmt;
+        goto_stmt;
+        break_stmt;
+        label_stmt;
+        empty_stmt;
+      ]
+      state
+  with
+  | Some result -> result
+  | None ->
       let simple, state = parse_simple_stmt state in
       (Simple simple, state)
 
 and parse_block state =
-  match peek state with
-  | Sym "}" -> ([], advance state)
-  | Eof -> raise (Parse_error "unterminated block")
-  | _ ->
+  match take_sym "}" state with
+  | Some state -> ([], state)
+  | None -> (
+      match peek state with
+      | Eof -> raise (Parse_error "unterminated block")
+      | _ ->
       let stmt, state = parse_stmt state in
       let rest, state = parse_block state in
-      (stmt :: rest, state)
+      (stmt :: rest, state))
 
 let parse_params state =
   let state = need_sym "(" state in
