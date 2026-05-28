@@ -66,6 +66,12 @@ The host source also avoids OCaml `Buffer`, optional arguments, labelled
 arguments, `function` shorthand, pattern guards, and OCaml bitwise operators;
 the Nix gate rejects those so the development compiler stays close to the
 eventual portable ML source instead of drifting into host-library style.
+The host compiler now has an opt-in `--trace` flag for stderr-only phase and
+parse-position debugging. The current full TinyCC probe uses HCC's
+`tcc-expanded.c` artifact, parses through GNU attributes, anonymous unions,
+bitfields, function-pointer fields, bitwise expressions, compound assignments,
+and member postfix updates, and next stops at a local declaration list of the
+form `TinyAlloc *bottom = al, *next = ...;`.
 
 ## Supporting Artifacts
 

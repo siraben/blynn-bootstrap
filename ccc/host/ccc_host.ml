@@ -51,6 +51,29 @@ let rec shift_left_u32 value count =
 let shift_right_u32 value count =
   (unsigned_mod value 4294967296) / pow2 count
 
+let bitwise_combine choose x y =
+  let rec loop count x y place acc =
+    if count <= 0 then unsigned_mod acc 4294967296
+    else
+      let xb = unsigned_mod x 2 in
+      let yb = unsigned_mod y 2 in
+      let bit = if choose xb yb then place else 0 in
+      loop (count - 1) (x / 2) (y / 2) (place * 2) (acc + bit)
+  in
+  loop 32 (unsigned_mod x 4294967296) (unsigned_mod y 4294967296) 1 0
+
+let bitwise_or x y =
+  bitwise_combine (fun xb yb -> xb <> 0 || yb <> 0) x y
+
+let bitwise_and x y =
+  bitwise_combine (fun xb yb -> xb <> 0 && yb <> 0) x y
+
+let bitwise_xor x y =
+  bitwise_combine (fun xb yb -> (xb <> 0 && yb = 0) || (xb = 0 && yb <> 0)) x y
+
+let bitwise_not x =
+  bitwise_xor x 4294967295
+
 let char_code_at src pos =
   if pos >= String.length src then 0 else Char.code src.[pos]
 
@@ -379,7 +402,7 @@ let preprocess_source src =
   loop 0 [] []
 
 let multi_symbols =
-  [ "=="; "!="; "<="; ">="; "&&"; "||"; "<<"; ">>"; "++"; "--"; "+="; "-="; "->" ]
+  [ "..."; "<<="; ">>="; "=="; "!="; "<="; ">="; "&&"; "||"; "<<"; ">>"; "++"; "--"; "+="; "-="; "*="; "/="; "%="; "|="; "&="; "^="; "->" ]
 
 let lex src =
   let rec loop pos acc =
@@ -412,6 +435,23 @@ let lex src =
   in
   Array.of_list (loop 0 [])
 
+let token_text tok =
+  match tok with
+  | Ident name -> "identifier " ^ name
+  | Int_lit n -> "integer " ^ string_of_int n
+  | Char_lit n -> "character " ^ string_of_int n
+  | String_lit s -> "string length " ^ string_of_int (String.length s)
+  | Sym text -> "symbol " ^ text
+  | Eof -> "end of input"
+
+let trace_enabled () =
+  Array.length Sys.argv > 1 && Sys.argv.(1) = "--trace"
+
+let trace msg =
+  if trace_enabled () then prerr_endline ("ccc-host-ocaml: " ^ msg) else ()
+
+let parse_trace_next = ref 0
+
 type parser_state = { tokens : token array; pos : int }
 type 'a parser_reply = ParserOk of 'a * parser_state | ParserErr of string
 type 'a consumed = Consumed of 'a parser_reply | Unconsumed of 'a parser_reply
@@ -433,6 +473,11 @@ let peek state =
   if state.pos < Array.length state.tokens then state.tokens.(state.pos) else Eof
 
 let advance state = { state with pos = state.pos + 1 }
+
+let trace_parse_position state =
+  if trace_enabled () && state.pos >= !parse_trace_next then (
+    trace ("parse token " ^ string_of_int state.pos ^ " near " ^ token_text (peek state));
+    parse_trace_next := state.pos + 10000)
 
 let satisfy f expected state =
   match f (peek state) with
@@ -467,7 +512,8 @@ let optional parser state =
 let need parser state =
   match force_consumed (parser state) with
   | ParserOk (value, state') -> (value, state')
-  | ParserErr msg -> raise (Parse_error msg)
+  | ParserErr msg ->
+      raise (Parse_error (msg ^ " at token " ^ string_of_int state.pos ^ " near " ^ token_text (peek state)))
 
 let need_sym text state =
   let _, state = need (expect_sym text) state in
@@ -512,7 +558,8 @@ let rec choose_option parsers state =
 let run parser tokens =
   match parser { tokens; pos = 0 } with
   | Consumed (ParserOk (value, _)) | Unconsumed (ParserOk (value, _)) -> value
-  | Consumed (ParserErr msg) | Unconsumed (ParserErr msg) -> raise (Parse_error msg)
+  | Consumed (ParserErr msg) | Unconsumed (ParserErr msg) ->
+      raise (Parse_error (msg ^ " at token 0 near " ^ token_text tokens.(0)))
 
 type c_type =
   | TInt
@@ -530,11 +577,12 @@ type c_type =
   | TDouble
   | TLongDouble
   | TVoid
+  | TUnion
   | TOther of string
   | TPtr of c_type
 
-type binop = Add | Sub | Mul | Div | Mod | Eq | Ne | Lt | Le | Gt | Ge | Land | Lor | Shl | Shr
-type unop = Neg | Not | Deref | Addr
+type binop = Add | Sub | Mul | Div | Mod | Eq | Ne | Lt | Le | Gt | Ge | Land | Lor | Bor | Bxor | Band | Shl | Shr
+type unop = Neg | Not | BNot | Deref | Addr
 
 type expr =
   | EInt of int
@@ -606,7 +654,7 @@ let starts_uppercase name =
 
 let rec starts_type tok =
   match tok with
-  | Ident ("int" | "char" | "signed" | "unsigned" | "void" | "long" | "short" | "_Bool" | "double" | "static" | "const" | "struct") -> true
+  | Ident ("int" | "char" | "signed" | "unsigned" | "void" | "long" | "short" | "_Bool" | "double" | "static" | "const" | "struct" | "union") -> true
   | Ident name -> has_suffix "_t" name || starts_uppercase name
   | _ -> false
 
@@ -662,6 +710,11 @@ let rec parse_type state =
     | Some (name, st) -> (TOther ("struct " ^ name), st)
     | None -> (TOther "struct", st)
   in
+  let union_type st =
+    match take_ident st with
+    | Some (_, st) -> (TUnion, st)
+    | None -> (TUnion, st)
+  in
   let named_type st =
     let name, st = need_ident st in
     (TOther name, st)
@@ -675,7 +728,10 @@ let rec parse_type state =
         | None -> (
             match take_keyword "struct" st with
             | Some st -> struct_type st
-            | None -> named_type st))
+            | None -> (
+                match take_keyword "union" st with
+                | Some st -> union_type st
+                | None -> named_type st)))
   in
   let state = qualifiers state in
   let base, state =
@@ -696,12 +752,40 @@ let rec parse_type state =
     | Some st -> ptr (TPtr ty) (post_ptr_qualifiers st)
     | None -> (ty, st)
   in
-  ptr base state
+  ptr base (qualifiers state)
 
 let rec parse_expr state = parse_assignment state
 
 and parse_assignment state =
   let lhs, state = parse_conditional state in
+  let compound_op st =
+    choose_option
+      [
+        (fun st -> match take_sym "+=" st with Some st -> Some (Add, st) | None -> None);
+        (fun st -> match take_sym "-=" st with Some st -> Some (Sub, st) | None -> None);
+        (fun st -> match take_sym "*=" st with Some st -> Some (Mul, st) | None -> None);
+        (fun st -> match take_sym "/=" st with Some st -> Some (Div, st) | None -> None);
+        (fun st -> match take_sym "%=" st with Some st -> Some (Mod, st) | None -> None);
+        (fun st -> match take_sym "<<=" st with Some st -> Some (Shl, st) | None -> None);
+        (fun st -> match take_sym ">>=" st with Some st -> Some (Shr, st) | None -> None);
+        (fun st -> match take_sym "|=" st with Some st -> Some (Bor, st) | None -> None);
+        (fun st -> match take_sym "&=" st with Some st -> Some (Band, st) | None -> None);
+        (fun st -> match take_sym "^=" st with Some st -> Some (Bxor, st) | None -> None);
+      ]
+      st
+  in
+  match compound_op state with
+  | Some (op, state) ->
+      let rhs, state = parse_assignment state in
+      let rhs = EBinary (op, lhs, rhs) in
+      (match lhs with
+      | EVar name -> (EAssignExpr (name, rhs), state)
+      | EUnary (Deref, ptr) -> (EAssignDeref (ptr, rhs), state)
+      | EIndex (base, index) -> (EAssignIndex (base, index, rhs), state)
+      | EMember (base, field) -> (EAssignMember (base, field, rhs), state)
+      | EPtrMember (base, field) -> (EAssignMember (EUnary (Deref, base), field, rhs), state)
+      | _ -> raise (Parse_error "bad compound assignment target"))
+  | None -> (
   match take_sym "=" state with
   | Some state -> (
       let rhs, state = parse_assignment state in
@@ -712,7 +796,7 @@ and parse_assignment state =
       | EMember (base, field) -> (EAssignMember (base, field, rhs), state)
       | EPtrMember (base, field) -> (EAssignMember (EUnary (Deref, base), field, rhs), state)
       | _ -> raise (Parse_error "bad assignment target"))
-  | None -> (lhs, state)
+  | None -> (lhs, state))
 
 and parse_conditional state =
   let cond, state = parse_binop 1 state in
@@ -808,7 +892,8 @@ and parse_primary state =
       state
   with
   | Some result -> result
-  | None -> raise (Parse_error "expected expression")
+  | None ->
+      raise (Parse_error ("expected expression at token " ^ string_of_int state.pos ^ " near " ^ token_text (peek state)))
 
 and parse_arg_list state =
   match take_sym ")" state with
@@ -850,6 +935,7 @@ and parse_unary state =
         prefix_update "++" 1;
         prefix_update "--" (-1);
         prefix_unary "!" Not;
+        prefix_unary "~" BNot;
         prefix_unary "-" Neg;
         prefix_unary "*" Deref;
         prefix_unary "&" Addr;
@@ -862,6 +948,11 @@ and parse_unary state =
       parse_postfix expr state
 
 and parse_postfix expr state =
+  let update_expr delta =
+    match expr with
+    | EVar name -> EUpdateExpr (name, delta, false)
+    | _ -> EUpdateLvalue (expr, delta, false)
+  in
   let postfix_tail expr state =
     match take_sym "[" state with
     | Some state ->
@@ -878,35 +969,36 @@ and parse_postfix expr state =
             | Some state ->
                 let name, state = need_ident state in
                 parse_postfix (EPtrMember (expr, name)) state
-            | None -> (expr, state)))
+            | None -> (
+                match take_sym "++" state with
+                | Some state -> (update_expr 1, state)
+                | None -> (
+                    match take_sym "--" state with
+                    | Some state -> (update_expr (-1), state)
+                    | None -> (expr, state)))))
   in
-  match expr with
-  | EVar name -> (
-      match take_sym "++" state with
-      | Some state -> (EUpdateExpr (name, 1, false), state)
-      | None -> (
-          match take_sym "--" state with
-          | Some state -> (EUpdateExpr (name, -1, false), state)
-          | None -> postfix_tail expr state))
-  | _ -> postfix_tail expr state
+  postfix_tail expr state
 
 and binop_of op =
   match op with
   | "||" -> Some (Lor, 1)
   | "&&" -> Some (Land, 2)
-  | "==" -> Some (Eq, 3)
-  | "!=" -> Some (Ne, 3)
-  | "<" -> Some (Lt, 4)
-  | "<=" -> Some (Le, 4)
-  | ">" -> Some (Gt, 4)
-  | ">=" -> Some (Ge, 4)
-  | "<<" -> Some (Shl, 5)
-  | ">>" -> Some (Shr, 5)
-  | "+" -> Some (Add, 6)
-  | "-" -> Some (Sub, 6)
-  | "*" -> Some (Mul, 7)
-  | "/" -> Some (Div, 7)
-  | "%" -> Some (Mod, 7)
+  | "|" -> Some (Bor, 3)
+  | "^" -> Some (Bxor, 4)
+  | "&" -> Some (Band, 5)
+  | "==" -> Some (Eq, 6)
+  | "!=" -> Some (Ne, 6)
+  | "<" -> Some (Lt, 7)
+  | "<=" -> Some (Le, 7)
+  | ">" -> Some (Gt, 7)
+  | ">=" -> Some (Ge, 7)
+  | "<<" -> Some (Shl, 8)
+  | ">>" -> Some (Shr, 8)
+  | "+" -> Some (Add, 9)
+  | "-" -> Some (Sub, 9)
+  | "*" -> Some (Mul, 10)
+  | "/" -> Some (Div, 10)
+  | "%" -> Some (Mod, 10)
   | _ -> None
 
 and parse_binop min_prec state =
@@ -937,6 +1029,7 @@ let layout_scalar_size ty =
   | TShort | TUnsignedShort -> 2
   | TInt | TUnsigned | TOther _ -> 4
   | TLong | TLongLong | TUnsignedLong | TUnsignedLongLong | TPtr _ -> 8
+  | TUnion -> 8
   | TDouble -> 8
   | TLongDouble -> 16
   | TVoid -> 1
@@ -1071,7 +1164,22 @@ let parse_simple_no_semi state =
             in
             (match
                choose_option
-                 [ assign_tail; aug_tail "+=" Add; aug_tail "-=" Sub; post_tail "++" 1; post_tail "--" (-1); call_tail ]
+                 [
+                   assign_tail;
+                   aug_tail "+=" Add;
+                   aug_tail "-=" Sub;
+                   aug_tail "*=" Mul;
+                   aug_tail "/=" Div;
+                   aug_tail "%=" Mod;
+                   aug_tail "<<=" Shl;
+                   aug_tail ">>=" Shr;
+                   aug_tail "|=" Bor;
+                   aug_tail "&=" Band;
+                   aug_tail "^=" Bxor;
+                   post_tail "++" 1;
+                   post_tail "--" (-1);
+                   call_tail;
+                 ]
                  tail_state
              with
             | Some result -> result
@@ -1305,6 +1413,20 @@ and parse_block state =
           let rest, state = parse_block state in
           (stmt :: rest, state))
 
+let skip_balanced_symbols open_sym close_sym err state =
+  let state = need_sym open_sym state in
+  let rec loop st depth =
+    match peek st with
+    | Eof -> raise (Parse_error err)
+    | Sym sym ->
+        if sym = open_sym then loop (advance st) (depth + 1)
+        else if sym = close_sym then
+          if depth = 1 then advance st else loop (advance st) (depth - 1)
+        else loop (advance st) depth
+    | _ -> loop (advance st) depth
+  in
+  loop state 1
+
 let parse_params state =
   let state = need_sym "(" state in
   let rec skip_balanced st depth =
@@ -1331,14 +1453,33 @@ let parse_params state =
         | Some (name, st) -> (name, st)
         | None -> ("_", st))
   in
+  let rec skip_square st depth =
+    match peek st with
+    | Eof -> raise (Parse_error "unterminated array parameter")
+    | Sym "[" -> skip_square (advance st) (depth + 1)
+    | Sym "]" ->
+        if depth = 1 then advance st else skip_square (advance st) (depth - 1)
+    | _ -> skip_square (advance st) depth
+  in
+  let rec skip_param_suffix st =
+    match peek st with
+    | Sym "[" -> skip_param_suffix (skip_square st 0)
+    | _ -> st
+  in
   let rec parse_nonempty st acc =
-    let _ty, st = parse_type st in
-    let name, st = parse_name st in
-    match take_sym "," st with
-    | Some st -> parse_nonempty st (name :: acc)
-    | None ->
+    match take_sym "..." st with
+    | Some st ->
         let st = need_sym ")" st in
-        (List.rev (name :: acc), st)
+        (List.rev acc, st)
+    | None ->
+        let _ty, st = parse_type st in
+        let name, st = parse_name st in
+        let st = skip_param_suffix st in
+        match take_sym "," st with
+        | Some st -> parse_nonempty st (name :: acc)
+        | None ->
+            let st = need_sym ")" st in
+            (List.rev (name :: acc), st)
   in
   match take_sym ")" state with
   | Some state -> ([], state)
@@ -1350,7 +1491,15 @@ let parse_params state =
           | None -> parse_nonempty state [])
       | None -> parse_nonempty state [])
 
+let rec skip_attributes state =
+  match take_keyword "__attribute__" state with
+  | Some state ->
+      let state = skip_balanced_symbols "(" ")" "unterminated attribute" state in
+      skip_attributes state
+  | None -> state
+
 let parse_function_tail name params ret_type state =
+  let state = skip_attributes state in
   match take_sym ";" state with
   | Some state -> (None, state)
   | None -> (
@@ -1358,7 +1507,8 @@ let parse_function_tail name params ret_type state =
       | Some state ->
           let body, state = parse_block state in
           (Some { name; params; body; ret_type }, state)
-      | None -> raise (Parse_error "expected function body"))
+      | None ->
+          raise (Parse_error ("expected function body at token " ^ string_of_int state.pos ^ " near " ^ token_text (peek state))))
 
 let parse_function state =
   let ret_type, state = parse_type state in
@@ -1381,6 +1531,84 @@ let parse_external_decl state =
       let state = need_sym ";" state in
       (ExternalGlobal { global_type = ty; global_name = name; global_init = init; global_array_size = array_size }, state)
 
+let skip_braced_type_body state =
+  let state = need_sym "{" state in
+  let rec loop st depth =
+    match peek st with
+    | Eof -> raise (Parse_error "unterminated braced type body")
+    | Sym "{" -> loop (advance st) (depth + 1)
+    | Sym "}" ->
+        if depth = 1 then advance st else loop (advance st) (depth - 1)
+    | _ -> loop (advance st) depth
+  in
+  loop state 1
+
+let parse_field_name state =
+  match peek state, peek (advance state), peek (advance (advance state)) with
+  | Sym "(", Sym "*", Ident name ->
+      let state = advance (advance (advance state)) in
+      let state = need_sym ")" state in
+      let state =
+        match peek state with
+        | Sym "(" -> skip_balanced_symbols "(" ")" "unterminated function pointer field" state
+        | _ -> state
+      in
+      (name, state)
+  | _ -> need_ident state
+
+let parse_struct_field state =
+  match peek state with
+  | Ident "union" ->
+      let state = advance state in
+      let state =
+        match peek state with
+        | Ident _ -> advance state
+        | _ -> state
+      in
+      let state =
+        match peek state with
+        | Sym "{" -> skip_braced_type_body state
+        | _ -> state
+      in
+      (match take_sym ";" state with
+      | Some state -> ([ ("__anonymous_union", TUnion, None) ], state)
+      | None ->
+          let field, state = need_ident state in
+          let array_size, state = parse_array_size state in
+          let state = need_sym ";" state in
+          ([ (field, TUnion, array_size) ], state))
+  | _ ->
+      let ty, state = parse_type state in
+      let rec skip_declarator_pointer state =
+        match take_sym "*" state with
+        | Some state ->
+            let rec qualifiers state =
+              match take_keyword "const" state with
+              | Some state -> qualifiers state
+              | None -> state
+            in
+            skip_declarator_pointer (qualifiers state)
+        | None -> state
+      in
+      let rec declarators state acc =
+        let state = skip_declarator_pointer state in
+        let field, state = parse_field_name state in
+        let array_size, state = parse_array_size state in
+        let state =
+          match take_sym ":" state with
+          | Some state ->
+              let _width, state = parse_expr state in
+              state
+          | None -> state
+        in
+        match take_sym "," state with
+        | Some state -> declarators state ((field, ty, array_size) :: acc)
+        | None ->
+            let state = need_sym ";" state in
+            (List.rev ((field, ty, array_size) :: acc), state)
+      in
+      declarators state []
+
 let parse_struct_definition state =
   let state = need_keyword "struct" state in
   let name, state = need_ident state in
@@ -1391,13 +1619,8 @@ let parse_struct_definition state =
         let st = need_sym ";" st in
         (build_struct_layout name (List.rev acc), st)
     | None ->
-        let ty, st = parse_type st in
-        let field, st = need_ident st in
-        let array_size, st =
-          parse_array_size st
-        in
-        let st = need_sym ";" st in
-        loop st ((field, ty, array_size) :: acc)
+        let fields, st = parse_struct_field st in
+        loop st (List.rev_append fields acc)
   in
   loop state []
 
@@ -1417,13 +1640,8 @@ let parse_typedef_struct_definition state =
     match take_sym "}" st with
     | Some st -> (List.rev acc, st)
     | None ->
-        let ty, st = parse_type st in
-        let field, st = need_ident st in
-        let array_size, st =
-          parse_array_size st
-        in
-        let st = need_sym ";" st in
-        fields st ((field, ty, array_size) :: acc)
+        let parsed, st = parse_struct_field st in
+        fields st (List.rev_append parsed acc)
   in
   let fields, state = fields state [] in
   let alias, state = need_ident state in
@@ -1446,9 +1664,13 @@ let rec eval_enum_expr env expr =
   | EBinary (Mul, a, b) -> eval_enum_expr env a * eval_enum_expr env b
   | EBinary (Div, a, b) -> eval_enum_expr env a / eval_enum_expr env b
   | EBinary (Mod, a, b) -> eval_enum_expr env a mod eval_enum_expr env b
+  | EBinary (Bor, a, b) -> bitwise_or (eval_enum_expr env a) (eval_enum_expr env b)
+  | EBinary (Bxor, a, b) -> bitwise_xor (eval_enum_expr env a) (eval_enum_expr env b)
+  | EBinary (Band, a, b) -> bitwise_and (eval_enum_expr env a) (eval_enum_expr env b)
   | EBinary (Shl, a, b) -> shift_left_u32 (eval_enum_expr env a) (eval_enum_expr env b)
   | EBinary (Shr, a, b) -> shift_right_u32 (eval_enum_expr env a) (eval_enum_expr env b)
   | EUnary (Neg, e) -> - eval_enum_expr env e
+  | EUnary (BNot, e) -> bitwise_not (eval_enum_expr env e)
   | _ -> fail "unsupported enum initializer"
 
 let add_enum_constants env constants =
@@ -1491,17 +1713,20 @@ let is_typedef_struct_definition_start state =
 
 let parse_program tokens initial_constants =
   let rec loop state constants structs globals funcs =
+    trace_parse_position state;
     let parse_external_or_skip state constants structs globals funcs =
-      try
-        (match parse_external_decl state with
-        | ExternalFunc (Some fn), state -> loop state constants structs globals (fn :: funcs)
-        | ExternalFunc None, state -> loop state constants structs globals funcs
-        | ExternalGlobal global, state -> loop state constants structs (global :: globals) funcs)
-      with
-      | Parse_error msg ->
+      let parsed =
+        try Some (parse_external_decl state) with
+        | Parse_error msg ->
           if not (external_is_named_function state) then
-            loop { state with pos = skip_decl state.tokens state.pos 0 } constants structs globals funcs
+            None
           else raise (Parse_error msg)
+      in
+      match parsed with
+      | Some (ExternalFunc (Some fn), state) -> loop state constants structs globals (fn :: funcs)
+      | Some (ExternalFunc None, state) -> loop state constants structs globals funcs
+      | Some (ExternalGlobal global, state) -> loop state constants structs (global :: globals) funcs
+      | None -> loop { state with pos = skip_decl state.tokens state.pos 0 } constants structs globals funcs
     in
     match peek state with
     | Eof -> { constants; structs = List.rev structs; globals = List.rev globals; funcs = List.rev funcs }
@@ -1544,6 +1769,7 @@ let rec sizeof_type ty =
   | TLongDouble -> 16
   | TVoid -> 1
   | TOther _ -> 4
+  | TUnion -> 8
 
 type value =
   | VInt of int
@@ -1931,6 +2157,7 @@ let rec eval_value funcs structs globals env expr =
       if prefix then new_value else old_value
   | EUnary (Neg, e) -> VInt (- eval_expr funcs structs globals env e)
   | EUnary (Not, e) -> VInt (bool_int (not (truth_value (eval_value funcs structs globals env e))))
+  | EUnary (BNot, e) -> VInt (bitwise_not (eval_expr funcs structs globals env e))
   | ECond (cond, yes, no) ->
       if truth_value (eval_value funcs structs globals env cond) then eval_value funcs structs globals env yes else eval_value funcs structs globals env no
   | EUnary (Deref, e) -> read_pointer (eval_value funcs structs globals env e)
@@ -1989,6 +2216,9 @@ let rec eval_value funcs structs globals env expr =
       | Le -> bool_int (x <= y)
       | Gt -> bool_int (x > y)
       | Ge -> bool_int (x >= y)
+      | Bor -> bitwise_or x y
+      | Bxor -> bitwise_xor x y
+      | Band -> bitwise_and x y
       | Shl -> shift_left_u32 x y
       | Shr -> shift_right_u32 x y
       | Land | Lor -> assert false)
@@ -2147,7 +2377,20 @@ and exec_simple funcs structs globals env simple =
   | SAugAssign (name, op, expr) ->
       let old = assoc_find name env in
       let delta = eval_expr funcs structs globals env expr in
-      let value = match op with Add -> old + delta | Sub -> old - delta | _ -> fail "bad compound assignment" in
+      let value =
+        match op with
+        | Add -> old + delta
+        | Sub -> old - delta
+        | Mul -> old * delta
+        | Div -> old / delta
+        | Mod -> old mod delta
+        | Shl -> shift_left_u32 old delta
+        | Shr -> shift_right_u32 old delta
+        | Bor -> bitwise_or old delta
+        | Band -> bitwise_and old delta
+        | Bxor -> bitwise_xor old delta
+        | _ -> fail "bad compound assignment"
+      in
       assoc_set name value env
   | SPost (name, delta) ->
       let binding = find_binding name env in
@@ -2273,9 +2516,17 @@ let m1_of_exit code =
   \tSYSCALL"
 
 let compile src =
+  trace "preprocess";
   let src, constants = preprocess_source src in
+  trace "lex";
   let tokens = lex src in
+  trace ("tokens=" ^ string_of_int (Array.length tokens));
+  trace "parse";
   let program = parse_program tokens constants in
+  trace
+    ("program funcs=" ^ string_of_int (List.length program.funcs)
+     ^ " globals=" ^ string_of_int (List.length program.globals)
+     ^ " structs=" ^ string_of_int (List.length program.structs));
   if not (List.exists (fun fn -> fn.name = "main") program.funcs) then m1_of_exit 0
   else
   let constants =
@@ -2285,11 +2536,13 @@ let compile src =
       program.constants
   in
   let globals =
+    trace "globals";
     List.fold_left
       (fun env global ->
         exec_simple program.funcs program.structs env env (SDecl (global.global_type, global.global_name, global.global_init, global.global_array_size)))
       constants program.globals
   in
+  trace "eval main";
   m1_of_exit (int_of_value (eval_func program.funcs program.structs globals "main" []))
 
 let read_stdin () =

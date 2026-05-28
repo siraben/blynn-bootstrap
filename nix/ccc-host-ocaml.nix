@@ -141,6 +141,34 @@ DEFINE SYSCALL 0F05
     check_return define-helper-return.c 42
     printf '%s\n' "int letter_func(void) { return 'A'; }" 'int main(void) { return letter_func(); }' > helper-char-return.c
     check_return helper-char-return.c 65
+    printf '%s\n' 'int first(char const *s) { return s[0]; }' 'int main(void) { return first("A"); }' > postfix-const-param.c
+    check_return postfix-const-param.c 65
+    printf '%s\n' 'int logf(char const *fmt, ...);' 'int main(void) { return 42; }' > varargs-prototype.c
+    check_return varargs-prototype.c 42
+    printf '%s\n' 'int run(char * const argv[]);' 'int main(void) { return 42; }' > array-param-prototype.c
+    check_return array-param-prototype.c 42
+    printf '%s\n' 'typedef struct { int tag; union { int word; char *ptr; } value; } Node;' 'int main(void) { return sizeof(Node) > 0 ? 42 : 1; }' > typedef-anon-union.c
+    check_return typedef-anon-union.c 42
+    printf '%s\n' 'typedef struct { int tag; union { struct { int yes, no; }; int value; }; } Node;' 'int main(void) { return sizeof(Node) > 0 ? 42 : 1; }' > typedef-unnamed-anon-union.c
+    check_return typedef-unnamed-anon-union.c 42
+    printf '%s\n' 'typedef struct { unsigned short aligned:5, packed:1; } Flags;' 'int main(void) { return sizeof(Flags) > 0 ? 42 : 1; }' > typedef-bitfield-list.c
+    check_return typedef-bitfield-list.c 42
+    printf '%s\n' 'typedef struct { void (*error_func)(void *opaque, const char *msg); } Hooks;' 'int main(void) { return sizeof(Hooks) > 0 ? 42 : 1; }' > typedef-function-pointer-field.c
+    check_return typedef-function-pointer-field.c 42
+    printf '%s\n' 'typedef struct Section Section;' 'typedef struct { Section *text, *data, *bss; } Sections;' 'int main(void) { return sizeof(Sections) > 0 ? 42 : 1; }' > typedef-comma-pointer-fields.c
+    check_return typedef-comma-pointer-fields.c 42
+    printf '%s\n' 'int logf(const char *fmt, ...) __attribute__((format(printf, (1), (2))));' 'int main(void) { return 42; }' > attributed-prototype.c
+    check_return attributed-prototype.c 42
+    printf '%s\n' 'int main(void) { return ((1 | 2) == 3 && (7 & 3) == 3 && (7 ^ 3) == 4) ? 42 : 1; }' > bitwise-expr.c
+    check_return bitwise-expr.c 42
+    printf '%s\n' 'int main(void) { int x = 1; x |= 2; x <<= 1; x &= 6; x ^= 2; return x == 4 ? 42 : 1; }' > compound-bitwise-assign.c
+    check_return compound-bitwise-assign.c 42
+    printf '%s\n' 'typedef struct { int n; } Box;' 'int main(void) { Box b = { 2 }; Box *p = &b; p->n--; return b.n == 1 ? 42 : 1; }' > member-postfix-update.c
+    check_return member-postfix-update.c 42
+    printf '%s\n' 'int main(void) { return ((~0 & 255) == 255) ? 42 : 1; }' > bitwise-not.c
+    check_return bitwise-not.c 42
+    printf '%s\n' 'typedef struct { int n; } Box;' 'int main(void) { Box b = { 2 }; Box *p = &b; p->n += 40; return b.n; }' > member-compound-assign.c
+    check_return member-compound-assign.c 42
     printf '%s\n' '#ifdef MISSING' 'int main(void) { return 1; }' '#else' 'int main(void) { return 42; }' '#endif' > ifdef-missing-else.c
     check_return ifdef-missing-else.c 42
     printf '%s\n' '#define VALUE 42' '#ifndef VALUE' 'int main(void) { return 1; }' '#else' 'int main(void) { return VALUE; }' '#endif' > ifndef-defined-else.c
