@@ -227,34 +227,71 @@ let parse_directive_identifier src pos =
     Some (String.sub src pos (stop - pos), stop)
   else None
 
-let eval_defined_expr defs src pos =
+let parse_defined_expr defs src pos =
   let pos = skip_hspace src pos in
   let pos, close =
     if pos < String.length src && src.[pos] = '(' then (skip_hspace src (pos + 1), true) else (pos, false)
   in
   match parse_directive_identifier src pos with
-  | None -> false
+  | None -> (false, pos)
   | Some (name, pos) ->
       let pos = skip_hspace src pos in
-      if close && (pos >= String.length src || src.[pos] <> ')') then false
-      else define_exists name defs
+      if close then
+        if pos < String.length src && src.[pos] = ')' then (define_exists name defs, pos + 1)
+        else (false, pos)
+      else (define_exists name defs, pos)
 
-let rec eval_preprocessor_if defs src pos =
+let eval_defined_expr defs src pos =
+  let value, _ = parse_defined_expr defs src pos in
+  value
+
+let rec parse_preprocessor_primary defs src pos =
   let pos = skip_hspace src pos in
   if pos < String.length src && src.[pos] = '!' then
-    not (eval_preprocessor_if defs src (pos + 1))
+    let value, pos = parse_preprocessor_primary defs src (pos + 1) in
+    (not value, pos)
+  else if pos < String.length src && src.[pos] = '(' then
+    let value, pos = parse_preprocessor_or defs src (pos + 1) in
+    let pos = skip_hspace src pos in
+    if pos < String.length src && src.[pos] = ')' then (value, pos + 1) else (value, pos)
   else if directive_word_at "defined" src pos then
-    eval_defined_expr defs src (pos + 7)
+    parse_defined_expr defs src (pos + 7)
   else if pos < String.length src && src.[pos] = '\'' then
-    (match lex_char src pos with Char_lit value, _ -> value <> 0 | _ -> false)
+    (match lex_char src pos with Char_lit value, pos -> (value <> 0, pos) | _ -> (false, pos))
   else if pos < String.length src && src.[pos] = '-' then (
-    match lex_number src (pos + 1) with Int_lit value, _ -> -value <> 0 | _ -> false)
+    match lex_number src (pos + 1) with Int_lit value, pos -> (-value <> 0, pos) | _ -> (false, pos))
   else if pos < String.length src && is_digit src.[pos] then (
-    match lex_number src pos with Int_lit value, _ -> value <> 0 | _ -> false)
+    match lex_number src pos with Int_lit value, pos -> (value <> 0, pos) | _ -> (false, pos))
   else
     match parse_directive_identifier src pos with
-    | Some (name, _) -> define_value name defs <> 0
-    | None -> false
+    | Some (name, pos) -> (define_value name defs <> 0, pos)
+    | None -> (false, pos)
+
+and parse_preprocessor_and defs src pos =
+  let value, pos = parse_preprocessor_primary defs src pos in
+  let rec loop value pos =
+    let pos = skip_hspace src pos in
+    if pos + 1 < String.length src && src.[pos] = '&' && src.[pos + 1] = '&' then
+      let right, pos = parse_preprocessor_primary defs src (pos + 2) in
+      loop (value && right) pos
+    else (value, pos)
+  in
+  loop value pos
+
+and parse_preprocessor_or defs src pos =
+  let value, pos = parse_preprocessor_and defs src pos in
+  let rec loop value pos =
+    let pos = skip_hspace src pos in
+    if pos + 1 < String.length src && src.[pos] = '|' && src.[pos + 1] = '|' then
+      let right, pos = parse_preprocessor_and defs src (pos + 2) in
+      loop (value || right) pos
+    else (value, pos)
+  in
+  loop value pos
+
+let eval_preprocessor_if defs src pos =
+  let value, _ = parse_preprocessor_or defs src pos in
+  value
 
 let rec skip_inactive_conditional src pos depth =
   if pos >= String.length src then pos

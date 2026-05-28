@@ -2081,7 +2081,7 @@ let rec define_value state =
   let (has_define, value) = found in
   if has_define == 1 then value else 0
 in
-let rec eval_defined_expr state =
+let rec eval_defined_expr_at state =
   let (src, pair) = state in
   let (defs, pos0) = pair in
   let pos = skip_space_no_directive (src, pos0) in
@@ -2102,39 +2102,85 @@ let rec eval_defined_expr state =
       if close_ok == 1 then
         let found = find_env_optional (src, (defs, name)) in
         let (has_define, _value) = found in
-        has_define
+        let value_end =
+          if has_open == 1 then
+            let closed = p_eat_char (src, (name_end, ')')) in
+            let (_has_close, after_close) = closed in
+            after_close
+          else
+            name_end
+        in
+        (has_define, value_end)
       else
-        0
-  | IdentNone -> 0
+        (0, name_end)
+  | IdentNone -> (0, name_pos)
+in
+let rec eval_defined_expr state =
+  let (src, pair) = state in
+  let (defs, pos0) = pair in
+  let parsed = eval_defined_expr_at (src, (defs, pos0)) in
+  let (value, _value_end) = parsed in
+  value
+in
+let rec eval_preprocessor_if_at state =
+  let (src, pair) = state in
+  let (defs, pos0) = pair in
+  let pos = skip_space_no_directive (src, pos0) in
+  let primary =
+    if src.[pos] == '!' then
+      let parsed = eval_preprocessor_if_at (src, (defs, pos + 1)) in
+      let (value, value_end) = parsed in
+      (1 - value, value_end)
+    else if src.[pos] == '(' then
+      let parsed = eval_preprocessor_if_at (src, (defs, pos + 1)) in
+      let (value, value_end) = parsed in
+      let closed = p_eat_char (src, (value_end, ')')) in
+      let (has_close, after_close) = closed in
+      if has_close == 1 then (value, after_close) else (value, value_end)
+    else
+      let defined = p_eat_keyword ("defined", (7, (src, pos))) in
+      let (has_defined, after_defined) = defined in
+      if has_defined == 1 then eval_defined_expr_at (src, (defs, after_defined)) else
+      if src.[pos] == '\'' then
+        let parsed = parse_char_value (src, pos) in
+        let (value, value_end) = parsed in
+        if value == 0 then (0, value_end) else (1, value_end)
+      else if src.[pos] == '-' then
+        let parsed = parse_number (src, pos + 1) in
+        let (value, value_end) = parsed in
+        if value == 0 then (0, value_end) else (1, value_end)
+      else if is_digit (src.[pos]) then
+        let parsed = parse_number (src, pos) in
+        let (value, value_end) = parsed in
+        if value == 0 then (0, value_end) else (1, value_end)
+      else
+        match p_optional_ident (src, pos) with
+          IdentSome ident ->
+            let (name, name_end) = ident in
+            if define_value (src, (defs, name)) == 0 then (0, name_end) else (1, name_end)
+        | IdentNone -> (0, pos)
+  in
+  let (left, left_end) = primary in
+  let pos = skip_space_no_directive (src, left_end) in
+  if (src.[pos] == '&') * (src.[pos + 1] == '&') then
+    let parsed = eval_preprocessor_if_at (src, (defs, pos + 2)) in
+    let (right, right_end) = parsed in
+    let value = if left * right == 0 then 0 else 1 in
+    (value, right_end)
+  else if (src.[pos] == '|') * (src.[pos + 1] == '|') then
+    let parsed = eval_preprocessor_if_at (src, (defs, pos + 2)) in
+    let (right, right_end) = parsed in
+    let value = if left + right == 0 then 0 else 1 in
+    (value, right_end)
+  else
+    (left, pos)
 in
 let rec eval_preprocessor_if state =
   let (src, pair) = state in
   let (defs, pos0) = pair in
-  let pos = skip_space_no_directive (src, pos0) in
-  if src.[pos] == '!' then
-    1 - (eval_preprocessor_if (src, (defs, pos + 1)))
-  else
-    let defined = p_eat_keyword ("defined", (7, (src, pos))) in
-    let (has_defined, after_defined) = defined in
-    if has_defined == 1 then eval_defined_expr (src, (defs, after_defined)) else
-    if src.[pos] == '\'' then
-      let parsed = parse_char_value (src, pos) in
-      let (value, _value_end) = parsed in
-      if value == 0 then 0 else 1
-    else if src.[pos] == '-' then
-      let parsed = parse_number (src, pos + 1) in
-      let (value, _value_end) = parsed in
-      if value == 0 then 0 else 1
-    else if is_digit (src.[pos]) then
-      let parsed = parse_number (src, pos) in
-      let (value, _value_end) = parsed in
-      if value == 0 then 0 else 1
-    else
-      match p_optional_ident (src, pos) with
-        IdentSome ident ->
-          let (name, _name_end) = ident in
-          if define_value (src, (defs, name)) == 0 then 0 else 1
-      | IdentNone -> 0
+  let parsed = eval_preprocessor_if_at (src, (defs, pos0)) in
+  let (value, _value_end) = parsed in
+  value
 in
 let rec skip_inactive_ifdef_loop state =
   let (src, pair) = state in

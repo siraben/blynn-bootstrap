@@ -161,6 +161,12 @@ DEFINE SYSCALL 0F05
     check_return if-defined-value.c 42
     printf '%s\n' '#if !defined(MISSING)' 'int main(void) { return 42; }' '#else' 'int main(void) { return 1; }' '#endif' > if-not-defined-missing.c
     check_return if-not-defined-missing.c 42
+    printf '%s\n' '#define A 1' '#define B 1' '#if defined(A) && defined(B)' 'int main(void) { return 42; }' '#else' 'int main(void) { return 1; }' '#endif' > if-defined-and.c
+    check_return if-defined-and.c 42
+    printf '%s\n' '#define A 1' '#if defined(MISSING) || defined(A)' 'int main(void) { return 42; }' '#else' 'int main(void) { return 1; }' '#endif' > if-defined-or.c
+    check_return if-defined-or.c 42
+    printf '%s\n' '#define A 1' '#if !(defined(MISSING) && defined(A))' 'int main(void) { return 42; }' '#else' 'int main(void) { return 1; }' '#endif' > if-paren-not-and.c
+    check_return if-paren-not-and.c 42
     printf '%s\n' 'int main(voidx) { return 0; }' > keyword-prefix-param.c
     reject_compile keyword-prefix-param.c
     printf '%s\n' 'int main(void) { return sizeof(shorter); }' > keyword-prefix-sizeof.c
