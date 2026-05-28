@@ -442,14 +442,15 @@ and parse_primary state =
   | String_lit s -> (EString s, advance state)
   | Sym "{" ->
       let rec loop st acc =
-        match peek st with
-        | Sym "}" -> (EInitList (List.rev acc), advance st)
-        | _ ->
+        match take_sym "}" st with
+        | Some st -> (EInitList (List.rev acc), st)
+        | None ->
             let expr, st = parse_expr st in
-            (match peek st with
-            | Sym "," -> loop (advance st) (expr :: acc)
-            | Sym "}" -> loop st (expr :: acc)
-            | _ -> raise (Parse_error "expected , or } in initializer"))
+            (match take_sym "," st with
+            | Some st -> loop st (expr :: acc)
+            | None ->
+                let st = need_sym "}" st in
+                (EInitList (List.rev (expr :: acc)), st))
       in
       loop (advance state) []
   | Ident "sizeof" ->
@@ -488,15 +489,16 @@ and parse_primary state =
   | _ -> raise (Parse_error "expected expression")
 
 and parse_arg_list state =
-  match peek state with
-  | Sym ")" -> ([], advance state)
-  | _ ->
+  match take_sym ")" state with
+  | Some state -> ([], state)
+  | None ->
       let rec loop st acc =
         let arg, st = parse_expr st in
-        match peek st with
-        | Sym "," -> loop (advance st) (arg :: acc)
-        | Sym ")" -> (List.rev (arg :: acc), advance st)
-        | _ -> raise (Parse_error "expected , or )")
+        match take_sym "," st with
+        | Some st -> loop st (arg :: acc)
+        | None ->
+            let st = need_sym ")" st in
+            (List.rev (arg :: acc), st)
       in
       loop state []
 
