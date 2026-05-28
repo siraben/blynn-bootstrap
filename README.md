@@ -108,7 +108,8 @@ Native VM crashes should still be debugged under `nix develop` with `gdb`.
 The mini-ML sources are not yet valid OCaml, but `ccc/host/ccc_host.ml` is the
 HCC/GHC-style host-language debugging path for CCC feature work. That host path
 is kept in a small ML subset: no OCaml `Buffer`, optional arguments, labelled
-arguments, pattern guards, or newer option/list conveniences.
+arguments, `function` shorthand, pattern guards, or newer option/list
+conveniences.
 
 ## Portable Bootstrap
 

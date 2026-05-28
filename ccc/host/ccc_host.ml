@@ -12,16 +12,19 @@ exception Exit_code of int
 
 let fail msg = raise (Compile_error msg)
 
-let is_space = function ' ' | '\n' | '\r' | '\t' -> true | _ -> false
+let is_space ch =
+  match ch with ' ' | '\n' | '\r' | '\t' -> true | _ -> false
 let is_digit ch = '0' <= ch && ch <= '9'
 let is_alpha ch = ch = '_' || ('A' <= ch && ch <= 'Z') || ('a' <= ch && ch <= 'z')
 let is_ident ch = is_alpha ch || is_digit ch
 
-let rec list_find_opt pred = function
+let rec list_find_opt pred xs =
+  match xs with
   | [] -> None
   | x :: xs -> if pred x then Some x else list_find_opt pred xs
 
-let rec strings_of_chars = function
+let rec strings_of_chars chars =
+  match chars with
   | [] -> []
   | ch :: rest -> String.make 1 ch :: strings_of_chars rest
 
@@ -164,7 +167,8 @@ type 'a parser_reply = ParserOk of 'a * parser_state | ParserErr of string
 type 'a consumed = Consumed of 'a parser_reply | Unconsumed of 'a parser_reply
 type 'a parser = parser_state -> 'a consumed
 
-let force_consumed = function Consumed reply -> reply | Unconsumed reply -> reply
+let force_consumed consumed =
+  match consumed with Consumed reply -> reply | Unconsumed reply -> reply
 
 let return value state = Unconsumed (ParserOk (value, state))
 
@@ -186,10 +190,10 @@ let satisfy f expected state =
   | None -> Unconsumed (ParserErr expected)
 
 let expect_sym text =
-  satisfy (function Sym got -> if got = text then Some () else None | _ -> None) ("expected " ^ text)
+  satisfy (fun tok -> match tok with Sym got -> if got = text then Some () else None | _ -> None) ("expected " ^ text)
 
 let expect_ident =
-  satisfy (function Ident name -> Some name | _ -> None) "expected identifier"
+  satisfy (fun tok -> match tok with Ident name -> Some name | _ -> None) "expected identifier"
 
 let optional parser state =
   match parser state with
@@ -299,12 +303,14 @@ let align_up value align =
 let starts_uppercase name =
   String.length name > 0 && 'A' <= name.[0] && name.[0] <= 'Z'
 
-let rec starts_type = function
+let rec starts_type tok =
+  match tok with
   | Ident ("int" | "char" | "signed" | "unsigned" | "void" | "long" | "short" | "_Bool" | "double" | "static" | "const" | "struct") -> true
   | Ident name -> has_suffix "_t" name || starts_uppercase name
   | _ -> false
 
-let option_is_some = function Some _ -> true | None -> false
+let option_is_some value =
+  match value with Some _ -> true | None -> false
 
 let rec parse_type state =
   let rec qualifiers st =
@@ -497,7 +503,8 @@ and parse_postfix expr state =
       parse_postfix (EPtrMember (expr, name)) (advance (advance state))
   | _ -> (expr, state)
 
-and binop_of = function
+and binop_of op =
+  match op with
   | "||" -> Some (Lor, 1)
   | "&&" -> Some (Land, 2)
   | "==" -> Some (Eq, 3)
@@ -531,7 +538,8 @@ and parse_binop_tail min_prec lhs state =
       | None -> (lhs, state))
   | _ -> (lhs, state)
 
-let layout_scalar_size = function
+let layout_scalar_size ty =
+  match ty with
   | TChar | TSignedChar | TUnsignedChar | TBool -> 1
   | TShort | TUnsignedShort -> 2
   | TInt | TUnsigned | TOther _ -> 4
@@ -543,7 +551,8 @@ let layout_scalar_size = function
 let layout_align ty =
   min 8 (layout_scalar_size ty)
 
-let const_expr_int = function
+let const_expr_int expr =
+  match expr with
   | EInt n -> n
   | EUnary (Neg, EInt n) -> -n
   | _ -> 1
@@ -553,7 +562,8 @@ let layout_field_size ty array_size =
   layout_scalar_size ty * count
 
 let build_struct_layout name fields =
-  let rec loop offset acc = function
+  let rec loop offset acc fields =
+    match fields with
     | [] -> { struct_name = name; struct_fields = List.rev acc; struct_size = offset }
     | (field_name, ty, array_size) :: rest ->
         let offset = align_up offset (layout_align ty) in
@@ -957,11 +967,13 @@ let parse_typedef_struct_definition state =
   let tag_layout = if tag = "" then None else Some { layout with struct_name = tag } in
   (tag_layout, layout, state)
 
-let rec assoc_int name = function
+let rec assoc_int name env =
+  match env with
   | [] -> fail ("unknown enum constant: " ^ name)
   | (key, value) :: rest -> if key = name then value else assoc_int name rest
 
-let rec eval_enum_expr env = function
+let rec eval_enum_expr env expr =
+  match expr with
   | EInt n -> n
   | EVar name -> assoc_int name env
   | EBinary (Add, a, b) -> eval_enum_expr env a + eval_enum_expr env b
@@ -970,7 +982,8 @@ let rec eval_enum_expr env = function
   | _ -> fail "unsupported enum initializer"
 
 let add_enum_constants env constants =
-  let rec loop next_value env = function
+  let rec loop next_value env constants =
+    match constants with
     | [] -> env
     | (name, expr) :: rest ->
         let value = match expr with Some expr -> eval_enum_expr env expr | None -> next_value in
@@ -1051,7 +1064,8 @@ let parse_program tokens =
 let truth n = n <> 0
 let bool_int b = if b then 1 else 0
 
-let rec sizeof_type = function
+let rec sizeof_type ty =
+  match ty with
   | TChar | TSignedChar | TUnsignedChar | TBool -> 1
   | TShort | TUnsignedShort -> 2
   | TInt | TUnsigned -> 4
@@ -1081,7 +1095,8 @@ and binding = {
 
 type env = binding list
 
-let int_of_value = function
+let int_of_value value =
+  match value with
   | VInt value -> value
   | VPtr _ | VArrayPtr _ | VFieldPtr _ | VStringPtr _ | VFunc _ -> fail "pointer used as integer"
 
@@ -1096,15 +1111,18 @@ let coerce_int ty value =
   | TBool -> bool_int (truth value)
   | _ -> value
 
-let coerce_value ty = function
+let coerce_value ty value =
+  match value with
   | VInt value -> VInt (coerce_int ty value)
   | (VPtr _ | VArrayPtr _ | VFieldPtr _ | VStringPtr _ | VFunc _) as ptr -> ptr
 
-let rec find_binding name = function
+let rec find_binding name env =
+  match env with
   | [] -> fail ("unknown variable: " ^ name)
   | binding :: rest -> if binding.bind_name = name then binding else find_binding name rest
 
-let rec find_binding_opt name = function
+let rec find_binding_opt name env =
+  match env with
   | [] -> None
   | binding :: rest -> if binding.bind_name = name then Some binding else find_binding_opt name rest
 
@@ -1182,7 +1200,8 @@ let write_binding_byte binding index value =
       value
   | None -> fail ("not a writable byte value: " ^ binding.bind_name)
 
-let read_pointer = function
+let read_pointer ptr =
+  match ptr with
   | VPtr target -> !(target.bind_value)
   | VArrayPtr (target, offset) -> read_binding_index target offset
   | VFieldPtr (target, offset) -> read_binding_byte target offset
@@ -1228,12 +1247,14 @@ let copy_struct_fields target source =
       target_cell := !(source_cell))
     !(binding_fields source)
 
-let struct_binding_from_pointer = function
+let struct_binding_from_pointer ptr =
+  match ptr with
   | VPtr binding -> Some binding
   | VFieldPtr (binding, 0) -> Some binding
   | _ -> None
 
-let struct_name_of_type = function
+let struct_name_of_type ty =
+  match ty with
   | TOther name ->
       if has_prefix "struct " name then Some (String.sub name 7 (String.length name - 7))
       else Some name
@@ -1297,7 +1318,8 @@ let value_equal a b =
   | (VPtr _ | VArrayPtr _ | VFieldPtr _ | VStringPtr _ | VFunc _), VInt 0 -> false
   | _ -> false
 
-let truth_value = function
+let truth_value value =
+  match value with
   | VInt n -> truth n
   | VPtr _ | VArrayPtr _ | VFieldPtr _ | VStringPtr _ | VFunc _ -> true
 
@@ -1327,7 +1349,8 @@ let sub_values a b =
   | _ -> (
       match pointer_delta a b with Some delta -> VInt delta | None -> fail "unsupported subtraction")
 
-let rec eval_value funcs structs globals env = function
+let rec eval_value funcs structs globals env expr =
+  match expr with
   | EInt n -> VInt n
   | EString s -> VStringPtr (s, 0)
   | EInitList _ -> VInt 0
@@ -1509,7 +1532,8 @@ let rec eval_value funcs structs globals env = function
       in
       eval_func funcs structs globals target values
 
-and sizeof_expr funcs structs globals env = function
+and sizeof_expr funcs structs globals env expr =
+  match expr with
   | EVar name -> (
       match find_binding_opt name env with
       | Some { bind_array = Some values; _ } -> Array.length values
@@ -1542,8 +1566,8 @@ and sizeof_expr funcs structs globals env = function
 
 and eval_expr funcs structs globals env expr = int_of_value (eval_value funcs structs globals env expr)
 
-and call_arg funcs structs globals env = function
-  | expr -> eval_value funcs structs globals env expr
+and call_arg funcs structs globals env expr =
+  eval_value funcs structs globals env expr
 
 and eval_func funcs structs globals name args =
   let fn =
@@ -1565,7 +1589,8 @@ and eval_func funcs structs globals name args =
   | Jumped (label, _) -> fail ("unresolved goto: " ^ label)
   | Broke _ -> fail "break outside loop"
 
-and exec_simple funcs structs globals env = function
+and exec_simple funcs structs globals env simple =
+  match simple with
   | SEmpty -> env
   | SExpr (ECall ("_exit", [ arg ])) -> raise (Exit_code (eval_expr funcs structs globals env arg))
   | SExpr (ECall (name, _) as expr) ->
@@ -1607,7 +1632,8 @@ and exec_simple funcs structs globals env = function
           let binding = find_binding name env in
           (match binding.bind_array with
           | Some array ->
-              let rec fill i = function
+              let rec fill i values =
+                match values with
                 | [] -> ()
                 | value_expr :: values ->
                     if i < Array.length array then array.(i) <- coerce_value binding.bind_type (eval_value funcs structs globals env value_expr);
@@ -1628,7 +1654,8 @@ and exec_simple funcs structs globals env = function
       | _ -> env)
   | STypeAlias (ty, name) -> assoc_decl_value TInt name (VInt (sizeof_type ty)) env
   | SEnumDecl constants ->
-      let rec loop next_value env = function
+      let rec loop next_value env constants =
+        match constants with
         | [] -> env
         | (name, expr) :: rest ->
             let value = match expr with Some expr -> eval_expr funcs structs globals env expr | None -> next_value in
@@ -1655,7 +1682,8 @@ and exec_simple funcs structs globals env = function
       binding.bind_value := coerce_value binding.bind_type (add_to_value !(binding.bind_value) delta);
       env
 
-and exec_stmt funcs structs globals env = function
+and exec_stmt funcs structs globals env stmt =
+  match stmt with
   | Simple simple -> (
       try Continue (exec_simple funcs structs globals env simple) with Exit_code code -> Returned (VInt code))
   | Return None -> Returned (VInt 0)
@@ -1708,7 +1736,8 @@ and exec_stmt funcs structs globals env = function
 
 and exec_block funcs structs globals stmts env =
   let label_index label =
-    let rec loop i = function
+    let rec loop i stmts =
+      match stmts with
       | [] -> None
       | Label name :: rest -> if name = label then Some (i + 1) else loop (i + 1) rest
       | _ :: rest -> loop (i + 1) rest

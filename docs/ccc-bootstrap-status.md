@@ -46,9 +46,9 @@ small local ML helpers. This keeps the host compiler easy to run with `ocamlc`
 while making the code closer to the subset that should later be ported into
 the mini-ML `ccc.ml`.
 The host source also avoids OCaml `Buffer`, optional arguments, labelled
-arguments, and pattern guards; the Nix gate rejects those so the development
-compiler stays close to the eventual portable ML source instead of drifting
-into host-library style.
+arguments, `function` shorthand, and pattern guards; the Nix gate rejects those
+so the development compiler stays close to the eventual portable ML source
+instead of drifting into host-library style.
 
 ## Supporting Artifacts
 
