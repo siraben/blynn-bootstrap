@@ -28,7 +28,8 @@ stdenv.mkDerivation {
     check_return() {
       src="$1"
       expected_code="$2"
-      actual="$(./ccc-host-ocaml < "$src")"
+      shift 2
+      actual="$(./ccc-host-ocaml "$@" < "$src")"
       expected="DEFINE LOADI32_RDI 48C7C7
 DEFINE LOADI32_RAX 48C7C0
 DEFINE SYSCALL 0F05
@@ -37,7 +38,11 @@ DEFINE SYSCALL 0F05
 	LOADI32_RDI %$expected_code
 	LOADI32_RAX %60
 	SYSCALL"
-      test "$actual" = "$expected"
+      if [ "$actual" != "$expected" ]; then
+        echo "unexpected ccc-host-ocaml output for $src; expected exit $expected_code" >&2
+        printf '%s\n' "$actual" >&2
+        exit 1
+      fi
     }
 
     reject_compile() {
@@ -205,6 +210,37 @@ DEFINE SYSCALL 0F05
     check_return argc-argv-main.c 42
     printf '%s\n' 'int main(int argc, char *argv[]) { return argc == 0 && argv == 0 ? 42 : 1; }' > argc-argv-array-main.c
     check_return argc-argv-array-main.c 42
+    printf '%s\n' 'int main(int argc, char **argv) { return argc == 3 && argv[1][0] == 45 && argv[2][0] == 120 ? 42 : 1; }' > host-argv-index.c
+    check_return host-argv-index.c 42 --host-arg tcc --host-arg -c --host-arg x.c
+    printf '%s\n' 'int strcmp(char *, char *);' 'int main(int argc, char **argv) { return argc == 3 && strcmp(argv[1], "-c") == 0 && strcmp(argv[2], "x.c") == 0 ? 42 : 1; }' > host-argv-strcmp.c
+    check_return host-argv-strcmp.c 42 --host-arg tcc --host-arg -c --host-arg x.c
+    printf '%s\n' 'int first(int x, ...) { return x; }' 'int main(void) { return first(42, 1, 2); }' > variadic-function-call.c
+    check_return variadic-function-call.c 42
+    printf '%s\n' 'int vsnprintf(char *, unsigned long, char *, void *);' 'int strcmp(char *, char *);' 'int main(void) { char buf[8]; return vsnprintf(buf, 8, "abc", 0) == 3 && strcmp(buf, "abc") == 0 ? 42 : 1; }' > builtin-vsnprintf.c
+    check_return builtin-vsnprintf.c 42
+    printf '%s\n' 'typedef enum { TOK_A = 40, TOK_B, TOK_C } Token;' 'static int value = TOK_C;' 'int main(void) { return value; }' > typedef-enum-global.c
+    check_return typedef-enum-global.c 42
+    printf '%s\n' 'enum TokenTag { TAG_A = 40, TAG_B, TAG_C };' 'static int value = TAG_C;' 'int main(void) { return value; }' > tagged-enum-global.c
+    check_return tagged-enum-global.c 42
+    printf '%s\n' 'typedef struct { char *name; int code; int flags; } Opt;' 'static Opt opts[] = { { "c", 3, 0 }, { 0, 0, 0 } };' 'int main(void) { Opt *p = opts; return p->name[0] == 99 && p->code == 3 && (p + 1)->name == 0 ? 42 : 1; }' > global-struct-array-init.c
+    check_return global-struct-array-init.c 42
+    printf '%s\n' 'typedef unsigned long size_t;' 'typedef struct { int a; int b; } Box;' 'static int off = (size_t)&((Box *)0)->b;' 'int main(void) { return off == 4 ? 42 : 1; }' > offsetof-member.c
+    check_return offsetof-member.c 42
+    printf '%s\n' 'void *malloc(unsigned long);' 'struct Box { int x; char name[1]; };' 'int main(void) { struct Box *f = malloc(sizeof *f + 2); f->x = 42; return f->x; }' > self-sizeof-pointer-decl.c
+    check_return self-sizeof-pointer-decl.c 42
+    printf '%s\n' 'void *malloc(unsigned long);' 'char *strcpy(char *, char *);' 'struct Box { int x; char name[4]; };' 'int main(void) { struct Box *f = malloc(sizeof *f); strcpy(f->name, "OK"); return f->name[0] == 79 && f->name[1] == 75 ? 42 : 1; }' > heap-struct-array-field.c
+    check_return heap-struct-array-field.c 42
+    printf '%s\n' 'char *getenv(char *);' 'int main(void) { return getenv("MISSING") == 0 ? 42 : 1; }' > builtin-getenv.c
+    check_return builtin-getenv.c 42
+    printf '%s\n' 'char *strchr(char *, int);' 'char *strrchr(char *, int);' 'int main(void) { char *s = "a/b.c"; char *p = strchr(s, 47); char *q = strrchr(s, 46); return p[1] == 98 && q[1] == 99 ? 42 : 1; }' > builtin-strchr.c
+    check_return builtin-strchr.c 42
+    printf 'OK' > host-file.txt
+    printf '%s\n' 'int open(char *, int);' 'int read(int, char *, int);' 'int close(int);' 'int main(void) { char b[3]; int fd = open("host-file.txt", 0); int n = read(fd, b, 2); close(fd); return n == 2 && b[0] == 79 && b[1] == 75 ? 42 : 1; }' > builtin-open-read.c
+    check_return builtin-open-read.c 42
+    printf '%s\n' 'int main(void) { return (1 >> 99) == 0 ? 42 : 1; }' > large-shift-right.c
+    check_return large-shift-right.c 42
+    printf '%s\n' 'int setjmp(void *);' 'void longjmp(void *, int);' 'int main(void) { return setjmp(0) == 0 ? 42 : 1; }' > builtin-setjmp.c
+    check_return builtin-setjmp.c 42
     printf '%s\n' 'int forty_two(void) { return 42; }' 'static int (*entry)(void) = forty_two;' 'int main(void) { return entry(); }' > global-function-pointer.c
     check_return global-function-pointer.c 42
     printf '%s\n' 'void *malloc(unsigned long);' 'void *memset(void *, int, unsigned long);' 'unsigned long strlen(char *);' 'int main(void) { char *p = malloc(4); memset(p, 65, 3); p[3] = 0; return strlen(p) == 3 && p[0] == 65 ? 42 : 1; }' > libc-byte-allocation.c

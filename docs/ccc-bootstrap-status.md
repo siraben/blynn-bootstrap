@@ -79,8 +79,11 @@ anonymous local unions, uppercase function-like calls, nested tagged struct
 field declarations, and suffix-named assignments. The HCC-expanded TinyCC
 source now parses fully, initializes globals, evaluates `main` with synthetic
 empty `argc` / null `argv`, and emits deterministic M1 for the resulting exit
-status. This is still evaluator execution of TinyCC's empty-argument path, not
-a TinyCC self-host handoff.
+status. With compiler-shaped host argv (`tcc -c input.c -o output.o`), the host
+now parses options, initializes TinyCC sections, opens and reads the input file,
+and reaches identifier table setup before stopping at `hash_ident` array bounds
+in `tal_alloc_init`. This is still evaluator execution of TinyCC paths, not a
+TinyCC self-host handoff.
 
 ## Supporting Artifacts
 

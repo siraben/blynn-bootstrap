@@ -29,6 +29,12 @@ let rec same_length xs ys =
   | _ :: xs, _ :: ys -> same_length xs ys
   | _ -> false
 
+let rec has_at_least xs ys =
+  match (xs, ys) with
+  | [], _ -> true
+  | _ :: _, [] -> false
+  | _ :: xs, _ :: ys -> has_at_least xs ys
+
 let rec strings_of_chars chars =
   match chars with
   | [] -> []
@@ -48,8 +54,10 @@ let rec shift_left_u32 value count =
   if count <= 0 then unsigned_mod value 4294967296
   else shift_left_u32 (unsigned_mod (value * 2) 4294967296) (count - 1)
 
-let shift_right_u32 value count =
-  (unsigned_mod value 4294967296) / pow2 count
+let rec shift_right_u32 value count =
+  if count <= 0 then unsigned_mod value 4294967296
+  else if count >= 32 then 0
+  else shift_right_u32 ((unsigned_mod value 4294967296) / 2) (count - 1)
 
 let bitwise_combine choose x y =
   let rec loop count x y place acc =
@@ -473,8 +481,13 @@ let token_text tok =
   | Sym text -> "symbol " ^ text
   | Eof -> "end of input"
 
+let rec argv_contains text i =
+  if i >= Array.length Sys.argv then false
+  else if Sys.argv.(i) = text then true
+  else argv_contains text (i + 1)
+
 let trace_enabled () =
-  Array.length Sys.argv > 1 && Sys.argv.(1) = "--trace"
+  argv_contains "--trace" 1
 
 let trace msg =
   if trace_enabled () then prerr_endline ("ccc-host-ocaml: " ^ msg) else ()
@@ -665,7 +678,7 @@ type stmt =
 and switch_case = SwitchCase of expr option * stmt list
 
 type param = { param_type : c_type; param_name : string }
-type func = { name : string; params : param list; body : stmt list; ret_type : c_type }
+type func = { name : string; params : param list; variadic : bool; body : stmt list; ret_type : c_type }
 type global_decl = { global_type : c_type; global_name : string; global_init : expr option; global_array_size : expr option }
 type field_layout = { field_name : string; field_size : int; field_offset : int; field_is_array : bool }
 type struct_layout = { struct_name : string; struct_fields : field_layout list; struct_size : int }
@@ -1180,6 +1193,18 @@ let parse_enum_decl state =
   let state = need_sym ";" state in
   (constants, state)
 
+let parse_typedef_enum_decl state =
+  let state = need_keyword "typedef" state in
+  let state = need_keyword "enum" state in
+  let constants, state = parse_enum_after_keyword state in
+  let state =
+    match take_ident state with
+    | Some (_, state) -> state
+    | None -> state
+  in
+  let state = need_sym ";" state in
+  (constants, state)
+
 let parse_array_size state =
     match take_sym "[" state with
     | Some state ->
@@ -1569,7 +1594,7 @@ let parse_params state =
     match take_sym "..." st with
     | Some st ->
         let st = need_sym ")" st in
-        (List.rev acc, st)
+        ((List.rev acc, true), st)
     | None ->
         let ty, st = parse_type st in
         let name, ty, st = parse_name ty st in
@@ -1580,15 +1605,15 @@ let parse_params state =
         | Some st -> parse_nonempty st (param :: acc)
         | None ->
             let st = need_sym ")" st in
-            (List.rev (param :: acc), st)
+            ((List.rev (param :: acc), false), st)
   in
   match take_sym ")" state with
-  | Some state -> ([], state)
+  | Some state -> (([], false), state)
   | None -> (
       match take_keyword "void" state with
       | Some state_after_void -> (
           match take_sym ")" state_after_void with
-          | Some state -> ([], state)
+          | Some state -> (([], false), state)
           | None -> parse_nonempty state [])
       | None -> parse_nonempty state [])
 
@@ -1607,7 +1632,8 @@ let parse_function_tail name params ret_type state =
       match take_sym "{" state with
       | Some state ->
           let body, state = parse_block state in
-          (Some { name; params; body; ret_type }, state)
+          let params, variadic = params in
+          (Some { name; params; variadic; body; ret_type }, state)
       | None ->
           raise (Parse_error ("expected function body at token " ^ string_of_int state.pos ^ " near " ^ token_text (peek state))))
 
@@ -1884,10 +1910,27 @@ let is_typedef_struct_definition_start state =
   | Ident "typedef" -> (
       match peek (advance state) with
       | Ident "struct" -> (
-          match peek (advance (advance state)) with
-          | Ident _ -> peek (advance (advance (advance state))) = Sym "{"
-          | Sym "{" -> true
-          | _ -> false)
+	          match peek (advance (advance state)) with
+	          | Ident _ -> peek (advance (advance (advance state))) = Sym "{"
+	          | Sym "{" -> true
+	          | _ -> false)
+	      | _ -> false)
+  | _ -> false
+
+let is_typedef_enum_definition_start state =
+  match peek state with
+  | Ident "typedef" -> (
+      match peek (advance state) with
+      | Ident "enum" -> true
+      | _ -> false)
+  | _ -> false
+
+let is_enum_definition_start state =
+  match peek state with
+  | Ident "enum" -> (
+      match peek (advance state) with
+      | Sym "{" -> true
+      | Ident _ -> peek (advance (advance state)) = Sym "{"
       | _ -> false)
   | _ -> false
 
@@ -1911,7 +1954,7 @@ let parse_program tokens initial_constants =
     match peek state with
     | Eof -> { constants; structs = List.rev structs; globals = List.rev globals; funcs = List.rev funcs }
     | Ident "enum" ->
-        if peek (advance state) = Sym "{" then
+        if is_enum_definition_start state then
           let enum_constants, state = parse_enum_decl state in
           let constants = add_enum_constants constants enum_constants in
           loop state constants structs globals funcs
@@ -1927,6 +1970,10 @@ let parse_program tokens initial_constants =
           let tag_layout, alias_layout, state = parse_typedef_struct_definition state in
           let structs = alias_layout :: structs in
           let structs = match tag_layout with Some layout -> layout :: structs | None -> structs in
+          loop state constants structs globals funcs
+        else if is_typedef_enum_definition_start state then
+          let enum_constants, state = parse_typedef_enum_decl state in
+          let constants = add_enum_constants constants enum_constants in
           loop state constants structs globals funcs
         else loop { state with pos = skip_decl state.tokens state.pos 0 } constants structs globals funcs
     | tok ->
@@ -2034,7 +2081,7 @@ let positive_size size =
 
 let fresh_alloc size =
   alloc_counter := !alloc_counter + 1;
-  let values = Array.make (positive_size size) (VInt 0) in
+  let values = Array.make (positive_size size + 4096) (VInt 0) in
   let binding =
     {
       bind_name = "__alloc" ^ string_of_int !alloc_counter;
@@ -2154,6 +2201,70 @@ let c_string_length ptr =
   in
   loop 0
 
+let c_string_text ptr =
+  let rec loop i acc =
+    let ch = byte_of_pointer ptr i in
+    if ch = 0 then string_of_rev_chars acc
+    else loop (i + 1) (Char.chr (unsigned_mod ch 256) :: acc)
+  in
+  loop 0 []
+
+type host_file = { host_fd : int; host_text : string; host_pos : int ref }
+
+let next_host_fd = ref 3
+let host_files = ref []
+
+let read_file_text path =
+  let chan = open_in_bin path in
+  let rec loop acc =
+    let next = try Some (input_char chan) with End_of_file -> None in
+    match next with
+    | Some ch -> loop (ch :: acc)
+    | None ->
+        close_in chan;
+        string_of_rev_chars acc
+  in
+  try loop [] with exn -> close_in_noerr chan; raise exn
+
+let host_open_file path =
+  try
+    let text = read_file_text path in
+    let fd = !next_host_fd in
+    next_host_fd := fd + 1;
+    host_files := { host_fd = fd; host_text = text; host_pos = ref 0 } :: !host_files;
+    fd
+  with Sys_error _ -> -1
+
+let rec host_find_file fd files =
+  match files with
+  | [] -> None
+  | file :: files -> if file.host_fd = fd then Some file else host_find_file fd files
+
+let host_read_file fd dst count =
+  match host_find_file fd !host_files with
+  | None -> -1
+  | Some file ->
+      let available = String.length file.host_text - !(file.host_pos) in
+      let count = if count < available then count else available in
+      let rec loop i =
+        if i >= count then ()
+        else (
+          write_pointer_byte dst i (Char.code file.host_text.[!(file.host_pos) + i]);
+          loop (i + 1))
+      in
+      loop 0;
+      file.host_pos := !(file.host_pos) + count;
+      count
+
+let host_close_file fd =
+  let rec loop acc files =
+    match files with
+    | [] -> List.rev acc
+    | file :: files -> if file.host_fd = fd then List.rev acc @ files else loop (file :: acc) files
+  in
+  host_files := loop [] !host_files;
+  0
+
 let copy_c_string dst src =
   let rec loop i =
     let ch = byte_of_pointer src i in
@@ -2161,6 +2272,20 @@ let copy_c_string dst src =
     if ch = 0 then () else loop (i + 1)
   in
   loop 0
+
+let write_text_as_c_string dst size text =
+  let limit = if size <= 0 then 0 else size - 1 in
+  let text_len = String.length text in
+  let rec loop i =
+    if i >= limit || i >= text_len then ()
+    else (
+      write_pointer_byte dst i (Char.code text.[i]);
+      loop (i + 1))
+  in
+  if size > 0 then (
+    loop 0;
+    let nul_at = if text_len < limit then text_len else limit in
+    write_pointer_byte dst nul_at 0)
 
 let compare_bytes a b count =
   let rec loop i =
@@ -2180,12 +2305,34 @@ let compare_c_string a b =
   in
   loop 0
 
+let strchr_value ptr ch =
+  let rec loop i =
+    let here = byte_of_pointer ptr i in
+    if here = ch then add_to_value ptr i
+    else if here = 0 then VInt 0
+    else loop (i + 1)
+  in
+  loop 0
+
+let strrchr_value ptr ch =
+  let rec loop i last =
+    let here = byte_of_pointer ptr i in
+    let last = if here = ch then Some i else last in
+    if here = 0 then match last with Some offset -> add_to_value ptr offset | None -> VInt 0
+    else loop (i + 1) last
+  in
+  loop 0 None
+
 let is_builtin_name name =
   match name with
   | "malloc" | "calloc" | "realloc" | "free" | "exit"
   | "memset" | "memcpy" | "memmove" | "memcmp"
-  | "strlen" | "strcpy" | "strcmp"
-  | "fprintf" | "printf" | "sprintf" | "snprintf" ->
+  | "strlen" | "strcpy" | "strcmp" | "strchr" | "strrchr"
+  | "getenv"
+  | "open" | "read" | "close"
+  | "setjmp" | "longjmp"
+  | "fprintf" | "printf" | "sprintf" | "snprintf"
+  | "vfprintf" | "vprintf" | "vsprintf" | "vsnprintf" ->
       true
   | _ -> false
 
@@ -2216,7 +2363,27 @@ let eval_builtin_call name values =
       copy_c_string dst src;
       Some dst
   | "strcmp", [ a; b ] -> Some (VInt (compare_c_string a b))
-  | ("fprintf" | "printf" | "sprintf" | "snprintf"), _ -> Some (VInt 0)
+  | "strchr", [ ptr; ch ] -> Some (strchr_value ptr (int_of_value ch))
+  | "strrchr", [ ptr; ch ] -> Some (strrchr_value ptr (int_of_value ch))
+  | "getenv", [ _ ] -> Some (VInt 0)
+  | "open", path :: _ -> Some (VInt (host_open_file (c_string_text path)))
+  | "read", [ fd; dst; count ] -> Some (VInt (host_read_file (int_of_value fd) dst (int_of_value count)))
+  | "close", [ fd ] -> Some (VInt (host_close_file (int_of_value fd)))
+  | "setjmp", [ _ ] -> Some (VInt 0)
+  | "longjmp", _ -> Some (VInt 0)
+  | ("snprintf" | "vsnprintf"), dst :: size :: fmt :: _ ->
+      let text = c_string_text fmt in
+      write_text_as_c_string dst (int_of_value size) text;
+      Some (VInt (String.length text))
+  | ("sprintf" | "vsprintf"), dst :: fmt :: _ ->
+      let text = c_string_text fmt in
+      write_text_as_c_string dst (String.length text + 1) text;
+      Some (VInt (String.length text))
+  | "fprintf", [ VInt 2; fmt; msg ] ->
+      let fmt_text = c_string_text fmt in
+      if has_prefix "%s" fmt_text then prerr_endline (c_string_text msg);
+      Some (VInt 0)
+  | ("fprintf" | "printf" | "vfprintf" | "vprintf"), _ -> Some (VInt 0)
   | _ -> None
 
 let field_cell fields name =
@@ -2244,7 +2411,15 @@ let struct_binding_from_pointer ptr =
   match ptr with
   | VPtr binding -> Some binding
   | VFieldPtr (binding, 0) -> Some binding
-  | VArrayPtr (binding, 0) -> Some binding
+  | VArrayPtr (binding, index) -> (
+      match binding.bind_array with
+      | Some values ->
+          if index >= 0 && index < Array.length values then
+            match values.(index) with
+            | VPtr target | VFieldPtr (target, 0) -> Some target
+            | _ -> if index = 0 && option_is_some binding.bind_fields then Some binding else None
+          else None
+      | None -> if index = 0 && option_is_some binding.bind_fields then Some binding else None)
   | _ -> None
 
 let struct_name_of_type ty =
@@ -2406,6 +2581,23 @@ let rec eval_value funcs structs globals env expr =
           if layout.field_is_array then VFieldPtr (binding, layout.field_offset)
           else !(field_cell (binding_fields binding) field)
       | None -> !(field_cell (binding_fields binding) field))
+  | EPtrMember (EVar name, field) ->
+      let pointer_binding = find_binding name env in
+      let target =
+        match struct_binding_from_pointer (eval_value funcs structs globals env (EVar name)) with
+        | Some target -> target
+        | None -> fail "not a struct pointer"
+      in
+      let owner_ty =
+        match pointer_binding.bind_type with
+        | TPtr ty -> ty
+        | _ -> target.bind_type
+      in
+      (match struct_field_layout structs owner_ty field with
+      | Some layout ->
+          if layout.field_is_array then VFieldPtr (target, layout.field_offset)
+          else !(field_cell (binding_fields target) field)
+      | None -> !(field_cell (binding_fields target) field))
   | EPtrMember (base, field) ->
       eval_value funcs structs globals env (EMember (EUnary (Deref, base), field))
   | EAssignExpr (name, expr) ->
@@ -2489,6 +2681,8 @@ let rec eval_value funcs structs globals env expr =
   | EUnary (Addr, EMember (EVar name, field)) ->
       let binding = find_binding name env in
       field_pointer structs binding binding.bind_type field
+  | EUnary (Addr, EPtrMember (ECast (TPtr owner_ty, EInt 0), field)) ->
+      VInt (match struct_field_offset structs owner_ty field with Some offset -> offset | None -> 0)
   | EUnary (Addr, EPtrMember (EVar name, field)) ->
       let pointer_binding = find_binding name env in
       let target =
@@ -2602,12 +2796,17 @@ and sizeof_expr funcs structs globals env expr =
           | VPtr binding | VFieldPtr (binding, 0) -> (
               match struct_field_size structs binding.bind_type field with Some size -> size | None -> 4)
           | _ -> 4))
-  | EPtrMember (base, field) -> (
-      match eval_value funcs structs globals env base with
-      | VPtr binding | VFieldPtr (binding, 0) -> (
-          match struct_field_size structs binding.bind_type field with Some size -> size | None -> 4)
-      | _ -> 4)
-  | EIndex _ -> 1
+	  | EPtrMember (base, field) -> (
+	      match eval_value funcs structs globals env base with
+	      | VPtr binding | VFieldPtr (binding, 0) -> (
+	          match struct_field_size structs binding.bind_type field with Some size -> size | None -> 4)
+	      | _ -> 4)
+	  | EUnary (Deref, EVar name) -> (
+	      match find_binding_opt name env with
+	      | Some binding -> sizeof_type binding.bind_type
+	      | None -> 4)
+	  | EUnary (Deref, _) -> 4
+	  | EIndex _ -> 1
   | expr -> (
       match eval_value funcs structs globals env expr with
       | VInt _ -> 4
@@ -2618,28 +2817,31 @@ and eval_expr funcs structs globals env expr = int_of_value (eval_value funcs st
 and call_arg funcs structs globals env expr =
   eval_value funcs structs globals env expr
 
+and bind_params params args =
+  match (params, args) with
+  | [], _ -> []
+  | param :: params, value :: args ->
+      {
+        bind_name = param.param_name;
+        bind_type = param.param_type;
+        bind_value = ref (coerce_value param.param_type value);
+        bind_string = None;
+        bind_array = None;
+        bind_bytes = None;
+        bind_fields = None;
+      }
+      :: bind_params params args
+  | _ :: _, [] -> fail "internal parameter binding arity mismatch"
+
 and eval_func funcs structs globals name args =
+  trace ("call " ^ name ^ "/" ^ string_of_int (List.length args));
   let fn =
     match list_find_opt (fun fn -> fn.name = name) funcs with
     | Some fn -> fn
     | None -> fail ("unknown function: " ^ name)
   in
-  if not (same_length fn.params args) then fail ("wrong argument count: " ^ name) else
-  let env =
-    List.map2
-      (fun param value ->
-        {
-          bind_name = param.param_name;
-          bind_type = param.param_type;
-          bind_value = ref (coerce_value param.param_type value);
-          bind_string = None;
-          bind_array = None;
-          bind_bytes = None;
-          bind_fields = None;
-        })
-      fn.params args
-    @ globals
-  in
+  if (if fn.variadic then not (has_at_least fn.params args) else not (same_length fn.params args)) then fail ("wrong argument count: " ^ name) else
+  let env = bind_params fn.params args @ globals in
   let env = assoc_decl_full (Some name) None None (TPtr TChar) "__func__" (VStringPtr (name, 0)) env in
   match exec_block funcs structs globals fn.body env with
   | Returned value -> coerce_value fn.ret_type value
@@ -2691,11 +2893,45 @@ and exec_simple funcs structs globals env simple =
           let binding = find_binding name env in
           (match binding.bind_array with
           | Some array ->
+              let struct_array_fields = struct_fields structs ty in
+              let make_struct_element i field_values =
+                let fields = ref [] in
+                let bytes =
+                  match struct_size structs ty with
+                  | Some size -> Some (Array.make size (VInt 0))
+                  | None -> None
+                in
+                let element =
+                  {
+                    bind_name = name ^ "[" ^ string_of_int i ^ "]";
+                    bind_type = ty;
+                    bind_value = ref (VInt 0);
+                    bind_string = None;
+                    bind_array = None;
+                    bind_bytes = bytes;
+                    bind_fields = Some fields;
+                  }
+                in
+                let rec fill_fields fields values =
+                  match (fields, values) with
+                  | field :: fields, value_expr :: values ->
+                      let cell = field_cell (binding_fields element) field in
+                      cell := eval_value funcs structs globals env value_expr;
+                      fill_fields fields values
+                  | _ -> ()
+                in
+                fill_fields struct_array_fields field_values;
+                VPtr element
+              in
               let rec fill i values =
                 match values with
                 | [] -> ()
                 | value_expr :: values ->
-                    if i < Array.length array then array.(i) <- coerce_value binding.bind_type (eval_value funcs structs globals env value_expr);
+                    if i < Array.length array then
+                      array.(i) <-
+                        (match (value_expr, struct_array_fields) with
+                        | EInitList field_values, _ :: _ -> make_struct_element i field_values
+                        | _ -> coerce_value binding.bind_type (eval_value funcs structs globals env value_expr));
                     fill (i + 1) values
               in
               fill 0 values
@@ -2902,18 +3138,40 @@ let rec same_c_type a b =
 let is_main_argv_type ty =
   same_c_type ty (TPtr (TPtr TChar))
 
-let main_entry_args fn =
+let main_argv_value args =
+  let rec values_of_args args =
+    match args with
+    | [] -> [ VInt 0 ]
+    | arg :: rest -> VStringPtr (arg, 0) :: values_of_args rest
+  in
+  let values = Array.of_list (values_of_args args) in
+  let binding =
+    {
+      bind_name = "__argv";
+      bind_type = TPtr TChar;
+      bind_value = ref (VInt 0);
+      bind_string = None;
+      bind_array = Some values;
+      bind_bytes = None;
+      bind_fields = None;
+    }
+  in
+  VArrayPtr (binding, 0)
+
+let main_entry_args fn host_args =
   match fn.params with
   | [] -> []
   | [ argc ] ->
-      if same_c_type argc.param_type TInt then [ VInt 0 ]
+      if same_c_type argc.param_type TInt then [ VInt (List.length host_args) ]
       else fail "unsupported main parameters"
   | [ argc; argv ] ->
-      if same_c_type argc.param_type TInt && is_main_argv_type argv.param_type then [ VInt 0; VInt 0 ]
+      if same_c_type argc.param_type TInt && is_main_argv_type argv.param_type then
+        if host_args = [] then [ VInt 0; VInt 0 ]
+        else [ VInt (List.length host_args); main_argv_value host_args ]
       else fail "unsupported main parameters"
   | _ -> fail "unsupported main parameters"
 
-let compile src =
+let compile_with_args host_args src =
   trace "preprocess";
   let src, constants = preprocess_source src in
   trace "lex";
@@ -2933,20 +3191,24 @@ let compile src =
         { bind_name = name; bind_type = TInt; bind_value = ref (VInt value); bind_string = None; bind_array = None; bind_bytes = None; bind_fields = None })
       program.constants
   in
-  let globals =
-    trace "globals";
-    List.fold_left
-      (fun env global ->
-        exec_simple program.funcs program.structs env env (SDecl (global.global_type, global.global_name, global.global_init, global.global_array_size)))
-      constants program.globals
-  in
+	  let globals =
+	    trace "globals";
+	    List.fold_left
+	      (fun env global ->
+	        trace ("global " ^ global.global_name);
+	        exec_simple program.funcs program.structs env env (SDecl (global.global_type, global.global_name, global.global_init, global.global_array_size)))
+	      constants program.globals
+	  in
   let main =
     match list_find_opt (fun fn -> fn.name = "main") program.funcs with
     | Some fn -> fn
     | None -> fail "missing main"
   in
   trace "eval main";
-  m1_of_exit (int_of_value (eval_func program.funcs program.structs globals "main" (main_entry_args main)))
+  m1_of_exit (int_of_value (eval_func program.funcs program.structs globals "main" (main_entry_args main host_args)))
+
+let compile src =
+  compile_with_args [] src
 
 let read_stdin () =
   let rec loop acc =
@@ -2957,8 +3219,19 @@ let read_stdin () =
   in
   loop []
 
+let host_args_from_argv () =
+  let rec loop i acc =
+    if i >= Array.length Sys.argv then List.rev acc
+    else if Sys.argv.(i) = "--trace" then loop (i + 1) acc
+    else if Sys.argv.(i) = "--host-arg" then
+      if i + 1 >= Array.length Sys.argv then fail "--host-arg requires a value"
+      else loop (i + 2) (Sys.argv.(i + 1) :: acc)
+    else fail ("unknown option: " ^ Sys.argv.(i))
+  in
+  loop 1 []
+
 let () =
-  try print_string (compile (read_stdin ())) with
+  try print_string (compile_with_args (host_args_from_argv ()) (read_stdin ())) with
   | Parse_error msg ->
       prerr_endline ("ccc-host-ocaml: parse error: " ^ msg);
       exit 1
