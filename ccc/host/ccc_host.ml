@@ -231,11 +231,17 @@ let need_sym text state =
 let need_ident state =
   need expect_ident state
 
-let take_keyword text state =
-  match force_consumed (optional (expect_keyword text) state) with
+let take parser state =
+  match force_consumed (optional parser state) with
   | ParserOk (Some _, state') -> Some state'
   | ParserOk (None, _) -> None
   | ParserErr _ -> None
+
+let take_sym text state =
+  take (expect_sym text) state
+
+let take_keyword text state =
+  take (expect_keyword text) state
 
 let run parser tokens =
   match parser { tokens; pos = 0 } with
@@ -390,7 +396,11 @@ let rec parse_type state =
     | Some st -> post_ptr_qualifiers st
     | None -> st
   in
-  let rec ptr ty st = match peek st with Sym "*" -> ptr (TPtr ty) (post_ptr_qualifiers (advance st)) | _ -> (ty, st) in
+  let rec ptr ty st =
+    match take_sym "*" st with
+    | Some st -> ptr (TPtr ty) (post_ptr_qualifiers st)
+    | None -> (ty, st)
+  in
   ptr base state
 
 let rec parse_expr state = parse_assignment state
@@ -629,26 +639,25 @@ let parse_enum_decl state =
 
 let parse_decl_suffix name state =
   let array_size, state =
-    match peek state with
-    | Sym "[" ->
-        let state = advance state in
+    match take_sym "[" state with
+    | Some state ->
         let array_size, state =
-          match peek state with
-          | Sym "]" -> (Some (EInt (-1)), state)
-          | _ ->
+          match take_sym "]" state with
+          | Some state -> (Some (EInt (-1)), state)
+          | None ->
               let size, state = parse_expr state in
+              let state = need_sym "]" state in
               (Some size, state)
         in
-        let state = need_sym "]" state in
         (array_size, state)
-    | _ -> (None, state)
+    | None -> (None, state)
   in
   let init, state =
-    match peek state with
-    | Sym "=" ->
-        let expr, state = parse_expr (advance state) in
+    match take_sym "=" state with
+    | Some state ->
+        let expr, state = parse_expr state in
         (Some expr, state)
-    | _ -> (None, state)
+    | None -> (None, state)
   in
   (name, init, array_size, state)
 
