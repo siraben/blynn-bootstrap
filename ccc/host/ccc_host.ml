@@ -212,6 +212,15 @@ let expect_ident =
 let expect_keyword text =
   satisfy (fun tok -> match tok with Ident got -> if got = text then Some () else None | _ -> None) ("expected " ^ text)
 
+let expect_int_lit =
+  satisfy (fun tok -> match tok with Int_lit n -> Some n | _ -> None) "expected integer literal"
+
+let expect_char_lit =
+  satisfy (fun tok -> match tok with Char_lit n -> Some n | _ -> None) "expected character literal"
+
+let expect_string_lit =
+  satisfy (fun tok -> match tok with String_lit s -> Some s | _ -> None) "expected string literal"
+
 let optional parser state =
   match parser state with
   | Unconsumed (ParserErr _) -> Unconsumed (ParserOk (None, state))
@@ -241,6 +250,12 @@ let take parser state =
   | ParserOk (None, _) -> None
   | ParserErr _ -> None
 
+let take_value parser state =
+  match force_consumed (optional parser state) with
+  | ParserOk (Some value, state') -> Some (value, state')
+  | ParserOk (None, _) -> None
+  | ParserErr _ -> None
+
 let take_sym text state =
   take (expect_sym text) state
 
@@ -248,10 +263,7 @@ let take_keyword text state =
   take (expect_keyword text) state
 
 let take_ident state =
-  match force_consumed (optional expect_ident state) with
-  | ParserOk (Some name, state') -> Some (name, state')
-  | ParserOk (None, _) -> None
-  | ParserErr _ -> None
+  take_value expect_ident state
 
 let run parser tokens =
   match parser { tokens; pos = 0 } with
@@ -466,57 +478,94 @@ and parse_conditional state =
   | _ -> (cond, state)
 
 and parse_primary state =
-  match peek state with
-  | Int_lit n -> (EInt n, advance state)
-  | Char_lit n -> (EInt n, advance state)
-  | String_lit s -> (EString s, advance state)
-  | Sym "{" ->
-      let rec loop st acc =
-        match take_sym "}" st with
-        | Some st -> (EInitList (List.rev acc), st)
-        | None ->
-            let expr, st = parse_expr st in
-            (match take_sym "," st with
-            | Some st -> loop st (expr :: acc)
-            | None ->
-                let st = need_sym "}" st in
-                (EInitList (List.rev (expr :: acc)), st))
-      in
-      loop (advance state) []
-  | Ident "sizeof" ->
-      let state = advance state in
-      if peek state = Sym "(" then
-        let state = advance state in
-        if starts_type (peek state) then
-          let ty, state = parse_type state in
-          let state = need_sym ")" state in
-          (ESizeof ty, state)
+  let int_lit st =
+    match take_value expect_int_lit st with
+    | Some (n, st) -> Some (EInt n, st)
+    | None -> None
+  in
+  let char_lit st =
+    match take_value expect_char_lit st with
+    | Some (n, st) -> Some (EInt n, st)
+    | None -> None
+  in
+  let string_lit st =
+    match take_value expect_string_lit st with
+    | Some (s, st) -> Some (EString s, st)
+    | None -> None
+  in
+  let init_list st =
+    match take_sym "{" st with
+    | None -> None
+    | Some st ->
+        let rec loop st acc =
+          match take_sym "}" st with
+          | Some st -> (EInitList (List.rev acc), st)
+          | None ->
+              let expr, st = parse_expr st in
+              (match take_sym "," st with
+              | Some st -> loop st (expr :: acc)
+              | None ->
+                  let st = need_sym "}" st in
+                  (EInitList (List.rev (expr :: acc)), st))
+        in
+        Some (loop st [])
+  in
+  let sizeof_expr st =
+    match take_keyword "sizeof" st with
+    | None -> None
+    | Some st ->
+        let expr, st =
+          match take_sym "(" st with
+          | Some st ->
+              if starts_type (peek st) then
+                let ty, st = parse_type st in
+                let st = need_sym ")" st in
+                (ESizeof ty, st)
+              else
+                let expr, st = parse_expr st in
+                let st = need_sym ")" st in
+                (ESizeofExpr expr, st)
+          | None ->
+              let expr, st = parse_unary st in
+              (ESizeofExpr expr, st)
+        in
+        Some (expr, st)
+  in
+  let ident_expr st =
+    match take_ident st with
+    | None -> None
+    | Some (name, st) -> (
+        match take_sym "(" st with
+        | Some st ->
+            let args, st = parse_arg_list st in
+            Some (ECall (name, args), st)
+        | None -> Some (EVar name, st))
+  in
+  let paren_or_cast st =
+    match take_sym "(" st with
+    | None -> None
+    | Some st ->
+        if starts_type (peek st) then
+          let ty, st = parse_type st in
+          let st = need_sym ")" st in
+          let rhs, st = parse_unary st in
+          Some (ECast (ty, rhs), st)
         else
-          let expr, state = parse_expr state in
-          let state = need_sym ")" state in
-          (ESizeofExpr expr, state)
-      else
-        let expr, state = parse_unary state in
-        (ESizeofExpr expr, state)
-  | Ident name ->
-      let state = advance state in
-      (match peek state with
-      | Sym "(" ->
-          let args, state = parse_arg_list (advance state) in
-          (ECall (name, args), state)
-      | _ -> (EVar name, state))
-  | Sym "(" ->
-      let state1 = advance state in
-      if starts_type (peek state1) then
-        let ty, state2 = parse_type state1 in
-        let state3 = need_sym ")" state2 in
-        let rhs, state4 = parse_unary state3 in
-        (ECast (ty, rhs), state4)
-      else
-        let expr, state2 = parse_expr state1 in
-        let state3 = need_sym ")" state2 in
-        (expr, state3)
-  | _ -> raise (Parse_error "expected expression")
+          let expr, st = parse_expr st in
+          let st = need_sym ")" st in
+          Some (expr, st)
+  in
+  let rec choose parsers st =
+    match parsers with
+    | [] -> None
+    | parser :: rest -> (
+        match parser st with
+        | Some result -> Some result
+        | None -> choose rest st)
+  in
+  match choose [ int_lit; char_lit; string_lit; init_list; sizeof_expr; ident_expr; paren_or_cast ] state with
+  | Some result -> result
+  | None -> raise (Parse_error "expected expression")
 
 and parse_arg_list state =
   match take_sym ")" state with
