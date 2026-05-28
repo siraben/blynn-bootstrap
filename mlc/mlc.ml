@@ -499,8 +499,11 @@ in
 let rec p_need_keyword input =
   p_force_pos (p_try_keyword input)
 in
+let rec p_optional_end_pos reply =
+  p_pos (p_optional reply)
+in
 let rec p_optional_keyword_pos input =
-  p_pos (p_optional (p_try_keyword input))
+  p_optional_end_pos (p_try_keyword input)
 in
 let rec need_string input =
   p_need_string input
@@ -719,12 +722,8 @@ let rec parse_record_fields state =
     let semi = p_optional_char_pos (src, (next, ';')) in
     let (has_semi, semi_pos) = semi in
     if has_semi == 1 then parse_record_fields (src, (semi_pos, (index + 1, next_ctors))) else
-    let close = p_try_char (src, (next, '}')) in
-    if p_is_ok close == 1 then (p_pos close, next_ctors) else
-      let forced = p_force close in
-      let (dummy2, done_pos) = forced in
-      let _ = dummy2 in
-      (done_pos, next_ctors)
+    let done_pos = p_need_char (src, (next, '}')) in
+    (done_pos, next_ctors)
 in
 let rec parse_type_decls input =
   let (src, pair) = input in

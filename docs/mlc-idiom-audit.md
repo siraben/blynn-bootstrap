@@ -88,6 +88,9 @@ These can move directly into `mlc.ml` because stage 02 already compiles them:
 - Optional record delimiters, match-case bars, tuple commas, and dynamic store
   arrows now use `p_optional_char_pos` / `p_optional_string_pos` instead of
   manually unpacking `p_optional` replies.
+- Optional top-level `in` probes now go through `p_optional_end_pos`, and the
+  record field parser uses `p_need_char` for the required closing `}` instead
+  of open-coding a try/force path.
 
 ## Promote before use
 
