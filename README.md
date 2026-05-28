@@ -37,6 +37,10 @@ slices.
   - `mlc-seed.m2` builds the initial M2 seed compiler slice and verifies its
     emitted bytecode under `mzvm-seed`; this remains transitional while the
     staged interpreter path grows.
+  - `ccc.host.ocaml` is the host-ML development C compiler, analogous to
+    HCC's GHC path: it is typed OCaml source with a small ML-style parser
+    core, C AST, functional evaluator, and M1 output gate before features are
+    ported back into the mini-ML `ccc.ml`.
 
 ## Layout
 
@@ -78,6 +82,7 @@ nix build .#mlc-seed.m2
 nix build .#tests.mlc.seed.host-vs-m2
 nix build .#mlc.byte.seed
 nix build .#tests.mlc.byte.committed
+nix build .#ccc.host.ocaml
 nix build .#ccc.byte.seed
 nix build .#tests.ccc.byte.committed
 nix build .#tcc.m1.ccc.seed
@@ -99,9 +104,9 @@ The mini-ML toolchain also exposes `debug_byte`, `debug_string`, `debug_int`,
 and `debug_printf "label=%d" expr` as stderr-only debugging forms. Use them
 for temporary compiler breadcrumbs when stdout is bytecode or M1 output. VM
 fatal errors also report `pc`, `op`, `sp`, `rp`, and heap use on stderr.
-Native VM crashes should still be debugged under `nix develop` with `gdb`; the
-mini-ML sources are not yet valid OCaml, so this is not at the HCC/GHC-style
-host-language debugging point.
+Native VM crashes should still be debugged under `nix develop` with `gdb`.
+The mini-ML sources are not yet valid OCaml, but `ccc/host/ccc_host.ml` is the
+HCC/GHC-style host-language debugging path for CCC feature work.
 
 ## Portable Bootstrap
 

@@ -17,6 +17,10 @@ let is_digit ch = '0' <= ch && ch <= '9'
 let is_alpha ch = ch = '_' || ('A' <= ch && ch <= 'Z') || ('a' <= ch && ch <= 'z')
 let is_ident ch = is_alpha ch || is_digit ch
 
+let rec list_find_opt pred = function
+  | [] -> None
+  | x :: xs -> if pred x then Some x else list_find_opt pred xs
+
 let char_code_at src pos =
   if pos >= String.length src then 0 else Char.code src.[pos]
 
@@ -141,7 +145,7 @@ let lex src =
         loop next (tok :: acc)
       else
         let found =
-          List.find_opt
+          list_find_opt
             (fun op -> pos + String.length op <= String.length src && String.sub src pos (String.length op) = op)
             multi_symbols
         in
@@ -152,11 +156,20 @@ let lex src =
   Array.of_list (loop 0 [])
 
 type parser_state = { tokens : token array; pos : int }
-type 'a parser = parser_state -> ('a * parser_state, string) result
+type 'a parser_reply = ParserOk of 'a * parser_state | ParserErr of string
+type 'a consumed = Consumed of 'a parser_reply | Unconsumed of 'a parser_reply
+type 'a parser = parser_state -> 'a consumed
 
-let return value state = Ok (value, state)
-let bind parser next state = match parser state with Ok (value, state') -> next value state' | Error msg -> Error msg
-let ( let* ) = bind
+let force_consumed = function Consumed reply -> reply | Unconsumed reply -> reply
+
+let return value state = Unconsumed (ParserOk (value, state))
+
+let bind parser next state =
+  match parser state with
+  | Unconsumed (ParserOk (value, state')) -> next value state'
+  | Consumed (ParserOk (value, state')) -> Consumed (force_consumed (next value state'))
+  | Unconsumed (ParserErr msg) -> Unconsumed (ParserErr msg)
+  | Consumed (ParserErr msg) -> Consumed (ParserErr msg)
 
 let peek state =
   if state.pos < Array.length state.tokens then state.tokens.(state.pos) else Eof
@@ -165,8 +178,8 @@ let advance state = { state with pos = state.pos + 1 }
 
 let satisfy f expected state =
   match f (peek state) with
-  | Some value -> Ok (value, advance state)
-  | None -> Error expected
+  | Some value -> Consumed (ParserOk (value, advance state))
+  | None -> Unconsumed (ParserErr expected)
 
 let expect_sym text =
   satisfy (function Sym got when got = text -> Some () | _ -> None) ("expected " ^ text)
@@ -175,12 +188,25 @@ let expect_ident =
   satisfy (function Ident name -> Some name | _ -> None) "expected identifier"
 
 let optional parser state =
-  match parser state with Ok (value, state') -> Ok (Some value, state') | Error _ -> Ok (None, state)
+  match parser state with
+  | Unconsumed (ParserErr _) -> Unconsumed (ParserOk (None, state))
+  | Unconsumed (ParserOk (value, state')) -> Unconsumed (ParserOk (Some value, state'))
+  | Consumed (ParserOk (value, state')) -> Consumed (ParserOk (Some value, state'))
+  | Consumed (ParserErr msg) -> Consumed (ParserErr msg)
+
+let need parser state =
+  match force_consumed (parser state) with
+  | ParserOk (value, state') -> (value, state')
+  | ParserErr msg -> raise (Parse_error msg)
+
+let need_sym text state =
+  let _, state = need (expect_sym text) state in
+  state
 
 let run parser tokens =
   match parser { tokens; pos = 0 } with
-  | Ok (value, _) -> value
-  | Error msg -> raise (Parse_error msg)
+  | Consumed (ParserOk (value, _)) | Unconsumed (ParserOk (value, _)) -> value
+  | Consumed (ParserErr msg) | Unconsumed (ParserErr msg) -> raise (Parse_error msg)
 
 type c_type =
   | TInt
@@ -274,6 +300,8 @@ let rec starts_type = function
   | Ident name -> has_suffix "_t" name || starts_uppercase name
   | _ -> false
 
+let option_is_some = function Some _ -> true | None -> false
+
 let rec parse_type state =
   let rec qualifiers st =
     match peek st with
@@ -347,11 +375,7 @@ and parse_conditional state =
   match peek state with
   | Sym "?" ->
       let yes, state = parse_expr (advance state) in
-      let state =
-        match expect_sym ":" state with
-        | Ok ((), st) -> st
-        | Error msg -> raise (Parse_error msg)
-      in
+      let state = need_sym ":" state in
       let no, state = parse_conditional state in
       (ECond (cond, yes, no), state)
   | _ -> (cond, state)
@@ -379,17 +403,12 @@ and parse_primary state =
         let state = advance state in
         if starts_type (peek state) then
           let ty, state = parse_type state in
-          let state =
-            match expect_sym ")" state with
-            | Ok ((), st) -> st
-            | Error msg -> raise (Parse_error msg)
-          in
+          let state = need_sym ")" state in
           (ESizeof ty, state)
         else
           let expr, state = parse_expr state in
-          (match expect_sym ")" state with
-          | Ok ((), state) -> (ESizeofExpr expr, state)
-          | Error msg -> raise (Parse_error msg))
+          let state = need_sym ")" state in
+          (ESizeofExpr expr, state)
       else
         let expr, state = parse_unary state in
         (ESizeofExpr expr, state)
@@ -404,18 +423,13 @@ and parse_primary state =
       let state1 = advance state in
       if starts_type (peek state1) then
         let ty, state2 = parse_type state1 in
-        let state3 =
-          match expect_sym ")" state2 with
-          | Ok ((), st) -> st
-          | Error msg -> raise (Parse_error msg)
-        in
+        let state3 = need_sym ")" state2 in
         let rhs, state4 = parse_unary state3 in
         (ECast (ty, rhs), state4)
       else
         let expr, state2 = parse_expr state1 in
-        (match expect_sym ")" state2 with
-        | Ok ((), state3) -> (expr, state3)
-        | Error msg -> raise (Parse_error msg))
+        let state3 = need_sym ")" state2 in
+        (expr, state3)
   | _ -> raise (Parse_error "expected expression")
 
 and parse_arg_list state =
@@ -461,11 +475,7 @@ and parse_postfix expr state =
   | EVar name, Sym "--" -> (EUpdateExpr (name, -1, false), advance state)
   | _, Sym "[" ->
       let index, state = parse_expr (advance state) in
-      let state =
-        match expect_sym "]" state with
-        | Ok ((), st) -> st
-        | Error msg -> raise (Parse_error msg)
-      in
+      let state = need_sym "]" state in
       parse_postfix (EIndex (expr, index)) state
   | _, Sym "." ->
       let name =
@@ -542,7 +552,7 @@ let build_struct_layout name fields =
     | (field_name, ty, array_size) :: rest ->
         let offset = align_up offset (layout_align ty) in
         let field_size = layout_field_size ty array_size in
-        loop (offset + field_size) ({ field_name; field_size; field_offset = offset; field_is_array = Option.is_some array_size } :: acc) rest
+        loop (offset + field_size) ({ field_name; field_size; field_offset = offset; field_is_array = option_is_some array_size } :: acc) rest
   in
   loop 0 [] fields
 
@@ -557,11 +567,7 @@ let parse_enum_decl state =
     | Ident _ -> advance state
     | _ -> state
   in
-  let state =
-    match expect_sym "{" state with
-    | Ok ((), st) -> st
-    | Error msg -> raise (Parse_error msg)
-  in
+  let state = need_sym "{" state in
   let rec loop st acc =
     match peek st with
     | Sym "}" -> (List.rev acc, advance st)
@@ -581,11 +587,7 @@ let parse_enum_decl state =
     | _ -> raise (Parse_error "expected enum constant")
   in
   let constants, state = loop state [] in
-  let state =
-    match expect_sym ";" state with
-    | Ok ((), st) -> st
-    | Error msg -> raise (Parse_error msg)
-  in
+  let state = need_sym ";" state in
   (constants, state)
 
 let parse_decl_suffix name state =
@@ -600,7 +602,8 @@ let parse_decl_suffix name state =
               let size, state = parse_expr state in
               (Some size, state)
         in
-        (match expect_sym "]" state with Ok ((), st) -> (array_size, st) | Error msg -> raise (Parse_error msg))
+        let state = need_sym "]" state in
+        (array_size, state)
     | _ -> (None, state)
   in
   let init, state =
@@ -656,9 +659,8 @@ let parse_simple_no_semi state =
 
 let parse_simple_stmt state =
   let simple, state = parse_simple_no_semi state in
-  match expect_sym ";" state with
-  | Ok ((), state') -> (simple, state')
-  | Error msg -> raise (Parse_error msg)
+  let state = need_sym ";" state in
+  (simple, state)
 
 let rec skip_decl tokens pos depth =
   match tokens.(pos) with
@@ -677,11 +679,7 @@ let rec parse_stmt state =
         | Ident name -> name
         | _ -> raise (Parse_error "expected typedef name")
       in
-      let state =
-        match expect_sym ";" (advance state) with
-        | Ok ((), st) -> st
-        | Error msg -> raise (Parse_error msg)
-      in
+      let state = need_sym ";" (advance state) in
       (Simple (STypeAlias (ty, name)), state)
   | Ident "enum" ->
       let constants, state = parse_enum_decl state in
@@ -694,12 +692,13 @@ let rec parse_stmt state =
       if peek state = Sym ";" then (Return None, advance state)
       else
         let expr, state = parse_expr state in
-        (match expect_sym ";" state with Ok ((), st) -> (Return (Some expr), st) | Error msg -> raise (Parse_error msg))
+        let state = need_sym ";" state in
+        (Return (Some expr), state)
   | Ident "if" ->
       let state = advance state in
-      let state = match expect_sym "(" state with Ok ((), st) -> st | Error msg -> raise (Parse_error msg) in
+      let state = need_sym "(" state in
       let cond, state = parse_expr state in
-      let state = match expect_sym ")" state with Ok ((), st) -> st | Error msg -> raise (Parse_error msg) in
+      let state = need_sym ")" state in
       let yes, state = parse_stmt state in
       let else_part =
         match peek state with
@@ -712,9 +711,9 @@ let rec parse_stmt state =
       (If (cond, yes, no), state)
   | Ident "while" ->
       let state = advance state in
-      let state = match expect_sym "(" state with Ok ((), st) -> st | Error msg -> raise (Parse_error msg) in
+      let state = need_sym "(" state in
       let cond, state = parse_expr state in
-      let state = match expect_sym ")" state with Ok ((), st) -> st | Error msg -> raise (Parse_error msg) in
+      let state = need_sym ")" state in
       let body, state = parse_stmt state in
       (While (cond, body), state)
   | Ident "do" ->
@@ -724,33 +723,33 @@ let rec parse_stmt state =
         | Ident "while" -> advance state
         | _ -> raise (Parse_error "expected while after do")
       in
-      let state = match expect_sym "(" state with Ok ((), st) -> st | Error msg -> raise (Parse_error msg) in
+      let state = need_sym "(" state in
       let cond, state = parse_expr state in
-      let state = match expect_sym ")" state with Ok ((), st) -> st | Error msg -> raise (Parse_error msg) in
-      let state = match expect_sym ";" state with Ok ((), st) -> st | Error msg -> raise (Parse_error msg) in
+      let state = need_sym ")" state in
+      let state = need_sym ";" state in
       (DoWhile (body, cond), state)
   | Ident "for" ->
       let state = advance state in
-      let state = match expect_sym "(" state with Ok ((), st) -> st | Error msg -> raise (Parse_error msg) in
+      let state = need_sym "(" state in
       let init, state =
         if peek state = Sym ";" then (None, advance state)
         else
           let s, st = parse_simple_no_semi state in
-          let st = match expect_sym ";" st with Ok ((), st') -> st' | Error msg -> raise (Parse_error msg) in
+          let st = need_sym ";" st in
           (Some s, st)
       in
       let cond, state =
         if peek state = Sym ";" then (None, advance state)
         else
           let e, st = parse_expr state in
-          let st = match expect_sym ";" st with Ok ((), st') -> st' | Error msg -> raise (Parse_error msg) in
+          let st = need_sym ";" st in
           (Some e, st)
       in
       let post, state =
         if peek state = Sym ")" then (None, advance state)
         else
           let s, st = parse_simple_no_semi state in
-          let st = match expect_sym ")" st with Ok ((), st') -> st' | Error msg -> raise (Parse_error msg) in
+          let st = need_sym ")" st in
           (Some s, st)
       in
       let body, state = parse_stmt state in
@@ -759,11 +758,11 @@ let rec parse_stmt state =
       let state = advance state in
       let name = match peek state with Ident name -> name | _ -> raise (Parse_error "expected label") in
       let state = advance state in
-      let state = match expect_sym ";" state with Ok ((), st) -> st | Error msg -> raise (Parse_error msg) in
+      let state = need_sym ";" state in
       (Goto name, state)
   | Ident "break" ->
       let state = advance state in
-      let state = match expect_sym ";" state with Ok ((), st) -> st | Error msg -> raise (Parse_error msg) in
+      let state = need_sym ";" state in
       (Break, state)
   | Ident name -> (
       match peek (advance state) with
@@ -786,7 +785,7 @@ and parse_block state =
       (stmt :: rest, state)
 
 let parse_params state =
-  let state = match expect_sym "(" state with Ok ((), st) -> st | Error msg -> raise (Parse_error msg) in
+  let state = need_sym "(" state in
   match peek state with
   | Sym ")" -> ([], advance state)
   | Ident "void" when peek (advance state) = Sym ")" -> ([], advance (advance state))
@@ -803,7 +802,7 @@ let parse_params state =
         match peek st, peek (advance st), peek (advance (advance st)) with
         | Sym "(", Sym "*", Ident name ->
             let st = advance (advance (advance st)) in
-            let st = match expect_sym ")" st with Ok ((), st) -> st | Error msg -> raise (Parse_error msg) in
+            let st = need_sym ")" st in
             let st =
               match peek st with
               | Sym "(" -> skip_balanced st 0
@@ -856,7 +855,7 @@ let parse_external_decl state =
       | _ -> raise (Parse_error "expected function body"))
   | _ ->
       let name, init, array_size, state = parse_decl_suffix name state in
-      let state = match expect_sym ";" state with Ok ((), st) -> st | Error msg -> raise (Parse_error msg) in
+      let state = need_sym ";" state in
       (ExternalGlobal { global_type = ty; global_name = name; global_init = init; global_array_size = array_size }, state)
 
 let parse_struct_definition state =
@@ -870,12 +869,12 @@ let parse_struct_definition state =
     | Ident name -> name
     | _ -> raise (Parse_error "expected struct name")
   in
-  let state = match expect_sym "{" (advance state) with Ok ((), st) -> st | Error msg -> raise (Parse_error msg) in
+  let state = need_sym "{" (advance state) in
   let rec loop st acc =
     match peek st with
     | Sym "}" ->
         let st = advance st in
-        let st = match expect_sym ";" st with Ok ((), st') -> st' | Error msg -> raise (Parse_error msg) in
+        let st = need_sym ";" st in
         (build_struct_layout name (List.rev acc), st)
     | _ ->
         let ty, st = parse_type st in
@@ -889,10 +888,11 @@ let parse_struct_definition state =
           | Sym "[" ->
               let st = advance (advance st) in
               let array_size, st = if peek st = Sym "]" then (None, st) else let expr, st = parse_expr st in (Some expr, st) in
-              (match expect_sym "]" st with Ok ((), st') -> (array_size, st') | Error msg -> raise (Parse_error msg))
+              let st = need_sym "]" st in
+              (array_size, st)
           | _ -> (None, advance st)
         in
-        let st = match expect_sym ";" st with Ok ((), st') -> st' | Error msg -> raise (Parse_error msg) in
+        let st = need_sym ";" st in
         loop st ((field, ty, array_size) :: acc)
   in
   loop state []
@@ -914,7 +914,7 @@ let parse_typedef_struct_definition state =
     | Sym "{" -> ("", state)
     | _ -> raise (Parse_error "expected struct name")
   in
-  let state = match expect_sym "{" state with Ok ((), st) -> st | Error msg -> raise (Parse_error msg) in
+  let state = need_sym "{" state in
   let rec fields st acc =
     match peek st with
     | Sym "}" -> (List.rev acc, advance st)
@@ -930,10 +930,11 @@ let parse_typedef_struct_definition state =
           | Sym "[" ->
               let st = advance (advance st) in
               let array_size, st = if peek st = Sym "]" then (None, st) else let expr, st = parse_expr st in (Some expr, st) in
-              (match expect_sym "]" st with Ok ((), st') -> (array_size, st') | Error msg -> raise (Parse_error msg))
+              let st = need_sym "]" st in
+              (array_size, st)
           | _ -> (None, advance st)
         in
-        let st = match expect_sym ";" st with Ok ((), st') -> st' | Error msg -> raise (Parse_error msg) in
+        let st = need_sym ";" st in
         fields st ((field, ty, array_size) :: acc)
   in
   let fields, state = fields state [] in
@@ -942,7 +943,7 @@ let parse_typedef_struct_definition state =
     | Ident name -> name
     | _ -> raise (Parse_error "expected typedef alias")
   in
-  let state = match expect_sym ";" (advance state) with Ok ((), st) -> st | Error msg -> raise (Parse_error msg) in
+  let state = need_sym ";" (advance state) in
   let layout = build_struct_layout alias fields in
   let tag_layout = if tag = "" then None else Some { layout with struct_name = tag } in
   (tag_layout, layout, state)
@@ -1177,7 +1178,7 @@ let add_to_value value delta =
   | VPtr _ | VFunc _ -> fail "unsupported pointer arithmetic"
 
 let field_cell fields name =
-  match List.find_opt (fun (field, _) -> field = name) !(fields) with
+  match list_find_opt (fun (field, _) -> field = name) !(fields) with
   | Some (_, cell) -> cell
   | None ->
       let cell = ref (VInt 0) in
@@ -1211,7 +1212,7 @@ let struct_fields structs ty =
   match struct_name_of_type ty with
   | None -> []
   | Some name -> (
-      match List.find_opt (fun layout -> layout.struct_name = name) structs with
+      match list_find_opt (fun layout -> layout.struct_name = name) structs with
       | Some layout -> List.map (fun field -> field.field_name) layout.struct_fields
       | None -> [])
 
@@ -1219,7 +1220,7 @@ let struct_size structs ty =
   match struct_name_of_type ty with
   | None -> None
   | Some name -> (
-      match List.find_opt (fun layout -> layout.struct_name = name) structs with
+      match list_find_opt (fun layout -> layout.struct_name = name) structs with
       | Some layout -> Some layout.struct_size
       | None -> None)
 
@@ -1227,10 +1228,10 @@ let struct_field_offset structs ty field_name =
   match struct_name_of_type ty with
   | None -> None
   | Some name -> (
-      match List.find_opt (fun layout -> layout.struct_name = name) structs with
+      match list_find_opt (fun layout -> layout.struct_name = name) structs with
       | None -> None
       | Some layout -> (
-          match List.find_opt (fun field -> field.field_name = field_name) layout.struct_fields with
+          match list_find_opt (fun field -> field.field_name = field_name) layout.struct_fields with
           | Some field -> Some field.field_offset
           | None -> None))
 
@@ -1238,18 +1239,18 @@ let struct_field_layout structs ty field_name =
   match struct_name_of_type ty with
   | None -> None
   | Some name -> (
-      match List.find_opt (fun layout -> layout.struct_name = name) structs with
+      match list_find_opt (fun layout -> layout.struct_name = name) structs with
       | None -> None
-      | Some layout -> List.find_opt (fun field -> field.field_name = field_name) layout.struct_fields)
+      | Some layout -> list_find_opt (fun field -> field.field_name = field_name) layout.struct_fields)
 
 let struct_field_size structs ty field_name =
   match struct_name_of_type ty with
   | None -> None
   | Some name -> (
-      match List.find_opt (fun layout -> layout.struct_name = name) structs with
+      match list_find_opt (fun layout -> layout.struct_name = name) structs with
       | None -> None
       | Some layout -> (
-          match List.find_opt (fun field -> field.field_name = field_name) layout.struct_fields with
+          match list_find_opt (fun field -> field.field_name = field_name) layout.struct_fields with
           | Some field -> Some field.field_size
           | None -> None))
 
@@ -1514,7 +1515,7 @@ and call_arg funcs structs globals env = function
 
 and eval_func funcs structs globals name args =
   let fn =
-    match List.find_opt (fun fn -> fn.name = name) funcs with
+    match list_find_opt (fun fn -> fn.name = name) funcs with
     | Some fn -> fn
     | None -> fail ("unknown function: " ^ name)
   in
@@ -1535,7 +1536,7 @@ and eval_func funcs structs globals name args =
 and exec_simple funcs structs globals env = function
   | SEmpty -> env
   | SExpr (ECall ("_exit", [ arg ])) -> raise (Exit_code (eval_expr funcs structs globals env arg))
-  | SExpr (ECall (name, _)) when List.find_opt (fun fn -> fn.name = name) funcs = None -> env
+  | SExpr (ECall (name, _)) when list_find_opt (fun fn -> fn.name = name) funcs = None -> env
   | SExpr expr ->
       let _ = eval_value funcs structs globals env expr in
       env

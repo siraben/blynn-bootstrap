@@ -18,6 +18,11 @@ stdenv.mkDerivation {
   buildPhase = ''
     runHook preBuild
 
+    if grep -nE 'List\.find_opt|Option\.is_some|\( let\* \)' host/ccc_host.ml; then
+      echo "ccc-host-ocaml should stay within the portable host-ML subset" >&2
+      exit 1
+    fi
+
     ocamlc host/ccc_host.ml -o ccc-host-ocaml
 
     check_return() {
