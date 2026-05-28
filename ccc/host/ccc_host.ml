@@ -23,6 +23,12 @@ let rec list_find_opt pred xs =
   | [] -> None
   | x :: xs -> if pred x then Some x else list_find_opt pred xs
 
+let rec same_length xs ys =
+  match (xs, ys) with
+  | [], [] -> true
+  | _ :: xs, _ :: ys -> same_length xs ys
+  | _ -> false
+
 let rec strings_of_chars chars =
   match chars with
   | [] -> []
@@ -1922,6 +1928,7 @@ and eval_func funcs structs globals name args =
     | Some fn -> fn
     | None -> fail ("unknown function: " ^ name)
   in
+  if not (same_length fn.params args) then fail ("wrong argument count: " ^ name) else
   let env =
     List.map2
       (fun param value ->

@@ -40,6 +40,16 @@ DEFINE SYSCALL 0F05
       test "$actual" = "$expected"
     }
 
+    reject_compile() {
+      src="$1"
+      if ./ccc-host-ocaml < "$src" > rejected.M1; then
+        echo "expected ccc-host-ocaml to reject $src" >&2
+        exit 1
+      else
+        :
+      fi
+    }
+
     check_return ${testsRoot}/mescc/scaffold/01-return-0.c 0
     check_return ${testsRoot}/mescc/scaffold/02-return-1.c 1
     check_return ${testsRoot}/mescc/scaffold/03-call.c 0
@@ -111,18 +121,38 @@ DEFINE SYSCALL 0F05
     check_return ${testsRoot}/hcc/scalar-immediate-smoke.c 0
     check_return ${testsRoot}/hcc/parse-smoke.c 0
     check_return ${testsRoot}/hcc/pp-smoke.c 0
+    printf '%s\n' \
+      "int accept(int ch) { return ch == 'A' || ch == 'B' || ch == 'C'; }" \
+      "int main(void) {" \
+      "  if (!accept('A')) return 1;" \
+      "  if (!accept('B')) return 2;" \
+      "  if (!accept('C')) return 3;" \
+      "  if (accept('D')) return 4;" \
+      "  return 0;" \
+      "}" > param-eq-three.c
+    check_return param-eq-three.c 0
     printf '%s\n' '#define VALUE 42' 'int main(void) { return VALUE; }' > define-return.c
     check_return define-return.c 42
     printf '%s\n' "#define LETTER 'A'" 'int main(void) { return LETTER; }' > define-char-return.c
     check_return define-char-return.c 65
     printf '%s\n' '#define VALUE 42' 'int main(void) { int VALUE = 7; return VALUE; }' > define-shadow.c
     check_return define-shadow.c 7
+    printf '%s\n' '#define VALUE 42' 'int value_func(void) { return VALUE; }' 'int main(void) { return value_func(); }' > define-helper-return.c
+    check_return define-helper-return.c 42
+    printf '%s\n' "int letter_func(void) { return 'A'; }" 'int main(void) { return letter_func(); }' > helper-char-return.c
+    check_return helper-char-return.c 65
     printf '%s\n' '#ifdef MISSING' 'int main(void) { return 1; }' '#else' 'int main(void) { return 42; }' '#endif' > ifdef-missing-else.c
     check_return ifdef-missing-else.c 42
     printf '%s\n' '#define VALUE 42' '#ifndef VALUE' 'int main(void) { return 1; }' '#else' 'int main(void) { return VALUE; }' '#endif' > ifndef-defined-else.c
     check_return ifndef-defined-else.c 42
     printf '%s\n' '#ifdef LATER' 'int main(void) { return 1; }' '#else' 'int main(void) { return 42; }' '#endif' '#define LATER 1' > define-after-ifdef.c
     check_return define-after-ifdef.c 42
+    printf '%s\n' 'int main(voidx) { return 0; }' > keyword-prefix-param.c
+    reject_compile keyword-prefix-param.c
+    printf '%s\n' 'int main(void) { return sizeof(shorter); }' > keyword-prefix-sizeof.c
+    reject_compile keyword-prefix-sizeof.c
+    reject_compile ${testsRoot}/hcc/diagnostics/unknown-identifier.c
+    reject_compile ${testsRoot}/hcc/diagnostics/unknown-global-initializer.c
 
     runHook postBuild
   '';
