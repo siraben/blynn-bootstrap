@@ -41,9 +41,9 @@ return, unit-as-int, and unknown direct-call rejection.
 Step 6a is now the intended HCC/GHC-style development loop for CCC. Its parser
 surface uses an explicit `ParserOk` / `ParserErr` and `Consumed` /
 `Unconsumed` reply shape plus `need_sym` / `need_ident`, generic optional
-parser `take`, `take_sym` / `take_keyword` adapters, and shared array-suffix
-parsing for declarations and struct fields, and the source avoids newer
-OCaml-only conveniences such as
+parser `take`, `take_sym` / `take_keyword` / value-preserving `take_ident`
+adapters, and shared array-suffix parsing for declarations and struct fields,
+and the source avoids newer OCaml-only conveniences such as
 `List.find_opt` / `Option.is_some` in favor of small local ML helpers. This
 keeps the host compiler easy to run with `ocamlc` while making the code closer
 to the subset that should later be ported into the mini-ML `ccc.ml`.

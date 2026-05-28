@@ -243,6 +243,12 @@ let take_sym text state =
 let take_keyword text state =
   take (expect_keyword text) state
 
+let take_ident state =
+  match force_consumed (optional expect_ident state) with
+  | ParserOk (Some name, state') -> Some (name, state')
+  | ParserOk (None, _) -> None
+  | ParserErr _ -> None
+
 let run parser tokens =
   match parser { tokens; pos = 0 } with
   | Consumed (ParserOk (value, _)) | Unconsumed (ParserOk (value, _)) -> value
@@ -387,7 +393,7 @@ let rec parse_type state =
     | Ident "double" -> (TDouble, advance state)
     | Ident "struct" ->
         let st = advance state in
-        (match peek st with Ident name -> (TOther ("struct " ^ name), advance st) | _ -> (TOther "struct", st))
+        (match take_ident st with Some (name, st) -> (TOther ("struct " ^ name), st) | None -> (TOther "struct", st))
     | Ident name -> (TOther name, advance state)
     | _ -> raise (Parse_error "expected type")
   in
@@ -610,9 +616,9 @@ let parse_enum_decl state =
     | _ -> raise (Parse_error "expected enum")
   in
   let state =
-    match peek state with
-    | Ident _ -> advance state
-    | _ -> state
+    match take_ident state with
+    | Some (_, state) -> state
+    | None -> state
   in
   let state = need_sym "{" state in
   let rec loop st acc =
@@ -845,9 +851,9 @@ let parse_params state =
         in
         (name, st)
     | _ -> (
-        match peek st with
-        | Ident name -> (name, advance st)
-        | _ -> ("_", st))
+        match take_ident st with
+        | Some (name, st) -> (name, st)
+        | None -> ("_", st))
   in
   let rec parse_nonempty st acc =
     let _ty, st = parse_type st in
@@ -931,10 +937,12 @@ let parse_typedef_struct_definition state =
     | _ -> raise (Parse_error "expected struct")
   in
   let tag, state =
-    match peek state with
-    | Ident name -> (name, advance state)
-    | Sym "{" -> ("", state)
-    | _ -> raise (Parse_error "expected struct name")
+    match take_ident state with
+    | Some (name, state) -> (name, state)
+    | None -> (
+        match peek state with
+        | Sym "{" -> ("", state)
+        | _ -> raise (Parse_error "expected struct name"))
   in
   let state = need_sym "{" state in
   let rec fields st acc =
