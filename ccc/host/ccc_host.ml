@@ -624,22 +624,22 @@ let parse_enum_decl state =
   in
   let state = need_sym "{" state in
   let rec loop st acc =
-    match peek st with
-    | Sym "}" -> (List.rev acc, advance st)
-    | Ident name ->
-        let st = advance st in
+    match take_sym "}" st with
+    | Some st -> (List.rev acc, st)
+    | None ->
+        let name, st = need_ident st in
         let value, st =
-          match peek st with
-          | Sym "=" ->
-              let expr, st = parse_expr (advance st) in
+          match take_sym "=" st with
+          | Some st ->
+              let expr, st = parse_expr st in
               (Some expr, st)
-          | _ -> (None, st)
+          | None -> (None, st)
         in
-        (match peek st with
-        | Sym "," -> loop (advance st) ((name, value) :: acc)
-        | Sym "}" -> loop st ((name, value) :: acc)
-        | _ -> raise (Parse_error "expected , or } in enum"))
-    | _ -> raise (Parse_error "expected enum constant")
+        (match take_sym "," st with
+        | Some st -> loop st ((name, value) :: acc)
+        | None ->
+            let st = need_sym "}" st in
+            (List.rev ((name, value) :: acc), st))
   in
   let constants, state = loop state [] in
   let state = need_sym ";" state in
