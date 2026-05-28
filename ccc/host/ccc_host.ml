@@ -1011,9 +1011,9 @@ and parse_block state =
       match peek state with
       | Eof -> raise (Parse_error "unterminated block")
       | _ ->
-      let stmt, state = parse_stmt state in
-      let rest, state = parse_block state in
-      (stmt :: rest, state))
+          let stmt, state = parse_stmt state in
+          let rest, state = parse_block state in
+          (stmt :: rest, state))
 
 let parse_params state =
   let state = need_sym "(" state in
@@ -1044,44 +1044,49 @@ let parse_params state =
   let rec parse_nonempty st acc =
     let _ty, st = parse_type st in
     let name, st = parse_name st in
-    match peek st with
-    | Sym "," -> parse_nonempty (advance st) (name :: acc)
-    | Sym ")" -> (List.rev (name :: acc), advance st)
-    | _ -> raise (Parse_error "expected , or ) in parameter list")
+    match take_sym "," st with
+    | Some st -> parse_nonempty st (name :: acc)
+    | None ->
+        let st = need_sym ")" st in
+        (List.rev (name :: acc), st)
   in
-  match peek state with
-  | Sym ")" -> ([], advance state)
-  | Ident "void" ->
-      if peek (advance state) = Sym ")" then ([], advance (advance state))
-      else parse_nonempty state []
-  | _ -> parse_nonempty state []
+  match take_sym ")" state with
+  | Some state -> ([], state)
+  | None -> (
+      match take_keyword "void" state with
+      | Some state_after_void -> (
+          match take_sym ")" state_after_void with
+          | Some state -> ([], state)
+          | None -> parse_nonempty state [])
+      | None -> parse_nonempty state [])
+
+let parse_function_tail name params ret_type state =
+  match take_sym ";" state with
+  | Some state -> (None, state)
+  | None -> (
+      match take_sym "{" state with
+      | Some state ->
+          let body, state = parse_block state in
+          (Some { name; params; body; ret_type }, state)
+      | None -> raise (Parse_error "expected function body"))
 
 let parse_function state =
   let ret_type, state = parse_type state in
   let name, state = need_ident state in
   let params, state = parse_params state in
-  match peek state with
-  | Sym ";" -> (None, advance state)
-  | Sym "{" ->
-      let body, state = parse_block (advance state) in
-      (Some { name; params; body; ret_type }, state)
-  | _ -> raise (Parse_error "expected function body")
+  parse_function_tail name params ret_type state
 
 type external_decl = ExternalFunc of func option | ExternalGlobal of global_decl
 
 let parse_external_decl state =
   let ty, state = parse_type state in
   let name, state = need_ident state in
-  match peek state with
-  | Sym "(" ->
+  match take_sym "(" state with
+  | Some _ ->
       let params, state = parse_params state in
-      (match peek state with
-      | Sym ";" -> (ExternalFunc None, advance state)
-      | Sym "{" ->
-          let body, state = parse_block (advance state) in
-          (ExternalFunc (Some { name; params; body; ret_type = ty }), state)
-      | _ -> raise (Parse_error "expected function body"))
-  | _ ->
+      let func, state = parse_function_tail name params ty state in
+      (ExternalFunc func, state)
+  | None ->
       let name, init, array_size, state = parse_decl_suffix name state in
       let state = need_sym ";" state in
       (ExternalGlobal { global_type = ty; global_name = name; global_init = init; global_array_size = array_size }, state)

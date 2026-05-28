@@ -54,7 +54,9 @@ operators routed through optional symbol adapters. Statement parsing is now an
 ordered local parser-alternative list for typedefs, enums, blocks, returns,
 conditionals, loops, gotos, breaks, labels, and empty statements, and simple
 identifier-led statements use shared tail parsers for assignment, update, and
-call forms. The source avoids newer OCaml-only conveniences such as
+call forms. Parameter-list delimiters and function/prototype/body tails are
+also parsed through shared symbol adapters. The source avoids newer OCaml-only
+conveniences such as
 `List.find_opt` / `Option.is_some` in favor of small local ML helpers. This
 keeps the host compiler easy to run with `ocamlc` while making the code closer
 to the subset that should later be ported into the mini-ML `ccc.ml`.
