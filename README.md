@@ -37,6 +37,16 @@ Debug alternatives are separate targets:
 
 These are useful for testing but are not seed-only compiler paths.
 
+## Downstream overlay
+
+Import nixpkgs with `blynn-bootstrap.nixpkgsArgs.default system` to select
+this flake's stage0/M2-rooted compiler and libc through `replaceStdenv`.
+This retains nixpkgs' surrounding build environment; it is not a complete
+seed-only stdenv. `overlays.default` replaces `minimal-bootstrap` and exposes
+`pkgs.blynn-bootstrap`; use `overlays.packages` for only the namespace.
+The exported `trustRoots.m2.precisely.m2` packages retain the trust boundaries
+below. Later GCC/glibc targets are not claimed as verified overlay builds.
+
 ## Trust boundary
 
 The compiler path is not the entire build environment:
