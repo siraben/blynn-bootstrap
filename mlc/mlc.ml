@@ -448,6 +448,9 @@ let rec p_try_char input =
   let (got, pos) = peeked in
   if got == want then p_ok (got, pos + 1) else p_err pos
 in
+let rec p_has_char input =
+  p_is_ok (p_try_char input)
+in
 let rec p_bind_char_keep input =
   let (reply, pair) = input in
   let (src, want) = pair in
@@ -627,16 +630,19 @@ let rec is_bytes_length_at input =
 in
 let rec starts_string_literal_expr input =
   let (src, pos0) = input in
-  let pos = skip_space (src, pos0) in
-  if src.[pos] == '"' then 1 else
-  if src.[pos] == '(' then starts_string_literal_expr (src, pos + 1) else 0
+  if p_has_char (src, (pos0, '"')) == 1 then 1 else
+  let opened = p_optional_char_pos (src, (pos0, '(')) in
+  let (has_opened, opened_pos) = opened in
+  if has_opened == 1 then starts_string_literal_expr (src, opened_pos) else 0
 in
 let rec starts_int_literal_expr input =
   let (src, pos0) = input in
   let pos = skip_space (src, pos0) in
   if is_digit (src.[pos]) then 1 else
-  if src.[pos] == '\'' then 1 else
-  if src.[pos] == '(' then starts_int_literal_expr (src, pos + 1) else 0
+  if p_has_char (src, (pos, '\'')) == 1 then 1 else
+  let opened = p_optional_char_pos (src, (pos, '(')) in
+  let (has_opened, opened_pos) = opened in
+  if has_opened == 1 then starts_int_literal_expr (src, opened_pos) else 0
 in
 let rec is_string_length_at input =
   let (src, pos0) = input in
@@ -792,10 +798,14 @@ let rec parse_case_payload input =
   let (pos0, has_arg) = pair in
   let pos = skip_space (src, pos0) in
   if has_arg == 1 then
-    if src.[pos] == '(' then
-      let first_pos = skip_space (src, pos + 1) in
-      if src.[first_pos] == '(' then
-        let bind1_parsed = parse_ident (src, first_pos + 1) in
+    let opened = p_optional_char_pos (src, (pos, '(')) in
+    let (has_opened, open_pos) = opened in
+    if has_opened == 1 then
+      let first_pos = skip_space (src, open_pos) in
+      let nested_left = p_optional_char_pos (src, (first_pos, '(')) in
+      let (has_nested_left, nested_left_pos) = nested_left in
+      if has_nested_left == 1 then
+        let bind1_parsed = parse_ident (src, nested_left_pos) in
         let (bind1, bind1_end0) = bind1_parsed in
         let after_comma1 = p_need_char (src, (bind1_end0, ',')) in
         let bind2_parsed = parse_ident (src, after_comma1) in
@@ -811,8 +821,10 @@ let rec parse_case_payload input =
         let (bind1, bind1_end0) = bind1_parsed in
         let second_pos = p_need_char (src, (bind1_end0, ',')) in
         let second_pos = skip_space (src, second_pos) in
-        if src.[second_pos] == '(' then
-          let bind2_parsed = parse_ident (src, second_pos + 1) in
+        let nested_right = p_optional_char_pos (src, (second_pos, '(')) in
+        let (has_nested_right, nested_right_pos) = nested_right in
+        if has_nested_right == 1 then
+          let bind2_parsed = parse_ident (src, nested_right_pos) in
           let (bind2, bind2_end0) = bind2_parsed in
           let after_comma2 = p_need_char (src, (bind2_end0, ',')) in
           let bind3_parsed = parse_ident (src, after_comma2) in

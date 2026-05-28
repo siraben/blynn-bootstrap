@@ -94,6 +94,8 @@ These can move directly into `mlc.ml` because stage 02 already compiles them:
 - Keyword predicate helpers now use `p_has_keyword`, and variant-constructor
   `|` separators are consumed with `p_optional_char_pos` rather than raw
   source-byte probes.
+- Expression-start lookahead and constructor payload tuple parsing now use
+  `p_has_char` / `p_optional_char_pos` for quoted and parenthesized forms.
 
 ## Promote before use
 
