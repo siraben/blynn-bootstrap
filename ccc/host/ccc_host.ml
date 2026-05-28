@@ -685,24 +685,34 @@ let parse_simple_no_semi state =
         (match tok with
         | Ident name -> (
             let state1 = advance state in
-            match peek state1 with
-            | Sym "=" ->
-                let expr, st = parse_expr (advance state1) in
+            match take_sym "=" state1 with
+            | Some st ->
+                let expr, st = parse_expr st in
                 (SAssign (name, expr), st)
-            | Sym "+=" ->
-                let expr, st = parse_expr (advance state1) in
-                (SAugAssign (name, Add, expr), st)
-            | Sym "-=" ->
-                let expr, st = parse_expr (advance state1) in
-                (SAugAssign (name, Sub, expr), st)
-            | Sym "++" -> (SPost (name, 1), advance state1)
-            | Sym "--" -> (SPost (name, -1), advance state1)
-            | Sym "(" ->
-                let args, st = parse_arg_list (advance state1) in
-                (SExpr (ECall (name, args)), st)
-            | _ ->
-                let expr, st = parse_expr state in
-                (SExpr expr, st))
+            | None -> (
+                match take_sym "+=" state1 with
+                | Some st ->
+                    let expr, st = parse_expr st in
+                    (SAugAssign (name, Add, expr), st)
+                | None -> (
+                    match take_sym "-=" state1 with
+                    | Some st ->
+                        let expr, st = parse_expr st in
+                        (SAugAssign (name, Sub, expr), st)
+                    | None -> (
+                        match take_sym "++" state1 with
+                        | Some st -> (SPost (name, 1), st)
+                        | None -> (
+                            match take_sym "--" state1 with
+                            | Some st -> (SPost (name, -1), st)
+                            | None -> (
+                                match take_sym "(" state1 with
+                                | Some st ->
+                                    let args, st = parse_arg_list st in
+                                    (SExpr (ECall (name, args)), st)
+                                | None ->
+                                    let expr, st = parse_expr state in
+                                    (SExpr expr, st)))))))
         | _ ->
             let expr, st = parse_expr state in
             (SExpr expr, st))
