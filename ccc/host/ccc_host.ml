@@ -921,12 +921,11 @@ let parse_struct_definition state =
   let name, state = need_ident state in
   let state = need_sym "{" state in
   let rec loop st acc =
-    match peek st with
-    | Sym "}" ->
-        let st = advance st in
+    match take_sym "}" st with
+    | Some st ->
         let st = need_sym ";" st in
         (build_struct_layout name (List.rev acc), st)
-    | _ ->
+    | None ->
         let ty, st = parse_type st in
         let field, st = need_ident st in
         let array_size, st =
@@ -958,9 +957,9 @@ let parse_typedef_struct_definition state =
   in
   let state = need_sym "{" state in
   let rec fields st acc =
-    match peek st with
-    | Sym "}" -> (List.rev acc, advance st)
-    | _ ->
+    match take_sym "}" st with
+    | Some st -> (List.rev acc, st)
+    | None ->
         let ty, st = parse_type st in
         let field, st = need_ident st in
         let array_size, st =
