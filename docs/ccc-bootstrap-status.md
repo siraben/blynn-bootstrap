@@ -45,8 +45,9 @@ parser `take`, `take_sym` / `take_keyword` / value-preserving `take_ident`
 adapters, and shared array-suffix parsing for declarations and struct fields,
 with identifier-led simple statement tails, expression-list delimiters, enum
 declaration delimiters, and struct field-list terminators parsed through
-optional symbol adapters, and the source avoids newer OCaml-only conveniences
-such as
+optional symbol adapters, and shared C type parsing consumes keyword choices
+through parser adapters instead of raw token advancement. The source avoids
+newer OCaml-only conveniences such as
 `List.find_opt` / `Option.is_some` in favor of small local ML helpers. This
 keeps the host compiler easy to run with `ocamlc` while making the code closer
 to the subset that should later be ported into the mini-ML `ccc.ml`.

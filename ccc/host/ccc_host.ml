@@ -228,6 +228,10 @@ let need_sym text state =
   let _, state = need (expect_sym text) state in
   state
 
+let need_keyword text state =
+  let _, state = need (expect_keyword text) state in
+  state
+
 let need_ident state =
   need expect_ident state
 
@@ -350,6 +354,14 @@ let rec starts_type tok =
 let option_is_some value =
   match value with Some _ -> true | None -> false
 
+let rec take_keyword_type choices state =
+  match choices with
+  | [] -> None
+  | (word, ty) :: rest -> (
+      match take_keyword word state with
+      | Some state -> Some (ty, state)
+      | None -> take_keyword_type rest state)
+
 let rec parse_type state =
   let rec qualifiers st =
     match take_keyword "static" st with
@@ -359,43 +371,61 @@ let rec parse_type state =
         | Some st -> qualifiers st
         | None -> st)
   in
+  let signed_suffix st =
+    match take_keyword_type [ ("char", TSignedChar); ("short", TShort); ("int", TInt) ] st with
+    | Some result -> result
+    | None -> (TInt, st)
+  in
+  let unsigned_suffix st =
+    match take_keyword_type [ ("char", TUnsignedChar); ("short", TUnsignedShort) ] st with
+    | Some result -> result
+    | None -> (
+        match take_keyword "long" st with
+        | Some st -> (
+            match take_keyword "long" st with
+            | Some st -> (TUnsignedLongLong, st)
+            | None -> (TUnsignedLong, st))
+        | None -> (
+            match take_keyword "int" st with
+            | Some st -> (TUnsigned, st)
+            | None -> (TUnsigned, st)))
+  in
+  let long_suffix st =
+    match take_keyword "long" st with
+    | Some st -> (TLongLong, st)
+    | None -> (
+        match take_keyword "double" st with
+        | Some st -> (TLongDouble, st)
+        | None -> (TLong, st))
+  in
+  let struct_type st =
+    match take_ident st with
+    | Some (name, st) -> (TOther ("struct " ^ name), st)
+    | None -> (TOther "struct", st)
+  in
+  let named_type st =
+    let name, st = need_ident st in
+    (TOther name, st)
+  in
+  let plain_type st =
+    match take_keyword_type [ ("char", TChar); ("int", TInt); ("void", TVoid); ("_Bool", TBool); ("short", TShort); ("double", TDouble) ] st with
+    | Some result -> result
+    | None -> (
+        match take_keyword "long" st with
+        | Some st -> long_suffix st
+        | None -> (
+            match take_keyword "struct" st with
+            | Some st -> struct_type st
+            | None -> named_type st))
+  in
   let state = qualifiers state in
   let base, state =
-    match peek state with
-    | Ident "signed" ->
-        let st = advance state in
-        (match peek st with
-        | Ident "char" -> (TSignedChar, advance st)
-        | Ident "short" -> (TShort, advance st)
-        | Ident "int" -> (TInt, advance st)
-        | _ -> (TInt, st))
-    | Ident "unsigned" ->
-        let st = advance state in
-        (match peek st with
-        | Ident "char" -> (TUnsignedChar, advance st)
-        | Ident "short" -> (TUnsignedShort, advance st)
-        | Ident "long" ->
-            let st = advance st in
-            (match peek st with Ident "long" -> (TUnsignedLongLong, advance st) | _ -> (TUnsignedLong, st))
-        | Ident "int" -> (TUnsigned, advance st)
-        | _ -> (TUnsigned, st))
-    | Ident "char" -> (TChar, advance state)
-    | Ident "int" -> (TInt, advance state)
-    | Ident "void" -> (TVoid, advance state)
-    | Ident "_Bool" -> (TBool, advance state)
-    | Ident "short" -> (TShort, advance state)
-    | Ident "long" ->
-        let st = advance state in
-        (match peek st with
-        | Ident "long" -> (TLongLong, advance st)
-        | Ident "double" -> (TLongDouble, advance st)
-        | _ -> (TLong, st))
-    | Ident "double" -> (TDouble, advance state)
-    | Ident "struct" ->
-        let st = advance state in
-        (match take_ident st with Some (name, st) -> (TOther ("struct " ^ name), st) | None -> (TOther "struct", st))
-    | Ident name -> (TOther name, advance state)
-    | _ -> raise (Parse_error "expected type")
+    match take_keyword "signed" state with
+    | Some st -> signed_suffix st
+    | None -> (
+        match take_keyword "unsigned" state with
+        | Some st -> unsigned_suffix st
+        | None -> plain_type state)
   in
   let rec post_ptr_qualifiers st =
     match take_keyword "const" st with
@@ -612,11 +642,7 @@ let build_struct_layout name fields =
   loop 0 [] fields
 
 let parse_enum_decl state =
-  let state =
-    match peek state with
-    | Ident "enum" -> advance state
-    | _ -> raise (Parse_error "expected enum")
-  in
+  let state = need_keyword "enum" state in
   let state =
     match take_ident state with
     | Some (_, state) -> state
@@ -913,11 +939,7 @@ let parse_external_decl state =
       (ExternalGlobal { global_type = ty; global_name = name; global_init = init; global_array_size = array_size }, state)
 
 let parse_struct_definition state =
-  let state =
-    match peek state with
-    | Ident "struct" -> advance state
-    | _ -> raise (Parse_error "expected struct")
-  in
+  let state = need_keyword "struct" state in
   let name, state = need_ident state in
   let state = need_sym "{" state in
   let rec loop st acc =
@@ -937,16 +959,8 @@ let parse_struct_definition state =
   loop state []
 
 let parse_typedef_struct_definition state =
-  let state =
-    match peek state with
-    | Ident "typedef" -> advance state
-    | _ -> raise (Parse_error "expected typedef")
-  in
-  let state =
-    match peek state with
-    | Ident "struct" -> advance state
-    | _ -> raise (Parse_error "expected struct")
-  in
+  let state = need_keyword "typedef" state in
+  let state = need_keyword "struct" state in
   let tag, state =
     match take_ident state with
     | Some (name, state) -> (name, state)
