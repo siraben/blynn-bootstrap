@@ -675,16 +675,22 @@ and parse_binop min_prec state =
   parse_binop_tail min_prec lhs state
 
 and parse_binop_tail min_prec lhs state =
-  match peek state with
-  | Sym op -> (
-      match binop_of op with
-      | Some (op, prec) ->
-          if prec >= min_prec then
-            let rhs, state2 = parse_binop (prec + 1) (advance state) in
-            parse_binop_tail min_prec (EBinary (op, lhs, rhs)) state2
-          else (lhs, state)
-      | None -> (lhs, state))
-  | _ -> (lhs, state)
+  let expect_binop =
+    satisfy
+      (fun tok ->
+        match tok with
+        | Sym op -> (
+            match binop_of op with
+            | Some (op, prec) -> if prec >= min_prec then Some (op, prec) else None
+            | None -> None)
+        | _ -> None)
+      "expected binary operator"
+  in
+  match take_value expect_binop state with
+  | Some ((op, prec), state) ->
+      let rhs, state = parse_binop (prec + 1) state in
+      parse_binop_tail min_prec (EBinary (op, lhs, rhs)) state
+  | None -> (lhs, state)
 
 let layout_scalar_size ty =
   match ty with
