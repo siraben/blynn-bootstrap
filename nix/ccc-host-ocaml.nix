@@ -105,6 +105,7 @@ DEFINE SYSCALL 0F05
     check_return ${testsRoot}/hcc/m1-smoke/examples/bootstrap-qsort-pointer.c 0
     check_return ${testsRoot}/hcc/m1-smoke/examples/sizeof-member-array-bound.c 0
     check_return ${testsRoot}/hcc/m1-smoke/examples/do-while.c 3
+    check_return ${testsRoot}/hcc/m1-smoke/examples/continue.c 42
     check_return ${testsRoot}/hcc/scalar-immediate-smoke.c 0
     check_return ${testsRoot}/hcc/parse-smoke.c 0
 

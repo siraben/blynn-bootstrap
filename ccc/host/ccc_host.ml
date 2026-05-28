@@ -342,6 +342,7 @@ type stmt =
   | Goto of string
   | Label of string
   | Break
+  | ContinueStmt
   | Block of stmt list
 
 type func = { name : string; params : string list; body : stmt list; ret_type : c_type }
@@ -974,6 +975,13 @@ let rec parse_stmt state =
         let st = need_sym ";" st in
         Some (Break, st)
   in
+  let continue_stmt st =
+    match take_keyword "continue" st with
+    | None -> None
+    | Some st ->
+        let st = need_sym ";" st in
+        Some (ContinueStmt, st)
+  in
   let label_stmt st =
     match take_ident st with
     | Some (name, st1) -> (
@@ -1000,6 +1008,7 @@ let rec parse_stmt state =
         for_stmt;
         goto_stmt;
         break_stmt;
+        continue_stmt;
         label_stmt;
         empty_stmt;
       ]
@@ -1330,7 +1339,7 @@ let assoc_decl_full text array bytes ty name value env =
 let assoc_decl_value ty name value env =
   assoc_decl_full None None None ty name value env
 
-type control = Continue of env | Returned of value | Jumped of string * env | Broke of env
+type control = Continue of env | Returned of value | Jumped of string * env | Broke of env | Continued of env
 
 let string_byte text pos =
   if pos < 0 || pos >= String.length text then 0 else Char.code text.[pos]
@@ -1769,6 +1778,7 @@ and eval_func funcs structs globals name args =
   | Continue _ -> VInt 0
   | Jumped (label, _) -> fail ("unresolved goto: " ^ label)
   | Broke _ -> fail "break outside loop"
+  | Continued _ -> fail "continue outside loop"
 
 and exec_simple funcs structs globals env simple =
   match simple with
@@ -1872,11 +1882,13 @@ and exec_stmt funcs structs globals env stmt =
   | Goto label -> Jumped (label, env)
   | Label _ -> Continue env
   | Break -> Broke env
+  | ContinueStmt -> Continued env
   | Block body -> (
       match exec_block funcs structs globals body env with
       | Continue _ -> Continue env
       | Jumped (label, _) -> Jumped (label, env)
       | Broke _ -> Broke env
+      | Continued _ -> Continued env
       | Returned _ as ret -> ret)
   | If (cond, yes, no) ->
       if truth_value (eval_value funcs structs globals env cond) then exec_stmt funcs structs globals env yes
@@ -1887,6 +1899,7 @@ and exec_stmt funcs structs globals env stmt =
         if truth_value (eval_value funcs structs globals env cond) then
           match exec_stmt funcs structs globals env body with
           | Continue env' -> loop env'
+          | Continued env' -> loop env'
           | Broke env' -> Continue env'
           | other -> other
         else Continue env
@@ -1896,6 +1909,7 @@ and exec_stmt funcs structs globals env stmt =
       let rec loop env =
         match exec_stmt funcs structs globals env body with
         | Continue env' -> if truth_value (eval_value funcs structs globals env' cond) then loop env' else Continue env'
+        | Continued env' -> if truth_value (eval_value funcs structs globals env' cond) then loop env' else Continue env'
         | Broke env' -> Continue env'
         | other -> other
       in
@@ -1907,6 +1921,9 @@ and exec_stmt funcs structs globals env stmt =
         if go then
           match exec_stmt funcs structs globals env body with
           | Continue env' ->
+              let env'' = match post with Some s -> exec_simple funcs structs globals env' s | None -> env' in
+              loop env''
+          | Continued env' ->
               let env'' = match post with Some s -> exec_simple funcs structs globals env' s | None -> env' in
               loop env''
           | Broke env' -> Continue env'
@@ -1934,6 +1951,7 @@ and exec_block funcs structs globals stmts env =
       | Jumped (label, env') -> (
           match label_index label with Some j -> run_at j env' | None -> Jumped (label, env'))
       | Broke _ as broke -> broke
+      | Continued _ as continued -> continued
       | Returned _ as ret -> ret
   in
   run_at 0 env
