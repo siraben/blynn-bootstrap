@@ -482,6 +482,9 @@ let rec p_try_keyword input =
   let pos = skip_space (src, pos0) in
   if keyword_at (src, (pos, text)) == 1 then p_ok (0, pos + String.length text) else p_err pos
 in
+let rec p_has_keyword input =
+  p_is_ok (p_try_keyword input)
+in
 let rec p_try_number input =
   let (src, pos0) = input in
   let pos = skip_space (src, pos0) in
@@ -568,59 +571,59 @@ let rec parse_char input =
 in
 let rec is_type_at input =
   let (src, pos0) = input in
-  p_is_ok (p_try_keyword (src, (pos0, "type")))
+  p_has_keyword (src, (pos0, "type"))
 in
 let rec is_of_at input =
   let (src, pos0) = input in
-  p_is_ok (p_try_keyword (src, (pos0, "of")))
+  p_has_keyword (src, (pos0, "of"))
 in
 let rec is_match_at input =
   let (src, pos0) = input in
-  p_is_ok (p_try_keyword (src, (pos0, "match")))
+  p_has_keyword (src, (pos0, "match"))
 in
 let rec is_write_byte_at input =
   let (src, pos0) = input in
-  p_is_ok (p_try_keyword (src, (pos0, "write_byte")))
+  p_has_keyword (src, (pos0, "write_byte"))
 in
 let rec is_write_string_at input =
   let (src, pos0) = input in
-  p_is_ok (p_try_keyword (src, (pos0, "write_string")))
+  p_has_keyword (src, (pos0, "write_string"))
 in
 let rec is_debug_byte_at input =
   let (src, pos0) = input in
-  p_is_ok (p_try_keyword (src, (pos0, "debug_byte")))
+  p_has_keyword (src, (pos0, "debug_byte"))
 in
 let rec is_debug_string_at input =
   let (src, pos0) = input in
-  p_is_ok (p_try_keyword (src, (pos0, "debug_string")))
+  p_has_keyword (src, (pos0, "debug_string"))
 in
 let rec is_debug_printf_at input =
   let (src, pos0) = input in
-  p_is_ok (p_try_keyword (src, (pos0, "debug_printf")))
+  p_has_keyword (src, (pos0, "debug_printf"))
 in
 let rec is_debug_int_at input =
   let (src, pos0) = input in
-  p_is_ok (p_try_keyword (src, (pos0, "debug_int")))
+  p_has_keyword (src, (pos0, "debug_int"))
 in
 let rec is_if_at input =
   let (src, pos0) = input in
-  p_is_ok (p_try_keyword (src, (pos0, "if")))
+  p_has_keyword (src, (pos0, "if"))
 in
 let rec is_exit_at input =
   let (src, pos0) = input in
-  p_is_ok (p_try_keyword (src, (pos0, "exit")))
+  p_has_keyword (src, (pos0, "exit"))
 in
 let rec is_read_byte_at input =
   let (src, pos0) = input in
-  p_is_ok (p_try_keyword (src, (pos0, "read_byte")))
+  p_has_keyword (src, (pos0, "read_byte"))
 in
 let rec is_bytes_create_at input =
   let (src, pos0) = input in
-  p_is_ok (p_try_keyword (src, (pos0, "Bytes.create")))
+  p_has_keyword (src, (pos0, "Bytes.create"))
 in
 let rec is_bytes_length_at input =
   let (src, pos0) = input in
-  p_is_ok (p_try_keyword (src, (pos0, "Bytes.length")))
+  p_has_keyword (src, (pos0, "Bytes.length"))
 in
 let rec starts_string_literal_expr input =
   let (src, pos0) = input in
@@ -637,43 +640,43 @@ let rec starts_int_literal_expr input =
 in
 let rec is_string_length_at input =
   let (src, pos0) = input in
-  p_is_ok (p_try_keyword (src, (pos0, "String.length")))
+  p_has_keyword (src, (pos0, "String.length"))
 in
 let rec is_cell_create_at input =
   let (src, pos0) = input in
-  p_is_ok (p_try_keyword (src, (pos0, "Cell.create")))
+  p_has_keyword (src, (pos0, "Cell.create"))
 in
 let rec is_cell_get_at input =
   let (src, pos0) = input in
-  p_is_ok (p_try_keyword (src, (pos0, "Cell.get")))
+  p_has_keyword (src, (pos0, "Cell.get"))
 in
 let rec is_cell_set_at input =
   let (src, pos0) = input in
-  p_is_ok (p_try_keyword (src, (pos0, "Cell.set")))
+  p_has_keyword (src, (pos0, "Cell.set"))
 in
 let rec is_then_at input =
   let (src, pos0) = input in
-  p_is_ok (p_try_keyword (src, (pos0, "then")))
+  p_has_keyword (src, (pos0, "then"))
 in
 let rec is_else_at input =
   let (src, pos0) = input in
-  p_is_ok (p_try_keyword (src, (pos0, "else")))
+  p_has_keyword (src, (pos0, "else"))
 in
 let rec is_let_at input =
   let (src, pos0) = input in
-  p_is_ok (p_try_keyword (src, (pos0, "let")))
+  p_has_keyword (src, (pos0, "let"))
 in
 let rec is_in_at input =
   let (src, pos0) = input in
-  p_is_ok (p_try_keyword (src, (pos0, "in")))
+  p_has_keyword (src, (pos0, "in"))
 in
 let rec is_rec_at input =
   let (src, pos0) = input in
-  p_is_ok (p_try_keyword (src, (pos0, "rec")))
+  p_has_keyword (src, (pos0, "rec"))
 in
 let rec is_and_at input =
   let (src, pos0) = input in
-  p_is_ok (p_try_keyword (src, (pos0, "and")))
+  p_has_keyword (src, (pos0, "and"))
 in
 let rec expect_with input =
   let (src, pos0) = input in
@@ -688,7 +691,9 @@ let rec parse_type_ctors state =
   let (pos0, pair2) = pair in
   let (tag, ctors) = pair2 in
   let pos1 = skip_space (src, pos0) in
-  let pos = if src.[pos1] == '|' then skip_space (src, pos1 + 1) else pos1 in
+  let bar = p_optional_char_pos (src, (pos1, '|')) in
+  let (has_bar, bar_pos) = bar in
+  let pos = if has_bar == 1 then bar_pos else pos1 in
   let parsed = parse_ident (src, pos) in
   let (name, after_name) = parsed in
   let after_ctor = skip_space (src, after_name) in
@@ -698,10 +703,14 @@ let rec parse_type_ctors state =
     let _ = dummy in
     let next_ctors = extend_ctor (name, (pack_ctor (tag, 1), ctors)) in
     let next = skip_space (src, after_type) in
-    if src.[next] == '|' then parse_type_ctors (src, (next, (tag + 1, next_ctors))) else (next, next_ctors)
+    let bar = p_optional_char_pos (src, (next, '|')) in
+    let (has_bar, bar_pos) = bar in
+    if has_bar == 1 then parse_type_ctors (src, (bar_pos, (tag + 1, next_ctors))) else (next, next_ctors)
   else
     let next_ctors = extend_ctor (name, (pack_ctor (tag, 0), ctors)) in
-    if src.[after_ctor] == '|' then parse_type_ctors (src, (after_ctor, (tag + 1, next_ctors))) else (after_ctor, next_ctors)
+    let bar = p_optional_char_pos (src, (after_ctor, '|')) in
+    let (has_bar, bar_pos) = bar in
+    if has_bar == 1 then parse_type_ctors (src, (bar_pos, (tag + 1, next_ctors))) else (after_ctor, next_ctors)
 in
 let rec parse_record_fields state =
   let (src, pair) = state in

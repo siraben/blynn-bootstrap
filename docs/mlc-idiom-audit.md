@@ -91,6 +91,9 @@ These can move directly into `mlc.ml` because stage 02 already compiles them:
 - Optional top-level `in` probes now go through `p_optional_end_pos`, and the
   record field parser uses `p_need_char` for the required closing `}` instead
   of open-coding a try/force path.
+- Keyword predicate helpers now use `p_has_keyword`, and variant-constructor
+  `|` separators are consumed with `p_optional_char_pos` rather than raw
+  source-byte probes.
 
 ## Promote before use
 
