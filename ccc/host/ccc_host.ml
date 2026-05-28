@@ -1207,6 +1207,11 @@ let rec eval_enum_expr env expr =
   | EVar name -> assoc_int name env
   | EBinary (Add, a, b) -> eval_enum_expr env a + eval_enum_expr env b
   | EBinary (Sub, a, b) -> eval_enum_expr env a - eval_enum_expr env b
+  | EBinary (Mul, a, b) -> eval_enum_expr env a * eval_enum_expr env b
+  | EBinary (Div, a, b) -> eval_enum_expr env a / eval_enum_expr env b
+  | EBinary (Mod, a, b) -> eval_enum_expr env a mod eval_enum_expr env b
+  | EBinary (Shl, a, b) -> shift_left_u32 (eval_enum_expr env a) (eval_enum_expr env b)
+  | EBinary (Shr, a, b) -> shift_right_u32 (eval_enum_expr env a) (eval_enum_expr env b)
   | EUnary (Neg, e) -> - eval_enum_expr env e
   | _ -> fail "unsupported enum initializer"
 
