@@ -77,8 +77,10 @@ floating constants, `float` casts/declarations, adjacent string literal
 concatenation, multidimensional arrays, lowercase typedef-shaped locals,
 anonymous local unions, uppercase function-like calls, nested tagged struct
 field declarations, and suffix-named assignments. The HCC-expanded TinyCC
-source now reaches evaluation and next stops at `main` argument binding
-(`wrong argument count: main`), not at a parser error.
+source now parses fully, initializes globals, evaluates `main` with synthetic
+empty `argc` / null `argv`, and emits deterministic M1 for the resulting exit
+status. This is still evaluator execution of TinyCC's empty-argument path, not
+a TinyCC self-host handoff.
 
 ## Supporting Artifacts
 

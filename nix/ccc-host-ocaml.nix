@@ -199,6 +199,20 @@ DEFINE SYSCALL 0F05
     check_return nested-struct-field-type.c 42
     printf '%s\n' 'int main(void) { int ret_t = 0; ret_t = 42; return ret_t; }' > suffix-name-assignment.c
     check_return suffix-name-assignment.c 42
+    printf '%s\n' 'int main(int argc) { return argc == 0 ? 42 : 1; }' > argc-main.c
+    check_return argc-main.c 42
+    printf '%s\n' 'int main(int argc, char **argv) { return argc == 0 && argv == 0 ? 42 : 1; }' > argc-argv-main.c
+    check_return argc-argv-main.c 42
+    printf '%s\n' 'int main(int argc, char *argv[]) { return argc == 0 && argv == 0 ? 42 : 1; }' > argc-argv-array-main.c
+    check_return argc-argv-array-main.c 42
+    printf '%s\n' 'int forty_two(void) { return 42; }' 'static int (*entry)(void) = forty_two;' 'int main(void) { return entry(); }' > global-function-pointer.c
+    check_return global-function-pointer.c 42
+    printf '%s\n' 'void *malloc(unsigned long);' 'void *memset(void *, int, unsigned long);' 'unsigned long strlen(char *);' 'int main(void) { char *p = malloc(4); memset(p, 65, 3); p[3] = 0; return strlen(p) == 3 && p[0] == 65 ? 42 : 1; }' > libc-byte-allocation.c
+    check_return libc-byte-allocation.c 42
+    printf '%s\n' 'void *malloc(unsigned long);' 'typedef struct { int x; } Box;' 'int main(void) { Box *p = malloc(sizeof(Box)); p->x = 42; return p->x; }' > heap-struct-pointer.c
+    check_return heap-struct-pointer.c 42
+    printf '%s\n' 'void *malloc(unsigned long);' 'typedef struct { int x; } Box;' 'int main(void) { Box *p = malloc(sizeof(Box)); int *q = &p->x; *q = 42; return p->x; }' > heap-struct-field-address.c
+    check_return heap-struct-field-address.c 42
     printf '%s\n' '#ifdef MISSING' 'int main(void) { return 1; }' '#else' 'int main(void) { return 42; }' '#endif' > ifdef-missing-else.c
     check_return ifdef-missing-else.c 42
     printf '%s\n' '#define VALUE 42' '#ifndef VALUE' 'int main(void) { return 1; }' '#else' 'int main(void) { return VALUE; }' '#endif' > ifndef-defined-else.c
