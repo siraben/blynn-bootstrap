@@ -339,11 +339,13 @@ type stmt =
   | While of expr * stmt
   | DoWhile of stmt * expr
   | For of simple_stmt option * expr option * simple_stmt option * stmt
+  | Switch of expr * switch_case list
   | Goto of string
   | Label of string
   | Break
   | ContinueStmt
   | Block of stmt list
+and switch_case = SwitchCase of expr option * stmt list
 
 type func = { name : string; params : string list; body : stmt list; ret_type : c_type }
 type global_decl = { global_type : c_type; global_name : string; global_init : expr option; global_array_size : expr option }
@@ -960,6 +962,42 @@ let rec parse_stmt state =
         let body, st = parse_stmt st in
         Some (For (init, cond, post, body), st)
   in
+  let switch_stmt st =
+    match take_keyword "switch" st with
+    | None -> None
+    | Some st ->
+        let st = need_sym "(" st in
+        let value, st = parse_expr st in
+        let st = need_sym ")" st in
+        let st = need_sym "{" st in
+        let rec case_body st acc =
+          match peek st with
+          | Ident "case" | Ident "default" | Sym "}" -> (List.rev acc, st)
+          | _ ->
+              let stmt, st = parse_stmt st in
+              case_body st (stmt :: acc)
+        in
+        let rec cases st acc =
+          match take_sym "}" st with
+          | Some st -> (List.rev acc, st)
+          | None -> (
+              match take_keyword "case" st with
+              | Some st ->
+                  let label, st = parse_expr st in
+                  let st = need_sym ":" st in
+                  let body, st = case_body st [] in
+                  cases st (SwitchCase (Some label, body) :: acc)
+              | None -> (
+                  match take_keyword "default" st with
+                  | Some st ->
+                      let st = need_sym ":" st in
+                      let body, st = case_body st [] in
+                      cases st (SwitchCase (None, body) :: acc)
+                  | None -> raise (Parse_error "expected switch case")))
+        in
+        let cases, st = cases st [] in
+        Some (Switch (value, cases), st)
+  in
   let goto_stmt st =
     match take_keyword "goto" st with
     | None -> None
@@ -1006,6 +1044,7 @@ let rec parse_stmt state =
         while_stmt;
         do_stmt;
         for_stmt;
+        switch_stmt;
         goto_stmt;
         break_stmt;
         continue_stmt;
@@ -1931,6 +1970,32 @@ and exec_stmt funcs structs globals env stmt =
         else Continue env
       in
       loop env
+  | Switch (value, cases) ->
+      let switch_value = eval_expr funcs structs globals env value in
+      let rec select default cases =
+        match cases with
+        | [] -> (
+            match default with
+            | Some cases -> cases
+            | None -> [])
+        | (SwitchCase (label, _) as current) :: rest -> (
+            match label with
+            | Some expr ->
+                if eval_expr funcs structs globals env expr = switch_value then current :: rest else select default rest
+            | None -> select (Some (current :: rest)) rest)
+      in
+      let rec run cases env =
+        match cases with
+        | [] -> Continue env
+        | SwitchCase (_, body) :: rest -> (
+            match exec_block funcs structs globals body env with
+            | Continue env -> run rest env
+            | Broke env -> Continue env
+            | Jumped _ as jumped -> jumped
+            | Continued _ as continued -> continued
+            | Returned _ as returned -> returned)
+      in
+      run (select None cases) env
 
 and exec_block funcs structs globals stmts env =
   let label_index label =
