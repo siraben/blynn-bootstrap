@@ -225,6 +225,9 @@ let need_sym text state =
   let _, state = need (expect_sym text) state in
   state
 
+let need_ident state =
+  need expect_ident state
+
 let run parser tokens =
   match parser { tokens; pos = 0 } with
   | Consumed (ParserOk (value, _)) | Unconsumed (ParserOk (value, _)) -> value
@@ -502,19 +505,11 @@ and parse_postfix expr state =
       let state = need_sym "]" state in
       parse_postfix (EIndex (expr, index)) state
   | _, Sym "." ->
-      let name =
-        match peek (advance state) with
-        | Ident name -> name
-        | _ -> raise (Parse_error "expected field name")
-      in
-      parse_postfix (EMember (expr, name)) (advance (advance state))
+      let name, state = need_ident (advance state) in
+      parse_postfix (EMember (expr, name)) state
   | _, Sym "->" ->
-      let name =
-        match peek (advance state) with
-        | Ident name -> name
-        | _ -> raise (Parse_error "expected field name")
-      in
-      parse_postfix (EPtrMember (expr, name)) (advance (advance state))
+      let name, state = need_ident (advance state) in
+      parse_postfix (EPtrMember (expr, name)) state
   | _ -> (expr, state)
 
 and binop_of op =
@@ -646,12 +641,8 @@ let parse_decl_suffix name state =
   (name, init, array_size, state)
 
 let parse_decl_tail state =
-  let name =
-    match peek state with
-    | Ident name -> name
-    | _ -> raise (Parse_error "expected declaration name")
-  in
-  parse_decl_suffix name (advance state)
+  let name, state = need_ident state in
+  parse_decl_suffix name state
 
 let parse_decl_after_type state =
   let ty, state = parse_type state in
@@ -706,12 +697,8 @@ let rec parse_stmt state =
   match peek state with
   | Ident "typedef" ->
       let ty, state = parse_type (advance state) in
-      let name =
-        match peek state with
-        | Ident name -> name
-        | _ -> raise (Parse_error "expected typedef name")
-      in
-      let state = need_sym ";" (advance state) in
+      let name, state = need_ident state in
+      let state = need_sym ";" state in
       (Simple (STypeAlias (ty, name)), state)
   | Ident "enum" ->
       let constants, state = parse_enum_decl state in
@@ -788,8 +775,7 @@ let rec parse_stmt state =
       (For (init, cond, post, body), state)
   | Ident "goto" ->
       let state = advance state in
-      let name = match peek state with Ident name -> name | _ -> raise (Parse_error "expected label") in
-      let state = advance state in
+      let name, state = need_ident state in
       let state = need_sym ";" state in
       (Goto name, state)
   | Ident "break" ->
@@ -859,10 +845,7 @@ let parse_params state =
 
 let parse_function state =
   let ret_type, state = parse_type state in
-  let name =
-    match peek state with Ident name -> name | _ -> raise (Parse_error "expected function name")
-  in
-  let state = advance state in
+  let name, state = need_ident state in
   let params, state = parse_params state in
   match peek state with
   | Sym ";" -> (None, advance state)
@@ -875,8 +858,7 @@ type external_decl = ExternalFunc of func option | ExternalGlobal of global_decl
 
 let parse_external_decl state =
   let ty, state = parse_type state in
-  let name = match peek state with Ident name -> name | _ -> raise (Parse_error "expected function name") in
-  let state = advance state in
+  let name, state = need_ident state in
   match peek state with
   | Sym "(" ->
       let params, state = parse_params state in
@@ -897,12 +879,8 @@ let parse_struct_definition state =
     | Ident "struct" -> advance state
     | _ -> raise (Parse_error "expected struct")
   in
-  let name =
-    match peek state with
-    | Ident name -> name
-    | _ -> raise (Parse_error "expected struct name")
-  in
-  let state = need_sym "{" (advance state) in
+  let name, state = need_ident state in
+  let state = need_sym "{" state in
   let rec loop st acc =
     match peek st with
     | Sym "}" ->
@@ -911,19 +889,15 @@ let parse_struct_definition state =
         (build_struct_layout name (List.rev acc), st)
     | _ ->
         let ty, st = parse_type st in
-        let field =
-          match peek st with
-          | Ident name -> name
-          | _ -> raise (Parse_error "expected field name")
-        in
+        let field, st = need_ident st in
         let array_size, st =
-          match peek (advance st) with
+          match peek st with
           | Sym "[" ->
-              let st = advance (advance st) in
+              let st = advance st in
               let array_size, st = if peek st = Sym "]" then (None, st) else let expr, st = parse_expr st in (Some expr, st) in
               let st = need_sym "]" st in
               (array_size, st)
-          | _ -> (None, advance st)
+          | _ -> (None, st)
         in
         let st = need_sym ";" st in
         loop st ((field, ty, array_size) :: acc)
@@ -953,30 +927,22 @@ let parse_typedef_struct_definition state =
     | Sym "}" -> (List.rev acc, advance st)
     | _ ->
         let ty, st = parse_type st in
-        let field =
-          match peek st with
-          | Ident name -> name
-          | _ -> raise (Parse_error "expected field name")
-        in
+        let field, st = need_ident st in
         let array_size, st =
-          match peek (advance st) with
+          match peek st with
           | Sym "[" ->
-              let st = advance (advance st) in
+              let st = advance st in
               let array_size, st = if peek st = Sym "]" then (None, st) else let expr, st = parse_expr st in (Some expr, st) in
               let st = need_sym "]" st in
               (array_size, st)
-          | _ -> (None, advance st)
+          | _ -> (None, st)
         in
         let st = need_sym ";" st in
         fields st ((field, ty, array_size) :: acc)
   in
   let fields, state = fields state [] in
-  let alias =
-    match peek state with
-    | Ident name -> name
-    | _ -> raise (Parse_error "expected typedef alias")
-  in
-  let state = need_sym ";" (advance state) in
+  let alias, state = need_ident state in
+  let state = need_sym ";" state in
   let layout = build_struct_layout alias fields in
   let tag_layout = if tag = "" then None else Some { layout with struct_name = tag } in
   (tag_layout, layout, state)
