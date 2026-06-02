@@ -192,9 +192,7 @@ lowerUnreachableLabels stmts defaultTerm = case stmts of
     lowerUnreachableLabels rest defaultTerm
 
 maybeLowerSideEffect :: Maybe Expr -> CompileM [Instr]
-maybeLowerSideEffect value = case value of
-  Nothing -> pure []
-  Just expr -> lowerSideEffect expr
+maybeLowerSideEffect = maybe (pure []) lowerSideEffect
 
 lowerLoopConditionBlocks :: Maybe Expr -> BlockId -> BlockId -> BlockId -> CompileM [BasicBlock]
 lowerLoopConditionBlocks condExpr condId bodyId restId = case condExpr of
@@ -331,19 +329,13 @@ lowerIncDecSideEffect op target = do
 lowerDirectSideEffect :: String -> [Expr] -> CompileM [Instr]
 lowerDirectSideEffect name args = do
   lowered <- lowerExprs args
-  pure (lowerExprResultsInstrs lowered ++ [ICall Nothing name (lowerExprResultsOps lowered)])
+  pure (concatMap fst lowered ++ [ICall Nothing name (map snd lowered)])
 
 lowerIndirectSideEffect :: Expr -> [Expr] -> CompileM [Instr]
 lowerIndirectSideEffect callee args = do
   (calleeInstrs, calleeOp) <- lowerExpr callee
   lowered <- lowerExprs args
-  pure (calleeInstrs ++ lowerExprResultsInstrs lowered ++ [ICallIndirect Nothing calleeOp (lowerExprResultsOps lowered)])
-
-lowerExprResultsInstrs :: [([Instr], Operand)] -> [Instr]
-lowerExprResultsInstrs = concatMap fst
-
-lowerExprResultsOps :: [([Instr], Operand)] -> [Operand]
-lowerExprResultsOps = map snd
+  pure (calleeInstrs ++ concatMap fst lowered ++ [ICallIndirect Nothing calleeOp (map snd lowered)])
 
 lowerDecls :: [(CType, String, Maybe Expr)] -> CompileM [Instr]
 lowerDecls decls = case decls of
@@ -782,8 +774,8 @@ lowerDirectCallExpr :: String -> [Expr] -> CompileM ([Instr], Operand)
 lowerDirectCallExpr name args = do
   lowered <- lowerExprs args
   out <- freshTemp
-  let instrs = lowerExprResultsInstrs lowered
-  let ops = lowerExprResultsOps lowered
+  let instrs = concatMap fst lowered
+  let ops = map snd lowered
   pure (instrs ++ [ICall (Just out) name ops], OTemp out)
 
 lowerExprs :: [Expr] -> CompileM [([Instr], Operand)]
@@ -799,7 +791,7 @@ lowerIndirectCall callee args = do
   (calleeInstrs, calleeOp) <- lowerExpr callee
   lowered <- lowerExprs args
   out <- freshTemp
-  pure (calleeInstrs ++ lowerExprResultsInstrs lowered ++ [ICallIndirect (Just out) calleeOp (lowerExprResultsOps lowered)], OTemp out)
+  pure (calleeInstrs ++ concatMap fst lowered ++ [ICallIndirect (Just out) calleeOp (map snd lowered)], OTemp out)
 
 lowerLogicalAnd :: Expr -> Expr -> CompileM ([Instr], Operand)
 lowerLogicalAnd = lowerShortCircuit True
@@ -886,9 +878,7 @@ lowerPointerOffset op ptr offset elemTy = do
   (ptrInstrs, po) <- lowerExpr ptr
   (oi, oo) <- lowerExpr offset
   size <- typeSize elemTy
-  scaledResult <- scaledOffset oo size
-  let scaledInstrs = fst scaledResult
-  let scaledOp = snd scaledResult
+  (scaledInstrs, scaledOp) <- scaledOffset oo size
   out <- freshTemp
   pure (ptrInstrs ++ oi ++ scaledInstrs ++ [IBin out op po scaledOp], OTemp out)
 
@@ -958,22 +948,12 @@ lowerAssignment lhs rhs = do
 
 lowerCompoundAssignment :: String -> Expr -> Expr -> CompileM ([Instr], Operand)
 lowerCompoundAssignment op lhs rhs = do
-  lhsResult <- lowerLValue lhs
-  let lhsInstrs = fst lhsResult
-  let lvalue = snd lhsResult
-  readResult <- readLValue lvalue
-  let readInstrs = fst readResult
-  let currentOp = snd readResult
+  (lhsInstrs, lvalue) <- lowerLValue lhs
+  (readInstrs, currentOp) <- readLValue lvalue
   targetTy <- lValueType lvalue
-  rhsResult <- lowerExpr rhs
-  let rhsInstrs = fst rhsResult
-  let rhsOp = snd rhsResult
-  opResult <- compoundBinOp op targetTy currentOp rhs rhsOp
-  let opInstrs = fst opResult
-  let resultOp = snd opResult
-  coerceResult <- coerceScalar targetTy resultOp
-  let coerceInstrs = fst coerceResult
-  let coerceOp = snd coerceResult
+  (rhsInstrs, rhsOp) <- lowerExpr rhs
+  (opInstrs, resultOp) <- compoundBinOp op targetTy currentOp rhs rhsOp
+  (coerceInstrs, coerceOp) <- coerceScalar targetTy resultOp
   writeInstrs <- writeLValue lvalue coerceOp
   pure ( lhsInstrs ++ readInstrs ++ rhsInstrs ++ opInstrs ++ coerceInstrs ++ writeInstrs
        , coerceOp)
@@ -1169,9 +1149,7 @@ zeroObjectBytes dst offset remaining =
             | remaining >= word = word
             | remaining >= 4 = 4
             | otherwise = 1
-      dstResult <- offsetAddress dst offset
-      let dstInstrs = fst dstResult
-      let dstAddr = snd dstResult
+      (dstInstrs, dstAddr) <- offsetAddress dst offset
       let store
             | width == 8 = IStore64 dstAddr (OImm 0)
             | width == 4 = IStore32 dstAddr (OImm 0)
@@ -1441,9 +1419,7 @@ promoteMaybeIntegerType mty = case mty of
     pure (Just promoted)
 
 maybePtrType :: Maybe CType -> Maybe CType
-maybePtrType mty = case mty of
-  Nothing -> Nothing
-  Just ty -> Just (CPtr ty)
+maybePtrType = fmap CPtr
 
 functionResultType :: CType -> Maybe CType
 functionResultType ty = case ty of
@@ -1456,10 +1432,7 @@ isFunctionNameMacro name =
   name `elem` ["__func__", "__FUNCTION__", "__PRETTY_FUNCTION__"]
 
 maybeMemberType :: Maybe (CType, Int) -> Maybe CType
-maybeMemberType info = case info of
-  Nothing -> Nothing
-  Just pair -> case pair of
-    (ty, _) -> Just ty
+maybeMemberType = fmap fst
 
 addExprResultType :: Maybe CType -> Maybe CType -> CType -> Maybe CType
 addExprResultType leftTy rightTy arithmeticTy = case pointerElementType leftTy of
@@ -1605,7 +1578,7 @@ isIntegerTypeM ty = case ty of
   CUnsignedLongLong -> pure True
   CBool -> pure True
   CEnum _ -> pure True
-  CNamed name -> pure (case namedIntegerSize name of { Just _ -> True; Nothing -> False })
+  CNamed name -> pure (maybe False (const True) (namedIntegerSize name))
   _ -> pure False
 
 promoteIntegerType :: CType -> CompileM CType
@@ -2055,7 +2028,7 @@ isAggregateTypeM ty = case ty of
   CArray _ _ -> pure True
   CNamed _ -> do
     aggregate <- aggregateFields ty
-    pure (case aggregate of { Just _ -> True; Nothing -> False })
+    pure (maybe False (const True) aggregate)
   _ -> pure (isAggregateType ty)
 
 scalarData :: CType -> Int -> CompileM [DataValue]

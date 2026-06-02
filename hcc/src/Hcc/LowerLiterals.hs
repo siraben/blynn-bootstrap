@@ -10,9 +10,7 @@ import Literal
 import TypesIr
 
 constBinOp :: String -> Int -> Int -> Int
-constBinOp op a b = case evalConstBinOp op a b of
-  Just value -> value
-  Nothing -> 0
+constBinOp op a b = maybe 0 id (evalConstBinOp op a b)
 
 intConstOperand :: String -> Operand
 intConstOperand text = case parseIntBytes text of
