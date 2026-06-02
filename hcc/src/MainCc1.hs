@@ -71,9 +71,7 @@ writeM1Ir opts trace ast = do
       Right _ -> pure ()
 
 traceLine :: (String -> IO a) -> String -> IO ()
-traceLine trace msg = do
-  _ <- trace msg
-  pure ()
+traceLine trace msg = trace msg >> pure ()
 
 mapParseError :: Either ParseError a -> Either String a
 mapParseError (Left (ParseError pos msg)) = Left (showPos pos ++ ": " ++ msg)

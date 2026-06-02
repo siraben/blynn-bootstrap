@@ -93,11 +93,7 @@ parsePrimary = do
       tok <- pTake "empty constant expression"
       case constTokenKind tok of
         TokIdent "defined" -> parseDefinedOperator
-        TokIdent name -> do
-          env <- pEnv
-          pure (case lookup name env of
-            Just value -> value
-            Nothing -> 0)
+        TokIdent name -> maybe 0 id . lookup name <$> pEnv
         TokInt value -> pure (parseInt value)
         TokChar value -> pure (charValue value)
         _ -> pFail "unsupported token in constant expression"
