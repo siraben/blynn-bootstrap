@@ -137,13 +137,13 @@ takeDecimalNumber st =
   in (digits ++ fraction ++ exponentText ++ suffix, cls, st4)
 
 isIntSuffix :: Char -> Bool
-isIntSuffix c = elem c "uUlL"
+isIntSuffix c = c `elem` "uUlL"
 
 isNumberSuffix :: Char -> Bool
-isNumberSuffix c = elem c "uUlLfF"
+isNumberSuffix c = c `elem` "uUlLfF"
 
 isFloatSuffix :: Char -> Bool
-isFloatSuffix c = elem c "fFlL"
+isFloatSuffix c = c `elem` "fFlL"
 
 hasFloatSuffix :: String -> Bool
 hasFloatSuffix text = case text of
@@ -161,7 +161,7 @@ takeFraction st = case lsInput st of
 
 takeExponent :: String -> LexState -> (String, LexState)
 takeExponent markers st = case lsInput st of
-  c:rest | elem c markers ->
+  c:rest | c `elem` markers ->
     let st0 = advance c st { lsInput = rest }
         (signText, st1) = takeExponentSign st0
         (digits, st2) = takeWhileState isDigit st1

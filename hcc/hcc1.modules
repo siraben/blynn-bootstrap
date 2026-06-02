@@ -5,7 +5,6 @@ hcc:src/Hcc/Literal.hs
 hcc:src/Hcc/TypesAst.hs
 hcc:src/Hcc/TypesToken.hs
 hcc:src/Hcc/SymbolTable.hs
-hcc:src/Hcc/IntTable.hs
 hcc:src/Hcc/ScopeMap.hs
 hcc:src/Hcc/ParseLite.hs
 hcc:src/Hcc/Operators.hs

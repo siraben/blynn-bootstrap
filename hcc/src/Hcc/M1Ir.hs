@@ -176,7 +176,7 @@ emitFunctionIr write fn = case fn of
     write "E"
 
 emitBlocksIr :: (String -> IO ()) -> [BasicBlock] -> IO ()
-emitBlocksIr write blocks = mapM_ (emitBlockIr write) blocks
+emitBlocksIr write = mapM_ (emitBlockIr write)
 
 emitBlockIr :: (String -> IO ()) -> BasicBlock -> IO ()
 emitBlockIr write block = case block of
@@ -186,7 +186,7 @@ emitBlockIr write block = case block of
     write (terminatorIrLine term)
 
 emitInstrsIr :: (String -> IO ()) -> [Instr] -> IO ()
-emitInstrsIr write instrs = mapM_ (emitInstrIr write) instrs
+emitInstrsIr write = mapM_ (emitInstrIr write)
 
 emitInstrIr :: (String -> IO ()) -> Instr -> IO ()
 emitInstrIr write instr = case instr of
@@ -274,9 +274,7 @@ intListFieldsRest values = case values of
   value:rest -> ' ' : show value ++ intListFieldsRest rest
 
 maybeTempText :: Maybe Temp -> String
-maybeTempText maybeTemp = case maybeTemp of
-  Nothing -> "-"
-  Just temp -> tempText temp
+maybeTempText = maybe "-" tempText
 
 tempText :: Temp -> String
 tempText temp = case temp of

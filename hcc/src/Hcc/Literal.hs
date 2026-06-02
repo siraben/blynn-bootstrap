@@ -57,7 +57,7 @@ pow2 :: Int -> Int
 pow2 n = if n <= 0 then 1 else 2 * pow2 (n - 1)
 
 bitNotInt :: Int -> Int
-bitNotInt value = 0 - value - 1
+bitNotInt value = negate value - 1
 
 bitAndInt :: Int -> Int -> Int
 bitAndInt lhs rhs = bitFoldInt bitAndBool lhs rhs 1 0
@@ -119,12 +119,10 @@ isIntSuffix c =
   c == 'u' || c == 'U' || c == 'l' || c == 'L'
 
 floatLiteralSize :: String -> Int
-floatLiteralSize text =
-  if endsWithFloatSuffix "fF" text
-    then 4
-    else if endsWithFloatSuffix "lL" text
-      then 16
-      else 8
+floatLiteralSize text
+  | endsWithFloatSuffix "fF" text = 4
+  | endsWithFloatSuffix "lL" text = 16
+  | otherwise = 8
 
 floatLiteralBytes :: Int -> String -> [Int]
 floatLiteralBytes size text =
@@ -145,11 +143,11 @@ isFloatLiteralSuffix c =
 
 endsWithFloatSuffix :: String -> String -> Bool
 endsWithFloatSuffix suffixes text = case reverse text of
-  c:_ -> elem c suffixes
+  c:_ -> c `elem` suffixes
   [] -> False
 
 readDecimalPrefix :: String -> Int
-readDecimalPrefix text = readDecimalPrefixFrom 0 text
+readDecimalPrefix = readDecimalPrefixFrom 0
 
 readDecimalPrefixFrom :: Int -> String -> Int
 readDecimalPrefixFrom acc xs = case xs of
@@ -160,7 +158,7 @@ readDecimalPrefixFrom acc xs = case xs of
   [] -> acc
 
 readOctal :: String -> Int
-readOctal text = readOctalFrom 0 text
+readOctal = readOctalFrom 0
 
 readOctalFrom :: Int -> String -> Int
 readOctalFrom n xs = case xs of
@@ -171,7 +169,7 @@ readOctalFrom n xs = case xs of
       else n
 
 readHex :: String -> Int
-readHex text = readHexFrom 0 text
+readHex = readHexFrom 0
 
 readHexFrom :: Int -> String -> Int
 readHexFrom n xs = case xs of
@@ -186,10 +184,10 @@ naturalLiteralBytes text = case text of
   _ -> decimalLiteralBytes text
 
 decimalLiteralBytes :: String -> [Int]
-decimalLiteralBytes text = readBaseBytes 10 text
+decimalLiteralBytes = readBaseBytes 10
 
 readBaseBytes :: Int -> String -> [Int]
-readBaseBytes base text = readBaseBytesFrom base zeroByteWord text
+readBaseBytes base = readBaseBytesFrom base zeroByteWord
 
 readBaseBytesFrom :: Int -> [Int] -> String -> [Int]
 readBaseBytesFrom base bytes text = case text of
@@ -204,7 +202,7 @@ digitValidForBase base c = digitValue c < base
 
 digitValue :: Char -> Int
 digitValue c
-  | c >= '0' && c <= '9' = decimalDigit c
+  | isDecimalDigit c = decimalDigit c
   | c >= 'a' && c <= 'f' = 10 + fromEnum c - fromEnum 'a'
   | c >= 'A' && c <= 'F' = 10 + fromEnum c - fromEnum 'A'
   | otherwise = 99
@@ -216,7 +214,7 @@ byteWordMulAdd :: Int -> Int -> [Int] -> [Int]
 byteWordMulAdd base digit bytes = takeInts 8 (byteWordAddSmall digit (byteWordMulSmall base bytes))
 
 byteWordMulSmall :: Int -> [Int] -> [Int]
-byteWordMulSmall factor bytes = byteWordMulSmallCarry factor 0 bytes
+byteWordMulSmall factor = byteWordMulSmallCarry factor 0
 
 byteWordMulSmallCarry :: Int -> Int -> [Int] -> [Int]
 byteWordMulSmallCarry factor carry bytes = case bytes of
@@ -226,7 +224,7 @@ byteWordMulSmallCarry factor carry bytes = case bytes of
     in (total `mod` 256) : byteWordMulSmallCarry factor (total `div` 256) rest
 
 byteWordAddSmall :: Int -> [Int] -> [Int]
-byteWordAddSmall addend bytes = byteWordAddSmallCarry addend bytes
+byteWordAddSmall = byteWordAddSmallCarry
 
 byteWordAddSmallCarry :: Int -> [Int] -> [Int]
 byteWordAddSmallCarry carry bytes = case bytes of
@@ -321,10 +319,10 @@ readHexEscapeFrom value chars = case chars of
   [] -> (value, chars, False)
 
 isDecimalDigit :: Char -> Bool
-isDecimalDigit c = c >= '0' && c <= '9'
+isDecimalDigit c = fromEnum c >= fromEnum '0' && fromEnum c <= fromEnum '9'
 
 isOctalDigit :: Char -> Bool
-isOctalDigit c = c >= '0' && c <= '7'
+isOctalDigit c = fromEnum c >= fromEnum '0' && fromEnum c <= fromEnum '7'
 
 isHexDigit :: Char -> Bool
 isHexDigit c =
@@ -341,7 +339,7 @@ decimalDigit c = fromEnum c - fromEnum '0'
 
 hexDigit :: Char -> Int
 hexDigit c
-  | c >= '0' && c <= '9' = decimalDigit c
+  | isDecimalDigit c = decimalDigit c
   | c >= 'a' && c <= 'f' = 10 + fromEnum c - fromEnum 'a'
   | c >= 'A' && c <= 'F' = 10 + fromEnum c - fromEnum 'A'
   | otherwise = 0

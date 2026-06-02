@@ -10,7 +10,7 @@ import TypesToken
 type ConstParser a = P [(String, Int)] Token String a
 
 parseConstExpr :: [(String, Int)] -> [Token] -> Either String (Int, [Token])
-parseConstExpr env toks = parseRest (expression 0) env toks
+parseConstExpr = parseRest (expression 0)
 
 expression :: Int -> ConstParser Int
 expression minPrec = do
@@ -74,7 +74,7 @@ parseUnary = do
   mtok <- pPeekMaybe
   case mtok of
     Just tok -> case constTokenKind tok of
-      TokPunct "!" -> advance >> ((boolToInt . (== 0)) <$> parseUnary)
+      TokPunct "!" -> advance >> (boolToInt . (== 0) <$> parseUnary)
       TokPunct "+" -> advance >> parseUnary
       TokPunct "-" -> advance >> (negate <$> parseUnary)
       TokPunct "~" -> advance >> (bitNotInt <$> parseUnary)
@@ -95,7 +95,9 @@ parsePrimary = do
         TokIdent "defined" -> parseDefinedOperator
         TokIdent name -> do
           env <- pEnv
-          pure (maybe 0 id (lookup name env))
+          pure (case lookup name env of
+            Just value -> value
+            Nothing -> 0)
         TokInt value -> pure (parseInt value)
         TokChar value -> pure (charValue value)
         _ -> pFail "unsupported token in constant expression"

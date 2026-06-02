@@ -46,8 +46,7 @@ symbolMapMember k m = case symbolMapLookup k m of
   Nothing -> False
 
 symbolSetFromList :: [String] -> SymbolSet
-symbolSetFromList [] = symbolSetEmpty
-symbolSetFromList (x:xt) = symbolSetInsert x (symbolSetFromList xt)
+symbolSetFromList = foldr symbolSetInsert symbolSetEmpty
 
 symbolSetMember :: String -> SymbolSet -> Bool
 symbolSetMember k (SymbolSet t) = case lookupT k t of
@@ -61,7 +60,7 @@ symbolSetDelete :: String -> SymbolSet -> SymbolSet
 symbolSetDelete k (SymbolSet t) = SymbolSet (deleteT k t)
 
 lookupT :: String -> Tree a -> Maybe a
-lookupT k t = lookupH k (hash k) t
+lookupT k = lookupH k (hash k)
 
 lookupH :: String -> Int -> Tree a -> Maybe a
 lookupH _ _ E = Nothing
@@ -71,10 +70,10 @@ lookupH k kh (N _ x xh v l r) = case cmpHash k kh x xh of
   Gt -> lookupH k kh r
 
 insertT :: String -> a -> Tree a -> Tree a
-insertT k v t = alterT k (Just v) t
+insertT k v = alterT k (Just v)
 
 deleteT :: String -> Tree a -> Tree a
-deleteT k t = alterT k Nothing t
+deleteT k = alterT k Nothing
 
 alterT :: String -> Maybe a -> Tree a -> Tree a
 alterT k v t = blacken (go (hash k) t) where
@@ -124,7 +123,7 @@ balR x xh v l r = case r of
   _ -> N B x xh v l r
 
 hash :: String -> Int
-hash s = go 5381 s where
+hash = go 5381 where
   go h [] = h
   go h (c:cs) = go (((h * 33) + fromEnum c) `mod` 2147483647) cs
 

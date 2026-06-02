@@ -149,7 +149,7 @@ parseFunctionMacro sp name text = do
   Right (FunctionMacro name params variadic body)
 
 takeMacroParams :: Span -> String -> Either PreprocessError (String, String)
-takeMacroParams sp text = go 1 [] text where
+takeMacroParams sp = go 1 [] where
   go :: Int -> String -> String -> Either PreprocessError (String, String)
   go depth acc rest = case rest of
     [] -> Left (PreprocessError (spanStart sp) "unterminated macro parameter list")
@@ -187,7 +187,7 @@ trimNonEmpty pieces = case pieces of
        else trimmed : trimNonEmpty rest
 
 splitCommas :: String -> [String]
-splitCommas text = go 0 [] [] text where
+splitCommas = go 0 [] [] where
   go :: Int -> String -> [String] -> String -> [String]
   go depth current acc rest = case rest of
     [] -> reverse (reverse current : acc)
@@ -271,7 +271,7 @@ takeDefinedOperandSource toks = case popSource toks of
   _ -> ([], toks)
 
 collectInvocationArgs :: Span -> [Chunk] -> Either PreprocessError ([[Token]], [Chunk])
-collectInvocationArgs sp toks = go 1 [] [] toks where
+collectInvocationArgs sp = go 1 [] [] where
   go :: Int -> [Token] -> [[Token]] -> [Chunk] -> Either PreprocessError ([[Token]], [Chunk])
   go depth current args rest = case popSource rest of
     Nothing -> Left (PreprocessError (spanStart sp) "unterminated macro invocation")
@@ -453,7 +453,9 @@ token x = (x :)
 
 sourceFromTokens :: [Token] -> [Chunk]
 sourceFromTokens toks =
-  if null toks then [] else [Chunk [] toks]
+  case toks of
+    [] -> []
+    _ -> [Chunk [] toks]
 
 prependChunk :: [String] -> [Token] -> [Chunk] -> [Chunk]
 prependChunk hidden toks source =
@@ -486,7 +488,7 @@ undefObject :: String -> Macros -> Macros
 undefObject = symbolMapDelete
 
 relocate :: Span -> [Token] -> [Token]
-relocate sp toks = map replaceSpan toks where
+relocate sp = map replaceSpan where
   replaceSpan (Token _ kind) = Token sp kind
 
 spanStart :: Span -> SrcPos

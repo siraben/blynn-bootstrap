@@ -44,8 +44,7 @@ instance Applicative (P env tok err) where
   pure x = P $ \env toks -> Unconsumed (Ok x env toks)
   pf <*> px = do
     f <- pf
-    x <- px
-    pure (f x)
+    f <$> px
 
 instance Monad (P env tok err) where
   return = pure
@@ -89,7 +88,7 @@ pLocalEnv enter leave action = P $ \env toks ->
     Consumed reply -> Consumed (leaveReply reply)
 
 pRaw :: (env -> [tok] -> Consumed (Reply env tok err a)) -> P env tok err a
-pRaw action = P action
+pRaw = P
 
 pFail :: err -> P env tok err a
 pFail err = P $ \_env _toks -> Unconsumed (Error err)

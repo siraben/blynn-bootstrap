@@ -177,9 +177,8 @@ bindGlobal name ty = do
 
 rejectReservedSymbol :: String -> String -> CompileM ()
 rejectReservedSymbol kind name =
-  if "FUNCTION_" `prefixOf` name || "HCC_DATA_" `prefixOf` name
-    then throwC (kind ++ " name " ++ show name ++ " uses a reserved HCC label prefix")
-    else pure ()
+  when ("FUNCTION_" `prefixOf` name || "HCC_DATA_" `prefixOf` name)
+    (throwC (kind ++ " name " ++ show name ++ " uses a reserved HCC label prefix"))
 
 bindConstant :: String -> Int -> CompileM ()
 bindConstant name value = CompileM $ \st ->

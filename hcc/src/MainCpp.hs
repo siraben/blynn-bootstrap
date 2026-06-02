@@ -34,7 +34,7 @@ mapPreprocessError (Left (PreprocessError pos msg)) = Left (showPos pos ++ ": " 
 mapPreprocessError (Right toks) = Right toks
 
 renderTokens :: [Token] -> String
-renderTokens toks = foldr renderToken "\n" toks
+renderTokens = foldr renderToken "\n"
 
 renderToken :: Token -> String -> String
 renderToken (Token _ kind) rest = tokenText kind ++ ' ' : rest

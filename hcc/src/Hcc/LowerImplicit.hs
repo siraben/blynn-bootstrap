@@ -56,9 +56,12 @@ registerImplicitCallsDecls locals decls = case decls of
       registerImplicitCallsDecls (name:locals) rest
 
 maybeRegisterImplicitCallsExpr :: [String] -> Maybe Expr -> CompileM ()
-maybeRegisterImplicitCallsExpr locals expr = case expr of
+maybeRegisterImplicitCallsExpr locals expr = maybeM_ expr (registerImplicitCallsExpr locals)
+
+maybeM_ :: Maybe a -> (a -> CompileM ()) -> CompileM ()
+maybeM_ expr action = case expr of
   Nothing -> pure ()
-  Just value -> registerImplicitCallsExpr locals value
+  Just value -> action value
 
 registerImplicitCallsExpr :: [String] -> Expr -> CompileM ()
 registerImplicitCallsExpr locals expr = case expr of
@@ -99,7 +102,7 @@ registerImplicitCallsExpr locals expr = case expr of
   _ -> pure ()
 
 registerImplicitCallsExprs :: [String] -> [Expr] -> CompileM ()
-registerImplicitCallsExprs locals exprs = mapM_ (registerImplicitCallsExpr locals) exprs
+registerImplicitCallsExprs locals = mapM_ (registerImplicitCallsExpr locals)
 
 switchBodyStatements :: [Stmt] -> [Stmt]
 switchBodyStatements body = case body of
