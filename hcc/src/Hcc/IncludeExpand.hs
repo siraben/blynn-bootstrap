@@ -52,9 +52,9 @@ readSourceWithIncludes includeDirs defines path = do
       Just "if" ->
         pure (keep, guards, macros, pushIfFrame frames (evalIncludeIf macros (directiveRest "if" line)))
       Just "elif" ->
-        pure (keep, guards, macros, maybe frames id (replaceElifFrame frames (evalIncludeIf macros (directiveRest "elif" line))))
+        pure (keep, guards, macros, case replaceElifFrame frames (evalIncludeIf macros (directiveRest "elif" line)) of { Just frames' -> frames'; Nothing -> frames })
       Just "else" ->
-        pure (keep, guards, macros, maybe frames id (replaceElseFrame frames))
+        pure (keep, guards, macros, case replaceElseFrame frames of { Just frames' -> frames'; Nothing -> frames })
       Just "endif" ->
         pure (keep, guards, macros, case frames of { [] -> []; _:xs -> xs })
       Just "define" | active ->
@@ -159,7 +159,7 @@ lastMaybe xs = case xs of
   _:rest -> lastMaybe rest
 
 readDecimal :: String -> Int
-readDecimal text = go 0 text where
+readDecimal = go 0 where
   go acc rest = case rest of
     [] -> acc
     c:cs -> go (acc * 10 + fromEnum c - fromEnum '0') cs
@@ -211,8 +211,8 @@ dropBlankLines sourceLines = case sourceLines of
     else sourceLines
 
 skipLineRange :: Int -> Int -> [String] -> [String]
-skipLineRange start end sourceLines =
-  kept 0 sourceLines
+skipLineRange start end =
+  kept 0
   where
     kept index lines' = case lines' of
       [] -> []
@@ -259,11 +259,16 @@ splitNameTokens text = filter (not . null) (go text "") where
       else reverse current : go cs ""
 
 isNameChar :: Char -> Bool
-isNameChar c =
-  (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
+isNameChar c = isAsciiUpper c || isDigitChar c
 
 toUpperAscii :: Char -> Char
 toUpperAscii c =
-  if c >= 'a' && c <= 'z'
+  if isAsciiLower c
   then toEnum (fromEnum c - 32)
   else c
+
+isAsciiLower :: Char -> Bool
+isAsciiLower c = c >= 'a' && c <= 'z'
+
+isAsciiUpper :: Char -> Bool
+isAsciiUpper c = c >= 'A' && c <= 'Z'

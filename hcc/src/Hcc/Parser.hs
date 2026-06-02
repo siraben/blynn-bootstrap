@@ -156,13 +156,12 @@ takeStaticAssertExpr depth acc toks = case toks of
 skipOptionalStaticAssertMessage :: Parser ()
 skipOptionalStaticAssertMessage = do
   hasComma <- eatPunct ","
-  if hasComma
-    then do
+  when hasComma
+    (do
       tok <- peek
       case tokenKind tok of
         TokString _ -> advanceToken
-        _ -> failAt tok "expected string literal in _Static_assert"
-    else pure ()
+        _ -> failAt tok "expected string literal in _Static_assert")
 
 topDeclNonEmpty :: Parser TopDecl
 topDeclNonEmpty = do
@@ -174,9 +173,7 @@ topDeclNonEmpty = do
 topDeclNoTypedef :: Parser TopDecl
 topDeclNoTypedef = do
   structDecl <- optionalP (tryP standaloneAggregateDecl)
-  case structDecl of
-    Just decl -> pure decl
-    Nothing -> topDeclNoStruct
+  maybe topDeclNoStruct pure structDecl
 
 topDeclNoStruct :: Parser TopDecl
 topDeclNoStruct = do
@@ -194,9 +191,7 @@ topDeclNoStruct = do
           isPrototype <- eatPunct ";"
           if isPrototype
             then pure (Prototype ty name params)
-            else do
-              body <- compound
-              pure (Function ty name params body))
+            else Function ty name params <$> compound)
         (do
           initExpr <- optionalP (eatPunct "=" >> initializerExpr)
           rest <- declarationItemsTail ty0
@@ -447,8 +442,7 @@ parseWhile = do
   needPunct "("
   cond <- expr
   needPunct ")"
-  body <- stmtAsBlock
-  pure (SWhile cond body)
+  SWhile cond <$> stmtAsBlock
 
 parseDoWhile :: Parser Stmt
 parseDoWhile = do
@@ -466,16 +460,14 @@ parseFor = do
   initExpr <- optionalExprUntil ";"
   cond <- optionalExprUntil ";"
   stepExpr <- optionalExprUntil ")"
-  body <- stmtAsBlock
-  pure (SFor initExpr cond stepExpr body)
+  SFor initExpr cond stepExpr <$> stmtAsBlock
 
 parseSwitch :: Parser Stmt
 parseSwitch = do
   needPunct "("
   value <- expr
   needPunct ")"
-  body <- stmtAsBlock
-  pure (SSwitch value body)
+  SSwitch value <$> stmtAsBlock
 
 parseCase :: Parser Stmt
 parseCase = do
@@ -670,7 +662,7 @@ enumType = do
   advanceToken
   name <- optionalIdent
   hasBody <- eatPunct "{"
-  if hasBody then parseEnumBody 0 else pure ()
+  when hasBody (parseEnumBody 0)
   pure (CEnum name)
 
 parseEnumBody :: Int -> Parser ()
@@ -763,7 +755,7 @@ skipAttributes = do
 skipOptionalBalancedParens :: Parser ()
 skipOptionalBalancedParens = do
   open <- eatPunct "("
-  if open then skipBalanced "(" ")" else pure ()
+  when open (skipBalanced "(" ")")
 
 declarator :: CType -> Parser (CType, String)
 declarator ty0 = do
@@ -804,9 +796,7 @@ optionalFunctionSuffix :: CType -> Parser CType
 optionalFunctionSuffix ty = do
   open <- eatPunct "("
   if open
-    then do
-      params <- parameters
-      pure (CFunc ty (paramTypes params))
+    then CFunc ty . paramTypes <$> parameters
     else pure ty
 
 pointerStars :: CType -> Parser CType

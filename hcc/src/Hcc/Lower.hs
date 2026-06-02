@@ -742,22 +742,21 @@ lowerTypedGlobalVarExpr name ty = case ty of
         pure ([load], OTemp out)
 
 lowerBinaryExpr :: String -> Expr -> Expr -> CompileM ([Instr], Operand)
-lowerBinaryExpr op a b =
-  if isComparisonOpString op
-    then lowerComparisonExpr op a b
-    else if op == "/" || op == "%"
-      then do
-        commonTy <- usualArithmeticType a b
-        let iop = if isUnsignedType commonTy
-              then if op == "/" then IUDiv else IUMod
-              else if op == "/" then IDiv else IMod
-        lowerPlainBin iop a b
-      else case lowerBinOp op of
-        Just iop -> do
-          if op == "<<"
-            then lowerShiftExpr op a b
-            else lowerPlainBin iop a b
-        Nothing -> throwC ("unsupported binary operator in lowering: " ++ op)
+lowerBinaryExpr op a b
+  | isComparisonOpString op = lowerComparisonExpr op a b
+  | op == "/" || op == "%" = do
+      commonTy <- usualArithmeticType a b
+      let iop
+            | isUnsignedType commonTy = if op == "/" then IUDiv else IUMod
+            | op == "/" = IDiv
+            | otherwise = IMod
+      lowerPlainBin iop a b
+  | otherwise = case lowerBinOp op of
+      Just iop ->
+        if op == "<<"
+          then lowerShiftExpr op a b
+          else lowerPlainBin iop a b
+      Nothing -> throwC ("unsupported binary operator in lowering: " ++ op)
 
 isComparisonOpString :: String -> Bool
 isComparisonOpString op =
@@ -1166,11 +1165,17 @@ zeroObjectBytes dst offset remaining =
     then pure []
     else do
       word <- targetWordSize
-      let width = if remaining >= word then word else if remaining >= 4 then 4 else 1
+      let width
+            | remaining >= word = word
+            | remaining >= 4 = 4
+            | otherwise = 1
       dstResult <- offsetAddress dst offset
       let dstInstrs = fst dstResult
       let dstAddr = snd dstResult
-      let store = if width == 8 then IStore64 dstAddr (OImm 0) else if width == 4 then IStore32 dstAddr (OImm 0) else IStore8 dstAddr (OImm 0)
+      let store
+            | width == 8 = IStore64 dstAddr (OImm 0)
+            | width == 4 = IStore32 dstAddr (OImm 0)
+            | otherwise = IStore8 dstAddr (OImm 0)
       rest <- zeroObjectBytes dst (offset + width) (remaining - width)
       pure (dstInstrs ++ [store] ++ rest)
 
@@ -1180,7 +1185,10 @@ copyObjectBytes dst src offset remaining =
     then pure []
     else do
       word <- targetWordSize
-      let width = if remaining >= word then word else if remaining >= 4 then 4 else 1
+      let width
+            | remaining >= word = word
+            | remaining >= 4 = 4
+            | otherwise = 1
       (dstInstrs, dstAddr) <- offsetAddress dst offset
       (srcInstrs, srcAddr) <- offsetAddress src offset
       val <- freshTemp
@@ -1597,7 +1605,7 @@ isIntegerTypeM ty = case ty of
   CUnsignedLongLong -> pure True
   CBool -> pure True
   CEnum _ -> pure True
-  CNamed name -> pure (maybe False (const True) (namedIntegerSize name))
+  CNamed name -> pure (case namedIntegerSize name of { Just _ -> True; Nothing -> False })
   _ -> pure False
 
 promoteIntegerType :: CType -> CompileM CType
@@ -1642,12 +1650,10 @@ isFloatingType ty = case ty of
   _ -> False
 
 usualFloatingType :: CType -> CType -> CType
-usualFloatingType leftTy rightTy =
-  if isLongDoubleType leftTy || isLongDoubleType rightTy
-    then CLongDouble
-    else if isDoubleType leftTy || isDoubleType rightTy
-      then CDouble
-      else CFloat
+usualFloatingType leftTy rightTy
+  | isLongDoubleType leftTy || isLongDoubleType rightTy = CLongDouble
+  | isDoubleType leftTy || isDoubleType rightTy = CDouble
+  | otherwise = CFloat
 
 isLongDoubleType :: CType -> Bool
 isLongDoubleType ty = case ty of
@@ -2049,7 +2055,7 @@ isAggregateTypeM ty = case ty of
   CArray _ _ -> pure True
   CNamed _ -> do
     aggregate <- aggregateFields ty
-    pure (maybe False (const True) aggregate)
+    pure (case aggregate of { Just _ -> True; Nothing -> False })
   _ -> pure (isAggregateType ty)
 
 scalarData :: CType -> Int -> CompileM [DataValue]
@@ -2126,11 +2132,11 @@ constExprValue expr = case expr of
   ECast _ value -> constExprValue value
   EUnary "-" value -> do
     n <- constExprValue value
-    pure (0 - n)
+    pure (negate n)
   EUnary "+" value -> constExprValue value
   EUnary "~" value -> do
     n <- constExprValue value
-    pure (0 - n - 1)
+    pure (negate n - 1)
   EUnary "!" value -> do
     n <- constExprValue value
     pure (if n == 0 then 1 else 0)

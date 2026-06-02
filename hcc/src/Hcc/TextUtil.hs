@@ -33,10 +33,10 @@ isSpaceChar c =
     code = charCode c
 
 isDigitChar :: Char -> Bool
-isDigitChar c = c >= '0' && c <= '9'
+isDigitChar c = fromEnum c >= fromEnum '0' && fromEnum c <= fromEnum '9'
 
 isAsciiAlpha :: Char -> Bool
-isAsciiAlpha c = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+isAsciiAlpha c = isAsciiLower c || isAsciiUpper c
 
 isAsciiAlphaNum :: Char -> Bool
 isAsciiAlphaNum c = isAsciiAlpha c || isDigitChar c
@@ -53,3 +53,9 @@ mapMaybe f xs = case xs of
   x:rest -> case f x of
     Just y -> y : mapMaybe f rest
     Nothing -> mapMaybe f rest
+
+isAsciiLower :: Char -> Bool
+isAsciiLower c = c >= 'a' && c <= 'z'
+
+isAsciiUpper :: Char -> Bool
+isAsciiUpper c = c >= 'A' && c <= 'Z'

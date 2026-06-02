@@ -82,8 +82,7 @@ dataLabelPrefix path =
       text -> text
 
 sanitizeLabel :: String -> String
-sanitizeLabel [] = []
-sanitizeLabel (c:rest) = sanitizeLabelChar c ++ sanitizeLabel rest
+sanitizeLabel = concatMap sanitizeLabelChar
 
 sanitizeLabelChar :: Char -> String
 sanitizeLabelChar c =
@@ -104,7 +103,7 @@ assemblyArgs args = finish (go args Nothing Nothing [] [] 64)
     finish (Left msg) = Left msg
     finish (Right (_, Nothing, _, _, _)) = Left "hcc: no input files"
     finish (Right (out, Just path, includes, defines, target)) =
-      Right (AsmOptions path (maybe (replaceExt path ".hccir") id out) (reverse includes) (reverse defines) target ("--trace" `elem` args))
+      Right (AsmOptions path (case out of { Just output -> output; Nothing -> replaceExt path ".hccir" }) (reverse includes) (reverse defines) target ("--trace" `elem` args))
 
     go [] out input includes defines target =
       Right (out, input, includes, defines, target)
