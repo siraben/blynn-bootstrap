@@ -20,7 +20,6 @@ enum {
   IK_PARAM = 1,
   IK_ALLOCA = 2,
   IK_CONST = 3,
-  IK_CONSTB = 4,
   IK_COPY = 5,
   IK_ADDROF = 6,
   IK_LOAD64 = 7,
@@ -649,11 +648,6 @@ static void parse_ir_instr_line(FILE *file, char *line, Instr *instr)
       instr->temp = parse_int_token(&cursor);
       instr->value = parse_long_token(&cursor);
       break;
-    case IK_CONSTB:
-      instr->temp = parse_int_token(&cursor);
-      parse_ir_operand(&cursor, instr_a_ptr(instr));
-      if (instr->a.kind != OP_BYTES) die("IR CONSTB needs bytes");
-      break;
     case IK_COPY:
     case IK_LOAD64:
     case IK_LOAD32:
@@ -1011,7 +1005,6 @@ static void allocate_instrs(InstrList *list, LocArray *locs, int *next_slot)
       case IK_ALLOCA: alloc_object(locs, next_slot, in->temp, in->value); break;
       case IK_PARAM:
       case IK_CONST:
-      case IK_CONSTB:
       case IK_COPY:
       case IK_ADDROF:
       case IK_LOAD64:
@@ -1330,7 +1323,7 @@ static void emit_load_immediate(FILE *out, EmitState *state, long value)
     return;
   }
   if (target_arch == TARGET_RISCV64) {
-    riscv64_emit_load_literal(out, 10, (unsigned long)value);
+    riscv64_emit_load_immediate(out, 10, value);
     return;
   }
   if (target_arch == TARGET_I386) {
@@ -1391,7 +1384,7 @@ static void emit_load_immediate_bytes(FILE *out, EmitState *state, Operand *op)
       value = (value << 8) + (unsigned long)(bytes[i] & 255);
       i = i - 1;
     }
-    riscv64_emit_load_literal(out, 10, value);
+    riscv64_emit_load_immediate(out, 10, (long)value);
     return;
   }
   if (bytes[0] == 0 && bytes[1] == 0 && bytes[2] == 0 && bytes[3] == 128 &&
@@ -2009,10 +2002,6 @@ static void emit_instr(FILE *out, const char *fn_name, EmitState *state, LocArra
       break;
     case IK_CONST:
       emit_load_immediate(out, state, in->value);
-      emit_store_temp(out, state, locs, in->temp);
-      break;
-    case IK_CONSTB:
-      emit_load_immediate_bytes(out, state, instr_a_ptr(in));
       emit_store_temp(out, state, locs, in->temp);
       break;
     case IK_COPY:

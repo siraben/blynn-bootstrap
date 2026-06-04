@@ -138,6 +138,15 @@ static void riscv64_emit_load_literal(FILE *out, int reg, unsigned long value)
   fputc('\n', out);
 }
 
+static void riscv64_emit_load_immediate(FILE *out, int reg, long value)
+{
+  if (value >= -2048 && value <= 2047) {
+    riscv64_emit_add_imm_reg(out, reg, 0, (int)value);
+  } else {
+    riscv64_emit_load_literal(out, reg, (unsigned long)value);
+  }
+}
+
 static void riscv64_emit_load_label(FILE *out, int reg, const char *label)
 {
   fprintf(out, "  %s ~%s auipc\n", riscv64_rd(reg), label);
