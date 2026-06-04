@@ -10,7 +10,27 @@ script_dir=${script_path%/*}
 [ "$script_dir" = "$script_path" ] && script_dir=.
 script_dir=$(CDPATH= cd "$script_dir" && pwd)
 
-: "${ARCH:=${M2_ARCH:-amd64}}"
+bootstrap_arch() {
+  case $(uname -m 2>/dev/null || echo unknown) in
+    amd64 | x86_64) echo amd64 ;;
+    aarch64 | arm64) echo aarch64 ;;
+    i386 | i486 | i586 | i686) echo x86 ;;
+    riscv32) echo riscv32 ;;
+    riscv64) echo riscv64 ;;
+    *)
+      echo "bootstrap: error: unsupported host architecture; set M2_ARCH" >&2
+      exit 1
+      ;;
+  esac
+}
+
+if [ "${ARCH:-}" ]; then
+  :
+elif [ "${M2_ARCH:-}" ]; then
+  ARCH=$M2_ARCH
+else
+  ARCH=$(bootstrap_arch)
+fi
 : "${OPERATING_SYSTEM:=${M2_OS:-Linux}}"
 : "${OUT_DIR:=build}"
 case $OUT_DIR in
