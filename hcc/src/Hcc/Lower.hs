@@ -299,11 +299,9 @@ lowerSideEffect expr = case expr of
   ECall callee args -> do
     lowerIndirectSideEffect callee args
   EAssign lhs rhs ->
-    lowerAssignmentInstrs lhs rhs
-  ECompoundAssign op lhs rhs -> do
-    result <- lowerCompoundAssignment op lhs rhs
-    case result of
-      (instrs, _) -> pure instrs
+    lowerResultInstrs (lowerAssignment lhs rhs)
+  ECompoundAssign op lhs rhs ->
+    lowerResultInstrs (lowerCompoundAssignment op lhs rhs)
   EPostfix "--" target ->
     lowerIncDecSideEffect ISub target
   EPostfix "++" target ->
@@ -312,39 +310,28 @@ lowerSideEffect expr = case expr of
     (instrs, _) <- lowerExpr expr
     pure instrs
 
-lowerAssignmentInstrs :: Expr -> Expr -> CompileM [Instr]
-lowerAssignmentInstrs lhs rhs = do
-  (instrs, _) <- lowerAssignment lhs rhs
+lowerResultInstrs :: CompileM ([Instr], Operand) -> CompileM [Instr]
+lowerResultInstrs action = do
+  (instrs, _) <- action
   pure instrs
 
 lowerIncDecSideEffect :: BinOp -> Expr -> CompileM [Instr]
-lowerIncDecSideEffect op target = do
-  (lvInstrs, lvalue) <- lowerLValue target
-  (readInstrs, current) <- readLValue lvalue
-  out <- freshTemp
-  step <- incDecStep target
-  writeInstrs <- writeLValue lvalue (OTemp out)
-  pure (lvInstrs ++ readInstrs ++ [IBin out op current (OImm step)] ++ writeInstrs)
+lowerIncDecSideEffect op target =
+  lowerResultInstrs (lowerIncDec True op target)
 
 lowerDirectSideEffect :: String -> [Expr] -> CompileM [Instr]
 lowerDirectSideEffect name args = do
-  lowered <- lowerExprs args
-  pure (concatMap fst lowered ++ [ICall Nothing name (map snd lowered)])
+  (argInstrs, argOps) <- lowerCallArgs args
+  pure (argInstrs ++ [ICall Nothing name argOps])
 
 lowerIndirectSideEffect :: Expr -> [Expr] -> CompileM [Instr]
-lowerIndirectSideEffect callee args = do
-  (calleeInstrs, calleeOp) <- lowerExpr callee
-  lowered <- lowerExprs args
-  pure (calleeInstrs ++ concatMap fst lowered ++ [ICallIndirect Nothing calleeOp (map snd lowered)])
+lowerIndirectSideEffect callee args =
+  lowerIndirectCallInstrs Nothing callee args
 
 lowerDecls :: [(CType, String, Maybe Expr)] -> CompileM [Instr]
-lowerDecls decls = case decls of
-  [] -> pure []
-  decl:rest -> case decl of
-    (ty, name, initExpr) -> do
-      instrs <- lowerDecl ty name initExpr
-      tailInstrs <- lowerDecls rest
-      pure (instrs ++ tailInstrs)
+lowerDecls decls = do
+  lowered <- mapM (\(ty, name, initExpr) -> lowerDecl ty name initExpr) decls
+  pure (concat lowered)
 
 lowerDecl :: CType -> String -> Maybe Expr -> CompileM [Instr]
 lowerDecl ty name initExpr = do
@@ -528,28 +515,15 @@ lowerAggregateElementScalarWrite addr fieldTy expr = do
   pure (exprInstrs ++ coerceInstrs ++ [store])
 
 registerExternGlobals :: [(CType, String)] -> CompileM ()
-registerExternGlobals globals = case globals of
-  [] -> pure ()
-  global:rest -> case global of
-    (ty, name) -> do
-      registerTypeAggregates ty
-      bindGlobal name ty
-      registerExternGlobals rest
+registerExternGlobals = mapM_ (uncurry (\ty name -> do
+    registerTypeAggregates ty
+    bindGlobal name ty))
 
 registerConstants :: [(String, Int)] -> CompileM ()
-registerConstants constants = case constants of
-  [] -> pure ()
-  constant:rest -> case constant of
-    (name, value) -> do
-      bindConstant name value
-      registerConstants rest
+registerConstants = mapM_ (uncurry bindConstant)
 
 registerFieldAggregates :: [Field] -> CompileM ()
-registerFieldAggregates fields = case fields of
-  [] -> pure ()
-  Field ty _:rest -> do
-    registerTypeAggregates ty
-    registerFieldAggregates rest
+registerFieldAggregates = mapM_ (\(Field ty _) -> registerTypeAggregates ty)
 
 registerTypeAggregates :: CType -> CompileM ()
 registerTypeAggregates ty = case ty of
@@ -571,11 +545,7 @@ registerTypeAggregates ty = case ty of
   _ -> pure ()
 
 registerTypesAggregates :: [CType] -> CompileM ()
-registerTypesAggregates types = case types of
-  [] -> pure ()
-  ty:rest -> do
-    registerTypeAggregates ty
-    registerTypesAggregates rest
+registerTypesAggregates = mapM_ registerTypeAggregates
 
 lowerExpr :: Expr -> CompileM ([Instr], Operand)
 lowerExpr expr = case expr of
@@ -772,26 +742,29 @@ lowerComparisonOperands a b = do
 
 lowerDirectCallExpr :: String -> [Expr] -> CompileM ([Instr], Operand)
 lowerDirectCallExpr name args = do
-  lowered <- lowerExprs args
+  (argInstrs, argOps) <- lowerCallArgs args
   out <- freshTemp
-  let instrs = concatMap fst lowered
-  let ops = map snd lowered
-  pure (instrs ++ [ICall (Just out) name ops], OTemp out)
+  pure (argInstrs ++ [ICall (Just out) name argOps], OTemp out)
 
 lowerExprs :: [Expr] -> CompileM [([Instr], Operand)]
-lowerExprs args = case args of
-  [] -> pure []
-  x:xs -> do
-    first <- lowerExpr x
-    rest <- lowerExprs xs
-    pure (first:rest)
+lowerExprs = mapM lowerExpr
+
+lowerCallArgs :: [Expr] -> CompileM ([Instr], [Operand])
+lowerCallArgs args = do
+  lowered <- lowerExprs args
+  pure (concatMap fst lowered, map snd lowered)
+
+lowerIndirectCallInstrs :: Maybe Temp -> Expr -> [Expr] -> CompileM [Instr]
+lowerIndirectCallInstrs result callee args = do
+  (calleeInstrs, calleeOp) <- lowerExpr callee
+  (argInstrs, argOps) <- lowerCallArgs args
+  pure (calleeInstrs ++ argInstrs ++ [ICallIndirect result calleeOp argOps])
 
 lowerIndirectCall :: Expr -> [Expr] -> CompileM ([Instr], Operand)
 lowerIndirectCall callee args = do
-  (calleeInstrs, calleeOp) <- lowerExpr callee
-  lowered <- lowerExprs args
   out <- freshTemp
-  pure (calleeInstrs ++ concatMap fst lowered ++ [ICallIndirect (Just out) calleeOp (map snd lowered)], OTemp out)
+  instrs <- lowerIndirectCallInstrs (Just out) callee args
+  pure (instrs, OTemp out)
 
 lowerLogicalAnd :: Expr -> Expr -> CompileM ([Instr], Operand)
 lowerLogicalAnd = lowerShortCircuit True

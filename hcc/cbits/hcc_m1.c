@@ -1920,6 +1920,28 @@ static void emit_arguments(FILE *out, EmitState *state, LocArray *locs, Operand 
   }
 }
 
+static void emit_memory_load(FILE *out, EmitState *state, LocArray *locs, Instr *in, int width, int is_signed, const char *i386_op, const char *other_op)
+{
+  if (width == 8 && target_arch == TARGET_I386) die("i386 M1 backend cannot lower 64-bit load");
+  emit_load_operand(out, state, locs, 0, instr_a_ptr(in));
+  if (target_arch == TARGET_I386 && i386_op) fprintf(out, "%s", i386_op);
+  else if (target_arch == TARGET_AARCH64) aarch64_emit_load_store(out, 1, width, is_signed, 0, 0);
+  else if (target_arch == TARGET_RISCV64) riscv64_emit_load_store(out, 1, width, is_signed, 10, 0);
+  else fprintf(out, "%s", other_op);
+  emit_store_temp(out, state, locs, in->temp);
+}
+
+static void emit_memory_store(FILE *out, EmitState *state, LocArray *locs, Instr *in, int width, const char *other_op)
+{
+  if (width == 8 && target_arch == TARGET_I386) die("i386 M1 backend cannot lower 64-bit store");
+  emit_load_operand(out, state, locs, 0, instr_a_ptr(in));
+  emit_copy_acc_to_scratch(out);
+  emit_load_operand(out, state, locs, 0, instr_b_ptr(in));
+  if (target_arch == TARGET_AARCH64) aarch64_emit_load_store(out, 0, width, 0, 1, 0);
+  else if (target_arch == TARGET_RISCV64) riscv64_emit_load_store_from(out, 0, width, 0, 11, 0, 10);
+  else fprintf(out, "%s", other_op);
+}
+
 static void emit_instrs(FILE *out, const char *fn_name, EmitState *state, LocArray *locs, int total_slots, InstrList *list);
 
 static void emit_instr(FILE *out, const char *fn_name, EmitState *state, LocArray *locs, int total_slots, Instr *in)
@@ -2002,103 +2024,37 @@ static void emit_instr(FILE *out, const char *fn_name, EmitState *state, LocArra
       emit_store_temp(out, state, locs, in->temp);
       break;
     case IK_LOAD64:
-      if (target_arch == TARGET_I386) die("i386 M1 backend cannot lower 64-bit load");
-      emit_load_operand(out, state, locs, 0, instr_a_ptr(in));
-      if (target_arch == TARGET_AARCH64) aarch64_emit_load_store(out, 1, 8, 0, 0, 0);
-      else if (target_arch == TARGET_RISCV64) riscv64_emit_load_store(out, 1, 8, 0, 10, 0);
-      else fprintf(out, "  HCC_LOAD_INTEGER\n");
-      emit_store_temp(out, state, locs, in->temp);
+      emit_memory_load(out, state, locs, in, 8, 0, 0, "  HCC_LOAD_INTEGER\n");
       break;
     case IK_LOAD32:
-      emit_load_operand(out, state, locs, 0, instr_a_ptr(in));
-      if (target_arch == TARGET_I386) fprintf(out, "  mov_eax,[eax]\n");
-      else if (target_arch == TARGET_AARCH64) aarch64_emit_load_store(out, 1, 4, 0, 0, 0);
-      else if (target_arch == TARGET_RISCV64) riscv64_emit_load_store(out, 1, 4, 0, 10, 0);
-      else fprintf(out, "  HCC_LOAD_WORD\n");
-      emit_store_temp(out, state, locs, in->temp);
+      emit_memory_load(out, state, locs, in, 4, 0, "  mov_eax,[eax]\n", "  HCC_LOAD_WORD\n");
       break;
     case IK_LOADS32:
-      emit_load_operand(out, state, locs, 0, instr_a_ptr(in));
-      if (target_arch == TARGET_AARCH64) aarch64_emit_load_store(out, 1, 4, 1, 0, 0);
-      else if (target_arch == TARGET_RISCV64) riscv64_emit_load_store(out, 1, 4, 1, 10, 0);
-      else fprintf(out, "  HCC_LOAD_SIGNED_WORD\n");
-      emit_store_temp(out, state, locs, in->temp);
+      emit_memory_load(out, state, locs, in, 4, 1, 0, "  HCC_LOAD_SIGNED_WORD\n");
       break;
     case IK_LOAD16:
-      emit_load_operand(out, state, locs, 0, instr_a_ptr(in));
-      if (target_arch == TARGET_I386) fprintf(out, "  movzx_eax,WORD_PTR_[eax]\n");
-      else if (target_arch == TARGET_AARCH64) aarch64_emit_load_store(out, 1, 2, 0, 0, 0);
-      else if (target_arch == TARGET_RISCV64) riscv64_emit_load_store(out, 1, 2, 0, 10, 0);
-      else fprintf(out, "  HCC_LOAD_HALF\n");
-      emit_store_temp(out, state, locs, in->temp);
+      emit_memory_load(out, state, locs, in, 2, 0, "  movzx_eax,WORD_PTR_[eax]\n", "  HCC_LOAD_HALF\n");
       break;
     case IK_LOADS16:
-      emit_load_operand(out, state, locs, 0, instr_a_ptr(in));
-      if (target_arch == TARGET_I386) fprintf(out, "  movsx_eax,WORD_PTR_[eax]\n");
-      else if (target_arch == TARGET_AARCH64) aarch64_emit_load_store(out, 1, 2, 1, 0, 0);
-      else if (target_arch == TARGET_RISCV64) riscv64_emit_load_store(out, 1, 2, 1, 10, 0);
-      else fprintf(out, "  HCC_LOAD_SIGNED_HALF\n");
-      emit_store_temp(out, state, locs, in->temp);
+      emit_memory_load(out, state, locs, in, 2, 1, "  movsx_eax,WORD_PTR_[eax]\n", "  HCC_LOAD_SIGNED_HALF\n");
       break;
     case IK_LOAD8:
-      emit_load_operand(out, state, locs, 0, instr_a_ptr(in));
-      if (target_arch == TARGET_I386) fprintf(out, "  movzx_eax,BYTE_PTR_[eax]\n");
-      else if (target_arch == TARGET_AARCH64) aarch64_emit_load_store(out, 1, 1, 0, 0, 0);
-      else if (target_arch == TARGET_RISCV64) riscv64_emit_load_store(out, 1, 1, 0, 10, 0);
-      else fprintf(out, "  LOAD_BYTE\n  MOVEZX\n");
-      emit_store_temp(out, state, locs, in->temp);
+      emit_memory_load(out, state, locs, in, 1, 0, "  movzx_eax,BYTE_PTR_[eax]\n", "  LOAD_BYTE\n  MOVEZX\n");
       break;
     case IK_LOADS8:
-      emit_load_operand(out, state, locs, 0, instr_a_ptr(in));
-      if (target_arch == TARGET_I386) fprintf(out, "  movsx_eax,BYTE_PTR_[eax]\n");
-      else if (target_arch == TARGET_AARCH64) aarch64_emit_load_store(out, 1, 1, 1, 0, 0);
-      else if (target_arch == TARGET_RISCV64) riscv64_emit_load_store(out, 1, 1, 1, 10, 0);
-      else fprintf(out, "  HCC_LOAD_SIGNED_CHAR\n");
-      emit_store_temp(out, state, locs, in->temp);
+      emit_memory_load(out, state, locs, in, 1, 1, "  movsx_eax,BYTE_PTR_[eax]\n", "  HCC_LOAD_SIGNED_CHAR\n");
       break;
     case IK_STORE64:
-      if (target_arch == TARGET_I386) die("i386 M1 backend cannot lower 64-bit store");
-      emit_load_operand(out, state, locs, 0, instr_a_ptr(in));
-      if (target_arch == TARGET_AARCH64) fprintf(out, "  SET_X1_FROM_X0\n");
-      else if (target_arch == TARGET_RISCV64) riscv64_emit_mov_reg(out, 11, 10);
-      else fprintf(out, "  HCC_M_RAX_RBX\n");
-      emit_load_operand(out, state, locs, 0, instr_b_ptr(in));
-      if (target_arch == TARGET_AARCH64) aarch64_emit_load_store(out, 0, 8, 0, 1, 0);
-      else if (target_arch == TARGET_RISCV64) riscv64_emit_load_store_from(out, 0, 8, 0, 11, 0, 10);
-      else fprintf(out, "  HCC_STORE_INTEGER\n");
+      emit_memory_store(out, state, locs, in, 8, "  HCC_STORE_INTEGER\n");
       break;
     case IK_STORE32:
-      emit_load_operand(out, state, locs, 0, instr_a_ptr(in));
-      if (target_arch == TARGET_I386) fprintf(out, "  mov_ebx,eax\n");
-      else if (target_arch == TARGET_AARCH64) fprintf(out, "  SET_X1_FROM_X0\n");
-      else if (target_arch == TARGET_RISCV64) riscv64_emit_mov_reg(out, 11, 10);
-      else fprintf(out, "  HCC_M_RAX_RBX\n");
-      emit_load_operand(out, state, locs, 0, instr_b_ptr(in));
-      if (target_arch == TARGET_AARCH64) aarch64_emit_load_store(out, 0, 4, 0, 1, 0);
-      else if (target_arch == TARGET_RISCV64) riscv64_emit_load_store_from(out, 0, 4, 0, 11, 0, 10);
-      else fprintf(out, "  HCC_STORE_WORD\n");
+      emit_memory_store(out, state, locs, in, 4, "  HCC_STORE_WORD\n");
       break;
     case IK_STORE16:
-      emit_load_operand(out, state, locs, 0, instr_a_ptr(in));
-      if (target_arch == TARGET_I386) fprintf(out, "  mov_ebx,eax\n");
-      else if (target_arch == TARGET_AARCH64) fprintf(out, "  SET_X1_FROM_X0\n");
-      else if (target_arch == TARGET_RISCV64) riscv64_emit_mov_reg(out, 11, 10);
-      else fprintf(out, "  HCC_M_RAX_RBX\n");
-      emit_load_operand(out, state, locs, 0, instr_b_ptr(in));
-      if (target_arch == TARGET_AARCH64) aarch64_emit_load_store(out, 0, 2, 0, 1, 0);
-      else if (target_arch == TARGET_RISCV64) riscv64_emit_load_store_from(out, 0, 2, 0, 11, 0, 10);
-      else fprintf(out, "  HCC_STORE_HALF\n");
+      emit_memory_store(out, state, locs, in, 2, "  HCC_STORE_HALF\n");
       break;
     case IK_STORE8:
-      emit_load_operand(out, state, locs, 0, instr_a_ptr(in));
-      if (target_arch == TARGET_I386) fprintf(out, "  mov_ebx,eax\n");
-      else if (target_arch == TARGET_AARCH64) fprintf(out, "  SET_X1_FROM_X0\n");
-      else if (target_arch == TARGET_RISCV64) riscv64_emit_mov_reg(out, 11, 10);
-      else fprintf(out, "  HCC_M_RAX_RBX\n");
-      emit_load_operand(out, state, locs, 0, instr_b_ptr(in));
-      if (target_arch == TARGET_AARCH64) aarch64_emit_load_store(out, 0, 1, 0, 1, 0);
-      else if (target_arch == TARGET_RISCV64) riscv64_emit_load_store_from(out, 0, 1, 0, 11, 0, 10);
-      else fprintf(out, "  HCC_STORE_CHAR\n");
+      emit_memory_store(out, state, locs, in, 1, "  HCC_STORE_CHAR\n");
       break;
     case IK_BIN:
       emit_load_operand(out, state, locs, 0, instr_a_ptr(in));

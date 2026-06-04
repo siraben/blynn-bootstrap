@@ -250,12 +250,7 @@ terminatorIrLine term = case term of
   TBranchCmp op a b yes no -> "C " ++ show (binOpCode op) ++ " " ++ operandIrFields a ++ " " ++ operandIrFields b ++ " " ++ blockIdText yes ++ " " ++ blockIdText no
 
 operandsIrFields :: [Operand] -> String
-operandsIrFields ops = show (length ops) ++ operandsIrFieldsRest ops
-
-operandsIrFieldsRest :: [Operand] -> String
-operandsIrFieldsRest ops = case ops of
-  [] -> ""
-  op:rest -> ' ' : operandIrFields op ++ operandsIrFieldsRest rest
+operandsIrFields = listIrFields operandIrFields
 
 operandIrFields :: Operand -> String
 operandIrFields op = case op of
@@ -266,12 +261,15 @@ operandIrFields op = case op of
   OFunction name -> "F" ++ name
 
 intListFields :: [Int] -> String
-intListFields values = show (length values) ++ intListFieldsRest values
+intListFields = listIrFields show
 
-intListFieldsRest :: [Int] -> String
-intListFieldsRest values = case values of
+listIrFields :: (a -> String) -> [a] -> String
+listIrFields render values = show (length values) ++ listIrFieldsRest render values
+
+listIrFieldsRest :: (a -> String) -> [a] -> String
+listIrFieldsRest render values = case values of
   [] -> ""
-  value:rest -> ' ' : show value ++ intListFieldsRest rest
+  value:rest -> ' ' : render value ++ listIrFieldsRest render rest
 
 maybeTempText :: Maybe Temp -> String
 maybeTempText = maybe "-" tempText
