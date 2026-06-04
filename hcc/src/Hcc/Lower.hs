@@ -57,23 +57,10 @@ lowerStatementsFrom bid instrs stmts defaultTerm = case stmts of
       tailBlocks <- lowerUnreachableLabels rest defaultTerm
       pure (BasicBlock bid instrs (TRet Nothing) : tailBlocks)
     Just expr -> do
-      if exprIsShortCircuitBoolean expr
-        then do
-          yesId <- freshBlock
-          noId <- freshBlock
-          condBlocks <- lowerConditionBlock bid instrs expr yesId noId
-          (yesInstrs, yesOp) <- coerceReturnOperand (OImm 1)
-          (noInstrs, noOp) <- coerceReturnOperand (OImm 0)
-          tailBlocks <- lowerUnreachableLabels rest defaultTerm
-          pure ( condBlocks ++
-                 [ BasicBlock yesId yesInstrs (TRet (Just yesOp))
-                 , BasicBlock noId noInstrs (TRet (Just noOp))
-                 ] ++ tailBlocks)
-        else do
-          (retInstrs, op) <- lowerExpr expr
-          (coerceInstrs, retOp) <- coerceReturnOperand op
-          tailBlocks <- lowerUnreachableLabels rest defaultTerm
-          pure (BasicBlock bid (instrs ++ retInstrs ++ coerceInstrs) (TRet (Just retOp)) : tailBlocks)
+      (retInstrs, op) <- lowerExpr expr
+      (coerceInstrs, retOp) <- coerceReturnOperand op
+      tailBlocks <- lowerUnreachableLabels rest defaultTerm
+      pure (BasicBlock bid (instrs ++ retInstrs ++ coerceInstrs) (TRet (Just retOp)) : tailBlocks)
   SBlock body:rest -> do
     if null rest
       then withVarScope (lowerStatementsFrom bid instrs body defaultTerm)
@@ -353,15 +340,13 @@ lowerAggregateDeclInit ty temp initExpr = do
   template <- localAggregateTemplateData ty initExpr
   case template of
     Just label ->
-      lowerAggregateDeclTemplate ty temp initExpr label
+      lowerAggregateDeclTemplate ty temp label
     Nothing ->
       lowerAggregateDeclRuntime ty temp initExpr
 
-lowerAggregateDeclTemplate :: CType -> Temp -> Maybe Expr -> String -> CompileM [Instr]
-lowerAggregateDeclTemplate ty temp initExpr label = do
-  copyInstrs <- copyObject (OTemp temp) (OGlobal label) ty
-  runtimeInstrs <- lowerAggregateInitWrites (OTemp temp) ty initExpr
-  pure (copyInstrs ++ runtimeInstrs)
+lowerAggregateDeclTemplate :: CType -> Temp -> String -> CompileM [Instr]
+lowerAggregateDeclTemplate ty temp label =
+  copyObject (OTemp temp) (OGlobal label) ty
 
 lowerAggregateDeclRuntime :: CType -> Temp -> Maybe Expr -> CompileM [Instr]
 lowerAggregateDeclRuntime ty temp initExpr = case initExpr of
@@ -796,12 +781,6 @@ exprIsBoolean :: Expr -> Bool
 exprIsBoolean expr = case expr of
   EUnary "!" _ -> True
   EBinary op _ _ -> op `elem` ["==", "!=", "<", "<=", ">", ">=", "&&", "||"]
-  _ -> False
-
-exprIsShortCircuitBoolean :: Expr -> Bool
-exprIsShortCircuitBoolean expr = case expr of
-  EBinary "&&" _ _ -> True
-  EBinary "||" _ _ -> True
   _ -> False
 
 lowerShiftExpr :: String -> Expr -> Expr -> CompileM ([Instr], Operand)

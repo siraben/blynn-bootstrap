@@ -55,7 +55,6 @@ data Instr
   = IParam Temp Int
   | IAlloca Temp Int
   | IConst Temp Int
-  | IConstBytes Temp [Int]
   | ICopy Temp Operand
   | IAddrOf Temp Temp
   | ILoad64 Temp Operand

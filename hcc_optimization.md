@@ -2,6 +2,61 @@
 
 Working metrics for improving HCC efficiency and modularity. The primary benchmark is the end-to-end TinyCC bootstrap path, with direct HCC-on-expanded-TCC measurements used to isolate compiler runtime and memory.
 
+## Pass 16: Codegen efficiency audit
+
+Goal: audit HCC codegen-efficiency features against their Haskell complexity
+cost, remove features whose benefit does not justify their implementation
+surface, and keep the ones that materially reduce generated IR/M1.
+
+Changes:
+
+- Removed the unused `IConstBytes` / `IK_CONSTB` instruction path. Byte
+  immediates are already represented by `OImmBytes`, and no lowering path built
+  `IConstBytes`.
+- Simplified static local aggregate initialization. Static templates are now
+  copied once instead of copying the template and replaying the same initializer
+  stores.
+- Added a small RISC-V immediate fast path for values that fit signed 12-bit
+  `addi`; wide values still use the existing literal-island path.
+- Removed the special `return a && b` / `return a || b` lowering path. The
+  general short-circuit expression lowering already preserves semantics, and the
+  return-only path duplicated condition-lowering machinery for a narrow case.
+
+Audit decisions:
+
+- Keep scalar immediate coercion and `OImmBytes`: the Haskell code is compact
+  and prevents extra temp/extension instructions for constants and float byte
+  literals.
+- Keep `TBranchCmp`: it turns common compare-and-branch forms into one IR
+  terminator and avoids emitting a boolean temp for each conditional branch.
+- Keep static data lowering and zero-run data IR: these are small producer-side
+  transforms with broad impact on aggregate/string-heavy C sources.
+- Keep aggregate copy/zero loops for now. They are simple, semantic support as
+  much as optimization, and deleting them would push complexity into callers.
+- Keep struct layout caches for now. They do not reduce generated M1 directly,
+  but removing them risks compile-time regressions on member-heavy sources for
+  little Haskell simplification.
+- Keep the stack-only temp model and M1 accumulator cache. Register allocation
+  would add substantial target-specific complexity; the current cache is in the
+  C backend and improves common local load/store traffic without complicating
+  Haskell lowering.
+- Do not add switch jump tables or relative branch encoders without fresh
+  measurements. The likely Haskell and target backend complexity is not
+  justified by the current linear switch lowering profile.
+
+Validation:
+
+```text
+nix build .#hcc.host.ghc.native .#tests.host.ghc.native.smoke.m1 .#tests.host.ghc.native.smoke.m1-riscv64 --no-link --print-out-paths
+pass
+
+nix build .#tinycc.m1.host.ghc.native --no-link --print-out-paths
+pass
+
+git diff --check
+pass
+```
+
 ## Pass 15: Generated RTS GC selection
 
 Goal: reduce end-to-end TinyCC bootstrap time by changing the generated

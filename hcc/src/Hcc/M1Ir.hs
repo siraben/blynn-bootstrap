@@ -193,7 +193,6 @@ emitInstrIr write instr = case instr of
   IParam temp index -> write ("1 " ++ tempText temp ++ " " ++ show index)
   IAlloca temp size -> write ("2 " ++ tempText temp ++ " " ++ show size)
   IConst temp value -> write ("3 " ++ tempText temp ++ " " ++ show value)
-  IConstBytes temp bytes -> write ("4 " ++ tempText temp ++ " B" ++ intListFields bytes)
   ICopy temp op -> emitTempOp write 5 temp op
   IAddrOf temp source -> write ("6 " ++ tempText temp ++ " " ++ tempText source)
   ILoad64 temp op -> emitTempOp write 7 temp op
