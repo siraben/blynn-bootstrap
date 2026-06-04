@@ -53,16 +53,16 @@ dieInputFile opts msg = die (asmInput opts ++ ":" ++ msg)
 
 writeM1Ir :: AsmOptions -> (String -> IO ()) -> Program -> IO ()
 writeM1Ir opts trace ast = do
-  traceLine trace ("open " ++ asmOutput opts)
+  trace ("open " ++ asmOutput opts)
   opened <- hccWithOpenWriteFile (asmOutput opts) $ \handle -> do
-    traceLine trace "m1-ir start"
+    trace "m1-ir start"
     result <- hccWithHandleLineWriter handle $ \writeLines ->
       emitM1IrWithDataPrefixTarget
         writeLines
         (dataLabelPrefix (asmInput opts))
         (asmTargetBits opts)
         ast
-    traceLine trace "m1-ir done"
+    trace "m1-ir done"
     pure result
   case opened of
     Nothing -> die ("hcc1: cannot write " ++ asmOutput opts)
@@ -70,16 +70,10 @@ writeM1Ir opts trace ast = do
       Left (CodegenError msg) -> dieInputFile opts msg
       Right _ -> pure ()
 
-traceLine :: (String -> IO a) -> String -> IO ()
-traceLine trace msg = trace msg >> pure ()
-
 mapParseError :: Either ParseError a -> Either String a
 mapParseError (Left (ParseError pos msg)) = Left (showPos pos ++ ": " ++ msg)
 mapParseError (Right ast) = Right ast
 
-hccTrace :: String -> IO ()
-hccTrace msg = hccPutErrLine ("hcc1: " ++ msg)
-
 hccTraceIf :: Bool -> String -> IO ()
 hccTraceIf enabled msg =
-  when enabled (hccTrace msg)
+  when enabled (hccPutErrLine ("hcc1: " ++ msg))

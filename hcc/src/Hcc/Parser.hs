@@ -94,6 +94,18 @@ leaveParserScope outer inner = case outer of
 withParserScope :: Parser a -> Parser a
 withParserScope = pLocalEnv enterParserScope leaveParserScope
 
+manyP :: Parser a -> Parser [a]
+manyP = pMany
+
+manyUntil :: Parser Bool -> Parser a -> Parser [a]
+manyUntil = pManyUntil
+
+optionalP :: Parser a -> Parser (Maybe a)
+optionalP = pOptional
+
+tryP :: Parser a -> Parser a
+tryP = pTry
+
 parseProgram :: [Token] -> Either ParseError Program
 parseProgram toks = case parseRestWithEnv program initialParserEnv toks of
   Left err -> Left err
@@ -865,7 +877,9 @@ expression minPrec = do
             climb (ECond lhs yes no)
           TokPunct op | Just (prec, assoc) <- binop op, prec >= minPrec -> do
             advanceToken
-            rhs <- expression (if rightAssoc assoc then prec else prec + 1)
+            rhs <- expression (case assoc of
+              RightAssoc -> prec
+              LeftAssoc -> prec + 1)
             let node = assignNode op lhs rhs
             climb node
           _ -> pure lhs
@@ -1108,12 +1122,6 @@ parserEnvHasType name env = case env of
     Just _ -> True
     Nothing -> False
 
-manyP :: Parser a -> Parser [a]
-manyP = pMany
-
-manyUntil :: Parser Bool -> Parser a -> Parser [a]
-manyUntil = pManyUntil
-
 skipBalanced :: String -> String -> Parser ()
 skipBalanced open close = go (1 :: Int) where
   go depth
@@ -1124,12 +1132,6 @@ skipBalanced open close = go (1 :: Int) where
           TokPunct p | p == open -> advanceToken >> go (depth + 1)
           TokPunct p | p == close -> advanceToken >> go (depth - 1)
           _ -> advanceToken >> go depth
-
-optionalP :: Parser a -> Parser (Maybe a)
-optionalP = pOptional
-
-tryP :: Parser a -> Parser a
-tryP = pTry
 
 ifM :: Parser Bool -> Parser a -> Parser a -> Parser a
 ifM test yes no = do

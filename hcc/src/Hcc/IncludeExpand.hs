@@ -241,13 +241,7 @@ directiveNameFromLine line = case words line of
 
 canonicalGuardName :: String -> String -> Bool
 canonicalGuardName path guard =
-  filenameTokens (hccTakeFileName path) == guardTokens guard
-
-filenameTokens :: String -> [String]
-filenameTokens name = splitNameTokens (map toUpperAscii name)
-
-guardTokens :: String -> [String]
-guardTokens name = splitNameTokens (map toUpperAscii name)
+  splitNameTokens (map toUpperAscii (hccTakeFileName path)) == splitNameTokens (map toUpperAscii guard)
 
 splitNameTokens :: String -> [String]
 splitNameTokens text = filter (not . null) (go text "") where

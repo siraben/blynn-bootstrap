@@ -1,17 +1,11 @@
 module Operators
   ( Assoc(..)
-  , rightAssoc
   , binopArith
   ) where
 
 import Base
 
 data Assoc = LeftAssoc | RightAssoc
-
-rightAssoc :: Assoc -> Bool
-rightAssoc assoc = case assoc of
-  RightAssoc -> True
-  LeftAssoc -> False
 
 binopArith :: String -> Maybe (Int, Assoc)
 binopArith op = case op of

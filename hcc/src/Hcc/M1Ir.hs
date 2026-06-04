@@ -39,7 +39,7 @@ lowerTopDeclsIr :: CompileState -> [TopDecl] -> Either CodegenError (CompileStat
 lowerTopDeclsIr st decls = case decls of
   [] -> Right (st, [])
   Function _ name params body:rest ->
-    case mapCompileRun (unCompileM (registerImplicitCalls (paramDeclNamesIr params) body >> lowerFunction name params body) st) of
+    case mapCompileRun (unCompileM (registerImplicitCalls (map (\(Param _ paramName) -> paramName) params) body >> lowerFunction name params body) st) of
       Left err -> Left err
       Right (fn, st') ->
         case pendingDataItemsIr st' of
@@ -86,15 +86,15 @@ registerTopDeclShallowState st decl = case decl of
   ExternGlobals globals ->
     unCompileM (registerExternGlobals globals) st
   EnumConstants constants ->
-    unCompileM (registerConstants constants) st
+    unCompileM (mapM_ (uncurry bindConstant) constants) st
   TypeDecl types ->
-    unCompileM (registerTypesAggregates types) st
+    unCompileM (mapM_ registerTypeAggregates types) st
   _ -> Right ((), st)
 
 registerFunctionDecl :: CType -> String -> [Param] -> CompileM ()
 registerFunctionDecl ty name params = do
   registerTypeAggregates ty
-  registerTypesAggregates (paramTypes params)
+  mapM_ registerTypeAggregates (paramTypes params)
   bindGlobal name ty
   bindFunctionType name ty params
 
@@ -116,21 +116,12 @@ pendingDataItemsIr st = case csDataItems st of
   [] -> ([], st)
   items -> (map TopData (reverse items), st { csDataItems = [] })
 
-paramDeclNamesIr :: [Param] -> [String]
-paramDeclNamesIr params = case params of
-  [] -> []
-  Param _ name:rest -> name : paramDeclNamesIr rest
-
 emitModuleIr :: (String -> IO ()) -> ModuleIr -> IO ()
 emitModuleIr write ir = case ir of
   ModuleIr items -> emitTopItemsIr write items
 
 emitTopItemsIr :: (String -> IO ()) -> [TopItemIr] -> IO ()
-emitTopItemsIr write items = case items of
-  [] -> pure ()
-  item:rest -> do
-    emitTopItemIr write item
-    emitTopItemsIr write rest
+emitTopItemsIr write = mapM_ (emitTopItemIr write)
 
 emitTopItemIr :: (String -> IO ()) -> TopItemIr -> IO ()
 emitTopItemIr write item = case item of
@@ -210,8 +201,8 @@ emitInstrIr write instr = case instr of
   IZExt temp size op -> emitExt write 23 temp size op
   ITrunc temp size op -> emitExt write 24 temp size op
   IBin temp op left right -> write ("18 " ++ tempText temp ++ " " ++ show (binOpCode op) ++ " " ++ operandIrFields left ++ " " ++ operandIrFields right)
-  ICall result name args -> write ("19 " ++ maybeTempText result ++ " " ++ name ++ " " ++ operandsIrFields args)
-  ICallIndirect result callee args -> write ("20 " ++ maybeTempText result ++ " " ++ operandIrFields callee ++ " " ++ operandsIrFields args)
+  ICall result name args -> write ("19 " ++ maybe "-" tempText result ++ " " ++ name ++ " " ++ listIrFields operandIrFields args)
+  ICallIndirect result callee args -> write ("20 " ++ maybe "-" tempText result ++ " " ++ operandIrFields callee ++ " " ++ listIrFields operandIrFields args)
   ICond temp condInstrs condOp trueInstrs trueOp falseInstrs falseOp -> do
     write ("21 " ++ tempText temp)
     write "["
@@ -248,19 +239,13 @@ terminatorIrLine term = case term of
   TBranch op yes no -> "B " ++ operandIrFields op ++ " " ++ blockIdText yes ++ " " ++ blockIdText no
   TBranchCmp op a b yes no -> "C " ++ show (binOpCode op) ++ " " ++ operandIrFields a ++ " " ++ operandIrFields b ++ " " ++ blockIdText yes ++ " " ++ blockIdText no
 
-operandsIrFields :: [Operand] -> String
-operandsIrFields = listIrFields operandIrFields
-
 operandIrFields :: Operand -> String
 operandIrFields op = case op of
   OTemp temp -> "T" ++ tempText temp
   OImm value -> "I" ++ show value
-  OImmBytes bytes -> "B" ++ intListFields bytes
+  OImmBytes bytes -> "B" ++ listIrFields show bytes
   OGlobal name -> "G" ++ name
   OFunction name -> "F" ++ name
-
-intListFields :: [Int] -> String
-intListFields = listIrFields show
 
 listIrFields :: (a -> String) -> [a] -> String
 listIrFields render values = show (length values) ++ listIrFieldsRest render values
@@ -269,9 +254,6 @@ listIrFieldsRest :: (a -> String) -> [a] -> String
 listIrFieldsRest render values = case values of
   [] -> ""
   value:rest -> ' ' : render value ++ listIrFieldsRest render rest
-
-maybeTempText :: Maybe Temp -> String
-maybeTempText = maybe "-" tempText
 
 tempText :: Temp -> String
 tempText temp = case temp of

@@ -98,9 +98,7 @@ data Expr
   | EInitList [Expr]
 
 paramTypes :: [Param] -> [CType]
-paramTypes params = case params of
-  [] -> []
-  Param ty _:rest -> ty : paramTypes rest
+paramTypes = map (\(Param ty _) -> ty)
 
 renderStmtTag :: Stmt -> String
 renderStmtTag stmt = case stmt of

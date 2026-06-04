@@ -1,7 +1,5 @@
 module LowerLiterals
-  ( constBinOp
-  , floatConstOperand
-  , intConstOperand
+  ( intConstOperand
   , lowerBinOp
   ) where
 
@@ -9,16 +7,10 @@ import Base
 import Literal
 import TypesIr
 
-constBinOp :: String -> Int -> Int -> Int
-constBinOp op a b = maybe 0 id (evalConstBinOp op a b)
-
 intConstOperand :: String -> Operand
 intConstOperand text = case parseIntBytes text of
   Just bytes -> OImmBytes bytes
   Nothing -> OImm (parseInt text)
-
-floatConstOperand :: String -> Operand
-floatConstOperand text = OImmBytes (floatLiteralBytes (floatLiteralSize text) text)
 
 parseIntBytes :: String -> Maybe [Int]
 parseIntBytes text =

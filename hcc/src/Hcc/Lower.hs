@@ -1,8 +1,6 @@
 module Lower
   ( registerTypeAggregates
-  , registerTypesAggregates
   , registerExternGlobals
-  , registerConstants
   , registerFieldAggregates
   , lowerFunction
   , globalData
@@ -100,13 +98,13 @@ lowerStatementsFrom bid instrs stmts defaultTerm = case stmts of
          : bodyBlocks ++
            condBlocks ++ restBlocks)
   SFor initExpr condExpr stepExpr body:rest -> do
-    initInstrs <- maybeLowerSideEffect initExpr
+    initInstrs <- maybe (pure []) lowerSideEffect initExpr
     condId <- freshBlock
     bodyId <- freshBlock
     stepId <- freshBlock
     restId <- freshBlock
     condBlocks <- lowerLoopConditionBlocks condExpr condId bodyId restId
-    stepInstrs <- maybeLowerSideEffect stepExpr
+    stepInstrs <- maybe (pure []) lowerSideEffect stepExpr
     bodyBlocks <- withLoopTargets restId stepId (lowerStatementsFrom bodyId [] body (TJump stepId))
     restBlocks <- lowerStatementsFrom restId [] rest defaultTerm
     pure ( BasicBlock bid (instrs ++ initInstrs) (TJump condId)
@@ -132,7 +130,7 @@ lowerStatementsFrom bid instrs stmts defaultTerm = case stmts of
     yesId <- freshBlock
     noId <- freshBlock
     (restId, restBlocks) <- lowerIfRestTarget rest defaultTerm
-    let noTarget = lowerIfNoTarget no restId noId
+    let noTarget = if null no then restId else noId
     yesBlocks <- lowerStatementsFrom yesId [] yes (TJump restId)
     noBlocks <- lowerIfNoBlocks no noId restId
     condBlocks <- lowerConditionBlock bid instrs cond yesId noTarget
@@ -160,10 +158,6 @@ lowerIfJoinTarget rest defaultTerm = do
   blocks <- lowerStatementsFrom joinId [] rest defaultTerm
   pure (joinId, blocks)
 
-lowerIfNoTarget :: [Stmt] -> BlockId -> BlockId -> BlockId
-lowerIfNoTarget no restId noId =
-  if null no then restId else noId
-
 lowerIfNoBlocks :: [Stmt] -> BlockId -> BlockId -> CompileM [BasicBlock]
 lowerIfNoBlocks no noId restId = case no of
   [] -> pure []
@@ -177,9 +171,6 @@ lowerUnreachableLabels stmts defaultTerm = case stmts of
     lowerStatementsFrom target [] rest defaultTerm
   _:rest ->
     lowerUnreachableLabels rest defaultTerm
-
-maybeLowerSideEffect :: Maybe Expr -> CompileM [Instr]
-maybeLowerSideEffect = maybe (pure []) lowerSideEffect
 
 lowerLoopConditionBlocks :: Maybe Expr -> BlockId -> BlockId -> BlockId -> CompileM [BasicBlock]
 lowerLoopConditionBlocks condExpr condId bodyId restId = case condExpr of
@@ -254,7 +245,9 @@ lowerSwitchDispatch :: BlockId -> Operand -> BlockId -> [(Expr, BlockId)] -> Com
 lowerSwitchDispatch bid valueOp defaultTarget switchCasePairs = case switchCasePairs of
   [] -> pure [BasicBlock bid [] (TJump defaultTarget)]
   (caseExpr, target):tailCases -> do
-    nextId <- switchNextDispatchTarget defaultTarget tailCases
+    nextId <- case tailCases of
+      [] -> pure defaultTarget
+      _ -> freshBlock
     (caseInstrs, caseOp) <- lowerExpr caseExpr
     let block = BasicBlock bid caseInstrs (TBranchCmp IEq valueOp caseOp target nextId)
     case tailCases of
@@ -268,7 +261,9 @@ lowerSwitchClauses restId clauses = case clauses of
   [] -> pure []
   pair:rest -> case pair of
     (SwitchClause _ body, bid) -> do
-      let fallthrough = switchFallthroughTarget restId rest
+      let fallthrough = case rest of
+            [] -> restId
+            (_, nextId):_ -> nextId
       bodyBlocks <- lowerStatementsFrom bid [] body (TJump fallthrough)
       restBlocks <- lowerSwitchClauses restId rest
       pure (bodyBlocks ++ restBlocks)
@@ -282,9 +277,9 @@ lowerSideEffect expr = case expr of
         direct <- lookupFunction name
         if direct
           then lowerDirectSideEffect name args
-          else lowerIndirectSideEffect (EVar name) args
+          else lowerIndirectCallInstrs Nothing (EVar name) args
   ECall callee args -> do
-    lowerIndirectSideEffect callee args
+    lowerIndirectCallInstrs Nothing callee args
   EAssign lhs rhs ->
     lowerResultInstrs (lowerAssignment lhs rhs)
   ECompoundAssign op lhs rhs ->
@@ -311,10 +306,6 @@ lowerDirectSideEffect name args = do
   (argInstrs, argOps) <- lowerCallArgs args
   pure (argInstrs ++ [ICall Nothing name argOps])
 
-lowerIndirectSideEffect :: Expr -> [Expr] -> CompileM [Instr]
-lowerIndirectSideEffect callee args =
-  lowerIndirectCallInstrs Nothing callee args
-
 lowerDecls :: [(CType, String, Maybe Expr)] -> CompileM [Instr]
 lowerDecls decls = do
   lowered <- mapM (\(ty, name, initExpr) -> lowerDecl ty name initExpr) decls
@@ -340,13 +331,9 @@ lowerAggregateDeclInit ty temp initExpr = do
   template <- localAggregateTemplateData ty initExpr
   case template of
     Just label ->
-      lowerAggregateDeclTemplate ty temp label
+      copyObject (OTemp temp) (OGlobal label) ty
     Nothing ->
       lowerAggregateDeclRuntime ty temp initExpr
-
-lowerAggregateDeclTemplate :: CType -> Temp -> String -> CompileM [Instr]
-lowerAggregateDeclTemplate ty temp label =
-  copyObject (OTemp temp) (OGlobal label) ty
 
 lowerAggregateDeclRuntime :: CType -> Temp -> Maybe Expr -> CompileM [Instr]
 lowerAggregateDeclRuntime ty temp initExpr = case initExpr of
@@ -500,15 +487,12 @@ lowerAggregateElementScalarWrite addr fieldTy expr = do
   pure (exprInstrs ++ coerceInstrs ++ [store])
 
 registerExternGlobals :: [(CType, String)] -> CompileM ()
-registerExternGlobals = mapM_ (uncurry (\ty name -> do
+registerExternGlobals = mapM_ $ \(ty, name) -> do
     registerTypeAggregates ty
-    bindGlobal name ty))
-
-registerConstants :: [(String, Int)] -> CompileM ()
-registerConstants = mapM_ (uncurry bindConstant)
+    bindGlobal name ty
 
 registerFieldAggregates :: [Field] -> CompileM ()
-registerFieldAggregates = mapM_ (\(Field ty _) -> registerTypeAggregates ty)
+registerFieldAggregates = mapM_ $ \(Field ty _) -> registerTypeAggregates ty
 
 registerTypeAggregates :: CType -> CompileM ()
 registerTypeAggregates ty = case ty of
@@ -516,7 +500,7 @@ registerTypeAggregates ty = case ty of
   CArray inner _ -> registerTypeAggregates inner
   CFunc ret params -> do
     registerTypeAggregates ret
-    registerTypesAggregates params
+    mapM_ registerTypeAggregates params
   CStructNamed name fields -> do
     registerFieldAggregates fields
     bindStruct name False fields
@@ -529,20 +513,17 @@ registerTypeAggregates ty = case ty of
     registerFieldAggregates fields
   _ -> pure ()
 
-registerTypesAggregates :: [CType] -> CompileM ()
-registerTypesAggregates = mapM_ registerTypeAggregates
-
 lowerExpr :: Expr -> CompileM ([Instr], Operand)
 lowerExpr expr = case expr of
   EInt text ->
     pure ([], intConstOperand text)
   EFloat text ->
-    pure ([], floatConstOperand text)
+    pure ([], OImmBytes (floatLiteralBytes (floatLiteralSize text) text))
   EChar text ->
     pure ([], OImm (charValue text))
   EString text -> do
     dataLabel <- freshDataLabel
-    addDataItem (DataItem dataLabel (bytesData (stringBytes text)))
+    addDataItem (DataItem dataLabel (map DByte (stringBytes text)))
     pure ([], OGlobal dataLabel)
   EVar name -> lowerVarExpr name
   EUnary "+" x -> lowerExpr x
@@ -597,9 +578,9 @@ lowerExpr expr = case expr of
     (bi, bo) <- lowerExpr b
     pure (ai ++ bi, bo)
   EBinary "&&" a b ->
-    lowerLogicalAnd a b
+    lowerShortCircuit True a b
   EBinary "||" a b ->
-    lowerLogicalOr a b
+    lowerShortCircuit False a b
   EBinary "+" a b ->
     lowerAddExpr a b
   EBinary "-" a b ->
@@ -731,12 +712,9 @@ lowerDirectCallExpr name args = do
   out <- freshTemp
   pure (argInstrs ++ [ICall (Just out) name argOps], OTemp out)
 
-lowerExprs :: [Expr] -> CompileM [([Instr], Operand)]
-lowerExprs = mapM lowerExpr
-
 lowerCallArgs :: [Expr] -> CompileM ([Instr], [Operand])
 lowerCallArgs args = do
-  lowered <- lowerExprs args
+  lowered <- mapM lowerExpr args
   pure (concatMap fst lowered, map snd lowered)
 
 lowerIndirectCallInstrs :: Maybe Temp -> Expr -> [Expr] -> CompileM [Instr]
@@ -750,12 +728,6 @@ lowerIndirectCall callee args = do
   out <- freshTemp
   instrs <- lowerIndirectCallInstrs (Just out) callee args
   pure (instrs, OTemp out)
-
-lowerLogicalAnd :: Expr -> Expr -> CompileM ([Instr], Operand)
-lowerLogicalAnd = lowerShortCircuit True
-
-lowerLogicalOr :: Expr -> Expr -> CompileM ([Instr], Operand)
-lowerLogicalOr = lowerShortCircuit False
 
 lowerShortCircuit :: Bool -> Expr -> Expr -> CompileM ([Instr], Operand)
 lowerShortCircuit isAnd left right = do
@@ -1278,7 +1250,7 @@ exprType expr = case expr of
       _ -> Nothing)
   EUnary "&" value -> do
     mty <- exprType value
-    pure (maybePtrType mty)
+    pure (fmap CPtr mty)
   EIndex base _ -> do
     mty <- exprType base
     pure (case mty of
@@ -1288,12 +1260,12 @@ exprType expr = case expr of
   EPtrMember base field -> do
     baseTy <- exprType base
     info <- memberInfoMaybe baseTy field
-    pure (maybeMemberType info)
+    pure (fmap fst info)
   EMember base field -> do
     baseTy <- exprType base
     knownBaseTy <- requireMaybeType "member base has unknown type" baseTy
     info <- memberInfoMaybe (Just (CPtr knownBaseTy)) field
-    pure (maybeMemberType info)
+    pure (fmap fst info)
   EBinary "+" left right -> do
     leftTy <- exprType left
     rightTy <- exprType right
@@ -1370,9 +1342,6 @@ promoteMaybeIntegerType mty = case mty of
     promoted <- promoteIntegerType ty
     pure (Just promoted)
 
-maybePtrType :: Maybe CType -> Maybe CType
-maybePtrType = fmap CPtr
-
 functionResultType :: CType -> Maybe CType
 functionResultType ty = case ty of
   CFunc ret _ -> Just ret
@@ -1382,9 +1351,6 @@ functionResultType ty = case ty of
 isFunctionNameMacro :: String -> Bool
 isFunctionNameMacro name =
   name `elem` ["__func__", "__FUNCTION__", "__PRETTY_FUNCTION__"]
-
-maybeMemberType :: Maybe (CType, Int) -> Maybe CType
-maybeMemberType = fmap fst
 
 addExprResultType :: Maybe CType -> Maybe CType -> CType -> Maybe CType
 addExprResultType leftTy rightTy arithmeticTy = case pointerElementType leftTy of
@@ -1880,11 +1846,11 @@ globalStringData :: CType -> String -> CompileM [DataValue]
 globalStringData ty text = case ty of
   CArray CChar count -> do
     size <- stringDataSize count text
-    padDataTarget size (bytesData (stringBytes text))
+    padDataTarget size (map DByte (stringBytes text))
   _ -> if isPointerType ty
     then do
       dataLabel <- freshDataLabel
-      addDataItem (DataItem dataLabel (bytesData (stringBytes text)))
+      addDataItem (DataItem dataLabel (map DByte (stringBytes text)))
       pure [DAddress dataLabel]
     else do
       value <- constExprValue (EString text)
@@ -1934,22 +1900,13 @@ structFields offset remaining values = case remaining of
       align <- typeAlign fieldTy
       let aligned = alignUp offset align
       fieldSize <- typeSize fieldTy
-      let valueHead = maybeExprHead values
-      let valueTail = exprTail values
+      let (valueHead, valueTail) = case values of
+            [] -> (Nothing, [])
+            expr:restExprs -> (Just expr, restExprs)
       fieldData <- globalDataValue fieldTy valueHead
       paddedField <- padDataTarget fieldSize fieldData
       (restData, end) <- structFields (aligned + fieldSize) rest valueTail
       pure (zeroData (aligned - offset) ++ paddedField ++ restData, end)
-
-maybeExprHead :: [Expr] -> Maybe Expr
-maybeExprHead values = case values of
-  [] -> Nothing
-  expr:_ -> Just expr
-
-exprTail :: [Expr] -> [Expr]
-exprTail values = case values of
-  [] -> []
-  _:rest -> rest
 
 globalUnionData :: [Field] -> [Expr] -> CompileM [DataValue]
 globalUnionData fields exprs = case fields of
@@ -1986,12 +1943,12 @@ isAggregateTypeM ty = case ty of
 scalarData :: CType -> Int -> CompileM [DataValue]
 scalarData ty value = do
   size <- typeSize ty
-  pure (bytesData (intBytes size value))
+  pure (map DByte (intBytes size value))
 
 scalarFloatData :: CType -> String -> CompileM [DataValue]
 scalarFloatData ty text = do
   size <- typeSize ty
-  pure (bytesData (floatLiteralBytes size text))
+  pure (map DByte (floatLiteralBytes size text))
 
 padDataTarget :: Int -> [DataValue] -> CompileM [DataValue]
 padDataTarget size values = do
@@ -2068,7 +2025,7 @@ constExprValue expr = case expr of
   EBinary op left right -> do
     a <- constExprValue left
     b <- constExprValue right
-    pure (constBinOp op a b)
+    pure (maybe 0 id (evalConstBinOp op a b))
   ECond cond yes no -> do
     c <- constExprValue cond
     constExprValue (if c /= 0 then yes else no)
