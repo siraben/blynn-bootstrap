@@ -195,7 +195,7 @@ topDeclNoTypedef = do
 
 topDeclNoStruct :: Parser TopDecl
 topDeclNoStruct = do
-  isExtern <- leadingExternQualifier
+  storage <- leadingStorageClass
   ty0 <- ctype
   skipAttributes
   standalone <- eatPunct ";"
@@ -209,34 +209,43 @@ topDeclNoStruct = do
           skipAttributes
           isPrototype <- eatPunct ";"
           if isPrototype
-            then pure (Prototype ty name params)
+            then pure (Prototype (storageLinkage storage) ty name params)
             else do
               body <- compound
-              pure (Function ty name params body))
+              pure (Function (storageLinkage storage) ty name params body))
         (do
           initExpr <- optionalP (eatPunct "=" >> initializerExpr)
           rest <- declarationItemsTail ty0
-          pure (globalDecl isExtern ((ty, name, initExpr):rest)))
+          pure (globalDecl storage ((ty, name, initExpr):rest)))
 
-globalDecl :: Bool -> [(CType, String, Maybe Expr)] -> TopDecl
-globalDecl isExtern decls =
-  if isExtern && all uninitialized decls
+data StorageClass = StorageDefault | StorageExtern | StorageStatic
+  deriving Eq
+
+storageLinkage :: StorageClass -> Linkage
+storageLinkage storage = case storage of
+  StorageStatic -> InternalLinkage
+  _ -> ExternalLinkage
+
+globalDecl :: StorageClass -> [(CType, String, Maybe Expr)] -> TopDecl
+globalDecl storage decls =
+  if storage == StorageExtern && all uninitialized decls
     then ExternGlobals (map externPair decls)
     else case decls of
-      [(ty, name, initExpr)] -> Global ty name initExpr
-      _ -> Globals decls
+      [(ty, name, initExpr)] -> Global (storageLinkage storage) ty name initExpr
+      _ -> Globals (storageLinkage storage) decls
   where
     uninitialized (_, _, initExpr) = case initExpr of
       Nothing -> True
       Just _ -> False
     externPair (ty, name, _) = (ty, name)
 
-leadingExternQualifier :: Parser Bool
-leadingExternQualifier = pRaw $ \env toks -> Unconsumed (Ok (go toks) env toks) where
-  go ts = case ts of
-    Token _ (TokIdent "extern"):_ -> True
-    Token _ (TokIdent name):rest | name `elem` storageAndTypeQualifiers -> go rest
-    _ -> False
+leadingStorageClass :: Parser StorageClass
+leadingStorageClass = pRaw $ \env toks -> Unconsumed (Ok (go StorageDefault toks) env toks) where
+  go storage ts = case ts of
+    Token _ (TokIdent "extern"):rest -> go StorageExtern rest
+    Token _ (TokIdent "static"):rest -> go StorageStatic rest
+    Token _ (TokIdent name):rest | name `elem` storageAndTypeQualifiers -> go storage rest
+    _ -> storage
 
 typedefDecl :: Parser TopDecl
 typedefDecl = do

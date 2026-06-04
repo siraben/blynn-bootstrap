@@ -851,7 +851,9 @@ lowerNonLocalVarExpr :: String -> CompileM ([Instr], Operand)
 lowerNonLocalVarExpr name = do
   function <- lookupFunction name
   if function
-    then pure ([], OFunction name)
+    then do
+      resolved <- resolveSymbolName name
+      pure ([], OFunction resolved)
     else lowerGlobalVarExpr name
 
 lowerGlobalVarExpr :: String -> CompileM ([Instr], Operand)
@@ -862,16 +864,18 @@ lowerGlobalVarExpr name = do
     Nothing -> throwC ("unknown identifier: " ++ name)
 
 lowerTypedGlobalVarExpr :: String -> CType -> CompileM ([Instr], Operand)
-lowerTypedGlobalVarExpr name ty = case ty of
-  CArray _ _ -> pure ([], OGlobal name)
-  _ -> do
-    aggregateStorage <- isAggregateTypeM ty
-    if aggregateStorage
-      then pure ([], OGlobal name)
-      else do
-        out <- freshTemp
-        load <- loadInstr out ty (OGlobal name)
-        pure ([load], OTemp out)
+lowerTypedGlobalVarExpr name ty = do
+  resolved <- resolveSymbolName name
+  case ty of
+    CArray _ _ -> pure ([], OGlobal resolved)
+    _ -> do
+      aggregateStorage <- isAggregateTypeM ty
+      if aggregateStorage
+        then pure ([], OGlobal resolved)
+        else do
+          out <- freshTemp
+          load <- loadInstr out ty (OGlobal resolved)
+          pure ([load], OTemp out)
 
 lowerBinaryExpr :: String -> Expr -> Expr -> CompileM ([Instr], Operand)
 lowerBinaryExpr op a b =
@@ -965,6 +969,7 @@ indirectCallReturnType callee = do
 
 lowerDirectCallInstrs :: Maybe Temp -> String -> Maybe CType -> [([Instr], Operand)] -> CompileM [Instr]
 lowerDirectCallInstrs result name retTy lowered = do
+  resolved <- resolveSymbolName name
   aggregate <- maybe (pure False) isAggregateTypeM retTy
   if aggregate
     then do
@@ -972,8 +977,8 @@ lowerDirectCallInstrs result name retTy lowered = do
       temp <- freshTemp
       size <- typeSize ty
       let ops = OTemp temp : lowerExprResultsOps lowered
-      pure (IAlloca temp size : lowerExprResultsInstrs lowered ++ [ICall Nothing name ops])
-    else pure (lowerExprResultsInstrs lowered ++ [ICall result name (lowerExprResultsOps lowered)])
+      pure (IAlloca temp size : lowerExprResultsInstrs lowered ++ [ICall Nothing resolved ops])
+    else pure (lowerExprResultsInstrs lowered ++ [ICall result resolved (lowerExprResultsOps lowered)])
 
 lowerIndirectCallInstrs :: Maybe Temp -> Operand -> Maybe CType -> [([Instr], Operand)] -> CompileM [Instr]
 lowerIndirectCallInstrs result calleeOp retTy lowered = do
@@ -989,10 +994,11 @@ lowerIndirectCallInstrs result calleeOp retTy lowered = do
 
 lowerAggregateDirectCall :: String -> CType -> [([Instr], Operand)] -> CompileM ([Instr], Operand)
 lowerAggregateDirectCall name ty lowered = do
+  resolved <- resolveSymbolName name
   temp <- freshTemp
   size <- typeSize ty
   let ops = OTemp temp : lowerExprResultsOps lowered
-  pure (IAlloca temp size : lowerExprResultsInstrs lowered ++ [ICall Nothing name ops], OTemp temp)
+  pure (IAlloca temp size : lowerExprResultsInstrs lowered ++ [ICall Nothing resolved ops], OTemp temp)
 
 lowerAggregateIndirectCall :: Operand -> CType -> [([Instr], Operand)] -> CompileM ([Instr], Operand)
 lowerAggregateIndirectCall calleeOp ty lowered = do
@@ -1494,7 +1500,9 @@ lowerVarAddress name = do
     Nothing -> do
       function <- lookupFunction name
       if function
-        then pure ([], OFunction name)
+        then do
+          resolved <- resolveSymbolName name
+          pure ([], OFunction resolved)
         else lowerNonFunctionAddress (EVar name)
     Just _ ->
       lowerNonFunctionAddress (EVar name)
@@ -1524,7 +1532,8 @@ lowerLValue target = case target of
       Nothing -> do
         ty <- lookupGlobalType name
         knownTy <- requireMaybeType ("unknown global type: " ++ name) ty
-        pure ([], LAddress (OGlobal name) knownTy)
+        resolved <- resolveSymbolName name
+        pure ([], LAddress (OGlobal resolved) knownTy)
   EUnary "*" ptr -> do
     (instrs, op) <- lowerExpr ptr
     ty <- exprType target
@@ -2557,8 +2566,9 @@ globalAddressData name = do
 
 globalAddressLabel :: String -> CompileM String
 globalAddressLabel name = do
+  resolved <- resolveSymbolName name
   function <- lookupFunction name
-  pure (if function then "FUNCTION_" ++ name else name)
+  pure (if function then "FUNCTION_" ++ resolved else resolved)
 
 constExprValue :: Expr -> CompileM Int
 constExprValue expr = case expr of

@@ -1,6 +1,7 @@
 module TypesAst
   ( Program(..)
   , TopDecl(..)
+  , Linkage(..)
   , Param(..)
   , Field(..)
   , CType(..)
@@ -15,11 +16,13 @@ import Base
 
 data Program = Program [TopDecl]
 
+data Linkage = ExternalLinkage | InternalLinkage
+
 data TopDecl
-  = Function CType String [Param] [Stmt]
-  | Prototype CType String [Param]
-  | Global CType String (Maybe Expr)
-  | Globals [(CType, String, Maybe Expr)]
+  = Function Linkage CType String [Param] [Stmt]
+  | Prototype Linkage CType String [Param]
+  | Global Linkage CType String (Maybe Expr)
+  | Globals Linkage [(CType, String, Maybe Expr)]
   | ExternGlobals [(CType, String)]
   | StructDecl Bool String [Field]
   | EnumConstants [(String, Int)]

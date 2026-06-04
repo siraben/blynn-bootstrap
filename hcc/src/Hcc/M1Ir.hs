@@ -28,19 +28,54 @@ buildM1IrModuleWithDataPrefixTarget prefix target ast = case ast of
     case mapCompileRun (unCompileM registerBuiltinStructs (initialCompileStateForTarget prefix target)) of
       Left err -> Left err
       Right (_, st0) ->
-        case registerTopDeclsIr st0 decls of
+        case mapCompileRun (unCompileM (registerInternalAliases prefix decls) st0) of
           Left err -> Left err
-          Right (st, registeredItems) ->
-            case lowerTopDeclsIr st decls of
+          Right (_, stAliases) ->
+            case registerTopDeclsIr stAliases decls of
               Left err -> Left err
-              Right (_, functionItems) ->
-                normalizeAddressAddends target (ModuleIr (registeredItems ++ functionItems))
+              Right (st, registeredItems) ->
+                case lowerTopDeclsIr st decls of
+                  Left err -> Left err
+                  Right (_, functionItems) ->
+                    normalizeAddressAddends target (ModuleIr (registeredItems ++ functionItems))
+
+registerInternalAliases :: String -> [TopDecl] -> CompileM ()
+registerInternalAliases prefix decls = case decls of
+  [] -> pure ()
+  decl:rest -> do
+    registerInternalAlias prefix decl
+    registerInternalAliases prefix rest
+
+registerInternalAlias :: String -> TopDecl -> CompileM ()
+registerInternalAlias prefix decl = case decl of
+  Function InternalLinkage _ name _ _ ->
+    bindSymbolAlias name (internalSymbolName prefix name)
+  Prototype InternalLinkage _ name _ ->
+    bindSymbolAlias name (internalSymbolName prefix name)
+  Global InternalLinkage _ name _ ->
+    bindSymbolAlias name (internalSymbolName prefix name)
+  Globals InternalLinkage globals ->
+    registerInternalGlobalAliases prefix globals
+  _ -> pure ()
+
+registerInternalGlobalAliases :: String -> [(CType, String, Maybe Expr)] -> CompileM ()
+registerInternalGlobalAliases prefix globals = case globals of
+  [] -> pure ()
+  (_, name, _):rest -> do
+    bindSymbolAlias name (internalSymbolName prefix name)
+    registerInternalGlobalAliases prefix rest
+
+internalSymbolName :: String -> String -> String
+internalSymbolName prefix name = "HCC_INTERNAL_" ++ prefix ++ "_" ++ name
 
 lowerTopDeclsIr :: CompileState -> [TopDecl] -> Either CodegenError (CompileState, [TopItemIr])
 lowerTopDeclsIr st decls = case decls of
   [] -> Right (st, [])
-  Function _ name params body:rest ->
-    case mapCompileRun (unCompileM (registerImplicitCalls (paramDeclNamesIr params) body >> lowerFunction name params body) st) of
+  Function _ _ name params body:rest ->
+    case mapCompileRun (unCompileM (do
+      resolved <- resolveSymbolName name
+      registerImplicitCalls (paramDeclNamesIr params) body
+      lowerFunction resolved params body) st) of
       Left err -> Left err
       Right (fn, st') ->
         case pendingDataItemsIr st' of
@@ -63,13 +98,18 @@ registerTopDeclsIr st decls = case decls of
 
 registerTopDeclIr :: CompileState -> TopDecl -> Either CodegenError (CompileState, [TopItemIr])
 registerTopDeclIr st decl = case decl of
-  Global ty name initExpr ->
-    case mapCompileRun (unCompileM (registerTypeAggregates ty >> bindGlobal name ty >> withErrorContext ("global " ++ name) (globalData ty initExpr)) st) of
+  Global _ ty name initExpr ->
+    case mapCompileRun (unCompileM (do
+      registerTypeAggregates ty
+      bindGlobal name ty
+      values <- withErrorContext ("global " ++ name) (globalData ty initExpr)
+      resolved <- resolveSymbolName name
+      pure (resolved, values)) st) of
       Left err -> Left err
-      Right (values, st') -> do
+      Right ((resolved, values), st') -> do
         case pendingDataItemsIr st' of
-          (pending, st'') -> Right (st'', TopData (DataItem name values) : pending)
-  Globals globals ->
+          (pending, st'') -> Right (st'', TopData (DataItem resolved values) : pending)
+  Globals _ globals ->
     registerGlobalsIr st globals
   _ ->
     case mapCompileRun (registerTopDeclShallowState st decl) of
@@ -78,9 +118,9 @@ registerTopDeclIr st decl = case decl of
 
 registerTopDeclShallowState :: CompileState -> TopDecl -> Either CompileError ((), CompileState)
 registerTopDeclShallowState st decl = case decl of
-  Function ty name params _ ->
+  Function _ ty name params _ ->
     unCompileM (registerFunctionDecl ty name params) st
-  Prototype ty name params ->
+  Prototype _ ty name params ->
     unCompileM (registerFunctionDecl ty name params) st
   StructDecl isUnion name fields ->
     unCompileM (registerFieldAggregates fields >> bindStruct name isUnion fields) st
@@ -103,14 +143,19 @@ registerGlobalsIr :: CompileState -> [(CType, String, Maybe Expr)] -> Either Cod
 registerGlobalsIr st globals = case globals of
   [] -> Right (st, [])
   (ty, name, initExpr):rest ->
-    case mapCompileRun (unCompileM (registerTypeAggregates ty >> bindGlobal name ty >> withErrorContext ("global " ++ name) (globalData ty initExpr)) st) of
+    case mapCompileRun (unCompileM (do
+      registerTypeAggregates ty
+      bindGlobal name ty
+      values <- withErrorContext ("global " ++ name) (globalData ty initExpr)
+      resolved <- resolveSymbolName name
+      pure (resolved, values)) st) of
       Left err -> Left err
-      Right (values, st') ->
+      Right ((resolved, values), st') ->
         case pendingDataItemsIr st' of
           (pending, st'') ->
             case registerGlobalsIr st'' rest of
               Left err -> Left err
-              Right (stFinal, restItems) -> Right (stFinal, TopData (DataItem name values) : pending ++ restItems)
+              Right (stFinal, restItems) -> Right (stFinal, TopData (DataItem resolved values) : pending ++ restItems)
 
 pendingDataItemsIr :: CompileState -> ([TopItemIr], CompileState)
 pendingDataItemsIr st = case csDataItems st of

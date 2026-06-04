@@ -17,6 +17,8 @@ module CompileM
   , bindConstant
   , bindFunction
   , bindFunctionType
+  , bindSymbolAlias
+  , resolveSymbolName
   , lookupVarMaybe
   , lookupVarType
   , lookupGlobalType
@@ -67,6 +69,7 @@ data CompileState = CompileState
   , csConstants :: SymbolMap Int
   , csFunctions :: SymbolSet
   , csFunctionTypes :: SymbolMap CType
+  , csSymbolAliases :: SymbolMap String
   , csLabels :: SymbolMap BlockId
   , csDataItems :: [DataItem]
   , csBreakTargets :: [BlockId]
@@ -114,6 +117,7 @@ initialCompileState = CompileState
   , csConstants = symbolMapEmpty
   , csFunctions = symbolSetEmpty
   , csFunctionTypes = symbolMapEmpty
+  , csSymbolAliases = symbolMapEmpty
   , csLabels = symbolMapEmpty
   , csDataItems = []
   , csBreakTargets = []
@@ -181,7 +185,8 @@ bindStruct name isUnion fields = CompileM $ \st ->
 bindGlobal :: String -> CType -> CompileM ()
 bindGlobal name ty = do
   rejectReservedSymbol "global" name
-  CompileM $ \st -> Right ((), st { csGlobals = symbolMapInsert name ty (csGlobals st) })
+  resolved <- resolveSymbolName name
+  CompileM $ \st -> Right ((), st { csGlobals = symbolMapInsert resolved ty (csGlobals st) })
 
 rejectReservedSymbol :: String -> String -> CompileM ()
 rejectReservedSymbol kind name =
@@ -196,15 +201,29 @@ bindConstant name value = CompileM $ \st ->
 bindFunction :: String -> CompileM ()
 bindFunction name = do
   rejectReservedSymbol "function" name
-  CompileM $ \st -> Right ((), st { csFunctions = symbolSetInsert name (csFunctions st) })
+  resolved <- resolveSymbolName name
+  CompileM $ \st -> Right ((), st { csFunctions = symbolSetInsert resolved (csFunctions st) })
 
 bindFunctionType :: String -> CType -> [Param] -> CompileM ()
 bindFunctionType name retTy params = do
   rejectReservedSymbol "function" name
+  resolved <- resolveSymbolName name
   CompileM $ \st -> Right ((), st
-    { csFunctions = symbolSetInsert name (csFunctions st)
-    , csFunctionTypes = symbolMapInsert name (CFunc retTy (paramTypes params)) (csFunctionTypes st)
+    { csFunctions = symbolSetInsert resolved (csFunctions st)
+    , csFunctionTypes = symbolMapInsert resolved (CFunc retTy (paramTypes params)) (csFunctionTypes st)
     })
+
+bindSymbolAlias :: String -> String -> CompileM ()
+bindSymbolAlias public resolved = do
+  rejectReservedSymbol "symbol alias" public
+  rejectReservedSymbol "symbol alias" resolved
+  CompileM $ \st -> Right ((), st { csSymbolAliases = symbolMapInsert public resolved (csSymbolAliases st) })
+
+resolveSymbolName :: String -> CompileM String
+resolveSymbolName name = CompileM $ \st ->
+  case symbolMapLookup name (csSymbolAliases st) of
+    Just resolved -> Right (resolved, st)
+    Nothing -> Right (name, st)
 
 lookupVarMaybe :: String -> CompileM (Maybe Temp)
 lookupVarMaybe name = CompileM $ \st -> Right (fmap fst (scopeMapLookup name (csVars st)), st)
@@ -213,16 +232,22 @@ lookupVarType :: String -> CompileM (Maybe CType)
 lookupVarType name = CompileM $ \st -> Right (fmap snd (scopeMapLookup name (csVars st)), st)
 
 lookupGlobalType :: String -> CompileM (Maybe CType)
-lookupGlobalType name = CompileM $ \st -> Right (symbolMapLookup name (csGlobals st), st)
+lookupGlobalType name = do
+  resolved <- resolveSymbolName name
+  CompileM $ \st -> Right (symbolMapLookup resolved (csGlobals st), st)
 
 lookupConstant :: String -> CompileM (Maybe Int)
 lookupConstant name = CompileM $ \st -> Right (symbolMapLookup name (csConstants st), st)
 
 lookupFunction :: String -> CompileM Bool
-lookupFunction name = CompileM $ \st -> Right (symbolSetMember name (csFunctions st), st)
+lookupFunction name = do
+  resolved <- resolveSymbolName name
+  CompileM $ \st -> Right (symbolSetMember resolved (csFunctions st), st)
 
 lookupFunctionType :: String -> CompileM (Maybe CType)
-lookupFunctionType name = CompileM $ \st -> Right (symbolMapLookup name (csFunctionTypes st), st)
+lookupFunctionType name = do
+  resolved <- resolveSymbolName name
+  CompileM $ \st -> Right (symbolMapLookup resolved (csFunctionTypes st), st)
 
 lookupStruct :: String -> CompileM (Maybe (Bool, [Field]))
 lookupStruct name = CompileM $ \st -> Right (symbolMapLookup name (csStructs st), st)
