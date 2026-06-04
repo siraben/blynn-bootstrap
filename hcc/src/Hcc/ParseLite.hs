@@ -30,15 +30,16 @@ data Reply env tok err a
 data P env tok err a = P { runP :: env -> [tok] -> Consumed (Reply env tok err a) }
 
 instance Functor (P env tok err) where
-  fmap f p = P $ \env toks -> mapConsumed (runP p env toks)
+  fmap f p = P $ \env toks -> mapConsumed mapReply (runP p env toks)
     where
-      mapConsumed consumed = case consumed of
-        Unconsumed x -> Unconsumed (mapReply x)
-        Consumed x -> Consumed (mapReply x)
-
       mapReply reply = case reply of
         Ok x env' rest -> Ok (f x) env' rest
         Error err -> Error err
+
+mapConsumed :: (a -> b) -> Consumed a -> Consumed b
+mapConsumed f consumed = case consumed of
+  Unconsumed x -> Unconsumed (f x)
+  Consumed x -> Consumed (f x)
 
 instance Applicative (P env tok err) where
   pure x = P $ \env toks -> Unconsumed (Ok x env toks)
@@ -83,9 +84,7 @@ pLocalEnv enter leave action = P $ \env toks ->
         Error err -> Error err
         Ok x env' rest -> Ok x (leave env env') rest
   in
-  case runP action (enter env) toks of
-    Unconsumed reply -> Unconsumed (leaveReply reply)
-    Consumed reply -> Consumed (leaveReply reply)
+  mapConsumed leaveReply (runP action (enter env) toks)
 
 pRaw :: (env -> [tok] -> Consumed (Reply env tok err a)) -> P env tok err a
 pRaw = P

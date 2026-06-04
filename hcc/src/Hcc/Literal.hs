@@ -14,7 +14,6 @@ module Literal
   , stripFloatSuffix
   , naturalLiteralBytes
   , intBytes
-  , takeInts
   , charValue
   , stringBytes
   , isDecimalDigit
@@ -29,7 +28,7 @@ module Literal
 import Base
 
 boolToInt :: Bool -> Int
-boolToInt value = if value then 1 else 0
+boolToInt = bool 0 1
 
 evalConstBinOp :: String -> Int -> Int -> Maybe Int
 evalConstBinOp op a b = case op of
@@ -60,22 +59,13 @@ bitNotInt :: Int -> Int
 bitNotInt value = negate value - 1
 
 bitAndInt :: Int -> Int -> Int
-bitAndInt lhs rhs = bitFoldInt bitAndBool lhs rhs 1 0
+bitAndInt lhs rhs = bitFoldInt (&&) lhs rhs 1 0
 
 bitOrInt :: Int -> Int -> Int
-bitOrInt lhs rhs = bitFoldInt bitOrBool lhs rhs 1 0
+bitOrInt lhs rhs = bitFoldInt (||) lhs rhs 1 0
 
 bitXorInt :: Int -> Int -> Int
-bitXorInt lhs rhs = bitFoldInt bitXorBool lhs rhs 1 0
-
-bitAndBool :: Bool -> Bool -> Bool
-bitAndBool lhs rhs = lhs && rhs
-
-bitOrBool :: Bool -> Bool -> Bool
-bitOrBool lhs rhs = lhs || rhs
-
-bitXorBool :: Bool -> Bool -> Bool
-bitXorBool lhs rhs = lhs /= rhs
+bitXorInt lhs rhs = bitFoldInt (/=) lhs rhs 1 0
 
 bitFoldInt :: (Bool -> Bool -> Bool) -> Int -> Int -> Int -> Int -> Int
 bitFoldInt op lhs rhs bit acc =
@@ -100,23 +90,22 @@ shiftRightInt value amount = value `div` pow2 amount
 intLiteralIsUnsigned :: String -> Bool
 intLiteralIsUnsigned text = case text of
   [] -> False
-  c:rest -> c == 'u' || c == 'U' || intLiteralIsUnsigned rest
+  c:rest -> c `elem` "uU" || intLiteralIsUnsigned rest
 
 parseInt :: String -> Int
 parseInt text =
   let clean = stripIntSuffix text
   in case clean of
-    '0':'x':xs -> readHex xs
-    '0':'X':xs -> readHex xs
-    '0':xs -> readOctal xs
-    _ -> readDecimalPrefix clean
+    '0':'x':xs -> readHexFrom 0 xs
+    '0':'X':xs -> readHexFrom 0 xs
+    '0':xs -> readOctalFrom 0 xs
+    _ -> readDecimalPrefixFrom 0 clean
 
 stripIntSuffix :: String -> String
 stripIntSuffix text = reverse (dropWhile isIntSuffix (reverse text))
 
 isIntSuffix :: Char -> Bool
-isIntSuffix c =
-  c == 'u' || c == 'U' || c == 'l' || c == 'L'
+isIntSuffix c = c `elem` "uUlL"
 
 floatLiteralSize :: String -> Int
 floatLiteralSize text
@@ -126,28 +115,24 @@ floatLiteralSize text
 
 floatLiteralBytes :: Int -> String -> [Int]
 floatLiteralBytes size text =
-  takeInts size (floatLiteralByteWord text)
+  take size (floatLiteralByteWord text)
 
 floatLiteralByteWord :: String -> [Int]
 floatLiteralByteWord text = case stripFloatSuffix text of
   '0':'x':rest -> readBaseBytes 16 rest
   '0':'X':rest -> readBaseBytes 16 rest
-  rest -> decimalLiteralBytes rest
+  rest -> readBaseBytes 10 rest
 
 stripFloatSuffix :: String -> String
 stripFloatSuffix text = reverse (dropWhile isFloatLiteralSuffix (reverse text))
 
 isFloatLiteralSuffix :: Char -> Bool
-isFloatLiteralSuffix c =
-  c == 'f' || c == 'F' || c == 'l' || c == 'L'
+isFloatLiteralSuffix c = c `elem` "fFlL"
 
 endsWithFloatSuffix :: String -> String -> Bool
 endsWithFloatSuffix suffixes text = case reverse text of
   c:_ -> c `elem` suffixes
   [] -> False
-
-readDecimalPrefix :: String -> Int
-readDecimalPrefix = readDecimalPrefixFrom 0
 
 readDecimalPrefixFrom :: Int -> String -> Int
 readDecimalPrefixFrom acc xs = case xs of
@@ -157,9 +142,6 @@ readDecimalPrefixFrom acc xs = case xs of
       else acc
   [] -> acc
 
-readOctal :: String -> Int
-readOctal = readOctalFrom 0
-
 readOctalFrom :: Int -> String -> Int
 readOctalFrom n xs = case xs of
   [] -> n
@@ -167,9 +149,6 @@ readOctalFrom n xs = case xs of
     if isOctalDigit c
       then readOctalFrom (n * 8 + decimalDigit c) rest
       else n
-
-readHex :: String -> Int
-readHex = readHexFrom 0
 
 readHexFrom :: Int -> String -> Int
 readHexFrom n xs = case xs of
@@ -181,10 +160,7 @@ naturalLiteralBytes text = case text of
   '0':'x':xs -> readBaseBytes 16 xs
   '0':'X':xs -> readBaseBytes 16 xs
   '0':xs -> readBaseBytes 8 xs
-  _ -> decimalLiteralBytes text
-
-decimalLiteralBytes :: String -> [Int]
-decimalLiteralBytes = readBaseBytes 10
+  _ -> readBaseBytes 10 text
 
 readBaseBytes :: Int -> String -> [Int]
 readBaseBytes base = readBaseBytesFrom base zeroByteWord
@@ -193,12 +169,9 @@ readBaseBytesFrom :: Int -> [Int] -> String -> [Int]
 readBaseBytesFrom base bytes text = case text of
   [] -> bytes
   c:rest ->
-    if digitValidForBase base c
+    if digitValue c < base
       then readBaseBytesFrom base (byteWordMulAdd base (digitValue c) bytes) rest
       else bytes
-
-digitValidForBase :: Int -> Char -> Bool
-digitValidForBase base c = digitValue c < base
 
 digitValue :: Char -> Int
 digitValue c
@@ -211,7 +184,7 @@ zeroByteWord :: [Int]
 zeroByteWord = [0,0,0,0,0,0,0,0]
 
 byteWordMulAdd :: Int -> Int -> [Int] -> [Int]
-byteWordMulAdd base digit bytes = takeInts 8 (byteWordAddSmall digit (byteWordMulSmall base bytes))
+byteWordMulAdd base digit bytes = take 8 (byteWordAddSmallCarry digit (byteWordMulSmall base bytes))
 
 byteWordMulSmall :: Int -> [Int] -> [Int]
 byteWordMulSmall factor = byteWordMulSmallCarry factor 0
@@ -223,9 +196,6 @@ byteWordMulSmallCarry factor carry bytes = case bytes of
     let total = byte * factor + carry
     in (total `mod` 256) : byteWordMulSmallCarry factor (total `div` 256) rest
 
-byteWordAddSmall :: Int -> [Int] -> [Int]
-byteWordAddSmall = byteWordAddSmallCarry
-
 byteWordAddSmallCarry :: Int -> [Int] -> [Int]
 byteWordAddSmallCarry carry bytes = case bytes of
   [] -> []
@@ -234,18 +204,10 @@ byteWordAddSmallCarry carry bytes = case bytes of
     in (total `mod` 256) : byteWordAddSmallCarry (total `div` 256) rest
 
 intBytes :: Int -> Int -> [Int]
-intBytes size value = takeInts size (intBytesFrom value)
+intBytes size value = take size (intBytesFrom value)
 
 intBytesFrom :: Int -> [Int]
 intBytesFrom n = (n `mod` 256) : intBytesFrom (n `div` 256)
-
-takeInts :: Int -> [Int] -> [Int]
-takeInts count values =
-  if count <= 0
-    then []
-    else case values of
-      [] -> []
-      value:rest -> value : takeInts (count - 1) rest
 
 charValue :: String -> Int
 charValue text = case text of
@@ -255,7 +217,7 @@ charValue text = case text of
   _ -> 0
 
 stringBytes :: String -> [Int]
-stringBytes text = stringBytesFrom (stripQuotes text)
+stringBytes text = stringBytesFrom (stripTrailingQuote (stripLeadingQuote text))
 
 stringBytesFrom :: String -> [Int]
 stringBytesFrom chars = case chars of
@@ -325,14 +287,7 @@ isOctalDigit :: Char -> Bool
 isOctalDigit c = fromEnum c >= fromEnum '0' && fromEnum c <= fromEnum '7'
 
 isHexDigit :: Char -> Bool
-isHexDigit c =
-  isDecimalDigit c || isLowerHexDigit c || isUpperHexDigit c
-
-isLowerHexDigit :: Char -> Bool
-isLowerHexDigit c = c >= 'a' && c <= 'f'
-
-isUpperHexDigit :: Char -> Bool
-isUpperHexDigit c = c >= 'A' && c <= 'F'
+isHexDigit c = isDecimalDigit c || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
 
 decimalDigit :: Char -> Int
 decimalDigit c = fromEnum c - fromEnum '0'
@@ -343,9 +298,6 @@ hexDigit c
   | c >= 'a' && c <= 'f' = 10 + fromEnum c - fromEnum 'a'
   | c >= 'A' && c <= 'F' = 10 + fromEnum c - fromEnum 'A'
   | otherwise = 0
-
-stripQuotes :: String -> String
-stripQuotes text = stripTrailingQuote (stripLeadingQuote text)
 
 stripLeadingQuote :: String -> String
 stripLeadingQuote text = case text of

@@ -27,14 +27,11 @@ preprocessFile args = case assemblyArgs ("-S":args) of
     let sourceWithDefines = renderDefines (asmDefines opts) ++ source
     case lexPlainSource sourceWithDefines >>= mapPreprocessError . preprocess of
       Left msg -> die (asmInput opts ++ ":" ++ msg)
-      Right toks -> hccPutStr (renderTokens toks)
+      Right toks -> hccPutStr (foldr renderToken "\n" toks)
 
 mapPreprocessError :: Either PreprocessError a -> Either String a
 mapPreprocessError (Left (PreprocessError pos msg)) = Left (showPos pos ++ ": " ++ msg)
 mapPreprocessError (Right toks) = Right toks
-
-renderTokens :: [Token] -> String
-renderTokens = foldr renderToken "\n"
 
 renderToken :: Token -> String -> String
 renderToken (Token _ kind) rest = tokenText kind ++ ' ' : rest

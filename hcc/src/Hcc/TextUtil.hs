@@ -1,6 +1,5 @@
 module TextUtil
-  ( charCode
-  , prefixOf
+  ( prefixOf
   , suffixOf
   , trim
   , isSpaceChar
@@ -9,13 +8,9 @@ module TextUtil
   , isAsciiAlphaNum
   , isIdentStart
   , isIdentChar
-  , mapMaybe
   ) where
 
 import Base
-
-charCode :: Char -> Int
-charCode = fromEnum
 
 prefixOf :: String -> String -> Bool
 prefixOf prefix text = take (length prefix) text == prefix
@@ -30,7 +25,7 @@ isSpaceChar :: Char -> Bool
 isSpaceChar c =
   c == ' ' || c == '\n' || code == 9 || code == 13 || code == 11 || code == 12
   where
-    code = charCode c
+    code = fromEnum c
 
 isDigitChar :: Char -> Bool
 isDigitChar c = fromEnum c >= fromEnum '0' && fromEnum c <= fromEnum '9'
@@ -46,13 +41,6 @@ isIdentStart c = isAsciiAlpha c || c == '_'
 
 isIdentChar :: Char -> Bool
 isIdentChar c = isAsciiAlphaNum c || c == '_'
-
-mapMaybe :: (a -> Maybe b) -> [a] -> [b]
-mapMaybe f xs = case xs of
-  [] -> []
-  x:rest -> case f x of
-    Just y -> y : mapMaybe f rest
-    Nothing -> mapMaybe f rest
 
 isAsciiLower :: Char -> Bool
 isAsciiLower c = c >= 'a' && c <= 'z'
