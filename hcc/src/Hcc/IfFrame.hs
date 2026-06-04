@@ -16,9 +16,8 @@ data IfFrame = IfFrame
   }
 
 ifStackActive :: [IfFrame] -> Bool
-ifStackActive frames = case frames of
-  [] -> True
-  frame:_ -> ifActive frame
+ifStackActive [] = True
+ifStackActive (frame:_) = ifActive frame
 
 pushIfFrame :: [IfFrame] -> Bool -> [IfFrame]
 pushIfFrame frames cond =
@@ -27,21 +26,18 @@ pushIfFrame frames cond =
   in IfFrame parent active active : frames
 
 replaceElifFrame :: [IfFrame] -> Bool -> Maybe [IfFrame]
-replaceElifFrame frames cond = case frames of
-  [] -> Nothing
-  frame:rest ->
-    let active = ifParent frame && not (ifTaken frame) && cond
-        taken = ifTaken frame || active
-    in Just (frame { ifTaken = taken, ifActive = active } : rest)
+replaceElifFrame [] _ = Nothing
+replaceElifFrame (frame:rest) cond =
+  let active = ifParent frame && not (ifTaken frame) && cond
+      taken = ifTaken frame || active
+  in Just (frame { ifTaken = taken, ifActive = active } : rest)
 
 replaceElseFrame :: [IfFrame] -> Maybe [IfFrame]
-replaceElseFrame frames = case frames of
-  [] -> Nothing
-  frame:rest ->
-    let active = ifParent frame && not (ifTaken frame)
-    in Just (frame { ifTaken = True, ifActive = active } : rest)
+replaceElseFrame [] = Nothing
+replaceElseFrame (frame:rest) =
+  let active = ifParent frame && not (ifTaken frame)
+  in Just (frame { ifTaken = True, ifActive = active } : rest)
 
 popIfFrame :: [IfFrame] -> Maybe [IfFrame]
-popIfFrame frames = case frames of
-  [] -> Nothing
-  _:rest -> Just rest
+popIfFrame [] = Nothing
+popIfFrame (_:rest) = Just rest

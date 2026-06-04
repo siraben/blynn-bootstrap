@@ -129,6 +129,12 @@ withErrorContext context action = CompileM $ \st ->
     Left (CompileError msg) -> Left (CompileError (context ++ ": " ++ msg))
     Right result -> Right result
 
+getC :: (CompileState -> a) -> CompileM a
+getC f = CompileM $ \st -> Right (f st, st)
+
+modifyC :: (CompileState -> CompileState) -> CompileM ()
+modifyC f = CompileM $ \st -> Right ((), f st)
+
 freshTemp :: CompileM Temp
 freshTemp = CompileM $ \st ->
   let n = csNextTemp st
@@ -147,33 +153,31 @@ freshLabel = CompileM $ \st ->
 freshDataLabel :: CompileM String
 freshDataLabel = do
   label <- freshLabel
-  CompileM $ \st -> Right (csDataPrefix st ++ "_" ++ label, st)
+  prefix <- getC csDataPrefix
+  pure (prefix ++ "_" ++ label)
 
 addDataItem :: DataItem -> CompileM ()
-addDataItem item@(DataItem label _) = CompileM $ \st ->
-  Right ((), st { csDataItems = item : removeLabel label (csDataItems st) })
+addDataItem item@(DataItem label _) =
+  modifyC $ \st -> st { csDataItems = item : filter (not . hasLabel label) (csDataItems st) }
   where
-    removeLabel key items = case items of
-      [] -> []
-      DataItem label' _:rest | label' == key -> removeLabel key rest
-      x:rest -> x : removeLabel key rest
+    hasLabel key (DataItem label' _) = label' == key
 
 bindVar :: String -> Temp -> CType -> CompileM ()
-bindVar name temp ty = CompileM $ \st ->
-  Right ((), st { csVars = scopeMapInsert name (temp, ty) (csVars st) })
+bindVar name temp ty =
+  modifyC $ \st -> st { csVars = scopeMapInsert name (temp, ty) (csVars st) }
 
 bindStruct :: String -> Bool -> [Field] -> CompileM ()
-bindStruct name isUnion fields = CompileM $ \st ->
-  Right ((), st
+bindStruct name isUnion fields =
+  modifyC $ \st -> st
     { csStructs = symbolMapInsert name (isUnion, fields) (csStructs st)
     , csStructSizes = symbolMapDelete name (csStructSizes st)
     , csStructMembers = symbolMapDelete name (csStructMembers st)
-    })
+    }
 
 bindGlobal :: String -> CType -> CompileM ()
 bindGlobal name ty = do
   rejectReservedSymbol "global" name
-  CompileM $ \st -> Right ((), st { csGlobals = symbolMapInsert name ty (csGlobals st) })
+  modifyC $ \st -> st { csGlobals = symbolMapInsert name ty (csGlobals st) }
 
 rejectReservedSymbol :: String -> String -> CompileM ()
 rejectReservedSymbol kind name =
@@ -182,49 +186,49 @@ rejectReservedSymbol kind name =
     else pure ()
 
 bindConstant :: String -> Int -> CompileM ()
-bindConstant name value = CompileM $ \st ->
-  Right ((), st { csConstants = symbolMapInsert name value (csConstants st) })
+bindConstant name value =
+  modifyC $ \st -> st { csConstants = symbolMapInsert name value (csConstants st) }
 
 bindFunction :: String -> CompileM ()
 bindFunction name = do
   rejectReservedSymbol "function" name
-  CompileM $ \st -> Right ((), st { csFunctions = symbolSetInsert name (csFunctions st) })
+  modifyC $ \st -> st { csFunctions = symbolSetInsert name (csFunctions st) }
 
 bindFunctionType :: String -> CType -> [Param] -> CompileM ()
 bindFunctionType name retTy params = do
   rejectReservedSymbol "function" name
-  CompileM $ \st -> Right ((), st
+  modifyC $ \st -> st
     { csFunctions = symbolSetInsert name (csFunctions st)
     , csFunctionTypes = symbolMapInsert name (CFunc retTy (paramTypes params)) (csFunctionTypes st)
-    })
+    }
 
 lookupVarMaybe :: String -> CompileM (Maybe Temp)
-lookupVarMaybe name = CompileM $ \st -> Right (fmap fst (scopeMapLookup name (csVars st)), st)
+lookupVarMaybe name = getC (fmap fst . scopeMapLookup name . csVars)
 
 lookupVarType :: String -> CompileM (Maybe CType)
-lookupVarType name = CompileM $ \st -> Right (fmap snd (scopeMapLookup name (csVars st)), st)
+lookupVarType name = getC (fmap snd . scopeMapLookup name . csVars)
 
 lookupGlobalType :: String -> CompileM (Maybe CType)
-lookupGlobalType name = CompileM $ \st -> Right (symbolMapLookup name (csGlobals st), st)
+lookupGlobalType name = getC (symbolMapLookup name . csGlobals)
 
 lookupConstant :: String -> CompileM (Maybe Int)
-lookupConstant name = CompileM $ \st -> Right (symbolMapLookup name (csConstants st), st)
+lookupConstant name = getC (symbolMapLookup name . csConstants)
 
 lookupFunction :: String -> CompileM Bool
-lookupFunction name = CompileM $ \st -> Right (symbolSetMember name (csFunctions st), st)
+lookupFunction name = getC (symbolSetMember name . csFunctions)
 
 lookupFunctionType :: String -> CompileM (Maybe CType)
-lookupFunctionType name = CompileM $ \st -> Right (symbolMapLookup name (csFunctionTypes st), st)
+lookupFunctionType name = getC (symbolMapLookup name . csFunctionTypes)
 
 lookupStruct :: String -> CompileM (Maybe (Bool, [Field]))
-lookupStruct name = CompileM $ \st -> Right (symbolMapLookup name (csStructs st), st)
+lookupStruct name = getC (symbolMapLookup name . csStructs)
 
 lookupStructSizeCache :: String -> CompileM (Maybe Int)
-lookupStructSizeCache name = CompileM $ \st -> Right (symbolMapLookup name (csStructSizes st), st)
+lookupStructSizeCache name = getC (symbolMapLookup name . csStructSizes)
 
 cacheStructSize :: String -> Int -> CompileM ()
-cacheStructSize name size = CompileM $ \st ->
-  Right ((), st { csStructSizes = symbolMapInsert name size (csStructSizes st) })
+cacheStructSize name size =
+  modifyC $ \st -> st { csStructSizes = symbolMapInsert name size (csStructSizes st) }
 
 lookupStructMemberCache :: String -> String -> CompileM (Maybe (CType, Int))
 lookupStructMemberCache structName fieldName = CompileM $ \st ->
@@ -233,15 +237,16 @@ lookupStructMemberCache structName fieldName = CompileM $ \st ->
     Just members -> Right (symbolMapLookup fieldName members, st)
 
 cacheStructMember :: String -> String -> (CType, Int) -> CompileM ()
-cacheStructMember structName fieldName info = CompileM $ \st ->
+cacheStructMember structName fieldName info =
+  modifyC $ \st ->
   let members = case symbolMapLookup structName (csStructMembers st) of
         Just existing -> existing
         Nothing -> symbolMapEmpty
       members' = symbolMapInsert fieldName info members
-  in Right ((), st { csStructMembers = symbolMapInsert structName members' (csStructMembers st) })
+  in st { csStructMembers = symbolMapInsert structName members' (csStructMembers st) }
 
 targetBits :: CompileM Int
-targetBits = CompileM $ \st -> Right (csTargetBits st, st)
+targetBits = getC csTargetBits
 
 targetWordSize :: CompileM Int
 targetWordSize = do
@@ -249,7 +254,7 @@ targetWordSize = do
   pure (if bits == 32 then 4 else 8)
 
 currentFunctionName :: CompileM (Maybe String)
-currentFunctionName = CompileM $ \st -> Right (csCurrentFunction st, st)
+currentFunctionName = getC csCurrentFunction
 
 withCurrentFunction :: String -> CompileM a -> CompileM a
 withCurrentFunction name action = CompileM $ \st ->
@@ -304,10 +309,14 @@ withBreakTarget breakTarget action = CompileM $ \st ->
     Right (x, st') -> Right (x, st' { csBreakTargets = csBreakTargets st })
 
 currentBreakTarget :: CompileM (Maybe BlockId)
-currentBreakTarget = CompileM $ \st -> Right (case csBreakTargets st of [] -> Nothing; x:_ -> Just x, st)
+currentBreakTarget = getC (listHead . csBreakTargets)
 
 currentContinueTarget :: CompileM (Maybe BlockId)
-currentContinueTarget = CompileM $ \st -> Right (case csContinueTargets st of [] -> Nothing; x:_ -> Just x, st)
+currentContinueTarget = getC (listHead . csContinueTargets)
+
+listHead :: [a] -> Maybe a
+listHead [] = Nothing
+listHead (x:_) = Just x
 
 labelBlock :: String -> CompileM BlockId
 labelBlock name = CompileM $ \st -> case symbolMapLookup name (csLabels st) of

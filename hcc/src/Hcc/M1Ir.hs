@@ -126,11 +126,7 @@ emitModuleIr write ir = case ir of
   ModuleIr items -> emitTopItemsIr write items
 
 emitTopItemsIr :: (String -> IO ()) -> [TopItemIr] -> IO ()
-emitTopItemsIr write items = case items of
-  [] -> pure ()
-  item:rest -> do
-    emitTopItemIr write item
-    emitTopItemsIr write rest
+emitTopItemsIr write items = mapM_ (emitTopItemIr write) items
 
 emitTopItemIr :: (String -> IO ()) -> TopItemIr -> IO ()
 emitTopItemIr write item = case item of
@@ -253,9 +249,10 @@ operandsIrFields :: [Operand] -> String
 operandsIrFields ops = show (length ops) ++ operandsIrFieldsRest ops
 
 operandsIrFieldsRest :: [Operand] -> String
-operandsIrFieldsRest ops = case ops of
-  [] -> ""
-  op:rest -> ' ' : operandIrFields op ++ operandsIrFieldsRest rest
+operandsIrFieldsRest = concatMap operandIrField
+
+operandIrField :: Operand -> String
+operandIrField op = ' ' : operandIrFields op
 
 operandIrFields :: Operand -> String
 operandIrFields op = case op of
@@ -269,14 +266,13 @@ intListFields :: [Int] -> String
 intListFields values = show (length values) ++ intListFieldsRest values
 
 intListFieldsRest :: [Int] -> String
-intListFieldsRest values = case values of
-  [] -> ""
-  value:rest -> ' ' : show value ++ intListFieldsRest rest
+intListFieldsRest = concatMap intListField
+
+intListField :: Int -> String
+intListField value = ' ' : show value
 
 maybeTempText :: Maybe Temp -> String
-maybeTempText maybeTemp = case maybeTemp of
-  Nothing -> "-"
-  Just temp -> tempText temp
+maybeTempText maybeTemp = maybe "-" tempText maybeTemp
 
 tempText :: Temp -> String
 tempText temp = case temp of

@@ -48,8 +48,8 @@ isIdentChar :: Char -> Bool
 isIdentChar c = isAsciiAlphaNum c || c == '_'
 
 mapMaybe :: (a -> Maybe b) -> [a] -> [b]
-mapMaybe f xs = case xs of
-  [] -> []
-  x:rest -> case f x of
-    Just y -> y : mapMaybe f rest
-    Nothing -> mapMaybe f rest
+mapMaybe f = foldr keep []
+  where
+    keep x rest = case f x of
+      Just y -> y : rest
+      Nothing -> rest

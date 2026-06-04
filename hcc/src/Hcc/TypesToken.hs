@@ -24,11 +24,10 @@ data TokenKind
   | TokDirective String
 
 tokenText :: TokenKind -> String
-tokenText kind = case kind of
-  TokIdent s -> s
-  TokInt s -> s
-  TokFloat s -> s
-  TokChar s -> s
-  TokString s -> s
-  TokPunct s -> s
-  TokDirective s -> s
+tokenText (TokIdent s) = s
+tokenText (TokInt s) = s
+tokenText (TokFloat s) = s
+tokenText (TokChar s) = s
+tokenText (TokString s) = s
+tokenText (TokPunct s) = s
+tokenText (TokDirective s) = s

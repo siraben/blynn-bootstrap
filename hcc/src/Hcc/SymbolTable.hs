@@ -41,18 +41,13 @@ symbolMapDelete :: String -> SymbolMap a -> SymbolMap a
 symbolMapDelete k (SymbolMap t) = SymbolMap (deleteT k t)
 
 symbolMapMember :: String -> SymbolMap a -> Bool
-symbolMapMember k m = case symbolMapLookup k m of
-  Just _ -> True
-  Nothing -> False
+symbolMapMember k m = maybe False (const True) (symbolMapLookup k m)
 
 symbolSetFromList :: [String] -> SymbolSet
-symbolSetFromList [] = symbolSetEmpty
-symbolSetFromList (x:xt) = symbolSetInsert x (symbolSetFromList xt)
+symbolSetFromList = foldr symbolSetInsert symbolSetEmpty
 
 symbolSetMember :: String -> SymbolSet -> Bool
-symbolSetMember k (SymbolSet t) = case lookupT k t of
-  Just _ -> True
-  Nothing -> False
+symbolSetMember k (SymbolSet t) = maybe False (const True) (lookupT k t)
 
 symbolSetInsert :: String -> SymbolSet -> SymbolSet
 symbolSetInsert k (SymbolSet t) = SymbolSet (insertT k () t)

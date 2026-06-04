@@ -46,20 +46,20 @@ freshBlocks count =
       pure (first:rest)
 
 switchDefaultTarget :: BlockId -> [(SwitchClause, BlockId)] -> BlockId
-switchDefaultTarget restId clauses = case clauses of
-  [] -> restId
-  pair:rest -> case pair of
-    (SwitchClause label _, bid) -> case label of
-      Nothing -> bid
-      Just _ -> switchDefaultTarget restId rest
+switchDefaultTarget restId clauses = case find isDefaultClause clauses of
+  Nothing -> restId
+  Just (_, bid) -> bid
+  where
+    isDefaultClause (SwitchClause label _, _) = case label of
+      Nothing -> True
+      Just _ -> False
 
 switchCases :: [(SwitchClause, BlockId)] -> [(Expr, BlockId)]
-switchCases clauses = case clauses of
-  [] -> []
-  pair:rest -> case pair of
-    (SwitchClause label _, bid) -> case label of
-      Just value -> (value, bid) : switchCases rest
-      Nothing -> switchCases rest
+switchCases = foldr addCase []
+  where
+    addCase (SwitchClause label _, bid) rest = case label of
+      Just value -> (value, bid) : rest
+      Nothing -> rest
 
 switchNextDispatchTarget :: BlockId -> [(Expr, BlockId)] -> CompileM BlockId
 switchNextDispatchTarget defaultTarget tailCases = case tailCases of
@@ -67,7 +67,5 @@ switchNextDispatchTarget defaultTarget tailCases = case tailCases of
   _ -> freshBlock
 
 switchFallthroughTarget :: BlockId -> [(SwitchClause, BlockId)] -> BlockId
-switchFallthroughTarget restId clauses = case clauses of
-  [] -> restId
-  pair:_ -> case pair of
-    (_, nextId) -> nextId
+switchFallthroughTarget restId [] = restId
+switchFallthroughTarget _ ((_, nextId):_) = nextId

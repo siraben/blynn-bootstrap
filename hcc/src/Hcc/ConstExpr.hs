@@ -103,14 +103,11 @@ parsePrimary = do
 parseDefinedOperator :: ConstParser Int
 parseDefinedOperator = do
   paren <- constEatPunct "("
+  name <- constNeedIdent "bad defined operator in #if expression"
   if paren
-    then do
-      name <- constNeedIdent "bad defined operator in #if expression"
-      constNeedPunct ")" "bad defined operator in #if expression"
-      pure (boolToInt (name /= ""))
-    else do
-      name <- constNeedIdent "bad defined operator in #if expression"
-      pure (boolToInt (name /= ""))
+    then constNeedPunct ")" "bad defined operator in #if expression"
+    else pure ()
+  pure (boolToInt (name /= ""))
 
 advance :: ConstParser ()
 advance = pSkip "unexpected end of constant expression"

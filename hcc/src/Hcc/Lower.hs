@@ -536,28 +536,24 @@ lowerAggregateElementScalarWrite addr fieldTy expr = do
   pure (exprInstrs ++ coerceInstrs ++ [store])
 
 registerExternGlobals :: [(CType, String)] -> CompileM ()
-registerExternGlobals globals = case globals of
-  [] -> pure ()
-  global:rest -> case global of
-    (ty, name) -> do
-      registerTypeAggregates ty
-      bindGlobal name ty
-      registerExternGlobals rest
+registerExternGlobals = mapM_ registerExternGlobal
+
+registerExternGlobal :: (CType, String) -> CompileM ()
+registerExternGlobal (ty, name) = do
+  registerTypeAggregates ty
+  bindGlobal name ty
 
 registerConstants :: [(String, Int)] -> CompileM ()
-registerConstants constants = case constants of
-  [] -> pure ()
-  constant:rest -> case constant of
-    (name, value) -> do
-      bindConstant name value
-      registerConstants rest
+registerConstants = mapM_ registerConstant
+
+registerConstant :: (String, Int) -> CompileM ()
+registerConstant (name, value) = bindConstant name value
 
 registerFieldAggregates :: [Field] -> CompileM ()
-registerFieldAggregates fields = case fields of
-  [] -> pure ()
-  Field ty _:rest -> do
-    registerTypeAggregates ty
-    registerFieldAggregates rest
+registerFieldAggregates = mapM_ registerFieldAggregate
+
+registerFieldAggregate :: Field -> CompileM ()
+registerFieldAggregate (Field ty _) = registerTypeAggregates ty
 
 registerTypeAggregates :: CType -> CompileM ()
 registerTypeAggregates ty = case ty of
@@ -579,11 +575,7 @@ registerTypeAggregates ty = case ty of
   _ -> pure ()
 
 registerTypesAggregates :: [CType] -> CompileM ()
-registerTypesAggregates types = case types of
-  [] -> pure ()
-  ty:rest -> do
-    registerTypeAggregates ty
-    registerTypesAggregates rest
+registerTypesAggregates = mapM_ registerTypeAggregates
 
 lowerExpr :: Expr -> CompileM ([Instr], Operand)
 lowerExpr expr = case expr of
@@ -788,12 +780,7 @@ lowerDirectCallExpr name args = do
   pure (instrs ++ [ICall (Just out) name ops], OTemp out)
 
 lowerExprs :: [Expr] -> CompileM [([Instr], Operand)]
-lowerExprs args = case args of
-  [] -> pure []
-  x:xs -> do
-    first <- lowerExpr x
-    rest <- lowerExprs xs
-    pure (first:rest)
+lowerExprs = mapM lowerExpr
 
 lowerIndirectCall :: Expr -> [Expr] -> CompileM ([Instr], Operand)
 lowerIndirectCall callee args = do
@@ -1433,9 +1420,7 @@ promoteMaybeIntegerType mty = case mty of
     pure (Just promoted)
 
 maybePtrType :: Maybe CType -> Maybe CType
-maybePtrType mty = case mty of
-  Nothing -> Nothing
-  Just ty -> Just (CPtr ty)
+maybePtrType = fmap CPtr
 
 functionResultType :: CType -> Maybe CType
 functionResultType ty = case ty of
@@ -1448,10 +1433,7 @@ isFunctionNameMacro name =
   name `elem` ["__func__", "__FUNCTION__", "__PRETTY_FUNCTION__"]
 
 maybeMemberType :: Maybe (CType, Int) -> Maybe CType
-maybeMemberType info = case info of
-  Nothing -> Nothing
-  Just pair -> case pair of
-    (ty, _) -> Just ty
+maybeMemberType = fmap fst
 
 addExprResultType :: Maybe CType -> Maybe CType -> CType -> Maybe CType
 addExprResultType leftTy rightTy arithmeticTy = case pointerElementType leftTy of
@@ -2011,14 +1993,12 @@ structFields offset remaining values = case remaining of
       pure (zeroData (aligned - offset) ++ paddedField ++ restData, end)
 
 maybeExprHead :: [Expr] -> Maybe Expr
-maybeExprHead values = case values of
-  [] -> Nothing
-  expr:_ -> Just expr
+maybeExprHead [] = Nothing
+maybeExprHead (expr:_) = Just expr
 
 exprTail :: [Expr] -> [Expr]
-exprTail values = case values of
-  [] -> []
-  _:rest -> rest
+exprTail [] = []
+exprTail (_:rest) = rest
 
 globalUnionData :: [Field] -> [Expr] -> CompileM [DataValue]
 globalUnionData fields exprs = case fields of

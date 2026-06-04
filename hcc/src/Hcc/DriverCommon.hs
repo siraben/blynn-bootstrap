@@ -62,16 +62,18 @@ stripBlockComment depth ('\n':rest) = '\n' : stripBlockComment depth rest
 stripBlockComment depth (_:rest) = stripBlockComment depth rest
 
 stripStringLiteral :: String -> String
-stripStringLiteral [] = []
-stripStringLiteral ('\\':c:rest) = '\\' : c : stripStringLiteral rest
-stripStringLiteral ('"':rest) = '"' : stripCommentNormal rest
-stripStringLiteral (c:rest) = c : stripStringLiteral rest
+stripStringLiteral = stripQuotedLiteral '"'
 
 stripCharLiteral :: String -> String
-stripCharLiteral [] = []
-stripCharLiteral ('\\':c:rest) = '\\' : c : stripCharLiteral rest
-stripCharLiteral ('\'':rest) = '\'' : stripCommentNormal rest
-stripCharLiteral (c:rest) = c : stripCharLiteral rest
+stripCharLiteral = stripQuotedLiteral '\''
+
+stripQuotedLiteral :: Char -> String -> String
+stripQuotedLiteral _ [] = []
+stripQuotedLiteral quote ('\\':c:rest) = '\\' : c : stripQuotedLiteral quote rest
+stripQuotedLiteral quote (c:rest) =
+  if c == quote
+    then c : stripCommentNormal rest
+    else c : stripQuotedLiteral quote rest
 
 dataLabelPrefix :: String -> String
 dataLabelPrefix path =
@@ -82,8 +84,7 @@ dataLabelPrefix path =
       text -> text
 
 sanitizeLabel :: String -> String
-sanitizeLabel [] = []
-sanitizeLabel (c:rest) = sanitizeLabelChar c ++ sanitizeLabel rest
+sanitizeLabel = concatMap sanitizeLabelChar
 
 sanitizeLabelChar :: Char -> String
 sanitizeLabelChar c =
@@ -176,11 +177,7 @@ renderDefines defs = go defs ""
         . go rest'
 
 replaceExt :: String -> String -> String
-replaceExt path ext = reverse (dropExt (reverse path)) ++ ext where
-  dropExt xs = case xs of
-    [] -> []
-    '.':_ -> []
-    c:rest -> c : dropExt rest
+replaceExt path ext = reverse (takeWhile (/= '.') (reverse path)) ++ ext
 
 showPos :: SrcPos -> String
 showPos (SrcPos line col) = show line ++ ":" ++ show col

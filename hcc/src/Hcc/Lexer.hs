@@ -27,7 +27,7 @@ lexC source = go (LexState source (SrcPos 1 1) True) [] where
       | startsLineComment (lsInput st) -> go (skipLineComment st) acc
       | startsBlockComment (lsInput st) -> skipBlockComment st >>= \st' -> go st' acc
       | isIdentStart c -> let (tok, st') = lexIdent st in go st' (tok:acc)
-      | isDigit c -> lexNumber st >>= \(tok, st') -> go st' (tok:acc)
+      | isDigitChar c -> lexNumber st >>= \(tok, st') -> go st' (tok:acc)
       | c == '\'' -> lexQuoted '\'' TokChar st >>= \(tok, st') -> go st' (tok:acc)
       | c == '"' -> lexQuoted '"' TokString st >>= \(tok, st') -> go st' (tok:acc)
       | otherwise -> case lexPunct st of
@@ -51,14 +51,10 @@ takeUntilNewline st = go st [] where
     c:cs -> go (advance c cur { lsInput = cs }) (c:acc)
 
 startsLineComment :: String -> Bool
-startsLineComment s = case s of
-  '/':'/':_ -> True
-  _ -> False
+startsLineComment = prefixOf "//"
 
 startsBlockComment :: String -> Bool
-startsBlockComment s = case s of
-  '/':'*':_ -> True
-  _ -> False
+startsBlockComment = prefixOf "/*"
 
 skipLineComment :: LexState -> LexState
 skipLineComment st = snd (takeUntilNewline st)
@@ -81,10 +77,7 @@ lexIdent st = (Token (Span start end) (TokIdent text), st') where
   end = lsPos st'
 
 takeIdent :: LexState -> (String, LexState)
-takeIdent st = go st [] where
-  go cur acc = case lsInput cur of
-    c:cs | isIdentChar c -> go (advance c cur { lsInput = cs }) (c:acc)
-    _ -> (reverse acc, cur)
+takeIdent = takeWhileState isIdentChar
 
 lexNumber :: LexState -> Either LexError (Token, LexState)
 lexNumber st = case takeNumber st of
@@ -126,7 +119,7 @@ takeHexFraction st = case lsInput st of
 
 takeDecimalNumber :: LexState -> (String, NumberClass, LexState)
 takeDecimalNumber st =
-  let (digits, st1) = takeWhileState isDigit st
+  let (digits, st1) = takeWhileState isDigitChar st
       (fraction, st2) = takeFraction st1
       (exponentText, st3) = takeExponent "eE" st2
       (suffix, st4) = takeWhileState isNumberSuffix st3
@@ -155,7 +148,7 @@ takeFraction st = case lsInput st of
   '.':'.':_ -> ("", st)
   '.':rest ->
     let st0 = advance '.' st { lsInput = rest }
-        (digits, st1) = takeWhileState isDigit st0
+        (digits, st1) = takeWhileState isDigitChar st0
     in ('.':digits, st1)
   _ -> ("", st)
 
@@ -164,7 +157,7 @@ takeExponent markers st = case lsInput st of
   c:rest | elem c markers ->
     let st0 = advance c st { lsInput = rest }
         (signText, st1) = takeExponentSign st0
-        (digits, st2) = takeWhileState isDigit st1
+        (digits, st2) = takeWhileState isDigitChar st1
     in if null digits then ("", st) else (c:signText ++ digits, st2)
   _ -> ("", st)
 
@@ -279,16 +272,10 @@ nextBol c bol =
   c == '\n' || lexerIsSpaceNoNewline c && bol
 
 lexerIsSpace :: Char -> Bool
-lexerIsSpace c =
-  c == ' ' || c == '\n' || lexerIsSpaceNoNewline c
+lexerIsSpace = isSpaceChar
 
 lexerIsSpaceNoNewline :: Char -> Bool
-lexerIsSpaceNoNewline c =
-  let code = charCode c
-  in code == 9 || code == 13 || code == 11 || code == 12
-
-isDigit :: Char -> Bool
-isDigit c = c >= '0' && c <= '9'
+lexerIsSpaceNoNewline c = isSpaceChar c && c /= '\n'
 
 isHexDigit :: Char -> Bool
-isHexDigit c = isDigit c || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
+isHexDigit c = isDigitChar c || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')

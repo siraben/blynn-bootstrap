@@ -29,7 +29,7 @@ module Literal
 import Base
 
 boolToInt :: Bool -> Int
-boolToInt value = if value then 1 else 0
+boolToInt = bool 0 1
 
 evalConstBinOp :: String -> Int -> Int -> Maybe Int
 evalConstBinOp op a b = case op of
@@ -100,7 +100,7 @@ shiftRightInt value amount = value `div` pow2 amount
 intLiteralIsUnsigned :: String -> Bool
 intLiteralIsUnsigned text = case text of
   [] -> False
-  c:rest -> c == 'u' || c == 'U' || intLiteralIsUnsigned rest
+  c:rest -> c `elem` "uU" || intLiteralIsUnsigned rest
 
 parseInt :: String -> Int
 parseInt text =
@@ -115,8 +115,7 @@ stripIntSuffix :: String -> String
 stripIntSuffix text = reverse (dropWhile isIntSuffix (reverse text))
 
 isIntSuffix :: Char -> Bool
-isIntSuffix c =
-  c == 'u' || c == 'U' || c == 'l' || c == 'L'
+isIntSuffix c = c `elem` "uUlL"
 
 floatLiteralSize :: String -> Int
 floatLiteralSize text =
@@ -140,8 +139,7 @@ stripFloatSuffix :: String -> String
 stripFloatSuffix text = reverse (dropWhile isFloatLiteralSuffix (reverse text))
 
 isFloatLiteralSuffix :: Char -> Bool
-isFloatLiteralSuffix c =
-  c == 'f' || c == 'F' || c == 'l' || c == 'L'
+isFloatLiteralSuffix c = c `elem` "fFlL"
 
 endsWithFloatSuffix :: String -> String -> Bool
 endsWithFloatSuffix suffixes text = case reverse text of
@@ -242,12 +240,7 @@ intBytesFrom :: Int -> [Int]
 intBytesFrom n = (n `mod` 256) : intBytesFrom (n `div` 256)
 
 takeInts :: Int -> [Int] -> [Int]
-takeInts count values =
-  if count <= 0
-    then []
-    else case values of
-      [] -> []
-      value:rest -> value : takeInts (count - 1) rest
+takeInts = take
 
 charValue :: String -> Int
 charValue text = case text of
