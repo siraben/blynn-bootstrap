@@ -51,6 +51,15 @@ run_m1_case() {
   log "DONE  hcc-m1 $name"
 }
 
+write_trailing_space_continuation_case() {
+  dst=$1
+  {
+    printf '#define CONTINUED_WITH_TRAILING_SPACE(x) \\   \n'
+    printf '  ((x) + 1)\n'
+    printf 'int continued = CONTINUED_WITH_TRAILING_SPACE(2);\n'
+  } > "$dst"
+}
+
 expect_hcc1_fail() {
   name=$1
   pattern=$2
@@ -71,7 +80,9 @@ expect_hcc1_fail() {
   log "DONE  expect hcc1 failure $name"
 }
 
+write_trailing_space_continuation_case pp-smoke-trailing-space.c
 run_check_case pp-smoke "$TESTS_DIR/pp-smoke.c"
+run_check_case pp-smoke-trailing-space pp-smoke-trailing-space.c
 run_check_case parse-smoke "$TESTS_DIR/parse-smoke.c"
 
 run_m1_case parse-smoke "$TESTS_DIR/parse-smoke.c"

@@ -21,8 +21,28 @@ rec {
   // skipFixup;
 
   patchGeneratedTop = file: top: ''
-    substituteInPlace ${file} \
-      --replace-fail 'enum{TOP=16777216};' 'enum{TOP=${toString top}};'
+    patch_generated_top_file=${file}
+    patch_generated_top_tmp="$patch_generated_top_file.tmp"
+    patch_generated_top_seen=no
+    : > "$patch_generated_top_tmp"
+    while IFS= read -r patch_generated_top_line || [ -n "$patch_generated_top_line" ]; do
+      case "$patch_generated_top_line" in
+        *'enum{TOP='*'};'*)
+          patch_generated_top_before=''${patch_generated_top_line%%enum\{TOP=*}
+          patch_generated_top_rest=''${patch_generated_top_line#*enum\{TOP=}
+          patch_generated_top_after=''${patch_generated_top_rest#*\};}
+          patch_generated_top_line="$patch_generated_top_before"'enum{TOP=${toString top}};'"$patch_generated_top_after"
+          patch_generated_top_seen=yes
+          ;;
+      esac
+      printf '%s\n' "$patch_generated_top_line" >> "$patch_generated_top_tmp"
+    done < "$patch_generated_top_file"
+    if [ "$patch_generated_top_seen" != yes ]; then
+      printf 'patchGeneratedTop: TOP marker not found in %s\n' "$patch_generated_top_file" >&2
+      exit 1
+    fi
+    chmod u+w "$patch_generated_top_file" 2>/dev/null || :
+    cp "$patch_generated_top_tmp" "$patch_generated_top_file"
   '';
 
   shellHelpers =

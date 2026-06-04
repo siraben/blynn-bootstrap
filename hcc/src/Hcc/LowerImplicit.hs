@@ -81,6 +81,9 @@ registerImplicitCallsExpr locals expr = case expr of
   EPtrMember base _ -> registerImplicitCallsExpr locals base
   EUnary _ value -> registerImplicitCallsExpr locals value
   ESizeofExpr value -> registerImplicitCallsExpr locals value
+  EAlignofExpr value -> registerImplicitCallsExpr locals value
+  EVaArg value _ -> registerImplicitCallsExpr locals value
+  EStmtExpr body -> registerImplicitCalls locals body
   ECast _ value -> registerImplicitCallsExpr locals value
   EPostfix _ value -> registerImplicitCallsExpr locals value
   EBinary _ left right -> do

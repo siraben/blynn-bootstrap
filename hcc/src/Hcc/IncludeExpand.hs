@@ -22,17 +22,20 @@ readSourceWithIncludes includeDirs defines path = do
       then pure (id, guards, macros)
       else do
         source <- hccReadFile key
-        case includeGuard key source of
+        let splicedSource = spliceContinuations source
+            cleanSource = stripComments splicedSource
+            sourceLines = zip (lines cleanSource) (lines cleanSource)
+        case includeGuard key splicedSource of
           Just (PragmaOnce guard) | symbolSetMember guard guards ->
             pure (id, guards, macros)
           Just (IfndefGuard guard start end) | symbolSetMember guard guards ->
-            expandLines (hccTakeDirectory key) (key:stack) guards macros [] (skipLineRange start end (lines source))
+            expandLines (hccTakeDirectory key) (key:stack) guards macros [] (skipLineRange start end sourceLines)
           guardInfo -> do
             let guards' = case guardInfo of
                   Nothing -> guards
                   Just (PragmaOnce guard) -> symbolSetInsert guard guards
                   Just (IfndefGuard guard _ _) -> symbolSetInsert guard guards
-            expandLines (hccTakeDirectory key) (key:stack) guards' macros [] (lines source)
+            expandLines (hccTakeDirectory key) (key:stack) guards' macros [] sourceLines
 
   expandLines currentDir stack guards macros frames ls = case ls of
     [] -> pure (id, guards, macros)
@@ -41,41 +44,43 @@ readSourceWithIncludes includeDirs defines path = do
       (tailText, guards'', macros'') <- expandLines currentDir stack guards' macros' frames' rest
       pure (expanded . tailText, guards'', macros'')
 
-  expandLine currentDir stack guards macros frames line =
-    let active = ifStackActive frames
-        keep = (line++) . ('\n':)
-    in case directiveNameFromLine line of
-      Just "ifdef" ->
-        pure (keep, guards, macros, pushIfFrame frames (maybe False (`symbolSetMember` macros) (directiveArgument "ifdef" line)))
-      Just "ifndef" ->
-        pure (keep, guards, macros, pushIfFrame frames (maybe False (not . (`symbolSetMember` macros)) (directiveArgument "ifndef" line)))
-      Just "if" ->
-        pure (keep, guards, macros, pushIfFrame frames (evalIncludeIf macros (directiveRest "if" line)))
-      Just "elif" ->
-        pure (keep, guards, macros, maybe frames id (replaceElifFrame frames (evalIncludeIf macros (directiveRest "elif" line))))
-      Just "else" ->
-        pure (keep, guards, macros, maybe frames id (replaceElseFrame frames))
-      Just "endif" ->
-        pure (keep, guards, macros, case frames of { [] -> []; _:xs -> xs })
-      Just "define" | active ->
-        pure (keep, guards, maybe macros (`symbolSetInsert` macros) (directiveArgument "define" line), frames)
-      Just "undef" | active ->
-        pure (keep, guards, maybe macros (`symbolSetDelete` macros) (directiveArgument "undef" line), frames)
-      _ -> case includeRequest line of
-        Just (form, name) | active -> do
-          found <- findInclude currentDir name
-          case found of
-            Nothing -> case form of
-              QuoteInclude -> die ("hcpp: cannot find include file " ++ show name)
-                              >> pure (keep, guards, macros, frames)
-              SystemInclude -> pure (keep, guards, macros, frames)
-            Just file ->
-              if file `elem` stack
-              then pure (id, guards, macros, frames)
-              else do
-                (expanded, guards', macros') <- expandFile stack guards macros file
-                pure (expanded, guards', macros', frames)
-        _ -> pure (keep, guards, macros, frames)
+  expandLine currentDir stack guards macros frames linePair =
+    case linePair of
+      (_, cleanLine) ->
+        let active = ifStackActive frames
+            keep = (cleanLine++) . ('\n':)
+        in case directiveNameFromLine cleanLine of
+          Just "ifdef" ->
+            pure (keep, guards, macros, pushIfFrame frames (maybe False (`symbolSetMember` macros) (directiveArgument "ifdef" cleanLine)))
+          Just "ifndef" ->
+            pure (keep, guards, macros, pushIfFrame frames (maybe False (not . (`symbolSetMember` macros)) (directiveArgument "ifndef" cleanLine)))
+          Just "if" ->
+            pure (keep, guards, macros, pushIfFrame frames (evalIncludeIf macros (directiveRest "if" cleanLine)))
+          Just "elif" ->
+            pure (keep, guards, macros, maybe frames id (replaceElifFrame frames (evalIncludeIf macros (directiveRest "elif" cleanLine))))
+          Just "else" ->
+            pure (keep, guards, macros, maybe frames id (replaceElseFrame frames))
+          Just "endif" ->
+            pure (keep, guards, macros, case frames of { [] -> []; _:xs -> xs })
+          Just "define" | active ->
+            pure (keep, guards, maybe macros (`symbolSetInsert` macros) (directiveArgument "define" cleanLine), frames)
+          Just "undef" | active ->
+            pure (keep, guards, maybe macros (`symbolSetDelete` macros) (directiveArgument "undef" cleanLine), frames)
+          _ -> case includeRequest cleanLine of
+            Just (form, name) | active -> do
+              found <- findInclude currentDir name
+              case found of
+                Nothing -> case form of
+                  QuoteInclude -> die ("hcpp: cannot find include file " ++ show name)
+                                  >> pure (keep, guards, macros, frames)
+                  SystemInclude -> pure (keep, guards, macros, frames)
+                Just file ->
+                  if file `elem` stack
+                  then pure (id, guards, macros, frames)
+                  else do
+                    (expanded, guards', macros') <- expandFile stack guards macros file
+                    pure (expanded, guards', macros', frames)
+            _ -> pure (keep, guards, macros, frames)
 
   findInclude currentDir name = do
     let candidates = hccPathJoin currentDir name : map (`hccPathJoin` name) includeDirs
@@ -210,7 +215,7 @@ dropBlankLines sourceLines = case sourceLines of
     then dropBlankLines rest
     else sourceLines
 
-skipLineRange :: Int -> Int -> [String] -> [String]
+skipLineRange :: Int -> Int -> [a] -> [a]
 skipLineRange start end sourceLines =
   kept 0 sourceLines
   where

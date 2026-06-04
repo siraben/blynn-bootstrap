@@ -42,10 +42,10 @@ isAsciiAlphaNum :: Char -> Bool
 isAsciiAlphaNum c = isAsciiAlpha c || isDigitChar c
 
 isIdentStart :: Char -> Bool
-isIdentStart c = isAsciiAlpha c || c == '_'
+isIdentStart c = isAsciiAlpha c || c == '_' || c == '$'
 
 isIdentChar :: Char -> Bool
-isIdentChar c = isAsciiAlphaNum c || c == '_'
+isIdentChar c = isAsciiAlphaNum c || c == '_' || c == '$'
 
 mapMaybe :: (a -> Maybe b) -> [a] -> [b]
 mapMaybe f xs = case xs of

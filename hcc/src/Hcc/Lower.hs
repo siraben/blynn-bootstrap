@@ -29,17 +29,30 @@ lowerFunction name params body =
 lowerFunctionBody :: String -> [Param] -> [Stmt] -> CompileM FunctionIr
 lowerFunctionBody name params body = do
   bid <- freshBlock
-  paramInstrs <- lowerParams 0 params
-  defaultTerm <- defaultReturnTerm
-  blocks <- lowerStatementsFrom bid paramInstrs body defaultTerm
-  pure (FunctionIr name blocks)
+  retTy <- currentReturnType
+  aggregateReturn <- maybe (pure False) isAggregateTypeM retTy
+  if aggregateReturn
+    then do
+      retSlot <- freshTemp
+      paramInstrs <- lowerParams 1 params
+      defaultTerm <- defaultReturnTerm
+      blocks <- withCurrentReturnSlot (Just retSlot) (lowerStatementsFrom bid (IParam retSlot 0:paramInstrs) body defaultTerm)
+      pure (FunctionIr name blocks)
+    else do
+      paramInstrs <- lowerParams 0 params
+      defaultTerm <- defaultReturnTerm
+      blocks <- lowerStatementsFrom bid paramInstrs body defaultTerm
+      pure (FunctionIr name blocks)
 
 defaultReturnTerm :: CompileM Terminator
 defaultReturnTerm = do
   mty <- currentReturnType
   case mty of
     Just CVoid -> pure (TRet Nothing)
-    _ -> pure (TRet (Just (OImm 0)))
+    Just ty -> do
+      aggregateReturn <- isAggregateTypeM ty
+      pure (if aggregateReturn then TRet Nothing else TRet (Just (OImm 0)))
+    Nothing -> pure (TRet (Just (OImm 0)))
 
 coerceReturnOperand :: Operand -> CompileM ([Instr], Operand)
 coerceReturnOperand op = do
@@ -56,24 +69,8 @@ lowerStatementsFrom bid instrs stmts defaultTerm = case stmts of
     Nothing -> do
       tailBlocks <- lowerUnreachableLabels rest defaultTerm
       pure (BasicBlock bid instrs (TRet Nothing) : tailBlocks)
-    Just expr -> do
-      if exprIsShortCircuitBoolean expr
-        then do
-          yesId <- freshBlock
-          noId <- freshBlock
-          condBlocks <- lowerConditionBlock bid instrs expr yesId noId
-          (yesInstrs, yesOp) <- coerceReturnOperand (OImm 1)
-          (noInstrs, noOp) <- coerceReturnOperand (OImm 0)
-          tailBlocks <- lowerUnreachableLabels rest defaultTerm
-          pure ( condBlocks ++
-                 [ BasicBlock yesId yesInstrs (TRet (Just yesOp))
-                 , BasicBlock noId noInstrs (TRet (Just noOp))
-                 ] ++ tailBlocks)
-        else do
-          (retInstrs, op) <- lowerExpr expr
-          (coerceInstrs, retOp) <- coerceReturnOperand op
-          tailBlocks <- lowerUnreachableLabels rest defaultTerm
-          pure (BasicBlock bid (instrs ++ retInstrs ++ coerceInstrs) (TRet (Just retOp)) : tailBlocks)
+    Just expr ->
+      lowerReturnBlocks bid instrs expr rest defaultTerm
   SBlock body:rest -> do
     if null rest
       then withVarScope (lowerStatementsFrom bid instrs body defaultTerm)
@@ -88,7 +85,8 @@ lowerStatementsFrom bid instrs stmts defaultTerm = case stmts of
   SDecls decls:rest -> do
     declInstrs <- lowerDecls decls
     lowerStatementsFrom bid (instrs ++ declInstrs) rest defaultTerm
-  STypedef:rest ->
+  STypedef types:rest -> do
+    registerTypesAggregates types
     lowerStatementsFrom bid instrs rest defaultTerm
   SExpr expr:rest -> do
     exprInstrs <- lowerSideEffect expr
@@ -133,6 +131,10 @@ lowerStatementsFrom bid instrs stmts defaultTerm = case stmts of
     switchBlocks <- lowerSwitch dispatchId restId valueOp body
     restBlocks <- lowerStatementsFrom restId [] rest defaultTerm
     pure (BasicBlock bid (instrs ++ valueInstrs) (TJump dispatchId) : switchBlocks ++ restBlocks)
+  SCase expr:rest ->
+    lowerSwitchLabelBlocks bid instrs (Just expr) rest defaultTerm
+  SDefault:rest ->
+    lowerSwitchLabelBlocks bid instrs Nothing rest defaultTerm
   SGoto name:rest -> do
     target <- labelBlock name
     tailBlocks <- lowerUnreachableLabels rest defaultTerm
@@ -158,7 +160,56 @@ lowerStatementsFrom bid instrs stmts defaultTerm = case stmts of
     target <- requireContinueTarget
     tailBlocks <- lowerUnreachableLabels rest defaultTerm
     pure (BasicBlock bid instrs (TJump target) : tailBlocks)
-  stmt:_ -> throwC ("unsupported statement in lowering: " ++ renderStmtTag stmt)
+
+lowerSwitchLabelBlocks :: BlockId -> [Instr] -> Maybe Expr -> [Stmt] -> Terminator -> CompileM [BasicBlock]
+lowerSwitchLabelBlocks bid instrs label rest defaultTerm = do
+  target <- nextSwitchCaseTarget label
+  blocks <- lowerStatementsFrom target [] rest defaultTerm
+  pure (BasicBlock bid instrs (TJump target) : blocks)
+
+lowerReturnBlocks :: BlockId -> [Instr] -> Expr -> [Stmt] -> Terminator -> CompileM [BasicBlock]
+lowerReturnBlocks bid instrs expr rest defaultTerm = do
+  mty <- currentReturnType
+  aggregateReturn <- maybe (pure False) isAggregateTypeM mty
+  if aggregateReturn
+    then lowerAggregateReturnBlocks bid instrs expr rest defaultTerm
+    else lowerScalarReturnBlocks bid instrs expr rest defaultTerm
+
+lowerScalarReturnBlocks :: BlockId -> [Instr] -> Expr -> [Stmt] -> Terminator -> CompileM [BasicBlock]
+lowerScalarReturnBlocks bid instrs expr rest defaultTerm =
+  if exprIsShortCircuitBoolean expr
+    then do
+      yesId <- freshBlock
+      noId <- freshBlock
+      condBlocks <- lowerConditionBlock bid instrs expr yesId noId
+      (yesInstrs, yesOp) <- coerceReturnOperand (OImm 1)
+      (noInstrs, noOp) <- coerceReturnOperand (OImm 0)
+      tailBlocks <- lowerUnreachableLabels rest defaultTerm
+      pure ( condBlocks ++
+             [ BasicBlock yesId yesInstrs (TRet (Just yesOp))
+             , BasicBlock noId noInstrs (TRet (Just noOp))
+             ] ++ tailBlocks)
+    else do
+      (retInstrs, op) <- lowerExpr expr
+      (coerceInstrs, retOp) <- coerceReturnOperand op
+      tailBlocks <- lowerUnreachableLabels rest defaultTerm
+      pure (BasicBlock bid (instrs ++ retInstrs ++ coerceInstrs) (TRet (Just retOp)) : tailBlocks)
+
+lowerAggregateReturnBlocks :: BlockId -> [Instr] -> Expr -> [Stmt] -> Terminator -> CompileM [BasicBlock]
+lowerAggregateReturnBlocks bid instrs expr rest defaultTerm = do
+  slot <- currentReturnSlot
+  retSlot <- requireReturnSlot slot
+  mty <- currentReturnType
+  retTy <- requireMaybeType "aggregate return has unknown type" mty
+  (retInstrs, op) <- lowerExpr expr
+  copyInstrs <- copyObject (OTemp retSlot) op retTy
+  tailBlocks <- lowerUnreachableLabels rest defaultTerm
+  pure (BasicBlock bid (instrs ++ retInstrs ++ copyInstrs) (TRet Nothing) : tailBlocks)
+
+requireReturnSlot :: Maybe Temp -> CompileM Temp
+requireReturnSlot slot = case slot of
+  Just temp -> pure temp
+  Nothing -> throwC "aggregate return slot is unavailable"
 
 lowerIfRestTarget :: [Stmt] -> Terminator -> CompileM (BlockId, [BasicBlock])
 lowerIfRestTarget rest defaultTerm = case rest of
@@ -256,14 +307,60 @@ requireContinueTarget = do
 lowerSwitch :: BlockId -> BlockId -> Operand -> [Stmt] -> CompileM [BasicBlock]
 lowerSwitch dispatchId restId valueOp body = do
   let bodyStmts = switchBodyStatements body
-  let clauses = collectSwitchClauses bodyStmts
-  clauseIds <- freshBlocks (length clauses)
-  let clausePairs = zip clauses clauseIds
+  let (prelude, clauseStmts) = splitSwitchPrelude bodyStmts
+  preludeInstrs <- lowerSwitchPrelude prelude
+  let labels = collectSwitchLabels clauseStmts
+  let clauses = collectSwitchClauses clauseStmts
+  caseIds <- freshBlocks (length labels)
+  let caseTargets = zip labels caseIds
+  let clausePairs = zip clauses caseIds
   let defaultTarget = switchDefaultTarget restId clausePairs
-  let switchCasePairs = switchCases clausePairs
+  let switchCasePairs = switchCases caseTargets
   dispatchBlocks <- lowerSwitchDispatch dispatchId valueOp defaultTarget switchCasePairs
-  bodyBlocks <- withBreakTarget restId (lowerSwitchClauses restId clausePairs)
-  pure (dispatchBlocks ++ bodyBlocks)
+  bodyBlocks <- case clauses of
+    [] -> pure []
+    _ -> withBreakTarget restId (withSwitchCaseTargets caseTargets (lowerSwitchClauses restId clausePairs))
+  pure (prependSwitchDispatchInstrs preludeInstrs dispatchBlocks ++ bodyBlocks)
+
+prependSwitchDispatchInstrs :: [Instr] -> [BasicBlock] -> [BasicBlock]
+prependSwitchDispatchInstrs instrs blocks = case (instrs, blocks) of
+  ([], _) -> blocks
+  (_, []) -> []
+  (_, BasicBlock bid existing term:rest) -> BasicBlock bid (instrs ++ existing) term : rest
+
+lowerSwitchPrelude :: [Stmt] -> CompileM [Instr]
+lowerSwitchPrelude stmts = case stmts of
+  [] -> pure []
+  stmt:rest -> do
+    instrs <- lowerSwitchPreludeStmt stmt
+    restInstrs <- lowerSwitchPrelude rest
+    pure (instrs ++ restInstrs)
+
+lowerSwitchPreludeStmt :: Stmt -> CompileM [Instr]
+lowerSwitchPreludeStmt stmt = case stmt of
+  SDecl ty name _ -> lowerSwitchPreludeDecl ty name
+  SDecls decls -> lowerSwitchPreludeDecls decls
+  STypedef types -> registerTypesAggregates types >> pure []
+  _ -> pure []
+
+lowerSwitchPreludeDecls :: [(CType, String, Maybe Expr)] -> CompileM [Instr]
+lowerSwitchPreludeDecls decls = case decls of
+  [] -> pure []
+  (ty, name, _):rest -> do
+    instrs <- lowerSwitchPreludeDecl ty name
+    restInstrs <- lowerSwitchPreludeDecls rest
+    pure (instrs ++ restInstrs)
+
+lowerSwitchPreludeDecl :: CType -> String -> CompileM [Instr]
+lowerSwitchPreludeDecl ty name = do
+  aggregateStorage <- isAggregateTypeM ty
+  temp <- freshTemp
+  bindVar name temp ty
+  if aggregateStorage
+    then do
+      size <- typeSize ty
+      pure [IAlloca temp size]
+    else pure []
 
 lowerSwitchDispatch :: BlockId -> Operand -> BlockId -> [(Expr, BlockId)] -> CompileM [BasicBlock]
 lowerSwitchDispatch bid valueOp defaultTarget switchCasePairs = case switchCasePairs of
@@ -290,6 +387,14 @@ lowerSwitchClauses restId clauses = case clauses of
 
 lowerSideEffect :: Expr -> CompileM [Instr]
 lowerSideEffect expr = case expr of
+  ECall (EUnary "*" (EVar name)) args ->
+    if isIgnoredSideEffectCall name
+      then pure []
+      else do
+        direct <- lookupFunction name
+        if direct
+          then lowerDirectSideEffect name args
+          else lowerIndirectSideEffect (EUnary "*" (EVar name)) args
   ECall (EVar name) args ->
     if isIgnoredSideEffectCall name
       then pure []
@@ -331,13 +436,16 @@ lowerIncDecSideEffect op target = do
 lowerDirectSideEffect :: String -> [Expr] -> CompileM [Instr]
 lowerDirectSideEffect name args = do
   lowered <- lowerExprs args
-  pure (lowerExprResultsInstrs lowered ++ [ICall Nothing name (lowerExprResultsOps lowered)])
+  retTy <- directCallReturnType name
+  lowerDirectCallInstrs Nothing name retTy lowered
 
 lowerIndirectSideEffect :: Expr -> [Expr] -> CompileM [Instr]
 lowerIndirectSideEffect callee args = do
   (calleeInstrs, calleeOp) <- lowerExpr callee
   lowered <- lowerExprs args
-  pure (calleeInstrs ++ lowerExprResultsInstrs lowered ++ [ICallIndirect Nothing calleeOp (lowerExprResultsOps lowered)])
+  retTy <- indirectCallReturnType callee
+  callInstrs <- lowerIndirectCallInstrs Nothing calleeOp retTy lowered
+  pure (calleeInstrs ++ callInstrs)
 
 lowerExprResultsInstrs :: [([Instr], Operand)] -> [Instr]
 lowerExprResultsInstrs = concatMap fst
@@ -356,6 +464,7 @@ lowerDecls decls = case decls of
 
 lowerDecl :: CType -> String -> Maybe Expr -> CompileM [Instr]
 lowerDecl ty name initExpr = do
+  registerTypeAggregates ty
   aggregateStorage <- isAggregateTypeM ty
   temp <- freshTemp
   bindVar name temp ty
@@ -576,6 +685,8 @@ registerTypeAggregates ty = case ty of
     registerFieldAggregates fields
   CUnionDef fields ->
     registerFieldAggregates fields
+  CEnum _ constants ->
+    registerConstants constants
   _ -> pure ()
 
 registerTypesAggregates :: [CType] -> CompileM ()
@@ -639,6 +750,20 @@ lowerExpr expr = case expr of
     size <- typeSize ty
     temp <- freshTemp
     pure ([IConst temp size], OTemp temp)
+  EAlignofType ty -> do
+    align <- typeAlign ty
+    temp <- freshTemp
+    pure ([IConst temp align], OTemp temp)
+  EAlignofExpr value -> do
+    mty <- exprType value
+    ty <- requireMaybeType "alignof expression has unknown type" mty
+    align <- typeAlign ty
+    temp <- freshTemp
+    pure ([IConst temp align], OTemp temp)
+  EVaArg list ty ->
+    lowerVaArg list ty
+  EStmtExpr body ->
+    lowerStmtExpr body
   ECond cond yes no -> do
     (ci, co) <- lowerExpr cond
     (yi, yo) <- lowerExpr yes
@@ -666,6 +791,11 @@ lowerExpr expr = case expr of
     readLValueExpr expr
   EMember _ _ ->
     readLValueExpr expr
+  ECall (EUnary "*" (EVar name)) args -> do
+    direct <- lookupFunction name
+    if direct
+      then lowerDirectCallExpr name args
+      else lowerIndirectCall (EUnary "*" (EVar name)) args
   ECall (EVar name) args -> do
     direct <- lookupFunction name
     if direct
@@ -687,6 +817,8 @@ lowerVarExpr :: String -> CompileM ([Instr], Operand)
 lowerVarExpr name =
   if isFunctionNameMacro name
     then lowerFunctionNameMacro
+    else if name == "__FILE__"
+      then lowerExpr (EString "")
     else case builtinConstant name of
       Just value -> pure ([], OImm value)
       Nothing -> lowerNonBuiltinVarExpr name
@@ -700,19 +832,19 @@ lowerFunctionNameMacro = do
 
 lowerNonBuiltinVarExpr :: String -> CompileM ([Instr], Operand)
 lowerNonBuiltinVarExpr name = do
-  constant <- lookupConstant name
-  case constant of
-    Just value -> pure ([], OImm value)
-    Nothing -> lowerNonConstantVarExpr name
-
-lowerNonConstantVarExpr :: String -> CompileM ([Instr], Operand)
-lowerNonConstantVarExpr name = do
   local <- lookupVarMaybe name
   case local of
     Just temp -> do
       mty <- lookupVarType name
       ty <- requireMaybeType ("unknown local type: " ++ name) mty
       coerceScalar ty (OTemp temp)
+    Nothing -> lowerNonLocalOrConstantVarExpr name
+
+lowerNonLocalOrConstantVarExpr :: String -> CompileM ([Instr], Operand)
+lowerNonLocalOrConstantVarExpr name = do
+  constant <- lookupConstant name
+  case constant of
+    Just value -> pure ([], OImm value)
     Nothing -> lowerNonLocalVarExpr name
 
 lowerNonLocalVarExpr :: String -> CompileM ([Instr], Operand)
@@ -782,10 +914,16 @@ lowerComparisonOperands a b = do
 lowerDirectCallExpr :: String -> [Expr] -> CompileM ([Instr], Operand)
 lowerDirectCallExpr name args = do
   lowered <- lowerExprs args
-  out <- freshTemp
-  let instrs = lowerExprResultsInstrs lowered
-  let ops = lowerExprResultsOps lowered
-  pure (instrs ++ [ICall (Just out) name ops], OTemp out)
+  retTy <- directCallReturnType name
+  aggregate <- maybe (pure False) isAggregateTypeM retTy
+  if aggregate
+    then do
+      ty <- requireMaybeType ("unknown aggregate return type for " ++ name) retTy
+      lowerAggregateDirectCall name ty lowered
+    else do
+      out <- freshTemp
+      instrs <- lowerDirectCallInstrs (Just out) name retTy lowered
+      pure (instrs, OTemp out)
 
 lowerExprs :: [Expr] -> CompileM [([Instr], Operand)]
 lowerExprs args = case args of
@@ -799,8 +937,139 @@ lowerIndirectCall :: Expr -> [Expr] -> CompileM ([Instr], Operand)
 lowerIndirectCall callee args = do
   (calleeInstrs, calleeOp) <- lowerExpr callee
   lowered <- lowerExprs args
+  retTy <- indirectCallReturnType callee
+  aggregate <- maybe (pure False) isAggregateTypeM retTy
+  if aggregate
+    then do
+      ty <- requireMaybeType "unknown aggregate return type for indirect call" retTy
+      (callInstrs, op) <- lowerAggregateIndirectCall calleeOp ty lowered
+      pure (calleeInstrs ++ callInstrs, op)
+    else do
+      out <- freshTemp
+      callInstrs <- lowerIndirectCallInstrs (Just out) calleeOp retTy lowered
+      pure (calleeInstrs ++ callInstrs, OTemp out)
+
+directCallReturnType :: String -> CompileM (Maybe CType)
+directCallReturnType name = do
+  functionTy <- lookupFunctionType name
+  case functionResultType =<< functionTy of
+    Just ty -> pure (Just ty)
+    Nothing -> do
+      globalTy <- lookupGlobalType name
+      pure (functionResultType =<< globalTy)
+
+indirectCallReturnType :: Expr -> CompileM (Maybe CType)
+indirectCallReturnType callee = do
+  calleeTy <- exprType callee
+  pure (functionResultType =<< calleeTy)
+
+lowerDirectCallInstrs :: Maybe Temp -> String -> Maybe CType -> [([Instr], Operand)] -> CompileM [Instr]
+lowerDirectCallInstrs result name retTy lowered = do
+  aggregate <- maybe (pure False) isAggregateTypeM retTy
+  if aggregate
+    then do
+      ty <- requireMaybeType ("unknown aggregate return type for " ++ name) retTy
+      temp <- freshTemp
+      size <- typeSize ty
+      let ops = OTemp temp : lowerExprResultsOps lowered
+      pure (IAlloca temp size : lowerExprResultsInstrs lowered ++ [ICall Nothing name ops])
+    else pure (lowerExprResultsInstrs lowered ++ [ICall result name (lowerExprResultsOps lowered)])
+
+lowerIndirectCallInstrs :: Maybe Temp -> Operand -> Maybe CType -> [([Instr], Operand)] -> CompileM [Instr]
+lowerIndirectCallInstrs result calleeOp retTy lowered = do
+  aggregate <- maybe (pure False) isAggregateTypeM retTy
+  if aggregate
+    then do
+      ty <- requireMaybeType "unknown aggregate return type for indirect call" retTy
+      temp <- freshTemp
+      size <- typeSize ty
+      let ops = OTemp temp : lowerExprResultsOps lowered
+      pure (IAlloca temp size : lowerExprResultsInstrs lowered ++ [ICallIndirect Nothing calleeOp ops])
+    else pure (lowerExprResultsInstrs lowered ++ [ICallIndirect result calleeOp (lowerExprResultsOps lowered)])
+
+lowerAggregateDirectCall :: String -> CType -> [([Instr], Operand)] -> CompileM ([Instr], Operand)
+lowerAggregateDirectCall name ty lowered = do
+  temp <- freshTemp
+  size <- typeSize ty
+  let ops = OTemp temp : lowerExprResultsOps lowered
+  pure (IAlloca temp size : lowerExprResultsInstrs lowered ++ [ICall Nothing name ops], OTemp temp)
+
+lowerAggregateIndirectCall :: Operand -> CType -> [([Instr], Operand)] -> CompileM ([Instr], Operand)
+lowerAggregateIndirectCall calleeOp ty lowered = do
+  temp <- freshTemp
+  size <- typeSize ty
+  let ops = OTemp temp : lowerExprResultsOps lowered
+  pure (IAlloca temp size : lowerExprResultsInstrs lowered ++ [ICallIndirect Nothing calleeOp ops], OTemp temp)
+
+lowerVaArg :: Expr -> CType -> CompileM ([Instr], Operand)
+lowerVaArg list ty = do
+  (listInstrs, listLValue) <- lowerLValue list
+  (readInstrs, currentOp) <- readLValue listLValue
+  aggregate <- isAggregateTypeM ty
+  value <- if aggregate
+    then do
+      temp <- freshTemp
+      size <- typeSize ty
+      copyInstrs <- copyObject (OTemp temp) currentOp ty
+      pure (IAlloca temp size : copyInstrs, OTemp temp)
+    else do
+      out <- freshTemp
+      load <- loadInstr out ty currentOp
+      (coerceInstrs, coerceOp) <- coerceScalar ty (OTemp out)
+      pure ([load] ++ coerceInstrs, coerceOp)
+  step <- vaArgSlotSize ty
+  next <- freshTemp
+  writeInstrs <- writeLValue listLValue (OTemp next)
+  case value of
+    (valueInstrs, valueOp) ->
+      pure ( listInstrs ++ readInstrs ++ valueInstrs ++
+             [IBin next IAdd currentOp (OImm step)] ++ writeInstrs
+           , valueOp)
+
+vaArgSlotSize :: CType -> CompileM Int
+vaArgSlotSize ty = do
+  size <- typeSize ty
+  word <- targetWordSize
+  pure (alignUp (max size word) word)
+
+lowerStmtExpr :: [Stmt] -> CompileM ([Instr], Operand)
+lowerStmtExpr body =
+  withVarScope (lowerStmtExprBody body)
+
+lowerStmtExprBody :: [Stmt] -> CompileM ([Instr], Operand)
+lowerStmtExprBody body = case body of
+  [] -> pure ([], OImm 0)
+  [SExpr expr] -> lowerExpr expr
+  stmt:rest -> do
+    instrs <- lowerStmtExprSideEffect stmt
+    (restInstrs, op) <- lowerStmtExprBody rest
+    pure (instrs ++ restInstrs, op)
+
+lowerStmtExprSideEffect :: Stmt -> CompileM [Instr]
+lowerStmtExprSideEffect stmt = case stmt of
+  SDecl ty name initExpr -> lowerDecl ty name initExpr
+  SDecls decls -> lowerDecls decls
+  STypedef types -> registerTypesAggregates types >> pure []
+  SExpr expr -> lowerSideEffect expr
+  SIf cond yes no -> lowerStmtExprIfSideEffect cond yes no
+  SBlock body -> withVarScope (lowerStmtExprSideEffects body)
+  _ -> throwC ("unsupported statement in statement expression: " ++ renderStmtTag stmt)
+
+lowerStmtExprIfSideEffect :: Expr -> [Stmt] -> [Stmt] -> CompileM [Instr]
+lowerStmtExprIfSideEffect cond yes no = do
+  (condInstrs, condOp) <- lowerTruthExpr cond
+  yesInstrs <- lowerStmtExprSideEffects yes
+  noInstrs <- lowerStmtExprSideEffects no
   out <- freshTemp
-  pure (calleeInstrs ++ lowerExprResultsInstrs lowered ++ [ICallIndirect (Just out) calleeOp (lowerExprResultsOps lowered)], OTemp out)
+  pure [ICond out condInstrs condOp yesInstrs (OImm 0) noInstrs (OImm 0)]
+
+lowerStmtExprSideEffects :: [Stmt] -> CompileM [Instr]
+lowerStmtExprSideEffects body = case body of
+  [] -> pure []
+  stmt:rest -> do
+    instrs <- lowerStmtExprSideEffect stmt
+    restInstrs <- lowerStmtExprSideEffects rest
+    pure (instrs ++ restInstrs)
 
 lowerLogicalAnd :: Expr -> Expr -> CompileM ([Instr], Operand)
 lowerLogicalAnd = lowerShortCircuit True
@@ -922,10 +1191,14 @@ lowerPlainBin op a b = do
 coerceBinOperand :: CType -> Expr -> Operand -> CompileM ([Instr], Operand)
 coerceBinOperand commonTy expr op = case expr of
   EVar name -> do
-    constant <- lookupConstant name
-    case (constant, builtinConstant name) of
-      (Nothing, Nothing) -> pure ([], op)
-      _ -> coerceScalar commonTy op
+    local <- lookupVarMaybe name
+    case local of
+      Just _ -> pure ([], op)
+      Nothing -> do
+        constant <- lookupConstant name
+        case (constant, builtinConstant name) of
+          (Nothing, Nothing) -> pure ([], op)
+          _ -> coerceScalar commonTy op
   _ -> coerceScalar commonTy op
 
 isComparisonBinOp :: BinOp -> Bool
@@ -1255,7 +1528,7 @@ lowerLValue target = case target of
   EUnary "*" ptr -> do
     (instrs, op) <- lowerExpr ptr
     ty <- exprType target
-    knownTy <- requireMaybeType "dereference has unknown pointed-to type" ty
+    knownTy <- requireMaybeType ("dereference has unknown pointed-to type: " ++ renderExprForDiagnostic ptr) ty
     pure (instrs, LAddress op knownTy)
   EIndex base ix -> do
     (baseInstrs, baseOp) <- lowerExpr base
@@ -1268,17 +1541,32 @@ lowerLValue target = case target of
   EPtrMember base field -> do
     (baseInstrs, baseOp) <- lowerExpr base
     baseTy <- exprType base
-    (fieldTy, offset) <- memberInfo baseTy field
+    (fieldTy, offset) <- memberInfoForExpr baseTy field base
     (addrInstrs, addrOp) <- offsetAddress baseOp offset
     pure (baseInstrs ++ addrInstrs, LAddress addrOp fieldTy)
   EMember base field -> do
-    (baseInstrs, baseAddr) <- lowerLValueAddress base
+    (baseInstrs, baseAddr) <- lowerAggregateBaseAddress base
     baseTy <- exprType base
     knownBaseTy <- requireMaybeType "member base has unknown type" baseTy
-    (fieldTy, offset) <- memberInfo (Just (CPtr knownBaseTy)) field
+    (fieldTy, offset) <- memberInfoForExpr (Just (CPtr knownBaseTy)) field base
     (addrInstrs, addrOp) <- offsetAddress baseAddr offset
     pure (baseInstrs ++ addrInstrs, LAddress addrOp fieldTy)
-  _ -> throwC ("unsupported lvalue: " ++ renderExprTag target)
+  _ -> throwC ("unsupported lvalue: " ++ renderExprForDiagnostic target)
+
+lowerAggregateBaseAddress :: Expr -> CompileM ([Instr], Operand)
+lowerAggregateBaseAddress base = case base of
+  EVar _ -> lowerLValueAddress base
+  EUnary "*" _ -> lowerLValueAddress base
+  EIndex _ _ -> lowerLValueAddress base
+  EPtrMember _ _ -> lowerLValueAddress base
+  EMember _ _ -> lowerLValueAddress base
+  _ -> do
+    mty <- exprType base
+    ty <- requireMaybeType "member base has unknown type" mty
+    aggregate <- isAggregateTypeM ty
+    if aggregate
+      then lowerExpr base
+      else lowerLValueAddress base
 
 requireMaybeType :: String -> Maybe CType -> CompileM CType
 requireMaybeType msg mty = case mty of
@@ -1309,6 +1597,10 @@ exprType expr = case expr of
   EString _ -> pure (Just (CPtr CChar))
   ESizeofType _ -> pure (Just CInt)
   ESizeofExpr _ -> pure (Just CInt)
+  EAlignofType _ -> pure (Just CInt)
+  EAlignofExpr _ -> pure (Just CInt)
+  EVaArg _ ty -> pure (Just ty)
+  EStmtExpr body -> stmtExprType body
   EVar name -> do
     if isFunctionNameMacro name
       then pure (Just (CPtr CChar))
@@ -1320,7 +1612,15 @@ exprType expr = case expr of
             functionTy <- lookupFunctionType name
             case functionTy of
               Just ty -> pure (Just ty)
-              Nothing -> lookupGlobalType name
+              Nothing -> do
+                globalTy <- lookupGlobalType name
+                case globalTy of
+                  Just ty -> pure (Just ty)
+                  Nothing -> do
+                    constant <- lookupConstant name
+                    case constant of
+                      Just _ -> pure (Just CInt)
+                      Nothing -> pure Nothing
   ECast ty _ -> pure (Just ty)
   EUnary "+" value -> do
     mty <- exprType value
@@ -1335,6 +1635,7 @@ exprType expr = case expr of
   EUnary "*" value -> do
     mty <- exprType value
     pure (case mty of
+      Just (CFunc ret params) -> Just (CFunc ret params)
       Just (CPtr ty) -> Just ty
       Just (CArray ty _) -> Just ty
       _ -> Nothing)
@@ -1349,12 +1650,12 @@ exprType expr = case expr of
       _ -> Nothing)
   EPtrMember base field -> do
     baseTy <- exprType base
-    info <- memberInfoMaybe baseTy field
+    info <- memberInfoMaybeForExpr baseTy field base
     pure (maybeMemberType info)
   EMember base field -> do
     baseTy <- exprType base
     knownBaseTy <- requireMaybeType "member base has unknown type" baseTy
-    info <- memberInfoMaybe (Just (CPtr knownBaseTy)) field
+    info <- memberInfoMaybeForExpr (Just (CPtr knownBaseTy)) field base
     pure (maybeMemberType info)
   EBinary "+" left right -> do
     leftTy <- exprType left
@@ -1395,11 +1696,7 @@ exprType expr = case expr of
   ECond _ yes no -> do
     yesTy <- exprType yes
     noTy <- exprType no
-    pure (case (yesTy, noTy) of
-      (Just ty, Nothing) -> Just ty
-      (Nothing, Just ty) -> Just ty
-      (Just ty, Just _) -> Just ty
-      _ -> Nothing)
+    conditionalExprType yes yesTy no noTy
   EAssign lhs _ -> exprType lhs
   ECompoundAssign _ lhs _ -> exprType lhs
   EPostfix _ value -> exprType value
@@ -1443,6 +1740,12 @@ functionResultType ty = case ty of
   CPtr inner -> functionResultType inner
   _ -> Nothing
 
+stmtExprType :: [Stmt] -> CompileM (Maybe CType)
+stmtExprType body = case body of
+  [] -> pure (Just CInt)
+  [SExpr expr] -> exprType expr
+  _:rest -> stmtExprType rest
+
 isFunctionNameMacro :: String -> Bool
 isFunctionNameMacro name =
   name `elem` ["__func__", "__FUNCTION__", "__PRETTY_FUNCTION__"]
@@ -1467,17 +1770,108 @@ subExprResultType leftTy rightTy arithmeticTy = case pointerElementType leftTy o
     Nothing -> leftTy
   Nothing -> Just arithmeticTy
 
+conditionalExprType :: Expr -> Maybe CType -> Expr -> Maybe CType -> CompileM (Maybe CType)
+conditionalExprType yes yesTy no noTy = case (yesTy, noTy) of
+  (Just ty, Nothing) -> pure (Just ty)
+  (Nothing, Just ty) -> pure (Just ty)
+  (Just yesKnown, Just noKnown) ->
+    if isPointerType yesKnown && isNullPointerConstant no
+      then pure (Just yesKnown)
+      else if isNullPointerConstant yes && isPointerType noKnown
+        then pure (Just noKnown)
+        else if isPointerType yesKnown && isPointerType noKnown
+          then pure (Just (conditionalPointerType yesKnown noKnown))
+          else do
+            yesArithmetic <- isArithmeticTypeM yesKnown
+            noArithmetic <- isArithmeticTypeM noKnown
+            if yesArithmetic && noArithmetic
+              then Just <$> usualArithmeticType yes no
+              else pure (Just yesKnown)
+  _ -> pure Nothing
+
+conditionalPointerType :: CType -> CType -> CType
+conditionalPointerType yesTy noTy =
+  if isVoidPointerType yesTy then yesTy else if isVoidPointerType noTy then noTy else yesTy
+
+isVoidPointerType :: CType -> Bool
+isVoidPointerType ty = case ty of
+  CPtr CVoid -> True
+  _ -> False
+
+isNullPointerConstant :: Expr -> Bool
+isNullPointerConstant expr = case expr of
+  EInt text -> parseInt text == 0
+  EChar text -> charValue text == 0
+  EUnary "+" value -> isNullPointerConstant value
+  ECast _ value -> isNullPointerConstant value
+  _ -> False
+
+isArithmeticTypeM :: CType -> CompileM Bool
+isArithmeticTypeM ty =
+  if isFloatingType ty
+    then pure True
+    else isIntegerTypeM ty
+
 memberInfo :: Maybe CType -> String -> CompileM (CType, Int)
 memberInfo mty field = do
   found <- memberInfoMaybe mty field
   case found of
     Just info -> pure info
-    Nothing -> throwC ("unknown struct member: " ++ field ++ " on aggregate")
+    Nothing -> throwC ("unknown struct member: " ++ field ++ " on aggregate " ++ memberBaseTypeLabel mty)
+
+memberInfoForExpr :: Maybe CType -> String -> Expr -> CompileM (CType, Int)
+memberInfoForExpr mty field base = do
+  found <- memberInfoMaybe mty field
+  case found of
+    Just info -> pure info
+    Nothing -> throwC ("unknown struct member: " ++ field ++ " on aggregate " ++ memberBaseTypeLabel mty ++ " in " ++ renderExprForDiagnostic base)
+
+memberBaseTypeLabel :: Maybe CType -> String
+memberBaseTypeLabel mty = case mty of
+  Nothing -> "<unknown>"
+  Just ty -> ctypeLabel ty
+
+ctypeLabel :: CType -> String
+ctypeLabel ty = case ty of
+  CVoid -> "void"
+  CInt -> "int"
+  CShort -> "short"
+  CChar -> "char"
+  CUnsigned -> "unsigned"
+  CUnsignedShort -> "unsigned short"
+  CUnsignedChar -> "unsigned char"
+  CLong -> "long"
+  CUnsignedLong -> "unsigned long"
+  CLongLong -> "long long"
+  CUnsignedLongLong -> "unsigned long long"
+  CBool -> "_Bool"
+  CFloat -> "float"
+  CDouble -> "double"
+  CLongDouble -> "long double"
+  CStruct name -> "struct " ++ name
+  CUnion name -> "union " ++ name
+  CStructNamed name _ -> "struct " ++ name
+  CUnionNamed name _ -> "union " ++ name
+  CStructDef _ -> "anonymous struct"
+  CUnionDef _ -> "anonymous union"
+  CEnum name _ -> "enum " ++ name
+  CNamed name -> name
+  CArray inner _ -> ctypeLabel inner ++ "[]"
+  CFunc ret _ -> ctypeLabel ret ++ "()"
+  CPtr inner -> ctypeLabel inner ++ " *"
 
 memberInfoMaybe :: Maybe CType -> String -> CompileM (Maybe (CType, Int))
 memberInfoMaybe mty field = case mty of
   Just (CPtr ty) -> memberInfoForAggregate ty field
+  Just (CArray ty _) -> memberInfoForAggregate ty field
   _ -> pure Nothing
+
+memberInfoMaybeForExpr :: Maybe CType -> String -> Expr -> CompileM (Maybe (CType, Int))
+memberInfoMaybeForExpr mty field base = do
+  info <- memberInfoMaybe mty field
+  case info of
+    Just _ -> pure info
+    Nothing -> throwC ("unknown struct member: " ++ field ++ " on aggregate " ++ memberBaseTypeLabel mty ++ " in " ++ renderExprForDiagnostic base)
 
 memberInfoForAggregate :: CType -> String -> CompileM (Maybe (CType, Int))
 memberInfoForAggregate ty field = case aggregateCacheName ty of
@@ -1579,7 +1973,7 @@ isSignedIntegerType ty = case ty of
   CInt -> True
   CLong -> True
   CLongLong -> True
-  CEnum _ -> True
+  CEnum _ _ -> True
   CNamed name -> isSignedNamedInteger name
   _ -> False
 
@@ -1596,7 +1990,7 @@ isIntegerTypeM ty = case ty of
   CLongLong -> pure True
   CUnsignedLongLong -> pure True
   CBool -> pure True
-  CEnum _ -> pure True
+  CEnum _ _ -> pure True
   CNamed name -> pure (maybe False (const True) (namedIntegerSize name))
   _ -> pure False
 
@@ -1720,8 +2114,19 @@ promotedExprType expr = case expr of
     pure (floatLiteralType text)
   _ -> do
     mty <- exprType expr
-    ty <- requireMaybeType ("expression has unknown type: " ++ renderExprTag expr) mty
+    ty <- requireMaybeType ("expression has unknown type: " ++ renderExprForDiagnostic expr) mty
     promoteIntegerType ty
+
+renderExprForDiagnostic :: Expr -> String
+renderExprForDiagnostic expr = case expr of
+  EVar name -> "EVar " ++ name
+  ECast ty value -> "ECast " ++ ctypeLabel ty ++ " (" ++ renderExprForDiagnostic value ++ ")"
+  ECall callee _ -> "ECall (" ++ renderExprForDiagnostic callee ++ ")"
+  EUnary op value -> "EUnary " ++ op ++ " (" ++ renderExprForDiagnostic value ++ ")"
+  EPtrMember base field -> "EPtrMember (" ++ renderExprForDiagnostic base ++ ") " ++ field
+  EMember base field -> "EMember (" ++ renderExprForDiagnostic base ++ ") " ++ field
+  EIndex base _ -> "EIndex (" ++ renderExprForDiagnostic base ++ ")"
+  _ -> renderExprTag expr
 
 floatLiteralType :: String -> CType
 floatLiteralType text =
@@ -1768,7 +2173,7 @@ typeSize ty = case ty of
     aggregateSize True fields
   CStructDef fields -> aggregateSize False fields
   CUnionDef fields -> aggregateSize True fields
-  CEnum _ -> pure 4
+  CEnum _ _ -> pure 4
   CNamed name -> namedTypeSize name
 
 namedTypeSize :: String -> CompileM Int
@@ -1906,10 +2311,20 @@ globalDataExpr ty expr = case expr of
   EChar text -> scalarData ty (charValue text)
   ECast _ value -> globalDataValue ty (Just value)
   EUnary "&" value -> globalAddressExprData ty value
+  EUnary "*" value -> globalFunctionDesignatorData ty value
   EVar name -> globalVarData ty name
   _ -> do
     value <- constExprValue expr
     scalarData ty value
+
+globalFunctionDesignatorData :: CType -> Expr -> CompileM [DataValue]
+globalFunctionDesignatorData ty value = do
+  mty <- exprType value
+  case mty of
+    Just (CFunc _ _) -> globalDataValue ty (Just value)
+    _ -> do
+      n <- constExprValue (EUnary "*" value)
+      scalarData ty n
 
 globalInitListData :: CType -> [Expr] -> CompileM [DataValue]
 globalInitListData ty exprs =
@@ -1954,7 +2369,7 @@ globalStringData ty text = case ty of
     then do
       dataLabel <- freshDataLabel
       addDataItem (DataItem dataLabel (bytesData (stringBytes text)))
-      pure [DAddress dataLabel]
+      pure [DAddress dataLabel 0]
     else do
       value <- constExprValue (EString text)
       scalarData ty value
@@ -1965,11 +2380,47 @@ stringDataSize count text = case count of
   Just bound -> constExprValue bound
 
 globalAddressExprData :: CType -> Expr -> CompileM [DataValue]
-globalAddressExprData ty value = case value of
-  EVar name -> globalAddressData name
-  _ -> do
-    n <- constExprValue (EUnary "&" value)
-    scalarData ty n
+globalAddressExprData ty value = do
+  resolved <- resolveGlobalAddressExpr value
+  case resolved of
+    Just address -> case address of
+      GlobalAddress label offset -> pure [DAddress label offset]
+    Nothing -> do
+      n <- constExprValue (EUnary "&" value)
+      scalarData ty n
+
+data GlobalAddress = GlobalAddress String Int
+
+resolveGlobalAddressExpr :: Expr -> CompileM (Maybe GlobalAddress)
+resolveGlobalAddressExpr expr = case expr of
+  EVar name -> do
+    label <- globalAddressLabel name
+    pure (Just (GlobalAddress label 0))
+  ECast _ value ->
+    resolveGlobalAddressExpr value
+  EIndex base index -> do
+    baseAddress <- resolveGlobalAddressExpr base
+    case baseAddress of
+      Nothing -> pure Nothing
+      Just address -> do
+        elemTy <- indexedElementType base
+        elemSize <- typeSize elemTy
+        indexValue <- constExprValue index
+        pure (Just (addGlobalAddressOffset (indexValue * elemSize) address))
+  EMember base field -> do
+    baseAddress <- resolveGlobalAddressExpr base
+    case baseAddress of
+      Nothing -> pure Nothing
+      Just address -> do
+        baseTy <- exprType base
+        knownBaseTy <- requireMaybeType "member base has unknown type" baseTy
+        (_, fieldOffsetBytes) <- memberInfo (Just (CPtr knownBaseTy)) field
+        pure (Just (addGlobalAddressOffset fieldOffsetBytes address))
+  _ -> pure Nothing
+
+addGlobalAddressOffset :: Int -> GlobalAddress -> GlobalAddress
+addGlobalAddressOffset extra address = case address of
+  GlobalAddress label offset -> GlobalAddress label (offset + extra)
 
 globalVarData :: CType -> String -> CompileM [DataValue]
 globalVarData ty name = do
@@ -2076,13 +2527,15 @@ takeDataTarget size values =
     DByte byte:rest -> do
       tailValues <- takeDataTarget (size - 1) rest
       pure (DByte byte : tailValues)
-    DAddress label:rest -> do
+    DAddress label offset:rest -> do
       word <- targetWordSize
       if size >= word
         then do
           tailValues <- takeDataTarget (size - word) rest
-          pure (DAddress label : tailValues)
+          pure (DAddress label offset : tailValues)
         else pure (zeroData size)
+    DLabel _:rest ->
+      takeDataTarget size rest
 
 dataSizeTarget :: [DataValue] -> CompileM Int
 dataSizeTarget values = case values of
@@ -2090,15 +2543,22 @@ dataSizeTarget values = case values of
   DByte _:rest -> do
     n <- dataSizeTarget rest
     pure (n + 1)
-  DAddress _:rest -> do
+  DAddress _ _:rest -> do
     word <- targetWordSize
     n <- dataSizeTarget rest
     pure (n + word)
+  DLabel _:rest ->
+    dataSizeTarget rest
 
 globalAddressData :: String -> CompileM [DataValue]
 globalAddressData name = do
+  label <- globalAddressLabel name
+  pure [DAddress label 0]
+
+globalAddressLabel :: String -> CompileM String
+globalAddressLabel name = do
   function <- lookupFunction name
-  pure [DAddress (if function then "FUNCTION_" ++ name else name)]
+  pure (if function then "FUNCTION_" ++ name else name)
 
 constExprValue :: Expr -> CompileM Int
 constExprValue expr = case expr of
@@ -2110,6 +2570,11 @@ constExprValue expr = case expr of
     mty <- exprType value
     ty <- requireMaybeType "sizeof expression has unknown type" mty
     typeSize ty
+  EAlignofType ty -> typeAlign ty
+  EAlignofExpr value -> do
+    mty <- exprType value
+    ty <- requireMaybeType "alignof expression has unknown type" mty
+    typeAlign ty
   ECast _ (EUnary "&" (EPtrMember (ECast (CPtr ty) (EInt "0")) field)) -> do
     info <- memberInfo (Just (CPtr ty)) field
     pure (snd info)
@@ -2134,6 +2599,20 @@ constExprValue expr = case expr of
   EUnary "!" value -> do
     n <- constExprValue value
     pure (if n == 0 then 1 else 0)
+  EBinary "&&" left right -> do
+    a <- constExprValue left
+    if a == 0
+      then pure 0
+      else do
+        b <- constExprValue right
+        pure (if b /= 0 then 1 else 0)
+  EBinary "||" left right -> do
+    a <- constExprValue left
+    if a /= 0
+      then pure 1
+      else do
+        b <- constExprValue right
+        pure (if b /= 0 then 1 else 0)
   EBinary op left right -> do
     a <- constExprValue left
     b <- constExprValue right
@@ -2141,6 +2620,7 @@ constExprValue expr = case expr of
   ECond cond yes no -> do
     c <- constExprValue cond
     constExprValue (if c /= 0 then yes else no)
+  EUnary op _ -> throwC ("unsupported constant expression: unary " ++ op)
   _ -> throwC ("unsupported constant expression: " ++ renderExprTag expr)
 
 arrayBoundSize :: Maybe Expr -> CompileM Int

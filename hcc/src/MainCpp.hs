@@ -24,10 +24,13 @@ preprocessFile args = case assemblyArgs ("-S":args) of
   Left msg -> die msg
   Right opts -> do
     source <- readSourceWithIncludes (asmIncludeDirs opts) (asmDefines opts) (asmInput opts)
-    let sourceWithDefines = renderDefines (asmDefines opts) ++ source
+    let sourceWithDefines = builtinDefines ++ renderDefines (asmDefines opts) ++ source
     case lexPlainSource sourceWithDefines >>= mapPreprocessError . preprocess of
       Left msg -> die (asmInput opts ++ ":" ++ msg)
       Right toks -> hccPutStr (renderTokens toks)
+
+builtinDefines :: String
+builtinDefines = "#define __STDC__ 1\n"
 
 mapPreprocessError :: Either PreprocessError a -> Either String a
 mapPreprocessError (Left (PreprocessError pos msg)) = Left (showPos pos ++ ": " ++ msg)

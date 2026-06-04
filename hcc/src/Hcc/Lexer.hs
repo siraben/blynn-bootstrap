@@ -28,6 +28,7 @@ lexC source = go (LexState source (SrcPos 1 1) True) [] where
       | startsBlockComment (lsInput st) -> skipBlockComment st >>= \st' -> go st' acc
       | isIdentStart c -> let (tok, st') = lexIdent st in go st' (tok:acc)
       | isDigit c -> lexNumber st >>= \(tok, st') -> go st' (tok:acc)
+      | startsDotNumber (lsInput st) -> let (tok, st') = lexDotNumber st in go st' (tok:acc)
       | c == '\'' -> lexQuoted '\'' TokChar st >>= \(tok, st') -> go st' (tok:acc)
       | c == '"' -> lexQuoted '"' TokString st >>= \(tok, st') -> go st' (tok:acc)
       | otherwise -> case lexPunct st of
@@ -38,10 +39,17 @@ isDirectiveStart :: LexState -> Char -> Bool
 isDirectiveStart st c = lsBol st && c == '#'
 
 lexDirective :: LexState -> Either LexError (Token, LexState)
-lexDirective st = Right (Token (Span start end) (TokDirective text), st') where
+lexDirective st =
+  if directiveLeavesBlockComment text
+    then do
+      skipped <- skipBlockCommentTail start stAfterLine
+      Right (tok, skipped)
+    else Right (tok, stAfterLine)
+  where
   start = lsPos st
-  (text, st') = takeUntilNewline st
-  end = lsPos st'
+  (text, stAfterLine) = takeUntilNewline st
+  end = lsPos stAfterLine
+  tok = Token (Span start end) (TokDirective text)
 
 takeUntilNewline :: LexState -> (String, LexState)
 takeUntilNewline st = go st [] where
@@ -74,6 +82,40 @@ skipBlockComment st = case go (advanceMany "/*" st { lsInput = drop 2 (lsInput s
       '*':'/':cs -> Right (advanceMany "*/" cur { lsInput = cs })
       c:cs -> go (advance c cur { lsInput = cs })
 
+skipBlockCommentTail :: SrcPos -> LexState -> Either LexError LexState
+skipBlockCommentTail start st = go st where
+  go cur = case lsInput cur of
+    [] -> Left (LexError start "unterminated block comment")
+    '*':'/':cs -> Right (advanceMany "*/" cur { lsInput = cs })
+    c:cs -> go (advance c cur { lsInput = cs })
+
+directiveLeavesBlockComment :: String -> Bool
+directiveLeavesBlockComment text = goCode text where
+  goCode chars = case chars of
+    [] -> False
+    '/':'/':_ -> False
+    '/':'*':rest -> goBlock rest
+    '"':rest -> goString rest
+    '\'':rest -> goChar rest
+    _:rest -> goCode rest
+
+  goBlock chars = case chars of
+    [] -> True
+    '*':'/':rest -> goCode rest
+    _:rest -> goBlock rest
+
+  goString chars = case chars of
+    [] -> False
+    '\\':_:rest -> goString rest
+    '"':rest -> goCode rest
+    _:rest -> goString rest
+
+  goChar chars = case chars of
+    [] -> False
+    '\\':_:rest -> goChar rest
+    '\'':rest -> goCode rest
+    _:rest -> goChar rest
+
 lexIdent :: LexState -> (Token, LexState)
 lexIdent st = (Token (Span start end) (TokIdent text), st') where
   start = lsPos st
@@ -93,6 +135,19 @@ lexNumber st = case takeNumber st of
   where
     kind NumberInt = TokInt
     kind NumberFloat = TokFloat
+
+startsDotNumber :: String -> Bool
+startsDotNumber input = case input of
+  '.':c:_ -> isDigit c
+  _ -> False
+
+lexDotNumber :: LexState -> (Token, LexState)
+lexDotNumber st =
+  let (fraction, st1) = takeFraction st
+      (exponentText, st2) = takeExponent "eE" st1
+      (suffix, st3) = takeWhileState isFloatSuffix st2
+      text = fraction ++ exponentText ++ suffix
+  in (Token (Span (lsPos st) (lsPos st3)) (TokFloat text), st3)
 
 takeNumber :: LexState -> Either LexError (String, NumberClass, LexState)
 takeNumber st = case lsInput st of

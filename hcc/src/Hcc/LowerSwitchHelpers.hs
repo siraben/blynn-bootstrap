@@ -1,6 +1,8 @@
 module LowerSwitchHelpers
   ( collectSwitchClauses
+  , collectSwitchLabels
   , freshBlocks
+  , splitSwitchPrelude
   , switchDefaultTarget
   , switchCases
   , switchNextDispatchTarget
@@ -36,6 +38,32 @@ collectSwitchClauseFinishOne currentLabel currentBody clauses = case currentLabe
   Nothing -> clauses
   Just label -> SwitchClause label (reverse currentBody) : clauses
 
+collectSwitchLabels :: [Stmt] -> [Maybe Expr]
+collectSwitchLabels stmts = concatMap collectSwitchLabelsStmt stmts
+
+collectSwitchLabelsStmt :: Stmt -> [Maybe Expr]
+collectSwitchLabelsStmt stmt = case stmt of
+  SCase expr -> [Just expr]
+  SDefault -> [Nothing]
+  SBlock body -> collectSwitchLabels body
+  SIf _ yes no -> collectSwitchLabels yes ++ collectSwitchLabels no
+  SWhile _ body -> collectSwitchLabels body
+  SDoWhile body _ -> collectSwitchLabels body
+  SFor _ _ _ body -> collectSwitchLabels body
+  SSwitch _ _ -> []
+  _ -> []
+
+splitSwitchPrelude :: [Stmt] -> ([Stmt], [Stmt])
+splitSwitchPrelude stmts = splitSwitchPreludeRev [] stmts
+
+splitSwitchPreludeRev :: [Stmt] -> [Stmt] -> ([Stmt], [Stmt])
+splitSwitchPreludeRev prelude stmts = case stmts of
+  [] -> (reverse prelude, [])
+  stmt:rest -> case stmt of
+    SCase _ -> (reverse prelude, stmts)
+    SDefault -> (reverse prelude, stmts)
+    _ -> splitSwitchPreludeRev (stmt:prelude) rest
+
 freshBlocks :: Int -> CompileM [BlockId]
 freshBlocks count =
   if count <= 0
@@ -53,11 +81,11 @@ switchDefaultTarget restId clauses = case clauses of
       Nothing -> bid
       Just _ -> switchDefaultTarget restId rest
 
-switchCases :: [(SwitchClause, BlockId)] -> [(Expr, BlockId)]
+switchCases :: [(Maybe Expr, BlockId)] -> [(Expr, BlockId)]
 switchCases clauses = case clauses of
   [] -> []
   pair:rest -> case pair of
-    (SwitchClause label _, bid) -> case label of
+    (label, bid) -> case label of
       Just value -> (value, bid) : switchCases rest
       Nothing -> switchCases rest
 

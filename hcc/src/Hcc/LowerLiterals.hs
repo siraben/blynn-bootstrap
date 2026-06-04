@@ -45,6 +45,4 @@ lowerBinOp op = case op of
   "&" -> Just IAnd
   "|" -> Just IOr
   "^" -> Just IXor
-  "&&" -> Just IAnd
-  "||" -> Just IOr
   _ -> Nothing

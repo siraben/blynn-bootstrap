@@ -75,6 +75,7 @@ mkDerivation (
       install -Dm555 hcpp $out/libexec/${shareName}/hcpp
       install -Dm555 hcc1 $out/libexec/${shareName}/hcc1
       install -Dm555 hcc-m1 $out/libexec/${shareName}/hcc-m1
+      install -Dm555 ${../scripts/hcc-cc-frontier.sh} $out/libexec/${shareName}/hcc-cc-frontier
       install_stack_wrapper() {
         name="$1"
         mkdir -p "$out/bin"
@@ -88,6 +89,7 @@ mkDerivation (
       install_stack_wrapper hcpp
       install_stack_wrapper hcc1
       install_stack_wrapper hcc-m1
+      install_stack_wrapper hcc-cc-frontier
       install -Dm644 hcpp-blynn.c $out/share/${shareName}/hcpp-blynn.c
       install -Dm644 hcc1-blynn.c $out/share/${shareName}/hcc1-blynn.c
       install -Dm644 hcpp-full.hs $out/share/${shareName}/hcpp-full.hs

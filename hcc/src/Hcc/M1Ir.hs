@@ -33,7 +33,8 @@ buildM1IrModuleWithDataPrefixTarget prefix target ast = case ast of
           Right (st, registeredItems) ->
             case lowerTopDeclsIr st decls of
               Left err -> Left err
-              Right (_, functionItems) -> Right (ModuleIr (registeredItems ++ functionItems))
+              Right (_, functionItems) ->
+                normalizeAddressAddends target (ModuleIr (registeredItems ++ functionItems))
 
 lowerTopDeclsIr :: CompileState -> [TopDecl] -> Either CodegenError (CompileState, [TopItemIr])
 lowerTopDeclsIr st decls = case decls of
@@ -63,7 +64,7 @@ registerTopDeclsIr st decls = case decls of
 registerTopDeclIr :: CompileState -> TopDecl -> Either CodegenError (CompileState, [TopItemIr])
 registerTopDeclIr st decl = case decl of
   Global ty name initExpr ->
-    case mapCompileRun (unCompileM (registerTypeAggregates ty >> bindGlobal name ty >> globalData ty initExpr) st) of
+    case mapCompileRun (unCompileM (registerTypeAggregates ty >> bindGlobal name ty >> withErrorContext ("global " ++ name) (globalData ty initExpr)) st) of
       Left err -> Left err
       Right (values, st') -> do
         case pendingDataItemsIr st' of
@@ -102,7 +103,7 @@ registerGlobalsIr :: CompileState -> [(CType, String, Maybe Expr)] -> Either Cod
 registerGlobalsIr st globals = case globals of
   [] -> Right (st, [])
   (ty, name, initExpr):rest ->
-    case mapCompileRun (unCompileM (registerTypeAggregates ty >> bindGlobal name ty >> globalData ty initExpr) st) of
+    case mapCompileRun (unCompileM (registerTypeAggregates ty >> bindGlobal name ty >> withErrorContext ("global " ++ name) (globalData ty initExpr)) st) of
       Left err -> Left err
       Right (values, st') ->
         case pendingDataItemsIr st' of
@@ -159,7 +160,8 @@ emitDataValuesIr write values = case values of
 dataValueIrLine :: DataValue -> String
 dataValueIrLine value = case value of
   DByte byte -> "b " ++ show byte
-  DAddress label -> "a " ++ label
+  DAddress label offset -> "a " ++ label ++ " " ++ show offset
+  DLabel label -> "l " ++ label
 
 zeroRun :: [DataValue] -> (Int, [DataValue])
 zeroRun values = case values of
@@ -167,6 +169,151 @@ zeroRun values = case values of
     case zeroRun rest of
       (count, tailValues) -> (count + 1, tailValues)
   _ -> (0, values)
+
+normalizeAddressAddends :: Int -> ModuleIr -> Either CodegenError ModuleIr
+normalizeAddressAddends target ir = case ir of
+  ModuleIr items ->
+    let refs = addressAddendRefsTopItems items
+        word = if target == 32 then 4 else 8
+    in case normalizeAddressAddendTopItems word refs items of
+      Left err -> Left err
+      Right normalized -> Right (ModuleIr normalized)
+
+addressAddendRefsTopItems :: [TopItemIr] -> [(String, Int)]
+addressAddendRefsTopItems items = case items of
+  [] -> []
+  TopData (DataItem _ values):rest ->
+    uniqueRefs (addressAddendRefs values ++ addressAddendRefsTopItems rest)
+  _:rest -> addressAddendRefsTopItems rest
+
+addressAddendRefs :: [DataValue] -> [(String, Int)]
+addressAddendRefs values = case values of
+  [] -> []
+  DAddress label offset:rest ->
+    if offset == 0
+      then addressAddendRefs rest
+      else insertRef (label, offset) (addressAddendRefs rest)
+  _:rest -> addressAddendRefs rest
+
+uniqueRefs :: [(String, Int)] -> [(String, Int)]
+uniqueRefs refs = case refs of
+  [] -> []
+  ref:rest -> insertRef ref (uniqueRefs rest)
+
+insertRef :: (String, Int) -> [(String, Int)] -> [(String, Int)]
+insertRef ref refs = case refs of
+  [] -> [ref]
+  x:xs ->
+    if ref == x
+      then refs
+      else x : insertRef ref xs
+
+normalizeAddressAddendTopItems :: Int -> [(String, Int)] -> [TopItemIr] -> Either CodegenError [TopItemIr]
+normalizeAddressAddendTopItems word refs items = case items of
+  [] -> Right []
+  TopData item:rest ->
+    case normalizeAddressAddendDataItem word refs item of
+      Left err -> Left err
+      Right normalizedItem ->
+        case normalizeAddressAddendTopItems word refs rest of
+          Left err -> Left err
+          Right normalizedRest -> Right (TopData normalizedItem : normalizedRest)
+  TopFunction fn:rest ->
+    case normalizeAddressAddendTopItems word refs rest of
+      Left err -> Left err
+      Right normalizedRest -> Right (TopFunction fn : normalizedRest)
+
+normalizeAddressAddendDataItem :: Int -> [(String, Int)] -> DataItem -> Either CodegenError DataItem
+normalizeAddressAddendDataItem word refs item = case item of
+  DataItem label values ->
+    let offsets = sortedOffsetsForLabel label refs
+        size = dataValuesSize word values
+    in case validateOffsets word label size values offsets of
+      Left err -> Left err
+      Right () -> Right (DataItem label (rewriteAddressAddends (insertInteriorLabels word label offsets 0 values)))
+
+sortedOffsetsForLabel :: String -> [(String, Int)] -> [Int]
+sortedOffsetsForLabel label refs = case refs of
+  [] -> []
+  (refLabel, offset):rest ->
+    if refLabel == label
+      then insertOffset offset (sortedOffsetsForLabel label rest)
+      else sortedOffsetsForLabel label rest
+
+insertOffset :: Int -> [Int] -> [Int]
+insertOffset value values = case values of
+  [] -> [value]
+  x:xs ->
+    if value == x
+      then values
+      else if value < x
+        then value : values
+        else x : insertOffset value xs
+
+validateOffsets :: Int -> String -> Int -> [DataValue] -> [Int] -> Either CodegenError ()
+validateOffsets word label size values offsets = case offsets of
+  [] -> Right ()
+  offset:rest ->
+    if offset < 0 || offset > size
+      then Left (CodegenError ("global address initializer points outside data object " ++ label))
+      else if not (offsetIsDataBoundary word offset 0 values)
+        then Left (CodegenError ("global address initializer points inside an indivisible data value in " ++ label))
+        else validateOffsets word label size values rest
+
+offsetIsDataBoundary :: Int -> Int -> Int -> [DataValue] -> Bool
+offsetIsDataBoundary word offset pos values =
+  if offset == pos
+    then True
+    else case values of
+      [] -> False
+      value:rest -> offsetIsDataBoundary word offset (pos + dataValueSize word value) rest
+
+insertInteriorLabels :: Int -> String -> [Int] -> Int -> [DataValue] -> [DataValue]
+insertInteriorLabels word label offsets pos values =
+  let (here, later) = splitOffsetsAt pos offsets
+      labels = dataInteriorLabels label here
+  in case values of
+    [] -> labels
+    value:rest ->
+      let next = pos + dataValueSize word value
+      in labels ++ value : insertInteriorLabels word label later next rest
+
+splitOffsetsAt :: Int -> [Int] -> ([Int], [Int])
+splitOffsetsAt pos offsets = case offsets of
+  [] -> ([], [])
+  offset:rest ->
+    if offset == pos
+      then case splitOffsetsAt pos rest of
+        (same, later) -> (offset:same, later)
+      else ([], offsets)
+
+dataInteriorLabels :: String -> [Int] -> [DataValue]
+dataInteriorLabels label offsets = case offsets of
+  [] -> []
+  offset:rest -> DLabel (dataInteriorLabel label offset) : dataInteriorLabels label rest
+
+rewriteAddressAddends :: [DataValue] -> [DataValue]
+rewriteAddressAddends values = case values of
+  [] -> []
+  DAddress label offset:rest ->
+    if offset == 0
+      then DAddress label 0 : rewriteAddressAddends rest
+      else DAddress (dataInteriorLabel label offset) 0 : rewriteAddressAddends rest
+  value:rest -> value : rewriteAddressAddends rest
+
+dataInteriorLabel :: String -> Int -> String
+dataInteriorLabel label offset = "HCC_DATA_" ++ label ++ "_" ++ show offset
+
+dataValuesSize :: Int -> [DataValue] -> Int
+dataValuesSize word values = case values of
+  [] -> 0
+  value:rest -> dataValueSize word value + dataValuesSize word rest
+
+dataValueSize :: Int -> DataValue -> Int
+dataValueSize word value = case value of
+  DByte _ -> 1
+  DAddress _ _ -> word
+  DLabel _ -> 0
 
 emitFunctionIr :: (String -> IO ()) -> FunctionIr -> IO ()
 emitFunctionIr write fn = case fn of

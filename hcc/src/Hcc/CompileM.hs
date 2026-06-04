@@ -32,12 +32,16 @@ module CompileM
   , currentFunctionName
   , withCurrentFunction
   , currentReturnType
+  , currentReturnSlot
+  , withCurrentReturnSlot
   , withFunctionScope
   , withVarScope
   , withLoopTargets
   , withBreakTarget
+  , withSwitchCaseTargets
   , currentBreakTarget
   , currentContinueTarget
+  , nextSwitchCaseTarget
   , labelBlock
   ) where
 
@@ -67,8 +71,10 @@ data CompileState = CompileState
   , csDataItems :: [DataItem]
   , csBreakTargets :: [BlockId]
   , csContinueTargets :: [BlockId]
+  , csSwitchCaseTargets :: [[(Maybe Expr, BlockId)]]
   , csTargetBits :: Int
   , csCurrentFunction :: Maybe String
+  , csCurrentReturnSlot :: Maybe Temp
   }
 
 data CompileM a = CompileM
@@ -112,8 +118,10 @@ initialCompileState = CompileState
   , csDataItems = []
   , csBreakTargets = []
   , csContinueTargets = []
+  , csSwitchCaseTargets = []
   , csTargetBits = 64
   , csCurrentFunction = Nothing
+  , csCurrentReturnSlot = Nothing
   }
 
 initialCompileStateForTarget :: String -> Int -> CompileState
@@ -268,22 +276,43 @@ currentReturnType = do
         Just (CFunc retTy _) -> pure (Just retTy)
         _ -> pure Nothing
 
+currentReturnSlot :: CompileM (Maybe Temp)
+currentReturnSlot = CompileM $ \st -> Right (csCurrentReturnSlot st, st)
+
+withCurrentReturnSlot :: Maybe Temp -> CompileM a -> CompileM a
+withCurrentReturnSlot slot action = CompileM $ \st ->
+  case unCompileM action st { csCurrentReturnSlot = slot } of
+    Left err -> Left err
+    Right (x, st') -> Right (x, st' { csCurrentReturnSlot = csCurrentReturnSlot st })
+
 withFunctionScope :: CompileM a -> CompileM a
 withFunctionScope action = CompileM $ \st ->
-  case unCompileM action st { csVars = scopeMapEmpty, csLabels = symbolMapEmpty, csBreakTargets = [], csContinueTargets = [] } of
+  case unCompileM action st { csVars = scopeMapEmpty, csLabels = symbolMapEmpty, csBreakTargets = [], csContinueTargets = [], csSwitchCaseTargets = [], csCurrentReturnSlot = Nothing } of
     Left err -> Left err
     Right (x, st') -> Right (x, st'
       { csVars = csVars st
       , csLabels = csLabels st
+      , csStructs = csStructs st
+      , csStructSizes = csStructSizes st
+      , csStructMembers = csStructMembers st
+      , csConstants = csConstants st
       , csBreakTargets = csBreakTargets st
       , csContinueTargets = csContinueTargets st
+      , csSwitchCaseTargets = csSwitchCaseTargets st
+      , csCurrentReturnSlot = csCurrentReturnSlot st
       })
 
 withVarScope :: CompileM a -> CompileM a
 withVarScope action = CompileM $ \st ->
   case unCompileM action st { csVars = scopeMapEnter (csVars st) } of
     Left err -> Left err
-    Right (x, st') -> Right (x, st' { csVars = scopeMapLeave (csVars st') })
+    Right (x, st') -> Right (x, st'
+      { csVars = scopeMapLeave (csVars st')
+      , csStructs = csStructs st
+      , csStructSizes = csStructSizes st
+      , csStructMembers = csStructMembers st
+      , csConstants = csConstants st
+      })
 
 withLoopTargets :: BlockId -> BlockId -> CompileM a -> CompileM a
 withLoopTargets breakTarget continueTarget action = CompileM $ \st ->
@@ -303,11 +332,51 @@ withBreakTarget breakTarget action = CompileM $ \st ->
     Left err -> Left err
     Right (x, st') -> Right (x, st' { csBreakTargets = csBreakTargets st })
 
+withSwitchCaseTargets :: [(Maybe Expr, BlockId)] -> CompileM a -> CompileM a
+withSwitchCaseTargets targets action = CompileM $ \st ->
+  case unCompileM action st { csSwitchCaseTargets = targets : csSwitchCaseTargets st } of
+    Left err -> Left err
+    Right (x, st') -> Right (x, st' { csSwitchCaseTargets = csSwitchCaseTargets st })
+
 currentBreakTarget :: CompileM (Maybe BlockId)
 currentBreakTarget = CompileM $ \st -> Right (case csBreakTargets st of [] -> Nothing; x:_ -> Just x, st)
 
 currentContinueTarget :: CompileM (Maybe BlockId)
 currentContinueTarget = CompileM $ \st -> Right (case csContinueTargets st of [] -> Nothing; x:_ -> Just x, st)
+
+nextSwitchCaseTarget :: Maybe Expr -> CompileM BlockId
+nextSwitchCaseTarget label = CompileM $ \st -> case csSwitchCaseTargets st of
+  [] -> Left (CompileError "case label outside switch")
+  []:_ -> Left (CompileError "unexpected switch case label")
+  targets:_ -> case lookupSwitchCaseTarget label targets of
+    Just target -> Right (target, st)
+    Nothing -> Left (CompileError "case label outside switch")
+
+lookupSwitchCaseTarget :: Maybe Expr -> [(Maybe Expr, BlockId)] -> Maybe BlockId
+lookupSwitchCaseTarget label targets = case targets of
+  [] -> Nothing
+  (targetLabel, target):rest ->
+    if sameSwitchLabel label targetLabel
+      then Just target
+      else lookupSwitchCaseTarget label rest
+
+sameSwitchLabel :: Maybe Expr -> Maybe Expr -> Bool
+sameSwitchLabel a b = case (a, b) of
+  (Nothing, Nothing) -> True
+  (Just x, Just y) -> sameExpr x y
+  _ -> False
+
+sameExpr :: Expr -> Expr -> Bool
+sameExpr a b = case (a, b) of
+  (EInt x, EInt y) -> x == y
+  (EChar x, EChar y) -> x == y
+  (EString x, EString y) -> x == y
+  (EVar x, EVar y) -> x == y
+  (EUnary opX x, EUnary opY y) -> opX == opY && sameExpr x y
+  (EBinary opX xl xr, EBinary opY yl yr) -> opX == opY && sameExpr xl yl && sameExpr xr yr
+  (ECond xc xy xn, ECond yc yy yn) -> sameExpr xc yc && sameExpr xy yy && sameExpr xn yn
+  (ECast _ x, ECast _ y) -> sameExpr x y
+  _ -> False
 
 labelBlock :: String -> CompileM BlockId
 labelBlock name = CompileM $ \st -> case symbolMapLookup name (csLabels st) of

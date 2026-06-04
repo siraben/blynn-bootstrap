@@ -51,7 +51,7 @@ data CType
   | CUnionNamed String [Field]
   | CStructDef [Field]
   | CUnionDef [Field]
-  | CEnum String
+  | CEnum String [(String, Int)]
   | CNamed String
   | CArray CType (Maybe Expr)
   | CFunc CType [CType]
@@ -60,7 +60,7 @@ data CType
 data Stmt
   = SDecl CType String (Maybe Expr)
   | SDecls [(CType, String, Maybe Expr)]
-  | STypedef
+  | STypedef [CType]
   | SReturn (Maybe Expr)
   | SExpr Expr
   | SIf Expr [Stmt] [Stmt]
@@ -89,6 +89,10 @@ data Expr
   | EUnary String Expr
   | ESizeofType CType
   | ESizeofExpr Expr
+  | EAlignofType CType
+  | EAlignofExpr Expr
+  | EVaArg Expr CType
+  | EStmtExpr [Stmt]
   | ECast CType Expr
   | EPostfix String Expr
   | EBinary String Expr Expr
@@ -106,7 +110,7 @@ renderStmtTag :: Stmt -> String
 renderStmtTag stmt = case stmt of
   SDecl _ _ _ -> "SDecl"
   SDecls _ -> "SDecls"
-  STypedef -> "STypedef"
+  STypedef _ -> "STypedef"
   SReturn _ -> "SReturn"
   SExpr _ -> "SExpr"
   SIf _ _ _ -> "SIf"
@@ -136,6 +140,10 @@ renderExprTag expr = case expr of
   EUnary _ _ -> "EUnary"
   ESizeofType _ -> "ESizeofType"
   ESizeofExpr _ -> "ESizeofExpr"
+  EAlignofType _ -> "EAlignofType"
+  EAlignofExpr _ -> "EAlignofExpr"
+  EVaArg _ _ -> "EVaArg"
+  EStmtExpr _ -> "EStmtExpr"
   ECast _ _ -> "ECast"
   EPostfix _ _ -> "EPostfix"
   EBinary _ _ _ -> "EBinary"

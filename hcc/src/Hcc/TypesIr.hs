@@ -87,7 +87,8 @@ data BasicBlock = BasicBlock BlockId [Instr] Terminator
 
 data DataValue
   = DByte Int
-  | DAddress String
+  | DAddress String Int
+  | DLabel String
 
 data DataItem = DataItem String [DataValue]
 

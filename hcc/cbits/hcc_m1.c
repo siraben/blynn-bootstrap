@@ -188,6 +188,7 @@ struct DataValue {
   int kind;
   int byte;
   char *label;
+  int offset;
 };
 
 struct DataItem {
@@ -847,6 +848,11 @@ static void parse_ir_data_item(FILE *file, char *first_line, DataItem *item)
     } else if (str_eq(tok, "a")) {
       value.kind = 2;
       value.label = xstrdup(need_token(&cursor));
+      tok = next_token(&cursor);
+      if (tok) value.offset = (int)parse_long_text(tok);
+    } else if (str_eq(tok, "l")) {
+      value.kind = 3;
+      value.label = xstrdup(need_token(&cursor));
     } else {
       die("unknown IR data value");
     }
@@ -1292,10 +1298,19 @@ static void emit_data_item(FILE *out, DataItem *item)
     fprintf(out, "  ");
     while (j < item->len && count < 16) {
       DataValue *v = data_value_at(item->values, j);
+      if (v->kind == 3) {
+        if (count) fputc('\n', out);
+        fprintf(out, ":%s\n", v->label);
+        fprintf(out, "  ");
+        count = 0;
+        j = j + 1;
+        continue;
+      }
       if (count) fputc(' ', out);
       if (v->kind == 1) {
         emit_byte(out, v->byte);
       } else {
+        if (v->offset != 0) die("M1 data address addend was not normalized");
         if (target_arch == TARGET_I386) fprintf(out, "&%s", v->label);
         else fprintf(out, "&%s '00' '00' '00' '00'", v->label);
       }
