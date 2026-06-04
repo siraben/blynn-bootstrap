@@ -21,6 +21,12 @@ expression minPrec = do
       mtok <- pPeekMaybe
       case mtok of
         Just tok -> case constTokenKind tok of
+          TokPunct "?" | minPrec <= 2 -> do
+            advance
+            yes <- expression 0
+            constNeedPunct ":" "expected ':' in constant expression"
+            no <- expression 2
+            climb (if lhs /= 0 then yes else no)
           TokPunct op | Just prec <- binop op, prec >= minPrec -> do
             advance
             rhs <- expression (prec + 1)
@@ -47,6 +53,8 @@ binop op = case op of
   "+" -> Just 11
   "-" -> Just 11
   "*" -> Just 12
+  "/" -> Just 12
+  "%" -> Just 12
   _ -> Nothing
 
 applyOp :: String -> Int -> Int -> ConstParser Int
@@ -54,6 +62,8 @@ applyOp op a b = case op of
   "+" -> pure (a + b)
   "-" -> pure (a - b)
   "*" -> pure (a * b)
+  "/" -> if b == 0 then pFail "division by zero in constant expression" else pure (a `div` b)
+  "%" -> if b == 0 then pFail "modulo by zero in constant expression" else pure (a `mod` b)
   "<<" -> pure (shiftLeftInt a (max 0 b))
   ">>" -> pure (shiftRightInt a (max 0 b))
   "<" -> pure (boolToInt (a < b))

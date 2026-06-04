@@ -469,10 +469,30 @@ parseDoWhile = do
 parseFor :: Parser Stmt
 parseFor = do
   needPunct "("
-  initExpr <- optionalExprUntil ";"
+  initClause <- forInit
   cond <- optionalExprUntil ";"
   stepExpr <- optionalExprUntil ")"
-  SFor initExpr cond stepExpr <$> stmtAsBlock
+  body <- stmtAsBlock
+  pure (SFor initClause cond stepExpr body)
+
+forInit :: Parser ForInit
+forInit = do
+  done <- eatPunct ";"
+  if done
+    then pure ForNoInit
+    else do
+      tok <- peek
+      startsDecl <- tokenStartsType tok
+      if startsDecl
+        then do
+          ty0 <- ctype
+          first <- declarationItem ty0
+          rest <- declarationItemsTail ty0
+          pure (ForDecls (first:rest))
+        else do
+          initExpr <- expr
+          needPunct ";"
+          pure (ForExpr initExpr)
 
 parseSwitch :: Parser Stmt
 parseSwitch = do
@@ -756,6 +776,10 @@ skipAttributes :: Parser ()
 skipAttributes = do
   tok <- peekMaybe
   case fmap tokenKind tok of
+    Just (TokIdent name) | name `elem` asmLabelNames -> do
+      advanceToken
+      skipOptionalBalancedParens
+      skipAttributes
     Just (TokIdent "__attribute__") -> do
       advanceToken
       skipOptionalBalancedParens
@@ -763,6 +787,9 @@ skipAttributes = do
     Just (TokIdent "__extension__") ->
       advanceToken >> skipAttributes
     _ -> pure ()
+
+asmLabelNames :: [String]
+asmLabelNames = ["asm", "__asm", "__asm__"]
 
 skipOptionalBalancedParens :: Parser ()
 skipOptionalBalancedParens = do

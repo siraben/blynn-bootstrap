@@ -4,6 +4,7 @@ module TypesAst
   , Param(..)
   , Field(..)
   , CType(..)
+  , ForInit(..)
   , Stmt(..)
   , Expr(..)
   , paramTypes
@@ -57,6 +58,11 @@ data CType
   | CFunc CType [CType]
   | CPtr CType
 
+data ForInit
+  = ForNoInit
+  | ForExpr Expr
+  | ForDecls [(CType, String, Maybe Expr)]
+
 data Stmt
   = SDecl CType String (Maybe Expr)
   | SDecls [(CType, String, Maybe Expr)]
@@ -66,7 +72,7 @@ data Stmt
   | SIf Expr [Stmt] [Stmt]
   | SWhile Expr [Stmt]
   | SDoWhile [Stmt] Expr
-  | SFor (Maybe Expr) (Maybe Expr) (Maybe Expr) [Stmt]
+  | SFor ForInit (Maybe Expr) (Maybe Expr) [Stmt]
   | SSwitch Expr [Stmt]
   | SCase Expr
   | SDefault

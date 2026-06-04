@@ -57,7 +57,7 @@ stdenvNoCC.mkDerivation (
 
         log_step "START $name expected=$expected"
         log_step "$name: hcpp $src -> $name.i"
-        hcpp "$src" > "$name.i"
+        hcpp -I ${mesTests} "$src" > "$name.i"
         log_step "$name: hcc1 --m1-ir $name.i -> $name.hccir"
         hcc1 --target ${targetCfg.hcc} --m1-ir -o "$name.hccir" "$name.i"
         log_step "$name: hcc-m1 $name.hccir -> $name.M1"

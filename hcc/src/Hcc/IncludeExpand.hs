@@ -9,12 +9,14 @@ import IfFrame
 import SymbolTable
 import TextUtil
 
+type IncludeMacros = SymbolMap String
+
 readSourceWithIncludes :: [String] -> [(String, String)] -> String -> IO String
 readSourceWithIncludes includeDirs defines path = do
   (builder, _, _) <- expandFile [] symbolSetEmpty initialMacros path
   pure (builder "")
   where
-  initialMacros = symbolSetFromList (map fst defines)
+  initialMacros = macrosFromDefines defines
 
   expandFile stack guards macros file = do
     key <- hccCanonicalizePath file
@@ -46,9 +48,9 @@ readSourceWithIncludes includeDirs defines path = do
         keep = (line++) . ('\n':)
     in case directiveNameFromLine line of
       Just "ifdef" ->
-        pure (keep, guards, macros, pushIfFrame frames (maybe False (`symbolSetMember` macros) (directiveArgument "ifdef" line)))
+        pure (keep, guards, macros, pushIfFrame frames (maybe False (`symbolMapMember` macros) (directiveArgument "ifdef" line)))
       Just "ifndef" ->
-        pure (keep, guards, macros, pushIfFrame frames (maybe False (not . (`symbolSetMember` macros)) (directiveArgument "ifndef" line)))
+        pure (keep, guards, macros, pushIfFrame frames (maybe False (not . (`symbolMapMember` macros)) (directiveArgument "ifndef" line)))
       Just "if" ->
         pure (keep, guards, macros, pushIfFrame frames (evalIncludeIf macros (directiveRest "if" line)))
       Just "elif" ->
@@ -58,17 +60,22 @@ readSourceWithIncludes includeDirs defines path = do
       Just "endif" ->
         pure (keep, guards, macros, case frames of { [] -> []; _:xs -> xs })
       Just "define" | active ->
-        pure (keep, guards, maybe macros (`symbolSetInsert` macros) (directiveArgument "define" line), frames)
+        case directiveDefine line of
+          Just (name, value) -> pure (keep, guards, symbolMapInsert name value macros, frames)
+          Nothing -> pure (keep, guards, macros, frames)
       Just "undef" | active ->
-        pure (keep, guards, maybe macros (`symbolSetDelete` macros) (directiveArgument "undef" line), frames)
-      _ -> case includeRequest line of
+        case directiveArgument "undef" line of
+          Just name -> pure (keep, symbolSetDelete name guards, symbolMapDelete name macros, frames)
+          Nothing -> pure (keep, guards, macros, frames)
+      _ -> case includeRequest macros line of
         Just (form, name) | active -> do
           found <- findInclude currentDir name
           case found of
             Nothing -> case form of
               QuoteInclude -> die ("hcpp: cannot find include file " ++ show name)
                               >> pure (keep, guards, macros, frames)
-              SystemInclude -> pure (keep, guards, macros, frames)
+              SystemInclude -> die ("hcpp: cannot find include file <" ++ name ++ ">")
+                               >> pure (keep, guards, macros, frames)
             Just file ->
               if file `elem` stack
               then pure (id, guards, macros, frames)
@@ -86,11 +93,18 @@ readSourceWithIncludes includeDirs defines path = do
 
 data IncludeForm = QuoteInclude | SystemInclude
 
-includeRequest :: String -> Maybe (IncludeForm, String)
-includeRequest line = case words line of
-  "#include":raw:_ -> stripIncludeDelims raw
-  "#":"include":raw:_ -> stripIncludeDelims raw
+includeRequest :: IncludeMacros -> String -> Maybe (IncludeForm, String)
+includeRequest macros line = case words line of
+  "#include":raw:_ -> includeRequestRaw macros raw
+  "#":"include":raw:_ -> includeRequestRaw macros raw
   _ -> Nothing
+
+includeRequestRaw :: IncludeMacros -> String -> Maybe (IncludeForm, String)
+includeRequestRaw macros raw = case stripIncludeDelims raw of
+  Just request -> Just request
+  Nothing -> case symbolMapLookup raw macros of
+    Just replacement -> stripIncludeDelims (trim replacement)
+    Nothing -> Nothing
 
 stripIncludeDelims :: String -> Maybe (IncludeForm, String)
 stripIncludeDelims raw = case raw of
@@ -111,7 +125,7 @@ afterDirective directive text =
      then dropWhile isSpaceChar (drop (length directive) trimmed)
      else ""
 
-evalIncludeIf :: SymbolSet -> String -> Bool
+evalIncludeIf :: IncludeMacros -> String -> Bool
 evalIncludeIf macros text =
   evalOr (filter (not . null) (splitTopLevel "||" text))
   where
@@ -132,14 +146,21 @@ evalIncludeIf macros text =
         'd':'e':'f':'i':'n':'e':'d':rest -> evalDefined rest
         '(' : rest | lastMaybe rest == Just ')' -> evalIncludeIf macros (init rest)
         _ | all isDigitChar atom -> readDecimal atom /= 0
-          | all isIdentChar atom -> symbolSetMember atom macros
+          | all isIdentChar atom -> case symbolMapLookup atom macros of
+              Just value -> evalIncludeIf macros value
+              Nothing -> False
           | otherwise -> False
 
     evalDefined raw =
       let rest = trim raw
       in case rest of
-        '(' : xs -> symbolSetMember (takeWhile isIdentChar xs) macros
-        _ -> symbolSetMember (takeWhile isIdentChar rest) macros
+        '(' : xs -> symbolMapMember (takeWhile isIdentChar xs) macros
+        _ -> symbolMapMember (takeWhile isIdentChar rest) macros
+
+macrosFromDefines :: [(String, String)] -> IncludeMacros
+macrosFromDefines defines = case defines of
+  [] -> symbolMapEmpty
+  (name, value):rest -> symbolMapInsert name value (macrosFromDefines rest)
 
 splitTopLevel :: String -> String -> [String]
 splitTopLevel sep text = go 0 text "" where
@@ -232,6 +253,33 @@ directiveArgument directive line = case words line of
   word:name:_ | word == "#" ++ directive -> Just name
   "#":word:name:_ | word == directive -> Just name
   _ -> Nothing
+
+directiveDefine :: String -> Maybe (String, String)
+directiveDefine line = case dropWhile isSpaceChar line of
+  '#':rest -> defineAfterHash rest
+  _ -> Nothing
+
+defineAfterHash :: String -> Maybe (String, String)
+defineAfterHash text =
+  let trimmed = dropWhile isSpaceChar text
+  in if "define" `prefixOf` trimmed
+     then defineNameValue (drop (length "define") trimmed)
+     else Nothing
+
+defineNameValue :: String -> Maybe (String, String)
+defineNameValue text = case dropWhile isSpaceChar text of
+  c:rest | isIdentStart c ->
+    let (tailName, afterName) = span isIdentChar rest
+        name = c:tailName
+    in Just (name, defineReplacement afterName)
+  _ -> Nothing
+
+defineReplacement :: String -> String
+defineReplacement text = case text of
+  '(':_ -> "1"
+  _ -> case trim text of
+    "" -> "1"
+    value -> value
 
 directiveNameFromLine :: String -> Maybe String
 directiveNameFromLine line = case words line of
