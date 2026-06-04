@@ -800,6 +800,8 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           stdenvNoCC = rawStdenvNoCC;
           inherit pname hcc minimalBootstrap target;
           binutils = if target == "riscv64" then pkgs.pkgsCross.riscv64.buildPackages.binutils else pkgs.binutils;
+          diffutils = pkgs.diffutils;
+          gnugrep = pkgs.gnugrep;
           qemu = pkgs.qemu;
           mesLibc = mesLibcSrc;
           m2libc = m2libcSrc;
@@ -812,6 +814,8 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           stdenvNoCC = rawStdenvNoCC;
           inherit pname hcc minimalBootstrap target;
           binutils = if target == "riscv64" then pkgs.pkgsCross.riscv64.buildPackages.binutils else pkgs.binutils;
+          diffutils = pkgs.diffutils;
+          gnugrep = pkgs.gnugrep;
           qemu = pkgs.qemu;
           mesLibc = mesLibcSrc;
           m2libc = m2libcSrc;

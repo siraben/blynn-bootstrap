@@ -4,6 +4,8 @@
   fetchgit,
   hcc,
   binutils,
+  diffutils,
+  gnugrep,
   minimalBootstrap,
   qemu,
   mesLibc,
@@ -104,6 +106,8 @@ stdenvNoCC.mkDerivation {
   nativeBuildInputs = [
     hcc
     minimalBootstrap.stage0-posix.mescc-tools
+    diffutils
+    gnugrep
   ] ++ lib.optional targetCfg.needsQemu qemu
     ++ lib.optional (patchTool != null) patchTool;
 
@@ -515,10 +519,10 @@ stdenvNoCC.mkDerivation {
     mkdir -p $out/lib
     cp final-libs/crt1.o final-libs/crti.o final-libs/crtn.o $out/lib/
     cp final-libs/libc.a final-libs/libgetopt.a final-libs/libtcc1.a $out/lib/
-    mkdir -p $out/include
-    cp -R ${mesLibc}/include/. $out/include/
-    chmod -R u+w $out/include
-    cp -R include/. $out/include/
+    mkdir -p out-include
+    cp -R ${mesLibc}/include/. out-include/
+    cp -R include/. out-include/
+    cp -R out-include $out/include
     fi
     runHook postInstall
   '';
