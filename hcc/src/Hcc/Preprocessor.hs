@@ -309,14 +309,15 @@ data BoundMacroArgs = BoundMacroArgs MacroArgs [MacroArg]
 bindMacroArgs :: Macros -> Bool -> [String] -> Span -> [String] -> Maybe String -> [[Token]] -> Either PreprocessError BoundMacroArgs
 bindMacroArgs macros protectDefined disabled sp params variadic args = do
   let fixedCount = length params
-  if length args < fixedCount || (variadic == Nothing && length args /= fixedCount)
+  let args' = normalizeEmptySingleArg fixedCount variadic args
+  if length args' < fixedCount || (variadic == Nothing && length args' /= fixedCount)
     then Left (PreprocessError (spanStart sp) "wrong number of macro arguments")
     else do
-      fixed <- bindFixed symbolMapEmpty [] params (take fixedCount args)
+      fixed <- bindFixed symbolMapEmpty [] params (take fixedCount args')
       variadicBinding <- case variadic of
         Nothing -> Right fixed
         Just name -> do
-          let restArgs = drop fixedCount args
+          let restArgs = drop fixedCount args'
           arg <- makeArg (joinVariadicArgs sp restArgs)
           Right (insertBoundArg name arg fixed)
       Right variadicBinding
@@ -336,6 +337,12 @@ bindMacroArgs macros protectDefined disabled sp params variadic args = do
 insertBoundArg :: String -> MacroArg -> BoundMacroArgs -> BoundMacroArgs
 insertBoundArg name arg bound = case bound of
   BoundMacroArgs argMap argList -> BoundMacroArgs (symbolMapInsert name arg argMap) (arg:argList)
+
+normalizeEmptySingleArg :: Int -> Maybe String -> [[Token]] -> [[Token]]
+normalizeEmptySingleArg fixedCount variadic args =
+  if fixedCount == 1 && variadic == Nothing && null args
+  then [[]]
+  else args
 
 macroArgHiddenNames :: Macros -> [MacroArg] -> [String]
 macroArgHiddenNames macros args = case args of
@@ -361,6 +368,9 @@ substituteMacroBody sp args body = go body [] where
       case acc of
         [] -> pasteWithPrevious pasteSp [] xs acc
         previous:before -> pasteWithPrevious pasteSp [previous] xs before
+    Token _ (TokIdent name):Token pasteSp (TokPunct "##"):xs
+      | Just arg <- symbolMapLookup name args ->
+          pasteWithPrevious pasteSp (argRaw arg) xs acc
     Token _ (TokIdent name):xs
       | Just arg <- symbolMapLookup name args ->
           go xs (reverse (argExpanded arg) ++ acc)

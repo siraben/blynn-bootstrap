@@ -33,11 +33,11 @@ registerImplicitCallsStmt locals stmt = case stmt of
     registerImplicitCalls locals body
     registerImplicitCallsExpr locals cond
     pure locals
-  SFor initExpr condExpr stepExpr body -> do
-    maybeRegisterImplicitCallsExpr locals initExpr
+  SFor initClause condExpr stepExpr body -> do
+    locals' <- registerForInitImplicitCalls locals initClause
     maybeRegisterImplicitCallsExpr locals condExpr
     maybeRegisterImplicitCallsExpr locals stepExpr
-    registerImplicitCalls locals body
+    registerImplicitCalls locals' body
     pure locals
   SSwitch value body -> do
     registerImplicitCallsExpr locals value
@@ -55,6 +55,12 @@ registerImplicitCallsDecls locals decls = case decls of
       maybeRegisterImplicitCallsExpr locals initExpr
       registerImplicitCallsDecls (name:locals) rest
 
+registerForInitImplicitCalls :: [String] -> ForInit -> CompileM [String]
+registerForInitImplicitCalls locals initClause = case initClause of
+  ForNoInit -> pure locals
+  ForExpr expr -> registerImplicitCallsExpr locals expr >> pure locals
+  ForDecls decls -> registerImplicitCallsDecls locals decls
+
 maybeRegisterImplicitCallsExpr :: [String] -> Maybe Expr -> CompileM ()
 maybeRegisterImplicitCallsExpr locals expr = case expr of
   Nothing -> pure ()
@@ -62,6 +68,7 @@ maybeRegisterImplicitCallsExpr locals expr = case expr of
 
 registerImplicitCallsExpr :: [String] -> Expr -> CompileM ()
 registerImplicitCallsExpr locals expr = case expr of
+  ECall (EVar "asm") _ -> pure ()
   ECall (EVar name) args -> do
     if name `elem` locals || isIgnoredSideEffectCall name
       then pure ()

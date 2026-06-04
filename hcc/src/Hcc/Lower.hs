@@ -97,20 +97,13 @@ lowerStatementsFrom bid instrs stmts defaultTerm = case stmts of
     pure ( BasicBlock bid instrs (TJump bodyId)
          : bodyBlocks ++
            condBlocks ++ restBlocks)
-  SFor initExpr condExpr stepExpr body:rest -> do
-    initInstrs <- maybe (pure []) lowerSideEffect initExpr
-    condId <- freshBlock
-    bodyId <- freshBlock
-    stepId <- freshBlock
+  SFor initClause condExpr stepExpr body:rest -> do
     restId <- freshBlock
-    condBlocks <- lowerLoopConditionBlocks condExpr condId bodyId restId
-    stepInstrs <- maybe (pure []) lowerSideEffect stepExpr
-    bodyBlocks <- withLoopTargets restId stepId (lowerStatementsFrom bodyId [] body (TJump stepId))
+    loopBlocks <- case initClause of
+      ForDecls _ -> withVarScope (lowerForLoop bid instrs initClause condExpr stepExpr body restId)
+      _ -> lowerForLoop bid instrs initClause condExpr stepExpr body restId
     restBlocks <- lowerStatementsFrom restId [] rest defaultTerm
-    pure ( BasicBlock bid (instrs ++ initInstrs) (TJump condId)
-         : condBlocks ++ bodyBlocks ++
-           [BasicBlock stepId stepInstrs (TJump condId)] ++
-           restBlocks)
+    pure (loopBlocks ++ restBlocks)
   SSwitch value body:rest -> do
     (valueInstrs, valueOp) <- lowerExpr value
     dispatchId <- freshBlock
@@ -144,6 +137,25 @@ lowerStatementsFrom bid instrs stmts defaultTerm = case stmts of
     tailBlocks <- lowerUnreachableLabels rest defaultTerm
     pure (BasicBlock bid instrs (TJump target) : tailBlocks)
   stmt:_ -> throwC ("unsupported statement in lowering: " ++ renderStmtTag stmt)
+
+lowerForLoop :: BlockId -> [Instr] -> ForInit -> Maybe Expr -> Maybe Expr -> [Stmt] -> BlockId -> CompileM [BasicBlock]
+lowerForLoop bid instrs initClause condExpr stepExpr body restId = do
+    initInstrs <- lowerForInit initClause
+    condId <- freshBlock
+    bodyId <- freshBlock
+    stepId <- freshBlock
+    condBlocks <- lowerLoopConditionBlocks condExpr condId bodyId restId
+    stepInstrs <- maybe (pure []) lowerSideEffect stepExpr
+    bodyBlocks <- withLoopTargets restId stepId (lowerStatementsFrom bodyId [] body (TJump stepId))
+    pure ( BasicBlock bid (instrs ++ initInstrs) (TJump condId)
+         : condBlocks ++ bodyBlocks ++
+           [BasicBlock stepId stepInstrs (TJump condId)])
+
+lowerForInit :: ForInit -> CompileM [Instr]
+lowerForInit initClause = case initClause of
+  ForNoInit -> pure []
+  ForExpr expr -> lowerSideEffect expr
+  ForDecls decls -> lowerDecls decls
 
 lowerIfRestTarget :: [Stmt] -> Terminator -> CompileM (BlockId, [BasicBlock])
 lowerIfRestTarget rest defaultTerm = case rest of
@@ -270,6 +282,10 @@ lowerSwitchClauses restId clauses = case clauses of
 
 lowerSideEffect :: Expr -> CompileM [Instr]
 lowerSideEffect expr = case expr of
+  ECall (EVar "asm") args ->
+    if noOpInlineAsmArgs args
+      then pure []
+      else throwC "unsupported inline assembly"
   ECall (EVar name) args ->
     if isIgnoredSideEffectCall name
       then pure []
@@ -291,6 +307,11 @@ lowerSideEffect expr = case expr of
   _ -> do
     (instrs, _) <- lowerExpr expr
     pure instrs
+
+noOpInlineAsmArgs :: [Expr] -> Bool
+noOpInlineAsmArgs args = case args of
+  [EString text] -> stringBytes text == [110, 111, 112, 0]
+  _ -> False
 
 lowerResultInstrs :: CompileM ([Instr], Operand) -> CompileM [Instr]
 lowerResultInstrs action = do

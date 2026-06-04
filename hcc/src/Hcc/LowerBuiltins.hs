@@ -20,7 +20,6 @@ builtinConstant name = case name of
 
 isIgnoredSideEffectCall :: String -> Bool
 isIgnoredSideEffectCall name = case name of
-  "asm" -> True
   "oputs" -> True
   "eputs" -> True
   _ -> False

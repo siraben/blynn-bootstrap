@@ -23,6 +23,8 @@ CASES = [
     ("case-cmp-ternary", 0),
     ("pointer-to-pointer-callback", 0),
     ("bootstrap-qsort-pointer", 0),
+    ("for-decl-scope", 0),
+    ("asm-nop", 0),
 ]
 
 
