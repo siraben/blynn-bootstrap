@@ -86,11 +86,11 @@ The full portable path is:
 scripts/bootstrap-blynn.sh
 ```
 
-On a fresh Alpine-style image with `wget`, this builds the default amd64 path
-from the branch archive without requiring `git`:
+On a fresh Alpine-style image with `wget`, this builds the native path from
+the branch archive without requiring `git`:
 
 ```sh
-apk add --no-cache ca-certificates wget patch && cd /tmp && wget -qO- https://github.com/siraben/blynn-bootstrap/archive/refs/heads/portability.tar.gz | tar xz && cd blynn-bootstrap-portability && M2_ARCH=amd64 M2_OS=Linux sh scripts/bootstrap-blynn.sh && test -x build/tinycc-boot-hcc/bin/tcc
+apk add --no-cache ca-certificates wget patch && cd /tmp && wget -qO- https://github.com/siraben/blynn-bootstrap/archive/refs/heads/portability.tar.gz | tar xz && cd blynn-bootstrap-portability && M2_OS=Linux sh scripts/bootstrap-blynn.sh && test -x build/tinycc-boot-hcc/bin/tcc
 ```
 
 If you are preparing the TinyCC source used by the HCC bootstrap outside Nix,
@@ -152,7 +152,9 @@ PATH=$PWD/build/bootstrap-tools/bin:$PATH M2LIBC_PATH=$PWD/build/bootstrap-tools
 ```
 
 Use `M2_ARCH` and `M2_OS` to select the M2libc target, matching the stage0
-tooling convention used by nixpkgs' minimal-bootstrap. For example:
+tooling convention used by nixpkgs' minimal-bootstrap. If `M2_ARCH` is not
+set, `scripts/bootstrap-blynn.sh` selects the native architecture from
+`uname -m`. For example:
 
 ```sh
 M2_ARCH=amd64 M2_OS=Linux scripts/bootstrap-blynn.sh
