@@ -4,7 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark light">
+  <meta name="description" content="Boot riscv64 Alpine Linux in the browser and bootstrap TinyCC from a hex0 seed.">
   <title>Portable TinyCC Alpine Bootstrap Demo</title>
+  <link rel="icon" href="data:,">
   <link rel="stylesheet" href="site.css">
 </head>
 <body>
@@ -26,14 +28,18 @@
       <div id="term_wrap">
         <div id="term_container"></div>
         <span id="vm_controls">
-          <textarea id="term_paste" cols="10" rows="1" autocorrect="off" spellcheck="false">Paste Here</textarea>
+          <textarea id="term_paste" cols="10" rows="1" autocorrect="off" spellcheck="false" aria-label="Paste text to send to the terminal">Paste Here</textarea>
           <label class="file-import">
             Upload
-            <input type="file" id="files" multiple onchange="on_update_files(this.files)">
+            <input type="file" id="files" multiple aria-label="Upload files into the VM" onchange="on_update_files(this.files)">
           </label>
-          <progress id="net_progress"></progress>
+          <progress id="net_progress" aria-label="Network transfer progress"></progress>
         </span>
       </div>
+
+      <noscript>
+        <p class="noscript-msg">This demo boots a riscv64 Linux VM entirely in your browser and needs JavaScript and WebAssembly enabled to run. The runbook on the right still describes the bootstrap steps.</p>
+      </noscript>
     </section>
 
     <aside class="runbook" aria-label="Demo runbook">
@@ -153,5 +159,14 @@ bootstrap</code></pre>
   </script>
   <script src="term.js"></script>
   <script src="jslinux.js"></script>
+  <script>
+    // jslinux.js wires term_wrap.onclick to a resize handler that reads a
+    // #term_bar element this page doesn't have, throwing a TypeError on every
+    // click. Drop it — term.js already focuses the terminal on mouseup.
+    const termWrap = document.getElementById("term_wrap");
+    if (termWrap) {
+      termWrap.onclick = null;
+    }
+  </script>
 </body>
 </html>

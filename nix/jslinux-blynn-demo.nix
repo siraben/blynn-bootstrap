@@ -152,6 +152,10 @@ stdenvNoCC.mkDerivation {
     cp ${kernel} "$out/kernel-riscv64.bin"
     cp ${termJs} "$out/term.js"
     cp ${jslinuxJs} "$out/jslinux.js"
+    # Upstream hardcodes 10000 lines of terminal scrollback; the bootstrap build
+    # emits a lot of output, so cap the DOM-backed buffer to bound memory.
+    substituteInPlace "$out/jslinux.js" \
+      --replace-fail "scrollback: 10000" "scrollback: 5000"
     cp ${emulatorJs} "$out/riscvemu64-wasm.js"
     cp ${emulatorWasm} "$out/riscvemu64-wasm.wasm"
     cp ${repoSrc}/docs/index.html "$out/index.html"

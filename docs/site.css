@@ -29,6 +29,14 @@ a {
   color: var(--accent);
 }
 
+a:focus-visible,
+.button:focus-visible,
+.file-import:focus-within,
+#term_paste:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .app-shell {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
@@ -115,8 +123,10 @@ h2 {
 }
 
 #term_container {
-  width: max-content;
-  min-width: 100%;
+  display: flex;
+  /* Center the fixed-width terminal; `safe` falls back to start-alignment
+     when the terminal is wider than the pane so it stays scrollable. */
+  justify-content: safe center;
 }
 
 .term {
@@ -237,18 +247,33 @@ h2 {
   background: var(--panel-strong);
 }
 
+/* Visually hidden but still keyboard-focusable (visibility:hidden would drop
+   it from the tab order and make the Upload control mouse-only). */
 #files {
+  position: absolute;
   width: 1px;
   height: 1px;
-  margin: 0;
+  margin: -1px;
   padding: 0;
   border: 0;
-  visibility: hidden;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 #net_progress {
   visibility: hidden;
   width: min(90px, 100%);
+}
+
+.noscript-msg {
+  margin: 16px;
+  padding: 14px 16px;
+  color: var(--muted);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
 }
 
 .runbook {
