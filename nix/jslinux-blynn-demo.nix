@@ -4,6 +4,7 @@
   fetchurl,
   genext2fs,
   e2fsprogs,
+  util-linux,
   coreutils,
   gnutar,
   gzip,
@@ -59,6 +60,7 @@ stdenvNoCC.mkDerivation {
     coreutils
     e2fsprogs
     genext2fs
+    util-linux
     gnutar
     gzip
     python3
@@ -147,16 +149,10 @@ build=/work/blynn
 mkdir -p "$build"
 cd "$repo"
 
-echo "== Nix-provided static stage0 tools =="
-/bootstrap/stage0-tools/bin/M2-Mesoplanet --version || true
-/bootstrap/stage0-tools/bin/M1 --version || true
-/bootstrap/stage0-tools/bin/hex2 --version || true
-
-echo "== Nix-built reference TinyCC =="
-/bootstrap/nix-built-tcc/bin/tcc -dumpversion || true
-
 export SOURCE_CACHE_DIR=/bootstrap/source-cache
+export BOOTSTRAP_TOOLS_REBUILD=1
 export OUT_DIR="$build/bootstrap-tools"
+echo "== hex0 seed to stage0-posix tools =="
 sh scripts/bootstrap-tools.sh
 
 export PATH="$build/bootstrap-tools/bin:/usr/sbin:/usr/bin:/sbin:/bin"
@@ -165,18 +161,22 @@ export M2LIBC_PATH="$STAGE0_M2LIBC"
 
 export GNU_MES_DIR=/bootstrap/upstreams/gnu-mes
 export OUT_DIR="$build/mes-libc"
+echo "== prepare Mes libc =="
 sh scripts/prepare-mes-libc.sh
 
 export ORIANSJ_BLYNN_DIR=/bootstrap/upstreams/oriansj-blynn-compiler
 export OUT_DIR="$build/blynn-root"
+echo "== bootstrap original blynn root =="
 sh scripts/bootstrap-blynn-root.sh
 
 export BLYNN_DIR=/bootstrap/upstreams/blynn-compiler
 export METHODICALLY="$build/blynn-root/bin/methodically"
 export OUT_DIR="$build/blynn-precisely"
+echo "== bootstrap blynn precisely =="
 sh scripts/bootstrap-blynn-precisely.sh
 
 export OUT_DIR="$build/hcc-blynn-sources"
+echo "== generate HCC blynn sources =="
 sh scripts/hcc-blynn-sources.sh
 
 export PRECISELY_UP="$build/blynn-precisely/bin/precisely_up"
@@ -184,6 +184,7 @@ export HCC_BLYNN_SOURCES_DIR="$build/hcc-blynn-sources"
 export MATERIALIZE_OBJECT_SCRIPT="$build/hcc-blynn-objs/materialize-object-script"
 export OUT_DIR="$build/hcc-blynn-objs"
 mkdir -p "$OUT_DIR"
+echo "== materialize HCC blynn objects =="
 M2-Mesoplanet --operating-system "$M2_OS" --architecture "$M2_ARCH" \
   -f hcc/support/materialize-object-script.c -o "$MATERIALIZE_OBJECT_SCRIPT"
 chmod 555 "$MATERIALIZE_OBJECT_SCRIPT"
@@ -191,10 +192,12 @@ sh scripts/hcc-blynn-objs.sh
 
 export HCC_BLYNN_OBJECTS_DIR="$build/hcc-blynn-objs"
 export OUT_DIR="$build/hcc-blynn-c"
+echo "== compile HCC C sources =="
 sh scripts/hcc-blynn-c.sh
 
 export HCC_BLYNN_C_DIR="$build/hcc-blynn-c"
 export OUT_DIR="$build/hcc-blynn-bin"
+echo "== link HCC binary =="
 sh scripts/hcc-blynn-bin.sh
 
 export TINYCC_DIR=/bootstrap/upstreams/janneke-tinycc
@@ -203,14 +206,19 @@ export MES_LIBC_DIR="$build/mes-libc"
 export HCC_TARGET=amd64
 export TINYCC_SELFHOST=''${TINYCC_SELFHOST:-0}
 export OUT_DIR="$build/tinycc-boot-hcc"
+echo "== build TinyCC with bootstrapped HCC =="
 sh scripts/tinycc-boot-hcc.sh
 
-echo "== Blynn/HCC-built portable TinyCC =="
+echo "== bootstrapped blynn/HCC TinyCC =="
 "$build/tinycc-boot-hcc/bin/tcc" -dumpversion || true
 ln -sf "$build/tinycc-boot-hcc/bin/tcc" /usr/local/bin/blynn-tcc
 echo "blynn-tcc is available on PATH"
 EOF
     chmod 755 "$root/bootstrap/run-portable-demo.sh"
+
+    dd if=/dev/zero of="$root/swapfile" bs=1M count=384
+    chmod 600 "$root/swapfile"
+    mkswap "$root/swapfile"
 
     cat > "$root/init" <<'EOF'
 #!/bin/sh
@@ -220,25 +228,25 @@ mount -t devtmpfs dev /dev 2>/dev/null || true
 mkdir -p /dev /tmp /work /root /usr/local/bin
 chmod 1777 /tmp
 export PATH=/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+swapon /swapfile 2>/dev/null || true
 
 echo "blynn-bootstrap JSLinux demo: Alpine x86_64"
-ln -sf /bootstrap/nix-built-tcc/bin/tcc /usr/local/bin/blynn-tcc
-echo "Nix-built HCC TinyCC:"
-blynn-tcc -dumpversion || true
-
-if grep -qw blynn_full=1 /proc/cmdline; then
-  echo "running full portable blynn bootstrap; log also written to /bootstrap-demo.log"
+if grep -qw blynn_shell=1 /proc/cmdline; then
+  echo "quick shell requested with blynn_shell=1"
+  ln -sf /bootstrap/nix-built-tcc/bin/tcc /usr/local/bin/blynn-tcc
+  echo "Nix-built reference TinyCC:"
+  blynn-tcc -dumpversion || true
+else
+  echo "running full portable blynn bootstrap from the hex0 seed"
+  echo "log is also written to /bootstrap-demo.log"
   rm -f /tmp/bootstrap-demo.status
   ( /bootstrap/run-portable-demo.sh 2>&1; echo $? >/tmp/bootstrap-demo.status ) | tee /bootstrap-demo.log
   bootstrap_status=$(cat /tmp/bootstrap-demo.status 2>/dev/null || echo 1)
   if [ "$bootstrap_status" = 0 ]; then
-    echo "portable bootstrap finished"
+    echo "portable bootstrap finished; bootstrapped tcc is /usr/local/bin/blynn-tcc"
   else
-    echo "portable bootstrap failed; dropping to shell"
+    echo "portable bootstrap failed with status $bootstrap_status; dropping to shell"
   fi
-else
-  echo "full portable build is available with cmdline blynn_full=1 or:"
-  echo "  /bootstrap/run-portable-demo.sh"
 fi
 exec /bin/sh -l
 EOF
@@ -293,7 +301,7 @@ PY
 {
   version: 1,
   machine: "pc",
-  memory_size: 512,
+  memory_size: 3072,
   kernel: "kernel-x86_64-new.bin",
   cmdline: "loglevel=3 console=hvc0 root=/dev/vda rw init=/init",
   drive0: { file: "blynn-root/blk.txt" },
