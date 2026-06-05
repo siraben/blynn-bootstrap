@@ -24,7 +24,9 @@
       </div>
 
       <div id="term_wrap">
-        <div id="term_container"></div>
+        <div id="term_container">
+          <div id="boot_status" class="boot-status" role="status" aria-live="polite">Loading terminal...</div>
+        </div>
         <div id="term_bar" aria-hidden="true"></div>
         <span id="vm_controls">
           <button class="button control-button" type="button" onclick="term && term.copySelection()">Copy</button>
@@ -132,13 +134,21 @@ blynn-tcc -run /tmp/tcc-smoke.c</code></pre>
       }
     }
 
+    function setBootStatus(message) {
+      const status = document.getElementById("boot_status");
+      if (status) {
+        status.textContent = message;
+      }
+    }
+
     const lowRamLink = document.getElementById("low_ram_link");
     lowRamLink.href = vmQuery(768);
 
+    setBootStatus("Preparing VM configuration...");
     normalizeVmQuery();
   </script>
-  <script src="xterm.js"></script>
-  <script src="term.js"></script>
-  <script src="jslinux.js"></script>
+  <script src="xterm.js" onerror="setBootStatus('Failed to load xterm.js.')"></script>
+  <script src="term.js" onerror="setBootStatus('Failed to load terminal adapter.')"></script>
+  <script src="jslinux.js" onerror="setBootStatus('Failed to load JSLinux runtime.')"></script>
 </body>
 </html>
