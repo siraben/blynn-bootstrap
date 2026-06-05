@@ -73,8 +73,8 @@
     this.term_el = this.xterm.element;
     this.term_el.style.width = "100%";
     this.term_el.style.minHeight = `${Math.ceil(this.h * this.font_size * 1.35)}px`;
-    this.xterm.onData((data) => {
-      this.handler(bytesToBinaryString(encoder.encode(data)));
+    this.xterm.onKey(({ key }) => {
+      this.handler(bytesToBinaryString(encoder.encode(key)));
     });
     parentEl.addEventListener("paste", (event) => {
       const text = event.clipboardData && event.clipboardData.getData("text/plain");
