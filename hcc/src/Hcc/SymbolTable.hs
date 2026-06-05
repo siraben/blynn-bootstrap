@@ -121,7 +121,8 @@ balR x xh v l r = case r of
 hash :: String -> Int
 hash = go 5381 where
   go h [] = h
-  go h (c:cs) = go (((h * 33) + fromEnum c) `mod` 2147483647) cs
+  go h (c:cs) = case ((h * 33) + fromEnum c) `mod` 2147483647 of
+    h' -> go h' cs
 
 cmpHash :: String -> Int -> String -> Int -> Cmp
 cmpHash l lh r rh

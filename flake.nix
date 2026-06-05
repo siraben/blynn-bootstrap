@@ -703,6 +703,26 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             description = "HCC compiled from Blynn output by the normal GCC C toolchain";
           };
 
+          # Same as gcc, but lowers HCC_RTS_ADAPTIVE_MAJOR_WORDS so the Blynn
+          # RTS collects more often. Trades ~2x runtime for ~60% peak-RSS cut
+          # on hcc1 against tcc-expanded.c; see docs/hcc_memory_audit.md.
+          gccLowmem = {
+            mkDerivation = rawStdenvCC.mkDerivation;
+            runtimeFile = "cbits/hcc_runtime.c";
+            compileCommand = ''
+              echo "hcc-blynn: gcc cc hcpp-blynn.c (low-mem GC) -> hcpp"
+              $CC -O2 -DHCC_RTS_ADAPTIVE_MAJOR_WORDS=16777216 hcpp-blynn.c cbits/hcc_runtime.c -o hcpp
+              echo "hcc-blynn: gcc cc hcc1-blynn.c (low-mem GC) -> hcc1"
+              $CC -O2 -DHCC_RTS_ADAPTIVE_MAJOR_WORDS=16777216 hcc1-blynn.c cbits/hcc_runtime.c -o hcc1
+              echo "hcc-blynn: gcc cc cbits/hcc_m1.c -> hcc-m1"
+              $CC -O2 cbits/hcc_m1.c -o hcc-m1
+            '';
+            top = 536870912;
+            hcppTop = 134217728;
+            hcc1Top = 134217728;
+            description = "HCC compiled from Blynn output by GCC with a low-memory adaptive-major GC threshold";
+          };
+
           tcc = tcc: {
             mkDerivation = rawStdenvNoCC.mkDerivation;
             nativeBuildInputs = [ tcc ];
@@ -727,6 +747,46 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             m2Arch = minimalBootstrap.stage0-posix.m2libcArch;
             m2Os = minimalBootstrap.stage0-posix.m2libcOS;
             description = "HCC compiled from Blynn output by stage0 M2-Mesoplanet";
+            metaPlatforms = [ "x86_64-linux" ];
+          };
+
+          # Same as m2, but with HCC_RTS_ADAPTIVE_MAJOR_WORDS lowered so the
+          # Blynn RTS collects more often AND with a smaller TOP so each of
+          # the two heap arenas is 4× smaller (8 GiB virtual → 1 GiB virtual).
+          # The smaller TOP is what makes the m2-compiled binary's RSS
+          # actually drop — the GC trigger alone doesn't help on m2 because
+          # M2-Mesoplanet's compiled code dirties roughly the whole arena.
+          # See docs/hcc_memory_audit.md for the trade-off curve.
+          m2Lowmem = {
+            mkDerivation = rawStdenvNoCC.mkDerivation;
+            nativeBuildInputs = [
+              minimalBootstrap.stage0-posix.mescc-tools
+            ];
+            runtimeFile = "cbits/hcc_runtime_m2.c";
+            compileCommand = ''
+              . ${./scripts/lib/bootstrap.sh}
+              cat hcpp-blynn.c > hcpp-body.c
+              cat hcc1-blynn.c > hcc1-body.c
+              {
+                printf '%s\n' '#define HCC_RTS_USE_EXTERNAL_ALLOC 1'
+                printf '%s\n' '#define HCC_RTS_ADAPTIVE_MAJOR_WORDS 33554432'
+              } > hcpp-blynn.c
+              cat hcpp-body.c >> hcpp-blynn.c
+              {
+                printf '%s\n' '#define HCC_RTS_USE_EXTERNAL_ALLOC 1'
+                printf '%s\n' '#define HCC_RTS_ADAPTIVE_MAJOR_WORDS 33554432'
+              } > hcc1-blynn.c
+              cat hcc1-body.c >> hcc1-blynn.c
+              compile_m2 hcpp-blynn.c hcpp -f cbits/hcc_runtime_m2.c
+              compile_m2 hcc1-blynn.c hcc1 -f cbits/hcc_runtime_m2.c
+              compile_m2 cbits/hcc_m1.c hcc-m1
+            '';
+            top = 67108864;
+            hcppTop = 67108864;
+            hcc1Top = 67108864;
+            m2Arch = minimalBootstrap.stage0-posix.m2libcArch;
+            m2Os = minimalBootstrap.stage0-posix.m2libcOS;
+            description = "HCC compiled from Blynn output by stage0 M2-Mesoplanet with a low-memory adaptive-major GC threshold and smaller heap arenas";
             metaPlatforms = [ "x86_64-linux" ];
           };
 
@@ -791,11 +851,27 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             };
           };
 
+          m2.precisely.m2Lowmem = hccFromPrecisely {
+            pname = "hcc-m2-precisely-m2-lowmem";
+            generatedC = hccBlynnCBy.m2.precisely;
+            cBackend = hccCBackends.m2Lowmem // {
+              description = "HCC compiled by the stage0-built Blynn precisely and M2-Mesoplanet with a low-memory GC trigger";
+            };
+          };
+
           m2.precisely.gcc = hccFromPrecisely {
             pname = "hcc-m2-precisely-gcc";
             generatedC = hccBlynnCBy.m2.precisely;
             cBackend = hccCBackends.gcc // {
               description = "HCC compiled by the stage0-built Blynn precisely and GCC";
+            };
+          };
+
+          m2.precisely.gccLowmem = hccFromPrecisely {
+            pname = "hcc-m2-precisely-gcc-lowmem";
+            generatedC = hccBlynnCBy.m2.precisely;
+            cBackend = hccCBackends.gccLowmem // {
+              description = "HCC compiled by the stage0-built Blynn precisely and GCC with a low-memory GC trigger";
             };
           };
 
@@ -845,7 +921,9 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           gcc.precisely.gcc = tinyccFromHcc "tinycc-boot-hcc-gcc-precisely-gcc" hccBy.gcc.precisely.gcc;
           gcc.precisely.tcc = tinyccFromHcc "tinycc-boot-hcc-gcc-precisely-tcc" hccBy.gcc.precisely.tcc;
           m2.precisely.m2 = tinyccFromHcc "tinycc-boot-hcc-m2-precisely-m2" hccBy.m2.precisely.m2;
+          m2.precisely.m2Lowmem = tinyccFromHcc "tinycc-boot-hcc-m2-precisely-m2-lowmem" hccBy.m2.precisely.m2Lowmem;
           m2.precisely.gcc = tinyccFromHcc "tinycc-boot-hcc-m2-precisely-gcc" hccBy.m2.precisely.gcc;
+          m2.precisely.gccLowmem = tinyccFromHcc "tinycc-boot-hcc-m2-precisely-gcc-lowmem" hccBy.m2.precisely.gccLowmem;
           m2.precisely.gccm2 = tinyccFromHcc "tinycc-boot-hcc-m2-precisely-gccm2" hccBy.m2.precisely.gccm2;
         };
 
