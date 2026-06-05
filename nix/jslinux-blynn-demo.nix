@@ -396,6 +396,8 @@ PY
     cp ${xtermCss} "$out/xterm.css"
     cp ${repoSrc}/docs/xterm-term.js "$out/term.js"
     cp ${jslinuxJs} "$out/jslinux.js"
+    chmod u+w "$out/jslinux.js"
+    python3 ${repoSrc}/nix/jslinux/patch-jslinux-status.py "$out/jslinux.js"
     cp ${emulatorJs} "$out/x86_64emu-wasm.js"
     cp ${emulatorWasm} "$out/x86_64emu-wasm.wasm"
     cp ${repoSrc}/docs/index.html "$out/index.html"
