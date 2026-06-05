@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - master
+      - siraben/portable-opt
       - siraben/portable-alpine-jslinux
     paths:
       - flake.lock
