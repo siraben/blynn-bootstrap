@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark light">
   <title>Portable TinyCC Alpine Bootstrap Demo</title>
+  <link rel="stylesheet" href="xterm.css">
   <link rel="stylesheet" href="site.css">
 </head>
 <body>
@@ -24,8 +25,10 @@
 
       <div id="term_wrap">
         <div id="term_container"></div>
+        <div id="term_bar" aria-hidden="true"></div>
         <span id="vm_controls">
-          <textarea id="term_paste" cols="10" rows="1" autocorrect="off" spellcheck="false">Paste Here</textarea>
+          <button class="button control-button" type="button" onclick="term && term.copySelection()">Copy</button>
+          <button class="button control-button" type="button" onclick="term && term.pasteClipboard()">Paste</button>
           <label class="file-import">
             Upload
             <input type="file" id="files" multiple onchange="on_update_files(this.files)">
@@ -134,6 +137,7 @@ blynn-tcc -run /tmp/tcc-smoke.c</code></pre>
 
     normalizeVmQuery();
   </script>
+  <script src="xterm.js"></script>
   <script src="term.js"></script>
   <script src="jslinux.js"></script>
 </body>
