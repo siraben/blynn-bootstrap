@@ -20,6 +20,7 @@ hcc:src/Hcc/LowerDataValues.hs
 hcc:src/Hcc/LowerImplicit.hs
 hcc:src/Hcc/LowerLiterals.hs
 hcc:src/Hcc/LowerParams.hs
+hcc:src/Hcc/LowerRegisters.hs
 hcc:src/Hcc/LowerSwitchHelpers.hs
 hcc:src/Hcc/LowerTypeInfo.hs
 hcc:src/Hcc/Lower.hs
