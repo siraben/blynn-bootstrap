@@ -1,0 +1,86 @@
+name: Slow acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Slow acceptance target to run
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - tinycc.m2.precisely.m2
+          - gcc46.m2.precisely.m2
+          - gccLatest.m2.precisely.m2
+          - tests.smoke.m1-riscv64
+          - tests.smoke.m1-aarch64
+          - downstream-pkgs-hello
+  schedule:
+    - cron: '17 5 * * 0'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: slow-acceptance-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    name: bootstrap (${{ matrix.attr }})
+    if: github.event_name == 'schedule' || inputs.target != 'downstream-pkgs-hello'
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        attr:
+          - tinycc.m2.precisely.m2
+          - gcc46.m2.precisely.m2
+          - gccLatest.m2.precisely.m2
+          - tests.smoke.m1-riscv64
+          - tests.smoke.m1-aarch64
+    steps:
+      - uses: actions/checkout@v4
+        if: github.event_name == 'schedule' || inputs.target == 'all' || inputs.target == matrix.attr
+      - name: Install Nix
+        if: github.event_name == 'schedule' || inputs.target == 'all' || inputs.target == matrix.attr
+        uses: cachix/install-nix-action@v31.5.2
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Setup Cachix
+        if: github.event_name == 'schedule' || inputs.target == 'all' || inputs.target == matrix.attr
+        uses: cachix/cachix-action@v12
+        with:
+          name: siraben
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - name: Build ${{ matrix.attr }}
+        if: github.event_name == 'schedule' || inputs.target == 'all' || inputs.target == matrix.attr
+        run: nix build --print-build-logs ".#${{ matrix.attr }}"
+
+  downstream-pkgs-hello:
+    name: downstream pkgs.hello
+    if: github.event_name == 'schedule' || inputs.target == 'all' || inputs.target == 'downstream-pkgs-hello'
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31.5.2
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Setup Cachix
+        uses: cachix/cachix-action@v12
+        with:
+          name: siraben
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - name: Build pkgs.hello through nixpkgsArgs.default
+        run: |
+          nix build --print-build-logs --impure --expr '
+            let
+              flake = builtins.getFlake (toString ./.);
+              pkgs = import flake.inputs.nixpkgs (flake.nixpkgsArgs.default builtins.currentSystem);
+            in
+              pkgs.hello
+          '
