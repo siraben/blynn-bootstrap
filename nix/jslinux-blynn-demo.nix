@@ -301,7 +301,7 @@ PY
 {
   version: 1,
   machine: "pc",
-  memory_size: 3072,
+  memory_size: 2048,
   kernel: "kernel-x86_64-new.bin",
   cmdline: "loglevel=3 console=hvc0 root=/dev/vda rw init=/init",
   drive0: { file: "blynn-root/blk.txt" },
