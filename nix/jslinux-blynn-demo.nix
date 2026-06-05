@@ -34,13 +34,9 @@ let
     url = "https://bellard.org/jslinux/kernel-riscv64.bin";
     hash = "sha256-ZcpwplYKcwOWq2FIjRz0YImzLaWvflNeA8GAzVvMjnU=";
   };
-  xtermJs = fetchurl {
-    url = "https://unpkg.com/@xterm/xterm@5.5.0/lib/xterm.js";
-    hash = "sha256-H5kaw7Syg+v5bmCuI6AKUnZd06Lkb6b92p8aqwMvdJU=";
-  };
-  xtermCss = fetchurl {
-    url = "https://unpkg.com/@xterm/xterm@5.5.0/css/xterm.css";
-    hash = "sha256-uo5phWaUiJgcz0DAzv46uoByLLbJLeetYosL1xf68rY=";
+  termJs = fetchurl {
+    url = "https://bellard.org/jslinux/term.js";
+    hash = "sha256-CZt7++4NIkYYk6JLWAHZCtlxygTGB/yM88wDRnULS58=";
   };
   jslinuxJs = fetchurl {
     url = "https://bellard.org/jslinux/jslinux.js";
@@ -393,12 +389,8 @@ PY
 
     cp ${bios} "$out/bbl64.bin"
     cp ${kernel} "$out/kernel-riscv64.bin"
-    cp ${xtermJs} "$out/xterm.js"
-    cp ${xtermCss} "$out/xterm.css"
-    cp ${repoSrc}/docs/xterm-term.js "$out/term.js"
+    cp ${termJs} "$out/term.js"
     cp ${jslinuxJs} "$out/jslinux.js"
-    chmod u+w "$out/jslinux.js"
-    python3 ${repoSrc}/nix/jslinux/patch-jslinux-status.py "$out/jslinux.js"
     cp ${emulatorJs} "$out/riscvemu64-wasm.js"
     cp ${emulatorWasm} "$out/riscvemu64-wasm.wasm"
     cp ${repoSrc}/docs/index.html "$out/index.html"

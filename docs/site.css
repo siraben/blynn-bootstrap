@@ -103,7 +103,7 @@ h2 {
 }
 
 #term_wrap {
-  display: block;
+  display: none;
   width: auto !important;
   max-width: 100%;
   min-width: 0;
@@ -115,75 +115,8 @@ h2 {
 }
 
 #term_container {
-  width: 100%;
+  width: max-content;
   min-width: 100%;
-}
-
-.boot-phase {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 34px;
-  margin-bottom: 8px;
-  padding: 7px 9px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--panel);
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.boot-phase span {
-  min-width: 0;
-  flex: 1 1 auto;
-}
-
-.boot-phase-progress {
-  width: min(220px, 34vw);
-  height: 8px;
-  flex: 0 0 auto;
-  accent-color: var(--accent);
-}
-
-.boot-status {
-  min-height: 320px;
-  padding: 10px;
-  border: 1px solid #2a2a2a;
-  background: var(--terminal);
-  color: #f0f0f0;
-  font: 14px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-}
-
-.boot-progress {
-  display: block;
-  width: min(420px, 100%);
-  height: 10px;
-  margin-top: 10px;
-  accent-color: var(--accent);
-}
-
-.xterm-host {
-  min-height: 0;
-  background: var(--terminal);
-  border: 1px solid #2a2a2a;
-}
-
-.xterm {
-  width: 100%;
-  padding: 8px;
-}
-
-.xterm .xterm-viewport {
-  background: var(--terminal) !important;
-}
-
-.xterm-measure-probe {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-  position: absolute;
-  top: -9999px;
-  left: -9999px;
-  visibility: hidden;
-  pointer-events: none;
 }
 
 .term_content a {
@@ -378,24 +311,7 @@ code {
     padding: 8px;
   }
 
-  .xterm {
-    padding: 6px;
-  }
-
   #vm_controls {
-    width: 100%;
-  }
-
-  .control-button {
-    flex: 1 1 84px;
-  }
-
-  .boot-phase {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .boot-phase-progress {
     width: 100%;
   }
 
