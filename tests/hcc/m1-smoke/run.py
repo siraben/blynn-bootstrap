@@ -6,6 +6,7 @@ import subprocess
 
 CASES = [
     ("ret13", 13),
+    ("target-widths", 16),
     ("short-circuit", 42),
     ("local-aggregate", 3),
     ("call-arg-immediate", 42),
@@ -103,6 +104,8 @@ def main():
     work_dir.mkdir(parents=True, exist_ok=True)
     log(f"running {len(CASES)} cases for {args.target}")
     for name, expected in CASES:
+        if name == "target-widths" and args.target == "i386":
+            expected = 8
         log(f"START {name}")
         src = examples_dir / f"{name}.c"
         preprocessed = work_dir / f"{name}.i"

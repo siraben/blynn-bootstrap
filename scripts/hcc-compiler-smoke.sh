@@ -143,4 +143,6 @@ expect_hcc1_fail unsupported-inline-asm "unsupported inline assembly" "$TESTS_DI
 expect_hcpp_fail multi-char-constant "invalid character constant" "$TESTS_DIR/diagnostics/multi-char-constant.c"
 expect_hcpp_fail invalid-octal-constant "invalid digit in octal constant" "$TESTS_DIR/diagnostics/invalid-octal-constant.c"
 
+. "$TESTS_DIR/target-contract.sh"
+
 log "all compiler smoke checks passed"
