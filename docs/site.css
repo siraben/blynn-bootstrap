@@ -1,0 +1,270 @@
+:root {
+  color-scheme: dark;
+  --bg: #111214;
+  --panel: #191b1f;
+  --panel-strong: #22262b;
+  --text: #f2f4f7;
+  --muted: #a9b0bb;
+  --line: #343941;
+  --accent: #5dd0a6;
+  --accent-2: #e0b859;
+  --terminal: #000;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+a {
+  color: var(--accent);
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+  min-height: 100vh;
+}
+
+.console-pane {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  border-right: 1px solid var(--line);
+}
+
+.console-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+h2 {
+  margin-bottom: 8px;
+  font-size: 13px;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  color: var(--accent-2);
+}
+
+.console-header p {
+  margin-top: 2px;
+  color: var(--muted);
+}
+
+.console-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-strong);
+  color: var(--text);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+#term_wrap {
+  display: none;
+  min-width: 0;
+  overflow: auto;
+  padding: 16px;
+  background: #070707;
+}
+
+#term_container {
+  width: max-content;
+  min-width: 100%;
+}
+
+.term {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 14px;
+  color: #f0f0f0;
+  background: var(--terminal);
+  border: 1px solid #2a2a2a;
+}
+
+.term_content a {
+  color: #ffff66;
+}
+
+.term_cursor {
+  color: #000;
+  background: #52ff7a;
+}
+
+.term_scrollbar {
+  position: relative;
+  float: right;
+  width: 15px;
+  height: 100%;
+  background: #151515;
+}
+
+.term_track {
+  position: relative;
+  width: 13px;
+  height: 100%;
+  padding: 0 1px;
+}
+
+.term_thumb {
+  position: absolute;
+  top: 0;
+  left: 1px;
+  width: 11px;
+  min-height: 24px;
+  cursor: pointer;
+  overflow: hidden;
+  background: #4b5563;
+  border-radius: 6px;
+}
+
+.term_thumb .term_end {
+  height: 5px;
+}
+
+.noSelect {
+  user-select: none;
+}
+
+#vm_controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: max-content;
+  margin-top: 8px;
+  padding: 8px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+#term_paste {
+  width: 140px;
+  height: 30px;
+  color: var(--text);
+  background: #0d0f12;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+
+.file-import {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 0 10px;
+  cursor: pointer;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--panel-strong);
+}
+
+#files {
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  visibility: hidden;
+}
+
+#net_progress {
+  visibility: hidden;
+  width: 90px;
+}
+
+.runbook {
+  overflow: auto;
+  padding: 18px;
+  background: var(--panel);
+}
+
+.runbook section + section {
+  margin-top: 22px;
+}
+
+.runbook p,
+.runbook li {
+  color: var(--muted);
+}
+
+.runbook ol,
+.runbook ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.runbook li + li {
+  margin-top: 8px;
+}
+
+pre {
+  overflow: auto;
+  margin: 0;
+  padding: 12px;
+  color: #edf7f2;
+  background: #0b0d0f;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+@media (max-width: 960px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .console-pane {
+    min-height: 70vh;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .console-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .console-actions {
+    justify-content: flex-start;
+  }
+}

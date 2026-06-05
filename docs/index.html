@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>Portable TinyCC Alpine Bootstrap Demo</title>
+  <link rel="stylesheet" href="site.css">
+</head>
+<body>
+  <main class="app-shell">
+    <section class="console-pane" aria-label="JSLinux console">
+      <div class="console-header">
+        <div>
+          <h1>Portable TinyCC Bootstrap</h1>
+          <p>x86_64 JSLinux booting Alpine Linux and running the repo's portable blynn bootstrap to a <code>tcc</code> shell.</p>
+        </div>
+        <div class="console-actions">
+          <a class="button" href="index.html">Reboot</a>
+          <a class="button" href="?url=blynn-x86_64.cfg&cpu=x86_64&mem=512&cols=100&rows=32&font_size=14&cmdline=blynn_full%3D1">Full Build</a>
+          <a class="button" href="blynn-x86_64.cfg">Config</a>
+        </div>
+      </div>
+
+      <div id="term_wrap">
+        <div id="term_container"></div>
+        <span id="vm_controls">
+          <textarea id="term_paste" cols="10" rows="1" autocorrect="off" spellcheck="false">Paste Here</textarea>
+          <label class="file-import">
+            Upload
+            <input type="file" id="files" multiple onchange="on_update_files(this.files)">
+          </label>
+          <progress id="net_progress"></progress>
+        </span>
+      </div>
+    </section>
+
+    <aside class="runbook" aria-label="Demo runbook">
+      <section>
+        <h2>Milestones</h2>
+        <ol>
+          <li>Kernel starts with <code>console=hvc0 root=/dev/vda rw init=/init</code>.</li>
+          <li>Alpine installs the Nix-built HCC TinyCC as <code>blynn-tcc</code>.</li>
+          <li>The full in-guest portable chain is available with <code>blynn_full=1</code> or <code>/bootstrap/run-portable-demo.sh</code>.</li>
+        </ol>
+      </section>
+
+      <section>
+        <h2>Shell Check</h2>
+        <pre><code>printf '#include &lt;stdio.h&gt;
+int main(void){ puts("tcc works"); return 0; }
+' &gt;/tmp/tcc-smoke.c
+command -v blynn-tcc
+blynn-tcc -run /tmp/tcc-smoke.c</code></pre>
+      </section>
+
+      <section>
+        <h2>Mirrored Assets</h2>
+        <p>The page serves the VM runtime and Nix-built split disk image from this GitHub Pages origin so the browser can boot without cross-origin failures.</p>
+        <ul>
+          <li><a href="https://bellard.org/jslinux/">JSLinux x86_64 runtime source</a></li>
+          <li><a href="https://hacktivis.me/jslinux/">hacktivis JSLinux inspiration</a></li>
+          <li><a href="NOTICE.md">asset notice</a></li>
+        </ul>
+      </section>
+    </aside>
+  </main>
+
+  <script>
+    if (!window.location.search) {
+      window.history.replaceState(null, "", "?url=blynn-x86_64.cfg&cpu=x86_64&mem=512&cols=100&rows=32&font_size=14");
+    }
+  </script>
+  <script src="term.js"></script>
+  <script src="jslinux.js"></script>
+</body>
+</html>
