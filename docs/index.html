@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark light">
   <title>Portable TinyCC Alpine Bootstrap Demo</title>
-  <link rel="stylesheet" href="xterm.css">
   <link rel="stylesheet" href="site.css">
 </head>
 <body>
@@ -25,20 +24,9 @@
       </div>
 
       <div id="term_wrap">
-        <div id="boot_phase" class="boot-phase" role="status" aria-live="polite">
-          <span id="boot_phase_text">Preparing VM...</span>
-          <progress id="boot_phase_progress" class="boot-phase-progress" max="1"></progress>
-        </div>
-        <div id="term_container">
-          <div id="boot_status" class="boot-status" role="status" aria-live="polite">
-            <div id="boot_status_text">Loading terminal...</div>
-            <progress id="boot_progress" class="boot-progress" max="1"></progress>
-          </div>
-        </div>
-        <div id="term_bar" aria-hidden="true"></div>
+        <div id="term_container"></div>
         <span id="vm_controls">
-          <button class="button control-button" type="button" onclick="term && term.copySelection()">Copy</button>
-          <button class="button control-button" type="button" onclick="term && term.pasteClipboard()">Paste</button>
+          <textarea id="term_paste" cols="10" rows="1" autocorrect="off" spellcheck="false">Paste Here</textarea>
           <label class="file-import">
             Upload
             <input type="file" id="files" multiple onchange="on_update_files(this.files)">
@@ -154,119 +142,6 @@ bootstrap</code></pre>
       }
     }
 
-    function setBootStatus(message) {
-      const status = document.getElementById("boot_status");
-      const text = document.getElementById("boot_status_text");
-      const phaseText = document.getElementById("boot_phase_text");
-      if (phaseText) {
-        phaseText.textContent = message;
-      }
-      if (status) {
-        if (text) {
-          text.textContent = message;
-        } else {
-          status.textContent = message;
-        }
-      }
-    }
-
-    function setBootProgress(done, total) {
-      const progress = document.getElementById("boot_progress");
-      const phaseProgress = document.getElementById("boot_phase_progress");
-      if (total > 0) {
-        for (const item of [progress, phaseProgress]) {
-          if (!item) {
-            continue;
-          }
-          item.max = total;
-          item.value = Math.min(done, total);
-          item.removeAttribute("data-indeterminate");
-        }
-      } else {
-        for (const item of [progress, phaseProgress]) {
-          if (!item) {
-            continue;
-          }
-          item.removeAttribute("value");
-          item.setAttribute("data-indeterminate", "true");
-        }
-      }
-    }
-
-    function appendScriptBlob(src, blob) {
-      return new Promise((resolve, reject) => {
-        const script = document.createElement("script");
-        const objectUrl = URL.createObjectURL(blob);
-        script.src = objectUrl;
-        script.onload = () => {
-          URL.revokeObjectURL(objectUrl);
-          resolve();
-        };
-        script.onerror = () => {
-          URL.revokeObjectURL(objectUrl);
-          reject(new Error(`failed to start ${src}`));
-        };
-        document.body.appendChild(script);
-      });
-    }
-
-    async function fetchForProgress(asset, assets, assetIndex, loadedByAsset) {
-      const response = await fetch(asset.src, { credentials: "same-origin" });
-      if (!response.ok) {
-        throw new Error(`failed to download ${asset.src}: HTTP ${response.status}`);
-      }
-
-      const encoded = Boolean(response.headers.get("content-encoding"));
-      const total = encoded ? 0 : Number(response.headers.get("content-length") || 0);
-      asset.total = total;
-      if (!response.body || !response.body.getReader) {
-        const blob = await response.blob();
-        loadedByAsset.set(asset.src, total || 1);
-        setBootProgress(assetIndex + 1, assets.length);
-        return blob;
-      }
-
-      const reader = response.body.getReader();
-      let loaded = 0;
-      const chunks = [];
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) {
-          break;
-        }
-        chunks.push(value);
-        loaded += value.byteLength;
-        loadedByAsset.set(asset.src, loaded);
-        const fraction = total > 0 ? Math.min(loaded / total, 1) : 0.5;
-        setBootProgress(assetIndex + fraction, assets.length);
-        setBootStatus(`Downloading ${asset.label}: ${loaded.toLocaleString()}${total ? ` / ${total.toLocaleString()}` : ""} bytes`);
-      }
-      loadedByAsset.set(asset.src, total || loaded || 1);
-      setBootProgress(assetIndex + 1, assets.length);
-      return new Blob(chunks);
-    }
-
-    const bootAssets = [
-      { src: "xterm.js", label: "xterm.js", total: 0, script: true },
-      { src: "term.js", label: "terminal adapter", total: 0, script: true },
-      { src: "jslinux.js", label: "JSLinux runtime", total: 0, script: true },
-    ];
-
-    async function loadBootAssets() {
-      const loadedByAsset = new Map();
-      setBootProgress(0, bootAssets.length);
-      for (const [index, asset] of bootAssets.entries()) {
-        setBootStatus(`Downloading ${asset.label}...`);
-        const blob = await fetchForProgress(asset, bootAssets, index, loadedByAsset);
-        if (asset.script) {
-          setBootStatus(`Starting ${asset.label}...`);
-          await appendScriptBlob(asset.src, blob);
-        }
-      }
-      setBootProgress(bootAssets.length, bootAssets.length);
-      setBootStatus("Starting VM runtime...");
-    }
-
     const lowRamLink = document.getElementById("low_ram_link");
     const fullRamLink = document.getElementById("full_ram_link");
     const rebootLink = document.getElementById("reboot_link");
@@ -274,14 +149,9 @@ bootstrap</code></pre>
     fullRamLink.href = vmQuery(1536, true);
     rebootLink.href = vmQuery(256, true);
 
-    setBootStatus("Preparing VM configuration...");
     normalizeVmQuery();
-    window.setBootStatus = setBootStatus;
-    window.setBootProgress = setBootProgress;
-    loadBootAssets().catch((error) => {
-      setBootStatus(error.message);
-      setBootProgress(0, 1);
-    });
   </script>
+  <script src="term.js"></script>
+  <script src="jslinux.js"></script>
 </body>
 </html>
