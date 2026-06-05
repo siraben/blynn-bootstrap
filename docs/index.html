@@ -39,7 +39,7 @@
       <section>
         <h2>Milestones</h2>
         <ol>
-          <li>Kernel starts with <code>console=hvc0 root=/dev/vda rw init=/init</code>.</li>
+          <li>Kernel starts with normal Linux boot messages on <code>console=hvc0</code>, then runs <code>init=/init</code>.</li>
           <li><code>/init</code> prepares Alpine and drops to a shell.</li>
           <li>Run <code>bootstrap</code> to rebuild stage0-posix tools from the hex0 seed, then run the blynn/HCC portable chain.</li>
           <li>After the build, the shell has the bootstrapped compiler as <code>blynn-tcc</code>.</li>
