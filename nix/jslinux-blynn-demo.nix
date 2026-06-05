@@ -197,6 +197,9 @@ sh scripts/hcc-blynn-c.sh
 
 export HCC_BLYNN_C_DIR="$build/hcc-blynn-c"
 export OUT_DIR="$build/hcc-blynn-bin"
+export HCPP_TOP=67108864
+export HCC1_TOP=67108864
+export HCC_RTS_ADAPTIVE_MAJOR_WORDS=33554432
 echo "== link HCC binary =="
 sh scripts/hcc-blynn-bin.sh
 
@@ -216,6 +219,25 @@ echo "blynn-tcc is available on PATH"
 EOF
     chmod 755 "$root/bootstrap/run-portable-demo.sh"
 
+    mkdir -p "$root/usr/local/bin"
+    cat > "$root/usr/local/bin/bootstrap" <<'EOF'
+#!/bin/sh
+set -u
+
+echo "running full portable blynn bootstrap from the hex0 seed"
+echo "log is also written to /bootstrap-demo.log"
+rm -f /tmp/bootstrap-demo.status
+( /bootstrap/run-portable-demo.sh 2>&1; echo $? >/tmp/bootstrap-demo.status ) | tee /bootstrap-demo.log
+bootstrap_status=$(cat /tmp/bootstrap-demo.status 2>/dev/null || echo 1)
+if [ "$bootstrap_status" = 0 ]; then
+  echo "portable bootstrap finished; bootstrapped tcc is /usr/local/bin/blynn-tcc"
+else
+  echo "portable bootstrap failed with status $bootstrap_status"
+fi
+exit "$bootstrap_status"
+EOF
+    chmod 755 "$root/usr/local/bin/bootstrap"
+
     dd if=/dev/zero of="$root/swapfile" bs=1M count=384
     chmod 600 "$root/swapfile"
     mkswap "$root/swapfile"
@@ -231,23 +253,10 @@ export PATH=/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 swapon /swapfile 2>/dev/null || true
 
 echo "blynn-bootstrap JSLinux demo: Alpine x86_64"
-if grep -qw blynn_shell=1 /proc/cmdline; then
-  echo "quick shell requested with blynn_shell=1"
-  ln -sf /bootstrap/nix-built-tcc/bin/tcc /usr/local/bin/blynn-tcc
-  echo "Nix-built reference TinyCC:"
-  blynn-tcc -dumpversion || true
-else
-  echo "running full portable blynn bootstrap from the hex0 seed"
-  echo "log is also written to /bootstrap-demo.log"
-  rm -f /tmp/bootstrap-demo.status
-  ( /bootstrap/run-portable-demo.sh 2>&1; echo $? >/tmp/bootstrap-demo.status ) | tee /bootstrap-demo.log
-  bootstrap_status=$(cat /tmp/bootstrap-demo.status 2>/dev/null || echo 1)
-  if [ "$bootstrap_status" = 0 ]; then
-    echo "portable bootstrap finished; bootstrapped tcc is /usr/local/bin/blynn-tcc"
-  else
-    echo "portable bootstrap failed with status $bootstrap_status; dropping to shell"
-  fi
-fi
+ln -sf /bootstrap/nix-built-tcc/bin/tcc /usr/local/bin/blynn-tcc
+echo "shell ready; run 'bootstrap' to build from the hex0 seed to bootstrapped TinyCC"
+echo "Nix-built reference TinyCC is available as blynn-tcc until bootstrap completes:"
+blynn-tcc -dumpversion || true
 exec /bin/sh -l
 EOF
     chmod 755 "$root/init"
@@ -301,7 +310,7 @@ PY
 {
   version: 1,
   machine: "pc",
-  memory_size: 2048,
+  memory_size: 1536,
   kernel: "kernel-x86_64-new.bin",
   cmdline: "loglevel=3 console=hvc0 root=/dev/vda rw init=/init",
   drive0: { file: "blynn-root/blk.txt" },
