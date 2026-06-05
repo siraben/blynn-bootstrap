@@ -15,6 +15,7 @@ module DriverCommon
 import Base
 import HccSystem
 import Lexer
+import Target
 import TextUtil
 import TypesToken
 
@@ -95,12 +96,12 @@ data AsmOptions = AsmOptions
   , asmOutput :: String
   , asmIncludeDirs :: [String]
   , asmDefines :: [(String, String)]
-  , asmTargetBits :: Int
+  , asmTarget :: Target
   , asmTrace :: Bool
   }
 
 assemblyArgs :: [String] -> Either String AsmOptions
-assemblyArgs args = finish (go args Nothing Nothing [] [] 64)
+assemblyArgs args = finish (go args Nothing Nothing [] [] defaultHccTarget)
   where
     finish (Left msg) = Left msg
     finish (Right (_, Nothing, _, _, _)) = Left "hcc: no input files"
@@ -121,10 +122,10 @@ assemblyArgs args = finish (go args Nothing Nothing [] [] 64)
       go xs out input (path:includes) defines target
     go ("-D":def:xs) out input includes defines target =
       go xs out input includes (parseDefine def:defines) target
-    go ("--target":targetName:xs) out input includes defines _ =
-      case parseTargetBits targetName of
-        Just bits -> go xs out input includes defines bits
-        Nothing -> Left ("hcc: unsupported target: " ++ targetName)
+    go ("--target":targetArg:xs) out input includes defines _ =
+      case parseHccTarget targetArg of
+        Just target -> go xs out input includes defines target
+        Nothing -> Left ("hcc: unsupported target: " ++ targetArg)
     go (flag:xs) out input includes defines target = case flag of
       '-':'I':path@(_:_) ->
         go xs out input (path:includes) defines target
@@ -137,17 +138,6 @@ assemblyArgs args = finish (go args Nothing Nothing [] [] 64)
             Left ("hcc: unsupported option: " ++ flag)
         | otherwise ->
             go xs out (Just flag) includes defines target
-
-parseTargetBits :: String -> Maybe Int
-parseTargetBits target = case target of
-  "amd64" -> Just 64
-  "x86_64" -> Just 64
-  "aarch64" -> Just 64
-  "arm64" -> Just 64
-  "riscv64" -> Just 64
-  "i386" -> Just 32
-  "x86" -> Just 32
-  _ -> Nothing
 
 ignoredAssemblyFlag :: String -> Bool
 ignoredAssemblyFlag flag =
