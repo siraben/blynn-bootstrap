@@ -1,8 +1,5 @@
 module Lower
-  ( registerTypeAggregates
-  , registerExternGlobals
-  , registerFieldAggregates
-  , lowerFunction
+  ( lowerFunction
   , globalData
   ) where
 
@@ -506,33 +503,6 @@ lowerAggregateElementScalarWrite addr fieldTy expr = do
   (coerceInstrs, coerceOp) <- coerceScalar fieldTy op
   store <- storeInstr fieldTy addr coerceOp
   pure (exprInstrs ++ coerceInstrs ++ [store])
-
-registerExternGlobals :: [(CType, String)] -> CompileM ()
-registerExternGlobals = mapM_ $ \(ty, name) -> do
-    registerTypeAggregates ty
-    bindGlobal name ty
-
-registerFieldAggregates :: [Field] -> CompileM ()
-registerFieldAggregates = mapM_ $ \(Field ty _) -> registerTypeAggregates ty
-
-registerTypeAggregates :: CType -> CompileM ()
-registerTypeAggregates ty = case ty of
-  CPtr inner -> registerTypeAggregates inner
-  CArray inner _ -> registerTypeAggregates inner
-  CFunc ret params -> do
-    registerTypeAggregates ret
-    mapM_ registerTypeAggregates params
-  CStructNamed name fields -> do
-    registerFieldAggregates fields
-    bindStruct name False fields
-  CUnionNamed name fields -> do
-    registerFieldAggregates fields
-    bindStruct name True fields
-  CStructDef fields ->
-    registerFieldAggregates fields
-  CUnionDef fields ->
-    registerFieldAggregates fields
-  _ -> pure ()
 
 lowerExpr :: Expr -> CompileM ([Instr], Operand)
 lowerExpr expr = case expr of

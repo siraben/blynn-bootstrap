@@ -8,6 +8,7 @@ import TypesAst
 import CompileM
 import TypesIr
 import Lower
+import LowerRegisters
 import LowerBootstrap
 import LowerImplicit
 
