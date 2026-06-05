@@ -231,6 +231,7 @@ bootstrap - run the full blynn-bootstrap demo inside this Alpine JSLinux VM
 
 Usage:
   bootstrap
+  BOOTSTRAP_ALLOW_LOW_MEM=1 bootstrap
   bootstrap --help
 
 What it does:
@@ -243,11 +244,39 @@ What it does:
 Output:
   The live log is printed to the terminal and saved to /bootstrap-demo.log.
 
+Memory:
+  The full bootstrap is validated with the default 1536 MB VM. The 768 MB link
+  is for a quick shell only. Set BOOTSTRAP_ALLOW_LOW_MEM=1 to bypass the guard.
+
 Before bootstrap completes, blynn-tcc points at a Nix-built reference TinyCC
 included for quick shell checks. After a successful bootstrap, blynn-tcc points
 at the compiler built inside this VM.
 HELP
     exit 0
+    ;;
+esac
+
+min_mem_kb=1400000
+mem_kb=$(awk '/^MemTotal:/ { print $2 }' /proc/meminfo 2>/dev/null || echo 0)
+case ''${BOOTSTRAP_ALLOW_LOW_MEM:-0} in
+  1|yes|true) ;;
+  *)
+    if [ "$mem_kb" -lt "$min_mem_kb" ]; then
+      cat <<LOWMEM
+bootstrap needs the default 1536 MB VM.
+
+This guest has MemTotal=''${mem_kb} KiB, which is below the tested floor.
+The 768 MB link is intended for a quick shell only; running the full bootstrap
+there can exhaust memory and leave the ext2 root filesystem read-only.
+
+Open the default page or change the URL to mem=1536, then run:
+  bootstrap
+
+To bypass this guard anyway:
+  BOOTSTRAP_ALLOW_LOW_MEM=1 bootstrap
+LOWMEM
+      exit 1
+    fi
     ;;
 esac
 
@@ -294,8 +323,12 @@ Environment:
 Commands:
   bootstrap          run the full hex0 -> Blynn/HCC -> TinyCC bootstrap
   bootstrap --help   print detailed bootstrap command help
+  BOOTSTRAP_ALLOW_LOW_MEM=1 bootstrap
   command -v blynn-tcc
   blynn-tcc -dumpversion
+
+Memory:
+  Use the default 1536 MB VM for bootstrap. The 768 MB link is shell-only.
 
 Compiler:
   blynn-tcc initially points at the Nix-built reference TinyCC for shell checks.
@@ -305,7 +338,10 @@ BANNER
 echo "Nix-built reference TinyCC version:"
 blynn-tcc -dumpversion || true
 echo
-exec /bin/sh -l
+if command -v setsid >/dev/null 2>&1; then
+  exec setsid -c /bin/sh -l </dev/console >/dev/console 2>&1
+fi
+exec /bin/sh -l </dev/console >/dev/console 2>&1
 EOF
     chmod 755 "$root/init"
 
