@@ -50,9 +50,9 @@ cp "$source_dir/hcc1-blynn.c" "$artifact_dir/hcc1-blynn.c"
 cp "$hcc_dir/cbits/hcc_runtime.c" "$artifact_dir/cbits/hcc_runtime.c"
 cp "$hcc_dir/cbits/hcc_runtime_m2.c" "$artifact_dir/cbits/hcc_runtime_m2.c"
 cp "$hcc_dir/cbits/hcc_m1.c" "$artifact_dir/cbits/hcc_m1.c"
-for arch_source in "$hcc_dir"/cbits/hcc_m1_arch_*.c; do
-  [ -f "$arch_source" ] || continue
-  cp "$arch_source" "$artifact_dir/cbits/${arch_source##*/}"
+for backend_source in "$hcc_dir"/cbits/hcc_m1_*.c; do
+  [ -f "$backend_source" ] || continue
+  cp "$backend_source" "$artifact_dir/cbits/${backend_source##*/}"
 done
 if [ -n "${M2LIBC_PATH:-}" ]; then
   m2libc=$(abspath "$M2LIBC_PATH")
