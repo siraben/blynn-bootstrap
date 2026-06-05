@@ -23,12 +23,10 @@ trim = reverse . dropWhile isSpaceChar . reverse . dropWhile isSpaceChar
 
 isSpaceChar :: Char -> Bool
 isSpaceChar c =
-  c == ' ' || c == '\n' || code == 9 || code == 13 || code == 11 || code == 12
-  where
-    code = fromEnum c
+  c == ' ' || c == '\n' || c == '\x09' || c == '\x0d' || c == '\x0b' || c == '\x0c'
 
 isDigitChar :: Char -> Bool
-isDigitChar c = fromEnum c >= fromEnum '0' && fromEnum c <= fromEnum '9'
+isDigitChar c = c >= '0' && c <= '9'
 
 isAsciiAlpha :: Char -> Bool
 isAsciiAlpha c = isAsciiLower c || isAsciiUpper c

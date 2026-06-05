@@ -2,6 +2,8 @@ module CompileM
   ( CompileError(..)
   , CompileState(..)
   , CompileM(..)
+  , Step(..)
+  , runCompileM
   , initialCompileState
   , initialCompileStateForTarget
   , throwC
@@ -71,28 +73,41 @@ data CompileState = CompileState
   , csCurrentFunction :: Maybe String
   }
 
+-- | Result of one CompileM step. Uses a single constructor instead of
+-- the equivalent @Either CompileError (a, CompileState)@: saves the
+-- outer @Right@ + the @(,)@ tuple, i.e. ~2 cells per successful bind.
+data Step a = StepOk a CompileState | StepErr CompileError
+
 data CompileM a = CompileM
-  { unCompileM :: CompileState -> Either CompileError (a, CompileState)
+  { unCompileM :: CompileState -> Step a
   }
 
 instance Functor CompileM where
   fmap f action = CompileM $ \st -> case unCompileM action st of
-    Left err -> Left err
-    Right (x, st') -> Right (f x, st')
+    StepErr err -> StepErr err
+    StepOk x st' -> StepOk (f x) st'
 
 instance Applicative CompileM where
-  pure x = CompileM $ \st -> Right (x, st)
+  pure x = CompileM $ \st -> StepOk x st
   ff <*> fx = CompileM $ \st -> case unCompileM ff st of
-    Left err -> Left err
-    Right (f, st') -> case unCompileM fx st' of
-      Left err -> Left err
-      Right (x, st'') -> Right (f x, st'')
+    StepErr err -> StepErr err
+    StepOk f st' -> case unCompileM fx st' of
+      StepErr err -> StepErr err
+      StepOk x st'' -> StepOk (f x) st''
 
 instance Monad CompileM where
   return = pure
   action >>= next = CompileM $ \st -> case unCompileM action st of
-    Left err -> Left err
-    Right (x, st') -> unCompileM (next x) st'
+    StepErr err -> StepErr err
+    StepOk x st' -> unCompileM (next x) st'
+
+-- | Adapter for callers that still want an 'Either' boundary
+-- representation: convert at the boundary, but the internal monad
+-- traffic uses 'Step'.
+runCompileM :: CompileM a -> CompileState -> Either CompileError (a, CompileState)
+runCompileM action st = case unCompileM action st of
+  StepErr err -> Left err
+  StepOk x st' -> Right (x, st')
 
 initialCompileState :: CompileState
 initialCompileState = CompileState
@@ -121,34 +136,34 @@ initialCompileStateForTarget prefix bits =
   initialCompileState { csDataPrefix = prefix, csTargetBits = bits }
 
 throwC :: String -> CompileM a
-throwC msg = CompileM $ \_ -> Left (CompileError msg)
+throwC msg = CompileM $ \_ -> StepErr (CompileError msg)
 
 withErrorContext :: String -> CompileM a -> CompileM a
 withErrorContext context action = CompileM $ \st ->
   case unCompileM action st of
-    Left (CompileError msg) -> Left (CompileError (context ++ ": " ++ msg))
-    Right result -> Right result
+    StepErr (CompileError msg) -> StepErr (CompileError (context ++ ": " ++ msg))
+    StepOk x st' -> StepOk x st'
 
 getC :: (CompileState -> a) -> CompileM a
-getC f = CompileM $ \st -> Right (f st, st)
+getC f = CompileM $ \st -> StepOk (f st) st
 
 modifyC :: (CompileState -> CompileState) -> CompileM ()
-modifyC f = CompileM $ \st -> Right ((), f st)
+modifyC f = CompileM $ \st -> StepOk () (f st)
 
 freshTemp :: CompileM Temp
 freshTemp = CompileM $ \st ->
   let n = csNextTemp st
-  in Right (Temp n, st { csNextTemp = n + 1 })
+  in StepOk (Temp n) (st { csNextTemp = n + 1 })
 
 freshBlock :: CompileM BlockId
 freshBlock = CompileM $ \st ->
   let n = csNextBlock st
-  in Right (BlockId n, st { csNextBlock = n + 1 })
+  in StepOk (BlockId n) (st { csNextBlock = n + 1 })
 
 freshLabel :: CompileM String
 freshLabel = CompileM $ \st ->
   let n = csNextLabel st
-    in Right ("L" ++ show n, st { csNextLabel = n + 1 })
+  in StepOk ("L" ++ show n) (st { csNextLabel = n + 1 })
 
 freshDataLabel :: CompileM String
 freshDataLabel = do
@@ -230,8 +245,8 @@ cacheStructSize name size =
 lookupStructMemberCache :: String -> String -> CompileM (Maybe (CType, Int))
 lookupStructMemberCache structName fieldName = CompileM $ \st ->
   case symbolMapLookup structName (csStructMembers st) of
-    Nothing -> Right (Nothing, st)
-    Just members -> Right (symbolMapLookup fieldName members, st)
+    Nothing -> StepOk Nothing st
+    Just members -> StepOk (symbolMapLookup fieldName members) st
 
 cacheStructMember :: String -> String -> (CType, Int) -> CompileM ()
 cacheStructMember structName fieldName info =
@@ -256,8 +271,8 @@ currentFunctionName = getC csCurrentFunction
 withCurrentFunction :: String -> CompileM a -> CompileM a
 withCurrentFunction name action = CompileM $ \st ->
   case unCompileM action st { csCurrentFunction = Just name } of
-    Left err -> Left err
-    Right (x, st') -> Right (x, st' { csCurrentFunction = csCurrentFunction st })
+    StepErr err -> StepErr err
+    StepOk x st' -> StepOk x (st' { csCurrentFunction = csCurrentFunction st })
 
 currentReturnType :: CompileM (Maybe CType)
 currentReturnType = do
@@ -273,8 +288,8 @@ currentReturnType = do
 withFunctionScope :: CompileM a -> CompileM a
 withFunctionScope action = CompileM $ \st ->
   case unCompileM action st { csVars = scopeMapEmpty, csLabels = symbolMapEmpty, csBreakTargets = [], csContinueTargets = [] } of
-    Left err -> Left err
-    Right (x, st') -> Right (x, st'
+    StepErr err -> StepErr err
+    StepOk x st' -> StepOk x (st'
       { csVars = csVars st
       , csLabels = csLabels st
       , csBreakTargets = csBreakTargets st
@@ -284,8 +299,8 @@ withFunctionScope action = CompileM $ \st ->
 withVarScope :: CompileM a -> CompileM a
 withVarScope action = CompileM $ \st ->
   case unCompileM action st { csVars = scopeMapEnter (csVars st) } of
-    Left err -> Left err
-    Right (x, st') -> Right (x, st' { csVars = scopeMapLeave (csVars st') })
+    StepErr err -> StepErr err
+    StepOk x st' -> StepOk x (st' { csVars = scopeMapLeave (csVars st') })
 
 withLoopTargets :: BlockId -> BlockId -> CompileM a -> CompileM a
 withLoopTargets breakTarget continueTarget action = CompileM $ \st ->
@@ -293,8 +308,8 @@ withLoopTargets breakTarget continueTarget action = CompileM $ \st ->
     { csBreakTargets = breakTarget : csBreakTargets st
     , csContinueTargets = continueTarget : csContinueTargets st
     } of
-    Left err -> Left err
-    Right (x, st') -> Right (x, st'
+    StepErr err -> StepErr err
+    StepOk x st' -> StepOk x (st'
       { csBreakTargets = csBreakTargets st
       , csContinueTargets = csContinueTargets st
       })
@@ -302,8 +317,8 @@ withLoopTargets breakTarget continueTarget action = CompileM $ \st ->
 withBreakTarget :: BlockId -> CompileM a -> CompileM a
 withBreakTarget breakTarget action = CompileM $ \st ->
   case unCompileM action st { csBreakTargets = breakTarget : csBreakTargets st } of
-    Left err -> Left err
-    Right (x, st') -> Right (x, st' { csBreakTargets = csBreakTargets st })
+    StepErr err -> StepErr err
+    StepOk x st' -> StepOk x (st' { csBreakTargets = csBreakTargets st })
 
 currentBreakTarget :: CompileM (Maybe BlockId)
 currentBreakTarget = getC (listHead . csBreakTargets)
@@ -317,8 +332,8 @@ listHead (x:_) = Just x
 
 labelBlock :: String -> CompileM BlockId
 labelBlock name = CompileM $ \st -> case symbolMapLookup name (csLabels st) of
-  Just bid -> Right (bid, st)
+  Just bid -> StepOk bid st
   Nothing ->
     let n = csNextBlock st
         bid = BlockId n
-    in Right (bid, st { csNextBlock = n + 1, csLabels = symbolMapInsert name bid (csLabels st) })
+    in StepOk bid (st { csNextBlock = n + 1, csLabels = symbolMapInsert name bid (csLabels st) })

@@ -25,7 +25,7 @@ emitM1IrWithDataPrefixTarget write prefix target ast =
 buildM1IrModuleWithDataPrefixTarget :: String -> Int -> Program -> Either CodegenError ModuleIr
 buildM1IrModuleWithDataPrefixTarget prefix target ast = case ast of
   Program decls ->
-    case mapCompileRun (unCompileM registerBuiltinStructs (initialCompileStateForTarget prefix target)) of
+    case mapCompileRun (runCompileM registerBuiltinStructs (initialCompileStateForTarget prefix target)) of
       Left err -> Left err
       Right (_, st0) ->
         case registerTopDeclsIr st0 decls of
@@ -39,7 +39,7 @@ lowerTopDeclsIr :: CompileState -> [TopDecl] -> Either CodegenError (CompileStat
 lowerTopDeclsIr st decls = case decls of
   [] -> Right (st, [])
   Function _ name params body:rest ->
-    case mapCompileRun (unCompileM (registerImplicitCalls (map (\(Param _ paramName) -> paramName) params) body >> lowerFunction name params body) st) of
+    case mapCompileRun (runCompileM (registerImplicitCalls (map (\(Param _ paramName) -> paramName) params) body >> lowerFunction name params body) st) of
       Left err -> Left err
       Right (fn, st') ->
         case pendingDataItemsIr st' of
@@ -63,7 +63,7 @@ registerTopDeclsIr st decls = case decls of
 registerTopDeclIr :: CompileState -> TopDecl -> Either CodegenError (CompileState, [TopItemIr])
 registerTopDeclIr st decl = case decl of
   Global ty name initExpr ->
-    case mapCompileRun (unCompileM (registerTypeAggregates ty >> bindGlobal name ty >> globalData ty initExpr) st) of
+    case mapCompileRun (runCompileM (registerTypeAggregates ty >> bindGlobal name ty >> globalData ty initExpr) st) of
       Left err -> Left err
       Right (values, st') -> do
         case pendingDataItemsIr st' of
@@ -78,17 +78,17 @@ registerTopDeclIr st decl = case decl of
 registerTopDeclShallowState :: CompileState -> TopDecl -> Either CompileError ((), CompileState)
 registerTopDeclShallowState st decl = case decl of
   Function ty name params _ ->
-    unCompileM (registerFunctionDecl ty name params) st
+    runCompileM (registerFunctionDecl ty name params) st
   Prototype ty name params ->
-    unCompileM (registerFunctionDecl ty name params) st
+    runCompileM (registerFunctionDecl ty name params) st
   StructDecl isUnion name fields ->
-    unCompileM (registerFieldAggregates fields >> bindStruct name isUnion fields) st
+    runCompileM (registerFieldAggregates fields >> bindStruct name isUnion fields) st
   ExternGlobals globals ->
-    unCompileM (registerExternGlobals globals) st
+    runCompileM (registerExternGlobals globals) st
   EnumConstants constants ->
-    unCompileM (mapM_ (uncurry bindConstant) constants) st
+    runCompileM (mapM_ (uncurry bindConstant) constants) st
   TypeDecl types ->
-    unCompileM (mapM_ registerTypeAggregates types) st
+    runCompileM (mapM_ registerTypeAggregates types) st
   _ -> Right ((), st)
 
 registerFunctionDecl :: CType -> String -> [Param] -> CompileM ()
@@ -102,7 +102,7 @@ registerGlobalsIr :: CompileState -> [(CType, String, Maybe Expr)] -> Either Cod
 registerGlobalsIr st globals = case globals of
   [] -> Right (st, [])
   (ty, name, initExpr):rest ->
-    case mapCompileRun (unCompileM (registerTypeAggregates ty >> bindGlobal name ty >> globalData ty initExpr) st) of
+    case mapCompileRun (runCompileM (registerTypeAggregates ty >> bindGlobal name ty >> globalData ty initExpr) st) of
       Left err -> Left err
       Right (values, st') ->
         case pendingDataItemsIr st' of
