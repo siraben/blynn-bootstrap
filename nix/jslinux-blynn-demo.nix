@@ -224,6 +224,33 @@ EOF
 #!/bin/sh
 set -u
 
+case ''${1:-} in
+  -h|--help|help)
+    cat <<'HELP'
+bootstrap - run the full blynn-bootstrap demo inside this Alpine JSLinux VM
+
+Usage:
+  bootstrap
+  bootstrap --help
+
+What it does:
+  1. Rebuilds stage0-posix tools from the hex0 seed.
+  2. Runs the portable Blynn compiler bootstrap.
+  3. Builds HCC from the Blynn-generated sources.
+  4. Builds TinyCC with the bootstrapped HCC toolchain.
+  5. Installs the resulting compiler as /usr/local/bin/blynn-tcc.
+
+Output:
+  The live log is printed to the terminal and saved to /bootstrap-demo.log.
+
+Before bootstrap completes, blynn-tcc points at a Nix-built reference TinyCC
+included for quick shell checks. After a successful bootstrap, blynn-tcc points
+at the compiler built inside this VM.
+HELP
+    exit 0
+    ;;
+esac
+
 echo "running full portable blynn bootstrap from the hex0 seed"
 echo "log is also written to /bootstrap-demo.log"
 rm -f /tmp/bootstrap-demo.status
@@ -254,9 +281,30 @@ swapon /swapfile 2>/dev/null || true
 
 echo "blynn-bootstrap JSLinux demo: Alpine x86_64"
 ln -sf /bootstrap/nix-built-tcc/bin/tcc /usr/local/bin/blynn-tcc
-echo "shell ready; run 'bootstrap' to build from the hex0 seed to bootstrapped TinyCC"
-echo "Nix-built reference TinyCC is available as blynn-tcc until bootstrap completes:"
+cat <<'BANNER'
+
+Project:
+  blynn-bootstrap portable web demo
+
+Environment:
+  Alpine Linux x86_64 running in Bellard JSLinux/WASM
+  Sources and pinned upstream snapshots are already in /bootstrap
+  Work directory: /work/blynn
+
+Commands:
+  bootstrap          run the full hex0 -> Blynn/HCC -> TinyCC bootstrap
+  bootstrap --help   print detailed bootstrap command help
+  command -v blynn-tcc
+  blynn-tcc -dumpversion
+
+Compiler:
+  blynn-tcc initially points at the Nix-built reference TinyCC for shell checks.
+  After a successful bootstrap, blynn-tcc points at the compiler built here.
+
+BANNER
+echo "Nix-built reference TinyCC version:"
 blynn-tcc -dumpversion || true
+echo
 exec /bin/sh -l
 EOF
     chmod 755 "$root/init"
@@ -312,7 +360,7 @@ PY
   machine: "pc",
   memory_size: 1536,
   kernel: "kernel-x86_64-new.bin",
-  cmdline: "loglevel=3 console=hvc0 root=/dev/vda rw init=/init",
+  cmdline: "console=hvc0 root=/dev/vda rw init=/init",
   drive0: { file: "blynn-root/blk.txt" },
 }
 EOF
