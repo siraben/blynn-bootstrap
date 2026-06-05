@@ -67,6 +67,10 @@
   };
 
   Term.prototype.open = function (parentEl) {
+    const bootStatus = document.getElementById("boot_status");
+    if (bootStatus) {
+      bootStatus.remove();
+    }
     this.parent_el = parentEl;
     parentEl.classList.add("xterm-host");
     this.xterm.open(parentEl);

@@ -103,7 +103,7 @@ h2 {
 }
 
 #term_wrap {
-  display: none;
+  display: block;
   width: auto !important;
   max-width: 100%;
   min-width: 0;
@@ -117,6 +117,15 @@ h2 {
 #term_container {
   width: 100%;
   min-width: 100%;
+}
+
+.boot-status {
+  min-height: 320px;
+  padding: 10px;
+  border: 1px solid #2a2a2a;
+  background: var(--terminal);
+  color: #f0f0f0;
+  font: 14px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
 }
 
 .xterm-host {
