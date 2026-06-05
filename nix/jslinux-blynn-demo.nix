@@ -30,9 +30,13 @@ let
     url = "https://bellard.org/jslinux/kernel-x86_64-new.bin";
     hash = "sha256-AtbqOhmwQIbdVhYfihfDQMfiu+1QyiurXJDEA+l4Nec=";
   };
-  termJs = fetchurl {
-    url = "https://bellard.org/jslinux/term.js";
-    hash = "sha256-CZt7++4NIkYYk6JLWAHZCtlxygTGB/yM88wDRnULS58=";
+  xtermJs = fetchurl {
+    url = "https://unpkg.com/@xterm/xterm@5.5.0/lib/xterm.js";
+    hash = "sha256-H5kaw7Syg+v5bmCuI6AKUnZd06Lkb6b92p8aqwMvdJU=";
+  };
+  xtermCss = fetchurl {
+    url = "https://unpkg.com/@xterm/xterm@5.5.0/css/xterm.css";
+    hash = "sha256-uo5phWaUiJgcz0DAzv46uoByLLbJLeetYosL1xf68rY=";
   };
   jslinuxJs = fetchurl {
     url = "https://bellard.org/jslinux/jslinux.js";
@@ -381,7 +385,9 @@ for i in range(n_block):
 PY
 
     cp ${kernel} "$out/kernel-x86_64-new.bin"
-    cp ${termJs} "$out/term.js"
+    cp ${xtermJs} "$out/xterm.js"
+    cp ${xtermCss} "$out/xterm.css"
+    cp ${repoSrc}/docs/xterm-term.js "$out/term.js"
     cp ${jslinuxJs} "$out/jslinux.js"
     cp ${emulatorJs} "$out/x86_64emu-wasm.js"
     cp ${emulatorWasm} "$out/x86_64emu-wasm.wasm"
