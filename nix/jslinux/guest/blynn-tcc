@@ -1,0 +1,7 @@
+#!/bin/sh
+built=/work/blynn/tinycc-boot-hcc/bin/tcc
+if [ -x "$built" ]; then
+  exec "$built" "$@"
+fi
+echo "blynn-tcc has not been built yet; run bootstrap first" >&2
+exit 127

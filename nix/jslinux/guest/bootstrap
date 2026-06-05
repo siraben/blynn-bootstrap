@@ -1,0 +1,33 @@
+#!/bin/sh
+set -u
+
+case ${1:-} in
+  -h|--help|help)
+    cat /bootstrap/help/bootstrap.txt
+    exit 0
+    ;;
+esac
+
+min_mem_kb=1400000
+mem_kb=$(awk '/^MemTotal:/ { print $2 }' /proc/meminfo 2>/dev/null || echo 0)
+case ${BOOTSTRAP_ALLOW_LOW_MEM:-0} in
+  1|yes|true) ;;
+  *)
+    if [ "$mem_kb" -lt "$min_mem_kb" ]; then
+      cat /bootstrap/help/lowmem.txt
+      exit 1
+    fi
+    ;;
+esac
+
+echo "running full portable blynn bootstrap from the hex0 seed"
+echo "log is also written to /tmp/bootstrap-demo.log"
+rm -f /tmp/bootstrap-demo.status
+( /bootstrap/run-portable-demo.sh 2>&1; echo $? >/tmp/bootstrap-demo.status ) | tee /tmp/bootstrap-demo.log
+bootstrap_status=$(cat /tmp/bootstrap-demo.status 2>/dev/null || echo 1)
+if [ "$bootstrap_status" = 0 ]; then
+  echo "portable bootstrap finished; bootstrapped tcc is /usr/local/bin/blynn-tcc"
+else
+  echo "portable bootstrap failed with status $bootstrap_status"
+fi
+exit "$bootstrap_status"

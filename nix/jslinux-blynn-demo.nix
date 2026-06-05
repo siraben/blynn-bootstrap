@@ -105,251 +105,27 @@ stdenvNoCC.mkDerivation {
     rm -rf "$root/bootstrap/source-cache/stage0-posix/bootstrap-seeds"
     cp -R ${bootstrapSeedsSrc} "$root/bootstrap/source-cache/stage0-posix/bootstrap-seeds"
     chmod -R u+w "$root/bootstrap/source-cache/stage0-posix"
-    cat > "$root/bootstrap/source-cache/stage0-posix/.bootstrap-rev" <<'EOF'
-45d90f5955b6907dc6cdea9ebafce558359edcd3
-EOF
-    cat > "$root/bootstrap/source-cache/stage0-posix/AMD64/.bootstrap-rev" <<'EOF'
-82efa0d6be1c9bb993a7a62af1cccd8d2cda91f6
-EOF
-    cat > "$root/bootstrap/source-cache/stage0-posix/M2-Mesoplanet/.bootstrap-rev" <<'EOF'
-4b011a85da73a7c97212468d41f17e806ba99547
-EOF
-    cat > "$root/bootstrap/source-cache/stage0-posix/M2-Planet/.bootstrap-rev" <<'EOF'
-bd2fe4b0659fd0ad3f476a5ad0ef801bd134665d
-EOF
-    cat > "$root/bootstrap/source-cache/stage0-posix/M2libc/.bootstrap-rev" <<'EOF'
-68a23cfd05d5a355ba7a30c770d684cbe86fcc4e
-EOF
-    cat > "$root/bootstrap/source-cache/stage0-posix/bootstrap-seeds/.bootstrap-rev" <<'EOF'
-cedec6b8066d1db229b6c77d42d120a23c6980ed
-EOF
-    cat > "$root/bootstrap/source-cache/stage0-posix/mescc-tools/.bootstrap-rev" <<'EOF'
-5adfbf3364261a77109878a56b100aeeb6ef9ac4
-EOF
+    install -Dm644 ${repoSrc}/nix/jslinux/bootstrap-revs/stage0-posix.rev "$root/bootstrap/source-cache/stage0-posix/.bootstrap-rev"
+    install -Dm644 ${repoSrc}/nix/jslinux/bootstrap-revs/AMD64.rev "$root/bootstrap/source-cache/stage0-posix/AMD64/.bootstrap-rev"
+    install -Dm644 ${repoSrc}/nix/jslinux/bootstrap-revs/M2-Mesoplanet.rev "$root/bootstrap/source-cache/stage0-posix/M2-Mesoplanet/.bootstrap-rev"
+    install -Dm644 ${repoSrc}/nix/jslinux/bootstrap-revs/M2-Planet.rev "$root/bootstrap/source-cache/stage0-posix/M2-Planet/.bootstrap-rev"
+    install -Dm644 ${repoSrc}/nix/jslinux/bootstrap-revs/M2libc.rev "$root/bootstrap/source-cache/stage0-posix/M2libc/.bootstrap-rev"
+    install -Dm644 ${repoSrc}/nix/jslinux/bootstrap-revs/bootstrap-seeds.rev "$root/bootstrap/source-cache/stage0-posix/bootstrap-seeds/.bootstrap-rev"
+    install -Dm644 ${repoSrc}/nix/jslinux/bootstrap-revs/mescc-tools.rev "$root/bootstrap/source-cache/stage0-posix/mescc-tools/.bootstrap-rev"
 
-    cat > "$root/bootstrap/tool-wrappers/M2-Mesoplanet" <<'EOF'
-#!/bin/sh
-for tool in M2-Planet blood-elf M1 hex2; do
-  [ -e "./$tool" ] || ln -s "/bootstrap/stage0-tools/bin/$tool" "./$tool" 2>/dev/null || true
-done
-exec /bootstrap/stage0-tools/bin/M2-Mesoplanet --temp-directory "$PWD" -I /bootstrap/stage0-m2libc "$@"
-EOF
-    chmod 755 "$root/bootstrap/tool-wrappers/M2-Mesoplanet"
-
-    cat > "$root/bootstrap/run-portable-demo.sh" <<'EOF'
-#!/bin/sh
-set -eu
-
-export HOME=/root
-export ARCH=riscv64
-export OPERATING_SYSTEM=Linux
-export M2_ARCH=riscv64
-export M2_OS=Linux
-export PATH=/usr/sbin:/usr/bin:/sbin:/bin
-export BOOTSTRAP_LOG_NAME=blynn-jslinux
-
-repo=/bootstrap/repo
-build=/work/blynn
-mkdir -p "$build"
-cd "$repo"
-
-export SOURCE_CACHE_DIR=/bootstrap/source-cache
-export BOOTSTRAP_TOOLS_REBUILD=1
-export OUT_DIR="$build/bootstrap-tools"
-echo "== hex0 seed to stage0-posix tools =="
-sh scripts/bootstrap-tools.sh
-
-export PATH="$build/bootstrap-tools/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-export STAGE0_M2LIBC="$build/bootstrap-tools/artifact/stage0-posix/M2libc"
-export M2LIBC_PATH="$STAGE0_M2LIBC"
-
-export GNU_MES_DIR=/bootstrap/upstreams/gnu-mes
-export OUT_DIR="$build/mes-libc"
-echo "== prepare Mes libc =="
-sh scripts/prepare-mes-libc.sh
-
-export ORIANSJ_BLYNN_DIR=/bootstrap/upstreams/oriansj-blynn-compiler
-export OUT_DIR="$build/blynn-root"
-echo "== bootstrap original blynn root =="
-sh scripts/bootstrap-blynn-root.sh
-
-export BLYNN_DIR=/bootstrap/upstreams/blynn-compiler
-export METHODICALLY="$build/blynn-root/bin/methodically"
-export OUT_DIR="$build/blynn-precisely"
-echo "== bootstrap blynn precisely =="
-sh scripts/bootstrap-blynn-precisely.sh
-
-export OUT_DIR="$build/hcc-blynn-sources"
-echo "== generate HCC blynn sources =="
-sh scripts/hcc-blynn-sources.sh
-
-export PRECISELY_UP="$build/blynn-precisely/bin/precisely_up"
-export HCC_BLYNN_SOURCES_DIR="$build/hcc-blynn-sources"
-export MATERIALIZE_OBJECT_SCRIPT="$build/hcc-blynn-objs/materialize-object-script"
-export OUT_DIR="$build/hcc-blynn-objs"
-mkdir -p "$OUT_DIR"
-echo "== materialize HCC blynn objects =="
-M2-Mesoplanet --operating-system "$M2_OS" --architecture "$M2_ARCH" \
-  -f hcc/support/materialize-object-script.c -o "$MATERIALIZE_OBJECT_SCRIPT"
-chmod 555 "$MATERIALIZE_OBJECT_SCRIPT"
-sh scripts/hcc-blynn-objs.sh
-
-export HCC_BLYNN_OBJECTS_DIR="$build/hcc-blynn-objs"
-export OUT_DIR="$build/hcc-blynn-c"
-echo "== compile HCC C sources =="
-sh scripts/hcc-blynn-c.sh
-
-export HCC_BLYNN_C_DIR="$build/hcc-blynn-c"
-export OUT_DIR="$build/hcc-blynn-bin"
-export HCPP_TOP=67108864
-export HCC1_TOP=67108864
-export HCC_RTS_ADAPTIVE_MAJOR_WORDS=33554432
-echo "== link HCC binary =="
-sh scripts/hcc-blynn-bin.sh
-
-export TINYCC_DIR=/bootstrap/upstreams/janneke-tinycc
-export HCC_BIN_DIR="$build/hcc-blynn-bin"
-export MES_LIBC_DIR="$build/mes-libc"
-export HCC_TARGET=riscv64
-export TINYCC_SELFHOST=''${TINYCC_SELFHOST:-0}
-export OUT_DIR="$build/tinycc-boot-hcc"
-echo "== build TinyCC with bootstrapped HCC =="
-sh scripts/tinycc-boot-hcc.sh
-
-echo "== bootstrapped blynn/HCC TinyCC =="
-"$build/tinycc-boot-hcc/bin/tcc" -dumpversion || true
-ln -sf "$build/tinycc-boot-hcc/bin/tcc" /usr/local/bin/blynn-tcc
-echo "blynn-tcc is available on PATH"
-EOF
-    chmod 755 "$root/bootstrap/run-portable-demo.sh"
+    install -Dm755 ${repoSrc}/nix/jslinux/guest/M2-Mesoplanet "$root/bootstrap/tool-wrappers/M2-Mesoplanet"
+    install -Dm755 ${repoSrc}/nix/jslinux/guest/run-portable-demo.sh "$root/bootstrap/run-portable-demo.sh"
+    install -Dm644 ${repoSrc}/nix/jslinux/help/bootstrap.txt "$root/bootstrap/help/bootstrap.txt"
+    install -Dm644 ${repoSrc}/nix/jslinux/help/lowmem.txt "$root/bootstrap/help/lowmem.txt"
+    install -Dm644 ${repoSrc}/nix/jslinux/help/banner.txt "$root/bootstrap/help/banner.txt"
 
     mkdir -p "$root/usr/local/bin"
-    cat > "$root/usr/local/bin/bootstrap" <<'EOF'
-#!/bin/sh
-set -u
-
-case ''${1:-} in
-  -h|--help|help)
-    cat <<'HELP'
-bootstrap - run the full blynn-bootstrap demo inside this Alpine JSLinux VM
-
-Usage:
-  bootstrap
-  BOOTSTRAP_ALLOW_LOW_MEM=1 bootstrap
-  bootstrap --help
-
-What it does:
-  1. Rebuilds stage0-posix tools from the hex0 seed.
-  2. Runs the portable Blynn compiler bootstrap.
-  3. Builds HCC from the Blynn-generated sources.
-  4. Builds TinyCC with the bootstrapped HCC toolchain.
-  5. Installs the resulting compiler as /usr/local/bin/blynn-tcc.
-
-Output:
-  The live log is printed to the terminal and saved to /bootstrap-demo.log.
-
-Memory:
-  The full bootstrap is intended for the 1536 MB VM. The guest does
-  not use swap. The 256 MB link is for a quick shell only. Set
-  BOOTSTRAP_ALLOW_LOW_MEM=1 to bypass the guard.
-
-After a successful bootstrap, blynn-tcc points at the compiler built inside
-this VM.
-HELP
-    exit 0
-    ;;
-esac
-
-min_mem_kb=1400000
-mem_kb=$(awk '/^MemTotal:/ { print $2 }' /proc/meminfo 2>/dev/null || echo 0)
-case ''${BOOTSTRAP_ALLOW_LOW_MEM:-0} in
-  1|yes|true) ;;
-  *)
-    if [ "$mem_kb" -lt "$min_mem_kb" ]; then
-      cat <<LOWMEM
-bootstrap needs the default 1536 MB VM.
-
-This guest has MemTotal=''${mem_kb} KiB, which is below the tested floor.
-The 256 MB link is intended for a quick shell only; running the full bootstrap
-there can exhaust memory and leave the ext2 root filesystem read-only.
-
-Open the default page or change the URL to mem=1536, then run:
-  bootstrap
-
-To bypass this guard anyway:
-  BOOTSTRAP_ALLOW_LOW_MEM=1 bootstrap
-LOWMEM
-      exit 1
-    fi
-    ;;
-esac
-
-echo "running full portable blynn bootstrap from the hex0 seed"
-echo "log is also written to /bootstrap-demo.log"
-rm -f /tmp/bootstrap-demo.status
-( /bootstrap/run-portable-demo.sh 2>&1; echo $? >/tmp/bootstrap-demo.status ) | tee /bootstrap-demo.log
-bootstrap_status=$(cat /tmp/bootstrap-demo.status 2>/dev/null || echo 1)
-if [ "$bootstrap_status" = 0 ]; then
-  echo "portable bootstrap finished; bootstrapped tcc is /usr/local/bin/blynn-tcc"
-else
-  echo "portable bootstrap failed with status $bootstrap_status"
-fi
-exit "$bootstrap_status"
-EOF
-    chmod 755 "$root/usr/local/bin/bootstrap"
-
-    cat > "$root/init" <<'EOF'
-#!/bin/sh
-mount -t proc proc /proc 2>/dev/null || true
-mount -t sysfs sys /sys 2>/dev/null || true
-mount -t devtmpfs dev /dev 2>/dev/null || true
-mkdir -p /dev /tmp /work /root /usr/local/bin
-chmod 1777 /tmp
-export PATH=/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-
-echo "blynn-bootstrap JSLinux demo: Alpine riscv64"
-cat <<'BANNER'
-
-Project:
-  blynn-bootstrap portable web demo
-
-Environment:
-  Alpine Linux riscv64 running in Bellard JSLinux/WASM
-  Sources and pinned upstream snapshots are already in /bootstrap
-  Work directory: /work/blynn
-
-Commands:
-  bootstrap          run the full hex0 -> Blynn/HCC -> TinyCC bootstrap
-  bootstrap --help   print detailed bootstrap command help
-  BOOTSTRAP_ALLOW_LOW_MEM=1 bootstrap
-  command -v blynn-tcc
-  blynn-tcc -dumpversion
-
-Memory:
-  Use the 1536 MB bootstrap VM for bootstrap. The default 256 MB VM is shell-only.
-
-Compiler:
-  After a successful bootstrap, blynn-tcc points at the compiler built here.
-
-BANNER
-echo
-if command -v setsid >/dev/null 2>&1; then
-  exec setsid -c /bin/sh -l </dev/console >/dev/console 2>&1
-fi
-exec /bin/sh -l </dev/console >/dev/console 2>&1
-EOF
-    chmod 755 "$root/init"
-
-    cat > "$TMPDIR/devices.txt" <<'EOF'
-/dev d 755 0 0 - - - - -
-/dev/console c 600 0 0 5 1 0 0 -
-/dev/null c 666 0 0 1 3 0 0 -
-/dev/zero c 666 0 0 1 5 0 0 -
-/dev/tty c 666 0 0 5 0 0 0 -
-EOF
+    install -Dm755 ${repoSrc}/nix/jslinux/guest/blynn-tcc "$root/usr/local/bin/blynn-tcc"
+    install -Dm755 ${repoSrc}/nix/jslinux/guest/bootstrap "$root/usr/local/bin/bootstrap"
+    install -Dm755 ${repoSrc}/nix/jslinux/guest/init "$root/init"
 
     mkdir -p "$out"
-    genext2fs -B 1024 -b 393216 -N 200000 -d "$root" -D "$TMPDIR/devices.txt" "$TMPDIR/blynn-root.ext2"
+    genext2fs -B 1024 -b 393216 -N 200000 -d "$root" -D ${repoSrc}/nix/jslinux/devices.txt "$TMPDIR/blynn-root.ext2"
     tune2fs -O large_file "$TMPDIR/blynn-root.ext2"
     fsck_status=0
     e2fsck -fy "$TMPDIR/blynn-root.ext2" || fsck_status=$?
@@ -358,34 +134,7 @@ EOF
     fi
 
     mkdir -p "$out/blynn-root"
-    python3 - "$TMPDIR/blynn-root.ext2" "$out/blynn-root" <<'PY'
-import math
-import os
-import pathlib
-import sys
-
-src = pathlib.Path(sys.argv[1])
-out = pathlib.Path(sys.argv[2])
-block_size = 256 * 1024
-zero_chunk = b"\0" * block_size
-zero_chunk_path = None
-data = src.read_bytes()
-n_block = math.ceil(len(data) / block_size)
-for i in range(n_block):
-    path = out / f"blk{i:09d}.bin"
-    chunk = data[i * block_size:(i + 1) * block_size]
-    if len(chunk) < block_size:
-        chunk += b"\0" * (block_size - len(chunk))
-    if chunk == zero_chunk:
-        if zero_chunk_path is None:
-            path.write_bytes(chunk)
-            zero_chunk_path = path
-        else:
-            os.link(zero_chunk_path, path)
-    else:
-        path.write_bytes(chunk)
-(out / "blk.txt").write_text("{\n  block_size: 256,\n  n_block: %d,\n}\n" % n_block)
-PY
+    python3 ${repoSrc}/nix/jslinux/split-image.py "$TMPDIR/blynn-root.ext2" "$out/blynn-root"
 
     cp ${bios} "$out/bbl64.bin"
     cp ${kernel} "$out/kernel-riscv64.bin"
@@ -396,19 +145,6 @@ PY
     cp ${repoSrc}/docs/index.html "$out/index.html"
     cp ${repoSrc}/docs/site.css "$out/site.css"
     cp ${repoSrc}/docs/NOTICE.md "$out/NOTICE.md"
-
-    cat > "$out/blynn-riscv64.cfg" <<'EOF'
-/* VM configuration file */
-{
-  version: 1,
-  machine: "riscv64",
-  memory_size: 256,
-  bios: "bbl64.bin",
-  kernel: "kernel-riscv64.bin",
-  cmdline: "swiotlb=1 console=hvc0 root=/dev/vda rootwait rootfstype=ext2 init=/init rw",
-  drive0: { file: "blynn-root/blk.txt" },
-  eth0: { driver: "user" },
-}
-EOF
+    cp ${repoSrc}/nix/jslinux/blynn-riscv64.cfg "$out/blynn-riscv64.cfg"
   '';
 }
