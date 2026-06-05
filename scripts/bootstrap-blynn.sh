@@ -42,4 +42,5 @@ M2_OS=$OPERATING_SYSTEM
 SCRIPT_DIR=$script_dir
 export ARCH OPERATING_SYSTEM M2_ARCH M2_OS OUT_DIR SCRIPT_DIR
 sh "$script_dir/bootstrap-blynn.kaem"
-"$OUT_DIR/tinycc-boot-hcc/bin/tcc" -version
+tcc_version=$("$OUT_DIR/tinycc-boot-hcc/bin/tcc" -dumpversion)
+printf 'tcc version %s\n' "$tcc_version"
