@@ -13,7 +13,28 @@ hex0 seed
   -> later GCC stages
 ```
 
+## Scope
+
+Goals:
+
+- Produce an auditable HCC replacement for the MesCC-to-TinyCC edge.
+- Preserve the stage0/M2 ancestry through the faithful `m2.precisely.m2` path.
+- Keep faster host/GCC-built paths available only as debug and comparison aids.
+
+Non-goals:
+
+- HCC is not intended to be a complete hosted C compiler.
+- Debug paths are not accepted substitutes for the faithful bootstrap path.
+- Exporting a flake attr is not the same as accepting that stage as complete.
+
 ## Current Status
+
+Status words used here:
+
+- Wired: the attr or script path exists.
+- Built: it has completed through the HCC path.
+- CI-gated: CI builds it or explicitly evaluates its documented attr.
+- Accepted: complete for the current HCC audit scope.
 
 - `precisely_up` is available through both the full stage0/M2 path and faster
   GCC-built debug paths.
@@ -30,6 +51,14 @@ hex0 seed
   - `gccLatest`
   - `glibc`
   - `gccGlibc`
+
+| Stage | Wired | Built | CI-gated | Accepted |
+| --- | --- | --- | --- | --- |
+| HCC tools from `m2.precisely.m2` | yes | yes, through TinyCC | yes, via stage0 TinyCC and M1 smoke builds | yes |
+| `tinycc.m2.precisely.m2` | yes | yes | yes, built on amd64 | yes |
+| `gcc46.m2.precisely.m2` | yes | yes | drvPath evaluated on amd64 | yes |
+| Later minimal-bootstrap attrs | yes | not claimed here | selected README attrs are evaluated on amd64 | no |
+| `m2.precisely.gccm2` debug attrs | yes | yes for fast iteration targets | selected attrs evaluated/built | debug only |
 
 ## Useful Targets
 
@@ -59,5 +88,5 @@ nix build .#hcc.host.ghc.native .#tests.smoke.m1 .#tests.mescc
   changes.
 - Use the fast GHC and GCC/M2 debug paths for performance work before
   repeating full stage0 builds.
-- Continue the minimal-bootstrap chain past `gcc46` toward `gccLatest` and
-  `gccGlibc` from the HCC-built TinyCC.
+- Build, gate, and accept the minimal-bootstrap chain past `gcc46` toward
+  `gccLatest` and `gccGlibc` from the HCC-built TinyCC.
