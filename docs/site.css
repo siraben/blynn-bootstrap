@@ -127,6 +127,14 @@ h2 {
   border: 1px solid #2a2a2a;
 }
 
+.term_char_size {
+  position: absolute;
+  top: -9999px;
+  left: -9999px;
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .term_content a {
   color: #ffff66;
 }
