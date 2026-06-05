@@ -17,7 +17,7 @@
           <p>x86_64 JSLinux booting Alpine Linux to a shell. Use the default 1536 MB VM and run <code>bootstrap</code> to build from the hex0 seed to a bootstrapped <code>tcc</code>.</p>
         </div>
         <div class="console-actions">
-          <a class="button" href="index.html">Reboot</a>
+          <a class="button" id="reboot_link" href="index.html">Reboot</a>
           <a class="button" id="low_ram_link" href="?url=blynn-x86_64.cfg&cpu=x86_64&mem=768&cols=80&rows=28&font_size=13&net_url=">768 MB Shell Only</a>
           <a class="button" href="blynn-x86_64.cfg">Config</a>
         </div>
@@ -87,9 +87,21 @@ blynn-tcc -run /tmp/tcc-smoke.c</code></pre>
       return { cols, rows, fontSize };
     }
 
-    function vmQuery(memory) {
+    function vmQuery(memory, cacheBust = false) {
       const { cols, rows, fontSize } = terminalMetrics();
-      return `?url=blynn-x86_64.cfg&cpu=x86_64&mem=${memory}&cols=${cols}&rows=${rows}&font_size=${fontSize}&net_url=`;
+      const params = new URLSearchParams({
+        url: "blynn-x86_64.cfg",
+        cpu: "x86_64",
+        mem: String(memory),
+        cols: String(cols),
+        rows: String(rows),
+        font_size: String(fontSize),
+        net_url: "",
+      });
+      if (cacheBust) {
+        params.set("nav", Date.now().toString(36));
+      }
+      return `?${params.toString()}`;
     }
 
     function normalizeVmQuery() {
@@ -243,7 +255,9 @@ blynn-tcc -run /tmp/tcc-smoke.c</code></pre>
     }
 
     const lowRamLink = document.getElementById("low_ram_link");
-    lowRamLink.href = vmQuery(768);
+    const rebootLink = document.getElementById("reboot_link");
+    lowRamLink.href = vmQuery(768, true);
+    rebootLink.href = vmQuery(1536, true);
 
     setBootStatus("Preparing VM configuration...");
     normalizeVmQuery();
