@@ -7,11 +7,29 @@ nix build .#tests.tinyccM1.native-vs-faithful
 nix build .#tinycc.m2.precisely.m2
 ```
 
-- `nix flake check` runs HCC golden-output tests with M2-built HCC and
-  shell regression tests for explicit toolchain/source selection and
-  mandatory seed-answer checks. The shell tests use fixtures, not real
-  seed builds; they also check missing answers, corrupted output, a missing
-  hasher, and invalid local source overrides.
+- `nix flake check` runs the gating `tests.*` derivations supported by the
+  host, using dotted check names (for example `checks.x86_64-linux."smoke.m1"`).
+  `bootstrap-tools` also runs shell regressions for explicit toolchain/source
+  selection and mandatory seed-answer checks. These use fixtures, not real
+  seed builds; they cover missing answers, corrupted output, a missing hasher,
+  and invalid local source overrides.
+- Both x86_64 and AArch64 Linux include M2-built HCC golden tests;
+  `hcc-golden` and `hcc.golden` alias the same derivation, built only once.
+  Both include M2/GHC AArch64 and RISC-V smoke tests, native GHC smoke/MesCC,
+  dialect tests, RISC-V TinyCC via QEMU, and both TinyCC artifact comparisons.
+  Golden/artifact comparisons execute host-built compilers, not emitted code.
+- Only portable TinyCC selfhost and tests that directly execute amd64/i386
+  output without a cross runner are x86_64-only (`smoke.m1`, `smoke.m1-i386`,
+  `mescc`, and `host.ghc.native.smoke.m1-i386`). AArch64 smoke output runs
+  natively or via QEMU; RISC-V smoke output always uses QEMU. Platform metadata
+  is selected before evaluating derivations; `check-platform-policy` asserts
+  the inventory, legacy target identity, preservation of the shell/golden
+  checks on both Linux systems, and lazy exclusion of unsupported/non-gating
+  tests.
+- Darwin exposes only shell regressions and the platform-policy assertions.
+  The flake's existing default package/toolchain remains Linux-only, so a full
+  `nix flake check --all-systems` is not supported. This does not claim Darwin
+  compiler coverage.
 - `tests.smoke.m1` compiles and executes C fixtures with M2-built HCC.
   Architecture-suffixed targets cover i386, AArch64, and RISC-V; cross-target
   execution uses QEMU. `tests.mescc` runs the selected MesCC scaffold cases.
@@ -28,8 +46,10 @@ For faster development, use `tests.host.ghc.native.smoke.m1`,
 `tests.host.ghc.native.mescc`, and `tests.precisely.dialect`.
 `tests.tinyccM1.native-vs-blynn-gcc` compares against the stage0-built Blynn
 compiler with **GCC-built HCC**, rather than the M2 executable.
-`tests.hcc.tinycc-tests2-stat` collects non-gating compatibility statistics;
-a successful statistics build does not mean every TinyCC test passed.
+`tests.hcc.tinycc-tests2-stat` collects non-gating compatibility statistics
+and is deliberately excluded from flake checks; a successful statistics build
+does not mean every TinyCC test passed. All existing `tests.*` package targets
+remain available by their original names.
 
 Without Nix, run the tool-selection regression tests with:
 

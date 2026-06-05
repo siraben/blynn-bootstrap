@@ -1098,6 +1098,44 @@
           src = hccSrc;
           blynnSrc = blynnUpstreamSrc;
         };
+        # Host support, not the architecture emitted by HCC. Keep this metadata
+        # outside derivations so selection never forces an unsupported toolchain.
+        linuxTest = drv: {
+          inherit drv;
+          systems = [ "x86_64-linux" "aarch64-linux" ];
+          gating = true;
+        };
+        x86Test = drv: (linuxTest drv) // { systems = [ "x86_64-linux" ]; };
+        testRegistry = {
+          # These amd64/i386 fixtures execute directly, with no cross runner.
+          "smoke.m1" = x86Test hcc-m1-smoke;
+          "smoke.m1-i386" = x86Test hcc-m1-smoke-i386;
+          # AArch64 runs natively or through QEMU; RISC-V always uses QEMU.
+          "smoke.m1-aarch64" = linuxTest hcc-m1-smoke-aarch64;
+          "smoke.m1-riscv64" = linuxTest hcc-m1-smoke-riscv64;
+          mescc = x86Test hcc-mescc-tests;
+          "host.ghc.native.smoke.m1" = linuxTest hcc-m1-smoke-native;
+          # i386 executes directly; unlike AArch64/RISC-V it has no QEMU runner.
+          "host.ghc.native.smoke.m1-i386" = x86Test hcc-m1-smoke-native-i386;
+          "host.ghc.native.smoke.m1-aarch64" = linuxTest hcc-m1-smoke-native-aarch64;
+          "host.ghc.native.smoke.m1-riscv64" = linuxTest hcc-m1-smoke-native-riscv64;
+          "host.ghc.native.mescc" = linuxTest hcc-mescc-tests-native;
+          "portable.tinycc-selfhost" = x86Test tinyccPortableSelfhost;
+          # Golden tests compare emitted text; they do not execute amd64 output.
+          "hcc.golden" = linuxTest hcc-golden-tests;
+          "hcc.tinycc-tests2-stat" = (linuxTest hcc-tinycc-tests2-stat) // { gating = false; };
+          "host.ghc.native.tinycc-riscv64" = linuxTest tinyccBy.riscv64.host.ghc.native;
+          "precisely.dialect" = linuxTest precisely-dialect-tests;
+          # Both compare artifacts only, using HCC built for the current host.
+          "tinyccM1.native-vs-faithful" = linuxTest (tinyccM1Compare
+            "tinycc-m1-compare-native-faithful" tinyccM1By.m2.precisely.m2);
+          "tinyccM1.native-vs-blynn-gcc" = linuxTest (tinyccM1Compare
+            "tinycc-m1-compare-native-blynn-gcc" tinyccM1By.m2.precisely.gcc);
+        };
+        testChecks = import ./nix/test-checks.nix {
+          inherit lib system;
+          registry = testRegistry;
+        };
         packageTree = {
           default = blynnPhaseBin;
 
@@ -1137,47 +1175,41 @@
 
           bootstrap = bootstrapBy;
 
-          tests = {
-            smoke.m1 = hcc-m1-smoke;
-            smoke.m1-i386 = hcc-m1-smoke-i386;
-            smoke.m1-aarch64 = hcc-m1-smoke-aarch64;
-            smoke.m1-riscv64 = hcc-m1-smoke-riscv64;
-            mescc = hcc-mescc-tests;
-            host.ghc.native.smoke.m1 = hcc-m1-smoke-native;
-            host.ghc.native.smoke.m1-i386 = hcc-m1-smoke-native-i386;
-            host.ghc.native.smoke.m1-aarch64 = hcc-m1-smoke-native-aarch64;
-            host.ghc.native.smoke.m1-riscv64 = hcc-m1-smoke-native-riscv64;
-            host.ghc.native.mescc = hcc-mescc-tests-native;
-            portable.tinycc-selfhost = tinyccPortableSelfhost;
-            hcc.golden = hcc-golden-tests;
-            hcc.tinycc-tests2-stat = hcc-tinycc-tests2-stat;
-            host.ghc.native.tinycc-riscv64 = tinyccBy.riscv64.host.ghc.native;
-            precisely.dialect = precisely-dialect-tests;
-            tinyccM1.native-vs-faithful = tinyccM1Compare
-              "tinycc-m1-compare-native-faithful" tinyccM1By.m2.precisely.m2;
-            tinyccM1.native-vs-blynn-gcc = tinyccM1Compare
-              "tinycc-m1-compare-native-blynn-gcc" tinyccM1By.m2.precisely.gcc;
-          };
+          # Preserve every legacy tests.* target, including non-gating statistics.
+          tests = lib.foldl' lib.recursiveUpdate { }
+            (lib.mapAttrsToList (name: test:
+              lib.setAttrByPath (lib.splitString "." name) test.drv
+            ) testRegistry);
         };
       in {
         packages = {
           default = packageTree.default;
         };
 
-        checks = {
-          hcc-golden = hcc-golden-tests;
-          bootstrap-tools = pkgs.runCommand "bootstrap-tools-tests" { } ''
-            mkdir -p scripts/lib data patches
-            cp ${./scripts/bootstrap-tools.sh} scripts/bootstrap-tools.sh
-            cp ${./scripts/prepare-upstreams.sh} scripts/prepare-upstreams.sh
-            cp ${./scripts/lib/bootstrap.sh} scripts/lib/bootstrap.sh
-            cp ${./data/bootstrap-sources.env} data/bootstrap-sources.env
-            ln -s ${./patches/upstreams} patches/upstreams
-            sh ${./tests/bootstrap-tools.sh} "$PWD"
-            sh ${./tests/prepare-upstreams.sh} "$PWD"
-            touch "$out"
-          '';
-        };
+        checks = let
+          publicChecks = testChecks // lib.optionalAttrs (testChecks ? "hcc.golden") {
+            # Compatibility alias: Nix builds the shared derivation only once.
+            hcc-golden = testChecks."hcc.golden";
+          } // {
+            # The regression assertions execute during evaluation on each system.
+            check-platform-policy = assert import ./tests/check-platform-policy.nix {
+              inherit lib system publicChecks;
+              checks = testChecks;
+              tests = packageTree.tests;
+            }; pkgs.runCommand "check-platform-policy" { } ''touch "$out"'';
+            bootstrap-tools = pkgs.runCommand "bootstrap-tools-tests" { } ''
+              mkdir -p scripts/lib data patches
+              cp ${./scripts/bootstrap-tools.sh} scripts/bootstrap-tools.sh
+              cp ${./scripts/prepare-upstreams.sh} scripts/prepare-upstreams.sh
+              cp ${./scripts/lib/bootstrap.sh} scripts/lib/bootstrap.sh
+              cp ${./data/bootstrap-sources.env} data/bootstrap-sources.env
+              ln -s ${./patches/upstreams} patches/upstreams
+              sh ${./tests/bootstrap-tools.sh} "$PWD"
+              sh ${./tests/prepare-upstreams.sh} "$PWD"
+              touch "$out"
+            '';
+          };
+        in publicChecks;
 
         legacyPackages = packageTree;
 
