@@ -17,7 +17,7 @@
         </div>
         <div class="console-actions">
           <a class="button" href="index.html">Reboot</a>
-          <a class="button" id="quick_shell_link" href="?url=blynn-x86_64.cfg&cpu=x86_64&mem=768&cols=80&rows=28&font_size=13&cmdline=blynn_shell%3D1">Quick Shell</a>
+          <a class="button" id="quick_shell_link" href="?url=blynn-x86_64.cfg&cpu=x86_64&mem=768&cols=80&rows=28&font_size=13&net_url=&cmdline=blynn_shell%3D1">Quick Shell</a>
           <a class="button" href="blynn-x86_64.cfg">Config</a>
         </div>
       </div>
@@ -75,7 +75,7 @@ blynn-tcc -run /tmp/tcc-smoke.c</code></pre>
       const horizontalPadding = narrow ? 24 : 56;
       const cols = Math.max(44, Math.min(100, Math.floor((window.innerWidth - horizontalPadding) / charWidth)));
       const rows = narrow ? 28 : 32;
-      return `?url=blynn-x86_64.cfg&cpu=x86_64&mem=${memory}&cols=${cols}&rows=${rows}&font_size=${fontSize}`;
+      return `?url=blynn-x86_64.cfg&cpu=x86_64&mem=${memory}&cols=${cols}&rows=${rows}&font_size=${fontSize}&net_url=`;
     }
 
     const quickShellLink = document.getElementById("quick_shell_link");
