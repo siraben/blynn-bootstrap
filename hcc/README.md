@@ -15,6 +15,8 @@ hcc-m1 input.hccir out.M1
 stage0's `M1` and `hex2`, not a host assembler. Target support covers amd64,
 i386, AArch64, and RISC-V64, with different bootstrap coverage; see the
 [top-level README](../README.md) and [tests](../tests/README.md).
+The [contract reference](../docs/hcc-contracts.md) describes the C subset,
+HCCIR encoding, target ABI, and support-file layering.
 
 HCC implements the C subset needed for this bootstrap, not a complete C
 implementation. It has no host `cc` passthrough. The sources in `support/`
