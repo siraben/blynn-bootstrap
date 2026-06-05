@@ -1,0 +1,24 @@
+bootstrap - run the full blynn-bootstrap demo inside this Alpine JSLinux VM
+
+Usage:
+  bootstrap
+  BOOTSTRAP_ALLOW_LOW_MEM=1 bootstrap
+  bootstrap --help
+
+What it does:
+  1. Rebuilds stage0-posix tools from the hex0 seed.
+  2. Runs the portable Blynn compiler bootstrap.
+  3. Builds HCC from the Blynn-generated sources.
+  4. Builds TinyCC with the bootstrapped HCC toolchain.
+  5. Installs the resulting compiler as /usr/local/bin/blynn-tcc.
+
+Output:
+  The live log is printed to the terminal and saved to /tmp/bootstrap-demo.log.
+
+Memory:
+  The full bootstrap is intended for the 1536 MB VM. The guest does
+  not use swap. The 256 MB link is for a quick shell only. Set
+  BOOTSTRAP_ALLOW_LOW_MEM=1 to bypass the guard.
+
+After a successful bootstrap, blynn-tcc points at the compiler built inside
+this VM.

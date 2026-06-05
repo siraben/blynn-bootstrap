@@ -1,0 +1,21 @@
+
+Project:
+  blynn-bootstrap portable web demo
+
+Environment:
+  Alpine Linux riscv64 running in Bellard JSLinux/WASM
+  Sources and pinned upstream snapshots are already in /bootstrap
+  Work directory: /work/blynn
+
+Commands:
+  bootstrap          run the full hex0 -> Blynn/HCC -> TinyCC bootstrap
+  bootstrap --help   print detailed bootstrap command help
+  BOOTSTRAP_ALLOW_LOW_MEM=1 bootstrap
+  command -v blynn-tcc
+  blynn-tcc -dumpversion
+
+Memory:
+  Use the 1536 MB bootstrap VM for bootstrap. The default 256 MB VM is shell-only.
+
+Compiler:
+  After a successful bootstrap, blynn-tcc points at the compiler built here.
