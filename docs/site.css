@@ -19,6 +19,7 @@ html,
 body {
   margin: 0;
   min-height: 100%;
+  overflow-x: hidden;
   background: var(--bg);
   color: var(--text);
   font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -32,6 +33,7 @@ a {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
   min-height: 100vh;
+  min-height: 100dvh;
 }
 
 .console-pane {
@@ -49,6 +51,10 @@ a {
   padding: 14px 18px;
   background: var(--panel);
   border-bottom: 1px solid var(--line);
+}
+
+.console-header > div:first-child {
+  min-width: 0;
 }
 
 h1,
@@ -86,7 +92,7 @@ h2 {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 34px;
+  min-height: 38px;
   padding: 0 12px;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -100,6 +106,8 @@ h2 {
   display: none;
   min-width: 0;
   overflow: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   padding: 16px;
   background: #070707;
 }
@@ -165,7 +173,9 @@ h2 {
   display: flex;
   align-items: center;
   gap: 8px;
-  width: max-content;
+  flex-wrap: wrap;
+  width: fit-content;
+  max-width: 100%;
   margin-top: 8px;
   padding: 8px;
   color: var(--text);
@@ -175,7 +185,7 @@ h2 {
 }
 
 #term_paste {
-  width: 140px;
+  width: min(180px, 100%);
   height: 30px;
   color: var(--text);
   background: #0d0f12;
@@ -206,7 +216,7 @@ h2 {
 
 #net_progress {
   visibility: hidden;
-  width: 90px;
+  width: min(90px, 100%);
 }
 
 .runbook {
@@ -242,6 +252,7 @@ pre {
   background: #0b0d0f;
   border: 1px solid var(--line);
   border-radius: 6px;
+  -webkit-overflow-scrolling: touch;
 }
 
 code {
@@ -254,7 +265,8 @@ code {
   }
 
   .console-pane {
-    min-height: 70vh;
+    min-height: 72vh;
+    min-height: 72dvh;
     border-right: 0;
     border-bottom: 1px solid var(--line);
   }
@@ -266,5 +278,67 @@ code {
 
   .console-actions {
     justify-content: flex-start;
+  }
+}
+
+@media (max-width: 640px) {
+  body {
+    font-size: 13px;
+  }
+
+  .console-pane {
+    min-height: 78vh;
+    min-height: 78dvh;
+  }
+
+  .console-header {
+    gap: 12px;
+    padding: 12px;
+  }
+
+  h1 {
+    font-size: 16px;
+  }
+
+  .console-header p {
+    max-width: 100%;
+  }
+
+  .console-actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .button {
+    min-width: 0;
+    min-height: 42px;
+    padding: 0 8px;
+    white-space: normal;
+    text-align: center;
+  }
+
+  #term_wrap {
+    padding: 8px;
+  }
+
+  .term {
+    font-size: 12px;
+  }
+
+  #vm_controls {
+    width: 100%;
+  }
+
+  #term_paste {
+    flex: 1 1 150px;
+  }
+
+  .runbook {
+    padding: 14px 12px 18px;
+  }
+
+  pre {
+    padding: 10px;
   }
 }
