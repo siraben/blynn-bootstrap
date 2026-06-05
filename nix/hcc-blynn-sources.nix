@@ -24,9 +24,10 @@ stdenvNoCC.mkDerivation (
 
       ${nixLib.shellHelpers { name = "hcc-blynn-sources"; }}
 
-      cat > hcc-blynn-sources.kaem <<'EOF'
-      ${bootstrapShell}/bin/sh ${../scripts/hcc-blynn-sources.sh}
-      EOF
+      install -m 644 ${./hcc/kaem/hcc-blynn-sources.kaem.in} hcc-blynn-sources.kaem
+      substituteInPlace hcc-blynn-sources.kaem \
+        --replace-fail @bootstrap_shell@ ${bootstrapShell} \
+        --replace-fail @script@ ${../scripts/hcc-blynn-sources.sh}
       BOOTSTRAP_LOG_NAME=hcc-blynn-sources \
       BOOTSTRAP_LIB=${../scripts/lib/bootstrap.sh} \
       HCC_DIR=${src} \

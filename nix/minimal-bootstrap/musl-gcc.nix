@@ -59,13 +59,7 @@ bash.runCommand "${pname}-${version}"
           ];
         }
         ''
-          cat <<EOF >> test.c
-          #include <stdio.h>
-          int main() {
-            printf("Hello World!\n");
-            return 0;
-          }
-          EOF
+          install -m 644 ${../fixtures/hello-world.c} test.c
           musl-gcc -o test test.c
           ./test
           mkdir $out
