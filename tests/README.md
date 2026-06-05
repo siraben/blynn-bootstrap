@@ -31,6 +31,10 @@ compiler with **GCC-built HCC**, rather than the M2 executable.
 `tests.hcc.tinycc-tests2-stat` collects non-gating compatibility statistics;
 a successful statistics build does not mean every TinyCC test passed.
 
+`sh scripts/check-hcc-ir-opcodes.sh` compares the Haskell emitter's numeric
+opcodes with the C backend constants. Compiler smoke tests also run it when
+the source tree and awk are available.
+
 Without Nix, run the tool-selection regression tests with:
 
 ```sh
