@@ -25,7 +25,10 @@
 
       <div id="term_wrap">
         <div id="term_container">
-          <div id="boot_status" class="boot-status" role="status" aria-live="polite">Loading terminal...</div>
+          <div id="boot_status" class="boot-status" role="status" aria-live="polite">
+            <div id="boot_status_text">Loading terminal...</div>
+            <progress id="boot_progress" class="boot-progress" max="1"></progress>
+          </div>
         </div>
         <div id="term_bar" aria-hidden="true"></div>
         <span id="vm_controls">
@@ -136,9 +139,107 @@ blynn-tcc -run /tmp/tcc-smoke.c</code></pre>
 
     function setBootStatus(message) {
       const status = document.getElementById("boot_status");
+      const text = document.getElementById("boot_status_text");
       if (status) {
-        status.textContent = message;
+        if (text) {
+          text.textContent = message;
+        } else {
+          status.textContent = message;
+        }
       }
+    }
+
+    function setBootProgress(done, total) {
+      const progress = document.getElementById("boot_progress");
+      if (!progress) {
+        return;
+      }
+      if (total > 0) {
+        progress.max = total;
+        progress.value = Math.min(done, total);
+        progress.removeAttribute("data-indeterminate");
+      } else {
+        progress.removeAttribute("value");
+        progress.setAttribute("data-indeterminate", "true");
+      }
+    }
+
+    function appendScriptBlob(src, blob) {
+      return new Promise((resolve, reject) => {
+        const script = document.createElement("script");
+        const objectUrl = URL.createObjectURL(blob);
+        script.src = objectUrl;
+        script.onload = () => {
+          URL.revokeObjectURL(objectUrl);
+          resolve();
+        };
+        script.onerror = () => {
+          URL.revokeObjectURL(objectUrl);
+          reject(new Error(`failed to start ${src}`));
+        };
+        document.body.appendChild(script);
+      });
+    }
+
+    async function fetchForProgress(asset, assets, assetIndex, loadedByAsset) {
+      const response = await fetch(asset.src, { credentials: "same-origin" });
+      if (!response.ok) {
+        throw new Error(`failed to download ${asset.src}: HTTP ${response.status}`);
+      }
+
+      const total = Number(response.headers.get("content-length") || 0);
+      asset.total = total;
+      if (!response.body || !response.body.getReader) {
+        const blob = await response.blob();
+        loadedByAsset.set(asset.src, total || 1);
+        setBootProgress(assetIndex + 1, assets.length);
+        return blob;
+      }
+
+      const reader = response.body.getReader();
+      let loaded = 0;
+      const chunks = [];
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
+        }
+        chunks.push(value);
+        loaded += value.byteLength;
+        loadedByAsset.set(asset.src, loaded);
+        const fraction = total > 0 ? Math.min(loaded / total, 1) : 0.5;
+        setBootProgress(assetIndex + fraction, assets.length);
+        setBootStatus(`Downloading ${asset.label}: ${loaded.toLocaleString()}${total ? ` / ${total.toLocaleString()}` : ""} bytes`);
+      }
+      loadedByAsset.set(asset.src, total || loaded || 1);
+      setBootProgress(assetIndex + 1, assets.length);
+      return new Blob(chunks);
+    }
+
+    const bootAssets = [
+      { src: "xterm.js", label: "xterm.js", total: 0, script: true },
+      { src: "term.js", label: "terminal adapter", total: 0, script: true },
+      { src: "jslinux.js", label: "JSLinux runtime", total: 0, script: true },
+      { src: "x86_64emu-wasm.js", label: "x86_64 emulator", total: 0, script: false },
+      { src: "x86_64emu-wasm.wasm", label: "x86_64 emulator wasm", total: 0, script: false },
+      { src: "blynn-x86_64.cfg", label: "VM configuration", total: 0, script: false },
+      { src: "blynn-root/blk.txt", label: "root disk index", total: 0, script: false },
+      { src: "kernel-x86_64-new.bin", label: "Linux kernel", total: 0, script: false },
+    ];
+
+    async function loadBootAssets() {
+      const loadedByAsset = new Map();
+      setBootProgress(0, bootAssets.length);
+      for (const [index, asset] of bootAssets.entries()) {
+        setBootStatus(`Downloading ${asset.label}...`);
+        const blob = await fetchForProgress(asset, bootAssets, index, loadedByAsset);
+        if (asset.script) {
+          setBootStatus(`Starting ${asset.label}...`);
+          await appendScriptBlob(asset.src, blob);
+        }
+      }
+      setBootProgress(bootAssets.length, bootAssets.length);
+      setBootStatus("Starting VM runtime...");
     }
 
     const lowRamLink = document.getElementById("low_ram_link");
@@ -146,9 +247,10 @@ blynn-tcc -run /tmp/tcc-smoke.c</code></pre>
 
     setBootStatus("Preparing VM configuration...");
     normalizeVmQuery();
+    loadBootAssets().catch((error) => {
+      setBootStatus(error.message);
+      setBootProgress(0, 1);
+    });
   </script>
-  <script src="xterm.js" onerror="setBootStatus('Failed to load xterm.js.')"></script>
-  <script src="term.js" onerror="setBootStatus('Failed to load terminal adapter.')"></script>
-  <script src="jslinux.js" onerror="setBootStatus('Failed to load JSLinux runtime.')"></script>
 </body>
 </html>
