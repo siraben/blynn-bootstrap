@@ -24,6 +24,10 @@
       </div>
 
       <div id="term_wrap">
+        <div id="boot_phase" class="boot-phase" role="status" aria-live="polite">
+          <span id="boot_phase_text">Preparing VM...</span>
+          <progress id="boot_phase_progress" class="boot-phase-progress" max="1"></progress>
+        </div>
         <div id="term_container">
           <div id="boot_status" class="boot-status" role="status" aria-live="polite">
             <div id="boot_status_text">Loading terminal...</div>
@@ -152,6 +156,10 @@ blynn-tcc -run /tmp/tcc-smoke.c</code></pre>
     function setBootStatus(message) {
       const status = document.getElementById("boot_status");
       const text = document.getElementById("boot_status_text");
+      const phaseText = document.getElementById("boot_phase_text");
+      if (phaseText) {
+        phaseText.textContent = message;
+      }
       if (status) {
         if (text) {
           text.textContent = message;
@@ -163,16 +171,24 @@ blynn-tcc -run /tmp/tcc-smoke.c</code></pre>
 
     function setBootProgress(done, total) {
       const progress = document.getElementById("boot_progress");
-      if (!progress) {
-        return;
-      }
+      const phaseProgress = document.getElementById("boot_phase_progress");
       if (total > 0) {
-        progress.max = total;
-        progress.value = Math.min(done, total);
-        progress.removeAttribute("data-indeterminate");
+        for (const item of [progress, phaseProgress]) {
+          if (!item) {
+            continue;
+          }
+          item.max = total;
+          item.value = Math.min(done, total);
+          item.removeAttribute("data-indeterminate");
+        }
       } else {
-        progress.removeAttribute("value");
-        progress.setAttribute("data-indeterminate", "true");
+        for (const item of [progress, phaseProgress]) {
+          if (!item) {
+            continue;
+          }
+          item.removeAttribute("value");
+          item.setAttribute("data-indeterminate", "true");
+        }
       }
     }
 
@@ -199,7 +215,8 @@ blynn-tcc -run /tmp/tcc-smoke.c</code></pre>
         throw new Error(`failed to download ${asset.src}: HTTP ${response.status}`);
       }
 
-      const total = Number(response.headers.get("content-length") || 0);
+      const encoded = Boolean(response.headers.get("content-encoding"));
+      const total = encoded ? 0 : Number(response.headers.get("content-length") || 0);
       asset.total = total;
       if (!response.body || !response.body.getReader) {
         const blob = await response.blob();
@@ -232,11 +249,6 @@ blynn-tcc -run /tmp/tcc-smoke.c</code></pre>
       { src: "xterm.js", label: "xterm.js", total: 0, script: true },
       { src: "term.js", label: "terminal adapter", total: 0, script: true },
       { src: "jslinux.js", label: "JSLinux runtime", total: 0, script: true },
-      { src: "x86_64emu-wasm.js", label: "x86_64 emulator", total: 0, script: false },
-      { src: "x86_64emu-wasm.wasm", label: "x86_64 emulator wasm", total: 0, script: false },
-      { src: "blynn-x86_64.cfg", label: "VM configuration", total: 0, script: false },
-      { src: "blynn-root/blk.txt", label: "root disk index", total: 0, script: false },
-      { src: "kernel-x86_64-new.bin", label: "Linux kernel", total: 0, script: false },
     ];
 
     async function loadBootAssets() {
@@ -261,6 +273,8 @@ blynn-tcc -run /tmp/tcc-smoke.c</code></pre>
 
     setBootStatus("Preparing VM configuration...");
     normalizeVmQuery();
+    window.setBootStatus = setBootStatus;
+    window.setBootProgress = setBootProgress;
     loadBootAssets().catch((error) => {
       setBootStatus(error.message);
       setBootProgress(0, 1);

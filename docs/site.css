@@ -119,6 +119,32 @@ h2 {
   min-width: 100%;
 }
 
+.boot-phase {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+  margin-bottom: 8px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.boot-phase span {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.boot-phase-progress {
+  width: min(220px, 34vw);
+  height: 8px;
+  flex: 0 0 auto;
+  accent-color: var(--accent);
+}
+
 .boot-status {
   min-height: 320px;
   padding: 10px;
@@ -362,6 +388,15 @@ code {
 
   .control-button {
     flex: 1 1 84px;
+  }
+
+  .boot-phase {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .boot-phase-progress {
+    width: 100%;
   }
 
   .runbook {
