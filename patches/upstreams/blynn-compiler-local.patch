@@ -928,7 +928,7 @@ index fd2d391..fe57c42 100644
  |]
  
  argList t = case t of
-@@ -214,123 +214,251 @@ runFun opts ffis = ("enum{_UNDEFINED=0,"++)
+@@ -214,123 +214,242 @@ runFun opts ffis = ("enum{_UNDEFINED=0,"++)
    . ("};\n"++)
    . ([r|#define EXPORT(f, sym) void f() asm(sym) __attribute__((export_name(sym)));
  void *malloc(unsigned long);
@@ -940,7 +940,9 @@ index fd2d391..fe57c42 100644
 +#endif
  enum { FORWARD = 127, REDUCING = 126 };
  static u *mem, *altmem, *sp, *spTop, hp;
++#ifndef HCC_RTS_ADAPTIVE_MAJOR_WORDS
 +#define HCC_RTS_ADAPTIVE_MAJOR_WORDS 83886080
++#endif
 +static u major_base;
 +#ifdef HCC_RTS_STATS
 +static u rts_gc_count, rts_major_gc_count;
@@ -973,77 +975,63 @@ index fd2d391..fe57c42 100644
 -    mem[n] = mem[n + 1];
 -    mem[n + 1] = mem[x + 1];
 -    x = mem[n];
-+  u *p;
-+  u *q;
-+  p = (u*)((char*)mem + n * sizeof(u));
-+  u x = *p;
++  u *pn = (u*)((char*)mem + n * sizeof(u));
++  u *pn1 = (u*)((char*)pn + sizeof(u));
++  u *px;
++  u x = *pn;
 +  while (isAddr(x)) {
-+    p = (u*)((char*)mem + x * sizeof(u));
-+    if (*p != _T) break;
-+    p = (u*)((char*)mem + n * sizeof(u));
-+    q = (u*)((char*)mem + (n + 1) * sizeof(u));
-+    *p = *q;
-+    p = (u*)((char*)mem + (x + 1) * sizeof(u));
-+    *q = *p;
-+    p = (u*)((char*)mem + n * sizeof(u));
-+    x = *p;
++    px = (u*)((char*)mem + x * sizeof(u));
++    if (*px != _T) break;
++    *pn = *pn1;
++    px = (u*)((char*)px + sizeof(u));
++    *pn1 = *px;
++    x = *pn;
    }
 -  if (isAddr(x) && mem[x] == _K) {
 -    mem[n + 1] = mem[x + 1];
 -    x = mem[n] = _I;
 +  if (isAddr(x)) {
-+    p = (u*)((char*)mem + x * sizeof(u));
-+    if (*p == _K) {
-+      p = (u*)((char*)mem + (n + 1) * sizeof(u));
-+      q = (u*)((char*)mem + (x + 1) * sizeof(u));
-+      *p = *q;
-+      p = (u*)((char*)mem + n * sizeof(u));
-+      *p = _I;
++    px = (u*)((char*)mem + x * sizeof(u));
++    if (*px == _K) {
++      px = (u*)((char*)px + sizeof(u));
++      *pn1 = *px;
++      *pn = _I;
 +      x = _I;
 +    }
    }
 -  u y = mem[n + 1];
-+  p = (u*)((char*)mem + (n + 1) * sizeof(u));
-+  u y = *p;
++  u y = *pn1;
    switch(x) {
      case FORWARD: return y;
      case REDUCING:
 -      mem[n] = FORWARD;
 -      mem[n + 1] = hp;
-+      p = (u*)((char*)mem + n * sizeof(u));
-+      *p = FORWARD;
-+      p = (u*)((char*)mem + (n + 1) * sizeof(u));
-+      *p = hp;
++      *pn = FORWARD;
++      *pn1 = hp;
        hp += 2;
 -      return mem[n + 1];
-+      return *p;
++      return *pn1;
      case _I:
 -      mem[n] = REDUCING;
-+      p = (u*)((char*)mem + n * sizeof(u));
-+      *p = REDUCING;
++      *pn = REDUCING;
        y = evac(y);
 -      if (mem[n] == FORWARD) {
 -        altmem[mem[n + 1]] = _I;
 -        altmem[mem[n + 1] + 1] = y;
-+      p = (u*)((char*)mem + n * sizeof(u));
-+      if (*p == FORWARD) {
-+        p = (u*)((char*)mem + (n + 1) * sizeof(u));
-+        u w = *p;
-+        p = (u*)((char*)altmem + w * sizeof(u));
-+        *p = _I;
-+        p = (u*)((char*)altmem + (w + 1) * sizeof(u));
-+        *p = y;
++      if (*pn == FORWARD) {
++        u w = *pn1;
++        u *altw = (u*)((char*)altmem + w * sizeof(u));
++        *altw = _I;
++        u *altw1 = (u*)((char*)altw + sizeof(u));
++        *altw1 = y;
        } else {
 -        mem[n] = FORWARD;
 -        mem[n + 1] = y;
-+        p = (u*)((char*)mem + n * sizeof(u));
-+        *p = FORWARD;
-+        p = (u*)((char*)mem + (n + 1) * sizeof(u));
-+        *p = y;
++        *pn = FORWARD;
++        *pn1 = y;
        }
 -      return mem[n + 1];
-+      p = (u*)((char*)mem + (n + 1) * sizeof(u));
-+      return *p;
++      return *pn1;
      default: break;
    }
    u z = hp;
@@ -1052,24 +1040,22 @@ index fd2d391..fe57c42 100644
 -  mem[n + 1] = z;
 -  altmem[z] = x;
 -  altmem[z + 1] = y;
-+  p = (u*)((char*)mem + n * sizeof(u));
-+  *p = FORWARD;
-+  p = (u*)((char*)mem + (n + 1) * sizeof(u));
-+  *p = z;
-+  p = (u*)((char*)altmem + z * sizeof(u));
-+  *p = x;
-+  p = (u*)((char*)altmem + (z + 1) * sizeof(u));
-+  *p = y;
++  *pn = FORWARD;
++  *pn1 = z;
++  u *altz = (u*)((char*)altmem + z * sizeof(u));
++  *altz = x;
++  u *altz1 = (u*)((char*)altz + sizeof(u));
++  *altz1 = y;
    if (x == _NUM64) {
      hp += 2;
 -    altmem[z + 2] = mem[n + 2];
 -    altmem[z + 3] = mem[n + 3];
-+    p = (u*)((char*)altmem + (z + 2) * sizeof(u));
-+    q = (u*)((char*)mem + (n + 2) * sizeof(u));
-+    *p = *q;
-+    p = (u*)((char*)altmem + (z + 3) * sizeof(u));
-+    q = (u*)((char*)mem + (n + 3) * sizeof(u));
-+    *p = *q;
++    u *pn2 = (u*)((char*)pn1 + sizeof(u));
++    u *pn3 = (u*)((char*)pn2 + sizeof(u));
++    u *altz2 = (u*)((char*)altz1 + sizeof(u));
++    u *altz3 = (u*)((char*)altz2 + sizeof(u));
++    *altz2 = *pn2;
++    *altz3 = *pn3;
    }
    return z;
  }
@@ -1141,8 +1127,10 @@ index fd2d391..fe57c42 100644
 -  sp += height - 1;
 +  u *q = (u*)((char*)sp + height * sizeof(u));
 +  u obj = *q;
-+  rts_store(obj, 0, f);
-+  rts_store(obj, 1, x);
++  u *p = (u*)((char*)mem + obj * sizeof(u));
++  *p = f;
++  p = (u*)((char*)p + sizeof(u));
++  *p = x;
 +  sp = (u*)((char*)sp + (height - 1) * sizeof(u));
    *sp = f;
  }
@@ -1150,10 +1138,13 @@ index fd2d391..fe57c42 100644
 +static void lazy3(u height,u x1,u x2,u x3){
 +  u *q = (u*)((char*)sp + height * sizeof(u));
 +  u obj = *q;
++  u *r = (u*)((char*)mem + obj * sizeof(u));
 +  q = (u*)((char*)sp + (height - 1) * sizeof(u));
-+  *q = app(x1, x2);
-+  rts_store(obj, 0, *q);
-+  rts_store(obj, 1, x3);
++  u app2 = app(x1, x2);
++  *q = app2;
++  *r = app2;
++  r = (u*)((char*)r + sizeof(u));
++  *r = x3;
 +  sp = (u*)((char*)sp + (height - 2) * sizeof(u));
 +  *sp = x1;
 +}
