@@ -17,6 +17,7 @@
   mesccTools,
   stage0M2libcSrc,
   stage0PosixSrc,
+  stage0Riscv64Src,
   bootstrapSeedsSrc,
   nixBuiltTinycc,
 }:
@@ -102,11 +103,14 @@ stdenvNoCC.mkDerivation {
     cp -R ${stage0M2libcSrc} "$root${toString stage0M2libcSrc}"
     cp -R ${stage0PosixSrc} "$root/bootstrap/source-cache/stage0-posix"
     chmod -R u+w "$root/bootstrap/source-cache/stage0-posix"
+    rm -rf "$root/bootstrap/source-cache/stage0-posix/riscv64"
+    cp -R ${stage0Riscv64Src} "$root/bootstrap/source-cache/stage0-posix/riscv64"
     rm -rf "$root/bootstrap/source-cache/stage0-posix/bootstrap-seeds"
     cp -R ${bootstrapSeedsSrc} "$root/bootstrap/source-cache/stage0-posix/bootstrap-seeds"
     chmod -R u+w "$root/bootstrap/source-cache/stage0-posix"
     install -Dm644 ${repoSrc}/nix/jslinux/bootstrap-revs/stage0-posix.rev "$root/bootstrap/source-cache/stage0-posix/.bootstrap-rev"
     install -Dm644 ${repoSrc}/nix/jslinux/bootstrap-revs/AMD64.rev "$root/bootstrap/source-cache/stage0-posix/AMD64/.bootstrap-rev"
+    install -Dm644 ${repoSrc}/nix/jslinux/bootstrap-revs/riscv64.rev "$root/bootstrap/source-cache/stage0-posix/riscv64/.bootstrap-rev"
     install -Dm644 ${repoSrc}/nix/jslinux/bootstrap-revs/M2-Mesoplanet.rev "$root/bootstrap/source-cache/stage0-posix/M2-Mesoplanet/.bootstrap-rev"
     install -Dm644 ${repoSrc}/nix/jslinux/bootstrap-revs/M2-Planet.rev "$root/bootstrap/source-cache/stage0-posix/M2-Planet/.bootstrap-rev"
     install -Dm644 ${repoSrc}/nix/jslinux/bootstrap-revs/M2libc.rev "$root/bootstrap/source-cache/stage0-posix/M2libc/.bootstrap-rev"

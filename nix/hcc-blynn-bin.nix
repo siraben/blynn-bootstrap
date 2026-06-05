@@ -53,9 +53,10 @@ mkDerivation (
       cp hcpp-blynn.c source/hcpp-blynn.c
       cp hcc1-blynn.c source/hcc1-blynn.c
 
-      cat > hcc-blynn-bin.kaem <<'EOF'
-      ${bootstrapShell}/bin/sh ${../scripts/hcc-blynn-bin.sh}
-      EOF
+      install -m 644 ${./hcc/kaem/hcc-blynn-bin.kaem.in} hcc-blynn-bin.kaem
+      substituteInPlace hcc-blynn-bin.kaem \
+        --replace-fail @bootstrap_shell@ ${bootstrapShell} \
+        --replace-fail @script@ ${../scripts/hcc-blynn-bin.sh}
       log_step "START portable hcc-blynn-bin script via kaem"
       BOOTSTRAP_LOG_NAME=hcc-blynn-bin \
       BOOTSTRAP_LIB=${../scripts/lib/bootstrap.sh} \

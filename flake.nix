@@ -952,6 +952,11 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           gnuMesSrc = mesLibcSrc;
           stage0M2libcSrc = "${minimalBootstrap.stage0-posix.src}/M2libc";
           stage0PosixSrc = minimalBootstrap.stage0-posix.src;
+          stage0Riscv64Src = pkgs.fetchgit {
+            url = "https://github.com/oriansj/stage0-posix-riscv64.git";
+            rev = "4688bc66bdfd00efd5964350c9d76bdb90a0f72e";
+            hash = "sha256-/zsKoZJYXCvtmRNSEd65wEVF5DVMc9DyPr4c1P0qRd8=";
+          };
           bootstrapSeedsSrc = pkgs.fetchgit {
             url = "https://github.com/oriansj/bootstrap-seeds.git";
             rev = "cedec6b8066d1db229b6c77d42d120a23c6980ed";
