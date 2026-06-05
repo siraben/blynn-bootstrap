@@ -14,12 +14,13 @@
       <div class="console-header">
         <div>
           <h1>Portable TinyCC Bootstrap</h1>
-          <p>x86_64 JSLinux booting Alpine Linux to a shell. Use the default 1536 MB VM and run <code>bootstrap</code> to build from the hex0 seed to a bootstrapped <code>tcc</code>.</p>
+          <p>riscv64 JSLinux booting Alpine Linux to a shell. Use the 1536 MB bootstrap VM and run <code>bootstrap</code> to build from the hex0 seed to a bootstrapped <code>tcc</code>.</p>
         </div>
         <div class="console-actions">
           <a class="button" id="reboot_link" href="index.html">Reboot</a>
-          <a class="button" id="low_ram_link" href="?url=blynn-x86_64.cfg&cpu=x86_64&mem=768&cols=80&rows=28&font_size=13&net_url=">768 MB Shell Only</a>
-          <a class="button" href="blynn-x86_64.cfg">Config</a>
+          <a class="button" id="low_ram_link" href="?url=blynn-riscv64.cfg&cpu=riscv64&mem=256&cols=80&rows=28&font_size=13&net_url=">256 MB Shell</a>
+          <a class="button" id="full_ram_link" href="?url=blynn-riscv64.cfg&cpu=riscv64&mem=1536&cols=80&rows=28&font_size=13&net_url=">1536 MB Bootstrap</a>
+          <a class="button" href="blynn-riscv64.cfg">Config</a>
         </div>
       </div>
 
@@ -53,7 +54,7 @@
         <ol>
           <li>Kernel starts with normal Linux boot messages on <code>console=hvc0</code>, then runs <code>init=/init</code>.</li>
           <li><code>/init</code> prepares Alpine and drops to a shell.</li>
-          <li>Run <code>bootstrap</code> in the default 1536 MB VM to rebuild stage0-posix tools from the hex0 seed, then run the blynn/HCC portable chain.</li>
+          <li>Run <code>bootstrap</code> in the 1536 MB VM to rebuild stage0-posix tools from the hex0 seed, then run the blynn/HCC portable chain.</li>
           <li>After the build, the shell has the bootstrapped compiler as <code>blynn-tcc</code>.</li>
         </ol>
       </section>
@@ -63,15 +64,15 @@
         <pre><code>printf '#include &lt;stdio.h&gt;
 int main(void){ puts("tcc works"); return 0; }
 ' &gt;/tmp/tcc-smoke.c
-command -v blynn-tcc
-blynn-tcc -run /tmp/tcc-smoke.c</code></pre>
+bootstrap --help
+bootstrap</code></pre>
       </section>
 
       <section>
         <h2>Mirrored Assets</h2>
         <p>The page serves the VM runtime and Nix-built split disk image from this GitHub Pages origin so the browser can boot without cross-origin failures.</p>
         <ul>
-          <li><a href="https://bellard.org/jslinux/">JSLinux x86_64 runtime source</a></li>
+          <li><a href="https://bellard.org/jslinux/">JSLinux riscv64 runtime source</a></li>
           <li><a href="https://hacktivis.me/jslinux/">hacktivis JSLinux inspiration</a></li>
           <li><a href="NOTICE.md">asset notice</a></li>
         </ul>
@@ -94,8 +95,8 @@ blynn-tcc -run /tmp/tcc-smoke.c</code></pre>
     function vmQuery(memory, cacheBust = false) {
       const { cols, rows, fontSize } = terminalMetrics();
       const params = new URLSearchParams({
-        url: "blynn-x86_64.cfg",
-        cpu: "x86_64",
+        url: "blynn-riscv64.cfg",
+        cpu: "riscv64",
         mem: String(memory),
         cols: String(cols),
         rows: String(rows),
@@ -119,16 +120,16 @@ blynn-tcc -run /tmp/tcc-smoke.c</code></pre>
       const requestedCols = Number(params.get("cols") || 0);
       let changed = false;
 
-      if (!params.has("url")) {
-        params.set("url", "blynn-x86_64.cfg");
+      if (!params.has("url") || params.get("url") === "blynn-x86_64.cfg") {
+        params.set("url", "blynn-riscv64.cfg");
         changed = true;
       }
-      if (!params.has("cpu")) {
-        params.set("cpu", "x86_64");
+      if (!params.has("cpu") || params.get("cpu") === "x86_64" || params.get("cpu") === "x86") {
+        params.set("cpu", "riscv64");
         changed = true;
       }
       if (!params.has("mem")) {
-        params.set("mem", "1536");
+        params.set("mem", "256");
         changed = true;
       }
       if (!requestedCols || requestedCols > cols) {
@@ -267,9 +268,11 @@ blynn-tcc -run /tmp/tcc-smoke.c</code></pre>
     }
 
     const lowRamLink = document.getElementById("low_ram_link");
+    const fullRamLink = document.getElementById("full_ram_link");
     const rebootLink = document.getElementById("reboot_link");
-    lowRamLink.href = vmQuery(768, true);
-    rebootLink.href = vmQuery(1536, true);
+    lowRamLink.href = vmQuery(256, true);
+    fullRamLink.href = vmQuery(1536, true);
+    rebootLink.href = vmQuery(256, true);
 
     setBootStatus("Preparing VM configuration...");
     normalizeVmQuery();
