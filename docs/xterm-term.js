@@ -44,6 +44,7 @@
     this.handler = function () {};
     this.term_el = null;
     this.parent_el = null;
+    this.console_seen = false;
     this.xterm = new Terminal({
       cols: this.w,
       rows: this.h,
@@ -107,6 +108,15 @@
   };
 
   Term.prototype.write = function (data) {
+    if (!this.console_seen && typeof data === "string" && data !== "Loading...\r\n") {
+      this.console_seen = true;
+      if (window.setBootStatus) {
+        window.setBootStatus("Linux console active.");
+      }
+      if (window.setBootProgress) {
+        window.setBootProgress(1, 1);
+      }
+    }
     this.xterm.write(dataToBytes(data));
   };
 
