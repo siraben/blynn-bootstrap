@@ -1,0 +1,20 @@
+#!/bin/sh
+mount -t proc proc /proc 2>/dev/null || true
+mount -t sysfs sys /sys 2>/dev/null || true
+mount -t devtmpfs dev /dev 2>/dev/null || true
+mkdir -p /dev /tmp /work /root /usr/local/bin
+mem_kb=$(awk '/^MemTotal:/ { print $2 }' /proc/meminfo 2>/dev/null || echo 262144)
+work_mb=$((mem_kb * 3 / 4 / 1024))
+[ "$work_mb" -lt 96 ] && work_mb=96
+mount -t tmpfs -o "mode=1777,size=64m" tmpfs /tmp 2>/dev/null || true
+mount -t tmpfs -o "mode=755,size=${work_mb}m" tmpfs /work 2>/dev/null || true
+chmod 1777 /tmp
+export PATH=/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+echo "blynn-bootstrap JSLinux demo: Alpine riscv64"
+cat /bootstrap/help/banner.txt
+echo
+if command -v setsid >/dev/null 2>&1; then
+  exec setsid -c /bin/sh -l </dev/console >/dev/console 2>&1
+fi
+exec /bin/sh -l </dev/console >/dev/console 2>&1
