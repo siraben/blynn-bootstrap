@@ -137,8 +137,16 @@ stdenvNoCC.mkDerivation {
       exit "$fsck_status"
     fi
 
-    mkdir -p "$out/blynn-root"
-    python3 ${repoSrc}/nix/jslinux/split-image.py "$TMPDIR/blynn-root.ext2" "$out/blynn-root"
+    disk_hash=$(sha256sum "$TMPDIR/blynn-root.ext2" | cut -c1-12)
+    disk_dir="blynn-root-$disk_hash"
+    cfg_file="blynn-riscv64-$disk_hash.cfg"
+    mkdir -p "$out/$disk_dir"
+    python3 ${repoSrc}/nix/jslinux/split-image.py "$TMPDIR/blynn-root.ext2" "$out/$disk_dir"
+
+    install -m 644 ${repoSrc}/nix/jslinux/blynn-riscv64.cfg "$out/$cfg_file"
+    substituteInPlace "$out/$cfg_file" \
+      --replace-fail @drive_dir@ "$disk_dir"
+    cp "$out/$cfg_file" "$out/blynn-riscv64.cfg"
 
     cp ${bios} "$out/bbl64.bin"
     cp ${kernel} "$out/kernel-riscv64.bin"
@@ -147,8 +155,9 @@ stdenvNoCC.mkDerivation {
     cp ${emulatorJs} "$out/riscvemu64-wasm.js"
     cp ${emulatorWasm} "$out/riscvemu64-wasm.wasm"
     cp ${repoSrc}/docs/index.html "$out/index.html"
+    substituteInPlace "$out/index.html" \
+      --replace-fail blynn-riscv64.cfg "$cfg_file"
     cp ${repoSrc}/docs/site.css "$out/site.css"
     cp ${repoSrc}/docs/NOTICE.md "$out/NOTICE.md"
-    cp ${repoSrc}/nix/jslinux/blynn-riscv64.cfg "$out/blynn-riscv64.cfg"
   '';
 }
