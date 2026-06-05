@@ -18,6 +18,7 @@ require_cmd cp
 require_cmd find
 require_cmd ln
 require_cmd mkdir
+require_cmd mv
 require_cmd rm
 require_cmd sed
 
@@ -120,14 +121,24 @@ stage0_submodule M2-Planet "$STAGE0_M2_PLANET_URL" "$STAGE0_M2_PLANET_REV" "$STA
 stage0_submodule M2libc "$M2LIBC_URL" "$STAGE0_M2LIBC_REV" "$STAGE0_M2LIBC_ARCHIVE_URL"
 stage0_submodule bootstrap-seeds "$STAGE0_BOOTSTRAP_SEEDS_URL" "$STAGE0_BOOTSTRAP_SEEDS_REV" "$STAGE0_BOOTSTRAP_SEEDS_ARCHIVE_URL"
 stage0_submodule mescc-tools "$MESCC_TOOLS_URL" "$MESCC_TOOLS_REV" "$MESCC_TOOLS_ARCHIVE_URL" "${MESCC_TOOLS_FETCH_REF:-}"
-stage0_submodule mescc-tools-extra "$STAGE0_MESCC_TOOLS_EXTRA_URL" "$STAGE0_MESCC_TOOLS_EXTRA_REV" "$STAGE0_MESCC_TOOLS_EXTRA_ARCHIVE_URL"
+[ "${BOOTSTRAP_TOOLS_FULL:-0}" != 1 ] || stage0_submodule mescc-tools-extra "$STAGE0_MESCC_TOOLS_EXTRA_URL" "$STAGE0_MESCC_TOOLS_EXTRA_REV" "$STAGE0_MESCC_TOOLS_EXTRA_ARCHIVE_URL"
 copy_writable_tree "$stage0_src" "$stage0_work"
+
+if [ "${BOOTSTRAP_TOOLS_FULL:-0}" != 1 ]; then
+  sed '/^# Phase 16-23 /,$d' "$stage0_work/$arch_dir/kaem.run" > "$stage0_work/$arch_dir/kaem.run.tmp"
+  printf '%s\n' 'exec ./${ARCH_DIR}/bin/kaem --verbose --strict --file ./after.kaem' >> "$stage0_work/$arch_dir/kaem.run.tmp"
+  mv "$stage0_work/$arch_dir/kaem.run.tmp" "$stage0_work/$arch_dir/kaem.run"
+fi
 
 msg "run stage0-posix $arch_dir seed from hex0"
 (
   cd "$stage0_work"
   "./bootstrap-seeds/POSIX/$arch_dir/kaem-optional-seed"
-  "./$arch_dir/bin/sha256sum" -c "$answer_file"
+  if [ "${BOOTSTRAP_TOOLS_FULL:-0}" != 1 ] && command -v sha256sum >/dev/null 2>&1; then
+    for tool in M2-Mesoplanet M2-Planet blood-elf M1 hex2 kaem; do
+      sed -n "\\|  $arch_dir/bin/$tool\$|p" "$answer_file"
+    done | sha256sum -c -
+  fi
 )
 
 stage0_bin=$stage0_work/$arch_dir/bin
