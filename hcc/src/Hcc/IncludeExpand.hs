@@ -3,6 +3,7 @@ module IncludeExpand
   ) where
 
 import Base
+import Directive
 import DriverCommon
 import HccSystem
 import IfFrame
@@ -48,17 +49,17 @@ readSourceWithIncludes includeDirs defines path = do
         keep = (line++) . ('\n':)
     in case directiveNameFromLine line of
       Just "ifdef" ->
-        pure (keep, guards, macros, pushIfFrame frames (maybe False (`symbolMapMember` macros) (directiveArgument "ifdef" line)))
+        pure (keep, guards, macros, applyIncludeIf frames (IfCondition (maybe False (`symbolMapMember` macros) (directiveArgument "ifdef" line))))
       Just "ifndef" ->
-        pure (keep, guards, macros, pushIfFrame frames (maybe False (not . (`symbolMapMember` macros)) (directiveArgument "ifndef" line)))
+        pure (keep, guards, macros, applyIncludeIf frames (IfCondition (maybe False (not . (`symbolMapMember` macros)) (directiveArgument "ifndef" line))))
       Just "if" ->
-        pure (keep, guards, macros, pushIfFrame frames (evalIncludeIf macros (directiveRest "if" line)))
+        pure (keep, guards, macros, applyIncludeIf frames (IfCondition (evalIncludeIf macros (directiveRest "if" line))))
       Just "elif" ->
-        pure (keep, guards, macros, case replaceElifFrame frames (evalIncludeIf macros (directiveRest "elif" line)) of { Just frames' -> frames'; Nothing -> frames })
+        pure (keep, guards, macros, applyIncludeIf frames (ElifCondition (evalIncludeIf macros (directiveRest "elif" line))))
       Just "else" ->
-        pure (keep, guards, macros, case replaceElseFrame frames of { Just frames' -> frames'; Nothing -> frames })
+        pure (keep, guards, macros, applyIncludeIf frames ElseCondition)
       Just "endif" ->
-        pure (keep, guards, macros, case frames of { [] -> []; _:xs -> xs })
+        pure (keep, guards, macros, applyIncludeIf frames EndifCondition)
       Just "define" | active ->
         case directiveDefine line of
           Just (name, value) -> pure (keep, guards, symbolMapInsert name value macros, frames)
@@ -84,6 +85,10 @@ readSourceWithIncludes includeDirs defines path = do
                 pure (expanded, guards', macros', frames)
         _ -> pure (keep, guards, macros, frames)
 
+  applyIncludeIf frames directive = case applyIfDirective frames directive of
+    Nothing -> frames
+    Just frames' -> frames'
+
   findInclude currentDir name = do
     let candidates = hccPathJoin currentDir name : map (`hccPathJoin` name) includeDirs
     existing <- hccFilterExisting candidates
@@ -94,9 +99,10 @@ readSourceWithIncludes includeDirs defines path = do
 data IncludeForm = QuoteInclude | SystemInclude
 
 includeRequest :: IncludeMacros -> String -> Maybe (IncludeForm, String)
-includeRequest macros line = case words line of
-  "#include":raw:_ -> includeRequestRaw macros raw
-  "#":"include":raw:_ -> includeRequestRaw macros raw
+includeRequest macros line = case parseDirective line of
+  Directive "include" rest -> case words rest of
+    raw:_ -> includeRequestRaw macros raw
+    _ -> Nothing
   _ -> Nothing
 
 includeRequestRaw :: IncludeMacros -> String -> Maybe (IncludeForm, String)
@@ -111,19 +117,6 @@ stripIncludeDelims raw = case raw of
   '"':rest -> Just (QuoteInclude, takeWhile (/= '"') rest)
   '<':rest -> Just (SystemInclude, takeWhile (/= '>') rest)
   _ -> Nothing
-
-
-directiveRest :: String -> String -> String
-directiveRest directive line = case dropWhile isSpaceChar line of
-  '#':rest -> afterDirective directive rest
-  _ -> ""
-
-afterDirective :: String -> String -> String
-afterDirective directive text =
-  let trimmed = dropWhile isSpaceChar text
-  in if directive `prefixOf` trimmed
-     then dropWhile isSpaceChar (drop (length directive) trimmed)
-     else ""
 
 evalIncludeIf :: IncludeMacros -> String -> Bool
 evalIncludeIf macros text =
@@ -248,12 +241,6 @@ pragmaOnceLine line = case words line of
   ["#", "pragma", "once"] -> True
   _ -> False
 
-directiveArgument :: String -> String -> Maybe String
-directiveArgument directive line = case words line of
-  word:name:_ | word == "#" ++ directive -> Just name
-  "#":word:name:_ | word == directive -> Just name
-  _ -> Nothing
-
 directiveDefine :: String -> Maybe (String, String)
 directiveDefine line = case dropWhile isSpaceChar line of
   '#':rest -> defineAfterHash rest
@@ -280,12 +267,6 @@ defineReplacement text = case text of
   _ -> case trim text of
     "" -> "1"
     value -> value
-
-directiveNameFromLine :: String -> Maybe String
-directiveNameFromLine line = case words line of
-  "#":word:_ -> Just word
-  word:_ | "#" `prefixOf` word -> Just (drop 1 word)
-  _ -> Nothing
 
 canonicalGuardName :: String -> String -> Bool
 canonicalGuardName path guard =

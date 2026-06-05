@@ -1,7 +1,9 @@
 module IfFrame
   ( IfFrame(..)
+  , IfDirective(..)
   , ifStackActive
   , pushIfFrame
+  , applyIfDirective
   , replaceElifFrame
   , replaceElseFrame
   , popIfFrame
@@ -15,9 +17,22 @@ data IfFrame = IfFrame
   , ifActive :: Bool
   }
 
+data IfDirective
+  = IfCondition Bool
+  | ElifCondition Bool
+  | ElseCondition
+  | EndifCondition
+
 ifStackActive :: [IfFrame] -> Bool
 ifStackActive [] = True
 ifStackActive (frame:_) = ifActive frame
+
+applyIfDirective :: [IfFrame] -> IfDirective -> Maybe [IfFrame]
+applyIfDirective frames directive = case directive of
+  IfCondition cond -> Just (pushIfFrame frames cond)
+  ElifCondition cond -> replaceElifFrame frames cond
+  ElseCondition -> replaceElseFrame frames
+  EndifCondition -> popIfFrame frames
 
 pushIfFrame :: [IfFrame] -> Bool -> [IfFrame]
 pushIfFrame frames cond =
