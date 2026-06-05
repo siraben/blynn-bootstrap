@@ -36,8 +36,7 @@ mkDerivation (
       mkdir -p cbits
       cp ${src}/cbits/hcc_runtime.c cbits/hcc_runtime.c
       cp ${src}/cbits/hcc_runtime_m2.c cbits/hcc_runtime_m2.c
-      cp ${src}/cbits/hcc_m1.c cbits/hcc_m1.c
-      cp ${src}/cbits/hcc_m1_arch_*.c cbits/
+      cp ${src}/cbits/hcc_m1*.c cbits/
 
       ${nixLib.shellHelpers { name = "hcc-blynn-bin"; }}
 
