@@ -13,11 +13,11 @@
       <div class="console-header">
         <div>
           <h1>Portable TinyCC Bootstrap</h1>
-          <p>x86_64 JSLinux booting Alpine Linux and running the repo's portable blynn bootstrap from the hex0 seed to a <code>tcc</code> shell.</p>
+          <p>x86_64 JSLinux booting Alpine Linux to a shell. Run <code>bootstrap</code> to build from the hex0 seed to a bootstrapped <code>tcc</code>.</p>
         </div>
         <div class="console-actions">
           <a class="button" href="index.html">Reboot</a>
-          <a class="button" id="quick_shell_link" href="?url=blynn-x86_64.cfg&cpu=x86_64&mem=768&cols=80&rows=28&font_size=13&net_url=&cmdline=blynn_shell%3D1">Quick Shell</a>
+          <a class="button" id="low_ram_link" href="?url=blynn-x86_64.cfg&cpu=x86_64&mem=768&cols=80&rows=28&font_size=13&net_url=">768 MB Shell</a>
           <a class="button" href="blynn-x86_64.cfg">Config</a>
         </div>
       </div>
@@ -40,8 +40,8 @@
         <h2>Milestones</h2>
         <ol>
           <li>Kernel starts with <code>console=hvc0 root=/dev/vda rw init=/init</code>.</li>
-          <li><code>/init</code> runs <code>/bootstrap/run-portable-demo.sh</code> by default.</li>
-          <li>The demo rebuilds stage0-posix tools from the hex0 seed, then runs the blynn/HCC portable chain.</li>
+          <li><code>/init</code> prepares Alpine and drops to a shell.</li>
+          <li>Run <code>bootstrap</code> to rebuild stage0-posix tools from the hex0 seed, then run the blynn/HCC portable chain.</li>
           <li>After the build, the shell has the bootstrapped compiler as <code>blynn-tcc</code>.</li>
         </ol>
       </section>
@@ -78,11 +78,11 @@ blynn-tcc -run /tmp/tcc-smoke.c</code></pre>
       return `?url=blynn-x86_64.cfg&cpu=x86_64&mem=${memory}&cols=${cols}&rows=${rows}&font_size=${fontSize}&net_url=`;
     }
 
-    const quickShellLink = document.getElementById("quick_shell_link");
-    quickShellLink.href = `${vmQuery(768)}&cmdline=blynn_shell%3D1`;
+    const lowRamLink = document.getElementById("low_ram_link");
+    lowRamLink.href = vmQuery(768);
 
     if (!window.location.search) {
-      window.history.replaceState(null, "", vmQuery(2048));
+      window.history.replaceState(null, "", vmQuery(1536));
     }
   </script>
   <script src="term.js"></script>
