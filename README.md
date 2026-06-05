@@ -37,6 +37,20 @@ Debug alternatives are separate targets:
 
 These are useful for testing but are not seed-only compiler paths.
 
+## Scheduled downstream acceptance
+
+`Slow acceptance` adds nightly and manual x86_64 builds of
+`gcc46.m2.precisely.m2`, `gccLatest.m2.precisely.m2`,
+`gccGlibc.m2.precisely.m2`, and `gnuHello.m2.precisely.m2`.
+Manual dispatch defaults to all endpoints or selects exactly one. These
+extend the M2 compiler path; they do not replace or speed up required PR
+checks (including the boss-stage and faithful-debug suites).
+
+Build failures and six-hour runner timeouts fail acceptance; at most two
+endpoints run concurrently. Cached dependencies may be reused, so this is
+not a nightly from-scratch rebuild. Adding a target to this workflow is
+not evidence that its complete bootstrap has succeeded.
+
 ## Trust boundary
 
 The compiler path is not the entire build environment:
