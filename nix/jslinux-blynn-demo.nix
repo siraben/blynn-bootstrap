@@ -249,8 +249,9 @@ Output:
   The live log is printed to the terminal and saved to /bootstrap-demo.log.
 
 Memory:
-  The full bootstrap is validated with the default 1536 MB VM. The 768 MB link
-  is for a quick shell only. Set BOOTSTRAP_ALLOW_LOW_MEM=1 to bypass the guard.
+  The full bootstrap is validated with the default 1536 MB VM. The guest does
+  not use swap. The 768 MB link is for a quick shell only. Set
+  BOOTSTRAP_ALLOW_LOW_MEM=1 to bypass the guard.
 
 Before bootstrap completes, blynn-tcc points at a Nix-built reference TinyCC
 included for quick shell checks. After a successful bootstrap, blynn-tcc points
@@ -298,10 +299,6 @@ exit "$bootstrap_status"
 EOF
     chmod 755 "$root/usr/local/bin/bootstrap"
 
-    dd if=/dev/zero of="$root/swapfile" bs=1M count=384
-    chmod 600 "$root/swapfile"
-    mkswap "$root/swapfile"
-
     cat > "$root/init" <<'EOF'
 #!/bin/sh
 mount -t proc proc /proc 2>/dev/null || true
@@ -310,7 +307,6 @@ mount -t devtmpfs dev /dev 2>/dev/null || true
 mkdir -p /dev /tmp /work /root /usr/local/bin
 chmod 1777 /tmp
 export PATH=/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-swapon /swapfile 2>/dev/null || true
 
 echo "blynn-bootstrap JSLinux demo: Alpine x86_64"
 ln -sf /bootstrap/nix-built-tcc/bin/tcc /usr/local/bin/blynn-tcc
@@ -358,7 +354,7 @@ EOF
 EOF
 
     mkdir -p "$out"
-    genext2fs -B 1024 -b 786432 -N 200000 -d "$root" -D "$TMPDIR/devices.txt" "$TMPDIR/blynn-root.ext2"
+    genext2fs -B 1024 -b 393216 -N 200000 -d "$root" -D "$TMPDIR/devices.txt" "$TMPDIR/blynn-root.ext2"
     fsck_status=0
     e2fsck -fy "$TMPDIR/blynn-root.ext2" || fsck_status=$?
     if [ "$fsck_status" -gt 1 ]; then
@@ -368,19 +364,30 @@ EOF
     mkdir -p "$out/blynn-root"
     python3 - "$TMPDIR/blynn-root.ext2" "$out/blynn-root" <<'PY'
 import math
+import os
 import pathlib
 import sys
 
 src = pathlib.Path(sys.argv[1])
 out = pathlib.Path(sys.argv[2])
 block_size = 256 * 1024
+zero_chunk = b"\0" * block_size
+zero_chunk_path = None
 data = src.read_bytes()
 n_block = math.ceil(len(data) / block_size)
 for i in range(n_block):
+    path = out / f"blk{i:09d}.bin"
     chunk = data[i * block_size:(i + 1) * block_size]
     if len(chunk) < block_size:
         chunk += b"\0" * (block_size - len(chunk))
-    (out / f"blk{i:09d}.bin").write_bytes(chunk)
+    if chunk == zero_chunk:
+        if zero_chunk_path is None:
+            path.write_bytes(chunk)
+            zero_chunk_path = path
+        else:
+            os.link(zero_chunk_path, path)
+    else:
+        path.write_bytes(chunk)
 (out / "blk.txt").write_text("{\n  block_size: 256,\n  n_block: %d,\n}\n" % n_block)
 PY
 
