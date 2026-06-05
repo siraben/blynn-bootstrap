@@ -68,22 +68,71 @@ blynn-tcc -run /tmp/tcc-smoke.c</code></pre>
   </main>
 
   <script>
-    function vmQuery(memory) {
+    function terminalMetrics() {
+      const consolePane = document.querySelector(".console-pane");
       const narrow = window.matchMedia("(max-width: 700px)").matches;
       const fontSize = narrow ? 12 : 14;
       const charWidth = fontSize * 0.62;
-      const horizontalPadding = narrow ? 24 : 56;
-      const cols = Math.max(44, Math.min(100, Math.floor((window.innerWidth - horizontalPadding) / charWidth)));
+      const terminalWidth = (consolePane ? consolePane.clientWidth : window.innerWidth) - (narrow ? 16 : 32) - 15;
+      const cols = Math.max(44, Math.min(100, Math.floor(terminalWidth / charWidth)));
       const rows = narrow ? 28 : 32;
+      return { cols, rows, fontSize };
+    }
+
+    function vmQuery(memory) {
+      const { cols, rows, fontSize } = terminalMetrics();
       return `?url=blynn-x86_64.cfg&cpu=x86_64&mem=${memory}&cols=${cols}&rows=${rows}&font_size=${fontSize}&net_url=`;
+    }
+
+    function normalizeVmQuery() {
+      if (!window.location.search) {
+        window.history.replaceState(null, "", vmQuery(1536));
+        return;
+      }
+
+      const params = new URLSearchParams(window.location.search);
+      const { cols, rows, fontSize } = terminalMetrics();
+      const requestedCols = Number(params.get("cols") || 0);
+      let changed = false;
+
+      if (!params.has("url")) {
+        params.set("url", "blynn-x86_64.cfg");
+        changed = true;
+      }
+      if (!params.has("cpu")) {
+        params.set("cpu", "x86_64");
+        changed = true;
+      }
+      if (!params.has("mem")) {
+        params.set("mem", "1536");
+        changed = true;
+      }
+      if (!requestedCols || requestedCols > cols) {
+        params.set("cols", String(cols));
+        changed = true;
+      }
+      if (!params.has("rows")) {
+        params.set("rows", String(rows));
+        changed = true;
+      }
+      if (!params.has("font_size")) {
+        params.set("font_size", String(fontSize));
+        changed = true;
+      }
+      if (!params.has("net_url")) {
+        params.set("net_url", "");
+        changed = true;
+      }
+
+      if (changed) {
+        window.history.replaceState(null, "", `?${params.toString()}`);
+      }
     }
 
     const lowRamLink = document.getElementById("low_ram_link");
     lowRamLink.href = vmQuery(768);
 
-    if (!window.location.search) {
-      window.history.replaceState(null, "", vmQuery(1536));
-    }
+    normalizeVmQuery();
   </script>
   <script src="term.js"></script>
   <script src="jslinux.js"></script>

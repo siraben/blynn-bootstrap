@@ -104,6 +104,8 @@ h2 {
 
 #term_wrap {
   display: none;
+  width: auto !important;
+  max-width: 100%;
   min-width: 0;
   overflow: auto;
   overscroll-behavior: contain;
@@ -259,7 +261,7 @@ code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
 }
 
-@media (max-width: 960px) {
+@media (max-width: 1280px) {
   .app-shell {
     grid-template-columns: 1fr;
   }
