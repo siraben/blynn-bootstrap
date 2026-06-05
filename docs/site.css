@@ -125,6 +125,33 @@ h2 {
   color: #f0f0f0;
   background: var(--terminal);
   border: 1px solid #2a2a2a;
+  /* monospace render hints: skip ligature/kerning shaping per glyph */
+  font-variant-ligatures: none;
+  font-kerning: none;
+}
+
+.term_content {
+  text-rendering: optimizeSpeed;
+}
+
+/* Focus-capture textarea created by term.js. term.js positions it via inline
+   left/top/zIndex but never sets `position`, and supplies no visual styling,
+   so without this rule it renders as a default textarea box on top of the
+   terminal. Keep it focusable (do NOT use display:none/visibility:hidden)
+   but visually invisible. */
+.term_textarea {
+  position: absolute;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  outline: 0;
+  resize: none;
+  overflow: hidden;
+  white-space: pre;
+  opacity: 0;
+  background: transparent;
+  color: transparent;
+  caret-color: transparent;
 }
 
 .term_char_size {
