@@ -26,6 +26,7 @@ out_dir=${OUT_DIR:-${3:-build/hcc-blynn-bin}}
 backend=${HCC_C_BACKEND:-m2}
 hcpp_top=${HCPP_TOP:-134217728}
 hcc1_top=${HCC1_TOP:-134217728}
+hcc_rts_adaptive_major_words=${HCC_RTS_ADAPTIVE_MAJOR_WORDS:-}
 host_cc=${HOST_CC:-${CC:-cc}}
 host_cflags=${HOST_CFLAGS:--O2}
 tcc=${TCC:-tcc}
@@ -69,6 +70,9 @@ patch_top() {
   found=0
 
   : > "$dst"
+  if [ -n "$hcc_rts_adaptive_major_words" ]; then
+    printf '#define HCC_RTS_ADAPTIVE_MAJOR_WORDS %s\n' "$hcc_rts_adaptive_major_words" >> "$dst"
+  fi
   while IFS= read -r line || [ -n "$line" ]; do
     case $line in
       *"$marker"*"};"*)
