@@ -13,7 +13,7 @@ def main() -> None:
 {
     var el;
     if (window.setBootStatus) {
-        window.setBootStatus(flag ? "Downloading VM block data..." : "VM block download complete; waiting for Linux output...");
+        window.setBootStatus(flag ? "Downloading VM storage data..." : "VM storage idle; waiting for Linux console output...");
     }
     if (window.setBootProgress) {
         window.setBootProgress(flag ? 0 : 1, 1);

@@ -23,12 +23,16 @@
 
 let
   alpineMinirootfs = fetchurl {
-    url = "https://dl-cdn.alpinelinux.org/alpine/v3.23/releases/x86_64/alpine-minirootfs-3.23.3-x86_64.tar.gz";
-    hash = "sha256-QtDm2N5VIee/kuB14DK1aQwdlI+pd176MqUaOLJUYPs=";
+    url = "https://dl-cdn.alpinelinux.org/alpine/v3.23/releases/riscv64/alpine-minirootfs-3.23.3-riscv64.tar.gz";
+    hash = "sha256-7uAM6bt5XjctBUsFnmHD8lhgiSJ0VFYcLg8voEVOBMU=";
+  };
+  bios = fetchurl {
+    url = "https://bellard.org/jslinux/bbl64.bin";
+    hash = "sha256-KTYQzqevbHXkqDN+FsDWKDS+y/Mf/ZzKNeDCEWAjSds=";
   };
   kernel = fetchurl {
-    url = "https://bellard.org/jslinux/kernel-x86_64-new.bin";
-    hash = "sha256-AtbqOhmwQIbdVhYfihfDQMfiu+1QyiurXJDEA+l4Nec=";
+    url = "https://bellard.org/jslinux/kernel-riscv64.bin";
+    hash = "sha256-ZcpwplYKcwOWq2FIjRz0YImzLaWvflNeA8GAzVvMjnU=";
   };
   xtermJs = fetchurl {
     url = "https://unpkg.com/@xterm/xterm@5.5.0/lib/xterm.js";
@@ -43,12 +47,12 @@ let
     hash = "sha256-UYmdR7PXDdHzU0SNmlQ/fYxeD4p6I31V7W5+NYyXp9w=";
   };
   emulatorJs = fetchurl {
-    url = "https://bellard.org/jslinux/x86_64emu-wasm.js";
-    hash = "sha256-ueM9l0YIKD1vAM6UWbIyC/zPPNVTzN7QmL/+2lBhQp4=";
+    url = "https://bellard.org/jslinux/riscvemu64-wasm.js";
+    hash = "sha256-xmE2x7b1LfZSyys7UfYLW2JPteyVeDfDh7rrn/LIOYE=";
   };
   emulatorWasm = fetchurl {
-    url = "https://bellard.org/jslinux/x86_64emu-wasm.wasm";
-    hash = "sha256-L0GnQ3M9g2nlPb4GiyQ9kdxxNhg+Ml5izW0eiVgk5ls=";
+    url = "https://bellard.org/jslinux/riscvemu64-wasm.wasm";
+    hash = "sha256-X6nb8Wnv9EdSXPmMU40Go/CO6q735Mczglrln8XJJU4=";
   };
 in
 stdenvNoCC.mkDerivation {
@@ -76,6 +80,8 @@ stdenvNoCC.mkDerivation {
     root=$TMPDIR/root
     mkdir -p "$root"
     tar --no-same-owner -xzf ${alpineMinirootfs} -C "$root"
+    : > "$root/init"
+    chmod 755 "$root/init"
 
     mkdir -p \
       "$root/bootstrap/repo" \
@@ -83,8 +89,7 @@ stdenvNoCC.mkDerivation {
       "$root/bootstrap/tool-wrappers" \
       "$root/bootstrap/stage0-tools" \
       "$root/bootstrap/stage0-m2libc" \
-      "$root/bootstrap/source-cache" \
-      "$root/bootstrap/nix-built-tcc"
+      "$root/bootstrap/source-cache"
 
     cp -R ${repoSrc}/. "$root/bootstrap/repo/"
     chmod -R u+w "$root/bootstrap/repo"
@@ -99,7 +104,6 @@ stdenvNoCC.mkDerivation {
     cp -R ${stage0M2libcSrc}/. "$root/bootstrap/stage0-m2libc/"
     mkdir -p "$root${builtins.dirOf (toString stage0M2libcSrc)}"
     cp -R ${stage0M2libcSrc} "$root${toString stage0M2libcSrc}"
-    cp -R ${nixBuiltTinycc}/. "$root/bootstrap/nix-built-tcc/"
     cp -R ${stage0PosixSrc} "$root/bootstrap/source-cache/stage0-posix"
     chmod -R u+w "$root/bootstrap/source-cache/stage0-posix"
     rm -rf "$root/bootstrap/source-cache/stage0-posix/bootstrap-seeds"
@@ -141,9 +145,9 @@ EOF
 set -eu
 
 export HOME=/root
-export ARCH=amd64
+export ARCH=riscv64
 export OPERATING_SYSTEM=Linux
-export M2_ARCH=amd64
+export M2_ARCH=riscv64
 export M2_OS=Linux
 export PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export BOOTSTRAP_LOG_NAME=blynn-jslinux
@@ -210,7 +214,7 @@ sh scripts/hcc-blynn-bin.sh
 export TINYCC_DIR=/bootstrap/upstreams/janneke-tinycc
 export HCC_BIN_DIR="$build/hcc-blynn-bin"
 export MES_LIBC_DIR="$build/mes-libc"
-export HCC_TARGET=amd64
+export HCC_TARGET=riscv64
 export TINYCC_SELFHOST=''${TINYCC_SELFHOST:-0}
 export OUT_DIR="$build/tinycc-boot-hcc"
 echo "== build TinyCC with bootstrapped HCC =="
@@ -249,13 +253,12 @@ Output:
   The live log is printed to the terminal and saved to /bootstrap-demo.log.
 
 Memory:
-  The full bootstrap is validated with the default 1536 MB VM. The guest does
-  not use swap. The 768 MB link is for a quick shell only. Set
+  The full bootstrap is intended for the 1536 MB VM. The guest does
+  not use swap. The 256 MB link is for a quick shell only. Set
   BOOTSTRAP_ALLOW_LOW_MEM=1 to bypass the guard.
 
-Before bootstrap completes, blynn-tcc points at a Nix-built reference TinyCC
-included for quick shell checks. After a successful bootstrap, blynn-tcc points
-at the compiler built inside this VM.
+After a successful bootstrap, blynn-tcc points at the compiler built inside
+this VM.
 HELP
     exit 0
     ;;
@@ -271,7 +274,7 @@ case ''${BOOTSTRAP_ALLOW_LOW_MEM:-0} in
 bootstrap needs the default 1536 MB VM.
 
 This guest has MemTotal=''${mem_kb} KiB, which is below the tested floor.
-The 768 MB link is intended for a quick shell only; running the full bootstrap
+The 256 MB link is intended for a quick shell only; running the full bootstrap
 there can exhaust memory and leave the ext2 root filesystem read-only.
 
 Open the default page or change the URL to mem=1536, then run:
@@ -308,15 +311,14 @@ mkdir -p /dev /tmp /work /root /usr/local/bin
 chmod 1777 /tmp
 export PATH=/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-echo "blynn-bootstrap JSLinux demo: Alpine x86_64"
-ln -sf /bootstrap/nix-built-tcc/bin/tcc /usr/local/bin/blynn-tcc
+echo "blynn-bootstrap JSLinux demo: Alpine riscv64"
 cat <<'BANNER'
 
 Project:
   blynn-bootstrap portable web demo
 
 Environment:
-  Alpine Linux x86_64 running in Bellard JSLinux/WASM
+  Alpine Linux riscv64 running in Bellard JSLinux/WASM
   Sources and pinned upstream snapshots are already in /bootstrap
   Work directory: /work/blynn
 
@@ -328,15 +330,12 @@ Commands:
   blynn-tcc -dumpversion
 
 Memory:
-  Use the default 1536 MB VM for bootstrap. The 768 MB link is shell-only.
+  Use the 1536 MB bootstrap VM for bootstrap. The default 256 MB VM is shell-only.
 
 Compiler:
-  blynn-tcc initially points at the Nix-built reference TinyCC for shell checks.
   After a successful bootstrap, blynn-tcc points at the compiler built here.
 
 BANNER
-echo "Nix-built reference TinyCC version:"
-blynn-tcc -dumpversion || true
 echo
 if command -v setsid >/dev/null 2>&1; then
   exec setsid -c /bin/sh -l </dev/console >/dev/console 2>&1
@@ -355,6 +354,7 @@ EOF
 
     mkdir -p "$out"
     genext2fs -B 1024 -b 393216 -N 200000 -d "$root" -D "$TMPDIR/devices.txt" "$TMPDIR/blynn-root.ext2"
+    tune2fs -O large_file "$TMPDIR/blynn-root.ext2"
     fsck_status=0
     e2fsck -fy "$TMPDIR/blynn-root.ext2" || fsck_status=$?
     if [ "$fsck_status" -gt 1 ]; then
@@ -391,28 +391,31 @@ for i in range(n_block):
 (out / "blk.txt").write_text("{\n  block_size: 256,\n  n_block: %d,\n}\n" % n_block)
 PY
 
-    cp ${kernel} "$out/kernel-x86_64-new.bin"
+    cp ${bios} "$out/bbl64.bin"
+    cp ${kernel} "$out/kernel-riscv64.bin"
     cp ${xtermJs} "$out/xterm.js"
     cp ${xtermCss} "$out/xterm.css"
     cp ${repoSrc}/docs/xterm-term.js "$out/term.js"
     cp ${jslinuxJs} "$out/jslinux.js"
     chmod u+w "$out/jslinux.js"
     python3 ${repoSrc}/nix/jslinux/patch-jslinux-status.py "$out/jslinux.js"
-    cp ${emulatorJs} "$out/x86_64emu-wasm.js"
-    cp ${emulatorWasm} "$out/x86_64emu-wasm.wasm"
+    cp ${emulatorJs} "$out/riscvemu64-wasm.js"
+    cp ${emulatorWasm} "$out/riscvemu64-wasm.wasm"
     cp ${repoSrc}/docs/index.html "$out/index.html"
     cp ${repoSrc}/docs/site.css "$out/site.css"
     cp ${repoSrc}/docs/NOTICE.md "$out/NOTICE.md"
 
-    cat > "$out/blynn-x86_64.cfg" <<'EOF'
+    cat > "$out/blynn-riscv64.cfg" <<'EOF'
 /* VM configuration file */
 {
   version: 1,
-  machine: "pc",
-  memory_size: 1536,
-  kernel: "kernel-x86_64-new.bin",
-  cmdline: "console=hvc0 root=/dev/vda rw init=/init",
+  machine: "riscv64",
+  memory_size: 256,
+  bios: "bbl64.bin",
+  kernel: "kernel-riscv64.bin",
+  cmdline: "swiotlb=1 console=hvc0 root=/dev/vda rootwait rootfstype=ext2 init=/init rw",
   drive0: { file: "blynn-root/blk.txt" },
+  eth0: { driver: "user" },
 }
 EOF
   '';
