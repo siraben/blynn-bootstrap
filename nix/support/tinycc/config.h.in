@@ -1,0 +1,25 @@
+#define BOOTSTRAP 1
+#define HAVE_LONG_LONG 1
+#define HAVE_SETJMP 1
+#define HAVE_BITFIELD 1
+#define HAVE_FLOAT 1
+#define @target_define@ 1
+#define inline
+#define CONFIG_TCCDIR ""
+#define CONFIG_SYSROOT ""
+#define CONFIG_TCC_CRTPREFIX "{B}"
+#define CONFIG_TCC_ELFINTERP "/mes/loader"
+#define CONFIG_TCC_LIBPATHS "{B}"
+#define CONFIG_TCC_SYSINCLUDEPATHS "@sysinclude@"
+#define TCC_LIBGCC "libc.a"
+#define TCC_LIBTCC1 "libtcc1.a"
+#define CONFIG_TCC_LIBTCC1_MES 0
+#define CONFIG_TCCBOOT 1
+#define CONFIG_TCC_STATIC 1
+#define CONFIG_USE_LIBGCC 1
+#define TCC_MES_LIBC 1
+#define TCC_VERSION "0.9.28-@version@"
+#define ONE_SOURCE 1
+@riscv64_no_asm_define@
+@arm64_backtrace_define@
+#define CONFIG_TCC_SEMLOCK 0
