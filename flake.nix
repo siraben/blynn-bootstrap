@@ -24,6 +24,18 @@
             || lib.hasSuffix ".hs" (baseNameOf path)
             || lib.hasSuffix ".modules" (baseNameOf path);
         };
+        repoPortableSrc = lib.cleanSourceWith {
+          src = ./.;
+          filter = path: type:
+            let
+              rel = lib.removePrefix ((toString ./.) + "/") (toString path);
+              base = baseNameOf path;
+            in
+            type == "directory" || !(lib.hasPrefix "build/" rel)
+              && !(lib.hasPrefix "result" rel)
+              && !(lib.hasPrefix ".git/" rel)
+              && base != "flake.lock~";
+        };
         upstreamPatches = ./patches/upstreams;
         upstreamPatchSeries = name:
           map (file: upstreamPatches + "/${file}")
@@ -802,6 +814,31 @@
           m2.precisely.m2 = tinyccM1FromHcc "tinycc-m1-hcc-m2-precisely-m2" hccBy.m2.precisely.m2;
         };
 
+        jslinuxBlynnDemo = pkgs.callPackage ./nix/jslinux-blynn-demo.nix {
+          repoSrc = repoPortableSrc;
+          oriansjBlynnSrc = blynnSrc;
+          blynnSrc = blynnUpstreamSrc;
+          mesccTools = minimalBootstrap.stage0-posix.mescc-tools;
+          tinyccSrc = patchedUpstreamSource {
+            name = "janneke-tinycc-jslinux-demo";
+            src = pkgs.fetchgit {
+              url = "https://github.com/TinyCC/tinycc.git";
+              rev = sourcePins.JANNEKE_TINYCC_REV;
+              hash = "sha256-LgYeX6Q80Z6VNJ7iPk46fPpEr/dEAezqvR6jQddSsxI=";
+            };
+            patches = [ (upstreamPatches + "/tinycc-mescc-source.patch") ];
+          };
+          gnuMesSrc = mesLibcSrc;
+          stage0M2libcSrc = "${minimalBootstrap.stage0-posix.src}/M2libc";
+          stage0PosixSrc = minimalBootstrap.stage0-posix.src;
+          bootstrapSeedsSrc = pkgs.fetchgit {
+            url = "https://github.com/oriansj/bootstrap-seeds.git";
+            rev = sourcePins.STAGE0_BOOTSTRAP_SEEDS_REV;
+            hash = "sha256-0RVjc5eTPD2AXFdQ4/rKyeiGrll7Fj62NY5RISvGNSg=";
+          };
+          nixBuiltTinycc = tinyccBy.host.ghc.native;
+        };
+
         tinyccPortableSelfhost = assert system == "x86_64-linux"; pkgs.runCommand "tinycc-portable-selfhost" {
           nativeBuildInputs = [ minimalBootstrap.stage0-posix.mescc-tools pkgs.patch ];
         } ''
@@ -1162,6 +1199,7 @@
       in {
         packages = {
           default = packageTree.default;
+          jslinux-blynn-demo = jslinuxBlynnDemo;
         };
 
         checks = {
