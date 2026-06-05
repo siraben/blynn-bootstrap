@@ -19,7 +19,7 @@ main = do
   hccExitSuccess
 
 usage :: IO ()
-usage = hccPutStrLn "usage: hcc1 [--m1-ir] [-o FILE] INPUT.i\n       hcc1 --check FILE..."
+usage = hccPutStrLn "usage: hcc1 [--target amd64|i386|aarch64|riscv64] [--m1-ir] [-o FILE] INPUT.i\n       hcc1 --check FILE..."
 
 checkFiles :: [String] -> IO ()
 checkFiles [] = die "hcc1: no input files"
@@ -63,7 +63,7 @@ writeM1Ir opts trace ast = do
       emitM1IrStreamingWithDataPrefixTarget
         writeLines
         (dataLabelPrefix (asmInput opts))
-        (asmTargetBits opts)
+        (asmTarget opts)
         ast
     trace "m1-ir done"
     pure result
