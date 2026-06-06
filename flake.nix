@@ -973,7 +973,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             rev = "cedec6b8066d1db229b6c77d42d120a23c6980ed";
             hash = "sha256-0RVjc5eTPD2AXFdQ4/rKyeiGrll7Fj62NY5RISvGNSg=";
           };
-          nixBuiltTinycc = tinyccBy.host.ghc.native;
+          nixBuiltTinycc = tinyccBy.riscv64.host.ghc.native;
           hccCheckpoint = jslinuxHccRiscv64Checkpoint;
         };
 

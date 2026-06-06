@@ -4,4 +4,5 @@ if [ -x "$built" ]; then
   exec "$built" "$@"
 fi
 echo "blynn-tcc has not been built yet; run bootstrap first" >&2
+echo "or boot the TinyCC checkpoint shell" >&2
 exit 127

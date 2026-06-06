@@ -11,6 +11,17 @@ mount -t tmpfs -o "mode=755,size=${work_mb}m" tmpfs /work 2>/dev/null || true
 chmod 1777 /tmp
 export PATH=/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
+mkdir -p /work/blynn
+if [ -d /bootstrap/checkpoints/tinycc-riscv64 ]; then
+  rm -rf /work/blynn/tinycc-boot-hcc
+  mkdir -p /work/blynn/tinycc-boot-hcc
+  cp -R /bootstrap/checkpoints/tinycc-riscv64/. /work/blynn/tinycc-boot-hcc/
+  chmod -R u+w /work/blynn/tinycc-boot-hcc
+  if [ -x /work/blynn/tinycc-boot-hcc/bin/tcc ]; then
+    sha256sum /work/blynn/tinycc-boot-hcc/bin/tcc > /work/blynn/tinycc-boot-hcc/tcc.sha256
+  fi
+fi
+
 echo "blynn-bootstrap JSLinux demo: Alpine riscv64"
 cat /bootstrap/help/banner.txt
 echo

@@ -128,6 +128,10 @@ stdenvNoCC.mkDerivation {
     cp -R ${hccCheckpoint}/. "$root/bootstrap/checkpoints/hcc-riscv64/"
     chmod -R u+w "$root/bootstrap/checkpoints/hcc-riscv64"
 
+    mkdir -p "$root/bootstrap/checkpoints/tinycc-riscv64"
+    cp -R ${nixBuiltTinycc}/. "$root/bootstrap/checkpoints/tinycc-riscv64/"
+    chmod -R u+w "$root/bootstrap/checkpoints/tinycc-riscv64"
+
     mkdir -p "$root/usr/local/bin"
     install -Dm755 ${repoSrc}/nix/jslinux/guest/blynn-tcc "$root/usr/local/bin/blynn-tcc"
     install -Dm755 ${repoSrc}/nix/jslinux/guest/bootstrap "$root/usr/local/bin/bootstrap"
@@ -143,6 +147,8 @@ stdenvNoCC.mkDerivation {
     fi
 
     disk_hash=$(sha256sum "$TMPDIR/blynn-root.ext2" | cut -c1-12)
+    disk_size_bytes=$(stat -c %s "$TMPDIR/blynn-root.ext2")
+    disk_size_mb=$(( (disk_size_bytes + 1048575) / 1048576 ))
     disk_dir="blynn-root-$disk_hash"
     cfg_file="blynn-riscv64-$disk_hash.cfg"
     mkdir -p "$out/$disk_dir"
@@ -169,7 +175,8 @@ stdenvNoCC.mkDerivation {
     cp ${repoSrc}/docs/index.html "$out/index.html"
     substituteInPlace "$out/index.html" \
       --replace-fail blynn-riscv64.cfg "$cfg_file" \
-      --replace-fail site.css "$css_file"
+      --replace-fail site.css "$css_file" \
+      --replace-fail @root_image_size_mb@ "$disk_size_mb"
     cp ${repoSrc}/docs/site.css "$out/$css_file"
     cp "$out/$css_file" "$out/site.css"
     cp ${repoSrc}/docs/NOTICE.md "$out/NOTICE.md"
