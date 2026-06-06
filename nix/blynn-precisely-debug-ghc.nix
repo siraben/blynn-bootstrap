@@ -56,7 +56,7 @@ stdenv.mkDerivation {
     perl -0pi -e 's/(module Obj where\n)/$1import Text.RawString.QQ\n/' Obj.hs
 
     sed -i '$r ${./precisely-debug-ghc/base-compat.hs}' Base.hs
-    install -m 644 ${./precisely-debug-ghc/System.hs} System.hs
+    cp ${./precisely-debug-ghc/System.hs} System.hs
 
     perl -0pi -e 's/\n-- Hash consing\.\ninstance \(Ord a, Ord b\) => Ord \(Either a b\) where\n.*?\nmemget /\n-- Hash consing.\nmemget /s' RTS.hs
     perl -0pi -e "s/Basic \[chr \\\$ intFromWord h\]/Basic (\"#num\" ++ show h)/" RTS.hs

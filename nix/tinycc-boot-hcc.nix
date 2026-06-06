@@ -172,7 +172,7 @@ stdenvNoCC.mkDerivation {
     mes_include_src="${mesLibc}/include"
     tcc_sysinclude_path="${if m1ArtifactsOnly then "/hcc-bootstrap/include" else "$out/include"}"
 
-    install -m 644 ${./support/tinycc/config.h.in} config.h
+    cp ${./support/tinycc/config.h.in} config.h
     substituteInPlace config.h \
       --replace-fail @target_define@ ${targetCfg.tccDefine} \
       --replace-fail @sysinclude@ "$tcc_sysinclude_path" \
@@ -525,13 +525,13 @@ stdenvNoCC.mkDerivation {
       bootstrap_link_suffix="bootstrap-libs/libc.o bootstrap-libs/libtcc1.o bootstrap-libs/crtn.o"
     fi
 
-    install -m 644 ${./support/tinycc/smoke/include-smoke-header.h} include-smoke-header.h
-    install -m 644 ${./support/tinycc/smoke/include-smoke.c} include-smoke.c
+    cp ${./support/tinycc/smoke/include-smoke-header.h} include-smoke-header.h
+    cp ${./support/tinycc/smoke/include-smoke.c} include-smoke.c
     run_target ./tcc $check_include_flags -E include-smoke.c > include-smoke.i
     run_target ./tcc $check_include_flags -c include-smoke.c -o include-smoke.o
     test -s include-smoke.o
 
-    install -m 644 ${./support/tinycc/smoke/macro-smoke.c} macro-smoke.c
+    cp ${./support/tinycc/smoke/macro-smoke.c} macro-smoke.c
     run_target ./tcc $check_include_flags -E macro-smoke.c > macro-smoke.i
     run_target ./tcc $check_include_flags -c macro-smoke.c -o macro-smoke.o
     test -s macro-smoke.o
@@ -540,11 +540,11 @@ stdenvNoCC.mkDerivation {
     run_target ./tcc $check_include_flags -c smoke.c -o smoke.o
     test -s smoke.o
 
-    install -m 644 ${./support/tinycc/smoke/float-const-smoke.c} float-const-smoke.c
+    cp ${./support/tinycc/smoke/float-const-smoke.c} float-const-smoke.c
     run_target ./tcc $check_include_flags -c float-const-smoke.c -o float-const-smoke.o
     test -s float-const-smoke.o
 
-    install -m 644 ${./support/tinycc/smoke/hex-float-smoke.c} hex-float-smoke.c
+    cp ${./support/tinycc/smoke/hex-float-smoke.c} hex-float-smoke.c
     run_target ./tcc-stage3 $check_include_flags -c hex-float-smoke.c -o hex-float-smoke.o
     "$support_objdump" -s hex-float-smoke.o | grep -i '00002065 4715f73f'
 
