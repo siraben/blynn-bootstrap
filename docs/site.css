@@ -129,15 +129,18 @@ h2 {
   justify-content: safe center;
 }
 
-.term {
+.term,
+.term * {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-variant-ligatures: none;
+  font-kerning: none;
+}
+
+.term {
   font-size: 14px;
   color: #f0f0f0;
   background: var(--terminal);
   border: 1px solid #2a2a2a;
-  /* monospace render hints: skip ligature/kerning shaping per glyph */
-  font-variant-ligatures: none;
-  font-kerning: none;
 }
 
 .term_content {
