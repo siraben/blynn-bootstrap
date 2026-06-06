@@ -59,7 +59,7 @@ bash.runCommand "${pname}-${version}"
           ];
         }
         ''
-          install -m 644 ${../fixtures/hello-world.c} test.c
+          cp ${../fixtures/hello-world.c} test.c
           musl-gcc -o test test.c
           ./test
           mkdir $out

@@ -33,7 +33,7 @@ stdenvNoCC.mkDerivation (
       cp ${sourceBundle}/share/hcc-blynn-sources/hcpp-tail.hs source/hcpp-tail.hs
       cp ${sourceBundle}/share/hcc-blynn-sources/hcc1-tail.hs source/hcc1-tail.hs
 
-      install -m 644 ${./hcc/kaem/hcc-blynn-c.kaem.in} hcc-blynn-c.kaem
+      cp ${./hcc/kaem/hcc-blynn-c.kaem.in} hcc-blynn-c.kaem
       substituteInPlace hcc-blynn-c.kaem \
         --replace-fail @bootstrap_shell@ ${bootstrapShell} \
         --replace-fail @script@ ${../scripts/hcc-blynn-c.sh}

@@ -15,12 +15,13 @@
       <div class="console-header">
         <div>
           <h1>Portable TinyCC Bootstrap</h1>
-          <p>riscv64 JSLinux booting Alpine Linux to a shell. Use the 1536 MB bootstrap VM and run <code>bootstrap</code> to build from the hex0 seed to a bootstrapped <code>tcc</code>.</p>
+          <p>riscv64 JSLinux booting Alpine Linux to a shell. Run <code>bootstrap</code> to verify the HCC checkpoint, build TinyCC, self-host it, and print the resulting hash.</p>
         </div>
         <div class="console-actions">
           <a class="button" id="reboot_link" href="index.html">Reboot</a>
           <a class="button" id="low_ram_link" href="?url=blynn-riscv64.cfg&cpu=riscv64&mem=256&cols=80&rows=28&font_size=13&net_url=">256 MB Shell</a>
-          <a class="button" id="full_ram_link" href="?url=blynn-riscv64.cfg&cpu=riscv64&mem=1536&cols=80&rows=28&font_size=13&net_url=">1536 MB Bootstrap</a>
+          <a class="button" id="checkpoint_ram_link" href="?url=blynn-riscv64.cfg&cpu=riscv64&mem=768&cols=80&rows=28&font_size=13&net_url=">768 MB Checkpoint</a>
+          <a class="button" id="full_ram_link" href="?url=blynn-riscv64.cfg&cpu=riscv64&mem=1536&cols=80&rows=28&font_size=13&net_url=">1536 MB Full</a>
           <a class="button" href="blynn-riscv64.cfg">Config</a>
         </div>
       </div>
@@ -48,8 +49,9 @@
         <ol>
           <li>Kernel starts with normal Linux boot messages on <code>console=hvc0</code>, then runs <code>init=/init</code>.</li>
           <li><code>/init</code> prepares Alpine and drops to a shell.</li>
-          <li>Run <code>bootstrap</code> in the 1536 MB VM to rebuild stage0-posix tools from the hex0 seed, then run the blynn/HCC portable chain.</li>
-          <li>After the build, the shell has the bootstrapped compiler as <code>blynn-tcc</code>.</li>
+          <li>Run <code>bootstrap</code> to verify the Nix-built riscv64 HCC checkpoint, then compile and self-host TinyCC inside the VM.</li>
+          <li>For the full proof run, use <code>bootstrap --from-seed</code> to rebuild stage0-posix, Blynn, HCC, and TinyCC from the seed path.</li>
+          <li>After either build, the shell has the bootstrapped compiler as <code>blynn-tcc</code> and prints its SHA256 hash.</li>
         </ol>
       </section>
 
@@ -59,7 +61,8 @@
 int main(void){ puts("tcc works"); return 0; }
 ' &gt;/tmp/tcc-smoke.c
 bootstrap --help
-bootstrap</code></pre>
+bootstrap
+cat /work/blynn/tinycc-boot-hcc/tcc.sha256</code></pre>
       </section>
 
       <section>
@@ -105,7 +108,7 @@ bootstrap</code></pre>
 
     function normalizeVmQuery() {
       if (!window.location.search) {
-        window.history.replaceState(null, "", vmQuery(1536));
+        window.history.replaceState(null, "", vmQuery(768));
         return;
       }
 
@@ -149,11 +152,13 @@ bootstrap</code></pre>
     }
 
     const lowRamLink = document.getElementById("low_ram_link");
+    const checkpointRamLink = document.getElementById("checkpoint_ram_link");
     const fullRamLink = document.getElementById("full_ram_link");
     const rebootLink = document.getElementById("reboot_link");
     lowRamLink.href = vmQuery(256, true);
+    checkpointRamLink.href = vmQuery(768, true);
     fullRamLink.href = vmQuery(1536, true);
-    rebootLink.href = vmQuery(256, true);
+    rebootLink.href = vmQuery(768, true);
 
     normalizeVmQuery();
   </script>

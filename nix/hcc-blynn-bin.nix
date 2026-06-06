@@ -53,7 +53,7 @@ mkDerivation (
       cp hcpp-blynn.c source/hcpp-blynn.c
       cp hcc1-blynn.c source/hcc1-blynn.c
 
-      install -m 644 ${./hcc/kaem/hcc-blynn-bin.kaem.in} hcc-blynn-bin.kaem
+      cp ${./hcc/kaem/hcc-blynn-bin.kaem.in} hcc-blynn-bin.kaem
       substituteInPlace hcc-blynn-bin.kaem \
         --replace-fail @bootstrap_shell@ ${bootstrapShell} \
         --replace-fail @script@ ${../scripts/hcc-blynn-bin.sh}

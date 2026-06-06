@@ -814,6 +814,17 @@
           m2.precisely.m2 = tinyccM1FromHcc "tinycc-m1-hcc-m2-precisely-m2" hccBy.m2.precisely.m2;
         };
 
+        jslinuxHccRiscv64Checkpoint = pkgs.callPackage ./nix/jslinux-hcc-checkpoint.nix {
+          stdenvNoCC = rawStdenvNoCC;
+          inherit minimalBootstrap;
+          generatedC = hccBlynnCBy.m2.precisely;
+          hccSrc = hccSrc;
+          repoSrc = repoPortableSrc;
+          m2libcSrc = m2libcSrc;
+          riscv64Binutils = pkgs.pkgsCross.riscv64.buildPackages.binutils;
+          bootstrapShell = minimalShell;
+        };
+
         jslinuxBlynnDemo = pkgs.callPackage ./nix/jslinux-blynn-demo.nix {
           repoSrc = repoPortableSrc;
           oriansjBlynnSrc = blynnSrc;
@@ -842,6 +853,7 @@
             hash = "sha256-0RVjc5eTPD2AXFdQ4/rKyeiGrll7Fj62NY5RISvGNSg=";
           };
           nixBuiltTinycc = tinyccBy.host.ghc.native;
+          hccCheckpoint = jslinuxHccRiscv64Checkpoint;
         };
 
         tinyccPortableSelfhost = assert system == "x86_64-linux"; pkgs.runCommand "tinycc-portable-selfhost" {

@@ -16,8 +16,10 @@ require_cmd chmod
 require_cmd cp
 require_cmd mkdir
 require_cmd rm
+require_cmd cmp
 require_cmd M1
 require_cmd hex2
+require_cmd sha256sum
 
 src_dir=${TINYCC_DIR:-${1:-build/upstreams/janneke-tinycc}}
 hcc_dir=${HCC_BIN_DIR:-${2:-build/hcc-blynn-bin}}
@@ -32,6 +34,7 @@ case $selfhost in
 esac
 [ "$selfhost" != 1 ] || require_cmd cmp
 target=${HCC_TARGET:-${TINYCC_HCC_TARGET:-${M2_ARCH:-}}}
+support_object_dir=${TCC_SUPPORT_OBJECT_DIR:-}
 
 src_dir=$(abspath "$src_dir")
 hcc_dir=$(abspath "$hcc_dir")
@@ -72,6 +75,19 @@ case $target in
     base_address=0x00600000
     [ "$selfhost" = 0 ] || die "TINYCC_SELFHOST=1 is not wired for portable aarch64 yet"
     ;;
+  riscv64)
+    hcc_target=riscv64
+    m1_arch=riscv64
+    m2_arch=riscv64
+    tcc_target_define=TCC_TARGET_RISCV64
+    m2_defs=riscv64_defs.M1
+    m2_elf=ELF-riscv64.hex2
+    support_start=riscv64-start.M1
+    support_memory=riscv64-memory.M1
+    support_syscalls=riscv64-syscalls.M1
+    support_compat=
+    base_address=0x00600000
+    ;;
   *) die "unsupported HCC_TARGET: $target" ;;
 esac
 
@@ -82,6 +98,14 @@ esac
 [ -d "$mes_libc/include" ] || die "missing Mes libc include directory: $mes_libc/include"
 [ -f "$mes_libc/lib/libc.c" ] || die "missing Mes libc aggregate: $mes_libc/lib/libc.c"
 [ -d "$m2libc/$m2_arch" ] || die "missing M2libc $m2_arch directory: $m2libc"
+case $hcc_target in
+  riscv64)
+    [ -n "$support_object_dir" ] || die "TCC_SUPPORT_OBJECT_DIR is required for portable riscv64"
+    support_object_dir=$(abspath "$support_object_dir")
+    [ -f "$support_object_dir/crt1.o" ] || die "missing riscv64 crt1.o in $support_object_dir"
+    [ -f "$support_object_dir/riscv64-syscalls.o" ] || die "missing riscv64-syscalls.o in $support_object_dir"
+    ;;
+esac
 
 bin_dir=$out_dir/bin
 lib_dir=$out_dir/lib
@@ -136,6 +160,28 @@ build_tcc() {
     bootstrap-libs/libc.o bootstrap-libs/libtcc1.o bootstrap-libs/crtn.o -o "$2"
 }
 
+build_riscv64_libs() {
+  tool=$1
+  dest=$2
+  mkdir -p "$dest"
+  cp "$support_object_dir/crt1.o" "$dest/crt1.o"
+  cp "$support_object_dir/riscv64-syscalls.o" "$dest/riscv64-syscalls.o"
+  run_target "$tool" -c -std=c11 -I include -I "$mes_libc/include" -o "$dest/crti.o" "$support_dir/tcc-riscv64-empty.c"
+  run_target "$tool" -c -std=c11 -I include -I "$mes_libc/include" -o "$dest/crtn.o" "$support_dir/tcc-riscv64-empty.c"
+  run_target "$tool" -c -std=c11 -I include -I "$mes_libc/include" -o "$dest/riscv64-runtime.o" "$support_dir/tcc-riscv64-runtime.c"
+  run_target "$tool" -c -std=c11 -I include -I "$mes_libc/include" -o "$dest/tcc-bootstrap-support.o" "$support_dir/tcc-bootstrap-support.c"
+  run_target "$tool" -c -std=c11 -I include -I "$mes_libc/include" -o "$dest/libgetopt.o" "$mes_libc/lib/libgetopt.c"
+  run_target "$tool" -c -I include -I "$mes_libc/include" -D TCC_TARGET_RISCV64=1 -o "$dest/libtcc1.o" "$support_dir/tcc-riscv64-empty.c"
+  run_target "$tool" -c -I include -I "$mes_libc/include" -D TCC_TARGET_RISCV64=1 -o "$dest/lib-arm64.o" lib/lib-arm64.c
+  make_ar "$tool" "$dest/libc.a" "$dest/riscv64-syscalls.o" "$dest/riscv64-runtime.o" "$dest/tcc-bootstrap-support.o"
+  make_ar "$tool" "$dest/libgetopt.a" "$dest/libgetopt.o"
+  make_ar "$tool" "$dest/libtcc1.a" "$dest/libtcc1.o" "$dest/lib-arm64.o"
+}
+
+run_target() {
+  "$@"
+}
+
 (
   cd "$artifact_dir"
   tcc_include_src=$PWD/include
@@ -166,6 +212,9 @@ build_tcc() {
 #define ONE_SOURCE 1
 #define CONFIG_TCC_SEMLOCK 0
 EOF
+  if [ "$hcc_target" = riscv64 ]; then
+    printf '%s\n' '#define TCC_RISCV64_NO_ASM 1' >> config.h
+  fi
 
   msg "hcpp tcc.c"
   hcpp -I . -I "$tcc_include_src" -I "$mes_libc/include" -D__linux__=1 tcc.c > tcc-expanded.c
@@ -199,17 +248,30 @@ EOF
   if [ "$selfhost" != 1 ]; then
     cp tcc "$bin_dir/tcc"
   else
-    build_libs ./tcc bootstrap-libs
-
-    # Stage1 needs explicit objects; its archive-loading path is incomplete.
-    build_tcc ./tcc tcc-stage2
-    build_tcc ./tcc-stage2 tcc-stage3
-    msg "fixpoint check tcc-stage2 == tcc-stage3"
-    cmp tcc-stage2 tcc-stage3
+    if [ "$hcc_target" = riscv64 ]; then
+      build_riscv64_libs ./tcc bootstrap-libs
+      bootstrap_link_prefix="-nostdlib bootstrap-libs/crt1.o bootstrap-libs/crti.o"
+      bootstrap_link_suffix="bootstrap-libs/riscv64-syscalls.o bootstrap-libs/riscv64-runtime.o bootstrap-libs/tcc-bootstrap-support.o bootstrap-libs/libgetopt.o bootstrap-libs/libtcc1.o bootstrap-libs/lib-arm64.o bootstrap-libs/crtn.o"
+      ./tcc $bootstrap_link_prefix -I . -I include -I "$mes_libc/include" tcc.c $bootstrap_link_suffix -o tcc-stage2
+      ./tcc-stage2 $bootstrap_link_prefix -I . -I include -I "$mes_libc/include" tcc.c $bootstrap_link_suffix -o tcc-stage3
+      ./tcc-stage3 $bootstrap_link_prefix -I . -I include -I "$mes_libc/include" tcc.c $bootstrap_link_suffix -o tcc-stage4
+      msg "fixpoint check tcc-stage3 == tcc-stage4"
+      cmp tcc-stage3 tcc-stage4
+      build_riscv64_libs ./tcc-stage3 final-libs
+      cp tcc-stage4 "$bin_dir/tcc-stage4"
+      chmod 555 "$bin_dir/tcc-stage4"
+    else
+      build_libs ./tcc bootstrap-libs
+      # Stage1 needs explicit objects; its archive-loading path is incomplete.
+      build_tcc ./tcc tcc-stage2
+      build_tcc ./tcc-stage2 tcc-stage3
+      msg "fixpoint check tcc-stage2 == tcc-stage3"
+      cmp tcc-stage2 tcc-stage3
+      build_libs ./tcc-stage3 final-libs
+      ./tcc-stage3 -c -I include -I "$mes_libc/include" -o final-libs/alloca.o lib/alloca.S
+      make_ar ./tcc-stage3 final-libs/libtcc1.a final-libs/libtcc1.o final-libs/alloca.o
+    fi
     test "$(./tcc-stage3 -dumpversion)" = '0.9.28-unstable-2025-12-03'
-    build_libs ./tcc-stage3 final-libs
-    ./tcc-stage3 -c -I include -I "$mes_libc/include" -o final-libs/alloca.o lib/alloca.S
-    make_ar ./tcc-stage3 final-libs/libtcc1.a final-libs/libtcc1.o final-libs/alloca.o
 
     printf '%s\n' 'int f(void){return 31;} int main(void){return f();}' > smoke.c
     ./tcc-stage3 -B final-libs -I include -I "$mes_libc/include" smoke.c -o smoke
@@ -229,4 +291,6 @@ EOF
 
 chmod 555 "$bin_dir/tcc-hcc-stage1" "$bin_dir/tcc"
 [ "$selfhost" != 1 ] || chmod 555 "$bin_dir/tcc-stage2"
+sha256sum "$bin_dir/tcc" > "$out_dir/tcc.sha256"
+msg "TinyCC final sha256: $(sed -n '1p' "$out_dir/tcc.sha256")"
 msg "TinyCC bootstrap complete: $bin_dir/tcc"
