@@ -158,10 +158,15 @@ stdenvNoCC.mkDerivation {
       --replace-fail "scrollback: 10000" "scrollback: 5000"
     cp ${emulatorJs} "$out/riscvemu64-wasm.js"
     cp ${emulatorWasm} "$out/riscvemu64-wasm.wasm"
+    css_hash=$(sha256sum ${repoSrc}/docs/site.css | cut -c1-12)
+    css_file="site-$css_hash.css"
+
     cp ${repoSrc}/docs/index.html "$out/index.html"
     substituteInPlace "$out/index.html" \
-      --replace-fail blynn-riscv64.cfg "$cfg_file"
-    cp ${repoSrc}/docs/site.css "$out/site.css"
+      --replace-fail blynn-riscv64.cfg "$cfg_file" \
+      --replace-fail site.css "$css_file"
+    cp ${repoSrc}/docs/site.css "$out/$css_file"
+    cp "$out/$css_file" "$out/site.css"
     cp ${repoSrc}/docs/NOTICE.md "$out/NOTICE.md"
   '';
 }
