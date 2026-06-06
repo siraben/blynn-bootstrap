@@ -20,6 +20,7 @@
   stage0Riscv64Src,
   bootstrapSeedsSrc,
   nixBuiltTinycc,
+  hccCheckpoint,
 }:
 
 let
@@ -123,6 +124,10 @@ stdenvNoCC.mkDerivation {
     install -Dm644 ${repoSrc}/nix/jslinux/help/lowmem.txt "$root/bootstrap/help/lowmem.txt"
     install -Dm644 ${repoSrc}/nix/jslinux/help/banner.txt "$root/bootstrap/help/banner.txt"
 
+    mkdir -p "$root/bootstrap/checkpoints/hcc-riscv64"
+    cp -R ${hccCheckpoint}/. "$root/bootstrap/checkpoints/hcc-riscv64/"
+    chmod -R u+w "$root/bootstrap/checkpoints/hcc-riscv64"
+
     mkdir -p "$root/usr/local/bin"
     install -Dm755 ${repoSrc}/nix/jslinux/guest/blynn-tcc "$root/usr/local/bin/blynn-tcc"
     install -Dm755 ${repoSrc}/nix/jslinux/guest/bootstrap "$root/usr/local/bin/bootstrap"
@@ -143,7 +148,7 @@ stdenvNoCC.mkDerivation {
     mkdir -p "$out/$disk_dir"
     python3 ${repoSrc}/nix/jslinux/split-image.py "$TMPDIR/blynn-root.ext2" "$out/$disk_dir"
 
-    install -m 644 ${repoSrc}/nix/jslinux/blynn-riscv64.cfg "$out/$cfg_file"
+    cp ${repoSrc}/nix/jslinux/blynn-riscv64.cfg "$out/$cfg_file"
     substituteInPlace "$out/$cfg_file" \
       --replace-fail @drive_dir@ "$disk_dir"
     cp "$out/$cfg_file" "$out/blynn-riscv64.cfg"

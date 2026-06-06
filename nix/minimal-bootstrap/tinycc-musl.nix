@@ -156,7 +156,7 @@ in
     passthru.tests.hello-world =
       result:
       bash.runCommand "${pname}-simple-program-${version}" { } ''
-        install -m 644 ${../fixtures/hello-world.c} test.c
+        cp ${../fixtures/hello-world.c} test.c
         ${result}/bin/tcc -v ${lib.optionalString staticByDefault "-static"} -B${musl}/lib -o test test.c
         ./test
         mkdir $out

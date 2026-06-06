@@ -1,14 +1,26 @@
 #!/bin/sh
 set -u
 
+bootstrap_mode=checkpoint
 case ${1:-} in
   -h|--help|help)
     cat /bootstrap/help/bootstrap.txt
     exit 0
     ;;
+  --from-seed|from-seed|full)
+    bootstrap_mode=from-seed
+    ;;
+  ""|--checkpoint|checkpoint) ;;
+  *)
+    echo "usage: bootstrap [--checkpoint|--from-seed]"
+    exit 2
+    ;;
 esac
 
-min_mem_kb=1400000
+case $bootstrap_mode in
+  checkpoint) min_mem_kb=512000 ;;
+  from-seed) min_mem_kb=1400000 ;;
+esac
 mem_kb=$(awk '/^MemTotal:/ { print $2 }' /proc/meminfo 2>/dev/null || echo 0)
 case ${BOOTSTRAP_ALLOW_LOW_MEM:-0} in
   1|yes|true) ;;
@@ -20,10 +32,13 @@ case ${BOOTSTRAP_ALLOW_LOW_MEM:-0} in
     ;;
 esac
 
-echo "running full portable blynn bootstrap from the hex0 seed"
+case $bootstrap_mode in
+  checkpoint) echo "running checkpointed HCC -> TinyCC self-host demo" ;;
+  from-seed) echo "running full portable blynn bootstrap from the hex0 seed" ;;
+esac
 echo "log is also written to /tmp/bootstrap-demo.log"
 rm -f /tmp/bootstrap-demo.status
-( /bootstrap/run-portable-demo.sh 2>&1; echo $? >/tmp/bootstrap-demo.status ) | tee /tmp/bootstrap-demo.log
+( BOOTSTRAP_MODE=$bootstrap_mode /bootstrap/run-portable-demo.sh 2>&1; echo $? >/tmp/bootstrap-demo.status ) | tee /tmp/bootstrap-demo.log
 bootstrap_status=$(cat /tmp/bootstrap-demo.status 2>/dev/null || echo 1)
 if [ "$bootstrap_status" = 0 ]; then
   echo "portable bootstrap finished; bootstrapped tcc is /usr/local/bin/blynn-tcc"

@@ -14,6 +14,54 @@ build=/work/blynn
 mkdir -p "$build"
 cd "$repo"
 
+run_tinycc_from_hcc_checkpoint() {
+  checkpoint=/bootstrap/checkpoints/hcc-riscv64
+  [ -x "$checkpoint/bin/hcpp" ] || {
+    echo "missing HCC checkpoint: $checkpoint/bin/hcpp" >&2
+    exit 1
+  }
+  [ -x "$checkpoint/bin/hcc1" ] || {
+    echo "missing HCC checkpoint: $checkpoint/bin/hcc1" >&2
+    exit 1
+  }
+  [ -x "$checkpoint/bin/hcc-m1" ] || {
+    echo "missing HCC checkpoint: $checkpoint/bin/hcc-m1" >&2
+    exit 1
+  }
+
+  echo "== verified checkpoint: HCC riscv64 =="
+  if [ -f "$checkpoint/SHA256SUMS" ]; then
+    (cd "$checkpoint" && sha256sum -c SHA256SUMS)
+  fi
+
+  export PATH="/bootstrap/stage0-tools/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+  export M2LIBC_PATH=/bootstrap/stage0-m2libc
+  export TINYCC_DIR=/bootstrap/upstreams/janneke-tinycc
+  export HCC_BIN_DIR="$checkpoint"
+  export MES_LIBC_DIR=/bootstrap/upstreams/gnu-mes
+  export HCC_TARGET=riscv64
+  export TINYCC_SELFHOST=1
+  export TCC_SUPPORT_OBJECT_DIR="$checkpoint/support-objects"
+  export OUT_DIR="$build/tinycc-boot-hcc"
+
+  echo "== HCC compiles TinyCC; TinyCC self-compiles to fixpoint =="
+  sh scripts/tinycc-boot-hcc.sh
+
+  echo "== resulting bootstrapped TinyCC hash =="
+  cat "$OUT_DIR/tcc.sha256"
+  "$OUT_DIR/bin/tcc" -dumpversion || true
+  echo "blynn-tcc is available on PATH via /usr/local/bin/blynn-tcc"
+}
+
+case ${BOOTSTRAP_MODE:-checkpoint} in
+  checkpoint)
+    run_tinycc_from_hcc_checkpoint
+    exit 0
+    ;;
+  from-seed) ;;
+  *) echo "unknown BOOTSTRAP_MODE: ${BOOTSTRAP_MODE:-}" >&2; exit 2 ;;
+esac
+
 export SOURCE_CACHE_DIR=/bootstrap/source-cache
 export BOOTSTRAP_TOOLS_REBUILD=1
 export OUT_DIR="$build/bootstrap-tools"
@@ -72,11 +120,13 @@ export TINYCC_DIR=/bootstrap/upstreams/janneke-tinycc
 export HCC_BIN_DIR="$build/hcc-blynn-bin"
 export MES_LIBC_DIR="$build/mes-libc"
 export HCC_TARGET=riscv64
-export TINYCC_SELFHOST=${TINYCC_SELFHOST:-0}
+export TINYCC_SELFHOST=${TINYCC_SELFHOST:-1}
+export TCC_SUPPORT_OBJECT_DIR=/bootstrap/checkpoints/hcc-riscv64/support-objects
 export OUT_DIR="$build/tinycc-boot-hcc"
-echo "== build TinyCC with bootstrapped HCC =="
+echo "== build TinyCC with bootstrapped HCC; TinyCC self-compiles =="
 sh scripts/tinycc-boot-hcc.sh
 
 echo "== bootstrapped blynn/HCC TinyCC =="
+cat "$build/tinycc-boot-hcc/tcc.sha256"
 "$build/tinycc-boot-hcc/bin/tcc" -dumpversion || true
 echo "blynn-tcc is available on PATH via /usr/local/bin/blynn-tcc"

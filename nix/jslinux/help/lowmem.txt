@@ -1,11 +1,14 @@
-bootstrap needs the default 1536 MB VM.
+bootstrap needs more memory for the selected mode.
 
 This guest is below the tested memory floor.
-The 256 MB link is intended for a quick shell only; running the full bootstrap
+The 256 MB link is intended for a quick shell only; running the bootstrap
 there can exhaust memory and leave the ext2 root filesystem read-only.
 
-Open the default page or change the URL to mem=1536, then run:
+Use mem=768 for the default checkpoint run:
   bootstrap
+
+Use mem=1536 for the full proof run:
+  bootstrap --from-seed
 
 To bypass this guard anyway:
   BOOTSTRAP_ALLOW_LOW_MEM=1 bootstrap
