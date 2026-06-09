@@ -1184,6 +1184,16 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           cccSrc = ./ccc;
         };
 
+        cccAsHcc = pkgs.callPackage ./nix/ccc-as-hcc.nix {
+          stdenvNoCC = pkgs.stdenvNoCC;
+          inherit minimalBootstrap;
+          cccSrc = ./ccc;
+          hccSrc = ./hcc;
+        };
+
+        tinyccBootCcc = tinyccFromHcc "tinycc-boot-ccc-m2" cccAsHcc;
+        tinyccM1Ccc = tinyccM1FromHcc "tinycc-m1-ccc-m2" cccAsHcc;
+
         tinyccPreprocInputs = pkgs.callPackage ./nix/tinycc-preproc-inputs.nix {
           stdenvNoCC = pkgs.stdenvNoCC;
           inherit (pkgs) fetchgit;
@@ -1212,6 +1222,9 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
 
           ccc = {
             chain = cccChain;
+            asHcc = cccAsHcc;
+            tinycc = tinyccBootCcc;
+            tinyccM1 = tinyccM1Ccc;
             tinyccPreprocInputs = tinyccPreprocInputs;
           };
 
