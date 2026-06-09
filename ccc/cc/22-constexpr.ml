@@ -121,7 +121,7 @@ and ce_primary env toks =
        | TkChar text -> Some (char_value text, rest)
        | _ -> ce_fail_str "unsupported token in constant expression")
 
-and ce_defined env toks =
+and ce_defined _env toks =
   match toks with
   | Tok (_, _, TkPunct p) :: rest ->
       if bytes_eq_str p "(" then

@@ -887,14 +887,20 @@ let rec emit_pat_binds p s0 path =
   | PCtor (_, args) -> emit_fields_binds args s0 path 0
   | PTup fields -> emit_fields_binds fields s0 path 0
   | PListCell (h, t) ->
-      emit_pat_binds h s0 (PFld (0, path)) + emit_pat_binds t s0 (PFld (1, path))
+      (* bind left-to-right explicitly: both sides emit code, and host
+         OCaml may evaluate operator operands right-to-left *)
+      (let nh = emit_pat_binds h s0 (PFld (0, path)) in
+       let nt = emit_pat_binds t s0 (PFld (1, path)) in
+       nh + nt)
   | _ -> 0
 
 and emit_fields_binds f s0 path i =
   match f with
   | PSeqEnd -> 0
   | PSeq (p, rest) ->
-      emit_pat_binds p s0 (PFld (i, path)) + emit_fields_binds rest s0 path (i + 1)
+      (let np = emit_pat_binds p s0 (PFld (i, path)) in
+       let nr = emit_fields_binds rest s0 path (i + 1) in
+       np + nr)
   | _ -> die "internal: malformed field chain"
 
 let emit_pat p ln s0 path =
