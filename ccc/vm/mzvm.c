@@ -91,9 +91,9 @@ enum {
 };
 
 enum {
-  DEFAULT_HEAP_WORDS = 8388608,  /* 1 << 23 per semispace */
-  STACK_WORDS = 1048576,         /* 1 << 20 */
-  RET_SLOTS = 524288             /* 1 << 19 */
+  DEFAULT_HEAP_WORDS = 33554432, /* 1 << 25 per semispace */
+  STACK_WORDS = 8388608,         /* 1 << 23 */
+  RET_SLOTS = 4194304            /* 1 << 22 */
 };
 
 /* ---- machine state ---- */

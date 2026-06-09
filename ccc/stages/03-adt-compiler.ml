@@ -323,6 +323,54 @@ let op_follows () =
      bytes_eq_str b "asr")
   else false
 
+(* ---- scanner lookahead ----
+   Decides whether a parenthesized expression in tail position can be
+   compiled as a tail expression: scan ahead to the matching close paren
+   and require that no operator, atom, or top-level comma follows (a
+   trailing operator/atom means the parens are a subexpression; a
+   depth-one comma means a tuple). Saves and restores the token state. *)
+
+let sv_pos = array_make 1 0
+let sv_line = array_make 1 0
+let sv_tk = array_make 1 0
+let sv_tint = array_make 1 0
+let sv_tstr = array_make 1 (bytes_create 1)
+
+let scan_save () =
+  array_set sv_pos 0 (array_get pos 0);
+  array_set sv_line 0 (array_get line 0);
+  array_set sv_tk 0 (array_get tk 0);
+  array_set sv_tint 0 (array_get tint 0);
+  array_set sv_tstr 0 (array_get tstr 0)
+
+let scan_restore () =
+  array_set pos 0 (array_get sv_pos 0);
+  array_set line 0 (array_get sv_line 0);
+  array_set tk 0 (array_get sv_tk 0);
+  array_set tint 0 (array_get sv_tint 0);
+  array_set tstr 0 (array_get sv_tstr 0)
+
+(* current token is the open paren; 1 = compile contents as tail *)
+let paren_tail_closed () =
+  scan_save ();
+  next_token ();
+  if array_get tk 0 = tk_punct && bytes_eq_str (array_get tstr 0) ")" then
+    (scan_restore (); 0)
+  else
+    (let rec scan depth tuple =
+       if array_get tk 0 = tk_eof then (scan_restore (); 0)
+       else if tok_is_punct "(" then (next_token (); scan (depth + 1) tuple)
+       else if tok_is_punct ")" then
+         (if depth = 1 then
+            (next_token ();
+             let cont = op_follows () || starts_atom () in
+             scan_restore ();
+             if cont || tuple = 1 then 0 else 1)
+          else (next_token (); scan (depth - 1) tuple))
+       else if depth = 1 && tok_is_punct "," then (next_token (); scan depth 1)
+       else (next_token (); scan depth tuple) in
+     scan 1 0)
+
 (* ---- output ---- *)
 
 let out = array_make 1 1
@@ -1032,6 +1080,14 @@ and c_unary t =
   else c_app t
 
 and c_app t =
+  if t = 1 && tok_is_punct "(" && paren_tail_closed () = 1 then
+    (* tail call through parentheses: (effects; call args) *)
+    (next_token ();
+     c_expr 1;
+     expect_punct ")")
+  else c_app_head t
+
+and c_app_head t =
   (* head *)
   let was_builtin =
     if array_get tk 0 = tk_ident &&
