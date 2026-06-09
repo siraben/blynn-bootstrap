@@ -38,7 +38,8 @@ OPS = {
     "ultint": (37, 0), "ugeint": (38, 0), "offsetint": (39, 1),
     "vectlength": (40, 0), "getvectitem": (41, 0), "setvectitem": (42, 0),
     "getbytes": (43, 0), "setbytes": (44, 0), "getglobal": (45, 1),
-    "setglobal": (46, 1), "ccall": (47, 2),
+    "setglobal": (46, 1), "ccall": (47, 2), "isint": (48, 0),
+    "gettag": (49, 0),
 }
 
 NPRIMS = 12
