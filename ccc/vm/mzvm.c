@@ -74,11 +74,13 @@ enum {
   PRIM_BYTES_CREATE = 6,
   PRIM_BYTES_LENGTH = 7,
   PRIM_ARG_COUNT = 8,
-  PRIM_ARG_GET = 9
+  PRIM_ARG_GET = 9,
+  PRIM_ARRAY_MAKE = 10,
+  PRIM_BYTES_OF_STRING = 11
 };
 
 enum {
-  NPRIMS = 10,
+  NPRIMS = 12,
   TAG_CLOSURE = 250,
   TAG_BYTES = 251,
   TAG_FWD = 255,
@@ -388,7 +390,7 @@ static word prim_arity(word prim) {
   if (prim == PRIM_ARG_COUNT) {
     return 0;
   }
-  if (prim == PRIM_WRITE_BYTE) {
+  if (prim == PRIM_WRITE_BYTE || prim == PRIM_ARRAY_MAKE) {
     return 2;
   }
   return 1;
@@ -472,6 +474,28 @@ static word do_prim(word prim, word nargs, word *args) {
       die("arg_get: out of range");
     }
     return bytes_of_cstr(vm_argv[i]);
+  }
+  if (prim == PRIM_ARRAY_MAKE) {
+    h = untag(args[0]);
+    if (h < 1) {
+      /* zero-size blocks have no field 0 for the GC forwarding pointer */
+      die("array_make: length must be positive");
+    }
+    slot = alloc_block(h, 0);
+    i = 0;
+    while (i < h) {
+      block_set_field(slot, i, args[1]);
+      i = i + 1;
+    }
+    return slot;
+  }
+  if (prim == PRIM_BYTES_OF_STRING) {
+    if (is_int(args[0]) || block_tag(args[0]) != TAG_BYTES) {
+      die("bytes_of_string: not bytes");
+    }
+    slot = alloc_bytes(bytes_len(args[0]));
+    memcpy(bytes_data(slot), bytes_data(args[0]), (size_t)bytes_len(args[0]));
+    return slot;
   }
   die("unknown primitive");
   return 0;
