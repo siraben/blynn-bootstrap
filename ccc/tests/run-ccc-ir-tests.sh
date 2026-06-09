@@ -46,6 +46,11 @@ run_corpus host_runner ""
 if [ "${1:-}" = "--vm" ]; then
   sh -c '
     set -e
+    gcc -O2 -o ccc/build/mzvm ccc/vm/mzvm.c 2>/dev/null || true
+    ccc/build/mlc-interp ccc/stages/02-ml0-compiler.ml ccc/stages/03-adt-compiler.ml ccc/build/ccc/03.mzs
+    ccc/build/mlc-interp ccc/stages/01-parenthetical.ml ccc/build/ccc/03.mzs ccc/build/ccc/03.mzbc
+    ccc/build/mzvm ccc/build/ccc/03.mzbc ccc/stages/04-pattern-compiler.ml ccc/build/ccc/04.mzs
+    ccc/build/mlc-interp ccc/stages/01-parenthetical.ml ccc/build/ccc/04.mzs ccc/build/ccc/04.mzbc
     ccc/build/mzvm ccc/build/ccc/04.mzbc ccc/build/ccc/ccc-cc1.ml ccc/build/ccc/ccc-cc1.mzs
     ccc/build/mlc-interp ccc/stages/01-parenthetical.ml ccc/build/ccc/ccc-cc1.mzs ccc/build/ccc/ccc-cc1.mzbc
   ' || { echo "FAIL vm chain build"; exit 1; }
