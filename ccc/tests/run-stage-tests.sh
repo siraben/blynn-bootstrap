@@ -145,6 +145,8 @@ if "$MZVM" "$BUILD/stage/03gen1.mzbc" "$S/04-pattern-compiler.ml" "$BUILD/stage/
   check_pat refs "42
 9 2
 55"
+  check_pat options "48
+79"
   [ "$ok04" = 1 ] && echo "ok   stage 04 conservative + fixpoint"
   [ "$ok04" = 1 ] || fail=1
 else
