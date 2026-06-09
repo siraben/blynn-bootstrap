@@ -75,4 +75,41 @@ else
   echo "FAIL compiling stage 02"; fail=1
 fi
 
+# 4. stage 03 (ADTs + shallow match): built by 02, must be a conservative
+#    extension (byte-identical .mzs for ML0 inputs), recompile itself to a
+#    fixpoint, and pass the ML1 fixtures
+if compile "$S/03-adt-compiler.ml" 03gen1; then
+  ok03=1
+  # conservative extension on ML0 fixtures
+  for f in ccc/tests/core/*.ml; do
+    n=$(basename "$f" .ml)
+    "$MZVM" "$BUILD/stage/03gen1.mzbc" "$f" "$BUILD/stage/$n.via03.mzs"
+    cmp -s "$BUILD/stage/$n.mzs" "$BUILD/stage/$n.via03.mzs" || { echo "FAIL stage03 not conservative on $n"; ok03=0; }
+  done
+  # self-compilation fixpoint
+  "$MZVM" "$BUILD/stage/03gen1.mzbc" "$S/03-adt-compiler.ml" "$BUILD/stage/03gen2.mzs" &&
+  "$INTERP" "$S/01-parenthetical.ml" "$BUILD/stage/03gen2.mzs" "$BUILD/stage/03gen2.mzbc"
+  cmp -s "$BUILD/stage/03gen1.mzbc" "$BUILD/stage/03gen2.mzbc" || { echo "FAIL stage 03 self-compilation fixpoint"; ok03=0; }
+  # ML1 fixtures
+  check_adt() {
+    name=$1; want=$2
+    "$MZVM" "$BUILD/stage/03gen1.mzbc" "ccc/tests/adt/$name.ml" "$BUILD/stage/$name.mzs" &&
+    "$INTERP" "$S/01-parenthetical.ml" "$BUILD/stage/$name.mzs" "$BUILD/stage/$name.mzbc" || { echo "FAIL $name (compile)"; ok03=0; return; }
+    got=$("$MZVM" "$BUILD/stage/$name.mzbc")
+    if [ "$got" = "$want" ]; then echo "ok   $name (adt)"; else echo "FAIL $name: '$got'"; ok03=0; fi
+  }
+  check_adt eval "40"
+  check_adt list "5050
+100"
+  check_adt classify "100
+101
+102
+42
+rgbTF"
+  [ "$ok03" = 1 ] && echo "ok   stage 03 conservative + fixpoint"
+  [ "$ok03" = 1 ] || fail=1
+else
+  echo "FAIL compiling stage 03"; fail=1
+fi
+
 if [ "$fail" = 0 ]; then echo "all stage tests passed"; else exit 1; fi

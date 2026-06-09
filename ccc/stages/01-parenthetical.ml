@@ -250,7 +250,8 @@ let () =
   add_op "geint" 36 0; add_op "ultint" 37 0; add_op "ugeint" 38 0;
   add_op "offsetint" 39 1; add_op "vectlength" 40 0; add_op "getvectitem" 41 0;
   add_op "setvectitem" 42 0; add_op "getbytes" 43 0; add_op "setbytes" 44 0;
-  add_op "getglobal" 45 1; add_op "setglobal" 46 1; add_op "ccall" 47 2
+  add_op "getglobal" 45 1; add_op "setglobal" 46 1; add_op "ccall" 47 2;
+  add_op "isint" 48 0; add_op "gettag" 49 0
 
 let op_switch = 17
 let nprims = 12
