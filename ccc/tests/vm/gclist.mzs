@@ -1,0 +1,28 @@
+; Build a 1000-cell live list with garbage churn (forces many GCs under a
+; small heap), then sum it. 1+..+1000 = 500500; exit 500500 mod 256 = 20.
+(const 0) (push)                ; list = nil (int 0)
+(const 0) (push)                ; i = 0
+(:build)
+(acc 0) (push) (const 1000) (ltint) (branchifnot :sum)
+(acc 0) (push) (const 1) (addint) (push)   ; head = i+1
+(acc 2) (push)                              ; tail = list
+(makeblock 0 2)
+(assign 1)                      ; list = cell
+(const 5) (push) (makeblock 0 1)            ; garbage churn
+(acc 0) (push) (const 1) (addint) (assign 0)
+(branch :build)
+
+(:sum)
+(pop 1)                         ; drop i; stack: [list]
+(const 0) (push)                ; sum
+(:sumloop)
+(acc 1) (push) (const 0) (eq) (branchif :done)
+(acc 0) (push)
+(acc 2) (getfield 0) (addint)
+(assign 0)                      ; sum += head
+(acc 1) (getfield 1) (assign 1) ; list = tail
+(branch :sumloop)
+
+(:done)
+(acc 0) (push) (const 256) (modint)
+(stop)
