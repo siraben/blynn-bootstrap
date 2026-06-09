@@ -100,6 +100,18 @@ New private helpers you invent must be prefixed (la_, lb_, lc_, ld_) to
 avoid collisions between segments. Functions from OTHER segments are
 called by their mechanical snake_case names; do not redefine them.
 
+## Evaluation-order rule (host-OCaml equivalence)
+
+ML2 evaluates operator operands, application arguments, and constructor
+arguments left-to-right; host OCaml evaluates them right-to-left. The two
+agree only when at most ONE operand of any operator/application/constructor
+performs side effects. Never combine two effectful calls in a single
+expression — bind them with `let` in the intended order first:
+
+    let a = effectful_one () in
+    let b = effectful_two () in
+    a + b
+
 ## Style
 
 Match the existing parts: two-space indent, parenthesized multi-statement
