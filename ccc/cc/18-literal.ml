@@ -1,7 +1,9 @@
-(* ccc part 18: literal decoding; port of Hcc.Literal. The bitwise
-   helpers deliberately fold bits only up to 2^30 and the shifts are
-   multiplications, exactly like the Haskell reference (which targeted
-   the Blynn dialect); native operators would diverge on wide values. *)
+(* ccc part 18: literal decoding; port of Hcc.Literal. Unlike the Haskell
+   reference (which bit-folded up to 2^30 for the Blynn dialect), the
+   bitwise helpers are native operators: the whole stack is ours and the
+   VM executes them directly. Shifts are guarded against >= word size,
+   where C native shifts are undefined; the reference's multiply/divide
+   shifts behaved like these guards for sane inputs. *)
 
 let bool_to_int v = if v then 1 else 0
 
@@ -9,29 +11,16 @@ let rec pow2 n = if n <= 0 then 1 else 2 * pow2 (n - 1)
 
 let bit_not_int v = 0 - v - 1
 
-let rec lit_bit_set value bit =
-  if value >= 0 then hmod (hdiv value bit) 2 = 1
-  else not (lit_bit_set (bit_not_int value) bit)
+let bit_and_int a b = a land b
+let bit_or_int a b = a lor b
+let bit_xor_int a b = a lxor b
 
-(* op: 0 and, 1 or, 2 xor *)
-let rec bit_fold_int op lhs rhs bit acc =
-  if bit > 1073741824 then acc
-  else
-    (let lb = lit_bit_set lhs bit in
-     let rb = lit_bit_set rhs bit in
-     let hit =
-       if op = 0 then lb && rb
-       else if op = 1 then lb || rb
-       else not (lb = rb) in
-     let acc2 = if hit then acc + bit else acc in
-     if bit = 1073741824 then acc2 else bit_fold_int op lhs rhs (bit * 2) acc2)
+let shift_left_int v amount =
+  if amount >= 63 then 0 else v lsl amount
 
-let bit_and_int a b = bit_fold_int 0 a b 1 0
-let bit_or_int a b = bit_fold_int 1 a b 1 0
-let bit_xor_int a b = bit_fold_int 2 a b 1 0
-
-let shift_left_int v amount = v * pow2 amount
-let shift_right_int v amount = hdiv v (pow2 amount)
+let shift_right_int v amount =
+  if amount >= 63 then (if v < 0 then 0 - 1 else 0)
+  else v asr amount
 
 (* "+","-",... on already-evaluated ints; None on bad op / division by 0 *)
 let eval_const_binop op a b =
