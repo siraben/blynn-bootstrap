@@ -1,9 +1,13 @@
 /* mzvm - ZINC-style bytecode VM for the mini-OCaml bootstrap chain.
  *
  * See ccc/docs/mzbc.md for the locked .mzbc container layout and
- * instruction set. This file is written in a conservative C subset so the
- * seed split (mzvm-seed.c for M2-Planet) stays mechanical: while loops,
- * switch dispatch, no struct passing, no designated initializers.
+ * instruction set. This file is written in the C subset accepted by both
+ * gcc and M2-Planet (via M2-Mesoplanet): while loops, switch dispatch, no
+ * struct passing, no designated initializers, no >32-bit integer
+ * literals, no reliance on short-circuit &&/|| (M2-Planet evaluates both
+ * sides bitwise), and no pointer +/- integer arithmetic on non-char
+ * pointers (M2-Planet does not scale it; indexing p[i] is fine, address
+ * computation goes through (char *) with explicit sizeof scaling).
  */
 
 #include <stdio.h>
@@ -121,10 +125,12 @@ static word *alloc_end;
 static word *from_start;
 static word *to_start;
 
-static FILE **chans;
+/* Channel table. M2-Planet rejects pointer-to-pointer-to-struct types
+ * (FILE **), so the slots are stored as char * and cast at use sites. */
+static char **chans;
 
 static int vm_argc;
-static char **vm_argv;
+static char **vm_argv; /* full argv; VM args start at index 2 */
 
 /* ---- diagnostics ---- */
 
@@ -168,6 +174,17 @@ static void die(char *msg) {
   exit(2);
 }
 
+/* ---- pointer helpers ----
+ *
+ * M2-Planet does not scale pointer +/- integer arithmetic by the pointed
+ * size (indexing p[i] does scale). All address computation on word
+ * pointers therefore goes through explicit byte arithmetic, which gcc and
+ * M2-Planet agree on. */
+
+static word *word_ptr_add(word *p, word n) {
+  return (word *)((char *)p + (n * (word)sizeof(word)));
+}
+
 /* ---- value layout ---- */
 
 static word mkint(word n) {
@@ -206,8 +223,7 @@ static void block_set_field(word v, word i, word x) {
 }
 
 static char *bytes_data(word v) {
-  word *p = (word *)v;
-  return (char *)(p + 1);
+  return (char *)v + sizeof(word);
 }
 
 static word bytes_len(word v) {
@@ -236,14 +252,14 @@ static word gc_copy(word v) {
   }
   wosize = (word)(((uword)hdr) >> 8);
   np = alloc_ptr;
-  alloc_ptr = alloc_ptr + wosize + 1;
+  alloc_ptr = word_ptr_add(alloc_ptr, wosize + 1);
   np[0] = hdr;
   i = 0;
   while (i < wosize) {
     np[i + 1] = p[i];
     i = i + 1;
   }
-  nv = (word)(np + 1);
+  nv = (word)word_ptr_add(np, 1);
   p[-1] = TAG_FWD;
   p[0] = nv;
   return nv;
@@ -260,7 +276,7 @@ static void gc(void) {
   from_start = to_start;
   to_start = tmp;
   alloc_ptr = from_start;
-  alloc_end = from_start + heap_words;
+  alloc_end = word_ptr_add(from_start, heap_words);
 
   acc = gc_copy(acc);
   env = gc_copy(env);
@@ -292,22 +308,22 @@ static void gc(void) {
         i = i + 1;
       }
     }
-    scan = scan + wosize + 1;
+    scan = word_ptr_add(scan, wosize + 1);
   }
 }
 
 static word alloc_block(word wosize, word tag) {
   word *p;
-  if (alloc_ptr + wosize + 1 > alloc_end) {
+  if (word_ptr_add(alloc_ptr, wosize + 1) > alloc_end) {
     gc();
-    if (alloc_ptr + wosize + 1 > alloc_end) {
+    if (word_ptr_add(alloc_ptr, wosize + 1) > alloc_end) {
       die("heap overflow");
     }
   }
   p = alloc_ptr;
-  alloc_ptr = alloc_ptr + wosize + 1;
+  alloc_ptr = word_ptr_add(alloc_ptr, wosize + 1);
   p[0] = (word)((((uword)wosize) << 8) | (uword)tag);
-  return (word)(p + 1);
+  return (word)word_ptr_add(p, 1);
 }
 
 static word alloc_bytes(word len) {
@@ -398,9 +414,12 @@ static word prim_arity(word prim) {
   return 1;
 }
 
-static word do_prim(word prim, word nargs, word *args) {
+/* Arguments live at stack[argbase .. argbase + nargs - 1]; passing an
+ * index instead of a pointer avoids non-char pointer arithmetic. */
+static word do_prim(word prim, word nargs, word argbase) {
   word h;
   word slot;
+  word a0;
   FILE *f;
   int c;
   word i;
@@ -410,75 +429,88 @@ static word do_prim(word prim, word nargs, word *args) {
   if (nargs != prim_arity(prim)) {
     die("primitive arity mismatch");
   }
+  a0 = 0;
+  if (nargs > 0) {
+    a0 = stack[argbase];
+  }
   if (prim == PRIM_EXIT) {
-    exit((int)untag(args[0]));
+    exit((int)untag(a0));
   }
   if (prim == PRIM_OPEN_IN) {
-    f = fopen(chan_path_buf(args[0]), "rb");
+    f = fopen(chan_path_buf(a0), "rb");
     if (f == NULL) {
       return mkint(-1);
     }
     slot = find_chan_slot();
-    chans[slot] = f;
+    chans[slot] = (char *)f;
     return mkint(slot);
   }
   if (prim == PRIM_OPEN_OUT) {
-    f = fopen(chan_path_buf(args[0]), "wb");
+    f = fopen(chan_path_buf(a0), "wb");
     if (f == NULL) {
       return mkint(-1);
     }
     slot = find_chan_slot();
-    chans[slot] = f;
+    chans[slot] = (char *)f;
     return mkint(slot);
   }
   if (prim == PRIM_CLOSE_CHAN) {
-    h = untag(args[0]);
-    if (h < 0 || h >= NCHANS || chans[h] == NULL) {
+    h = untag(a0);
+    if (h < 0 || h >= NCHANS) {
+      die("close_chan: bad handle");
+    }
+    if (chans[h] == NULL) {
       die("close_chan: bad handle");
     }
     if (h > 2) {
-      fclose(chans[h]);
+      fclose((FILE *)chans[h]);
       chans[h] = NULL;
     }
     return mkint(0);
   }
   if (prim == PRIM_READ_BYTE) {
-    h = untag(args[0]);
-    if (h < 0 || h >= NCHANS || chans[h] == NULL) {
+    h = untag(a0);
+    if (h < 0 || h >= NCHANS) {
       die("read_byte: bad handle");
     }
-    c = fgetc(chans[h]);
+    if (chans[h] == NULL) {
+      die("read_byte: bad handle");
+    }
+    c = fgetc((FILE *)chans[h]);
     if (c == EOF) {
       return mkint(-1);
     }
     return mkint(c & 255);
   }
   if (prim == PRIM_WRITE_BYTE) {
-    h = untag(args[0]);
-    if (h < 0 || h >= NCHANS || chans[h] == NULL) {
+    h = untag(a0);
+    if (h < 0 || h >= NCHANS) {
       die("write_byte: bad handle");
     }
-    fputc((int)(untag(args[1]) & 255), chans[h]);
+    if (chans[h] == NULL) {
+      die("write_byte: bad handle");
+    }
+    fputc((int)(untag(stack[argbase + 1]) & 255), (FILE *)chans[h]);
     return mkint(0);
   }
   if (prim == PRIM_BYTES_CREATE) {
-    return alloc_bytes(untag(args[0]));
+    return alloc_bytes(untag(a0));
   }
   if (prim == PRIM_BYTES_LENGTH) {
-    return mkint(bytes_len(args[0]));
+    return mkint(bytes_len(a0));
   }
   if (prim == PRIM_ARG_COUNT) {
     return mkint(vm_argc);
   }
   if (prim == PRIM_ARG_GET) {
-    i = untag(args[0]);
+    i = untag(a0);
     if (i < 0 || i >= vm_argc) {
       die("arg_get: out of range");
     }
-    return bytes_of_cstr(vm_argv[i]);
+    return bytes_of_cstr(vm_argv[i + 2]);
   }
   if (prim == PRIM_ARRAY_MAKE) {
-    h = untag(args[0]);
+    h = untag(a0);
     if (h < 1) {
       /* zero-size blocks have no field 0 for the GC forwarding pointer */
       die("array_make: length must be positive");
@@ -486,17 +518,23 @@ static word do_prim(word prim, word nargs, word *args) {
     slot = alloc_block(h, 0);
     i = 0;
     while (i < h) {
-      block_set_field(slot, i, args[1]);
+      block_set_field(slot, i, stack[argbase + 1]);
       i = i + 1;
     }
     return slot;
   }
   if (prim == PRIM_BYTES_OF_STRING) {
-    if (is_int(args[0]) || block_tag(args[0]) != TAG_BYTES) {
+    if (is_int(a0)) {
       die("bytes_of_string: not bytes");
     }
-    slot = alloc_bytes(bytes_len(args[0]));
-    memcpy(bytes_data(slot), bytes_data(args[0]), (size_t)bytes_len(args[0]));
+    if (block_tag(a0) != TAG_BYTES) {
+      die("bytes_of_string: not bytes");
+    }
+    slot = alloc_bytes(bytes_len(a0));
+    /* alloc_bytes may run the GC and move the source block; re-read it
+     * from the (GC-updated) stack slot. */
+    a0 = stack[argbase];
+    memcpy(bytes_data(slot), bytes_data(a0), (size_t)bytes_len(a0));
     return slot;
   }
   die("unknown primitive");
@@ -527,7 +565,11 @@ static word read_i32(FILE *f, char *what) {
   word v;
   v = read_u32(f, what);
   if (v > 2147483647) {
-    v = v - 4294967296;
+    /* subtract 2^32, split so every literal fits in 32 bits (M2-Planet
+     * rejects 64-bit integer literals) */
+    v = v - 2147483647;
+    v = v - 2147483647;
+    v = v - 2;
   }
   return v;
 }
@@ -542,6 +584,7 @@ static void load_file(char *path) {
   word g;
   word n;
   int c;
+  char *gd;
   f = fopen(path, "rb");
   if (f == NULL) {
     print_err("mzvm: cannot open ");
@@ -549,7 +592,26 @@ static void load_file(char *path) {
     print_err("\n");
     exit(2);
   }
-  if (fgetc(f) != 'M' || fgetc(f) != 'Z' || fgetc(f) != 'B' || fgetc(f) != 'C') {
+  /* read the magic bytes one at a time: M2-Planet's || does not
+   * short-circuit, so a chained fgetc condition has no guaranteed
+   * evaluation order */
+  c = fgetc(f);
+  if (c != 'M') {
+    print_err("mzvm: bad magic\n");
+    exit(2);
+  }
+  c = fgetc(f);
+  if (c != 'Z') {
+    print_err("mzvm: bad magic\n");
+    exit(2);
+  }
+  c = fgetc(f);
+  if (c != 'B') {
+    print_err("mzvm: bad magic\n");
+    exit(2);
+  }
+  c = fgetc(f);
+  if (c != 'C') {
     print_err("mzvm: bad magic\n");
     exit(2);
   }
@@ -594,6 +656,9 @@ static void load_file(char *path) {
   while (i < datacount) {
     len = read_u32(f, "data length");
     g = alloc_bytes(len);
+    /* index through a char* local: M2-Planet scales subscripts on a
+     * function-call result by the word size, not the element size */
+    gd = bytes_data(g);
     n = 0;
     while (n < len) {
       c = fgetc(f);
@@ -601,7 +666,7 @@ static void load_file(char *path) {
         print_err("mzvm: truncated data record\n");
         exit(2);
       }
-      bytes_data(g)[n] = (char)c;
+      gd[n] = (char)c;
       n = n + 1;
     }
     globals[i] = g;
@@ -630,6 +695,7 @@ static word run(void) {
   word nt;
   uword ul;
   uword ur;
+  char *bp;
   while (1) {
     if (pc < 0 || pc >= codelen) {
       die("pc out of code");
@@ -697,7 +763,10 @@ static word run(void) {
     case OP_APPLY:
       n = code[pc];
       pc = pc + 1;
-      if (is_int(acc) || block_tag(acc) != TAG_CLOSURE) {
+      if (is_int(acc)) {
+        die("APPLY of non-closure");
+      }
+      if (block_tag(acc) != TAG_CLOSURE) {
         die("APPLY of non-closure");
       }
       if (rsp >= RET_SLOTS) {
@@ -713,7 +782,10 @@ static word run(void) {
       n = code[pc];
       s = code[pc + 1];
       pc = pc + 2;
-      if (is_int(acc) || block_tag(acc) != TAG_CLOSURE) {
+      if (is_int(acc)) {
+        die("APPTERM of non-closure");
+      }
+      if (block_tag(acc) != TAG_CLOSURE) {
         die("APPTERM of non-closure");
       }
       if (s < 0 || n < 0 || sp - n - s < 0) {
@@ -983,25 +1055,36 @@ static word run(void) {
       break;
     case OP_GETBYTES:
       v = pop();
-      if (is_int(v) || block_tag(v) != TAG_BYTES) {
+      if (is_int(v)) {
+        die("GETBYTES of non-bytes");
+      }
+      if (block_tag(v) != TAG_BYTES) {
         die("GETBYTES of non-bytes");
       }
       i = untag(acc);
       if (i < 0 || i >= bytes_len(v)) {
         die("bytes index out of bounds");
       }
-      acc = mkint(255 & (word)(unsigned char)bytes_data(v)[i]);
+      /* plain byte load, then mask: a cast right next to the subscript
+       * makes M2-Planet rescale the index by the cast type's size */
+      bp = bytes_data(v);
+      n = bp[i];
+      acc = mkint(n & 255);
       break;
     case OP_SETBYTES:
       i = untag(pop());
       v = pop();
-      if (is_int(v) || block_tag(v) != TAG_BYTES) {
+      if (is_int(v)) {
+        die("SETBYTES of non-bytes");
+      }
+      if (block_tag(v) != TAG_BYTES) {
         die("SETBYTES of non-bytes");
       }
       if (i < 0 || i >= bytes_len(v)) {
         die("bytes index out of bounds");
       }
-      bytes_data(v)[i] = (char)(untag(acc) & 255);
+      bp = bytes_data(v);
+      bp[i] = (char)(untag(acc) & 255);
       acc = mkint(0);
       break;
     case OP_GETGLOBAL:
@@ -1028,7 +1111,7 @@ static word run(void) {
       if (n < 0 || n > sp) {
         die("CCALL out of stack");
       }
-      acc = do_prim(t, n, stack + sp - n);
+      acc = do_prim(t, n, sp - n);
       sp = sp - n;
       break;
     case OP_ISINT:
@@ -1050,6 +1133,29 @@ static word run(void) {
   }
 }
 
+/* decimal string to word; M2libc has atoi but no atol, and the value may
+ * not fit the seed's int handling, so parse by hand */
+static word parse_decimal(char *s) {
+  word v;
+  word neg;
+  word i;
+  v = 0;
+  neg = 0;
+  i = 0;
+  if (s[0] == '-') {
+    neg = 1;
+    i = 1;
+  }
+  while (s[i] >= '0' && s[i] <= '9') {
+    v = v * 10 + (s[i] - '0');
+    i = i + 1;
+  }
+  if (neg) {
+    v = 0 - v;
+  }
+  return v;
+}
+
 int main(int argc, char **argv) {
   char *heap_env;
   word i;
@@ -1060,17 +1166,19 @@ int main(int argc, char **argv) {
   heap_words = DEFAULT_HEAP_WORDS;
   heap_env = getenv("MZVM_HEAP_WORDS");
   if (heap_env != NULL) {
-    heap_words = atol(heap_env);
+    heap_words = parse_decimal(heap_env);
     if (heap_words < 4096) {
       heap_words = 4096;
     }
   }
-  space_a = calloc((size_t)heap_words, sizeof(word));
-  space_b = calloc((size_t)heap_words, sizeof(word));
-  stack = calloc(STACK_WORDS, sizeof(word));
-  ret_pc = calloc(RET_SLOTS, sizeof(word));
-  ret_env = calloc(RET_SLOTS, sizeof(word));
-  chans = calloc(NCHANS, sizeof(FILE *));
+  /* the big regions are never read before being written, so plain malloc
+   * avoids M2libc's byte-at-a-time calloc memset */
+  space_a = malloc((size_t)(heap_words * (word)sizeof(word)));
+  space_b = malloc((size_t)(heap_words * (word)sizeof(word)));
+  stack = malloc((size_t)(STACK_WORDS * (word)sizeof(word)));
+  ret_pc = malloc((size_t)(RET_SLOTS * (word)sizeof(word)));
+  ret_env = malloc((size_t)(RET_SLOTS * (word)sizeof(word)));
+  chans = calloc(NCHANS, sizeof(char *));
   if (space_a == NULL || space_b == NULL || stack == NULL || ret_pc == NULL ||
       ret_env == NULL || chans == NULL) {
     print_err("mzvm: out of memory\n");
@@ -1079,12 +1187,12 @@ int main(int argc, char **argv) {
   from_start = space_a;
   to_start = space_b;
   alloc_ptr = from_start;
-  alloc_end = from_start + heap_words;
-  chans[0] = stdin;
-  chans[1] = stdout;
-  chans[2] = stderr;
+  alloc_end = word_ptr_add(from_start, heap_words);
+  chans[0] = (char *)stdin;
+  chans[1] = (char *)stdout;
+  chans[2] = (char *)stderr;
   vm_argc = argc - 2;
-  vm_argv = argv + 2;
+  vm_argv = argv;
   acc = mkint(0);
   env = 0;
   sp = 0;
