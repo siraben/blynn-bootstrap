@@ -108,6 +108,10 @@ let peekc2 () =
   if array_get pos 0 + 1 >= array_get src_len 0 then 0 - 1
   else bytes_get (array_get src_buf 0) (array_get pos 0 + 1)
 
+let peekc3 () =
+  if array_get pos 0 + 2 >= array_get src_len 0 then 0 - 1
+  else bytes_get (array_get src_buf 0) (array_get pos 0 + 2)
+
 let nextc () =
   let c = peekc () in
   array_set pos 0 (array_get pos 0 + 1);
@@ -247,6 +251,16 @@ let next_token () =
      str_loop ();
      array_set tstr 0 (tbuf_take ());
      array_set tk 0 tk_str)
+  else if c = 39 && is_ident_start (peekc2 ()) && not (peekc3 () = 39) then
+    (* type variable like 'a: an identifier-shaped token kept only so
+       type declarations can mention parameters; types are never checked *)
+    (array_set tlen 0 0;
+     tbuf_push (nextc ());
+     let rec tv_loop () =
+       if is_ident_char (peekc ()) then (tbuf_push (nextc ()); tv_loop ()) in
+     tv_loop ();
+     array_set tstr 0 (tbuf_take ());
+     array_set tk 0 tk_ident)
   else if c = 39 then
     (let _ = nextc () in
      let d = nextc () in
@@ -1502,15 +1516,28 @@ let at_decl_end () =
    components: "of int * t" has arity 2. The expression is never checked. *)
 let skip_of_type () =
   let rec go arity pdepth =
-    if pdepth = 0 && (at_decl_end () || tok_is_punct "|") then arity
+    if pdepth = 0 && (at_decl_end () || tok_is_punct "|" || tok_is_ident "and") then arity
     else if tok_is_punct "(" then (next_token (); go arity (pdepth + 1))
     else if tok_is_punct ")" then (next_token (); go arity (pdepth - 1))
     else if pdepth = 0 && tok_is_punct "*" then (next_token (); go (arity + 1) pdepth)
     else (next_token (); go arity pdepth) in
   go 1 0
 
-let top_type () =
-  (* "type" consumed; "name =" then constructors *)
+(* optional type parameters before the type name: 'a or ('a, 'b); the
+   parameters are recorded nowhere, types are never checked *)
+let skip_type_params () =
+  if array_get tk 0 = tk_ident && bytes_get (array_get tstr 0) 0 = 39 then
+    next_token ()
+  else if tok_is_punct "(" &&
+          (let _ = next_token () in
+           let rec skip_params () =
+             if tok_is_punct ")" then (next_token (); true)
+             else (next_token (); skip_params ()) in
+           skip_params ()) then ()
+
+let rec top_type () =
+  (* "type" or "and" consumed; [params] name = constructors *)
+  skip_type_params ();
   (if not (array_get tk 0 = tk_ident) || is_keyword (array_get tstr 0) then
     die "expected a type name");
   next_token ();
@@ -1531,7 +1558,8 @@ let top_type () =
      else
        (add_ctor name next_const 0;
         if tok_is_punct "|" then (next_token (); ctors (next_const + 1) next_block))) in
-  ctors 0 0
+  ctors 0 0;
+  if tok_is_ident "and" then (next_token (); top_type ())
 
 let rec top_loop () =
   if array_get tk 0 = tk_eof then ()
