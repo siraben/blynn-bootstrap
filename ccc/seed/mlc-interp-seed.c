@@ -664,7 +664,7 @@ static Ast *parse_let_common(void) {
   /* caller consumed "let"; returns A_LET with body NULL (filled by caller
    * for the "in" form, or left NULL at top level). */
   Ast *n = new_ast(A_LET);
-  long cap = 16;
+  long cap = 64;
   n->names = xalloc(cap * (long)sizeof(char *));
   n->exprs = xalloc(cap * (long)sizeof(Ast *));
   n->nbind = 0;
