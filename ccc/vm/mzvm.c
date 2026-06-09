@@ -128,10 +128,13 @@ static void print_err(char *s) {
   fputs(s, stderr);
 }
 
+static char errbuf[32];
+
 static void print_err_int(word n) {
-  char buf[32];
+  char *buf;
   int i;
   uword u;
+  buf = errbuf;
   i = 31;
   buf[i] = 0;
   if (n < 0) {
@@ -352,10 +355,13 @@ static word pop(void) {
 
 /* ---- primitives ---- */
 
+static char pathbuf[4096];
+
 static char *chan_path_buf(word b) {
   /* NUL-terminate a copy of a bytes value for fopen. */
-  static char buf[4096];
+  char *buf;
   word len;
+  buf = pathbuf;
   len = bytes_len(b);
   if (len >= 4096) {
     die("path too long");
