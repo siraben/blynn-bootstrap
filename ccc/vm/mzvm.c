@@ -703,12 +703,10 @@ static word run(void) {
     op = code[pc];
     pc = pc + 1;
     switch (op) {
-    case OP_STOP:
-      return untag(acc);
-    case OP_CONST:
-      acc = mkint(code[pc]);
-      pc = pc + 1;
-      break;
+    /* Cases are ordered by dynamic frequency, hottest first:
+       M2-Planet lowers switch to a sequential comparison chain, so
+       source order is dispatch cost. gcc builds a jump table and is
+       unaffected. */
     case OP_ACC:
       n = code[pc];
       pc = pc + 1;
@@ -719,6 +717,175 @@ static word run(void) {
       break;
     case OP_PUSH:
       push(acc);
+      break;
+    case OP_CONST:
+      acc = mkint(code[pc]);
+      pc = pc + 1;
+      break;
+    case OP_GETGLOBAL:
+      n = code[pc];
+      pc = pc + 1;
+      if (n < 0 || n >= nglobals) {
+        die("GETGLOBAL out of range");
+      }
+      acc = globals[n];
+      break;
+    case OP_GETFIELD:
+      n = code[pc];
+      pc = pc + 1;
+      if (is_int(acc)) {
+        die("GETFIELD of integer");
+      }
+      acc = block_field(acc, n);
+      break;
+    case OP_BRANCHIFNOT:
+      t = code[pc];
+      pc = pc + 1;
+      if (acc == mkint(0)) {
+        check_code_addr(t);
+        pc = t;
+      }
+      break;
+    case OP_BRANCHIF:
+      t = code[pc];
+      pc = pc + 1;
+      if (acc != mkint(0)) {
+        check_code_addr(t);
+        pc = t;
+      }
+      break;
+    case OP_BRANCH:
+      t = code[pc];
+      check_code_addr(t);
+      pc = t;
+      break;
+    case OP_APPLY:
+      n = code[pc];
+      pc = pc + 1;
+      if (is_int(acc)) {
+        die("APPLY of non-closure");
+      }
+      if (block_tag(acc) != TAG_CLOSURE) {
+        die("APPLY of non-closure");
+      }
+      if (rsp >= RET_SLOTS) {
+        die("return stack overflow");
+      }
+      ret_pc[rsp] = pc;
+      ret_env[rsp] = env;
+      rsp = rsp + 1;
+      env = acc;
+      pc = untag(block_field(acc, 0));
+      break;
+    case OP_RETURN:
+      n = code[pc];
+      pc = pc + 1;
+      if (n < 0 || n > sp) {
+        die("RETURN out of stack");
+      }
+      sp = sp - n;
+      if (rsp <= 0) {
+        die("RETURN with empty return stack");
+      }
+      rsp = rsp - 1;
+      pc = ret_pc[rsp];
+      env = ret_env[rsp];
+      break;
+    case OP_APPTERM:
+      n = code[pc];
+      s = code[pc + 1];
+      pc = pc + 2;
+      if (is_int(acc)) {
+        die("APPTERM of non-closure");
+      }
+      if (block_tag(acc) != TAG_CLOSURE) {
+        die("APPTERM of non-closure");
+      }
+      if (s < 0 || n < 0 || sp - n - s < 0) {
+        die("APPTERM out of stack");
+      }
+      i = 0;
+      while (i < n) {
+        stack[sp - n - s + i] = stack[sp - n + i];
+        i = i + 1;
+      }
+      sp = sp - s;
+      env = acc;
+      pc = untag(block_field(acc, 0));
+      break;
+    case OP_EQ:
+      left = pop();
+      if (left == acc) {
+        acc = mkint(1);
+      } else {
+        acc = mkint(0);
+      }
+      break;
+    case OP_ADDINT:
+      left = pop();
+      acc = mkint(untag(left) + untag(acc));
+      break;
+    case OP_SUBINT:
+      left = pop();
+      acc = mkint(untag(left) - untag(acc));
+      break;
+    case OP_LTINT:
+      left = pop();
+      if (untag(left) < untag(acc)) {
+        acc = mkint(1);
+      } else {
+        acc = mkint(0);
+      }
+      break;
+    case OP_GEINT:
+      left = pop();
+      if (untag(left) >= untag(acc)) {
+        acc = mkint(1);
+      } else {
+        acc = mkint(0);
+      }
+      break;
+    case OP_GETBYTES:
+      v = pop();
+      if (is_int(v)) {
+        die("GETBYTES of non-bytes");
+      }
+      if (block_tag(v) != TAG_BYTES) {
+        die("GETBYTES of non-bytes");
+      }
+      i = untag(acc);
+      if (i < 0 || i >= bytes_len(v)) {
+        die("bytes index out of bounds");
+      }
+      /* plain byte load, then mask: a cast right next to the subscript
+       * makes M2-Planet rescale the index by the cast type's size */
+      bp = bytes_data(v);
+      n = bp[i];
+      acc = mkint(n & 255);
+      break;
+    case OP_NEQ:
+      left = pop();
+      if (left != acc) {
+        acc = mkint(1);
+      } else {
+        acc = mkint(0);
+      }
+      break;
+    case OP_LEINT:
+      left = pop();
+      if (untag(left) <= untag(acc)) {
+        acc = mkint(1);
+      } else {
+        acc = mkint(0);
+      }
+      break;
+    case OP_GTINT:
+      left = pop();
+      if (untag(left) > untag(acc)) {
+        acc = mkint(1);
+      } else {
+        acc = mkint(0);
+      }
       break;
     case OP_POP:
       n = code[pc];
@@ -745,75 +912,6 @@ static word run(void) {
       }
       acc = block_field(env, n);
       break;
-    case OP_CLOSURE:
-      t = code[pc];
-      n = code[pc + 1];
-      pc = pc + 2;
-      check_code_addr(t);
-      v = alloc_block(n + 1, TAG_CLOSURE);
-      block_set_field(v, 0, mkint(t));
-      i = 0;
-      while (i < n) {
-        block_set_field(v, i + 1, stack[sp - n + i]);
-        i = i + 1;
-      }
-      sp = sp - n;
-      acc = v;
-      break;
-    case OP_APPLY:
-      n = code[pc];
-      pc = pc + 1;
-      if (is_int(acc)) {
-        die("APPLY of non-closure");
-      }
-      if (block_tag(acc) != TAG_CLOSURE) {
-        die("APPLY of non-closure");
-      }
-      if (rsp >= RET_SLOTS) {
-        die("return stack overflow");
-      }
-      ret_pc[rsp] = pc;
-      ret_env[rsp] = env;
-      rsp = rsp + 1;
-      env = acc;
-      pc = untag(block_field(acc, 0));
-      break;
-    case OP_APPTERM:
-      n = code[pc];
-      s = code[pc + 1];
-      pc = pc + 2;
-      if (is_int(acc)) {
-        die("APPTERM of non-closure");
-      }
-      if (block_tag(acc) != TAG_CLOSURE) {
-        die("APPTERM of non-closure");
-      }
-      if (s < 0 || n < 0 || sp - n - s < 0) {
-        die("APPTERM out of stack");
-      }
-      i = 0;
-      while (i < n) {
-        stack[sp - n - s + i] = stack[sp - n + i];
-        i = i + 1;
-      }
-      sp = sp - s;
-      env = acc;
-      pc = untag(block_field(acc, 0));
-      break;
-    case OP_RETURN:
-      n = code[pc];
-      pc = pc + 1;
-      if (n < 0 || n > sp) {
-        die("RETURN out of stack");
-      }
-      sp = sp - n;
-      if (rsp <= 0) {
-        die("RETURN with empty return stack");
-      }
-      rsp = rsp - 1;
-      pc = ret_pc[rsp];
-      env = ret_env[rsp];
-      break;
     case OP_MAKEBLOCK:
       t = code[pc];
       n = code[pc + 1];
@@ -833,13 +931,46 @@ static word run(void) {
       sp = sp - n;
       acc = v;
       break;
-    case OP_GETFIELD:
-      n = code[pc];
-      pc = pc + 1;
-      if (is_int(acc)) {
-        die("GETFIELD of integer");
+    case OP_SETBYTES:
+      i = untag(pop());
+      v = pop();
+      if (is_int(v)) {
+        die("SETBYTES of non-bytes");
       }
-      acc = block_field(acc, n);
+      if (block_tag(v) != TAG_BYTES) {
+        die("SETBYTES of non-bytes");
+      }
+      if (i < 0 || i >= bytes_len(v)) {
+        die("bytes index out of bounds");
+      }
+      bp = bytes_data(v);
+      bp[i] = (char)(untag(acc) & 255);
+      acc = mkint(0);
+      break;
+    case OP_CCALL:
+      n = code[pc];
+      t = code[pc + 1];
+      pc = pc + 2;
+      if (n < 0 || n > sp) {
+        die("CCALL out of stack");
+      }
+      acc = do_prim(t, n, sp - n);
+      sp = sp - n;
+      break;
+    case OP_CLOSURE:
+      t = code[pc];
+      n = code[pc + 1];
+      pc = pc + 2;
+      check_code_addr(t);
+      v = alloc_block(n + 1, TAG_CLOSURE);
+      block_set_field(v, 0, mkint(t));
+      i = 0;
+      while (i < n) {
+        block_set_field(v, i + 1, stack[sp - n + i]);
+        i = i + 1;
+      }
+      sp = sp - n;
+      acc = v;
       break;
     case OP_SETFIELD:
       n = code[pc];
@@ -851,26 +982,14 @@ static word run(void) {
       block_set_field(v, n, acc);
       acc = mkint(0);
       break;
-    case OP_BRANCH:
-      t = code[pc];
-      check_code_addr(t);
-      pc = t;
-      break;
-    case OP_BRANCHIF:
-      t = code[pc];
+    case OP_SETGLOBAL:
+      n = code[pc];
       pc = pc + 1;
-      if (acc != mkint(0)) {
-        check_code_addr(t);
-        pc = t;
+      if (n < 0 || n >= nglobals) {
+        die("SETGLOBAL out of range");
       }
-      break;
-    case OP_BRANCHIFNOT:
-      t = code[pc];
-      pc = pc + 1;
-      if (acc == mkint(0)) {
-        check_code_addr(t);
-        pc = t;
-      }
+      globals[n] = acc;
+      acc = mkint(0);
       break;
     case OP_SWITCH:
       ni = code[pc];
@@ -891,14 +1010,21 @@ static word run(void) {
       check_code_addr(t);
       pc = t;
       break;
-    case OP_ADDINT:
-      left = pop();
-      acc = mkint(untag(left) + untag(acc));
+    case OP_ISINT:
+      if (is_int(acc)) {
+        acc = mkint(1);
+      } else {
+        acc = mkint(0);
+      }
       break;
-    case OP_SUBINT:
-      left = pop();
-      acc = mkint(untag(left) - untag(acc));
+    case OP_GETTAG:
+      if (is_int(acc)) {
+        die("GETTAG of integer");
+      }
+      acc = mkint(block_tag(acc));
       break;
+    case OP_STOP:
+      return untag(acc);
     case OP_MULINT:
       left = pop();
       acc = mkint(untag(left) * untag(acc));
@@ -946,54 +1072,6 @@ static word run(void) {
       break;
     case OP_BOOLNOT:
       if (acc == mkint(0)) {
-        acc = mkint(1);
-      } else {
-        acc = mkint(0);
-      }
-      break;
-    case OP_EQ:
-      left = pop();
-      if (left == acc) {
-        acc = mkint(1);
-      } else {
-        acc = mkint(0);
-      }
-      break;
-    case OP_NEQ:
-      left = pop();
-      if (left != acc) {
-        acc = mkint(1);
-      } else {
-        acc = mkint(0);
-      }
-      break;
-    case OP_LTINT:
-      left = pop();
-      if (untag(left) < untag(acc)) {
-        acc = mkint(1);
-      } else {
-        acc = mkint(0);
-      }
-      break;
-    case OP_LEINT:
-      left = pop();
-      if (untag(left) <= untag(acc)) {
-        acc = mkint(1);
-      } else {
-        acc = mkint(0);
-      }
-      break;
-    case OP_GTINT:
-      left = pop();
-      if (untag(left) > untag(acc)) {
-        acc = mkint(1);
-      } else {
-        acc = mkint(0);
-      }
-      break;
-    case OP_GEINT:
-      left = pop();
-      if (untag(left) >= untag(acc)) {
         acc = mkint(1);
       } else {
         acc = mkint(0);
@@ -1052,80 +1130,6 @@ static word run(void) {
       }
       block_set_field(v, i, acc);
       acc = mkint(0);
-      break;
-    case OP_GETBYTES:
-      v = pop();
-      if (is_int(v)) {
-        die("GETBYTES of non-bytes");
-      }
-      if (block_tag(v) != TAG_BYTES) {
-        die("GETBYTES of non-bytes");
-      }
-      i = untag(acc);
-      if (i < 0 || i >= bytes_len(v)) {
-        die("bytes index out of bounds");
-      }
-      /* plain byte load, then mask: a cast right next to the subscript
-       * makes M2-Planet rescale the index by the cast type's size */
-      bp = bytes_data(v);
-      n = bp[i];
-      acc = mkint(n & 255);
-      break;
-    case OP_SETBYTES:
-      i = untag(pop());
-      v = pop();
-      if (is_int(v)) {
-        die("SETBYTES of non-bytes");
-      }
-      if (block_tag(v) != TAG_BYTES) {
-        die("SETBYTES of non-bytes");
-      }
-      if (i < 0 || i >= bytes_len(v)) {
-        die("bytes index out of bounds");
-      }
-      bp = bytes_data(v);
-      bp[i] = (char)(untag(acc) & 255);
-      acc = mkint(0);
-      break;
-    case OP_GETGLOBAL:
-      n = code[pc];
-      pc = pc + 1;
-      if (n < 0 || n >= nglobals) {
-        die("GETGLOBAL out of range");
-      }
-      acc = globals[n];
-      break;
-    case OP_SETGLOBAL:
-      n = code[pc];
-      pc = pc + 1;
-      if (n < 0 || n >= nglobals) {
-        die("SETGLOBAL out of range");
-      }
-      globals[n] = acc;
-      acc = mkint(0);
-      break;
-    case OP_CCALL:
-      n = code[pc];
-      t = code[pc + 1];
-      pc = pc + 2;
-      if (n < 0 || n > sp) {
-        die("CCALL out of stack");
-      }
-      acc = do_prim(t, n, sp - n);
-      sp = sp - n;
-      break;
-    case OP_ISINT:
-      if (is_int(acc)) {
-        acc = mkint(1);
-      } else {
-        acc = mkint(0);
-      }
-      break;
-    case OP_GETTAG:
-      if (is_int(acc)) {
-        die("GETTAG of integer");
-      }
-      acc = mkint(block_tag(acc));
       break;
     default:
       die("unknown opcode");

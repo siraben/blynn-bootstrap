@@ -182,10 +182,12 @@ let float_literal_bytes size t =
 
 (* ---- escapes, characters and strings ---- *)
 
-(* decode one escape body starting at index i (after the backslash);
-   returns (value, next index) *)
-let decode_escape t i =
-  let n = bytes_length t in
+(* decode one escape body starting at index i (after the backslash),
+   reading no further than index n; returns (value, next index). The
+   bound is a parameter so callers can exclude a trailing quote without
+   slicing the text (a per-escape copy made this quadratic on long
+   escape-heavy literals, which dominated whole-of-TinyCC compiles). *)
+let decode_escape_until t n i =
   if i >= n then (0, i)
   else
     (let c = bytes_get t i in
@@ -222,7 +224,7 @@ let char_value t =
   if n >= 2 && bytes_get t 0 = 39 && bytes_get t 1 = 92 then
     (* drop the closing quote, then decode from index 2 *)
     (let e = if n >= 3 && bytes_get t (n - 1) = 39 then n - 1 else n in
-     let (v, _) = decode_escape (bytes_sub t 0 e) 2 in
+     let (v, _) = decode_escape_until t e 2 in
      v)
   else if n = 3 && bytes_get t 0 = 39 && bytes_get t 2 = 39 then bytes_get t 1
   else 0
@@ -235,7 +237,7 @@ let string_bytes t =
   let rec go i =
     if i >= e then [0]
     else if bytes_get t i = 92 then
-      (let (v, j) = decode_escape (bytes_sub t 0 e) (i + 1) in
+      (let (v, j) = decode_escape_until t e (i + 1) in
        v :: go j)
     else bytes_get t i :: go (i + 1) in
   go s
