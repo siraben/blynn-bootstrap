@@ -1276,7 +1276,7 @@ and need_string () =
 and join_strings strings =
   let out = buf_new 64 in
   buf_push out 34;
-  let rec one s =
+  let one s =
     (* decoded content bytes minus the trailing NUL *)
     let bs = string_bytes s in
     let rec emit l =
