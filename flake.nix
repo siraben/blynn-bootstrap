@@ -1081,6 +1081,17 @@
           target = nativeM1Target;
         };
 
+        cccChain = pkgs.callPackage ./nix/ccc-chain.nix {
+          stdenv = pkgs.stdenv;
+          cccSrc = ./ccc;
+        };
+
+        tinyccPreprocInputs = pkgs.callPackage ./nix/tinycc-preproc-inputs.nix {
+          stdenvNoCC = pkgs.stdenvNoCC;
+          inherit (pkgs) fetchgit;
+          mesLibc = mesLibcSrc;
+        };
+
         precisely-dialect-tests = pkgs.callPackage ./nix/precisely-dialect-tests.nix {
           stdenv = pkgs.stdenv;
           precisely = preciselyGhcDebug;
@@ -1100,6 +1111,11 @@
           precisely = preciselyBy;
 
           m2.mesoplanet.gcc = m2MesoplanetGcc;
+
+          ccc = {
+            chain = cccChain;
+            tinyccPreprocInputs = tinyccPreprocInputs;
+          };
 
           hcc = hccBy // {
             profile.host.ghc.native = hccProfileHostGhcNative;
