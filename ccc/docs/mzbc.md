@@ -122,6 +122,8 @@ stack, pushed left-to-right.
 | 45 | GETGLOBAL   | n         | `acc = globals[n]` |
 | 46 | SETGLOBAL   | n         | `globals[n] = acc`; `acc = 0` |
 | 47 | CCALL       | n, p      | call primitive `p`: pops `n` args (pushed left-to-right), result in `acc` |
+| 48 | ISINT       |           | `acc = acc is an immediate integer` (pattern tests) |
+| 49 | GETTAG      |           | `acc = tag(acc)` (block required; pattern tests) |
 
 ## Primitives (version 1 table, primcount = 12)
 
