@@ -61,7 +61,9 @@ enum {
   OP_SETBYTES = 44,
   OP_GETGLOBAL = 45,
   OP_SETGLOBAL = 46,
-  OP_CCALL = 47
+  OP_CCALL = 47,
+  OP_ISINT = 48,
+  OP_GETTAG = 49
 };
 
 enum {
@@ -1028,6 +1030,19 @@ static word run(void) {
       }
       acc = do_prim(t, n, stack + sp - n);
       sp = sp - n;
+      break;
+    case OP_ISINT:
+      if (is_int(acc)) {
+        acc = mkint(1);
+      } else {
+        acc = mkint(0);
+      }
+      break;
+    case OP_GETTAG:
+      if (is_int(acc)) {
+        die("GETTAG of integer");
+      }
+      acc = mkint(block_tag(acc));
       break;
     default:
       die("unknown opcode");
