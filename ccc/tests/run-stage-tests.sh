@@ -112,4 +112,43 @@ else
   echo "FAIL compiling stage 03"; fail=1
 fi
 
+# 5. stage 04 (nested patterns, list sugar, refs): built by stage 03,
+#    conservative on ML0/ML1 inputs, self-fixpoint, ML2 fixtures
+asm04() { # asm04 src.ml out-tag
+  "$MZVM" "$BUILD/stage/04gen1.mzbc" "$1" "$BUILD/stage/$2.mzs" &&
+  "$INTERP" "$S/01-parenthetical.ml" "$BUILD/stage/$2.mzs" "$BUILD/stage/$2.mzbc"
+}
+if "$MZVM" "$BUILD/stage/03gen1.mzbc" "$S/04-pattern-compiler.ml" "$BUILD/stage/04gen1.mzs" &&
+   "$INTERP" "$S/01-parenthetical.ml" "$BUILD/stage/04gen1.mzs" "$BUILD/stage/04gen1.mzbc"; then
+  ok04=1
+  for f in ccc/tests/core/*.ml ccc/tests/adt/*.ml; do
+    n=$(basename "$f" .ml)
+    "$MZVM" "$BUILD/stage/04gen1.mzbc" "$f" "$BUILD/stage/$n.via04.mzs"
+    cmp -s "$BUILD/stage/$n.mzs" "$BUILD/stage/$n.via04.mzs" || { echo "FAIL stage04 not conservative on $n"; ok04=0; }
+  done
+  "$MZVM" "$BUILD/stage/04gen1.mzbc" "$S/04-pattern-compiler.ml" "$BUILD/stage/04gen2.mzs" &&
+  "$INTERP" "$S/01-parenthetical.ml" "$BUILD/stage/04gen2.mzs" "$BUILD/stage/04gen2.mzbc"
+  cmp -s "$BUILD/stage/04gen1.mzbc" "$BUILD/stage/04gen2.mzbc" || { echo "FAIL stage 04 self-compilation fixpoint"; ok04=0; }
+  check_pat() {
+    name=$1; want=$2
+    asm04 "ccc/tests/pat/$name.ml" "$name" || { echo "FAIL $name (compile)"; ok04=0; return; }
+    got=$("$MZVM" "$BUILD/stage/$name.mzbc")
+    if [ "$got" = "$want" ]; then echo "ok   $name (pat)"; else echo "FAIL $name: '$got'"; ok04=0; fi
+  }
+  check_pat nested "24
+8
+12342"
+  check_pat lists "15
+15
+8
+13"
+  check_pat refs "42
+9 2
+55"
+  [ "$ok04" = 1 ] && echo "ok   stage 04 conservative + fixpoint"
+  [ "$ok04" = 1 ] || fail=1
+else
+  echo "FAIL compiling stage 04"; fail=1
+fi
+
 if [ "$fail" = 0 ]; then echo "all stage tests passed"; else exit 1; fi
