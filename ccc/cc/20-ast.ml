@@ -89,6 +89,49 @@ let rec param_types params =
   | [] -> []
   | Param (ty, _) :: rest -> ty :: param_types rest
 
+(* diagnostic tags, mirroring TypesAst.renderStmtTag/renderExprTag *)
+let render_stmt_tag s =
+  match s with
+  | SDecl (_, _, _) -> str_to_bytes "SDecl"
+  | SDecls _ -> str_to_bytes "SDecls"
+  | STypedef -> str_to_bytes "STypedef"
+  | SReturn _ -> str_to_bytes "SReturn"
+  | SExpr _ -> str_to_bytes "SExpr"
+  | SIf (_, _, _) -> str_to_bytes "SIf"
+  | SWhile (_, _) -> str_to_bytes "SWhile"
+  | SDoWhile (_, _) -> str_to_bytes "SDoWhile"
+  | SFor (_, _, _, _) -> str_to_bytes "SFor"
+  | SSwitch (_, _) -> str_to_bytes "SSwitch"
+  | SCase _ -> str_to_bytes "SCase"
+  | SDefault -> str_to_bytes "SDefault"
+  | SBreak -> str_to_bytes "SBreak"
+  | SContinue -> str_to_bytes "SContinue"
+  | SGoto _ -> str_to_bytes "SGoto"
+  | SLabel _ -> str_to_bytes "SLabel"
+  | SBlock _ -> str_to_bytes "SBlock"
+
+let render_expr_tag e =
+  match e with
+  | EInt _ -> str_to_bytes "EInt"
+  | EFloat _ -> str_to_bytes "EFloat"
+  | EChar _ -> str_to_bytes "EChar"
+  | EString _ -> str_to_bytes "EString"
+  | EVar _ -> str_to_bytes "EVar"
+  | ECall (_, _) -> str_to_bytes "ECall"
+  | EIndex (_, _) -> str_to_bytes "EIndex"
+  | EMember (_, _) -> str_to_bytes "EMember"
+  | EPtrMember (_, _) -> str_to_bytes "EPtrMember"
+  | EUnary (_, _) -> str_to_bytes "EUnary"
+  | ESizeofType _ -> str_to_bytes "ESizeofType"
+  | ESizeofExpr _ -> str_to_bytes "ESizeofExpr"
+  | ECast (_, _) -> str_to_bytes "ECast"
+  | EPostfix (_, _) -> str_to_bytes "EPostfix"
+  | EBinary (_, _, _) -> str_to_bytes "EBinary"
+  | ECond (_, _, _) -> str_to_bytes "ECond"
+  | EAssign (_, _) -> str_to_bytes "EAssign"
+  | ECompoundAssign (_, _, _) -> str_to_bytes "ECompoundAssign"
+  | EInitList _ -> str_to_bytes "EInitList"
+
 (* binary operator precedence: returns prec, or -1 when not a binop;
    right-associativity is a separate predicate (only assignments) *)
 let binop_arith_prec op =
