@@ -63,15 +63,29 @@ stdenvNoCC.mkDerivation {
     runasm() { ./mzvm 01.mzbc "$1" "$2"; }
     mark "bootstrap bytecode assembler"
 
+    # type-check gate: every promoted ML source must pass the HM checker
+    # (which is itself type-checked) before anything is compiled from it
+    ./mzvm 04.mzbc mlc/mltc.ml mltc.mzs
+    runasm mltc.mzs mltc.mzbc
+    typecheck() { ./mzvm mltc.mzbc "$1"; }
+    typecheck mlc/mltc.ml
+    typecheck stages/01-parenthetical.ml
+    typecheck stages/02-ml0-compiler.ml
+    typecheck stages/03-adt-compiler.ml
+    typecheck stages/04-pattern-compiler.ml
+    mark "mltc type-check gate (stages)"
+
     cat cc/[0-9]*.ml cc/dev/cc1main.ml > ccc-cc1.ml
+    typecheck ccc-cc1.ml
     ./mzvm 04.mzbc ccc-cc1.ml ccc-cc1.mzs
     runasm ccc-cc1.mzs ccc-cc1.mzbc
     cat cc/00-util.ml cc/05-prim.ml cc/10-lexer.ml cc/12-symtab.ml \
         cc/18-literal.ml cc/20-ast.ml cc/22-constexpr.ml \
         cc/70-preproc.ml cc/72-include.ml cc/dev/cppmain.ml > ccpp.ml
+    typecheck ccpp.ml
     ./mzvm 04.mzbc ccpp.ml ccpp.mzs
     runasm ccpp.mzs ccpp.mzbc
-    mark "ccc1 + ccpp bytecode"
+    mark "ccc1 + ccpp bytecode (type-checked)"
 
     mkdir -p cbits
     cp ${hccSrc}/cbits/hcc_m1.c cbits/hcc_m1.c
