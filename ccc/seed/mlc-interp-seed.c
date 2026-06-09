@@ -1086,8 +1086,8 @@ static Val *apply_prim(long prim, Val **a) {
     return val_false;
   case P_ARRAY_MAKE:
     h = val_int(a[0]);
-    if (h < 0) {
-      run_error("array_make: negative length");
+    if (h < 1) {
+      run_error("array_make: length must be positive");
     }
     v = new_val(V_BLOCK);
     v->nfields = h;

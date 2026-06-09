@@ -41,11 +41,11 @@ OPS = {
     "setglobal": (46, 1), "ccall": (47, 2),
 }
 
-NPRIMS = 10
+NPRIMS = 12
 PRIMS = {
     "exit": 0, "open_in": 1, "open_out": 2, "close_chan": 3,
     "read_byte": 4, "write_byte": 5, "bytes_create": 6, "bytes_length": 7,
-    "arg_count": 8, "arg_get": 9,
+    "arg_count": 8, "arg_get": 9, "array_make": 10, "bytes_of_string": 11,
 }
 
 
