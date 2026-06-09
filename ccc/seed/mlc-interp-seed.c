@@ -15,9 +15,13 @@
  * type inference. The dialect is a subset of OCaml so stage sources can be
  * cross-checked under a real OCaml with a small prelude.
  *
- * Written in a conservative M2-Planet-friendly C subset: while loops,
- * switch, malloc-only arena, no designated initializers, no varargs use
- * beyond stdio.
+ * Written in the C subset accepted by both gcc and M2-Planet (via
+ * M2-Mesoplanet): while loops, switch, malloc-only arena, no designated
+ * initializers, no varargs use beyond stdio, no ternary operator, no
+ * reliance on short-circuit &&/|| (M2-Planet evaluates both sides
+ * bitwise), no pointer-to-pointer-to-struct types (char ** carriers with
+ * casts instead), and no pointer +/- integer arithmetic except on char
+ * pointers (M2-Planet does not scale it; indexing p[i] is fine).
  */
 
 #include <stdio.h>
@@ -31,7 +35,7 @@ static long arena_left;
 
 static void *xalloc(long n) {
   void *p;
-  n = (n + 15) & ~15L;
+  n = (n + 15) & (0 - 16);
   if (arena_left < n) {
     long chunk = 4194304;
     if (chunk < n) {
@@ -96,8 +100,11 @@ static long line;
 
 static long tok_kind;
 static long tok_int;
-static char *tok_text;   /* ident or punct spelling */
-static char *tok_str;    /* string literal bytes */
+/* initialized to "" so strcmp in tok_is_punct/tok_is_ident is always safe:
+ * M2-Planet's && does not short-circuit, so the strcmp runs even when the
+ * token kind does not match */
+static char *tok_text = "";   /* ident or punct spelling */
+static char *tok_str = "";    /* string literal bytes */
 static long tok_strlen;
 
 static void lex_error(char *msg) {
@@ -110,17 +117,23 @@ static void lex_error(char *msg) {
 }
 
 static int peekc(void) {
+  int c;
   if (srcpos >= srclen) {
     return -1;
   }
-  return 255 & (int)(unsigned char)src[srcpos];
+  /* plain byte load, then mask: a cast right next to the subscript makes
+   * M2-Planet rescale the index by the cast type's size */
+  c = src[srcpos];
+  return c & 255;
 }
 
 static int peekc2(void) {
+  int c;
   if (srcpos + 1 >= srclen) {
     return -1;
   }
-  return 255 & (int)(unsigned char)src[srcpos + 1];
+  c = src[srcpos + 1];
+  return c & 255;
 }
 
 static int nextc(void) {
@@ -359,6 +372,8 @@ enum {
   B_LAND = 12, B_LOR = 13, B_LXOR = 14, B_LSL = 15, B_LSR = 16, B_ASR = 17
 };
 
+/* M2-Planet rejects pointer-to-pointer-to-struct types (Ast **), so
+ * arrays of Ast pointers are carried as char ** and cast at use sites. */
 typedef struct Ast Ast;
 struct Ast {
   int tag;
@@ -369,10 +384,14 @@ struct Ast {
   Ast *b;
   Ast *c;
   char **names;    /* A_LET binding names */
-  Ast **exprs;     /* A_LET binding exprs; A_TUPLE elements */
+  char **exprs;    /* really Ast *: A_LET binding exprs; A_TUPLE elements */
   long nbind;
   long lineno;
 };
+
+static Ast *ast_at(char **arr, long i) {
+  return (Ast *)arr[i];
+}
 
 static Ast *new_ast(int tag) {
   Ast *n = xalloc((long)sizeof(Ast));
@@ -492,15 +511,15 @@ static Ast *parse_atom(void) {
     n = parse_expr();
     if (tok_is_punct(",")) {
       Ast *t = new_ast(A_TUPLE);
-      t->exprs = xalloc(8 * (long)sizeof(Ast *));
-      t->exprs[0] = n;
+      t->exprs = xalloc(8 * (long)sizeof(char *));
+      t->exprs[0] = (char *)n;
       t->nbind = 1;
       while (tok_is_punct(",")) {
         next_token();
         if (t->nbind >= 8) {
           parse_error("tuple too wide for seed dialect");
         }
-        t->exprs[t->nbind] = parse_expr();
+        t->exprs[t->nbind] = (char *)parse_expr();
         t->nbind = t->nbind + 1;
       }
       expect_punct(")");
@@ -599,15 +618,24 @@ static Ast *parse_andor(void) {
     else if (tok_is_punct("||")) isand = 0;
     else return l;
     next_token();
-    n = new_ast(isand ? A_AND : A_OR);
+    if (isand) {
+      n = new_ast(A_AND);
+    } else {
+      n = new_ast(A_OR);
+    }
     n->a = l;
     n->b = parse_cmp();
     l = n;
   }
 }
 
-/* binding := name param* = expr | () = expr | _ = expr */
-static void parse_binding(char **name_out, Ast **expr_out) {
+/* binding := name param* = expr | () = expr | _ = expr
+ * Results are returned in bind_name/bind_expr: an Ast ** out-parameter
+ * would be a pointer-to-pointer-to-struct, which M2-Planet rejects. */
+static char *bind_name;
+static Ast *bind_expr;
+
+static void parse_binding(void) {
   char *name;
   char **params;
   long nparams = 0;
@@ -656,8 +684,8 @@ static void parse_binding(char **name_out, Ast **expr_out) {
     body = f;
     i = i - 1;
   }
-  *name_out = name;
-  *expr_out = body;
+  bind_name = name;
+  bind_expr = body;
 }
 
 static Ast *parse_let_common(void) {
@@ -666,7 +694,7 @@ static Ast *parse_let_common(void) {
   Ast *n = new_ast(A_LET);
   long cap = 64;
   n->names = xalloc(cap * (long)sizeof(char *));
-  n->exprs = xalloc(cap * (long)sizeof(Ast *));
+  n->exprs = xalloc(cap * (long)sizeof(char *));
   n->nbind = 0;
   n->ival = 0;
   if (tok_is_ident("rec")) {
@@ -674,14 +702,12 @@ static Ast *parse_let_common(void) {
     next_token();
   }
   while (1) {
-    char *name;
-    Ast *e;
     if (n->nbind >= cap) {
       parse_error("too many and-bindings");
     }
-    parse_binding(&name, &e);
-    n->names[n->nbind] = name;
-    n->exprs[n->nbind] = e;
+    parse_binding();
+    n->names[n->nbind] = bind_name;
+    n->exprs[n->nbind] = (char *)bind_expr;
     n->nbind = n->nbind + 1;
     if (tok_is_ident("and")) {
       next_token();
@@ -748,8 +774,9 @@ static Ast *parse_expr_nosemi(void) {
       next_token();
       n->c = parse_expr_nosemi();
     } else {
-      n->c = new_ast(A_INT);
-      n->c->ival = 0;
+      Ast *z = new_ast(A_INT);
+      z->ival = 0;
+      n->c = z;
     }
     return n;
   }
@@ -780,12 +807,12 @@ static Ast *parse_expr(void) {
 }
 
 /* program := (let [rec] bindings)* */
-static Ast **toplevels;
+static char **toplevels; /* really Ast * elements */
 static long ntoplevels;
 
 static void parse_program(void) {
   long cap = 1024;
-  toplevels = xalloc(cap * (long)sizeof(Ast *));
+  toplevels = xalloc(cap * (long)sizeof(char *));
   ntoplevels = 0;
   next_token();
   while (tok_kind != T_EOF) {
@@ -800,7 +827,7 @@ static void parse_program(void) {
     if (ntoplevels >= cap) {
       parse_error("too many top-level declarations");
     }
-    toplevels[ntoplevels] = parse_let_common();
+    toplevels[ntoplevels] = (char *)parse_let_common();
     ntoplevels = ntoplevels + 1;
   }
 }
@@ -818,21 +845,27 @@ enum {
 typedef struct Val Val;
 typedef struct Env Env;
 
+/* fields/pargs hold Val pointers but are typed char ** because M2-Planet
+ * rejects pointer-to-pointer-to-struct types; val_at casts them back. */
 struct Val {
   int tag;
   long ival;        /* V_INT */
   char *bdata;      /* V_BYTES */
   long blen;
-  Val **fields;     /* V_BLOCK */
+  char **fields;    /* V_BLOCK: really Val * elements */
   long nfields;
   char *param;      /* V_CLOSURE */
   Ast *body;
   Env *env;
   long prim;        /* V_PRIM: id */
   long arity;       /* V_PRIM: remaining args */
-  Val **pargs;      /* V_PRIM: collected args */
+  char **pargs;     /* V_PRIM: collected args, really Val * elements */
   long npargs;
 };
+
+static Val *val_at(char **arr, long i) {
+  return (Val *)arr[i];
+}
 
 struct Env {
   char *name;
@@ -943,9 +976,11 @@ enum {
 };
 
 enum { NCHANS = 256 };
-static FILE **chans;
+/* FILE ** is a pointer-to-pointer-to-struct, which M2-Planet rejects, so
+ * the channel slots are stored as char * and cast at use sites. */
+static char **chans;
 static int vm_argc;
-static char **vm_argv;
+static char **vm_argv; /* full argv; interpreted-program args start at 2 */
 
 static long find_chan_slot(void) {
   long i = 3;
@@ -970,164 +1005,184 @@ static char *path_buf(Val *b) {
   if (b->blen >= 4096) {
     run_error("path too long");
   }
-  memcpy(buf, b->bdata, (size_t)b->blen);
+  /* parenthesized: M2-Planet parses (size_t)b->blen as ((size_t)b)->blen */
+  memcpy(buf, b->bdata, (size_t)(b->blen));
   buf[b->blen] = 0;
   return buf;
 }
 
-static Val *apply_prim(long prim, Val **a) {
+/* a holds Val pointers as char * (see struct Val) */
+static Val *apply_prim(long prim, char **a) {
   FILE *f;
   long slot;
   long h;
   long i;
   int c;
   Val *v;
+  Val *a0;
+  Val *a1;
+  Val *a2;
+  a0 = (Val *)a[0];
+  a1 = (Val *)a[1];
+  a2 = (Val *)a[2];
   switch (prim) {
   case P_EXIT:
     fflush(stdout);
-    exit((int)val_int(a[0]));
+    exit((int)val_int(a0));
   case P_OPEN_IN:
-    f = fopen(path_buf(a[0]), "rb");
+    f = fopen(path_buf(a0), "rb");
     if (f == NULL) {
       return mk_int(-1);
     }
     slot = find_chan_slot();
-    chans[slot] = f;
+    chans[slot] = (char *)f;
     return mk_int(slot);
   case P_OPEN_OUT:
-    f = fopen(path_buf(a[0]), "wb");
+    f = fopen(path_buf(a0), "wb");
     if (f == NULL) {
       return mk_int(-1);
     }
     slot = find_chan_slot();
-    chans[slot] = f;
+    chans[slot] = (char *)f;
     return mk_int(slot);
   case P_CLOSE_CHAN:
-    h = val_int(a[0]);
-    if (h < 0 || h >= NCHANS || chans[h] == NULL) {
+    h = val_int(a0);
+    if (h < 0 || h >= NCHANS) {
+      run_error("close_chan: bad handle");
+    }
+    if (chans[h] == NULL) {
       run_error("close_chan: bad handle");
     }
     if (h > 2) {
-      fclose(chans[h]);
+      fclose((FILE *)chans[h]);
       chans[h] = NULL;
     }
     return val_unit;
   case P_READ_BYTE:
-    h = val_int(a[0]);
-    if (h < 0 || h >= NCHANS || chans[h] == NULL) {
+    h = val_int(a0);
+    if (h < 0 || h >= NCHANS) {
       run_error("read_byte: bad handle");
     }
-    c = fgetc(chans[h]);
+    if (chans[h] == NULL) {
+      run_error("read_byte: bad handle");
+    }
+    c = fgetc((FILE *)chans[h]);
     if (c == EOF) {
       return mk_int(-1);
     }
     return mk_int(c & 255);
   case P_WRITE_BYTE:
-    h = val_int(a[0]);
-    if (h < 0 || h >= NCHANS || chans[h] == NULL) {
+    h = val_int(a0);
+    if (h < 0 || h >= NCHANS) {
       run_error("write_byte: bad handle");
     }
-    fputc((int)(val_int(a[1]) & 255), chans[h]);
+    if (chans[h] == NULL) {
+      run_error("write_byte: bad handle");
+    }
+    fputc((int)(val_int(a1) & 255), (FILE *)chans[h]);
     return val_unit;
   case P_BYTES_CREATE:
-    h = val_int(a[0]);
+    h = val_int(a0);
     if (h < 0) {
       run_error("bytes_create: negative length");
     }
     return mk_bytes(h);
   case P_BYTES_LENGTH:
-    if (a[0]->tag != V_BYTES) {
+    if (a0->tag != V_BYTES) {
       run_error("bytes_length: not bytes");
     }
-    return mk_int(a[0]->blen);
+    return mk_int(a0->blen);
   case P_BYTES_GET:
-    if (a[0]->tag != V_BYTES) {
+    if (a0->tag != V_BYTES) {
       run_error("bytes_get: not bytes");
     }
-    i = val_int(a[1]);
-    if (i < 0 || i >= a[0]->blen) {
+    i = val_int(a1);
+    if (i < 0 || i >= a0->blen) {
       run_error("bytes_get: out of bounds");
     }
-    return mk_int(255 & (long)(unsigned char)a[0]->bdata[i]);
+    /* plain byte load, then mask: a cast right next to the subscript
+     * makes M2-Planet rescale the index by the cast type's size */
+    h = a0->bdata[i];
+    return mk_int(h & 255);
   case P_BYTES_SET:
-    if (a[0]->tag != V_BYTES) {
+    if (a0->tag != V_BYTES) {
       run_error("bytes_set: not bytes");
     }
-    i = val_int(a[1]);
-    if (i < 0 || i >= a[0]->blen) {
+    i = val_int(a1);
+    if (i < 0 || i >= a0->blen) {
       run_error("bytes_set: out of bounds");
     }
-    a[0]->bdata[i] = (char)(val_int(a[2]) & 255);
+    a0->bdata[i] = (char)(val_int(a2) & 255);
     return val_unit;
   case P_ARG_COUNT:
     return mk_int(vm_argc);
   case P_ARG_GET:
-    i = val_int(a[0]);
+    i = val_int(a0);
     if (i < 0 || i >= vm_argc) {
       run_error("arg_get: out of range");
     }
-    v = mk_bytes((long)strlen(vm_argv[i]));
-    memcpy(v->bdata, vm_argv[i], strlen(vm_argv[i]));
+    v = mk_bytes((long)strlen(vm_argv[i + 2]));
+    memcpy(v->bdata, vm_argv[i + 2], strlen(vm_argv[i + 2]));
     return v;
   case P_FST:
-    if (a[0]->tag != V_BLOCK || a[0]->nfields < 2) {
+    if (a0->tag != V_BLOCK || a0->nfields < 2) {
       run_error("fst: not a pair");
     }
-    return a[0]->fields[0];
+    return val_at(a0->fields, 0);
   case P_SND:
-    if (a[0]->tag != V_BLOCK || a[0]->nfields < 2) {
+    if (a0->tag != V_BLOCK || a0->nfields < 2) {
       run_error("snd: not a pair");
     }
-    return a[0]->fields[1];
+    return val_at(a0->fields, 1);
   case P_NOT:
-    if (val_int(a[0]) == 0) {
+    if (val_int(a0) == 0) {
       return val_true;
     }
     return val_false;
   case P_ARRAY_MAKE:
-    h = val_int(a[0]);
+    h = val_int(a0);
     if (h < 1) {
       run_error("array_make: length must be positive");
     }
     v = new_val(V_BLOCK);
     v->nfields = h;
-    v->fields = xalloc((h + 1) * (long)sizeof(Val *));
+    v->fields = xalloc((h + 1) * (long)sizeof(char *));
     i = 0;
     while (i < h) {
-      v->fields[i] = a[1];
+      v->fields[i] = (char *)a1;
       i = i + 1;
     }
     return v;
   case P_ARRAY_GET:
-    if (a[0]->tag != V_BLOCK) {
+    if (a0->tag != V_BLOCK) {
       run_error("array_get: not an array");
     }
-    i = val_int(a[1]);
-    if (i < 0 || i >= a[0]->nfields) {
+    i = val_int(a1);
+    if (i < 0 || i >= a0->nfields) {
       run_error("array_get: out of bounds");
     }
-    return a[0]->fields[i];
+    return val_at(a0->fields, i);
   case P_ARRAY_SET:
-    if (a[0]->tag != V_BLOCK) {
+    if (a0->tag != V_BLOCK) {
       run_error("array_set: not an array");
     }
-    i = val_int(a[1]);
-    if (i < 0 || i >= a[0]->nfields) {
+    i = val_int(a1);
+    if (i < 0 || i >= a0->nfields) {
       run_error("array_set: out of bounds");
     }
-    a[0]->fields[i] = a[2];
+    a0->fields[i] = (char *)a2;
     return val_unit;
   case P_ARRAY_LENGTH:
-    if (a[0]->tag != V_BLOCK) {
+    if (a0->tag != V_BLOCK) {
       run_error("array_length: not an array");
     }
-    return mk_int(a[0]->nfields);
+    return mk_int(a0->nfields);
   case P_BYTES_OF_STRING:
-    if (a[0]->tag != V_BYTES) {
+    if (a0->tag != V_BYTES) {
       run_error("bytes_of_string: not a string");
     }
-    v = mk_bytes(a[0]->blen);
-    memcpy(v->bdata, a[0]->bdata, (size_t)a[0]->blen);
+    v = mk_bytes(a0->blen);
+    memcpy(v->bdata, a0->bdata, (size_t)(a0->blen));
     return v;
   default:
     run_error("unknown primitive");
@@ -1181,7 +1236,8 @@ static Val *eval(Ast *ast, Env *env) {
       } else {
         ast = ast->c;
       }
-      continue;
+      /* M2-Planet rejects continue inside switch; break re-enters the loop */
+      break;
     case A_FUN: {
       Val *v = new_val(V_CLOSURE);
       v->param = ast->sval;
@@ -1192,26 +1248,26 @@ static Val *eval(Ast *ast, Env *env) {
     case A_SEQ:
       eval(ast->a, env);
       ast = ast->b;
-      continue;
+      break;
     case A_AND:
       if (val_int(eval(ast->a, env)) == 0) {
         return val_false;
       }
       ast = ast->b;
-      continue;
+      break;
     case A_OR:
       if (val_int(eval(ast->a, env)) != 0) {
         return val_true;
       }
       ast = ast->b;
-      continue;
+      break;
     case A_TUPLE: {
       Val *v = new_val(V_BLOCK);
       long i = 0;
       v->nfields = ast->nbind;
-      v->fields = xalloc(ast->nbind * (long)sizeof(Val *));
+      v->fields = xalloc(ast->nbind * (long)sizeof(char *));
       while (i < ast->nbind) {
-        v->fields[i] = eval(ast->exprs[i], env);
+        v->fields[i] = (char *)eval(ast_at(ast->exprs, i), env);
         i = i + 1;
       }
       return v;
@@ -1229,12 +1285,24 @@ static Val *eval(Ast *ast, Env *env) {
       case B_MOD:
         if (r == 0) run_error("division by zero");
         return mk_int(l % r);
-      case B_EQ: return l == r ? val_true : val_false;
-      case B_NE: return l != r ? val_true : val_false;
-      case B_LT: return l < r ? val_true : val_false;
-      case B_LE: return l <= r ? val_true : val_false;
-      case B_GT: return l > r ? val_true : val_false;
-      case B_GE: return l >= r ? val_true : val_false;
+      case B_EQ:
+        if (l == r) { return val_true; }
+        return val_false;
+      case B_NE:
+        if (l != r) { return val_true; }
+        return val_false;
+      case B_LT:
+        if (l < r) { return val_true; }
+        return val_false;
+      case B_LE:
+        if (l <= r) { return val_true; }
+        return val_false;
+      case B_GT:
+        if (l > r) { return val_true; }
+        return val_false;
+      case B_GE:
+        if (l >= r) { return val_true; }
+        return val_false;
       case B_LAND: return mk_int(l & r);
       case B_LOR: return mk_int(l | r);
       case B_LXOR: return mk_int(l ^ r);
@@ -1250,30 +1318,27 @@ static Val *eval(Ast *ast, Env *env) {
       if (ast->ival == 0) {
         i = 0;
         while (i < ast->nbind) {
-          env = env_bind(env, ast->names[i], eval(ast->exprs[i], env));
+          env = env_bind(env, ast->names[i], eval(ast_at(ast->exprs, i), env));
           i = i + 1;
         }
       } else {
-        Env *base = env;
+        Env *cell;
         i = 0;
         while (i < ast->nbind) {
           env = env_bind(env, ast->names[i], NULL);
           i = i + 1;
         }
-        {
-          /* evaluate in the extended env, then patch */
-          Env *cell = env;
-          i = ast->nbind - 1;
-          while (i >= 0) {
-            (void)base;
-            cell->val = eval(ast->exprs[i], env);
-            cell = cell->next;
-            i = i - 1;
-          }
+        /* evaluate in the extended env, then patch */
+        cell = env;
+        i = ast->nbind - 1;
+        while (i >= 0) {
+          cell->val = eval(ast_at(ast->exprs, i), env);
+          cell = cell->next;
+          i = i - 1;
         }
       }
       ast = ast->c;
-      continue;
+      break;
     }
     case A_APP: {
       Val *f = eval(ast->a, env);
@@ -1288,31 +1353,38 @@ static Val *eval(Ast *ast, Env *env) {
           Val *np;
           long i;
           if (f->arity == 1) {
-            Val *args[4];
+            /* arena-allocated: M2-Planet miscompiles local arrays that
+             * decay to a pointer argument */
+            char **args;
+            args = xalloc(4 * (long)sizeof(char *));
+            args[0] = NULL;
+            args[1] = NULL;
+            args[2] = NULL;
+            args[3] = NULL;
             i = 0;
             while (i < f->npargs) {
               args[i] = f->pargs[i];
               i = i + 1;
             }
-            args[f->npargs] = arg;
+            args[f->npargs] = (char *)arg;
             return apply_prim(f->prim, args);
           }
           np = new_val(V_PRIM);
           np->prim = f->prim;
           np->arity = f->arity - 1;
           np->npargs = f->npargs + 1;
-          np->pargs = xalloc(np->npargs * (long)sizeof(Val *));
+          np->pargs = xalloc(np->npargs * (long)sizeof(char *));
           i = 0;
           while (i < f->npargs) {
             np->pargs[i] = f->pargs[i];
             i = i + 1;
           }
-          np->pargs[f->npargs] = arg;
+          np->pargs[f->npargs] = (char *)arg;
           return np;
         }
         run_error("application of a non-function");
       }
-      continue;
+      break;
     }
     default:
       run_error("bad AST node");
@@ -1377,13 +1449,13 @@ int main(int argc, char **argv) {
   src[srclen] = 0;
   fclose(f);
 
-  chans = xalloc(NCHANS * (long)sizeof(FILE *));
-  memset(chans, 0, NCHANS * sizeof(FILE *));
-  chans[0] = stdin;
-  chans[1] = stdout;
-  chans[2] = stderr;
+  chans = xalloc(NCHANS * (long)sizeof(char *));
+  memset(chans, 0, NCHANS * sizeof(char *));
+  chans[0] = (char *)stdin;
+  chans[1] = (char *)stdout;
+  chans[2] = (char *)stderr;
   vm_argc = argc - 2;
-  vm_argv = argv + 2;
+  vm_argv = argv;
 
   val_unit = new_val(V_INT);
   val_unit->ival = 0;
@@ -1398,12 +1470,12 @@ int main(int argc, char **argv) {
   env = global_env();
   t = 0;
   while (t < ntoplevels) {
-    Ast *d = toplevels[t];
+    Ast *d = ast_at(toplevels, t);
     long i;
     if (d->ival == 0) {
       i = 0;
       while (i < d->nbind) {
-        env = env_bind(env, d->names[i], eval(d->exprs[i], env));
+        env = env_bind(env, d->names[i], eval(ast_at(d->exprs, i), env));
         i = i + 1;
       }
     } else {
@@ -1416,7 +1488,7 @@ int main(int argc, char **argv) {
       cell = env;
       i = d->nbind - 1;
       while (i >= 0) {
-        cell->val = eval(d->exprs[i], env);
+        cell->val = eval(ast_at(d->exprs, i), env);
         cell = cell->next;
         i = i - 1;
       }
