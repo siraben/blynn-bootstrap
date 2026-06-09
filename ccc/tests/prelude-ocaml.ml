@@ -52,6 +52,11 @@ let bytes_get (b : bytes) (i : int) : int = Char.code (Bytes.get b i)
 let bytes_set (b : bytes) (i : int) (v : int) : unit =
   Bytes.set b i (Char.chr (v land 255))
 let bytes_of_string = Bytes.of_string
+(* host-only bridge: dialect strings ARE bytes, so constructed paths can
+   be passed straight to open_in on the VM; under host OCaml the
+   conversion must be explicit. The VM build supplies the identity. *)
+let bytes_to_string : bytes -> string = Bytes.to_string
+let _ = bytes_to_string
 
 let string_length = String.length
 let string_get (s : string) (i : int) : int = Char.code (String.get s i)
