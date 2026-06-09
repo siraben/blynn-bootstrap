@@ -123,7 +123,7 @@ stack, pushed left-to-right.
 | 46 | SETGLOBAL   | n         | `globals[n] = acc`; `acc = 0` |
 | 47 | CCALL       | n, p      | call primitive `p`: pops `n` args (pushed left-to-right), result in `acc` |
 
-## Primitives (version 1 table, primcount = 10)
+## Primitives (version 1 table, primcount = 12)
 
 Channel handles are small integers into a VM-side table; handles 0, 1, 2
 are preopened as stdin, stdout, stderr.
@@ -140,3 +140,5 @@ are preopened as stdin, stdout, stderr.
 | 7  | bytes_length | b               | length |
 | 8  | arg_count    |                 | number of program args (after the .mzbc path) |
 | 9  | arg_get      | i               | program arg i as bytes |
+| 10 | array_make   | n, init         | fresh tag-0 block of n fields, all = init; n ≥ 1 (zero-size blocks have no field for the GC forwarding pointer) |
+| 11 | bytes_of_string | b            | fresh mutable copy of b |
