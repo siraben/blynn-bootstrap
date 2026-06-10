@@ -24,7 +24,8 @@ global *i* as a fresh `bytes` block before execution. Globals from
 
 Execution starts at code word 0 and ends at `STOP`; the accumulator's
 integer value at `STOP` is the process exit code (prim `exit` also ends
-the program).
+the program). The loader plants a `STOP` sentinel one word past the end
+of the code, so running off the end halts like an explicit `STOP`.
 
 ## Values
 
