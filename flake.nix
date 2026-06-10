@@ -94,6 +94,7 @@
           patches = [
             (upstreamPatches + "/blynn-compiler-local.patch")
             (upstreamPatches + "/blynn-compiler-crossly-perf.patch")
+            (upstreamPatches + "/blynn-compiler-rts2-vm-speed.patch")
           ];
         };
         m2libcSrc = "${blynnSrc}/M2libc";

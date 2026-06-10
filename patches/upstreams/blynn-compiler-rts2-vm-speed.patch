@@ -1,0 +1,119 @@
+diff --git a/inn/RTS2.hs b/inn/RTS2.hs
+--- a/inn/RTS2.hs
++++ b/inn/RTS2.hs
+@@ -198,23 +198,13 @@
+ 
+ -- Main VM loop.
+ comdefsrc = [r|
+-F x = "foreign(num(1));"
++END = "return;"
++ERR = "{u *p = sp + sizeof(u); *p = app(app(arg(1), _ERREND), _ERR2); sp = sp + sizeof(u);}"
++ERR2 = "lazy3(2, arg(1), _ERROUT, arg(2));"
++ERROUT = "errchar(num(1)); lazy2(2, _ERR, arg(2));"
++ERREND = "errexit(); return;"
+ Y x = "{u *p = sp + sizeof(u); lazy2(1, arg(1), *p);}"
+-Q x y z = z(y x)
+ QQ f a b c d = d(c(b(a(f))))
+-S x y z = x z(y z)
+-B x y z = x (y z)
+-BK x y z = x y
+-C x y z = x z y
+-R x y z = y z x
+-V x y z = z x y
+-T x y = y x
+-K x y = "_I" x
+-KI x y = "_I" y
+-I x = "{u *p = sp + sizeof(u); *p = arg(1); sp = sp + sizeof(u);}"
+-LEFT x y z = y x
+-CONS x y z w = w x y
+-NUM x y = "{u *p = sp + sizeof(u); lazy2(2, arg(2), *p);}"
+ NUM64 x y = "{u *p = sp + sizeof(u); lazy2(2, arg(2), *p);}"
+ FLO x = "lazy2(1, _I, app64d((u) num(1)));"
+ FLW x = "lazy2(1, _I, app64d((u) num(1)));"
+@@ -233,9 +223,6 @@
+ DMOD x y = "lazyDub(dub(1,2) % dub(3,4));"
+ DSHL x y = "lazyDub(dub(1,2) << dub(3,4));"
+ DSHR x y = "lazyDub(dub(1,2) >> dub(3,4));"
+-ADD x y = "_NUM" "num(1) + num(2)"
+-SUB x y = "_NUM" "num(1) - num(2)"
+-MUL x y = "_NUM" "num(1) * num(2)"
+ QUOT x y = "_NUM" "num(1) / num(2)"
+ REM x y = "_NUM" "num(1) % num(2)"
+ DIV x y = "_NUM" "div(num(1), num(2))"
+@@ -246,8 +233,6 @@
+ SHL x y = "_NUM" "num(1) << num(2)"
+ SHR x y = "_NUM" "ashr(num(1), num(2))"
+ U_SHR x y = "_NUM" "(u) num(1) >> (u) num(2)"
+-EQ x y = "lazy2(2, _I, ite(num(1) == num(2)));"
+-LE x y = "lazy2(2, _I, ite(num(1) <= num(2)));"
+ U_DIV x y = "_NUM" "(u) num(1) / (u) num(2)"
+ U_MOD x y = "_NUM" "(u) num(1) % (u) num(2)"
+ U_LE x y = "lazy2(2, _I, ule(num(1), num(2)));"
+@@ -255,11 +240,26 @@
+ NEWREF x y z = z ("_REF" x) y
+ READREF x y z = z "num(1)" y
+ WRITEREF x y z w = "{u *p = mem + (arg(2) + 1) * sizeof(u); *p = arg(1); lazy3(4, arg(4), _K, arg(3));}"
+-END = "return;"
+-ERR = "{u *p = sp + sizeof(u); *p = app(app(arg(1), _ERREND), _ERR2); sp = sp + sizeof(u);}"
+-ERR2 = "lazy3(2, arg(1), _ERROUT, arg(2));"
+-ERROUT = "errchar(num(1)); lazy2(2, _ERR, arg(2));"
+-ERREND = "errexit(); return;"
++SUB x y = "_NUM" "num(1) - num(2)"
++MUL x y = "_NUM" "num(1) * num(2)"
++ADD x y = "_NUM" "num(1) + num(2)"
++F x = "foreign(num(1));"
++LEFT x y z = y x
++EQ x y = "{u *p = sp + sizeof(u); p = mem + (*p + 1) * sizeof(u); p = mem + (*p + 1) * sizeof(u); u a = *p; u *p2 = sp + 2 * sizeof(u); u n = *p2; u *t = mem + n * sizeof(u); u *t1 = t + sizeof(u); p = mem + (*t1 + 1) * sizeof(u); u b = *p; u r = _KI; if (a == b) r = _K; *t = _I; *t1 = r; sp = sp + sizeof(u); *sp = _I; x = _I; goto run_nogc;}"
++LE x y = "{u *p = sp + sizeof(u); p = mem + (*p + 1) * sizeof(u); p = mem + (*p + 1) * sizeof(u); int a = *p; u *p2 = sp + 2 * sizeof(u); u n = *p2; u *t = mem + n * sizeof(u); u *t1 = t + sizeof(u); p = mem + (*t1 + 1) * sizeof(u); int b = *p; u r = _KI; if (a <= b) r = _K; *t = _I; *t1 = r; sp = sp + sizeof(u); *sp = _I; x = _I; goto run_nogc;}"
++KI x y = "{u *p2 = sp + 2 * sizeof(u); u n = *p2; u *t = mem + n * sizeof(u); *t = _I; sp = sp + sizeof(u); *sp = _I; x = _I; goto run_nogc;}"
++T x y = "{u *p1 = sp + sizeof(u); u *p = mem + (*p1 + 1) * sizeof(u); u xa = *p; u *p2 = sp + 2 * sizeof(u); u n = *p2; u *t = mem + n * sizeof(u); u *t1 = t + sizeof(u); u xb = *t1; *t = xb; *t1 = xa; sp = p1; *sp = xb; x = xb; goto run_nogc;}"
++CONS x y z w = "{u *p = sp + sizeof(u); p = mem + (*p + 1) * sizeof(u); u xa = *p; u *p2 = sp + 2 * sizeof(u); p = mem + (*p2 + 1) * sizeof(u); u xb = *p; u *p3 = sp + 3 * sizeof(u); u *q = sp + 4 * sizeof(u); u n = *q; u *t = mem + n * sizeof(u); u *t1 = t + sizeof(u); u xd = *t1; u *h = mem + hp * sizeof(u); *h = xd; h = h + sizeof(u); *h = xa; *p3 = hp; *t = hp; *t1 = xb; hp = hp + 2; sp = p2; *sp = xd; x = xd; goto run_check;}"
++Q x y z = "{u *p = sp + sizeof(u); p = mem + (*p + 1) * sizeof(u); u xa = *p; p = sp + 2 * sizeof(u); p = mem + (*p + 1) * sizeof(u); u xb = *p; u *q = sp + 3 * sizeof(u); u n = *q; u *t = mem + n * sizeof(u); u *t1 = t + sizeof(u); u xc = *t1; u *h = mem + hp * sizeof(u); *h = xb; h = h + sizeof(u); *h = xa; *t = xc; *t1 = hp; hp = hp + 2; sp = q - sizeof(u); *sp = xc; x = xc; goto run_check;}"
++K x y = "{u *p1 = sp + sizeof(u); u *p = mem + (*p1 + 1) * sizeof(u); u xa = *p; u *p2 = sp + 2 * sizeof(u); u n = *p2; u *t = mem + n * sizeof(u); *t = _I; t = t + sizeof(u); *t = xa; sp = p1; *sp = _I; x = _I; goto run_nogc;}"
++V x y z = "{u *p1 = sp + sizeof(u); u *p = mem + (*p1 + 1) * sizeof(u); u xa = *p; u *p2 = sp + 2 * sizeof(u); p = mem + (*p2 + 1) * sizeof(u); u xb = *p; u *q = sp + 3 * sizeof(u); u n = *q; u *t = mem + n * sizeof(u); u *t1 = t + sizeof(u); u xc = *t1; u *h = mem + hp * sizeof(u); *h = xc; h = h + sizeof(u); *h = xa; *p2 = hp; *t = hp; *t1 = xb; hp = hp + 2; sp = p1; *sp = xc; x = xc; goto run_check;}"
++BK x y z = "{u *p = sp + sizeof(u); p = mem + (*p + 1) * sizeof(u); u xa = *p; p = sp + 2 * sizeof(u); p = mem + (*p + 1) * sizeof(u); u xb = *p; u *q = sp + 3 * sizeof(u); u n = *q; u *t = mem + n * sizeof(u); *t = xa; t = t + sizeof(u); *t = xb; sp = q - sizeof(u); *sp = xa; x = xa; goto run_nogc;}"
++NUM x y = "{u *p1 = sp + sizeof(u); u xn = *p1; u *p2 = sp + 2 * sizeof(u); u n = *p2; u *t = mem + n * sizeof(u); u *t1 = t + sizeof(u); u f = *t1; *t = f; *t1 = xn; sp = p1; *sp = f; x = f; goto run_nogc;}"
++R x y z = "{u *p1 = sp + sizeof(u); u *p = mem + (*p1 + 1) * sizeof(u); u xa = *p; u *p2 = sp + 2 * sizeof(u); p = mem + (*p2 + 1) * sizeof(u); u xb = *p; u *q = sp + 3 * sizeof(u); u n = *q; u *t = mem + n * sizeof(u); u *t1 = t + sizeof(u); u xc = *t1; u *h = mem + hp * sizeof(u); *h = xb; h = h + sizeof(u); *h = xc; *p2 = hp; *t = hp; *t1 = xa; hp = hp + 2; sp = p1; *sp = xb; x = xb; goto run_check;}"
++S x y z = "{u *p1 = sp + sizeof(u); u *p = mem + (*p1 + 1) * sizeof(u); u xa = *p; u *p2 = sp + 2 * sizeof(u); p = mem + (*p2 + 1) * sizeof(u); u xb = *p; u *q = sp + 3 * sizeof(u); u n = *q; u *t = mem + n * sizeof(u); u *t1 = t + sizeof(u); u xc = *t1; u *h = mem + hp * sizeof(u); *h = xb; h = h + sizeof(u); *h = xc; h = h + sizeof(u); *h = xa; h = h + sizeof(u); *h = xc; u ap = hp + 2; *p2 = ap; *t = ap; *t1 = hp; hp = hp + 4; sp = p1; *sp = xa; x = xa; goto run_check;}"
++C x y z = "{u *p1 = sp + sizeof(u); u *p = mem + (*p1 + 1) * sizeof(u); u xa = *p; u *p2 = sp + 2 * sizeof(u); p = mem + (*p2 + 1) * sizeof(u); u xb = *p; u *q = sp + 3 * sizeof(u); u n = *q; u *t = mem + n * sizeof(u); u *t1 = t + sizeof(u); u xc = *t1; u *h = mem + hp * sizeof(u); *h = xa; h = h + sizeof(u); *h = xc; *p2 = hp; *t = hp; *t1 = xb; hp = hp + 2; sp = p1; *sp = xa; x = xa; goto run_check;}"
++I x = "{u *p = sp + sizeof(u); u *q = mem + (*p + 1) * sizeof(u); u v = *q; *p = v; sp = p; x = v; goto run_nogc;}"
++B x y z = "{u *p = sp + sizeof(u); p = mem + (*p + 1) * sizeof(u); u xa = *p; p = sp + 2 * sizeof(u); p = mem + (*p + 1) * sizeof(u); u xb = *p; u *q = sp + 3 * sizeof(u); u n = *q; u *t = mem + n * sizeof(u); u *t1 = t + sizeof(u); u xc = *t1; u *h = mem + hp * sizeof(u); *h = xb; h = h + sizeof(u); *h = xc; *t = xa; *t1 = hp; hp = hp + 2; sp = q - sizeof(u); *sp = xa; x = xa; goto run_check;}"
+ |]
+ 
+ argList t = case t of
+@@ -338,10 +338,32 @@
+ static int mod(int a, int b) { int r = a%b; return r + (((u)(a^b)) >> 31)*(!!r)*b; }
+ 
+ static void run() {
++  u x;
++  u *lim;
+   while(1) {
+-    if (mem + hp * sizeof(u) > sp - 8 * sizeof(u)) gc();
+-    u x = *sp;
+-    if (isAddr(x)) { u *p = mem + x * sizeof(u); sp = sp - sizeof(u); *sp = *p; } else switch(x) {
++    x = *sp;
++    run_check:
++    lim = mem + (hp + 8) * sizeof(u);
++    if (lim > sp) {
++      gc();
++      lim = mem + (hp + 8) * sizeof(u);
++      x = *sp;
++    }
++    run_nogc:
++    if (x >= 128) {
++      do {
++        u *p = mem + x * sizeof(u);
++        sp = sp - sizeof(u);
++        x = *p;
++        *sp = x;
++        if (sp < lim) {
++          gc();
++          lim = mem + (hp + 8) * sizeof(u);
++          x = *sp;
++        }
++      } while (x >= 128);
++    }
++    switch(x) {
+ |]++)
+   . foldr (.) id (genComb <$> comdefs)
+   . ([r|
