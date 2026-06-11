@@ -63,8 +63,25 @@ msg "ccc-chain: stage 04 self-compilation fixpoint holds"
 run01 01.mzs 01.mzbc
 runasm() { ./mzvm 01.mzbc "$1" "$2"; }
 
+# stage 05 optimizes code generation (uncurried known calls), so it is
+# verified by a SECOND-generation fixpoint: gen1 (built by 04) carries
+# 04's codegen, gen2 (built by gen1) and gen3 (built by gen2) must agree
+msg "ccc-chain: stage 05 (uncurrying optimizer)"
+./mzvm 04.mzbc "$stages/uncurry-compiler.ml" 05.mzs
+runasm 05.mzs 05.mzbc
+./mzvm 05.mzbc "$stages/uncurry-compiler.ml" 05b.mzs
+runasm 05b.mzs 05b.mzbc
+./mzvm 05b.mzbc "$stages/uncurry-compiler.ml" 05c.mzs
+cmp 05b.mzs 05c.mzs
+msg "ccc-chain: stage 05 self-compilation fixpoint holds"
+
+# faster assembler and everything downstream compiled by stage 05
+./mzvm 05b.mzbc "$stages/parenthetical.ml" 01o.mzs
+runasm 01o.mzs 01o.mzbc
+runasm() { ./mzvm 01o.mzbc "$1" "$2"; }
+
 msg "ccc-chain: mltc type-check gate"
-./mzvm 04.mzbc "$ccc_dir/mlc/mltc.ml" mltc.mzs
+./mzvm 05b.mzbc "$ccc_dir/mlc/mltc.ml" mltc.mzs
 runasm mltc.mzs mltc.mzbc
 typecheck() { ./mzvm mltc.mzbc "$1"; }
 typecheck "$ccc_dir/mlc/mltc.ml"
@@ -72,15 +89,16 @@ typecheck "$stages/parenthetical.ml"
 typecheck "$stages/ml0-compiler.ml"
 typecheck "$stages/adt-compiler.ml"
 typecheck "$stages/pattern-compiler.ml"
+typecheck "$stages/uncurry-compiler.ml"
 
 msg "ccc-chain: ccc1 + ccpp bytecode (type-checked)"
 cat $(sed "s|^|$ccc_dir/cc/|" "$ccc_dir/cc/PARTS-cc1") "$ccc_dir/cc/dev/cc1main.ml" > ccc-cc1.ml
 typecheck ccc-cc1.ml
-./mzvm 04.mzbc ccc-cc1.ml ccc-cc1.mzs
+./mzvm 05b.mzbc ccc-cc1.ml ccc-cc1.mzs
 runasm ccc-cc1.mzs ccc-cc1.mzbc
 cat $(sed "s|^|$ccc_dir/cc/|" "$ccc_dir/cc/PARTS-ccpp") "$ccc_dir/cc/dev/cppmain.ml" > ccpp.ml
 typecheck ccpp.ml
-./mzvm 04.mzbc ccpp.ml ccpp.mzs
+./mzvm 05b.mzbc ccpp.ml ccpp.mzs
 runasm ccpp.mzs ccpp.mzbc
 
 msg "ccc-chain: M2 hcc-m1 backend"

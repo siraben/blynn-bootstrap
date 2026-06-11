@@ -48,7 +48,7 @@ host_runner() { ocaml "$BUILD/ccc/mltc-host.ml" "$1"; }
 run_all host_runner ""
 
 if [ "${1:-}" = "--vm" ]; then
-  ccc/build/mzvm ccc/build/ccc/04.mzbc ccc/mlc/mltc.ml "$BUILD/ccc/mltc.mzs" &&
+  ccc/build/mzvm ccc/build/ccc/05b.mzbc ccc/mlc/mltc.ml "$BUILD/ccc/mltc.mzs" &&
   ccc/build/mlc-interp ccc/stages/parenthetical.ml "$BUILD/ccc/mltc.mzs" "$BUILD/ccc/mltc.mzbc" || { echo "FAIL vm build"; exit 1; }
   vm_runner() { ccc/build/mzvm "$BUILD/ccc/mltc.mzbc" "$1"; }
   run_all vm_runner " (vm)"
