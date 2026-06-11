@@ -157,4 +157,35 @@ else
   echo "FAIL compiling stage 04"; fail=1
 fi
 
+# 6. stage 05 (uncurrying optimizer): same language, different codegen,
+#    so verification is behavioral: second-generation fixpoint and every
+#    fixture must produce the same output as it did through stage 04
+asm05() {
+  "$MZVM" "$BUILD/stage/05gen2.mzbc" "$1" "$BUILD/stage/$2.mzs" &&
+  "$INTERP" "$S/parenthetical.ml" "$BUILD/stage/$2.mzs" "$BUILD/stage/$2.mzbc"
+}
+if "$MZVM" "$BUILD/stage/04gen1.mzbc" "$S/uncurry-compiler.ml" "$BUILD/stage/05gen1.mzs" &&
+   "$INTERP" "$S/parenthetical.ml" "$BUILD/stage/05gen1.mzs" "$BUILD/stage/05gen1.mzbc" &&
+   "$MZVM" "$BUILD/stage/05gen1.mzbc" "$S/uncurry-compiler.ml" "$BUILD/stage/05gen2.mzs" &&
+   "$INTERP" "$S/parenthetical.ml" "$BUILD/stage/05gen2.mzs" "$BUILD/stage/05gen2.mzbc"; then
+  ok05=1
+  "$MZVM" "$BUILD/stage/05gen2.mzbc" "$S/uncurry-compiler.ml" "$BUILD/stage/05gen3.mzs"
+  cmp -s "$BUILD/stage/05gen2.mzs" "$BUILD/stage/05gen3.mzs" || { echo "FAIL stage 05 second-generation fixpoint"; ok05=0; }
+  for f in ccc/tests/core/*.ml ccc/tests/adt/*.ml ccc/tests/pat/*.ml; do
+    n=$(basename "$f" .ml)
+    case "$n" in
+      echo) stdin=ccc/tests/core/echo.ml ;;
+      *)    stdin=/dev/null ;;
+    esac
+    want=$("$MZVM" "$BUILD/stage/$n.mzbc" <"$stdin"; echo "exit=$?")
+    asm05 "$f" "$n.o5" >/dev/null 2>&1 || { echo "FAIL $n (05 compile)"; ok05=0; continue; }
+    got=$("$MZVM" "$BUILD/stage/$n.o5.mzbc" <"$stdin"; echo "exit=$?")
+    if [ "$want" = "$got" ]; then echo "ok   $n (05)"; else echo "FAIL $n (05): '$got' vs '$want'"; ok05=0; fi
+  done
+  [ "$ok05" = 1 ] && echo "ok   stage 05 fixpoint + behavior"
+  [ "$ok05" = 1 ] || fail=1
+else
+  echo "FAIL compiling stage 05"; fail=1
+fi
+
 if [ "$fail" = 0 ]; then echo "all stage tests passed"; else exit 1; fi

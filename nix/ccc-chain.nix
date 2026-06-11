@@ -34,12 +34,20 @@ stdenv.mkDerivation {
     run01 04b.mzs 04b.mzbc
     cmp 04.mzbc 04b.mzbc
 
+    # stage 05 optimizer: second-generation fixpoint (gen2 = gen3)
+    ./mzvm 04.mzbc stages/uncurry-compiler.ml 05.mzs
+    run01 05.mzs 05.mzbc
+    ./mzvm 05.mzbc stages/uncurry-compiler.ml 05b.mzs
+    run01 05b.mzs 05b.mzbc
+    ./mzvm 05b.mzbc stages/uncurry-compiler.ml 05c.mzs
+    cmp 05b.mzs 05c.mzs
+
     cat $(sed "s|^|cc/|" cc/PARTS-cc1) cc/dev/cc1main.ml > ccc-cc1.ml
-    ./mzvm 04.mzbc ccc-cc1.ml ccc-cc1.mzs
+    ./mzvm 05b.mzbc ccc-cc1.ml ccc-cc1.mzs
     run01 ccc-cc1.mzs ccc-cc1.mzbc
 
     cat $(sed "s|^|cc/|" cc/PARTS-ccpp) cc/dev/cppmain.ml > ccpp.ml
-    ./mzvm 04.mzbc ccpp.ml ccpp.mzs
+    ./mzvm 05b.mzbc ccpp.ml ccpp.mzs
     run01 ccpp.mzs ccpp.mzbc
     runHook postBuild
   '';
@@ -48,7 +56,7 @@ stdenv.mkDerivation {
     runHook preInstall
     mkdir -p $out/bin $out/lib/ccc
     install -m755 mzvm mlc-interp $out/bin/
-    install -m644 03.mzbc 04.mzbc ccc-cc1.mzbc ccpp.mzbc $out/lib/ccc/
+    install -m644 03.mzbc 04.mzbc 05b.mzbc ccc-cc1.mzbc ccpp.mzbc $out/lib/ccc/
     cat > $out/bin/ccc1 <<EOF
     #!${stdenv.shell}
     exec $out/bin/mzvm $out/lib/ccc/ccc-cc1.mzbc "\$@"
