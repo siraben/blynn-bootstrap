@@ -140,17 +140,11 @@ let
     installPhase = ''
         runHook preInstall
         install -D tcc-musl $out/libexec/tcc
-        mkdir -p $out/bin
-        cat > $out/bin/tcc <<EOF
-#!${bash}/bin/bash
-for arg in "\$@"; do
-  if [ "\$arg" = -ar ]; then
-    exec "$out/libexec/tcc" "\$@"
-  fi
-done
-exec "$out/libexec/tcc" ${lib.optionalString staticByDefault "-static"} "\$@"
-EOF
-        chmod 555 $out/bin/tcc
+        install -Dm555 ${../support/tinycc/tcc-wrapper.in} $out/bin/tcc
+        substituteInPlace $out/bin/tcc \
+          --replace-fail @bash@ ${bash}/bin/bash \
+          --replace-fail @tcc@ $out/libexec/tcc \
+          --replace-fail @static_flags@ '${lib.optionalString staticByDefault "-static"}'
         install -Dm444 libtcc1.a $out/lib/libtcc1.a
         runHook postInstall
       '';
@@ -162,13 +156,7 @@ in
     passthru.tests.hello-world =
       result:
       bash.runCommand "${pname}-simple-program-${version}" { } ''
-        cat <<EOF >> test.c
-        #include <stdio.h>
-        int main() {
-          printf("Hello World!\n");
-          return 0;
-        }
-        EOF
+        cp ${../fixtures/hello-world.c} test.c
         ${result}/bin/tcc -v ${lib.optionalString staticByDefault "-static"} -B${musl}/lib -o test test.c
         ./test
         mkdir $out

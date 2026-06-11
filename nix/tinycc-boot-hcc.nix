@@ -172,33 +172,13 @@ stdenvNoCC.mkDerivation {
     mes_include_src="${mesLibc}/include"
     tcc_sysinclude_path="${if m1ArtifactsOnly then "/hcc-bootstrap/include" else "$out/include"}"
 
-    cat > config.h <<EOF
-    #define BOOTSTRAP 1
-    #define HAVE_LONG_LONG 1
-    #define HAVE_SETJMP 1
-    #define HAVE_BITFIELD 1
-    #define HAVE_FLOAT 1
-    #define ${targetCfg.tccDefine} 1
-    #define inline
-    #define CONFIG_TCCDIR ""
-    #define CONFIG_SYSROOT ""
-    #define CONFIG_TCC_CRTPREFIX "{B}"
-    #define CONFIG_TCC_ELFINTERP "/mes/loader"
-    #define CONFIG_TCC_LIBPATHS "{B}"
-    #define CONFIG_TCC_SYSINCLUDEPATHS "$tcc_sysinclude_path"
-    #define TCC_LIBGCC "libc.a"
-    #define TCC_LIBTCC1 "libtcc1.a"
-    #define CONFIG_TCC_LIBTCC1_MES 0
-    #define CONFIG_TCCBOOT 1
-    #define CONFIG_TCC_STATIC 1
-    #define CONFIG_USE_LIBGCC 1
-    #define TCC_MES_LIBC 1
-    #define TCC_VERSION "0.9.28-${version}"
-    #define ONE_SOURCE 1
-    ${lib.optionalString targetCfg.buildRiscv64Lib "#define TCC_RISCV64_NO_ASM 1"}
-    ${lib.optionalString targetCfg.buildArm64Lib "#define CONFIG_TCC_BACKTRACE 0"}
-    #define CONFIG_TCC_SEMLOCK 0
-    EOF
+    cp ${./support/tinycc/config.h.in} config.h
+    substituteInPlace config.h \
+      --replace-fail @target_define@ ${targetCfg.tccDefine} \
+      --replace-fail @sysinclude@ "$tcc_sysinclude_path" \
+      --replace-fail @version@ ${version} \
+      --replace-fail @riscv64_no_asm_define@ '${lib.optionalString targetCfg.buildRiscv64Lib "#define TCC_RISCV64_NO_ASM 1"}' \
+      --replace-fail @arm64_backtrace_define@ '${lib.optionalString targetCfg.buildArm64Lib "#define CONFIG_TCC_BACKTRACE 0"}'
 
     run_step_shell "hcpp tcc.c > tcc-expanded.c" "hcpp \
       -I . \
@@ -545,21 +525,13 @@ stdenvNoCC.mkDerivation {
       bootstrap_link_suffix="bootstrap-libs/libc.o bootstrap-libs/libtcc1.o bootstrap-libs/crtn.o"
     fi
 
-    cat > include-smoke-header.h <<'EOF'
-    #define HCC_INCLUDE_SMOKE 7
-    EOF
-    cat > include-smoke.c <<'EOF'
-    #include "include-smoke-header.h"
-    int main(){return HCC_INCLUDE_SMOKE;}
-    EOF
+    cp ${./support/tinycc/smoke/include-smoke-header.h} include-smoke-header.h
+    cp ${./support/tinycc/smoke/include-smoke.c} include-smoke.c
     run_target ./tcc $check_include_flags -E include-smoke.c > include-smoke.i
     run_target ./tcc $check_include_flags -c include-smoke.c -o include-smoke.o
     test -s include-smoke.o
 
-    cat > macro-smoke.c <<'EOF'
-    #define HCC_MACRO(NAME, CODE, STRING) NAME=CODE,
-    enum { HCC_MACRO(HCC_VALUE, 0x20, "value") HCC_LAST };
-    EOF
+    cp ${./support/tinycc/smoke/macro-smoke.c} macro-smoke.c
     run_target ./tcc $check_include_flags -E macro-smoke.c > macro-smoke.i
     run_target ./tcc $check_include_flags -c macro-smoke.c -o macro-smoke.o
     test -s macro-smoke.o
@@ -568,18 +540,11 @@ stdenvNoCC.mkDerivation {
     run_target ./tcc $check_include_flags -c smoke.c -o smoke.o
     test -s smoke.o
 
-    cat > float-const-smoke.c <<'EOF'
-    float hcc_float_const = -1.0f;
-    double hcc_double_const = -1.0;
-    int main(){return 0;}
-    EOF
+    cp ${./support/tinycc/smoke/float-const-smoke.c} float-const-smoke.c
     run_target ./tcc $check_include_flags -c float-const-smoke.c -o float-const-smoke.o
     test -s float-const-smoke.o
 
-    cat > hex-float-smoke.c <<'EOF'
-    struct hcc_hex_float_smoke { double value; };
-    const struct hcc_hex_float_smoke hcc_hex_float_const = { 0x1.7154765200000p+0 };
-    EOF
+    cp ${./support/tinycc/smoke/hex-float-smoke.c} hex-float-smoke.c
     run_target ./tcc-stage3 $check_include_flags -c hex-float-smoke.c -o hex-float-smoke.o
     "$support_objdump" -s hex-float-smoke.o | grep -i '00002065 4715f73f'
 

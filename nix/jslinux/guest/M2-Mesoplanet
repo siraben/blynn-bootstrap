@@ -1,0 +1,5 @@
+#!/bin/sh
+for tool in M2-Planet blood-elf M1 hex2; do
+  [ -e "./$tool" ] || ln -s "/bootstrap/stage0-tools/bin/$tool" "./$tool" 2>/dev/null || true
+done
+exec /bootstrap/stage0-tools/bin/M2-Mesoplanet --temp-directory "$PWD" -I /bootstrap/stage0-m2libc "$@"

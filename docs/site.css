@@ -1,0 +1,396 @@
+:root {
+  color-scheme: dark;
+  --bg: #111214;
+  --panel: #191b1f;
+  --panel-strong: #22262b;
+  --text: #f2f4f7;
+  --muted: #a9b0bb;
+  --line: #343941;
+  --accent: #5dd0a6;
+  --accent-2: #e0b859;
+  --terminal: #000;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  overflow-x: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+a {
+  color: var(--accent);
+}
+
+a:focus-visible,
+.button:focus-visible,
+.file-import:focus-within,
+#term_paste:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+.console-pane {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  border-right: 1px solid var(--line);
+}
+
+.console-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+
+.console-header > div:first-child {
+  min-width: 0;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+h2 {
+  margin-bottom: 8px;
+  font-size: 13px;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  color: var(--accent-2);
+}
+
+.console-header p {
+  margin-top: 2px;
+  color: var(--muted);
+}
+
+.console-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-strong);
+  color: var(--text);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+#term_wrap {
+  display: none;
+  width: auto !important;
+  max-width: 100%;
+  min-width: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 16px;
+  background: #070707;
+}
+
+#term_container {
+  display: flex;
+  /* Center the fixed-width terminal; `safe` falls back to start-alignment
+     when the terminal is wider than the pane so it stays scrollable. */
+  justify-content: safe center;
+}
+
+.term,
+.term * {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-variant-ligatures: none;
+  font-kerning: none;
+}
+
+.term {
+  font-size: 14px;
+  color: #f0f0f0;
+  background: var(--terminal);
+  border: 1px solid #2a2a2a;
+}
+
+.term_content {
+  text-rendering: optimizeSpeed;
+}
+
+/* Focus-capture textarea created by term.js. term.js positions it via inline
+   left/top/zIndex but never sets `position`, and supplies no visual styling,
+   so without this rule it renders as a default textarea box on top of the
+   terminal. Keep it focusable (do NOT use display:none/visibility:hidden)
+   but visually invisible. */
+.term_textarea {
+  position: absolute;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  outline: 0;
+  resize: none;
+  overflow: hidden;
+  white-space: pre;
+  opacity: 0;
+  background: transparent;
+  color: transparent;
+  caret-color: transparent;
+}
+
+.term_char_size {
+  position: absolute;
+  top: -9999px;
+  left: -9999px;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.term_content a {
+  color: #ffff66;
+}
+
+.term_cursor {
+  color: #000;
+  background: #52ff7a;
+}
+
+.term_scrollbar {
+  position: relative;
+  float: right;
+  width: 15px;
+  height: 100%;
+  background: #151515;
+}
+
+.term_track {
+  position: relative;
+  width: 13px;
+  height: 100%;
+  padding: 0 1px;
+}
+
+.term_thumb {
+  position: absolute;
+  top: 0;
+  left: 1px;
+  width: 11px;
+  min-height: 24px;
+  cursor: pointer;
+  overflow: hidden;
+  background: #4b5563;
+  border-radius: 6px;
+}
+
+.term_thumb .term_end {
+  height: 5px;
+}
+
+.noSelect {
+  user-select: none;
+}
+
+#vm_controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  width: 100%;
+  max-width: 100%;
+  margin-top: 8px;
+  padding: 8px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.control-button {
+  min-height: 32px;
+}
+
+.file-import {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 0 10px;
+  cursor: pointer;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--panel-strong);
+}
+
+/* Visually hidden but still keyboard-focusable (visibility:hidden would drop
+   it from the tab order and make the Upload control mouse-only). */
+#files {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+#net_progress {
+  visibility: hidden;
+  width: min(90px, 100%);
+}
+
+.noscript-msg {
+  margin: 16px;
+  padding: 14px 16px;
+  color: var(--muted);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.runbook {
+  overflow: auto;
+  padding: 18px;
+  background: var(--panel);
+}
+
+.runbook section + section {
+  margin-top: 22px;
+}
+
+.runbook p,
+.runbook li {
+  color: var(--muted);
+}
+
+.runbook ol,
+.runbook ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.runbook li + li {
+  margin-top: 8px;
+}
+
+pre {
+  overflow: auto;
+  margin: 0;
+  padding: 12px;
+  color: #edf7f2;
+  background: #0b0d0f;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  -webkit-overflow-scrolling: touch;
+}
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+@media (max-width: 1280px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .console-pane {
+    min-height: 72vh;
+    min-height: 72dvh;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .console-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .console-actions {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 640px) {
+  body {
+    font-size: 13px;
+  }
+
+  .console-pane {
+    min-height: 78vh;
+    min-height: 78dvh;
+  }
+
+  .console-header {
+    gap: 12px;
+    padding: 12px;
+  }
+
+  h1 {
+    font-size: 16px;
+  }
+
+  .console-header p {
+    max-width: 100%;
+  }
+
+  .console-actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .button {
+    min-width: 0;
+    min-height: 42px;
+    padding: 0 8px;
+    white-space: normal;
+    text-align: center;
+  }
+
+  #term_wrap {
+    padding: 8px;
+  }
+
+  #vm_controls {
+    width: 100%;
+  }
+
+  .runbook {
+    padding: 14px 12px 18px;
+  }
+
+  pre {
+    padding: 10px;
+  }
+}
