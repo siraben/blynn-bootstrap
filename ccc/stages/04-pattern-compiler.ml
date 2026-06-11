@@ -203,6 +203,7 @@ let punct2 c d =
   else if c = 59 && d = 59 then ";;"
   else if c = 58 && d = 58 then "::"
   else if c = 58 && d = 61 then ":="
+  else if c = 60 && d = 45 then "<-"
   else ""
 
 let str_to_bytes s =
@@ -324,7 +325,8 @@ let starts_atom () =
     (let b = get tstr in
      if bytes_eq_str b "true" || bytes_eq_str b "false" then true
      else not (is_keyword b))
-  else tok_is_punct "(" || tok_is_punct "[" || tok_is_punct "!"
+  else tok_is_punct "(" || tok_is_punct "[" || tok_is_punct "!" ||
+       tok_is_punct "{"
 
 (* does the current token continue the enclosing expression as an infix
    operator (or sequence/tuple separator)? used to veto tail calls *)
@@ -337,7 +339,7 @@ let op_follows () =
      bytes_eq_str b "<" || bytes_eq_str b "<=" || bytes_eq_str b ">" ||
      bytes_eq_str b ">=" || bytes_eq_str b "&&" || bytes_eq_str b "||" ||
      bytes_eq_str b ";" || bytes_eq_str b "," || bytes_eq_str b "::" ||
-     bytes_eq_str b ":=")
+     bytes_eq_str b ":=" || bytes_eq_str b "." || bytes_eq_str b "<-")
   else if k = tk_ident then
     (let b = get tstr in
      bytes_eq_str b "mod" || bytes_eq_str b "land" || bytes_eq_str b "lor" ||
@@ -602,6 +604,40 @@ let find_ctor name =
     if i >= n then 0 - 1
     else if bytes_eq name (array_get names i) then i
     else go (i + 1) in
+  go 0
+
+(* record fields: globally unique names; a field knows its slot index,
+   its record (an id), and the record's total field count. Records are
+   blocks with tag 0, so projection/mutation are getfield/setfield. *)
+let fld_names = array_make 512 (bytes_create 1)
+let fld_index = array_make 512 0
+let fld_recid = array_make 512 0
+let fld_total = array_make 512 0
+let fld_count = cell 0
+let rec_count = cell 0
+
+let add_field name idx recid =
+  let n = get fld_count in
+  (if n >= 512 then die "too many record fields");
+  array_set fld_names n name;
+  array_set fld_index n idx;
+  array_set fld_recid n recid;
+  set fld_count (n + 1)
+
+let find_field name =
+  let n = get fld_count in
+  let rec go i =
+    if i >= n then 0 - 1
+    else if bytes_eq name (array_get fld_names i) then i
+    else go (i + 1) in
+  go 0
+
+let set_record_total recid total =
+  let n = get fld_count in
+  let rec go i =
+    if i < n then
+      ((if array_get fld_recid i = recid then array_set fld_total i total);
+       go (i + 1)) in
   go 0
 
 (* ---- data strings ---- *)
@@ -1299,8 +1335,8 @@ and c_app_head t =
          (resolve name;
           if get res_kind = 3 then
             (c_builtin (get res_idx); 1)
-          else (emit_var_load (); 0)))
-    else (c_atom (); 0) in
+          else (emit_var_load (); c_proj_rest (); 0)))
+    else (c_atom (); c_proj_rest (); 0) in
   (if was_builtin = 1 && starts_atom () then
     die "builtin or constructor result cannot be applied");
   c_app_args t
@@ -1314,6 +1350,7 @@ and c_ctor name =
   else if arity = 1 then
     ((if not (starts_atom ()) then die_name "constructor needs an argument" name);
      c_atom ();
+     c_proj_rest ();
      e0 "push";
      bump 1;
      e2 "makeblock" tag 1;
@@ -1383,6 +1420,7 @@ and c_app_args t =
     (e0 "push";
      bump 1;
      c_atom ();
+     c_proj_rest ();
      e0 "push";
      bump 1;
      if starts_atom () then
@@ -1410,6 +1448,7 @@ and c_builtin b =
     if j < arity then
       ((if not (starts_atom ()) then die "builtin applied to too few arguments");
        c_atom ();
+       c_proj_rest ();
        (if kind = 0 || kind = 3 || j < arity - 1 then (e0 "push"; bump 1));
        args (j + 1)) in
   args 0;
@@ -1417,6 +1456,60 @@ and c_builtin b =
   else if kind = 2 then e2 "ccall" 0 prim
   else if kind = 3 then (e2 "makeblock" 0 1; bump (0 - 1))
   else (emit_opcode_builtin prim; bump (0 - (arity - 1)))
+
+(* postfix projections: .f chains compile to getfield; ".f <- e" is the
+   record mutation, mirroring ":=" (the block is pushed, the right-hand
+   side evaluated, setfield stores and leaves unit in acc) *)
+and c_proj_rest () =
+  if tok_is_punct "." then
+    (next_token ();
+     let fname = need_ident "expected a field name" in
+     let f = find_field fname in
+     (if f < 0 then die_name "unknown record field" fname);
+     let idx = array_get fld_index f in
+     if tok_is_punct "<-" then
+       (next_token ();
+        e0 "push";
+        bump 1;
+        c_or 0;
+        e1 "setfield" idx;
+        bump (0 - 1))
+     else
+       (e1 "getfield" idx;
+        c_proj_rest ()))
+
+(* { f = e; ... }: fields must be complete and in declaration order, so
+   the literal builds like a tuple (push each value, makeblock) *)
+and c_record_literal () =
+  let rec fields k rid =
+    let fname = need_ident "expected a field name" in
+    let f = find_field fname in
+    (if f < 0 then die_name "unknown record field" fname);
+    (if k > 0 then
+      (if not (array_get fld_recid f = rid) then
+        die_name "field from a different record" fname));
+    (if not (array_get fld_index f = k) then
+      die_name "record fields must be complete and in declaration order" fname);
+    expect_punct "=";
+    c_nosemi 0;
+    e0 "push";
+    bump 1;
+    if tok_is_punct ";" then
+      (next_token ();
+       if tok_is_punct "}" then
+         (next_token ();
+          (if not (array_get fld_total f = k + 1) then
+            die "record literal must define every field");
+          k + 1)
+       else fields (k + 1) (array_get fld_recid f))
+    else
+      (expect_punct "}";
+       (if not (array_get fld_total f = k + 1) then
+         die "record literal must define every field");
+       k + 1) in
+  let n = fields 0 0 in
+  e2 "makeblock" 0 n;
+  bump (0 - n)
 
 and c_atom () =
   let k = get tk in
@@ -1454,10 +1547,15 @@ and c_atom () =
            bump (0 - n);
            expect_punct ")")
         else expect_punct ")"))
+  else if tok_is_punct "{" then
+    (next_token ();
+     c_record_literal ())
   else if tok_is_punct "!" then
-    (* dereference: ! binds to the following atom *)
+    (* dereference: ! binds to the following atom (with projections,
+       so !r.f is !(r.f) like OCaml) *)
     (next_token ();
      c_atom ();
+     c_proj_rest ();
      e1 "getfield" 0)
   else if tok_is_punct "[" then
     (* [e1; e2; ..]: push the elements, then fold cons cells from the
@@ -1551,12 +1649,47 @@ let skip_type_params () =
              else (next_token (); skip_params ()) in
            skip_params ()) then ()
 
+(* skip one field type expression (never checked) up to the next
+   top-level ";" or "}" *)
+let skip_field_type () =
+  let rec go pdepth =
+    if pdepth = 0 && (tok_is_punct ";" || tok_is_punct "}") then ()
+    else if tok_is_punct "(" then (next_token (); go (pdepth + 1))
+    else if tok_is_punct ")" then (next_token (); go (pdepth - 1))
+    else (next_token (); go pdepth) in
+  go 0
+
+(* { mutable? name : type ; ... }: register the fields in slot order;
+   mutability is checked by mltc, not here. The open brace is consumed. *)
+let record_type_body () =
+  let recid = get rec_count in
+  set rec_count (recid + 1);
+  let rec fields idx =
+    (skip_ident "mutable";
+     let fname = need_ident "expected a field name" in
+     (if find_field fname >= 0 then die_name "duplicate record field" fname);
+     add_field fname idx recid;
+     expect_punct ":";
+     skip_field_type ();
+     if tok_is_punct ";" then
+       (next_token ();
+        if tok_is_punct "}" then (next_token (); idx + 1)
+        else fields (idx + 1))
+     else (expect_punct "}"; idx + 1)) in
+  let total = fields 0 in
+  set_record_total recid total
+
 let rec top_type () =
-  (* "type" or "and" consumed; [params] name = constructors *)
+  (* "type" or "and" consumed; [params] name = constructors or fields *)
   skip_type_params ();
   let _ = need_ident "expected a type name" in
   expect_punct "=";
-  skip_punct "|";
+  if tok_is_punct "{" then
+    (next_token ();
+     record_type_body ();
+     if tok_is_ident "and" then (next_token (); top_type ()))
+  else
+  (skip_punct "|";
   let rec ctors next_const next_block =
     ((if not (get tk = tk_ident) ||
          not (is_ctor_name (get tstr)) then
@@ -1573,7 +1706,7 @@ let rec top_type () =
        (add_ctor name next_const 0;
         if tok_is_punct "|" then (next_token (); ctors (next_const + 1) next_block))) in
   ctors 0 0;
-  if tok_is_ident "and" then (next_token (); top_type ())
+  if tok_is_ident "and" then (next_token (); top_type ()))
 
 let rec top_loop () =
   if get tk = tk_eof then ()

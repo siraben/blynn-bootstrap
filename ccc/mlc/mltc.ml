@@ -50,41 +50,37 @@ let str_to_bytes s =
 
 (* ---- growable byte buffers: (bytes ref, length ref) ---- *)
 
-let buf_new n = (ref (bytes_create n), ref 0)
+type buf = { mutable bdata : bytes; mutable blen : int }
+
+let buf_new n = { bdata = bytes_create n; blen = 0 }
 
 let buf_reserve b extra =
-  let data = fst b in
-  let len = snd b in
-  if !len + extra > bytes_length !data then
-    (let rec newcap c = if c >= !len + extra then c else newcap (2 * c) in
-     let nb = bytes_create (newcap (2 * bytes_length !data)) in
-     mt_bytes_blit !data nb !len 0;
-     data := nb)
+  if b.blen + extra > bytes_length b.bdata then
+    (let rec newcap c = if c >= b.blen + extra then c else newcap (2 * c) in
+     let nb = bytes_create (newcap (2 * bytes_length b.bdata)) in
+     mt_bytes_blit b.bdata nb b.blen 0;
+     b.bdata <- nb)
 
 let buf_push b c =
   buf_reserve b 1;
-  bytes_set !(fst b) !(snd b) c;
-  (snd b) := !(snd b) + 1
+  bytes_set b.bdata b.blen c;
+  b.blen <- b.blen + 1
 
 let buf_add_bytes b s =
   let n = bytes_length s in
   buf_reserve b n;
-  let data = !(fst b) in
-  let len = snd b in
   let rec cp i =
-    if i < n then (bytes_set data (!len + i) (bytes_get s i); cp (i + 1)) in
+    if i < n then (bytes_set b.bdata (b.blen + i) (bytes_get s i); cp (i + 1)) in
   cp 0;
-  len := !len + n
+  b.blen <- b.blen + n
 
 let buf_add_str b s =
   let n = string_length s in
   buf_reserve b n;
-  let data = !(fst b) in
-  let len = snd b in
   let rec cp i =
-    if i < n then (bytes_set data (!len + i) (string_get s i); cp (i + 1)) in
+    if i < n then (bytes_set b.bdata (b.blen + i) (string_get s i); cp (i + 1)) in
   cp 0;
-  len := !len + n
+  b.blen <- b.blen + n
 
 let buf_add_int b n =
   let rec go v =
@@ -92,7 +88,7 @@ let buf_add_int b n =
     buf_push b (48 + v mod 10) in
   if n < 0 then (buf_push b 45; go (0 - n)) else go n
 
-let buf_take b = bytes_sub !(fst b) 0 !(snd b)
+let buf_take b = bytes_sub b.bdata 0 b.blen
 
 (* ---- list helpers ---- *)
 
@@ -269,6 +265,7 @@ let punct2 c d =
   else if c = 59 && d = 59 then ";;"
   else if c = 58 && d = 58 then "::"
   else if c = 58 && d = 61 then ":="
+  else if c = 60 && d = 45 then "<-"
   else ""
 
 let next_token () =
@@ -294,7 +291,7 @@ let next_token () =
      tint := v;
      tk := tk_int)
   else if is_ident_start c then
-    ((snd tbuf) := 0;
+    (tbuf.blen <- 0;
      let rec id_loop () =
        if is_ident_char (peekc ()) then (buf_push tbuf (nextc ()); id_loop ()) in
      id_loop ();
@@ -302,7 +299,7 @@ let next_token () =
      tk := tk_ident)
   else if c = 34 then
     (let _ = nextc () in
-     (snd tbuf) := 0;
+     tbuf.blen <- 0;
      let rec str_loop () =
        let d = peekc () in
        if d < 0 then fail !line "unterminated string"
@@ -314,7 +311,7 @@ let next_token () =
      tk := tk_str)
   else if c = 39 && is_ident_start (peekc2 ()) && not (peekc3 () = 39) then
     (* type variable like 'a *)
-    ((snd tbuf) := 0;
+    (tbuf.blen <- 0;
      buf_push tbuf (nextc ());
      let rec tv_loop () =
        if is_ident_char (peekc ()) then (buf_push tbuf (nextc ()); tv_loop ()) in
@@ -378,7 +375,8 @@ let starts_atom () =
     (let b = !tstr in
      if bytes_eq_str b "true" || bytes_eq_str b "false" then true
      else not (is_keyword b))
-  else tok_is_punct "(" || tok_is_punct "[" || tok_is_punct "!"
+  else tok_is_punct "(" || tok_is_punct "[" || tok_is_punct "!" ||
+       tok_is_punct "{"
 
 (* a name starting with an upper-case letter is a constructor *)
 let is_ctor_name b = bytes_length b > 0 && is_upper (bytes_get b 0)
@@ -433,6 +431,9 @@ type expr =
   | EDeref of int * expr
   | EAssign of int * expr * expr
   | EBinop of int * int * expr * expr
+  | ERecord of int * (bytes * expr) list
+  | EProj of int * expr * bytes
+  | ESetField of int * expr * bytes * expr
 
 (* ---- meta variable store ---- *)
 
@@ -643,6 +644,26 @@ let ctor_add name nq args res =
   array_set !ctor_tab h ((name, (nq, args, res)) :: array_get !ctor_tab h)
 
 let ctor_find name = assoc_find name (array_get !ctor_tab (hash_bytes name))
+
+(* record fields: globally unique; name -> (record type, field type,
+   mutable). Records are monomorphic. *)
+let field_tab = ref (array_make 1024 [])
+
+let field_add name info =
+  let h = hash_bytes name in
+  array_set !field_tab h ((name, info) :: array_get !field_tab h)
+
+let field_find name = assoc_find name (array_get !field_tab (hash_bytes name))
+
+(* record type name -> ordered (field, type, mutable) list, for checking
+   literals for completeness and declaration order *)
+let recfields_tab = ref (array_make 1024 [])
+
+let recfields_add name fields =
+  let h = hash_bytes name in
+  array_set !recfields_tab h ((name, fields) :: array_get !recfields_tab h)
+
+let recfields_find name = assoc_find name (array_get !recfields_tab (hash_bytes name))
 
 (* type names: name -> (unique id, arity) *)
 let type_tab = ref (array_make 1024 [])
@@ -917,6 +938,13 @@ and p_assign () =
      next_token ();
      let b = p_or () in
      EAssign (ln, a, b))
+  else if tok_is_punct "<-" then
+    (let ln = !tline in
+     next_token ();
+     let b = p_or () in
+     match a with
+     | EProj (_, e, f) -> ESetField (ln, e, f, b)
+     | _ -> fail ln "left-hand side of <- must be a record field")
   else a
 
 and p_or () = p_or_rest (p_and ())
@@ -1014,7 +1042,7 @@ and p_app () = p_app_args (p_app_head ())
 and p_app_args h =
   if starts_atom () then
     (let ln = !tline in
-     let a = p_atom () in
+     let a = p_postfix (p_atom ()) in
      p_app_args (EApp (ln, h, a)))
   else h
 
@@ -1025,8 +1053,20 @@ and p_app_head () =
      let name = !tstr in
      next_token ();
      if is_ctor_name name then p_ctor ln name
-     else EVar (ln, name))
-  else p_atom ()
+     else p_postfix (EVar (ln, name)))
+  else p_postfix (p_atom ())
+
+(* .field projection chains bind tighter than application *)
+and p_postfix a =
+  if tok_is_punct "." then
+    (let ln = !tline in
+     next_token ();
+     ((if not (!tk = tk_ident) || is_keyword !tstr then
+        fail !tline "expected a field name");
+      let f = !tstr in
+      next_token ();
+      p_postfix (EProj (ln, a, f))))
+  else a
 
 and p_ctor ln name =
   match ctor_find name with
@@ -1212,8 +1252,25 @@ and p_atom () =
   else if tok_is_punct "!" then
     (let ln = !tline in
      next_token ();
-     let a = p_atom () in
+     let a = p_postfix (p_atom ()) in
      EDeref (ln, a))
+  else if tok_is_punct "{" then
+    (let ln = !tline in
+     next_token ();
+     let rec rfields acc =
+       ((if not (!tk = tk_ident) || is_keyword !tstr then
+          fail !tline "expected a field name");
+        let f = !tstr in
+        next_token ();
+        expect_punct "=";
+        let e = p_nosemi () in
+        let acc2 = (f, e) :: acc in
+        if tok_is_punct ";" then
+          (next_token ();
+           if tok_is_punct "}" then (next_token (); list_rev acc2)
+           else rfields acc2)
+        else (expect_punct "}"; list_rev acc2)) in
+     ERecord (ln, rfields []))
   else if tok_is_punct "[" then
     (let ln = !tline in
      next_token ();
@@ -1425,6 +1482,52 @@ let rec check_expr env e =
        else if code < 22 then (unify ln ta tb; t_bool)
        else if code < 30 then (unify ln ta t_int; unify ln tb t_int; t_bool)
        else (unify ln ta t_bool; unify ln tb t_bool; t_bool))
+  | ERecord (ln, fields) ->
+      (match fields with
+       | [] -> fail ln "record literal needs at least one field"
+       | (f0, _) :: _ ->
+           (match field_find f0 with
+            | None -> fail_name ln "unknown record field" f0
+            | Some info ->
+                (let (rty, _, _) = info in
+                 let rname = (match rty with TCon (_, n, _) -> n | _ -> f0) in
+                 (match recfields_find rname with
+                  | None -> fail_name ln "not a record type" rname
+                  | Some decl ->
+                      (check_record_fields env ln fields decl;
+                       rty)))))
+  | EProj (ln, e, f) ->
+      (match field_find f with
+       | None -> fail_name ln "unknown record field" f
+       | Some info ->
+           (let (rty, fty, _) = info in
+            let t = check_expr env e in
+            unify ln t rty;
+            fty))
+  | ESetField (ln, e, f, v) ->
+      (match field_find f with
+       | None -> fail_name ln "unknown record field" f
+       | Some info ->
+           (let (rty, fty, ismut) = info in
+            (if not ismut then fail_name ln "record field is not mutable" f);
+            let t = check_expr env e in
+            unify ln t rty;
+            let tv = check_expr env v in
+            unify ln tv fty;
+            t_unit))
+
+and check_record_fields env ln fields decl =
+  match (fields, decl) with
+  | ([], []) -> ()
+  | ((fname, e) :: frest, (dname, fty, _) :: drest) ->
+      ((if not (bytes_eq fname dname) then
+         fail_name ln "record fields must be complete and in declaration order" fname);
+       let t = check_expr env e in
+       unify ln t fty;
+       check_record_fields env ln frest drest)
+  | ((fname, _) :: _, _) -> fail_name ln "unknown or repeated record field" fname
+  | (_, (dname, _, _) :: _) ->
+      fail_name ln "record literal must define every field" dname
 
 and check_fun env params body =
   match params with
@@ -1502,6 +1605,25 @@ let rec p_ctor_decls acc =
    if tok_is_punct "|" then (next_token (); p_ctor_decls acc2)
    else list_rev acc2)
 
+(* { mutable? field : type ; ... }: the open brace is consumed *)
+let p_record_decl () =
+  let rec rfdecls acc =
+    let ismut = (if tok_is_ident "mutable" then (next_token (); true) else false) in
+    ((if not (!tk = tk_ident) || is_keyword !tstr then
+       fail !tline "expected a field name");
+     let fname = !tstr in
+     let fln = !tline in
+     next_token ();
+     expect_punct ":";
+     let tx = p_tx_full () in
+     let acc2 = (fln, fname, ismut, tx) :: acc in
+     if tok_is_punct ";" then
+       (next_token ();
+        if tok_is_punct "}" then (next_token (); list_rev acc2)
+        else rfdecls acc2)
+     else (expect_punct "}"; list_rev acc2)) in
+  rfdecls []
+
 let rec p_type_decls acc =
   let params = p_type_params () in
   ((if not (!tk = tk_ident) || is_keyword !tstr then
@@ -1510,11 +1632,18 @@ let rec p_type_decls acc =
    let ln = !tline in
    next_token ();
    expect_punct "=";
-   (if tok_is_punct "|" then next_token ());
-   let ctors = p_ctor_decls [] in
-   let acc2 = (ln, name, params, ctors) :: acc in
-   if tok_is_ident "and" then (next_token (); p_type_decls acc2)
-   else list_rev acc2)
+   if tok_is_punct "{" then
+     (next_token ();
+      let rf = p_record_decl () in
+      let acc2 = (ln, name, params, [], rf) :: acc in
+      if tok_is_ident "and" then (next_token (); p_type_decls acc2)
+      else list_rev acc2)
+   else
+     ((if tok_is_punct "|" then next_token ());
+      let ctors = p_ctor_decls [] in
+      let acc2 = (ln, name, params, ctors, []) :: acc in
+      if tok_is_ident "and" then (next_token (); p_type_decls acc2)
+      else list_rev acc2))
 
 let check_type_group () =
   let decls = p_type_decls [] in
@@ -1522,15 +1651,15 @@ let check_type_group () =
   let rec reg l =
     match l with
     | [] -> []
-    | (ln, name, params, ctors) :: rest ->
+    | (ln, name, params, ctors, rf) :: rest ->
         (let id = fresh_type_id () in
          type_add name id (list_length params);
-         (ln, name, params, ctors, id) :: reg rest) in
+         (ln, name, params, ctors, rf, id) :: reg rest) in
   let regd = reg decls in
   let rec do_decl l =
     match l with
     | [] -> ()
-    | (_, name, params, ctors, id) :: rest ->
+    | (ln, name, params, ctors, rf, id) :: rest ->
         (let rec param_assoc ps i =
            match ps with
            | [] -> []
@@ -1540,13 +1669,28 @@ let check_type_group () =
          let rec qargs i =
            if i >= nq then [] else TQVar i :: qargs (i + 1) in
          let res = TCon (id, name, qargs 0) in
-         let rec do_ctors cs =
-           match cs with
-           | [] -> ()
-           | (_, cname, txargs) :: ct ->
-               (ctor_add cname nq (tx_to_ty_list passoc txargs) res;
-                do_ctors ct) in
-         do_ctors ctors;
+         (match rf with
+          | [] ->
+              (let rec do_ctors cs =
+                 match cs with
+                 | [] -> ()
+                 | (_, cname, txargs) :: ct ->
+                     (ctor_add cname nq (tx_to_ty_list passoc txargs) res;
+                      do_ctors ct) in
+               do_ctors ctors)
+          | _ ->
+              ((if nq > 0 then fail ln "record types cannot take parameters");
+               let rec do_fields fs acc =
+                 match fs with
+                 | [] -> recfields_add name (list_rev acc)
+                 | (fln, fname, ismut, tx) :: ft ->
+                     ((match field_find fname with
+                       | Some _ -> fail_name fln "duplicate record field" fname
+                       | None -> ());
+                      let fty = tx_to_ty [] tx in
+                      field_add fname (res, fty, ismut);
+                      do_fields ft ((fname, fty, ismut) :: acc)) in
+               do_fields rf []));
          do_decl rest) in
   do_decl regd
 
