@@ -107,45 +107,41 @@ let bytes_eq_any b names =
     | s :: rest -> bytes_eq_str b s || go rest in
   go names
 
-(* ---- growable byte buffers: (bytes ref, length ref) ---- *)
+(* ---- growable byte buffers ---- *)
 
-let buf_new n = (ref (bytes_create n), ref 0)
+type buf = { mutable bdata : bytes; mutable blen : int }
 
-let buf_len b = !(snd b)
+let buf_new n = { bdata = bytes_create n; blen = 0 }
+
+let buf_len b = b.blen
 
 let buf_reserve b extra =
-  let data = fst b in
-  let len = snd b in
-  if !len + extra > bytes_length !data then
-    (let rec newcap c = if c >= !len + extra then c else newcap (2 * c) in
-     let nb = bytes_create (newcap (2 * bytes_length !data)) in
-     bytes_blit_into !data nb !len 0;
-     data := nb)
+  if b.blen + extra > bytes_length b.bdata then
+    (let rec newcap c = if c >= b.blen + extra then c else newcap (2 * c) in
+     let nb = bytes_create (newcap (2 * bytes_length b.bdata)) in
+     bytes_blit_into b.bdata nb b.blen 0;
+     b.bdata <- nb)
 
 let buf_push b c =
   buf_reserve b 1;
-  bytes_set !(fst b) !(snd b) c;
-  (snd b) := !(snd b) + 1
+  bytes_set b.bdata b.blen c;
+  b.blen <- b.blen + 1
 
 let buf_add_bytes b s =
   let n = bytes_length s in
   buf_reserve b n;
-  let data = !(fst b) in
-  let len = snd b in
   let rec cp i =
-    if i < n then (bytes_set data (!len + i) (bytes_get s i); cp (i + 1)) in
+    if i < n then (bytes_set b.bdata (b.blen + i) (bytes_get s i); cp (i + 1)) in
   cp 0;
-  len := !len + n
+  b.blen <- b.blen + n
 
 let buf_add_str b s =
   let n = string_length s in
   buf_reserve b n;
-  let data = !(fst b) in
-  let len = snd b in
   let rec cp i =
-    if i < n then (bytes_set data (!len + i) (string_get s i); cp (i + 1)) in
+    if i < n then (bytes_set b.bdata (b.blen + i) (string_get s i); cp (i + 1)) in
   cp 0;
-  len := !len + n
+  b.blen <- b.blen + n
 
 let buf_add_int b n =
   let rec go v =
@@ -153,11 +149,11 @@ let buf_add_int b n =
     buf_push b (ch_0 + v mod 10) in
   if n < 0 then (buf_push b ch_minus; go (0 - n)) else go n
 
-let buf_take b = bytes_sub !(fst b) 0 !(snd b)
+let buf_take b = bytes_sub b.bdata 0 b.blen
 
-let buf_get b i = bytes_get !(fst b) i
+let buf_get b i = bytes_get b.bdata i
 
-let buf_clear b = (snd b) := 0
+let buf_clear b = b.blen <- 0
 
 (* string-ish conversions *)
 
@@ -232,7 +228,6 @@ let read_file path =
 let out_chan = ref 1
 
 let write_buf b =
-  let data = !(fst b) in
-  let n = !(snd b) in
-  let rec go i = if i < n then (write_byte !out_chan (bytes_get data i); go (i + 1)) in
+  let rec go i =
+    if i < b.blen then (write_byte !out_chan (bytes_get b.bdata i); go (i + 1)) in
   go 0
