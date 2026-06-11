@@ -150,9 +150,15 @@ let binop_is_assign op =
   bytes_eq_any op
     ["="; "+="; "-="; "*="; "/="; "%="; "<<="; ">>="; "&="; "^="; "|="]
 
+(* every binary operator starts with one of these; the parser probes
+   binop_prec with whatever punct follows an expression (mostly ")" and
+   ";"), so reject non-operators without scanning the whole table *)
+let binop_start_chars = "|&^=!<>+-*/%,"
+
 (* full expression-level binop table (Parser.binop): prec or -1 *)
 let binop_prec op =
-  if bytes_eq_str op "," then 0
+  if not (char_in_str (bytes_get op 0) binop_start_chars) then 0 - 1
+  else if bytes_eq_str op "," then 0
   else if binop_is_assign op then 1
   else binop_arith_prec op
 

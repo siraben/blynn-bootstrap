@@ -1101,8 +1101,9 @@ and join_strings strings =
       | b :: rest ->
           (buf_push out ch_bslash;
            buf_push out ch_x;
-           let h1 = hdiv b 16 in
-           let h2 = hmod b 16 in
+           (* decoded bytes are 0..255, so native / and mod are exact *)
+           let h1 = b / 16 in
+           let h2 = b mod 16 in
            buf_push out (if h1 < 10 then ch_0 + h1 else ch_a + h1 - 10);
            buf_push out (if h2 < 10 then ch_0 + h2 else ch_a + h2 - 10);
            emit rest) in
