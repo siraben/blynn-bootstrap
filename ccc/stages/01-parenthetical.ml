@@ -10,6 +10,12 @@
    state lives in 1-element arrays. The format is described at the top of
    ccc/tools/mzbc_asm.py, which must stay byte-for-byte equivalent. *)
 
+(* one-slot mutable cells: ML0 has no ref type, so a one-element array
+   stands in; cell/get/set keep call sites readable *)
+let cell v = array_make 1 v
+let get c = array_get c 0
+let set c v = array_set c 0 v
+
 (* ---- diagnostics ---- *)
 
 let rec err_str_from s i =
@@ -26,13 +32,13 @@ let rec err_int_rec n =
 
 let err_int n = if n < 0 then (write_byte 2 45; err_int_rec (0 - n)) else err_int_rec n
 
-let line = array_make 1 1
+let line = cell 1
 
 let die msg =
   err_str "01-parenthetical: ";
   err_str msg;
   err_str " at line ";
-  err_int (array_get line 0);
+  err_int (get line);
   write_byte 2 10;
   exit 1
 
@@ -48,21 +54,21 @@ let bytes_eq_str b s =
 
 (* ---- input: read whole file into a growable byte buffer ---- *)
 
-let src_buf = array_make 1 (bytes_create 65536)
-let src_len = array_make 1 0
+let src_buf = cell (bytes_create 65536)
+let src_len = cell 0
 
 let rec bytes_blit src dst n i =
   if i < n then (bytes_set dst i (bytes_get src i); bytes_blit src dst n (i + 1))
 
 let src_push b =
-  let buf = array_get src_buf 0 in
-  let len = array_get src_len 0 in
+  let buf = get src_buf in
+  let len = get src_len in
   (if len >= bytes_length buf then
     (let nb = bytes_create (2 * bytes_length buf) in
      bytes_blit buf nb len 0;
-     array_set src_buf 0 nb));
-  bytes_set (array_get src_buf 0) len b;
-  array_set src_len 0 (len + 1)
+     set src_buf nb));
+  bytes_set (get src_buf) len b;
+  set src_len (len + 1)
 
 let rec read_all h =
   let b = read_byte h in
@@ -70,16 +76,16 @@ let rec read_all h =
 
 (* ---- scanner ---- *)
 
-let pos = array_make 1 0
+let pos = cell 0
 
 let peekc () =
-  if array_get pos 0 >= array_get src_len 0 then 0 - 1
-  else bytes_get (array_get src_buf 0) (array_get pos 0)
+  if get pos >= get src_len then 0 - 1
+  else bytes_get (get src_buf) (get pos)
 
 let nextc () =
   let c = peekc () in
-  array_set pos 0 (array_get pos 0 + 1);
-  (if c = 10 then array_set line 0 (array_get line 0 + 1));
+  set pos (get pos + 1);
+  (if c = 10 then set line (get line + 1));
   c
 
 (* token kinds *)
@@ -91,28 +97,28 @@ let tk_int = 4
 let tk_string = 5
 let tk_label = 6
 
-let tk = array_make 1 0
-let tint = array_make 1 0
-let tstr = array_make 1 (bytes_create 1)
+let tk = cell 0
+let tint = cell 0
+let tstr = cell (bytes_create 1)
 
 (* token text accumulator *)
-let tbuf = array_make 1 (bytes_create 256)
-let tlen = array_make 1 0
+let tbuf = cell (bytes_create 256)
+let tlen = cell 0
 
 let tbuf_push b =
-  let buf = array_get tbuf 0 in
-  let len = array_get tlen 0 in
+  let buf = get tbuf in
+  let len = get tlen in
   (if len >= bytes_length buf then
     (let nb = bytes_create (2 * bytes_length buf) in
      bytes_blit buf nb len 0;
-     array_set tbuf 0 nb));
-  bytes_set (array_get tbuf 0) len b;
-  array_set tlen 0 (len + 1)
+     set tbuf nb));
+  bytes_set (get tbuf) len b;
+  set tlen (len + 1)
 
 let tbuf_take () =
-  let len = array_get tlen 0 in
+  let len = get tlen in
   let out = bytes_create len in
-  bytes_blit (array_get tbuf 0) out len 0;
+  bytes_blit (get tbuf) out len 0;
   out
 
 let is_ws c = c = 32 || c = 9 || c = 13 || c = 10
@@ -155,13 +161,13 @@ let is_atom_char c =
 let next_token () =
   skip_ws ();
   let c = peekc () in
-  if c < 0 then array_set tk 0 tk_eof
-  else if c = 40 then (let _ = nextc () in array_set tk 0 tk_lparen)
-  else if c = 41 then (let _ = nextc () in array_set tk 0 tk_rparen)
+  if c < 0 then set tk tk_eof
+  else if c = 40 then (let _ = nextc () in set tk tk_lparen)
+  else if c = 41 then (let _ = nextc () in set tk tk_rparen)
   else if c = 34 then
     (* string literal *)
     (let _ = nextc () in
-     array_set tlen 0 0;
+     set tlen 0;
      let rec str_loop () =
        let d = peekc () in
        if d < 0 then die "unterminated string"
@@ -170,26 +176,26 @@ let next_token () =
          (let _ = nextc () in tbuf_push (read_escape ()); str_loop ())
        else (let _ = nextc () in tbuf_push d; str_loop ()) in
      str_loop ();
-     array_set tstr 0 (tbuf_take ());
-     array_set tk 0 tk_string)
+     set tstr (tbuf_take ());
+     set tk tk_string)
   else if c = 39 then
     (* char literal 'c' *)
     (let _ = nextc () in
      let d = nextc () in
      let v = if d = 92 then read_escape () else d in
      (if not (nextc () = 39) then die "unterminated char literal");
-     array_set tint 0 v;
-     array_set tk 0 tk_int)
+     set tint v;
+     set tk tk_int)
   else if c = 58 then
     (* :label *)
     (let _ = nextc () in
-     array_set tlen 0 0;
+     set tlen 0;
      let rec lab_loop () =
        if is_atom_char (peekc ()) then (tbuf_push (nextc ()); lab_loop ()) in
      lab_loop ();
-     (if array_get tlen 0 = 0 then die "empty label");
-     array_set tstr 0 (tbuf_take ());
-     array_set tk 0 tk_label)
+     (if get tlen = 0 then die "empty label");
+     set tstr (tbuf_take ());
+     set tk tk_label)
   else if is_digit c || c = 45 then
     (* decimal or 0x hex, optionally negative *)
     (let neg = (c = 45) in
@@ -209,30 +215,30 @@ let next_token () =
             if is_digit (peekc ()) then dec_loop (acc * 10 + (nextc () - 48))
             else acc in
           dec_loop 0) in
-     array_set tint 0 (if neg then 0 - v else v);
-     array_set tk 0 tk_int)
+     set tint (if neg then 0 - v else v);
+     set tk tk_int)
   else
     (let rec atom_loop () =
        if is_atom_char (peekc ()) then (tbuf_push (nextc ()); atom_loop ()) in
-     array_set tlen 0 0;
+     set tlen 0;
      atom_loop ();
-     (if array_get tlen 0 = 0 then die "unexpected character");
-     array_set tstr 0 (tbuf_take ());
-     array_set tk 0 tk_atom)
+     (if get tlen = 0 then die "unexpected character");
+     set tstr (tbuf_take ());
+     set tk tk_atom)
 
 (* ---- opcode and primitive tables ---- *)
 
 let op_names = array_make 64 ""
 let op_codes = array_make 64 0
 let op_nops = array_make 64 0
-let op_count = array_make 1 0
+let op_count = cell 0
 
 let add_op name code nops =
-  let i = array_get op_count 0 in
+  let i = get op_count in
   array_set op_names i name;
   array_set op_codes i code;
   array_set op_nops i nops;
-  array_set op_count 0 (i + 1)
+  set op_count (i + 1)
 
 let () =
   add_op "stop" 0 0; add_op "const" 1 1; add_op "acc" 2 1; add_op "push" 3 0;
@@ -257,12 +263,12 @@ let op_switch = 17
 let nprims = 12
 
 let prim_names = array_make 16 ""
-let prim_count = array_make 1 0
+let prim_count = cell 0
 
 let add_prim name =
-  let i = array_get prim_count 0 in
+  let i = get prim_count in
   array_set prim_names i name;
-  array_set prim_count 0 (i + 1)
+  set prim_count (i + 1)
 
 let () =
   add_prim "exit"; add_prim "open_in"; add_prim "open_out";
@@ -271,7 +277,7 @@ let () =
   add_prim "arg_get"; add_prim "array_make"; add_prim "bytes_of_string"
 
 let find_op b =
-  let n = array_get op_count 0 in
+  let n = get op_count in
   let rec go i =
     if i >= n then 0 - 1
     else if bytes_eq_str b (array_get op_names i) then i
@@ -279,7 +285,7 @@ let find_op b =
   go 0
 
 let find_prim b =
-  let n = array_get prim_count 0 in
+  let n = get prim_count in
   let rec go i =
     if i >= n then 0 - 1
     else if bytes_eq_str b (array_get prim_names i) then i
@@ -288,13 +294,13 @@ let find_prim b =
 
 (* ---- label table ---- *)
 
-let lab_names = array_make 1 (array_make 256 (bytes_create 1))
-let lab_addrs = array_make 1 (array_make 256 0)
-let lab_count = array_make 1 0
+let lab_names = cell (array_make 256 (bytes_create 1))
+let lab_addrs = cell (array_make 256 0)
+let lab_count = cell 0
 
 let add_label name addr =
-  let n = array_get lab_count 0 in
-  let names = array_get lab_names 0 in
+  let n = get lab_count in
+  let names = get lab_names in
   (if n >= array_length names then
     (let cap = array_length names in
      let nn = array_make (2 * cap) (bytes_create 1) in
@@ -302,14 +308,14 @@ let add_label name addr =
      let rec cp i =
        if i < n then
          (array_set nn i (array_get names i);
-          array_set na i (array_get (array_get lab_addrs 0) i);
+          array_set na i (array_get (get lab_addrs) i);
           cp (i + 1)) in
      cp 0;
-     array_set lab_names 0 nn;
-     array_set lab_addrs 0 na));
-  array_set (array_get lab_names 0) n name;
-  array_set (array_get lab_addrs 0) n addr;
-  array_set lab_count 0 (n + 1)
+     set lab_names nn;
+     set lab_addrs na));
+  array_set (get lab_names) n name;
+  array_set (get lab_addrs) n addr;
+  set lab_count (n + 1)
 
 let bytes_eq a b =
   let n = bytes_length a in
@@ -320,8 +326,8 @@ let bytes_eq a b =
   if bytes_length b = n then cmp 0 else false
 
 let find_label name =
-  let n = array_get lab_count 0 in
-  let names = array_get lab_names 0 in
+  let n = get lab_count in
+  let names = get lab_names in
   let rec go i =
     if i >= n then 0 - 1
     else if bytes_eq name (array_get names i) then i
@@ -330,86 +336,86 @@ let find_label name =
 
 (* ---- code buffer and data records ---- *)
 
-let code_buf = array_make 1 (array_make 4096 0)
-let code_len = array_make 1 0
+let code_buf = cell (array_make 4096 0)
+let code_len = cell 0
 
 let emit w =
-  let buf = array_get code_buf 0 in
-  let len = array_get code_len 0 in
+  let buf = get code_buf in
+  let len = get code_len in
   (if len >= array_length buf then
     (let nb = array_make (2 * array_length buf) 0 in
      let rec cp i = if i < len then (array_set nb i (array_get buf i); cp (i + 1)) in
      cp 0;
-     array_set code_buf 0 nb));
-  array_set (array_get code_buf 0) len w;
-  array_set code_len 0 (len + 1)
+     set code_buf nb));
+  array_set (get code_buf) len w;
+  set code_len (len + 1)
 
-let data_recs = array_make 1 (array_make 256 (bytes_create 1))
-let data_count = array_make 1 0
+let data_recs = cell (array_make 256 (bytes_create 1))
+let data_count = cell 0
 
 let add_data b =
-  let n = array_get data_count 0 in
-  let recs = array_get data_recs 0 in
+  let n = get data_count in
+  let recs = get data_recs in
   (if n >= array_length recs then
     (let nr = array_make (2 * array_length recs) (bytes_create 1) in
      let rec cp i = if i < n then (array_set nr i (array_get recs i); cp (i + 1)) in
      cp 0;
-     array_set data_recs 0 nr));
-  array_set (array_get data_recs 0) n b;
-  array_set data_count 0 (n + 1)
+     set data_recs nr));
+  array_set (get data_recs) n b;
+  set data_count (n + 1)
 
-let globals_decl = array_make 1 (0 - 1)
+let globals_decl = cell (0 - 1)
 
 (* ---- the two passes ---- *)
 
 (* pass: 1 collects labels/data/globals and counts addresses;
    2 emits code words. addr is tracked in a cell. *)
 
-let addr = array_make 1 0
+let addr = cell 0
 
-let bump n = array_set addr 0 (array_get addr 0 + n)
+let bump n = set addr (get addr + n)
 
 (* read one operand token (already fetched into tk by caller? no: fetches).
    Returns its value; labels resolve only in pass 2 (pass 1 returns 0). *)
 let read_operand pass =
   next_token ();
-  let k = array_get tk 0 in
-  if k = tk_int then array_get tint 0
+  let k = get tk in
+  if k = tk_int then get tint
   else if k = tk_label then
     (if pass = 1 then 0
      else
-       (let i = find_label (array_get tstr 0) in
+       (let i = find_label (get tstr) in
         if i < 0 then
           (err_str "01-parenthetical: undefined label ";
-           err_bytes_from (array_get tstr 0) 0;
+           err_bytes_from (get tstr) 0;
            write_byte 2 10;
            exit 1)
-        else array_get (array_get lab_addrs 0) i))
+        else array_get (get lab_addrs) i))
   else if k = tk_atom then
-    (let p = find_prim (array_get tstr 0) in
+    (let p = find_prim (get tstr) in
      if p < 0 then die "expected an operand" else p)
   else die "expected an operand"
 
 let expect_rparen () =
   next_token ();
-  if not (array_get tk 0 = tk_rparen) then die "expected )"
+  if not (get tk = tk_rparen) then die "expected )"
 
 let handle_form pass =
   next_token ();
-  let k = array_get tk 0 in
+  let k = get tk in
   if k = tk_label then
-    ((if pass = 1 then add_label (array_get tstr 0) (array_get addr 0));
+    ((if pass = 1 then add_label (get tstr) (get addr));
      expect_rparen ())
   else if k = tk_atom then
-    (let name = array_get tstr 0 in
+    (let name = get tstr in
      if bytes_eq_str name "globals" then
        (let v = read_operand pass in
-        array_set globals_decl 0 v;
+        set globals_decl v;
         expect_rparen ())
      else if bytes_eq_str name "data" then
        (next_token ();
-        (if not (array_get tk 0 = tk_string) then die "data needs a string");
-        (if pass = 1 then add_data (array_get tstr 0));
+        (if not (get tk = tk_string) then die "data needs a string");
+        (if pass = 1 then add_data (get tstr));
         expect_rparen ())
      else if bytes_eq_str name "switch" then
        (let ni = read_operand pass in
@@ -444,16 +450,16 @@ let handle_form pass =
 
 let rec run_pass pass =
   next_token ();
-  let k = array_get tk 0 in
+  let k = get tk in
   if k = tk_eof then ()
   else if k = tk_lparen then (handle_form pass; run_pass pass)
   else die "expected ("
 
 (* ---- output ---- *)
 
-let out_h = array_make 1 0
+let out_h = cell 0
 
-let wbyte b = write_byte (array_get out_h 0) (b land 255)
+let wbyte b = write_byte (get out_h) (b land 255)
 
 let wu32 v =
   wbyte v;
@@ -468,34 +474,34 @@ let () =
   (if h < 0 then die "cannot open input");
   read_all h;
   close_chan h;
-  array_set line 0 1;
-  array_set pos 0 0;
-  array_set addr 0 0;
+  set line 1;
+  set pos 0;
+  set addr 0;
   run_pass 1;
-  array_set line 0 1;
-  array_set pos 0 0;
-  array_set addr 0 0;
+  set line 1;
+  set pos 0;
+  set addr 0;
   run_pass 2;
   let o = open_out (arg_get 1) in
   (if o < 0 then die "cannot open output");
-  array_set out_h 0 o;
+  set out_h o;
   (* header *)
   wbyte 77; wbyte 90; wbyte 66; wbyte 67;   (* M Z B C *)
   wu32 1;
-  wu32 (array_get code_len 0);
+  wu32 (get code_len);
   wu32 nprims;
-  let ndata = array_get data_count 0 in
-  let nglob = if array_get globals_decl 0 < 0 then ndata else array_get globals_decl 0 in
+  let ndata = get data_count in
+  let nglob = if get globals_decl < 0 then ndata else get globals_decl in
   (if nglob < ndata then die "globals count smaller than data count");
   wu32 nglob;
   wu32 ndata;
   (* code *)
-  let buf = array_get code_buf 0 in
-  let n = array_get code_len 0 in
+  let buf = get code_buf in
+  let n = get code_len in
   let rec wcode i = if i < n then (wu32 (array_get buf i); wcode (i + 1)) in
   wcode 0;
   (* data *)
-  let recs = array_get data_recs 0 in
+  let recs = get data_recs in
   let rec wdata i =
     if i < ndata then
       (let b = array_get recs i in
