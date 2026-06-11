@@ -84,10 +84,8 @@ type topdecl =
   | DEnumConstants of (bytes * int) list
   | DTypeDecl of ctype list
 
-let rec param_types params =
-  match params with
-  | [] -> []
-  | Param (ty, _) :: rest -> ty :: param_types rest
+let param_types params =
+  list_map (fun p -> (match p with Param (ty, _) -> ty)) params
 
 (* diagnostic tags, mirroring TypesAst.renderStmtTag/renderExprTag *)
 let render_stmt_tag s =
@@ -149,10 +147,8 @@ let binop_arith_prec op =
   else 0 - 1
 
 let binop_is_assign op =
-  bytes_eq_str op "=" || bytes_eq_str op "+=" || bytes_eq_str op "-=" ||
-  bytes_eq_str op "*=" || bytes_eq_str op "/=" || bytes_eq_str op "%=" ||
-  bytes_eq_str op "<<=" || bytes_eq_str op ">>=" || bytes_eq_str op "&=" ||
-  bytes_eq_str op "^=" || bytes_eq_str op "|="
+  bytes_eq_any op
+    ["="; "+="; "-="; "*="; "/="; "%="; "<<="; ">>="; "&="; "^="; "|="]
 
 (* full expression-level binop table (Parser.binop): prec or -1 *)
 let binop_prec op =

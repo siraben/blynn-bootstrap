@@ -106,6 +106,34 @@ let rec list_length_from l n =
 
 let list_length l = list_length_from l 0
 
+(* iteration helpers; f is applied left to right / in increasing index
+   order (list_map binds each head value before the recursive call) *)
+
+let rec iter_range i n f =
+  if i < n then (f i; iter_range (i + 1) n f)
+
+let rec list_iter f l =
+  match l with
+  | [] -> ()
+  | h :: t -> (f h; list_iter f t)
+
+let rec list_map f l =
+  match l with
+  | [] -> []
+  | h :: t ->
+      (let v = f h in
+       v :: list_map f t)
+
+let rec list_for_all f l =
+  match l with
+  | [] -> true
+  | h :: t -> f h && list_for_all f t
+
+let rec list_fold_left f acc l =
+  match l with
+  | [] -> acc
+  | h :: t -> list_fold_left f (f acc h) t
+
 let rec list_append a b =
   match a with
   | [] -> b
@@ -447,12 +475,10 @@ let mt_grow () =
   if !mt_count >= cap then
     (let nl = array_make (2 * cap) None in
      let nv = array_make (2 * cap) 0 in
-     let rec cp i =
-       if i < cap then
+     iter_range 0 cap
+       (fun i ->
          (array_set nl i (array_get !mt_link i);
-          array_set nv i (array_get !mt_level i);
-          cp (i + 1)) in
-     cp 0;
+          array_set nv i (array_get !mt_level i)));
      mt_link := nl;
      mt_level := nv)
 
@@ -489,9 +515,7 @@ let rec occurs_adjust id lvl t ln =
   | TCon (_, _, args) -> occurs_adjust_list id lvl args ln
 
 and occurs_adjust_list id lvl l ln =
-  match l with
-  | [] -> ()
-  | h :: t -> (occurs_adjust id lvl h ln; occurs_adjust_list id lvl t ln)
+  list_iter (fun h -> occurs_adjust id lvl h ln) l
 
 (* ---- type printing (for diagnostics) ---- *)
 
@@ -574,15 +598,11 @@ let rec inst_ty marr t =
   | TTup l -> TTup (inst_list marr l)
   | TCon (id, name, args) -> TCon (id, name, inst_list marr args)
 
-and inst_list marr l =
-  match l with
-  | [] -> []
-  | h :: t -> inst_ty marr h :: inst_list marr t
+and inst_list marr l = list_map (fun h -> inst_ty marr h) l
 
 let new_meta_array n =
   let marr = array_make (if n > 0 then n else 1) (TQVar 0) in
-  let rec fill i = if i < n then (array_set marr i (fresh_meta ()); fill (i + 1)) in
-  fill 0;
+  iter_range 0 n (fun i -> array_set marr i (fresh_meta ()));
   marr
 
 (* a scheme is (number of quantified variables, body) *)
@@ -605,10 +625,7 @@ let rec gen_walk counter t =
   | TTup l -> gen_walk_list counter l
   | TCon (_, _, args) -> gen_walk_list counter args
 
-and gen_walk_list counter l =
-  match l with
-  | [] -> ()
-  | h :: t -> (gen_walk counter h; gen_walk_list counter t)
+and gen_walk_list counter l = list_iter (fun h -> gen_walk counter h) l
 
 (* keep a type monomorphic: clamp its metas to the current level *)
 let clamp_ty ln t = occurs_adjust (0 - 1) !cur_level t ln
@@ -1300,10 +1317,7 @@ let rec is_value e =
   | ECons (_, a, b) -> is_value a && is_value b
   | _ -> false
 
-and is_value_list l =
-  match l with
-  | [] -> true
-  | h :: t -> is_value h && is_value_list t
+and is_value_list l = list_for_all (fun h -> is_value h) l
 
 (* ---- pattern checking ----
    check_pat acc p subject extends acc with monomorphic bindings
@@ -1347,10 +1361,7 @@ and check_pat_args acc args argtys marr =
   | (p :: pt, t :: tt) -> check_pat_args (check_pat acc p (inst_ty marr t)) pt tt marr
   | (_, _) -> acc
 
-and fresh_meta_list ps =
-  match ps with
-  | [] -> []
-  | _ :: t -> fresh_meta () :: fresh_meta_list t
+and fresh_meta_list ps = list_map (fun _ -> fresh_meta ()) ps
 
 (* ---- generalization of binding groups ---- *)
 
@@ -1358,37 +1369,26 @@ and fresh_meta_list ps =
 
 let gen_binds binds =
   let counter = ref 0 in
-  let rec walk l =
-    match l with
-    | [] -> ()
-    | (_, (_, t)) :: rest -> (gen_walk counter t; walk rest) in
-  walk binds;
+  list_iter (fun b -> (let (_, (_, t)) = b in gen_walk counter t)) binds;
   let n = !counter in
-  let rec remap l =
-    match l with
-    | [] -> []
-    | (name, (_, t)) :: rest -> (name, (n, t)) :: remap rest in
-  remap binds
+  list_map (fun b -> (let (name, (_, t)) = b in (name, (n, t)))) binds
 
-let rec clamp_binds ln binds =
-  match binds with
-  | [] -> ()
-  | (_, (_, t)) :: rest -> (clamp_ty ln t; clamp_binds ln rest)
+let clamp_binds ln binds =
+  list_iter (fun b -> (let (_, (_, t)) = b in clamp_ty ln t)) binds
 
 (* clamp every non-value binding before any value binding generalizes *)
-let rec clamp_pass checked =
-  match checked with
-  | [] -> ()
-  | (ln, bs, isv) :: rest ->
-      ((if not isv then clamp_binds ln bs);
-       clamp_pass rest)
+let clamp_pass checked =
+  list_iter
+    (fun c -> (let (ln, bs, isv) = c in if not isv then clamp_binds ln bs))
+    checked
 
-let rec build_env env checked =
-  match checked with
-  | [] -> env
-  | (_, bs, isv) :: rest ->
-      (let bs2 = if isv then gen_binds bs else bs in
-       build_env (list_append bs2 env) rest)
+let build_env env checked =
+  list_fold_left
+    (fun e c ->
+      (let (_, bs, isv) = c in
+       let bs2 = if isv then gen_binds bs else bs in
+       list_append bs2 e))
+    env checked
 
 (* ---- expression checking ---- *)
 
@@ -1560,10 +1560,7 @@ and check_arms env arms ts tr =
        unify (pat_line p) t tr;
        check_arms env rest ts tr)
 
-and check_list env l =
-  match l with
-  | [] -> []
-  | h :: t -> check_expr env h :: check_list env t
+and check_list env l = list_map (fun h -> check_expr env h) l
 
 and check_bindings env binds =
   match binds with
@@ -1648,19 +1645,18 @@ let rec p_type_decls acc =
 let check_type_group () =
   let decls = p_type_decls [] in
   (* register every head first: the group may be mutually recursive *)
-  let rec reg l =
-    match l with
-    | [] -> []
-    | (ln, name, params, ctors, rf) :: rest ->
-        (let id = fresh_type_id () in
+  let regd =
+    list_map
+      (fun d ->
+        (let (ln, name, params, ctors, rf) = d in
+         let id = fresh_type_id () in
          type_add name id (list_length params);
-         (ln, name, params, ctors, rf, id) :: reg rest) in
-  let regd = reg decls in
-  let rec do_decl l =
-    match l with
-    | [] -> ()
-    | (ln, name, params, ctors, rf, id) :: rest ->
-        (let rec param_assoc ps i =
+         (ln, name, params, ctors, rf, id)))
+      decls in
+  list_iter
+    (fun d ->
+      (let (ln, name, params, ctors, rf, id) = d in
+         let rec param_assoc ps i =
            match ps with
            | [] -> []
            | h :: pt -> (h, i) :: param_assoc pt (i + 1) in
@@ -1671,13 +1667,11 @@ let check_type_group () =
          let res = TCon (id, name, qargs 0) in
          (match rf with
           | [] ->
-              (let rec do_ctors cs =
-                 match cs with
-                 | [] -> ()
-                 | (_, cname, txargs) :: ct ->
-                     (ctor_add cname nq (tx_to_ty_list passoc txargs) res;
-                      do_ctors ct) in
-               do_ctors ctors)
+              list_iter
+                (fun c ->
+                  (let (_, cname, txargs) = c in
+                   ctor_add cname nq (tx_to_ty_list passoc txargs) res))
+                ctors
           | _ ->
               ((if nq > 0 then fail ln "record types cannot take parameters");
                let rec do_fields fs acc =
@@ -1690,9 +1684,8 @@ let check_type_group () =
                       let fty = tx_to_ty [] tx in
                       field_add fname (res, fty, ismut);
                       do_fields ft ((fname, fty, ismut) :: acc)) in
-               do_fields rf []));
-         do_decl rest) in
-  do_decl regd
+               do_fields rf []))))
+    regd
 
 (* ---- top-level bindings ---- *)
 
@@ -1710,31 +1703,26 @@ let rec p_top_bindings_after binder acc =
      p_top_bindings_after b2 acc2)
   else list_rev acc2
 
-let rec add_globals checked =
-  match checked with
-  | [] -> ()
-  | (_, bs, isv) :: rest ->
-      (let bs2 = if isv then gen_binds bs else bs in
-       let rec add l =
-         match l with
-         | [] -> ()
-         | (name, sch) :: lt ->
-             (let (n, t0) = sch in
-              glob_add name n t0;
-              add lt) in
-       add bs2;
-       add_globals rest)
+let add_globals checked =
+  list_iter
+    (fun c ->
+      (let (_, bs, isv) = c in
+       let bs2 = if isv then gen_binds bs else bs in
+       list_iter
+         (fun b -> (let (name, (n, t0)) = b in glob_add name n t0))
+         bs2))
+    checked
 
 let check_top_group binds =
   enter_level ();
-  let rec go l =
-    match l with
-    | [] -> []
-    | (p, rhs) :: rest ->
-        (let t = check_expr [] rhs in
+  let checked =
+    list_map
+      (fun b ->
+        (let (p, rhs) = b in
+         let t = check_expr [] rhs in
          let bs = check_pat [] p t in
-         (pat_line p, bs, is_value rhs) :: go rest) in
-  let checked = go binds in
+         (pat_line p, bs, is_value rhs)))
+      binds in
   leave_level ();
   clamp_pass checked;
   add_globals checked
@@ -1742,50 +1730,35 @@ let check_top_group binds =
 let check_top_rec () =
   let binds = p_top_bindings_after (p_let_binder ()) [] in
   enter_level ();
-  let rec mk l =
-    match l with
-    | [] -> []
-    | (p, rhs) :: rest ->
-        (match p with
-         | PVar (ln, name) -> (ln, name, fresh_meta (), rhs) :: mk rest
-         | _ -> fail (pat_line p) "let rec needs a name") in
-  let group = mk binds in
-  let rec menv l =
-    match l with
-    | [] -> []
-    | (_, name, m, _) :: rest -> (name, (0, m)) :: menv rest in
-  let env = menv group in
-  let rec chk l =
-    match l with
-    | [] -> ()
-    | (ln, _, m, rhs) :: rest ->
-        (let t = check_expr env rhs in
-         unify ln m t;
-         chk rest) in
-  chk group;
+  let group =
+    list_map
+      (fun b ->
+        (let (p, rhs) = b in
+         match p with
+         | PVar (ln, name) -> (ln, name, fresh_meta (), rhs)
+         | _ -> fail (pat_line p) "let rec needs a name"))
+      binds in
+  let env = list_map (fun g -> (let (_, name, m, _) = g in (name, (0, m)))) group in
+  list_iter
+    (fun g ->
+      (let (ln, _, m, rhs) = g in
+       let t = check_expr env rhs in
+       unify ln m t))
+    group;
   leave_level ();
   (* clamp non-value right-hand sides first, then generalize the rest *)
-  let rec clamp1 l =
-    match l with
-    | [] -> ()
-    | (ln, _, m, rhs) :: rest ->
-        ((if not (is_value rhs) then clamp_ty ln m);
-         clamp1 rest) in
-  clamp1 group;
+  list_iter
+    (fun g ->
+      (let (ln, _, m, rhs) = g in
+       if not (is_value rhs) then clamp_ty ln m))
+    group;
   let counter = ref 0 in
-  let rec gen1 l =
-    match l with
-    | [] -> ()
-    | (_, _, m, rhs) :: rest ->
-        ((if is_value rhs then gen_walk counter m);
-         gen1 rest) in
-  gen1 group;
+  list_iter
+    (fun g ->
+      (let (_, _, m, rhs) = g in if is_value rhs then gen_walk counter m))
+    group;
   let n = !counter in
-  let rec add l =
-    match l with
-    | [] -> ()
-    | (_, name, m, _) :: rest -> (glob_add name n m; add rest) in
-  add group
+  list_iter (fun g -> (let (_, name, m, _) = g in glob_add name n m)) group
 
 (* ---- driver ---- *)
 

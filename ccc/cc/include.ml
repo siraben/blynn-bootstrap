@@ -211,12 +211,8 @@ let inc_split_top_level sep text =
        else (buf_push cur c; go depth (i + 1) acc)) in
   go 0 0 []
 
-let rec inc_filter_non_null pieces =
-  match pieces with
-  | [] -> []
-  | p :: rest ->
-      if bytes_length p = 0 then inc_filter_non_null rest
-      else p :: inc_filter_non_null rest
+let inc_filter_non_null pieces =
+  list_filter (fun p -> bytes_length p > 0) pieces
 
 let inc_read_decimal b =
   let n = bytes_length b in
@@ -286,8 +282,7 @@ let rec inc_matching_endif depth ls =
   | (line_no, line) :: rest ->
       (match inc_directive_name_from_line line with
        | Some name ->
-           if bytes_eq_str name "if" || bytes_eq_str name "ifdef" ||
-              bytes_eq_str name "ifndef" then
+           if bytes_eq_any name ["if"; "ifdef"; "ifndef"] then
              inc_matching_endif (depth + 1) rest
            else if bytes_eq_str name "endif" then
              (if depth = 1 then Some line_no else inc_matching_endif (depth - 1) rest)

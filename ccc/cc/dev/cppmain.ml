@@ -30,17 +30,14 @@ let cm_parse_define def =
      cm_unescape_define_value (bytes_sub def (eq + 1) (n - eq - 1)))
 
 let cm_parse_target_bits target =
-  if bytes_eq_str target "amd64" || bytes_eq_str target "x86_64" ||
-     bytes_eq_str target "aarch64" || bytes_eq_str target "arm64" ||
-     bytes_eq_str target "riscv64" then Some 64
-  else if bytes_eq_str target "i386" || bytes_eq_str target "x86" then Some 32
+  if bytes_eq_any target ["amd64"; "x86_64"; "aarch64"; "arm64"; "riscv64"]
+  then Some 64
+  else if bytes_eq_any target ["i386"; "x86"] then Some 32
   else None
 
 let cm_ignored_flag flag =
-  bytes_eq_str flag "-c" || bytes_eq_str flag "-pipe" ||
-  bytes_eq_str flag "-nostdinc" || bytes_eq_str flag "-nostdlib" ||
-  bytes_eq_str flag "-static" || bytes_eq_str flag "--m1-ir" ||
-  bytes_eq_str flag "--trace"
+  bytes_eq_any flag
+    ["-c"; "-pipe"; "-nostdinc"; "-nostdlib"; "-static"; "--m1-ir"; "--trace"]
 
 (* assemblyArgs; returns (input, include dirs, defines) *)
 let rec cm_assembly_args args out input includes defines target =
@@ -92,16 +89,16 @@ let rec cm_assembly_args args out input includes defines target =
          die_bytes (buf_take b))
       else cm_assembly_args rest out (Some a) includes defines target
 
-let rec cm_render_defines out defines =
-  match defines with
-  | [] -> ()
-  | (name, value) :: rest ->
-      buf_add_str out "#define ";
-      buf_add_bytes out name;
-      buf_push out ch_space;
-      buf_add_bytes out value;
-      buf_push out ch_nl;
-      cm_render_defines out rest
+let cm_render_defines out defines =
+  list_iter
+    (fun d ->
+      (let (name, value) = d in
+       buf_add_str out "#define ";
+       buf_add_bytes out name;
+       buf_push out ch_space;
+       buf_add_bytes out value;
+       buf_push out ch_nl))
+    defines
 
 let cm_usage () =
   let b = buf_new 64 in
@@ -120,14 +117,11 @@ let cm_preprocess_file args =
   let toks = lex_plain_source (buf_take full) in
   let out_toks = preprocess toks in
   let out = buf_new 65536 in
-  let rec render ts =
-    match ts with
-    | [] -> buf_push out ch_nl
-    | t :: rest ->
-        buf_add_bytes out (token_text (tok_kind t));
-        buf_push out ch_space;
-        render rest in
-  render out_toks;
+  list_iter
+    (fun t ->
+      (buf_add_bytes out (token_text (tok_kind t)); buf_push out ch_space))
+    out_toks;
+  buf_push out ch_nl;
   write_buf out;
   exit 0
 

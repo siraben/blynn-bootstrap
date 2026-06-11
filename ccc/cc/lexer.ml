@@ -304,23 +304,20 @@ let lx_punct () =
   let c1 = lx_peek () in
   let take k =
     let b = buf_new 4 in
-    let rec go i = if i < k then (buf_push b (lx_adv ()); go (i + 1)) in
-    go 0;
+    iter_range 0 k (fun _ -> buf_push b (lx_adv ()));
     Tok (line, col, TkPunct (buf_take b)) in
   let single () =
     if char_in_str c1 single_char_puncts then take 1
     else lex_die_at line col "unexpected character" in
-  let rec try_ops l =
-    match l with
-    | [] -> single ()
-    | s :: rest ->
-        if lx_looking_at s then take (string_length s) else try_ops rest in
-  let rec groups l =
-    match l with
-    | [] -> single ()
-    | (k, ops) :: rest ->
-        if string_get k 0 = c1 then try_ops ops else groups rest in
-  groups multi_punct_groups
+  let try_ops ops =
+    match list_find (fun s -> lx_looking_at s) ops with
+    | Some s -> take (string_length s)
+    | None -> single () in
+  match
+    list_find (fun g -> (let (k, _) = g in string_get k 0 = c1)) multi_punct_groups
+  with
+  | Some g -> (let (_, ops) = g in try_ops ops)
+  | None -> single ()
 
 (* directive: bol '#' through end of line; newline consumed *)
 let lx_directive () =
