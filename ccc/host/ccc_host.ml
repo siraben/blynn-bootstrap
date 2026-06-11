@@ -9,6 +9,8 @@ type token =
 exception Compile_error of string
 exception Parse_error of string
 exception Exit_code of int
+exception Fatal_exit of int
+exception Longjmp of int
 
 let fail msg = raise (Compile_error msg)
 
@@ -42,6 +44,55 @@ let rec strings_of_chars chars =
 
 let string_of_rev_chars chars =
   String.concat "" (strings_of_chars (List.rev chars))
+
+let host_stderr_line msg =
+  prerr_endline msg (* HOST-ML-BOUNDARY *)
+
+let host_stdout text =
+  print_string text (* HOST-ML-BOUNDARY *)
+
+let host_exit code =
+  exit code (* HOST-ML-BOUNDARY *)
+
+let host_getenv name =
+  try Some (Sys.getenv name) with Not_found -> None (* HOST-ML-BOUNDARY *)
+
+let host_arg_count () =
+  Array.length Sys.argv (* HOST-ML-BOUNDARY *)
+
+let host_arg_at i =
+  Sys.argv.(i) (* HOST-ML-BOUNDARY *)
+
+let host_read_all chan =
+  let rec loop acc =
+    let next = try Some (input_char chan) with End_of_file -> None (* HOST-ML-BOUNDARY *) in
+    match next with
+    | Some ch -> loop (ch :: acc)
+    | None -> string_of_rev_chars acc
+  in
+  loop []
+
+let host_read_stdin () =
+  host_read_all stdin (* HOST-ML-BOUNDARY *)
+
+let host_read_text_file path =
+  let chan = open_in_bin path in (* HOST-ML-BOUNDARY *)
+  try
+    let text = host_read_all chan in
+    close_in chan; (* HOST-ML-BOUNDARY *)
+    text
+  with exn ->
+    close_in_noerr chan; (* HOST-ML-BOUNDARY *)
+    raise exn
+
+let host_write_file path text =
+  let chan = open_out_bin path in (* HOST-ML-BOUNDARY *)
+  try
+    output_string chan text; (* HOST-ML-BOUNDARY *)
+    close_out chan (* HOST-ML-BOUNDARY *)
+  with exn ->
+    close_out_noerr chan; (* HOST-ML-BOUNDARY *)
+    raise exn
 
 let unsigned_mod value modulus =
   let rem = value mod modulus in
@@ -85,6 +136,9 @@ let bitwise_not x =
 let char_code_at src pos =
   if pos >= String.length src then 0 else Char.code src.[pos]
 
+let saturating_add_digit base acc digit =
+  if acc > (max_int - digit) / base then max_int else acc * base + digit
+
 let hex_value ch =
   if '0' <= ch && ch <= '9' then Char.code ch - Char.code '0'
   else if 'A' <= ch && ch <= 'F' then Char.code ch - Char.code 'A' + 10
@@ -126,6 +180,8 @@ let parse_escape src pos =
   | 'n' -> (10, pos + 1)
   | 'r' -> (13, pos + 1)
   | 't' -> (9, pos + 1)
+  | 'v' -> (11, pos + 1)
+  | 'f' -> (12, pos + 1)
   | 'x' ->
       let rec loop p acc =
         if p < String.length src && (is_digit src.[p] || ('a' <= src.[p] && src.[p] <= 'f') || ('A' <= src.[p] && src.[p] <= 'F')) then
@@ -181,14 +237,14 @@ let lex_number src pos =
   if pos + 1 < len && src.[pos] = '0' && (src.[pos + 1] = 'x' || src.[pos + 1] = 'X') then
     let rec loop p acc =
       if p < len && (is_digit src.[p] || ('a' <= src.[p] && src.[p] <= 'f') || ('A' <= src.[p] && src.[p] <= 'F')) then
-        loop (p + 1) ((acc * 16) + hex_value src.[p])
+        loop (p + 1) (saturating_add_digit 16 acc (hex_value src.[p]))
       else (Int_lit acc, suffix p)
     in
     loop (pos + 2) 0
   else
     let rec loop p acc =
       if p < len && is_digit src.[p] then
-        loop (p + 1) ((acc * 10) + Char.code src.[p] - Char.code '0')
+        loop (p + 1) (saturating_add_digit 10 acc (Char.code src.[p] - Char.code '0'))
       else
         match float_tail p with
         | Some p -> (Int_lit 0, p)
@@ -481,16 +537,13 @@ let token_text tok =
   | Sym text -> "symbol " ^ text
   | Eof -> "end of input"
 
-let rec argv_contains text i =
-  if i >= Array.length Sys.argv then false
-  else if Sys.argv.(i) = text then true
-  else argv_contains text (i + 1)
+let trace_requested = ref false
 
 let trace_enabled () =
-  argv_contains "--trace" 1
+  !trace_requested
 
 let trace msg =
-  if trace_enabled () then prerr_endline ("ccc-host-ocaml: " ^ msg) else ()
+  if trace_enabled () then host_stderr_line ("ccc-host-ocaml: " ^ msg) else ()
 
 let parse_trace_next = ref 0
 
@@ -672,6 +725,7 @@ type stmt =
   | Switch of expr * switch_case list
   | Goto of string
   | Label of string
+  | Labeled of string * stmt
   | Break
   | ContinueStmt
   | Block of stmt list
@@ -680,9 +734,63 @@ and switch_case = SwitchCase of expr option * stmt list
 type param = { param_type : c_type; param_name : string }
 type func = { name : string; params : param list; variadic : bool; body : stmt list; ret_type : c_type }
 type global_decl = { global_type : c_type; global_name : string; global_init : expr option; global_array_size : expr option }
-type field_layout = { field_name : string; field_size : int; field_offset : int; field_is_array : bool }
+type field_layout = { field_name : string; field_type : c_type; field_size : int; field_offset : int; field_is_array : bool }
 type struct_layout = { struct_name : string; struct_fields : field_layout list; struct_size : int }
 type program = { constants : (string * int) list; structs : struct_layout list; globals : global_decl list; funcs : func list }
+
+let union_begin_field = "__anonymous_union_begin"
+let union_end_field = "__anonymous_union_end"
+
+let is_layout_marker name =
+  name = union_begin_field || name = union_end_field
+
+let binop_name op =
+  match op with
+  | Add -> "+"
+  | Sub -> "-"
+  | Mul -> "*"
+  | Div -> "/"
+  | Mod -> "%"
+  | Eq -> "=="
+  | Ne -> "!="
+  | Lt -> "<"
+  | Le -> "<="
+  | Gt -> ">"
+  | Ge -> ">="
+  | Bor -> "|"
+  | Bxor -> "^"
+  | Band -> "&"
+  | Shl -> "<<"
+  | Shr -> ">>"
+  | Land -> "&&"
+  | Lor -> "||"
+
+let rec expr_summary expr =
+  match expr with
+  | EInt n -> string_of_int n
+  | EVar name -> name
+  | EString _ -> "string"
+  | EInitList _ -> "init-list"
+  | EIndex (base, _) -> expr_summary base ^ "[]"
+  | EMember (base, field) -> expr_summary base ^ "." ^ field
+  | EPtrMember (base, field) -> expr_summary base ^ "->" ^ field
+  | EAssignExpr (name, _) -> name ^ " = ..."
+  | EAssignDeref _ -> "*... = ..."
+  | EAssignIndex (base, _, _) -> expr_summary base ^ "[] = ..."
+  | EAssignMember (base, field, _) -> expr_summary base ^ "." ^ field ^ " = ..."
+  | EUpdateExpr (name, _, _) -> name ^ " update"
+  | EUpdateLvalue (target, _, _) -> expr_summary target ^ " update"
+  | EUnary (Deref, e) -> "*" ^ expr_summary e
+  | EUnary (Addr, e) -> "&" ^ expr_summary e
+  | EUnary _ -> "unary"
+  | EBinary (op, a, b) -> "(" ^ expr_summary a ^ " " ^ binop_name op ^ " " ^ expr_summary b ^ ")"
+  | ECond _ -> "?:"
+  | ECall (name, _) -> name ^ "(...)"
+  | ECallExpr (callee, _) -> expr_summary callee ^ "(...)"
+  | ECast (_, e) -> "(" ^ expr_summary e ^ " cast)"
+  | ESizeof _ -> "sizeof"
+  | ESizeofExpr e -> "sizeof " ^ expr_summary e
+  | EComma (_, rhs) -> "..., " ^ expr_summary rhs
 
 let has_suffix suffix text =
   let suffix_len = String.length suffix in
@@ -705,6 +813,20 @@ let rec starts_type tok =
   | Ident "va_list" -> true
   | Ident name -> has_suffix "_t" name || starts_uppercase name
   | _ -> false
+
+let canonical_named_type name =
+  match name with
+  | "int8_t" -> TSignedChar
+  | "uint8_t" -> TUnsignedChar
+  | "int16_t" -> TShort
+  | "uint16_t" -> TUnsignedShort
+  | "int32_t" -> TInt
+  | "uint32_t" -> TUnsigned
+  | "int64_t" -> TLongLong
+  | "uint64_t" -> TUnsignedLongLong
+  | "size_t" | "__SIZE_TYPE__" | "uintptr_t" | "addr_t" -> TUnsignedLong
+  | "ssize_t" | "intptr_t" -> TLong
+  | _ -> TOther name
 
 let option_is_some value =
   match value with Some _ -> true | None -> false
@@ -789,7 +911,7 @@ let rec parse_type state =
   in
   let named_type st =
     let name, st = need_ident st in
-    (TOther name, st)
+    (canonical_named_type name, st)
   in
   let plain_type st =
     match take_keyword_type [ ("char", TChar); ("int", TInt); ("void", TVoid); ("_Bool", TBool); ("short", TShort); ("float", TFloat); ("double", TDouble) ] st with
@@ -1150,13 +1272,44 @@ let layout_field_size ty array_size =
   layout_scalar_size ty * count
 
 let build_struct_layout name fields =
+  let layout_one offset field_name ty array_size =
+    let offset = align_up offset (layout_align ty) in
+    let field_size = layout_field_size ty array_size in
+    (offset + field_size, { field_name; field_type = ty; field_size; field_offset = offset; field_is_array = option_is_some array_size })
+  in
+  let rec take_union fields acc =
+    match fields with
+    | [] -> (List.rev acc, [])
+    | (field_name, ty, array_size) :: rest ->
+        if field_name = union_end_field then (List.rev acc, rest)
+        else take_union rest ((field_name, ty, array_size) :: acc)
+  in
   let rec loop offset acc fields =
     match fields with
     | [] -> { struct_name = name; struct_fields = List.rev acc; struct_size = offset }
     | (field_name, ty, array_size) :: rest ->
-        let offset = align_up offset (layout_align ty) in
-        let field_size = layout_field_size ty array_size in
-        loop (offset + field_size) ({ field_name; field_size; field_offset = offset; field_is_array = option_is_some array_size } :: acc) rest
+        if field_name = union_begin_field then
+          let union_fields, rest = take_union rest [] in
+          let rec union_align fields align =
+            match fields with
+            | [] -> align
+            | (_, ty, _) :: fields -> union_align fields (max align (layout_align ty))
+          in
+          let offset = align_up offset (union_align union_fields 1) in
+          let rec union_layout fields max_size acc =
+            match fields with
+            | [] -> (max_size, acc)
+            | (field_name, ty, array_size) :: fields ->
+                let field_size = layout_field_size ty array_size in
+                let layout = { field_name; field_type = ty; field_size; field_offset = offset; field_is_array = option_is_some array_size } in
+                union_layout fields (max max_size field_size) (layout :: acc)
+          in
+          let size, union_acc = union_layout union_fields 0 acc in
+          loop (offset + size) union_acc rest
+        else if is_layout_marker field_name then loop offset acc rest
+        else
+          let next_offset, layout = layout_one offset field_name ty array_size in
+          loop next_offset (layout :: acc) rest
   in
   loop 0 [] fields
 
@@ -1366,7 +1519,16 @@ let rec parse_stmt state =
         let st = need_sym "(" st in
         let cond, st = parse_expr st in
         let st = need_sym ")" st in
-        let yes, st = parse_stmt st in
+        let yes, st =
+          match take_ident st with
+          | Some (name, st1) -> (
+              match take_sym ":" st1 with
+              | Some st2 ->
+                  let stmt, st2 = parse_stmt st2 in
+                  (Labeled (name, stmt), st2)
+              | None -> parse_stmt st)
+          | None -> parse_stmt st
+        in
         let no, st =
           match take_keyword "else" st with
           | Some st ->
@@ -1643,7 +1805,7 @@ let parse_function state =
   let params, state = parse_params state in
   parse_function_tail name params ret_type state
 
-type external_decl = ExternalFunc of func option | ExternalGlobal of global_decl
+type external_decl = ExternalFunc of func option | ExternalGlobals of global_decl list
 
 let parse_function_pointer_declarator ty state =
   let state = need_sym "(" state in
@@ -1670,7 +1832,7 @@ let parse_external_decl state =
         | None -> (None, state)
       in
       let state = need_sym ";" state in
-      (ExternalGlobal { global_type = ty; global_name = name; global_init = init; global_array_size = None }, state)
+      (ExternalGlobals [ { global_type = ty; global_name = name; global_init = init; global_array_size = None } ], state)
   | _ ->
       let name, state = need_ident state in
       match take_sym "(" state with
@@ -1680,8 +1842,20 @@ let parse_external_decl state =
           (ExternalFunc func, state)
       | None ->
           let name, init, array_size, state = parse_decl_suffix name state in
-          let state = need_sym ";" state in
-          (ExternalGlobal { global_type = ty; global_name = name; global_init = init; global_array_size = array_size }, state)
+          let base_ty = strip_ptr_type ty in
+          let first = { global_type = ty; global_name = name; global_init = init; global_array_size = array_size } in
+          let rec rest state acc =
+            match take_sym "," state with
+            | Some state ->
+                let ptr_count, state = parse_declarator_pointer state in
+                let item_ty = add_ptr_type base_ty ptr_count in
+                let name, init, array_size, state = parse_decl_tail state in
+                rest state ({ global_type = item_ty; global_name = name; global_init = init; global_array_size = array_size } :: acc)
+            | None ->
+                let state = need_sym ";" state in
+                (ExternalGlobals (List.rev acc), state)
+          in
+          rest state [ first ]
 
 let skip_braced_type_body state =
   let state = need_sym "{" state in
@@ -1714,7 +1888,7 @@ let starts_aggregate_body state =
   | Ident ("struct" | "union"), Ident _, Sym "{" -> true
   | _ -> false
 
-let parse_aggregate_body_field state =
+let rec parse_aggregate_body_field state =
   let keyword =
     match peek state with
     | Ident name -> name
@@ -1731,9 +1905,21 @@ let parse_aggregate_body_field state =
       TOther (if tag = "" then "struct" else "struct " ^ tag)
     else TUnion
   in
-  let state = skip_braced_type_body state in
+  let body_fields, state =
+    let state = need_sym "{" state in
+    let rec loop state acc =
+      match take_sym "}" state with
+      | Some state -> (List.rev acc, state)
+      | None ->
+          let fields, state = parse_struct_field state in
+          loop state (List.rev_append fields acc)
+    in
+    loop state []
+  in
   match take_sym ";" state with
-  | Some state -> ([ ("__anonymous_" ^ keyword, base_ty, None) ], state)
+  | Some state ->
+      if keyword = "union" then ((union_begin_field, TUnion, None) :: body_fields @ [ (union_end_field, TUnion, None) ], state)
+      else (body_fields, state)
   | None ->
       let rec declarators state acc =
         let ptr_count, state = parse_declarator_pointer state in
@@ -1748,13 +1934,13 @@ let parse_aggregate_body_field state =
       in
       declarators state []
 
-let parse_struct_field state =
+and parse_struct_field state =
   match peek state with
   | Ident ("struct" | "union") ->
       if starts_aggregate_body state then parse_aggregate_body_field state
       else
         let ty, state = parse_type state in
-        let rec skip_declarator_pointer state =
+        let rec declarator_pointer count state =
           match take_sym "*" state with
           | Some state ->
               let rec qualifiers state =
@@ -1762,11 +1948,12 @@ let parse_struct_field state =
                 | Some state -> qualifiers state
                 | None -> state
               in
-              skip_declarator_pointer (qualifiers state)
-          | None -> state
+              declarator_pointer (count + 1) (qualifiers state)
+          | None -> (count, state)
         in
         let rec declarators state acc =
-          let state = skip_declarator_pointer state in
+          let ptr_count, state = declarator_pointer 0 state in
+          let ty = add_ptr_type ty ptr_count in
           let field, state = parse_field_name state in
           let array_size, state = parse_array_size state in
           let state =
@@ -1785,7 +1972,7 @@ let parse_struct_field state =
         declarators state []
   | _ ->
       let ty, state = parse_type state in
-      let rec skip_declarator_pointer state =
+      let rec declarator_pointer count state =
         match take_sym "*" state with
         | Some state ->
             let rec qualifiers state =
@@ -1793,11 +1980,12 @@ let parse_struct_field state =
               | Some state -> qualifiers state
               | None -> state
             in
-            skip_declarator_pointer (qualifiers state)
-        | None -> state
+            declarator_pointer (count + 1) (qualifiers state)
+        | None -> (count, state)
       in
       let rec declarators state acc =
-        let state = skip_declarator_pointer state in
+        let ptr_count, state = declarator_pointer 0 state in
+        let ty = add_ptr_type ty ptr_count in
         let field, state = parse_field_name state in
         let array_size, state = parse_array_size state in
         let state =
@@ -1948,7 +2136,7 @@ let parse_program tokens initial_constants =
       match parsed with
       | Some (ExternalFunc (Some fn), state) -> loop state constants structs globals (fn :: funcs)
       | Some (ExternalFunc None, state) -> loop state constants structs globals funcs
-      | Some (ExternalGlobal global, state) -> loop state constants structs (global :: globals) funcs
+      | Some (ExternalGlobals parsed_globals, state) -> loop state constants structs (List.rev_append parsed_globals globals) funcs
       | None -> loop { state with pos = skip_decl state.tokens state.pos 0 } constants structs globals funcs
     in
     match peek state with
@@ -2014,14 +2202,29 @@ and binding = {
   bind_array : value array option;
   bind_bytes : value array option;
   bind_fields : (string * value ref) list ref option;
+  bind_layout : field_layout list option ref;
 }
 
 type env = binding list
 
+let value_summary value =
+  match value with
+  | VInt n -> "int " ^ string_of_int n
+  | VPtr binding -> "ptr " ^ binding.bind_name
+  | VArrayPtr (binding, offset) -> "arrayptr " ^ binding.bind_name ^ "+" ^ string_of_int offset
+  | VFieldPtr (binding, offset) -> "fieldptr " ^ binding.bind_name ^ "+" ^ string_of_int offset
+  | VStringPtr (_, offset) -> "stringptr +" ^ string_of_int offset
+  | VFunc name -> "func " ^ name
+
 let int_of_value value =
   match value with
   | VInt value -> value
-  | VPtr _ | VArrayPtr _ | VFieldPtr _ | VStringPtr _ | VFunc _ -> fail "pointer used as integer"
+  | VPtr _ | VArrayPtr _ | VFieldPtr _ | VStringPtr _ | VFunc _ -> fail ("pointer used as integer: " ^ value_summary value)
+
+let is_pointer_value value =
+  match value with
+  | VInt _ -> false
+  | VPtr _ | VArrayPtr _ | VFieldPtr _ | VStringPtr _ | VFunc _ -> true
 
 let coerce_int ty value =
   match ty with
@@ -2066,7 +2269,7 @@ let assoc_decl_full text array bytes ty name value env =
     | TOther _ -> Some (ref [])
     | _ -> None
   in
-  { bind_name = name; bind_type = ty; bind_value = ref (coerce_value ty value); bind_string = text; bind_array = array; bind_bytes = bytes; bind_fields = fields }
+  { bind_name = name; bind_type = ty; bind_value = ref (coerce_value ty value); bind_string = text; bind_array = array; bind_bytes = bytes; bind_fields = fields; bind_layout = ref None }
   :: env
 
 let assoc_decl_value ty name value env =
@@ -2091,6 +2294,7 @@ let fresh_alloc size =
       bind_array = Some values;
       bind_bytes = Some values;
       bind_fields = Some (ref []);
+      bind_layout = ref None;
     }
   in
   VArrayPtr (binding, 0)
@@ -2098,10 +2302,119 @@ let fresh_alloc size =
 let string_byte text pos =
   if pos < 0 || pos >= String.length text then 0 else Char.code text.[pos]
 
+let fill_string_array values text =
+  let rec loop i =
+    if i >= Array.length values then ()
+    else (
+      let value = if i < String.length text then Char.code text.[i] else 0 in
+      values.(i) <- VInt value;
+      loop (i + 1))
+  in
+  loop 0
+
+let field_cell fields name =
+  match list_find_opt (fun (field, _) -> field = name) !(fields) with
+  | Some (_, cell) -> cell
+  | None ->
+      let alias =
+        if name = "i" then Some "tab[0]"
+        else if has_suffix "_section" name then
+          Some (String.sub name 0 (String.length name - String.length "_section"))
+        else Some (name ^ "_section")
+      in
+      (match alias with
+      | Some alias -> (
+          match list_find_opt (fun (field, _) -> field = alias) !(fields) with
+          | Some (_, cell) ->
+              fields := !(fields) @ [ (name, cell) ];
+              cell
+          | None ->
+              let cell = ref (VInt 0) in
+              fields := !(fields) @ [ (name, cell) ];
+              cell)
+      | None ->
+          let cell = ref (VInt 0) in
+          fields := !(fields) @ [ (name, cell) ];
+          cell)
+
+let field_index_cell fields field index =
+  if field = "tab" && index = 0 then field_cell fields "i"
+  else field_cell fields (field ^ "[" ^ string_of_int index ^ "]")
+
+let binding_fields binding =
+  match binding.bind_fields with
+  | Some fields ->
+      (match !(binding.bind_layout) with
+      | Some layouts ->
+          let rec fields_at_offset offset layouts acc =
+            match layouts with
+            | [] -> acc
+            | layout :: rest ->
+                if layout.field_offset = offset then fields_at_offset offset rest (layout.field_name :: acc)
+                else fields_at_offset offset rest acc
+          in
+          let rec find_existing names =
+            match names with
+            | [] -> None
+            | name :: rest -> (
+                match list_find_opt (fun (field, _) -> field = name) !(fields) with
+                | Some (_, cell) -> Some cell
+                | None -> find_existing rest)
+          in
+          let rec add_missing names cell =
+            match names with
+            | [] -> ()
+            | name :: rest ->
+                (match list_find_opt (fun (field, _) -> field = name) !(fields) with
+                | Some _ -> ()
+                | None -> fields := !(fields) @ [ (name, cell) ]);
+                add_missing rest cell
+          in
+          let rec loop layouts =
+            match layouts with
+            | [] -> ()
+            | layout :: rest ->
+                let names = fields_at_offset layout.field_offset layouts [] in
+                let cell = match find_existing names with Some cell -> cell | None -> ref (VInt 0) in
+                add_missing names cell;
+                loop rest
+          in
+          loop layouts
+      | None -> ());
+      fields
+  | None -> fail ("not a struct value: " ^ binding.bind_name)
+
+let field_array_prefix field = "__field_array:" ^ field ^ ":"
+
+let field_array_name field target =
+  field_array_prefix field ^ target.bind_name
+
+let field_array_field binding =
+  if has_prefix (field_array_prefix "tab") binding.bind_name then Some "tab" else None
+
+let field_array_pointer target field =
+  let values = Array.make 16 (VInt 0) in
+  VArrayPtr
+    ({
+      bind_name = field_array_name field target;
+      bind_type = TInt;
+      bind_value = ref (VInt 0);
+      bind_string = None;
+      bind_array = Some values;
+      bind_bytes = None;
+      bind_fields = Some (binding_fields target);
+      bind_layout = ref !(target.bind_layout);
+    },
+    0)
+
 let rec read_binding_index binding index =
   match binding.bind_array, binding.bind_string, !(binding.bind_value) with
   | Some values, _, _ ->
-      if index < 0 || index >= Array.length values then VInt 0 else values.(index)
+      if index < 0 || index >= Array.length values then VInt 0
+      else (
+        match field_array_field binding with
+        | Some field -> !(field_index_cell (binding_fields binding) field index)
+        | None -> values.(index))
   | None, Some text, _ -> VInt (string_byte text index)
   | None, None, VArrayPtr (target, base) -> read_binding_index target (base + index)
   | None, None, VFieldPtr (target, base) -> (
@@ -2119,8 +2432,16 @@ let read_binding_byte binding index =
 let rec write_binding_index binding index value =
   match binding.bind_array, !(binding.bind_value) with
   | Some values, _ ->
-      if index < 0 || index >= Array.length values then fail ("array index out of bounds: " ^ binding.bind_name);
+      if index < 0 || index >= Array.length values then
+        fail
+          ("array index out of bounds: " ^ binding.bind_name ^ "["
+           ^ string_of_int index ^ "] len=" ^ string_of_int (Array.length values));
       let value = coerce_value binding.bind_type value in
+      (match field_array_field binding with
+      | Some field ->
+          let cell = field_index_cell (binding_fields binding) field index in
+          cell := value
+      | None -> ());
       values.(index) <- value;
       value
   | None, VArrayPtr (target, base) -> write_binding_index target (base + index) value
@@ -2150,7 +2471,7 @@ let read_pointer ptr =
   | VArrayPtr (target, offset) -> read_binding_index target offset
   | VFieldPtr (target, offset) -> read_binding_byte target offset
   | VStringPtr (text, offset) -> VInt (string_byte text offset)
-  | VInt _ | VFunc _ -> fail "not a pointer"
+  | VInt _ | VFunc _ -> fail ("not a pointer: " ^ value_summary ptr)
 
 let write_pointer ptr value =
   match ptr with
@@ -2160,7 +2481,144 @@ let write_pointer ptr value =
   | VArrayPtr (target, offset) -> write_binding_index target offset value
   | VFieldPtr (target, offset) -> write_binding_byte target offset value
   | VStringPtr _ -> fail "cannot write through string literal pointer"
-  | VInt _ | VFunc _ -> fail "not a pointer"
+  | VInt _ | VFunc _ -> fail ("not a pointer: " ^ value_summary ptr)
+
+let is_raw_byte_binding binding =
+  match binding.bind_array, binding.bind_type with
+  | Some _, TUnsignedChar -> true
+  | _ -> false
+
+let raw_byte_at binding index =
+  match binding.bind_array with
+  | Some values ->
+      if index < 0 || index >= Array.length values then 0
+      else unsigned_mod (int_of_value values.(index)) 256
+  | None -> 0
+
+let write_raw_byte binding index value =
+  match binding.bind_array with
+  | Some values ->
+      if index < 0 || index >= Array.length values then fail ("byte index out of bounds: " ^ binding.bind_name)
+      else values.(index) <- VInt (unsigned_mod value 256)
+  | None -> fail ("not a raw byte array: " ^ binding.bind_name)
+
+let read_raw_int_unsigned binding offset size =
+  let rec loop i shift acc =
+    if i >= size then acc
+    else loop (i + 1) (shift + 8) (acc + shift_left_u32 (raw_byte_at binding (offset + i)) shift)
+  in
+  loop 0 0 0
+
+let sign_extend_raw_int size value =
+  if size >= 8 then value
+  else
+    let bits = size * 8 in
+    let sign_bit = pow2 (bits - 1) in
+    let modulus = pow2 bits in
+    if value >= sign_bit then value - modulus else value
+
+let raw_int_is_unsigned ty =
+  match ty with
+  | TUnsignedChar | TUnsignedShort | TUnsigned | TUnsignedLong | TUnsignedLongLong | TPtr _ -> true
+  | _ -> false
+
+let read_raw_int_as ty binding offset size =
+  let value = read_raw_int_unsigned binding offset size in
+  if raw_int_is_unsigned ty then VInt value else VInt (sign_extend_raw_int size value)
+
+let write_raw_int binding offset size value =
+  let n = int_of_value value in
+  let rec loop i =
+    if i >= size then ()
+    else (
+      write_raw_byte binding (offset + i) (shift_right_u32 n (i * 8));
+      loop (i + 1))
+  in
+  loop 0;
+  value
+
+let raw_pointer_key offset = "__rawptr@" ^ string_of_int offset
+
+let read_raw_pointer binding offset =
+  match binding.bind_fields with
+  | Some fields -> (
+      match list_find_opt (fun (field, _) -> field = raw_pointer_key offset) !(fields) with
+      | Some (_, cell) -> !(cell)
+      | None -> VInt 0)
+  | None -> VInt 0
+
+let write_raw_pointer binding offset value =
+  match binding.bind_fields with
+  | Some fields ->
+      let key = raw_pointer_key offset in
+      (match list_find_opt (fun (field, _) -> field = key) !(fields) with
+      | Some (_, cell) -> cell := value
+      | None -> fields := !(fields) @ [ (key, ref value) ]);
+      value
+  | None -> fail ("not a raw pointer-addressable value: " ^ binding.bind_name)
+
+let raw_overlay_key offset = "__overlay@" ^ string_of_int offset
+
+let parse_numeric_suffix prefix text =
+  let prefix_len = String.length prefix in
+  if not (has_prefix prefix text) then None
+  else
+    let rec loop i acc =
+      if i >= String.length text then Some acc
+      else
+        let ch = text.[i] in
+        if is_digit ch then loop (i + 1) (acc * 10 + Char.code ch - Char.code '0') else None
+    in
+    loop prefix_len 0
+
+let clear_struct_overlay value =
+  match value with
+  | VPtr target | VFieldPtr (target, 0) -> (
+      match target.bind_fields with
+      | Some fields -> fields := []
+      | None -> ())
+  | _ -> ()
+
+let reset_raw_metadata_range binding base count value =
+  if value <> 0 then ()
+  else
+    match binding.bind_fields with
+    | None -> ()
+    | Some fields ->
+        let stop = base + count in
+        List.iter
+          (fun (field, cell) ->
+            let clear_offset prefix action =
+              match parse_numeric_suffix prefix field with
+              | Some offset -> if base <= offset && offset < stop then action cell else ()
+              | None -> ()
+            in
+            clear_offset "__rawptr@" (fun cell -> cell := VInt 0);
+            clear_offset "__overlay@" (fun cell -> clear_struct_overlay !(cell)))
+          !(fields)
+
+let read_pointer_as ty ptr =
+  let size = sizeof_type ty in
+  match ptr with
+  | VArrayPtr (binding, offset) | VFieldPtr (binding, offset) ->
+      if is_raw_byte_binding binding then
+        match ty with
+        | TPtr _ | TVoid -> read_raw_pointer binding offset
+        | _ -> if size > 1 then read_raw_int_as ty binding offset size else read_pointer ptr
+      else read_pointer ptr
+  | _ -> read_pointer ptr
+
+let write_pointer_as ty ptr value =
+  let size = sizeof_type ty in
+  match ptr with
+  | VArrayPtr (binding, offset) | VFieldPtr (binding, offset) ->
+      if is_raw_byte_binding binding then
+        match ty with
+        | TPtr _ -> write_raw_pointer binding offset value
+        | TVoid -> if is_pointer_value value then write_raw_pointer binding offset value else write_pointer ptr value
+        | _ -> if size > 1 then write_raw_int binding offset size value else write_pointer ptr value
+      else write_pointer ptr value
+  | _ -> write_pointer ptr value
 
 let add_to_value value delta =
   match value with
@@ -2178,13 +2636,39 @@ let write_pointer_byte ptr offset value =
   ()
 
 let write_repeated_bytes ptr value count =
-  let rec loop i =
-    if i >= count then ()
-    else (
-      write_pointer_byte ptr i value;
-      loop (i + 1))
-  in
-  loop 0
+  (match ptr with
+  | VArrayPtr (binding, base) | VFieldPtr (binding, base) -> reset_raw_metadata_range binding base count value
+  | _ -> ());
+  match ptr with
+  | VArrayPtr (binding, base) -> (
+      match binding.bind_array, binding.bind_bytes with
+      | Some values, None ->
+          let elem_size = sizeof_type binding.bind_type in
+          let count = if elem_size <= 0 then count else (count + elem_size - 1) / elem_size in
+          let rec loop i =
+            if i >= count then ()
+            else (
+              let index = base + i in
+              if index >= 0 && index < Array.length values then values.(index) <- coerce_value binding.bind_type (VInt value);
+              loop (i + 1))
+          in
+          loop 0
+      | _ ->
+          let rec loop i =
+            if i >= count then ()
+            else (
+              write_pointer_byte ptr i value;
+              loop (i + 1))
+          in
+          loop 0)
+  | _ ->
+      let rec loop i =
+        if i >= count then ()
+        else (
+          write_pointer_byte ptr i value;
+          loop (i + 1))
+      in
+      loop 0
 
 let copy_bytes dst src count =
   let rec loop i =
@@ -2194,6 +2678,60 @@ let copy_bytes dst src count =
       loop (i + 1))
   in
   loop 0
+
+let raw_allocation_size ptr =
+  match ptr with
+  | VArrayPtr (binding, 0) | VFieldPtr (binding, 0) -> (
+      match binding.bind_bytes with Some bytes -> Some (Array.length bytes) | None -> None)
+  | _ -> None
+
+let raw_allocation_values ptr =
+  match ptr with
+  | VArrayPtr (binding, 0) | VFieldPtr (binding, 0) -> binding.bind_bytes
+  | _ -> None
+
+let raw_allocation_binding ptr =
+  match ptr with
+  | VArrayPtr (binding, 0) | VFieldPtr (binding, 0) -> Some binding
+  | _ -> None
+
+let copy_raw_overlays dst src =
+  match raw_allocation_binding dst, raw_allocation_binding src with
+  | Some dst_binding, Some src_binding -> (
+      match dst_binding.bind_fields, src_binding.bind_fields with
+      | Some dst_fields, Some src_fields ->
+          dst_fields := !(src_fields)
+      | _ -> ())
+  | _ -> ()
+
+let copy_raw_allocation dst src count =
+  match raw_allocation_values dst, raw_allocation_values src with
+  | Some dst_values, Some src_values ->
+      let limit = min count (min (Array.length dst_values) (Array.length src_values)) in
+      let rec loop i =
+        if i >= limit then ()
+        else (
+          dst_values.(i) <- src_values.(i);
+          loop (i + 1))
+      in
+      loop 0;
+      copy_raw_overlays dst src
+  | _ -> copy_bytes dst src count
+
+let realloc_pointer ptr size =
+  if size = 0 then VInt 0
+  else
+    match ptr with
+    | VInt 0 -> fresh_alloc size
+    | _ -> (
+        match raw_allocation_size ptr with
+        | Some old_size ->
+            if size <= old_size then ptr
+            else
+              let dst = fresh_alloc size in
+              copy_raw_allocation dst ptr old_size;
+              dst
+        | None -> ptr)
 
 let c_string_length ptr =
   let rec loop i =
@@ -2209,31 +2747,157 @@ let c_string_text ptr =
   in
   loop 0 []
 
+let trace_string_arg value =
+  match value with
+  | VPtr _ | VArrayPtr _ | VFieldPtr _ | VStringPtr _ -> c_string_text value
+  | _ -> value_summary value
+
+let format_int_base value base upper =
+  let digits = if upper then "0123456789ABCDEF" else "0123456789abcdef" in
+  let rec loop n acc =
+    if n = 0 then acc
+    else loop (n / base) (Char.chr (char_code_at digits (n mod base)) :: acc)
+  in
+  if value = 0 then "0"
+  else if value < 0 && base = 10 then "-" ^ String.concat "" (strings_of_chars (loop (-value) []))
+  else String.concat "" (strings_of_chars (loop value []))
+
+let format_c_string fmt args =
+  let len = String.length fmt in
+  let rec take_int args =
+    match args with
+    | value :: rest -> (int_of_value value, rest)
+    | [] -> (0, [])
+  in
+  let rec take_string args =
+    match args with
+    | value :: rest -> (trace_string_arg value, rest)
+    | [] -> ("", [])
+  in
+  let rec flags p =
+    if p < len then
+      match fmt.[p] with
+      | '-' | '+' | ' ' | '#' | '0' -> flags (p + 1)
+      | _ -> p
+    else p
+  in
+  let rec digits p =
+    if p < len && is_digit fmt.[p] then digits (p + 1) else p
+  in
+  let rec digit_value p acc =
+    if p < len && is_digit fmt.[p] then digit_value (p + 1) (acc * 10 + char_code_at fmt p - Char.code '0')
+    else (acc, p)
+  in
+  let rec length_mod p =
+    if p < len then
+      match fmt.[p] with
+      | 'l' | 'h' | 'z' | 't' | 'j' -> length_mod (p + 1)
+      | _ -> p
+    else p
+  in
+  let rec loop p args acc =
+    if p >= len then string_of_rev_chars acc
+    else if fmt.[p] <> '%' then loop (p + 1) args (fmt.[p] :: acc)
+    else if p + 1 < len && fmt.[p + 1] = '%' then loop (p + 2) args ('%' :: acc)
+    else
+      let p = flags (p + 1) in
+      let p, args =
+        if p < len && fmt.[p] = '*' then
+          let _width, args = take_int args in
+          (p + 1, args)
+        else (digits p, args)
+      in
+      let precision, p, args =
+        if p < len && fmt.[p] = '.' then
+          if p + 1 < len && fmt.[p + 1] = '*' then
+            let n, args = take_int args in
+            (Some n, p + 2, args)
+          else
+            let n, p = digit_value (p + 1) 0 in
+            (Some n, p, args)
+        else
+          (None, p, args)
+      in
+      let p = length_mod p in
+      if p >= len then string_of_rev_chars acc
+      else
+        let text, args =
+          match fmt.[p] with
+          | 's' ->
+              let text, args = take_string args in
+              let text =
+                match precision with
+                | Some n -> if n < String.length text then String.sub text 0 n else text
+                | None -> text
+              in
+              (text, args)
+          | 'd' | 'i' | 'u' ->
+              let n, args = take_int args in
+              (string_of_int n, args)
+          | 'x' ->
+              let n, args = take_int args in
+              (format_int_base n 16 false, args)
+          | 'X' ->
+              let n, args = take_int args in
+              (format_int_base n 16 true, args)
+          | 'c' ->
+              let n, args = take_int args in
+              (String.make 1 (Char.chr (unsigned_mod n 256)), args)
+          | spec -> (String.make 1 spec, args)
+        in
+        let rec add_text i acc =
+          if i >= String.length text then acc else add_text (i + 1) (text.[i] :: acc)
+        in
+        loop (p + 1) args (add_text 0 acc)
+  in
+  loop 0 args []
+
 type host_file = { host_fd : int; host_text : string; host_pos : int ref }
 
 let next_host_fd = ref 3
 let host_files = ref []
 
 let read_file_text path =
-  let chan = open_in_bin path in
-  let rec loop acc =
-    let next = try Some (input_char chan) with End_of_file -> None in
-    match next with
-    | Some ch -> loop (ch :: acc)
-    | None ->
-        close_in chan;
-        string_of_rev_chars acc
-  in
-  try loop [] with exn -> close_in_noerr chan; raise exn
+  host_read_text_file path
+
+let getenv_option name =
+  host_getenv name
+
+let is_root_header_path path =
+  if not (has_prefix "/" path) then false
+  else
+    let rec loop i =
+      if i >= String.length path then true
+      else if path.[i] = '/' then false
+      else loop (i + 1)
+    in
+    loop 1
+
+let host_remap_path path =
+  let prefix = "/hcc-bootstrap/include/" in
+  if has_prefix prefix path then
+    match getenv_option "CCC_HOST_HCC_INCLUDE" with
+    | Some include_dir ->
+        include_dir ^ "/" ^ String.sub path (String.length prefix) (String.length path - String.length prefix)
+    | None -> path
+  else if is_root_header_path path then
+    match getenv_option "CCC_HOST_HCC_INCLUDE" with
+    | Some include_dir -> include_dir ^ "/" ^ String.sub path 1 (String.length path - 1)
+    | None -> path
+  else path
 
 let host_open_file path =
+  let host_path = host_remap_path path in
   try
-    let text = read_file_text path in
+    let text = read_file_text host_path in
     let fd = !next_host_fd in
     next_host_fd := fd + 1;
     host_files := { host_fd = fd; host_text = text; host_pos = ref 0 } :: !host_files;
+    trace ("host open " ^ host_path ^ " fd=" ^ string_of_int fd ^ " bytes=" ^ string_of_int (String.length text));
     fd
-  with Sys_error _ -> -1
+  with Sys_error _ ->
+    trace ("host open failed " ^ host_path);
+    -1
 
 let rec host_find_file fd files =
   match files with
@@ -2254,6 +2918,7 @@ let host_read_file fd dst count =
       in
       loop 0;
       file.host_pos := !(file.host_pos) + count;
+      trace ("host read fd=" ^ string_of_int fd ^ " bytes=" ^ string_of_int count);
       count
 
 let host_close_file fd =
@@ -2323,6 +2988,40 @@ let strrchr_value ptr ch =
   in
   loop 0 None
 
+let cstring_binding ptr =
+  match ptr with
+  | VPtr binding | VFieldPtr (binding, 0) | VArrayPtr (binding, 0) -> Some binding
+  | _ -> None
+
+let cstring_append cstr_ptr text =
+  match cstring_binding cstr_ptr with
+  | None -> ()
+  | Some binding ->
+      let fields = binding_fields binding in
+      let data_cell = field_cell fields "data" in
+      let size_cell = field_cell fields "size" in
+      let allocated_cell = field_cell fields "size_allocated" in
+      let old_size = int_of_value !(size_cell) in
+      let needed = old_size + String.length text + 1 in
+      let allocated = int_of_value !(allocated_cell) in
+      let data =
+        if allocated >= needed && is_pointer_value !(data_cell) then !(data_cell)
+        else
+          let next = realloc_pointer !(data_cell) needed in
+          data_cell := next;
+          allocated_cell := VInt needed;
+          next
+      in
+      let rec loop i =
+        if i >= String.length text then ()
+        else (
+          write_pointer_byte data (old_size + i) (Char.code text.[i]);
+          loop (i + 1))
+      in
+      loop 0;
+      write_pointer_byte data (old_size + String.length text) 0;
+      size_cell := VInt (old_size + String.length text)
+
 let is_builtin_name name =
   match name with
   | "malloc" | "calloc" | "realloc" | "free" | "exit"
@@ -2331,8 +3030,12 @@ let is_builtin_name name =
   | "getenv"
   | "open" | "read" | "close"
   | "setjmp" | "longjmp"
+  | "_tcc_error"
+  | "cstr_printf"
   | "fprintf" | "printf" | "sprintf" | "snprintf"
-  | "vfprintf" | "vprintf" | "vsprintf" | "vsnprintf" ->
+  | "vfprintf" | "vprintf" | "vsprintf" | "vsnprintf"
+  | "ELF64_ST_INFO" | "ELF64_ST_BIND" | "ELF64_ST_TYPE" | "ELF64_ST_VISIBILITY"
+  | "check_fields" ->
       true
   | _ -> false
 
@@ -2343,13 +3046,10 @@ let eval_builtin_call name values =
   | "calloc", [ count; size ] ->
       Some (fresh_alloc (int_of_value count * int_of_value size))
   | "realloc", [ ptr; size ] ->
-      let size = int_of_value size in
-      if size = 0 then Some (VInt 0)
-      else (
-        match ptr with
-        | VInt 0 -> Some (fresh_alloc size)
-        | _ -> Some ptr)
-  | ("free" | "exit"), _ -> Some (VInt 0)
+      Some (realloc_pointer ptr (int_of_value size))
+  | "free", _ -> Some (VInt 0)
+  | "exit", [ code ] -> raise (Fatal_exit (int_of_value code))
+  | "exit", _ -> raise (Fatal_exit 0)
   | "memset", [ ptr; value; count ] ->
       write_repeated_bytes ptr (int_of_value value) (int_of_value count);
       Some ptr
@@ -2370,34 +3070,38 @@ let eval_builtin_call name values =
   | "read", [ fd; dst; count ] -> Some (VInt (host_read_file (int_of_value fd) dst (int_of_value count)))
   | "close", [ fd ] -> Some (VInt (host_close_file (int_of_value fd)))
   | "setjmp", [ _ ] -> Some (VInt 0)
-  | "longjmp", _ -> Some (VInt 0)
-  | ("snprintf" | "vsnprintf"), dst :: size :: fmt :: _ ->
+  | "longjmp", [ _; value ] ->
+      let value = int_of_value value in
+      raise (Longjmp (if value = 0 then 1 else value))
+  | "longjmp", _ -> raise (Longjmp 1)
+  | "cstr_printf", cstr :: fmt :: args ->
+      let text = format_c_string (c_string_text fmt) args in
+      trace ("cstr_printf text: " ^ text);
+      cstring_append cstr text;
+      Some (VInt (String.length text))
+  | "snprintf", dst :: size :: fmt :: args ->
+      let text = format_c_string (c_string_text fmt) args in
+      write_text_as_c_string dst (int_of_value size) text;
+      Some (VInt (String.length text))
+  | "vsnprintf", dst :: size :: fmt :: _ ->
       let text = c_string_text fmt in
       write_text_as_c_string dst (int_of_value size) text;
       Some (VInt (String.length text))
-  | ("sprintf" | "vsprintf"), dst :: fmt :: _ ->
-      let text = c_string_text fmt in
+  | ("sprintf" | "vsprintf"), dst :: fmt :: args ->
+      let text = format_c_string (c_string_text fmt) args in
       write_text_as_c_string dst (String.length text + 1) text;
       Some (VInt (String.length text))
   | "fprintf", [ VInt 2; fmt; msg ] ->
       let fmt_text = c_string_text fmt in
-      if has_prefix "%s" fmt_text then prerr_endline (c_string_text msg);
+      if has_prefix "%s" fmt_text then host_stderr_line (c_string_text msg);
       Some (VInt 0)
   | ("fprintf" | "printf" | "vfprintf" | "vprintf"), _ -> Some (VInt 0)
+  | "ELF64_ST_INFO", [ bind; typ ] -> Some (VInt (shift_left_u32 (int_of_value bind) 4 + bitwise_and (int_of_value typ) 15))
+  | "ELF64_ST_BIND", [ info ] -> Some (VInt (shift_right_u32 (int_of_value info) 4))
+  | "ELF64_ST_TYPE", [ info ] -> Some (VInt (bitwise_and (int_of_value info) 15))
+  | "ELF64_ST_VISIBILITY", [ other ] -> Some (VInt (bitwise_and (int_of_value other) 3))
+  | "check_fields", _ -> Some (VInt 0)
   | _ -> None
-
-let field_cell fields name =
-  match list_find_opt (fun (field, _) -> field = name) !(fields) with
-  | Some (_, cell) -> cell
-  | None ->
-      let cell = ref (VInt 0) in
-      fields := !(fields) @ [ (name, cell) ];
-      cell
-
-let binding_fields binding =
-  match binding.bind_fields with
-  | Some fields -> fields
-  | None -> fail ("not a struct value: " ^ binding.bind_name)
 
 let copy_struct_fields target source =
   let target_fields = binding_fields target in
@@ -2407,17 +3111,40 @@ let copy_struct_fields target source =
       target_cell := !(source_cell))
     !(binding_fields source)
 
+let copy_struct_fields_prefixed target prefix source =
+  let target_fields = binding_fields target in
+  List.iter
+    (fun (field, source_cell) ->
+      let target_cell = field_cell target_fields (prefix ^ "." ^ field) in
+      target_cell := !(source_cell))
+    !(binding_fields source)
+
 let struct_binding_from_pointer ptr =
   match ptr with
-  | VPtr binding -> Some binding
-  | VFieldPtr (binding, 0) -> Some binding
+  | VPtr binding -> if option_is_some binding.bind_fields then Some binding else None
+  | VFieldPtr (binding, 0) -> if option_is_some binding.bind_fields then Some binding else None
   | VArrayPtr (binding, index) -> (
       match binding.bind_array with
       | Some values ->
           if index >= 0 && index < Array.length values then
-            match values.(index) with
-            | VPtr target | VFieldPtr (target, 0) -> Some target
-            | _ -> if index = 0 && option_is_some binding.bind_fields then Some binding else None
+            let overlay =
+              match binding.bind_fields with
+              | Some fields -> (
+                  let key = raw_overlay_key index in
+                  match list_find_opt (fun (field, _) -> field = key) !(fields) with
+                  | Some (_, cell) -> (
+                      match !(cell) with
+                      | VPtr target | VFieldPtr (target, 0) -> Some target
+                      | _ -> None)
+                  | None -> None)
+              | None -> None
+            in
+            match overlay with
+            | Some target -> Some target
+            | None -> (
+                match values.(index) with
+                | VPtr target | VFieldPtr (target, 0) -> Some target
+                | _ -> if index = 0 && option_is_some binding.bind_fields then Some binding else None)
           else None
       | None -> if index = 0 && option_is_some binding.bind_fields then Some binding else None)
   | _ -> None
@@ -2428,6 +3155,71 @@ let struct_name_of_type ty =
       if has_prefix "struct " name then Some (String.sub name 7 (String.length name - 7))
       else Some name
   | _ -> None
+
+let struct_layout_fields structs ty =
+  match struct_name_of_type ty with
+  | None -> None
+  | Some name -> (
+      match list_find_opt (fun layout -> layout.struct_name = name) structs with
+      | Some layout -> Some layout.struct_fields
+      | None -> None)
+
+let set_binding_layout structs binding =
+  match !(binding.bind_layout) with
+  | Some _ -> ()
+  | None -> binding.bind_layout := struct_layout_fields structs binding.bind_type
+
+let typed_struct_binding_from_pointer structs ptr owner_ty =
+  let layout = struct_layout_fields structs owner_ty in
+  match ptr with
+  | VArrayPtr (binding, index) -> (
+      match binding.bind_array, binding.bind_bytes with
+      | Some values, Some bytes ->
+          if index >= 0 && index < Array.length values then
+            if (match binding.bind_type with TUnsignedChar -> true | _ -> false) then
+              let fields = binding_fields binding in
+              let key = raw_overlay_key index in
+              match list_find_opt (fun (field, _) -> field = key) !(fields) with
+              | Some (_, cell) -> (
+                  match !(cell) with
+                  | VPtr target | VFieldPtr (target, 0) -> Some target
+                  | _ -> None)
+              | None ->
+                  let target =
+                    {
+                      bind_name = binding.bind_name ^ "@" ^ string_of_int index;
+                      bind_type = owner_ty;
+                      bind_value = ref (VInt index);
+                      bind_string = None;
+                      bind_array = Some values;
+                      bind_bytes = Some bytes;
+                      bind_fields = Some (ref []);
+                      bind_layout = ref layout;
+                    }
+                  in
+                  fields := !(fields) @ [ (key, ref (VPtr target)) ];
+                  Some target
+            else
+              match values.(index) with
+              | VPtr target | VFieldPtr (target, 0) -> Some target
+              | _ ->
+                  let target =
+                    {
+                      bind_name = binding.bind_name ^ "@" ^ string_of_int index;
+                      bind_type = owner_ty;
+                      bind_value = ref (VInt index);
+                      bind_string = None;
+                      bind_array = Some values;
+                      bind_bytes = Some bytes;
+                      bind_fields = Some (ref []);
+                      bind_layout = ref layout;
+                    }
+                  in
+                  values.(index) <- VPtr target;
+                  Some target
+          else None
+      | _ -> struct_binding_from_pointer ptr)
+  | _ -> struct_binding_from_pointer ptr
 
 let struct_fields structs ty =
   match struct_name_of_type ty with
@@ -2475,6 +3267,85 @@ let struct_field_size structs ty field_name =
           | Some field -> Some field.field_size
           | None -> None))
 
+let struct_field_type structs ty field_name =
+  match struct_field_layout structs ty field_name with
+  | Some field -> Some field.field_type
+  | None -> None
+
+let pointer_delta_for_value structs ty value delta =
+  match ty, value with
+  | TPtr elem, (VArrayPtr (binding, _) | VFieldPtr (binding, _)) -> (
+      match binding.bind_type, binding.bind_bytes with
+      | TUnsignedChar, Some _ ->
+          let elem_size = match struct_size structs elem with Some size -> size | None -> sizeof_type elem in
+          delta * elem_size
+      | _ -> delta)
+  | TPtr elem, _ ->
+      let elem_size = match struct_size structs elem with Some size -> size | None -> sizeof_type elem in
+      delta * elem_size
+  | _ -> delta
+
+let rec pointer_owner_type structs env expr fallback =
+  match expr with
+  | EVar name -> (
+      try
+        match (find_binding name env).bind_type with
+        | TPtr ty -> ty
+        | _ -> fallback
+      with Compile_error _ -> fallback)
+  | EUpdateExpr (name, _, _) -> (
+      try
+        match (find_binding name env).bind_type with
+        | TPtr ty -> ty
+        | _ -> fallback
+      with Compile_error _ -> fallback)
+  | EIndex (EVar name, _) -> (
+      try
+        let binding = find_binding name env in
+        match binding.bind_array, binding.bind_type with
+        | Some _, TPtr ty -> ty
+        | _, TPtr (TPtr ty) -> ty
+        | _ -> fallback
+      with Compile_error _ -> fallback)
+  | EIndex (base, _) -> (
+      match pointer_owner_type structs env base fallback with
+      | TPtr ty -> ty
+      | _ -> fallback)
+  | EMember (base, field) -> (
+      let owner_ty =
+        match base with
+        | EVar name -> (
+            try (find_binding name env).bind_type with Compile_error _ -> TVoid)
+        | _ -> fallback
+      in
+      match struct_field_type structs owner_ty field with
+      | Some (TPtr ty) -> ty
+      | _ -> fallback)
+  | EPtrMember (base, field) -> (
+      let owner_ty = pointer_owner_type structs env base TVoid in
+      match struct_field_type structs owner_ty field with
+      | Some (TPtr ty) -> ty
+      | _ -> fallback)
+  | EUnary (Addr, EVar name) -> (
+      try (find_binding name env).bind_type with Compile_error _ -> fallback)
+  | EUnary (Deref, ptr) -> (
+      match pointer_owner_type structs env ptr fallback with
+      | TPtr ty -> ty
+      | _ -> fallback)
+  | ECast (TPtr ty, _) -> ty
+  | _ -> fallback
+
+let expression_pointer_delta structs env expr value delta =
+  pointer_delta_for_value structs (TPtr (pointer_owner_type structs env expr TVoid)) value delta
+
+let binding_byte_base binding =
+  match binding.bind_bytes, !(binding.bind_value) with
+  | Some _, VInt offset -> offset
+  | _ -> 0
+
+let binding_field_byte_offset binding layout =
+  binding_byte_base binding + layout.field_offset
+
 let scalar_field_pointer binding field =
   let cell = field_cell (binding_fields binding) field in
   VPtr
@@ -2485,17 +3356,57 @@ let scalar_field_pointer binding field =
       bind_string = None;
       bind_array = None;
       bind_bytes = None;
-      bind_fields = Some (ref []);
+      bind_fields = None;
+      bind_layout = ref None;
     }
+
+let struct_name_for_fields ty =
+  match ty with
+  | TOther name ->
+      if has_prefix "struct " name then Some (String.sub name 7 (String.length name - 7))
+      else Some name
+  | _ -> None
+
+let struct_field_names_for_type structs ty =
+  match struct_name_for_fields ty with
+  | None -> []
+  | Some name -> (
+      match list_find_opt (fun layout -> layout.struct_name = name) structs with
+      | Some layout -> List.map (fun field -> field.field_name) layout.struct_fields
+      | None -> [])
+
+let prefixed_struct_field_pointer structs binding field ty =
+  let names = struct_field_names_for_type structs ty in
+  match names with
+  | [] -> scalar_field_pointer binding field
+  | _ ->
+      let parent_fields = binding_fields binding in
+      let fields =
+        ref
+          (List.map
+             (fun name -> (name, field_cell parent_fields (field ^ "." ^ name)))
+             names)
+      in
+      VPtr
+        {
+          bind_name = binding.bind_name ^ "." ^ field;
+          bind_type = ty;
+          bind_value = field_cell parent_fields field;
+          bind_string = None;
+          bind_array = None;
+          bind_bytes = binding.bind_bytes;
+          bind_fields = Some fields;
+          bind_layout = ref (struct_layout_fields structs ty);
+        }
 
 let field_pointer structs binding owner_ty field =
   match struct_field_layout structs owner_ty field with
   | Some layout ->
-      (match binding.bind_array with
-      | Some _ ->
-          if layout.field_is_array then VFieldPtr (binding, layout.field_offset)
-          else scalar_field_pointer binding field
-      | None -> VFieldPtr (binding, layout.field_offset))
+      if layout.field_is_array then VFieldPtr (binding, binding_field_byte_offset binding layout)
+      else if struct_field_names_for_type structs layout.field_type <> [] then prefixed_struct_field_pointer structs binding field layout.field_type
+      else if (match layout.field_type with TPtr _ -> true | _ -> false) then scalar_field_pointer binding field
+      else if has_prefix "__alloc" binding.bind_name then scalar_field_pointer binding field
+      else VFieldPtr (binding, layout.field_offset)
   | None -> scalar_field_pointer binding field
 
 let value_equal a b =
@@ -2515,8 +3426,54 @@ let truth_value value =
   | VInt n -> truth n
   | VPtr _ | VArrayPtr _ | VFieldPtr _ | VStringPtr _ | VFunc _ -> true
 
+let tcc_error_recover env args =
+  match find_binding_opt "tcc_state" env with
+  | Some state_binding -> (
+      match struct_binding_from_pointer !(state_binding.bind_value) with
+      | Some state ->
+          let fields = binding_fields state in
+          let nb_errors = field_cell fields "nb_errors" in
+          nb_errors := VInt (int_of_value !(nb_errors) + 1);
+          trace ("_tcc_error args: " ^ String.concat " | " (List.map trace_string_arg args));
+          trace ("_tcc_error recovery enabled=" ^ value_summary (!(field_cell fields "error_set_jmp_enabled")));
+          if truth_value (!(field_cell fields "error_set_jmp_enabled")) then raise (Longjmp 1)
+          else raise (Fatal_exit 1)
+      | None -> raise (Fatal_exit 1))
+  | None -> raise (Fatal_exit 1)
+
+let trace_local_value env name =
+  match find_binding_opt name env with
+  | Some binding -> name ^ "=" ^ value_summary !(binding.bind_value)
+  | None -> name ^ "=<missing>"
+
+let trace_tcc_expect env values =
+  if trace_enabled () then
+    let file_line =
+      match find_binding_opt "file" env with
+      | Some binding -> (
+          match struct_binding_from_pointer !(binding.bind_value) with
+          | Some file ->
+              " file.line_num=" ^ value_summary !(field_cell (binding_fields file) "line_num")
+          | None -> "")
+      | None -> ""
+    in
+    let gnu_ext =
+      match find_binding_opt "tcc_state" env with
+      | Some binding -> (
+          match struct_binding_from_pointer !(binding.bind_value) with
+          | Some state -> " tcc_state.gnu_ext=" ^ value_summary !(field_cell (binding_fields state) "gnu_ext")
+          | None -> "")
+      | None -> ""
+    in
+    trace
+      ("expect args: " ^ String.concat " | " (List.map trace_string_arg values) ^ " "
+       ^ trace_local_value env "tok" ^ " " ^ trace_local_value env "v" ^ " "
+       ^ trace_local_value env "l" ^ " " ^ trace_local_value env "td" ^ " "
+       ^ trace_local_value env "n" ^ file_line ^ gnu_ext)
+
 let pointer_delta a b =
   match (a, b) with
+  | VPtr x, VPtr y -> if x == y then Some 0 else None
   | VFieldPtr (x, ix), VFieldPtr (y, iy) -> if x == y then Some (ix - iy) else None
   | VArrayPtr (x, ix), VArrayPtr (y, iy) -> if x == y then Some (ix - iy) else None
   | VStringPtr (x, ix), VStringPtr (y, iy) -> if x = y then Some (ix - iy) else None
@@ -2539,7 +3496,7 @@ let sub_values a b =
   | VInt x, VInt y -> VInt (x - y)
   | (VArrayPtr _ | VFieldPtr _ | VStringPtr _ as ptr), VInt n -> add_to_value ptr (-n)
   | _ -> (
-      match pointer_delta a b with Some delta -> VInt delta | None -> fail "unsupported subtraction")
+      match pointer_delta a b with Some delta -> VInt delta | None -> fail ("unsupported subtraction: " ^ value_summary a ^ " - " ^ value_summary b))
 
 let rec eval_value funcs structs globals env expr =
   match expr with
@@ -2561,55 +3518,151 @@ let rec eval_value funcs structs globals env expr =
       let index_value = eval_expr funcs structs globals env index in
       let value =
         match base with
-        | EVar name -> read_binding_index (find_binding name env) index_value
+        | EVar name ->
+            let binding = find_binding name env in
+            (match binding.bind_array with
+            | Some _ -> read_binding_index binding index_value
+            | None ->
+                let ptr = !(binding.bind_value) in
+                let delta = pointer_delta_for_value structs binding.bind_type ptr index_value in
+                let elem_ty = match binding.bind_type with TPtr ty -> ty | _ -> TVoid in
+                read_pointer_as elem_ty (add_to_value ptr delta))
+        | EMember (EVar name, field) ->
+            let binding = find_binding name env in
+            (match struct_field_layout structs binding.bind_type field with
+            | Some layout ->
+                if layout.field_is_array then read_pointer_as layout.field_type (VFieldPtr (binding, binding_field_byte_offset binding layout + index_value))
+                else
+                let expr = EMember (EVar name, field) in
+                let ptr = eval_value funcs structs globals env expr in
+                let delta = expression_pointer_delta structs env expr ptr index_value in
+                read_pointer_as (pointer_owner_type structs env expr TVoid) (add_to_value ptr delta)
+            | _ -> !(field_index_cell (binding_fields binding) field index_value))
+        | EPtrMember (base, field) ->
+            let owner_ty = pointer_owner_type structs env base TVoid in
+            let ptr = eval_value funcs structs globals env base in
+            let target =
+              match typed_struct_binding_from_pointer structs ptr owner_ty with
+              | Some target -> target
+              | None -> fail ("not a struct pointer for index " ^ field ^ ": " ^ value_summary ptr)
+            in
+            (match struct_field_layout structs owner_ty field with
+            | Some layout ->
+                if layout.field_is_array then read_pointer_as layout.field_type (VFieldPtr (target, binding_field_byte_offset target layout + index_value))
+                else
+                let expr = EPtrMember (base, field) in
+                let ptr = eval_value funcs structs globals env expr in
+                let delta = expression_pointer_delta structs env expr ptr index_value in
+                read_pointer_as (pointer_owner_type structs env expr TVoid) (add_to_value ptr delta)
+            | _ -> !(field_index_cell (binding_fields target) field index_value))
         | EString text -> VInt (string_byte text index_value)
-        | expr -> read_pointer (add_to_value (eval_value funcs structs globals env expr) index_value)
+        | expr ->
+            let ptr = eval_value funcs structs globals env expr in
+            let delta = expression_pointer_delta structs env expr ptr index_value in
+            read_pointer_as (pointer_owner_type structs env expr TVoid) (add_to_value ptr delta)
       in
       value
+  | EMember (EMember (base, parent), field) ->
+      eval_value funcs structs globals env (EMember (base, parent ^ "." ^ field))
+  | EMember (EPtrMember (base, parent), field) ->
+      eval_value funcs structs globals env (EPtrMember (base, parent ^ "." ^ field))
   | EMember (base, field) ->
       let binding =
         match base with
         | EVar name -> find_binding name env
-        | EUnary (Deref, ptr) -> (
-            match struct_binding_from_pointer (eval_value funcs structs globals env ptr) with
+        | EIndex (indexed_base, index) ->
+            let index_value = eval_expr funcs structs globals env index in
+            let ptr = eval_value funcs structs globals env indexed_base in
+            let address = add_to_value ptr (expression_pointer_delta structs env indexed_base ptr index_value) in
+            let owner_ty = pointer_owner_type structs env indexed_base TVoid in
+            (match typed_struct_binding_from_pointer structs address owner_ty with
             | Some target -> target
-            | None -> fail "not a struct pointer")
-        | _ -> fail "unsupported member expression"
+            | None -> fail ("not an indexed struct for member " ^ field ^ ": " ^ value_summary address))
+        | EUnary (Deref, ptr) -> (
+            let owner_ty = pointer_owner_type structs env ptr TVoid in
+            let ptr_value = eval_value funcs structs globals env ptr in
+            match typed_struct_binding_from_pointer structs ptr_value owner_ty with
+            | Some target -> target
+            | None ->
+                fail
+                  ("not a struct pointer for assign " ^ field ^ " via " ^ expr_summary ptr ^ ": "
+                   ^ value_summary ptr_value))
+        | _ -> fail ("unsupported member expression: " ^ expr_summary base ^ "." ^ field)
       in
       (match struct_field_layout structs binding.bind_type field with
       | Some layout ->
-          if layout.field_is_array then VFieldPtr (binding, layout.field_offset)
+          if layout.field_is_array then VFieldPtr (binding, binding_field_byte_offset binding layout)
           else !(field_cell (binding_fields binding) field)
-      | None -> !(field_cell (binding_fields binding) field))
+      | None ->
+          if field = "tab" then field_array_pointer binding field
+          else !(field_cell (binding_fields binding) field))
   | EPtrMember (EVar name, field) ->
       let pointer_binding = find_binding name env in
-      let target =
-        match struct_binding_from_pointer (eval_value funcs structs globals env (EVar name)) with
-        | Some target -> target
-        | None -> fail "not a struct pointer"
-      in
       let owner_ty =
         match pointer_binding.bind_type with
         | TPtr ty -> ty
-        | _ -> target.bind_type
+        | _ -> TVoid
       in
-      (match struct_field_layout structs owner_ty field with
-      | Some layout ->
-          if layout.field_is_array then VFieldPtr (target, layout.field_offset)
-          else !(field_cell (binding_fields target) field)
-      | None -> !(field_cell (binding_fields target) field))
+      let ptr = eval_value funcs structs globals env (EVar name) in
+      (match ptr with
+      | VInt 0 -> VInt 0
+      | _ ->
+          let target =
+            match typed_struct_binding_from_pointer structs ptr owner_ty with
+            | Some target -> target
+            | None ->
+                trace ("not struct pointer field " ^ field ^ " from " ^ name ^ " = " ^ value_summary ptr);
+                fail ("not a struct pointer field " ^ field ^ " from " ^ name ^ " = " ^ value_summary ptr)
+          in
+          (match struct_field_layout structs owner_ty field with
+          | Some layout ->
+              if layout.field_is_array then VFieldPtr (target, binding_field_byte_offset target layout)
+              else
+                !(field_cell (binding_fields target) field)
+          | None ->
+              if field = "tab" then field_array_pointer target field
+              else !(field_cell (binding_fields target) field)))
   | EPtrMember (base, field) ->
-      eval_value funcs structs globals env (EMember (EUnary (Deref, base), field))
+      let owner_ty = pointer_owner_type structs env base TVoid in
+      let ptr = eval_value funcs structs globals env base in
+      (match ptr with
+      | VInt 0 -> VInt 0
+      | _ ->
+          let target =
+            match typed_struct_binding_from_pointer structs ptr owner_ty with
+            | Some target -> target
+            | None ->
+                trace ("not struct pointer field " ^ field ^ " from expression = " ^ value_summary ptr);
+                fail ("not a struct pointer field " ^ field ^ " from expression = " ^ value_summary ptr)
+          in
+          (match struct_field_layout structs owner_ty field with
+          | Some layout ->
+              if layout.field_is_array then VFieldPtr (target, binding_field_byte_offset target layout)
+              else !(field_cell (binding_fields target) field)
+          | None ->
+              if field = "tab" then field_array_pointer target field
+              else !(field_cell (binding_fields target) field)))
   | EAssignExpr (name, expr) ->
       let target = find_binding name env in
       (match target.bind_fields, expr with
-      | Some _, EUnary (Deref, ptr_expr) -> (
-          match struct_binding_from_pointer (eval_value funcs structs globals env ptr_expr) with
-          | Some source ->
+      | Some _, EVar source_name -> (
+          let source = find_binding source_name env in
+          match source.bind_fields with
+          | Some _ ->
               copy_struct_fields target source;
               VInt 0
           | None ->
               let value = eval_value funcs structs globals env expr in
+              let _ = assoc_set_value name value env in
+              !(target.bind_value))
+      | Some _, EUnary (Deref, ptr_expr) -> (
+          let ptr_value = eval_value funcs structs globals env ptr_expr in
+          match struct_binding_from_pointer ptr_value with
+          | Some source ->
+              copy_struct_fields target source;
+              VInt 0
+          | None ->
+              let value = read_pointer_as (pointer_owner_type structs env ptr_expr TVoid) ptr_value in
               let _ = assoc_set_value name value env in
               !(target.bind_value))
       | _ ->
@@ -2617,67 +3670,231 @@ let rec eval_value funcs structs globals env expr =
           let _ = assoc_set_value name value env in
           !(target.bind_value))
   | EAssignDeref (ptr, expr) ->
-      let value = eval_value funcs structs globals env expr in
-      write_pointer (eval_value funcs structs globals env ptr) value
+      let ptr_value = eval_value funcs structs globals env ptr in
+      let owner_ty = pointer_owner_type structs env ptr TVoid in
+      let struct_source =
+        if struct_field_names_for_type structs owner_ty = [] then None
+        else
+          match expr with
+          | EVar name -> (
+              try
+                let source = find_binding name env in
+                match source.bind_fields with
+                | Some _ -> Some source
+                | None -> None
+              with Compile_error _ -> None)
+          | EUnary (Deref, source_ptr) -> struct_binding_from_pointer (eval_value funcs structs globals env source_ptr)
+          | _ -> None
+      in
+      (match struct_source with
+      | Some source ->
+          if option_is_some source.bind_fields then
+            match typed_struct_binding_from_pointer structs ptr_value owner_ty with
+            | Some target ->
+                copy_struct_fields target source;
+                VInt 0
+            | None ->
+                let value = eval_value funcs structs globals env expr in
+                write_pointer_as owner_ty ptr_value value
+          else
+            let value = eval_value funcs structs globals env expr in
+            write_pointer_as owner_ty ptr_value value
+      | None ->
+          let value = eval_value funcs structs globals env expr in
+          write_pointer_as owner_ty ptr_value value)
   | EAssignIndex (base, index, expr) ->
       let index_value = eval_expr funcs structs globals env index in
       let value = eval_value funcs structs globals env expr in
       let written =
         match base with
-        | EVar name -> write_binding_index (find_binding name env) index_value value
-        | expr -> write_pointer (add_to_value (eval_value funcs structs globals env expr) index_value) value
+        | EVar name ->
+            let binding = find_binding name env in
+            (match binding.bind_array with
+            | Some _ -> write_binding_index binding index_value value
+            | None ->
+                let ptr = !(binding.bind_value) in
+                let delta = pointer_delta_for_value structs binding.bind_type ptr index_value in
+                let elem_ty = match binding.bind_type with TPtr ty -> ty | _ -> TVoid in
+                write_pointer_as elem_ty (add_to_value ptr delta) value)
+        | EMember (EVar name, field) ->
+            let binding = find_binding name env in
+            (match struct_field_layout structs binding.bind_type field with
+            | Some layout ->
+                if layout.field_is_array then write_pointer_as layout.field_type (VFieldPtr (binding, binding_field_byte_offset binding layout + index_value)) value
+                else
+                let expr = EMember (EVar name, field) in
+                let ptr = eval_value funcs structs globals env expr in
+                let delta = expression_pointer_delta structs env expr ptr index_value in
+                write_pointer_as (pointer_owner_type structs env expr TVoid) (add_to_value ptr delta) value
+            | _ ->
+                let cell = field_index_cell (binding_fields binding) field index_value in
+                cell := value;
+                value)
+        | EPtrMember (base, field) ->
+            let owner_ty = pointer_owner_type structs env base TVoid in
+            let ptr = eval_value funcs structs globals env base in
+            let target =
+              match typed_struct_binding_from_pointer structs ptr owner_ty with
+              | Some target -> target
+              | None -> fail ("not a struct pointer for index assign " ^ field ^ ": " ^ value_summary ptr)
+            in
+            (match struct_field_layout structs owner_ty field with
+            | Some layout ->
+                if layout.field_is_array then write_pointer_as layout.field_type (VFieldPtr (target, binding_field_byte_offset target layout + index_value)) value
+                else
+                let expr = EPtrMember (base, field) in
+                let ptr = eval_value funcs structs globals env expr in
+                let delta = expression_pointer_delta structs env expr ptr index_value in
+                write_pointer_as (pointer_owner_type structs env expr TVoid) (add_to_value ptr delta) value
+            | _ ->
+                let cell = field_index_cell (binding_fields target) field index_value in
+                cell := value;
+                value)
+        | expr ->
+            let ptr = eval_value funcs structs globals env expr in
+            let delta = expression_pointer_delta structs env expr ptr index_value in
+            write_pointer_as (pointer_owner_type structs env expr TVoid) (add_to_value ptr delta) value
       in
       written
+  | EAssignMember (EMember (base, parent), field, expr) ->
+      eval_value funcs structs globals env (EAssignMember (base, parent ^ "." ^ field, expr))
+  | EAssignMember (EPtrMember (base, parent), field, expr) ->
+      eval_value funcs structs globals env (EAssignMember (EUnary (Deref, base), parent ^ "." ^ field, expr))
   | EAssignMember (base, field, expr) ->
       let binding =
         match base with
         | EVar name -> find_binding name env
-        | EUnary (Deref, ptr) -> (
-            match struct_binding_from_pointer (eval_value funcs structs globals env ptr) with
+        | EIndex (indexed_base, index) ->
+            let index_value = eval_expr funcs structs globals env index in
+            let ptr = eval_value funcs structs globals env indexed_base in
+            let address = add_to_value ptr (expression_pointer_delta structs env indexed_base ptr index_value) in
+            let owner_ty = pointer_owner_type structs env indexed_base TVoid in
+            (match typed_struct_binding_from_pointer structs address owner_ty with
             | Some target -> target
-            | None -> fail "not a struct pointer")
-        | _ -> fail "unsupported member expression"
+            | None -> fail ("not an indexed struct for assign " ^ field ^ ": " ^ value_summary address))
+        | EUnary (Deref, ptr) -> (
+            let owner_ty = pointer_owner_type structs env ptr TVoid in
+            let ptr_value = eval_value funcs structs globals env ptr in
+            match typed_struct_binding_from_pointer structs ptr_value owner_ty with
+            | Some target -> target
+            | None ->
+                fail
+                  ("not a struct pointer for member " ^ field ^ " via " ^ expr_summary ptr ^ ": "
+                   ^ value_summary ptr_value))
+        | _ -> fail ("unsupported member expression: " ^ expr_summary base ^ "." ^ field)
       in
-      let value = eval_value funcs structs globals env expr in
-      let cell = field_cell (binding_fields binding) field in
-      cell := value;
-      value
+      (match expr with
+      | EUnary (Deref, ptr_expr) -> (
+          let ptr_value = eval_value funcs structs globals env ptr_expr in
+          match binding.bind_fields, struct_binding_from_pointer ptr_value with
+          | Some _, Some source ->
+              if option_is_some source.bind_fields then (
+                copy_struct_fields_prefixed binding field source;
+                let cell = field_cell (binding_fields binding) field in
+                cell := VPtr source;
+                VInt 0)
+              else
+                let value = read_pointer_as (pointer_owner_type structs env ptr_expr TVoid) ptr_value in
+                let cell = field_cell (binding_fields binding) field in
+                cell := value;
+                value
+          | _ ->
+              let value = read_pointer_as (pointer_owner_type structs env ptr_expr TVoid) ptr_value in
+              let cell = field_cell (binding_fields binding) field in
+              cell := value;
+              value)
+      | _ ->
+          let value = eval_value funcs structs globals env expr in
+          let cell = field_cell (binding_fields binding) field in
+          cell := value;
+          value)
   | EUpdateExpr (name, delta, prefix) ->
       let binding = find_binding name env in
       let old_value = !(binding.bind_value) in
+      let delta = pointer_delta_for_value structs binding.bind_type old_value delta in
       let new_value = coerce_value binding.bind_type (add_to_value old_value delta) in
       binding.bind_value := new_value;
       if prefix then new_value else old_value
   | EUpdateLvalue (target, delta, prefix) ->
-      let cell =
-        match target with
-        | EMember (EVar name, field) ->
-            field_cell (binding_fields (find_binding name env)) field
-        | EPtrMember (base, field) ->
-            let binding =
-              match struct_binding_from_pointer (eval_value funcs structs globals env base) with
-              | Some target -> target
-              | None -> fail "not a struct pointer"
-            in
-            field_cell (binding_fields binding) field
-        | _ -> fail "unsupported update target"
-      in
-      let old_value = !(cell) in
-      let new_value = add_to_value old_value delta in
-      cell := new_value;
-      if prefix then new_value else old_value
+      (match target with
+      | EIndex (base, index) ->
+          let index_value = eval_expr funcs structs globals env index in
+          let ptr =
+            match base with
+            | EVar name ->
+                let binding = find_binding name env in
+                (match binding.bind_array with
+                | Some _ -> VPtr binding
+                | None ->
+                    let ptr = !(binding.bind_value) in
+                    add_to_value ptr (pointer_delta_for_value structs binding.bind_type ptr index_value))
+            | expr ->
+                let ptr = eval_value funcs structs globals env expr in
+                let delta = expression_pointer_delta structs env expr ptr index_value in
+                add_to_value ptr delta
+          in
+          let elem_ty =
+            match base with
+            | EVar name -> (
+                match (find_binding name env).bind_type with TPtr ty -> ty | _ -> pointer_owner_type structs env base TVoid)
+            | _ -> pointer_owner_type structs env base TVoid
+          in
+          let old_value =
+            match base with
+            | EVar name ->
+                let binding = find_binding name env in
+                (match binding.bind_array with Some _ -> read_binding_index binding index_value | None -> read_pointer_as elem_ty ptr)
+            | _ -> read_pointer_as elem_ty ptr
+          in
+          let new_value = add_to_value old_value (pointer_delta_for_value structs elem_ty old_value delta) in
+          let _ =
+            match base with
+            | EVar name ->
+                let binding = find_binding name env in
+                (match binding.bind_array with Some _ -> write_binding_index binding index_value new_value | None -> write_pointer_as elem_ty ptr new_value)
+            | _ -> write_pointer_as elem_ty ptr new_value
+          in
+          if prefix then new_value else old_value
+      | EUnary (Deref, ptr_expr) ->
+          let ptr = eval_value funcs structs globals env ptr_expr in
+          let elem_ty = pointer_owner_type structs env ptr_expr TVoid in
+          let old_value = read_pointer_as elem_ty ptr in
+          let new_value = add_to_value old_value (pointer_delta_for_value structs elem_ty old_value delta) in
+          let _ = write_pointer_as elem_ty ptr new_value in
+          if prefix then new_value else old_value
+      | _ ->
+          let cell =
+            match target with
+            | EMember (EVar name, field) ->
+                field_cell (binding_fields (find_binding name env)) field
+            | EPtrMember (base, field) ->
+                let binding =
+                  let owner_ty = pointer_owner_type structs env base TVoid in
+                  let ptr_value = eval_value funcs structs globals env base in
+                  match typed_struct_binding_from_pointer structs ptr_value owner_ty with
+                  | Some target -> target
+                  | None -> fail ("not a struct pointer for update " ^ field ^ ": " ^ value_summary ptr_value)
+                in
+                field_cell (binding_fields binding) field
+            | _ -> fail "unsupported update target"
+          in
+          let old_value = !(cell) in
+          let new_value = add_to_value old_value delta in
+          cell := new_value;
+          if prefix then new_value else old_value)
   | EUnary (Neg, e) -> VInt (- eval_expr funcs structs globals env e)
   | EUnary (Not, e) -> VInt (bool_int (not (truth_value (eval_value funcs structs globals env e))))
   | EUnary (BNot, e) -> VInt (bitwise_not (eval_expr funcs structs globals env e))
   | ECond (cond, yes, no) ->
       if truth_value (eval_value funcs structs globals env cond) then eval_value funcs structs globals env yes else eval_value funcs structs globals env no
-  | EUnary (Deref, e) -> read_pointer (eval_value funcs structs globals env e)
+  | EUnary (Deref, e) -> read_pointer_as (pointer_owner_type structs env e TVoid) (eval_value funcs structs globals env e)
   | EUnary (Addr, EVar name) ->
       let binding = find_binding name env in
       (match binding.bind_fields with Some _ -> VFieldPtr (binding, 0) | None -> VPtr binding)
   | EUnary (Addr, EIndex (base, index)) ->
       let index_value = eval_expr funcs structs globals env index in
-      add_to_value (eval_value funcs structs globals env base) index_value
+      let ptr = eval_value funcs structs globals env base in
+      add_to_value ptr (expression_pointer_delta structs env base ptr index_value)
   | EUnary (Addr, EMember (EVar name, field)) ->
       let binding = find_binding name env in
       field_pointer structs binding binding.bind_type field
@@ -2685,24 +3902,27 @@ let rec eval_value funcs structs globals env expr =
       VInt (match struct_field_offset structs owner_ty field with Some offset -> offset | None -> 0)
   | EUnary (Addr, EPtrMember (EVar name, field)) ->
       let pointer_binding = find_binding name env in
-      let target =
-        match struct_binding_from_pointer (eval_value funcs structs globals env (EVar name)) with
-        | Some target -> target
-        | None -> fail "not a struct pointer"
-      in
       let owner_ty =
         match pointer_binding.bind_type with
         | TPtr ty -> ty
-        | _ -> target.bind_type
+        | _ -> TVoid
+      in
+      let target =
+        let ptr_value = eval_value funcs structs globals env (EVar name) in
+        match typed_struct_binding_from_pointer structs ptr_value owner_ty with
+        | Some target -> target
+        | None -> fail ("not a struct pointer for address " ^ field ^ ": " ^ value_summary ptr_value)
       in
       field_pointer structs target owner_ty field
   | EUnary (Addr, EPtrMember (base, field)) ->
+      let owner_ty = pointer_owner_type structs env base TVoid in
       let target =
-        match struct_binding_from_pointer (eval_value funcs structs globals env base) with
+        let ptr_value = eval_value funcs structs globals env base in
+        match typed_struct_binding_from_pointer structs ptr_value owner_ty with
         | Some target -> target
-        | None -> fail "not a struct pointer"
+        | None -> fail ("not a struct pointer for address " ^ field ^ ": " ^ value_summary ptr_value)
       in
-      field_pointer structs target target.bind_type field
+      field_pointer structs target owner_ty field
   | EUnary (Addr, _) -> fail "unsupported address expression"
   | ECast (ty, e) ->
       coerce_value ty (eval_value funcs structs globals env e)
@@ -2717,20 +3937,46 @@ let rec eval_value funcs structs globals env expr =
       VInt (bool_int (value_equal (eval_value funcs structs globals env a) (eval_value funcs structs globals env b)))
   | EBinary (Ne, a, b) ->
       VInt (bool_int (not (value_equal (eval_value funcs structs globals env a) (eval_value funcs structs globals env b))))
-  | EBinary (Add, a, b) -> add_values (eval_value funcs structs globals env a) (eval_value funcs structs globals env b)
-  | EBinary (Sub, a, b) -> sub_values (eval_value funcs structs globals env a) (eval_value funcs structs globals env b)
+  | EBinary (Add, a, b) ->
+      let av = eval_value funcs structs globals env a in
+      let bv = eval_value funcs structs globals env b in
+      (match av, bv with
+      | (VArrayPtr _ | VFieldPtr _ | VStringPtr _ as ptr), VInt n ->
+          add_to_value ptr (expression_pointer_delta structs env a ptr n)
+      | VInt n, (VArrayPtr _ | VFieldPtr _ | VStringPtr _ as ptr) ->
+          add_to_value ptr (expression_pointer_delta structs env b ptr n)
+      | _ -> add_values av bv)
+  | EBinary (Sub, a, b) ->
+      let av = eval_value funcs structs globals env a in
+      let bv = eval_value funcs structs globals env b in
+      (match av, bv with
+      | (VArrayPtr _ | VFieldPtr _ | VStringPtr _ as ptr), VInt n ->
+          add_to_value ptr (- expression_pointer_delta structs env a ptr n)
+      | _ -> sub_values av bv)
   | EBinary ((Lt | Le | Gt | Ge) as op, a, b) ->
       let av = eval_value funcs structs globals env a in
       let bv = eval_value funcs structs globals env b in
-      let cmp = match pointer_compare av bv with Some cmp -> cmp | None -> compare (int_of_value av) (int_of_value bv) in
-      VInt
-        (bool_int
-           (match op with
-           | Lt -> cmp < 0
-           | Le -> cmp <= 0
-           | Gt -> cmp > 0
-           | Ge -> cmp >= 0
-           | _ -> assert false))
+      let result =
+        match pointer_compare av bv with
+        | Some cmp -> (
+            match op with
+            | Lt -> cmp < 0
+            | Le -> cmp <= 0
+            | Gt -> cmp > 0
+            | Ge -> cmp >= 0
+            | _ -> fail "internal non-comparison operator")
+        | None ->
+            if is_pointer_value av || is_pointer_value bv then false
+            else (
+              let cmp = compare (int_of_value av) (int_of_value bv) in
+              match op with
+              | Lt -> cmp < 0
+              | Le -> cmp <= 0
+              | Gt -> cmp > 0
+              | Ge -> cmp >= 0
+              | _ -> fail "internal non-comparison operator")
+      in
+      VInt (bool_int result)
   | EBinary (op, a, b) ->
       let x = eval_expr funcs structs globals env a in
       let y = eval_expr funcs structs globals env b in
@@ -2752,7 +3998,7 @@ let rec eval_value funcs structs globals env expr =
       | Band -> bitwise_and x y
       | Shl -> shift_left_u32 x y
       | Shr -> shift_right_u32 x y
-      | Land | Lor -> assert false)
+      | Land | Lor -> fail "internal short-circuit operator")
   | ECall ("_exit", [ arg ]) -> VInt (eval_expr funcs structs globals env arg)
   | ECall (name, args) ->
       let values = List.map (call_arg funcs structs globals env) args in
@@ -2761,7 +4007,9 @@ let rec eval_value funcs structs globals env expr =
         | Some binding -> (match !(binding.bind_value) with VFunc target -> target | _ -> name)
         | None -> name
       in
-      (match eval_builtin_call target values with
+      if target = "expect" then trace_tcc_expect env values;
+      if target = "_tcc_error" then tcc_error_recover env values
+      else (match eval_builtin_call target values with
       | Some value -> value
       | None -> eval_func funcs structs globals target values)
   | ECallExpr (callee, args) ->
@@ -2771,7 +4019,8 @@ let rec eval_value funcs structs globals env expr =
         | VFunc name -> name
         | _ -> fail "called expression is not a function"
       in
-      (match eval_builtin_call target values with
+      if target = "_tcc_error" then tcc_error_recover env values
+      else (match eval_builtin_call target values with
       | Some value -> value
       | None -> eval_func funcs structs globals target values)
 
@@ -2812,7 +4061,13 @@ and sizeof_expr funcs structs globals env expr =
       | VInt _ -> 4
       | VPtr _ | VArrayPtr _ | VFieldPtr _ | VStringPtr _ | VFunc _ -> 8)
 
-and eval_expr funcs structs globals env expr = int_of_value (eval_value funcs structs globals env expr)
+and eval_expr funcs structs globals env expr =
+  let value = eval_value funcs structs globals env expr in
+  (match value with
+  | VInt n -> n
+  | _ ->
+      trace ("integer context for " ^ expr_summary expr ^ " = " ^ value_summary value);
+      int_of_value value)
 
 and call_arg funcs structs globals env expr =
   eval_value funcs structs globals env expr
@@ -2829,12 +4084,15 @@ and bind_params params args =
         bind_array = None;
         bind_bytes = None;
         bind_fields = None;
+        bind_layout = ref None;
       }
       :: bind_params params args
   | _ :: _, [] -> fail "internal parameter binding arity mismatch"
 
 and eval_func funcs structs globals name args =
   trace ("call " ^ name ^ "/" ^ string_of_int (List.length args));
+  if name = "_tcc_warning" || name = "_tcc_error" || name = "_tcc_error_noabort" then
+    trace (name ^ " args: " ^ String.concat " | " (List.map trace_string_arg args));
   let fn =
     match list_find_opt (fun fn -> fn.name = name) funcs with
     | Some fn -> fn
@@ -2842,13 +4100,189 @@ and eval_func funcs structs globals name args =
   in
   if (if fn.variadic then not (has_at_least fn.params args) else not (same_length fn.params args)) then fail ("wrong argument count: " ^ name) else
   let env = bind_params fn.params args @ globals in
+  List.iter (set_binding_layout structs) env;
   let env = assoc_decl_full (Some name) None None (TPtr TChar) "__func__" (VStringPtr (name, 0)) env in
-  match exec_block funcs structs globals fn.body env with
-  | Returned value -> coerce_value fn.ret_type value
+  let rec flat_label_stmt stmt =
+    match stmt with
+    | Labeled (name, body) -> Label name :: flat_label_stmt body
+    | _ -> [ stmt ]
+  in
+  let rec flat_label_stmts stmts =
+    match stmts with
+    | [] -> []
+    | stmt :: rest -> flat_label_stmt stmt @ flat_label_stmts rest
+  in
+  let flat_body = Array.of_list (flat_label_stmts fn.body) in
+  let flat_label_index label =
+    let rec loop i =
+      if i >= Array.length flat_body then None
+      else
+        match flat_body.(i) with
+        | Label name -> if name = label then Some (i + 1) else loop (i + 1)
+        | _ -> loop (i + 1)
+    in
+    loop 0
+  in
+  let rec run_flat_at i env =
+    if i >= Array.length flat_body then Continue env
+    else
+      match exec_stmt funcs structs globals env flat_body.(i) with
+      | Continue env' -> run_flat_at (i + 1) env'
+      | Jumped (label, env') -> (
+          match flat_label_index label with
+          | Some j -> run_flat_at j env'
+          | None -> Jumped (label, env'))
+      | other -> other
+  in
+  let local_label_tail label stmt =
+    let rec loop stmts =
+      match stmts with
+      | [] -> None
+      | Label name :: rest -> if name = label then Some rest else loop rest
+      | _ :: rest -> loop rest
+    in
+    loop (label_flatten_stmt stmt)
+  in
+  let rec first_label_run label stmts env =
+    match stmts with
+    | [] -> None
+    | stmt :: rest -> (
+        match stmt_from_label label stmt env with
+        | Some (Continue env') -> Some (exec_block funcs structs globals rest env')
+        | Some result -> Some result
+        | None -> first_label_run label rest env)
+  and stmt_from_label label stmt env =
+    match stmt with
+    | While (cond, body) -> (
+        match local_label_tail label body with
+        | None -> stmt_child_from_label label stmt env
+        | Some rest ->
+            let rec loop env =
+              if truth_value (eval_value funcs structs globals env cond) then
+                match exec_stmt funcs structs globals env body with
+                | Continue env' -> loop env'
+                | Continued env' -> loop env'
+                | Broke env' -> Continue env'
+                | Jumped (label, env') -> (
+                    match local_label_tail label body with
+                    | Some rest -> run_from_tail rest env'
+                    | None -> Jumped (label, env'))
+                | other -> other
+              else Continue env
+            and run_from_tail rest env =
+              match exec_block funcs structs globals rest env with
+              | Continue env' -> loop env'
+              | Continued env' -> loop env'
+              | Broke env' -> Continue env'
+              | other -> other
+            in
+            Some (run_from_tail rest env))
+    | DoWhile (body, cond) -> (
+        match local_label_tail label body with
+        | None -> stmt_child_from_label label stmt env
+        | Some rest ->
+            let rec loop env =
+              match exec_stmt funcs structs globals env body with
+              | Continue env' -> if truth_value (eval_value funcs structs globals env' cond) then loop env' else Continue env'
+              | Continued env' -> if truth_value (eval_value funcs structs globals env' cond) then loop env' else Continue env'
+              | Broke env' -> Continue env'
+              | Jumped (label, env') -> (
+                  match local_label_tail label body with
+                  | Some rest -> run_from_tail rest env'
+                  | None -> Jumped (label, env'))
+              | other -> other
+            and run_from_tail rest env =
+              match exec_block funcs structs globals rest env with
+              | Continue env' -> if truth_value (eval_value funcs structs globals env' cond) then loop env' else Continue env'
+              | Continued env' -> if truth_value (eval_value funcs structs globals env' cond) then loop env' else Continue env'
+              | Broke env' -> Continue env'
+              | other -> other
+            in
+            Some (run_from_tail rest env))
+    | For (init, cond, post, body) -> (
+        match local_label_tail label body with
+        | None -> stmt_child_from_label label stmt env
+        | Some rest ->
+            let env = match init with Some s -> exec_simple funcs structs globals env s | None -> env in
+            let rec after_body env =
+              let env' = match post with Some s -> exec_simple funcs structs globals env s | None -> env in
+              loop env'
+            and loop env =
+              let go = match cond with Some e -> truth_value (eval_value funcs structs globals env e) | None -> true in
+              if go then
+                match exec_stmt funcs structs globals env body with
+                | Continue env' -> after_body env'
+                | Continued env' -> after_body env'
+                | Broke env' -> Continue env'
+                | Jumped (label, env') -> (
+                    match local_label_tail label body with
+                    | Some rest -> run_from_tail rest env'
+                    | None -> Jumped (label, env'))
+                | other -> other
+              else Continue env
+            and run_from_tail rest env =
+              match exec_block funcs structs globals rest env with
+              | Continue env' -> after_body env'
+              | Continued env' -> after_body env'
+              | Broke env' -> Continue env'
+              | other -> other
+            in
+            Some (run_from_tail rest env))
+    | _ -> stmt_child_from_label label stmt env
+  and stmt_child_from_label label stmt env =
+    match stmt with
+    | Block body -> first_label_run label body env
+    | If (_, yes, Some no) -> (
+        match stmt_from_label label yes env with Some result -> Some result | None -> stmt_from_label label no env)
+    | If (_, yes, None) -> stmt_from_label label yes env
+    | Switch (_, cases) ->
+        let rec case_bodies cases acc =
+          match cases with
+          | [] -> List.rev acc
+          | SwitchCase (_, body) :: rest -> case_bodies rest (List.rev_append body acc)
+        in
+        first_label_run label (case_bodies cases []) env
+    | Label name ->
+        if name = label then Some (Continue env) else None
+    | Labeled (name, body) ->
+        if name = label then Some (exec_stmt funcs structs globals env body) else stmt_from_label label body env
+    | _ -> None
+  in
+  let rec finish result =
+    match result with
+    | Jumped (label, env) -> (
+        match first_label_run label fn.body env with
+        | Some result -> finish result
+        | None -> (
+            match flat_label_index label with
+            | Some i -> finish (run_flat_at i env)
+            | None -> fail ("unresolved goto in " ^ name ^ ": " ^ label)))
+    | other -> other
+  in
+  let maybe_error1_longjmp () =
+    if name = "error1" then
+      match args with
+      | VInt mode :: _ ->
+        if mode = 2 then
+          (match find_binding_opt "tcc_state" env with
+          | Some state_binding -> (
+              match struct_binding_from_pointer !(state_binding.bind_value) with
+              | Some state ->
+                  if truth_value (!(field_cell (binding_fields state) "error_set_jmp_enabled")) then raise (Longjmp 1)
+              | None -> ())
+          | None -> ())
+      | _ -> ()
+  in
+  let result = finish (exec_block funcs structs globals fn.body env) in
+  maybe_error1_longjmp ();
+  match result with
+  | Returned value ->
+      let value = coerce_value fn.ret_type value in
+      value
   | Continue _ -> VInt 0
-  | Jumped (label, _) -> fail ("unresolved goto: " ^ label)
+  | Jumped (label, _) -> fail ("unresolved goto in " ^ name ^ ": " ^ label)
   | Broke _ -> fail "break outside loop"
-  | Continued _ -> fail "continue outside loop"
+  | Continued _ -> fail ("continue outside loop in " ^ name)
 
 and exec_simple funcs structs globals env simple =
   match simple with
@@ -2866,12 +4300,13 @@ and exec_simple funcs structs globals env simple =
       let array =
         match array_size with
         | Some size_expr ->
-            let size =
-              match (size_expr, init) with
-              | EInt (-1), Some (EInitList values) -> List.length values
-              | EInt (-1), _ -> 0
-              | _ -> eval_expr funcs structs globals env size_expr
-            in
+              let size =
+                match (size_expr, init) with
+                | EInt (-1), Some (EInitList values) -> List.length values
+                | EInt (-1), Some (EString text) -> String.length text + 1
+                | EInt (-1), _ -> 0
+                | _ -> eval_expr funcs structs globals env size_expr
+              in
             if size < 0 then fail ("negative array size: " ^ name);
             Some (Array.make size (VInt 0))
         | None -> None
@@ -2888,6 +4323,8 @@ and exec_simple funcs structs globals env simple =
       in
       let text = match init with Some (EString text) -> Some text | _ -> None in
       let env = assoc_decl_full text array bytes ty name value env in
+      let binding = find_binding name env in
+      set_binding_layout structs binding;
       (match init with
       | Some (EInitList values) ->
           let binding = find_binding name env in
@@ -2910,6 +4347,7 @@ and exec_simple funcs structs globals env simple =
                     bind_array = None;
                     bind_bytes = bytes;
                     bind_fields = Some fields;
+                    bind_layout = ref (struct_layout_fields structs ty);
                   }
                 in
                 let rec fill_fields fields values =
@@ -2946,6 +4384,12 @@ and exec_simple funcs structs globals env simple =
               in
               fill (struct_fields structs ty) values);
           env
+      | Some (EString text) ->
+          let binding = find_binding name env in
+          (match binding.bind_array with
+          | Some array -> fill_string_array array text
+          | None -> ());
+          env
       | _ -> env)
   | SDecls decls ->
       List.fold_left
@@ -2964,6 +4408,13 @@ and exec_simple funcs structs globals env simple =
   | SAssign (name, expr) ->
       let target = find_binding name env in
       (match target.bind_fields, expr with
+      | Some _, EVar source_name -> (
+          let source = find_binding source_name env in
+          match source.bind_fields with
+          | Some _ ->
+              copy_struct_fields target source;
+              env
+          | None -> assoc_set_value name (eval_value funcs structs globals env expr) env)
       | Some _, EUnary (Deref, ptr_expr) -> (
           match struct_binding_from_pointer (eval_value funcs structs globals env ptr_expr) with
           | Some source ->
@@ -2991,10 +4442,32 @@ and exec_simple funcs structs globals env simple =
       assoc_set name value env
   | SPost (name, delta) ->
       let binding = find_binding name env in
-      binding.bind_value := coerce_value binding.bind_type (add_to_value !(binding.bind_value) delta);
+      let old_value = !(binding.bind_value) in
+      let delta = pointer_delta_for_value structs binding.bind_type old_value delta in
+      binding.bind_value := coerce_value binding.bind_type (add_to_value old_value delta);
       env
 
 and exec_stmt funcs structs globals env stmt =
+  let is_setjmp_call expr =
+    match expr with
+    | ECall ("setjmp", _) -> true
+    | ECallExpr (EVar "setjmp", _) -> true
+    | _ -> false
+  in
+  let is_setjmp_zero_cond expr =
+    match expr with
+    | EBinary (Eq, call, EInt 0) | EBinary (Eq, EInt 0, call) -> is_setjmp_call call
+    | _ -> false
+  in
+  let local_label_tail label stmt =
+    let rec loop stmts =
+      match stmts with
+      | [] -> None
+      | Label name :: rest -> if name = label then Some rest else loop rest
+      | _ :: rest -> loop rest
+    in
+    loop (label_flatten_stmt stmt)
+  in
   match stmt with
   | Simple simple -> (
       try Continue (exec_simple funcs structs globals env simple) with Exit_code code -> Returned (VInt code))
@@ -3002,6 +4475,7 @@ and exec_stmt funcs structs globals env stmt =
   | Return (Some expr) -> Returned (eval_value funcs structs globals env expr)
   | Goto label -> Jumped (label, env)
   | Label _ -> Continue env
+  | Labeled (_, stmt) -> exec_stmt funcs structs globals env stmt
   | Break -> Broke env
   | ContinueStmt -> Continued env
   | Block body -> (
@@ -3012,48 +4486,107 @@ and exec_stmt funcs structs globals env stmt =
       | Continued _ -> Continued env
       | Returned _ as ret -> ret)
   | If (cond, yes, no) ->
-      if truth_value (eval_value funcs structs globals env cond) then exec_stmt funcs structs globals env yes
+      if is_setjmp_zero_cond cond then (
+        try
+          if truth_value (eval_value funcs structs globals env cond) then exec_stmt funcs structs globals env yes
+          else (
+            match no with Some stmt -> exec_stmt funcs structs globals env stmt | None -> Continue env)
+        with Longjmp _ -> (
+          match no with Some stmt -> exec_stmt funcs structs globals env stmt | None -> Continue env))
+      else if truth_value (eval_value funcs structs globals env cond) then exec_stmt funcs structs globals env yes
       else (
         match no with Some stmt -> exec_stmt funcs structs globals env stmt | None -> Continue env)
   | While (cond, body) ->
-      let rec loop env =
+      let rec run_body_from_label label env =
+        match local_label_tail label body with
+        | None -> Jumped (label, env)
+        | Some rest -> (
+            match exec_block funcs structs globals rest env with
+            | Continue env' -> loop env'
+            | Continued env' -> loop env'
+            | Broke env' -> Continue env'
+            | other -> other)
+      and loop env =
         if truth_value (eval_value funcs structs globals env cond) then
           match exec_stmt funcs structs globals env body with
           | Continue env' -> loop env'
           | Continued env' -> loop env'
           | Broke env' -> Continue env'
+          | Jumped (label, env') -> run_body_from_label label env'
           | other -> other
         else Continue env
       in
       loop env
   | DoWhile (body, cond) ->
-      let rec loop env =
+      let rec run_body_from_label label env =
+        match local_label_tail label body with
+        | None -> Jumped (label, env)
+        | Some rest -> (
+            match exec_block funcs structs globals rest env with
+            | Continue env' -> if truth_value (eval_value funcs structs globals env' cond) then loop env' else Continue env'
+            | Continued env' -> if truth_value (eval_value funcs structs globals env' cond) then loop env' else Continue env'
+            | Broke env' -> Continue env'
+            | other -> other)
+      and loop env =
         match exec_stmt funcs structs globals env body with
         | Continue env' -> if truth_value (eval_value funcs structs globals env' cond) then loop env' else Continue env'
         | Continued env' -> if truth_value (eval_value funcs structs globals env' cond) then loop env' else Continue env'
         | Broke env' -> Continue env'
+        | Jumped (label, env') -> run_body_from_label label env'
         | other -> other
       in
       loop env
   | For (init, cond, post, body) ->
       let env = match init with Some s -> exec_simple funcs structs globals env s | None -> env in
-      let rec loop env =
+      let rec after_body env =
+        let env' = match post with Some s -> exec_simple funcs structs globals env s | None -> env in
+        loop env'
+      and run_body_from_label label env =
+        match local_label_tail label body with
+        | None -> Jumped (label, env)
+        | Some rest -> (
+            match exec_block funcs structs globals rest env with
+            | Continue env' -> after_body env'
+            | Continued env' -> after_body env'
+            | Broke env' -> Continue env'
+            | other -> other)
+      and loop env =
         let go = match cond with Some e -> truth_value (eval_value funcs structs globals env e) | None -> true in
         if go then
           match exec_stmt funcs structs globals env body with
-          | Continue env' ->
-              let env'' = match post with Some s -> exec_simple funcs structs globals env' s | None -> env' in
-              loop env''
-          | Continued env' ->
-              let env'' = match post with Some s -> exec_simple funcs structs globals env' s | None -> env' in
-              loop env''
+          | Continue env' -> after_body env'
+          | Continued env' -> after_body env'
           | Broke env' -> Continue env'
+          | Jumped (label, env') -> run_body_from_label label env'
           | other -> other
         else Continue env
       in
       loop env
   | Switch (value, cases) ->
       let switch_value = eval_expr funcs structs globals env value in
+      trace ("switch " ^ expr_summary value ^ "=" ^ string_of_int switch_value);
+      let rec append_case_bodies cases acc =
+        match cases with
+        | [] -> List.rev acc
+        | SwitchCase (_, body) :: rest -> append_case_bodies rest (List.rev_append body acc)
+      in
+      let all_body = append_case_bodies cases [] in
+      let rec body_after_label label stmts =
+        match stmts with
+        | [] -> None
+        | Label name :: rest -> if name = label then Some rest else body_after_label label rest
+        | Labeled (name, body) :: rest -> if name = label then Some (body :: rest) else body_after_label label rest
+        | _ :: rest -> body_after_label label rest
+      in
+      let rec finish result =
+        match result with
+        | Broke env -> Continue env
+        | Jumped (label, env) -> (
+            match body_after_label label all_body with
+            | Some rest -> finish (exec_block funcs structs globals rest env)
+            | None -> Jumped (label, env))
+        | other -> other
+      in
       let rec select default cases =
         match cases with
         | [] -> (
@@ -3063,7 +4596,9 @@ and exec_stmt funcs structs globals env stmt =
         | (SwitchCase (label, _) as current) :: rest -> (
             match label with
             | Some expr ->
-                if eval_expr funcs structs globals env expr = switch_value then current :: rest else select default rest
+                let label_value = eval_expr funcs structs globals env expr in
+                trace ("case " ^ expr_summary expr ^ "=" ^ string_of_int label_value);
+                if label_value = switch_value then current :: rest else select default rest
             | None -> select (Some (current :: rest)) rest)
       in
       let rec run cases env =
@@ -3073,11 +4608,57 @@ and exec_stmt funcs structs globals env stmt =
             match exec_block funcs structs globals body env with
             | Continue env -> run rest env
             | Broke env -> Continue env
-            | Jumped _ as jumped -> jumped
+            | Jumped _ as jumped -> finish jumped
             | Continued _ as continued -> continued
             | Returned _ as returned -> returned)
       in
       run (select None cases) env
+
+and flatten_stmt stmt =
+  match stmt with
+  | If (_, yes, Some no) -> flatten_stmt yes @ flatten_stmt no
+  | If (_, yes, None) -> flatten_stmt yes
+  | While (_, body) -> flatten_stmt body
+  | DoWhile (body, _) -> flatten_stmt body
+  | For (_, _, _, body) -> flatten_stmt body
+  | Switch (_, cases) ->
+      let rec case_bodies cases acc =
+        match cases with
+        | [] -> List.rev acc
+        | SwitchCase (_, body) :: rest -> case_bodies rest (List.rev_append (flatten_stmts body) acc)
+      in
+      case_bodies cases []
+  | Block body -> flatten_stmts body
+  | Labeled (name, stmt) -> Label name :: flatten_stmt stmt
+  | Simple _ | Return _ | Goto _ | Label _ | Break | ContinueStmt -> [ stmt ]
+
+and flatten_stmts stmts =
+  match stmts with
+  | [] -> []
+  | stmt :: rest -> flatten_stmt stmt @ flatten_stmts rest
+
+and label_flatten_stmt stmt =
+  match stmt with
+  | Block body -> label_flatten_stmts body
+  | Labeled (name, stmt) -> Label name :: label_flatten_stmt stmt
+  | If (_, yes, Some no) -> stmt :: (label_flatten_stmt yes @ label_flatten_stmt no)
+  | If (_, yes, None) -> stmt :: label_flatten_stmt yes
+  | While (_, body) -> stmt :: label_flatten_stmt body
+  | DoWhile (body, _) -> stmt :: label_flatten_stmt body
+  | For (_, _, _, body) -> stmt :: label_flatten_stmt body
+  | Switch (_, cases) ->
+      let rec case_labels cases acc =
+        match cases with
+        | [] -> List.rev acc
+        | SwitchCase (_, body) :: rest -> case_labels rest (List.rev_append (label_flatten_stmts body) acc)
+      in
+      stmt :: case_labels cases []
+  | _ -> [ stmt ]
+
+and label_flatten_stmts stmts =
+  match stmts with
+  | [] -> []
+  | stmt :: rest -> label_flatten_stmt stmt @ label_flatten_stmts rest
 
 and exec_block funcs structs globals stmts env =
   let label_index label =
@@ -3096,7 +4677,9 @@ and exec_block funcs structs globals stmts env =
       match exec_stmt funcs structs globals env arr.(i) with
       | Continue env' -> run_at (i + 1) env'
       | Jumped (label, env') -> (
-          match label_index label with Some j -> run_at j env' | None -> Jumped (label, env'))
+          match label_index label with
+          | Some j -> run_at j env'
+          | None -> Jumped (label, env'))
       | Broke _ as broke -> broke
       | Continued _ as continued -> continued
       | Returned _ as ret -> ret
@@ -3154,6 +4737,7 @@ let main_argv_value args =
       bind_array = Some values;
       bind_bytes = None;
       bind_fields = None;
+      bind_layout = ref None;
     }
   in
   VArrayPtr (binding, 0)
@@ -3188,7 +4772,7 @@ let compile_with_args host_args src =
   let constants =
     List.map
       (fun (name, value) ->
-        { bind_name = name; bind_type = TInt; bind_value = ref (VInt value); bind_string = None; bind_array = None; bind_bytes = None; bind_fields = None })
+        { bind_name = name; bind_type = TInt; bind_value = ref (VInt value); bind_string = None; bind_array = None; bind_bytes = None; bind_fields = None; bind_layout = ref None })
       program.constants
   in
 	  let globals =
@@ -3205,36 +4789,85 @@ let compile_with_args host_args src =
     | None -> fail "missing main"
   in
   trace "eval main";
-  m1_of_exit (int_of_value (eval_func program.funcs program.structs globals "main" (main_entry_args main host_args)))
+  let exit_code =
+    try int_of_value (eval_func program.funcs program.structs globals "main" (main_entry_args main host_args)) with
+    | Fatal_exit code -> code
+  in
+  m1_of_exit exit_code
 
 let compile src =
   compile_with_args [] src
 
 let read_stdin () =
-  let rec loop acc =
-    let next = try Some (input_char stdin) with End_of_file -> None in
-    match next with
-    | Some ch -> loop (ch :: acc)
-    | None -> string_of_rev_chars acc
-  in
-  loop []
+  host_read_stdin ()
 
-let host_args_from_argv () =
-  let rec loop i acc =
-    if i >= Array.length Sys.argv then List.rev acc
-    else if Sys.argv.(i) = "--trace" then loop (i + 1) acc
-    else if Sys.argv.(i) = "--host-arg" then
-      if i + 1 >= Array.length Sys.argv then fail "--host-arg requires a value"
-      else loop (i + 2) (Sys.argv.(i + 1) :: acc)
-    else fail ("unknown option: " ^ Sys.argv.(i))
+type driver_config = {
+  driver_input : string option;
+  driver_output : string option;
+  driver_host_args : string list;
+}
+
+let empty_driver_config =
+  { driver_input = None; driver_output = None; driver_host_args = [] }
+
+let set_driver_input config path =
+  match config.driver_input with
+  | None -> { config with driver_input = Some path }
+  | Some _ -> fail ("multiple input files: " ^ path)
+
+let driver_config_from_argv () =
+  let host_args =
+    let rec gather i acc =
+      if i >= host_arg_count () then List.rev acc
+      else if host_arg_at i = "--host-arg" then
+        if i + 1 >= host_arg_count () then fail "--host-arg requires a value"
+        else gather (i + 2) (host_arg_at (i + 1) :: acc)
+      else gather (i + 1) acc
+    in
+    gather 1 []
   in
-  loop 1 []
+  let rec parse i config =
+    if i >= host_arg_count () then { config with driver_host_args = host_args }
+    else
+      let arg = host_arg_at i in
+      if arg = "--trace" then (
+        trace_requested := true;
+        parse (i + 1) config)
+      else if arg = "--emit-m1" then parse (i + 1) config
+      else if arg = "-c" then parse (i + 1) config
+      else if arg = "-S" then parse (i + 1) config
+      else if arg = "--host-arg" then
+        if i + 1 >= host_arg_count () then fail "--host-arg requires a value"
+        else parse (i + 2) config
+      else if arg = "-o" then
+        if i + 1 >= host_arg_count () then fail "-o requires an output file"
+        else parse (i + 2) { config with driver_output = Some (host_arg_at (i + 1)) }
+      else if String.length arg > 0 && arg.[0] = '-' then
+        fail ("unknown option: " ^ arg)
+      else
+        parse (i + 1) (set_driver_input config arg)
+  in
+  parse 1 empty_driver_config
+
+let read_driver_input config =
+  match config.driver_input with
+  | Some path -> host_read_text_file path
+  | None -> read_stdin ()
+
+let write_driver_output config text =
+  match config.driver_output with
+  | Some path -> host_write_file path text
+  | None -> host_stdout text
 
 let () =
-  try print_string (compile_with_args (host_args_from_argv ()) (read_stdin ())) with
+  try
+    let config = driver_config_from_argv () in
+    let src = read_driver_input config in
+    write_driver_output config (compile_with_args config.driver_host_args src)
+  with
   | Parse_error msg ->
-      prerr_endline ("ccc-host-ocaml: parse error: " ^ msg);
-      exit 1
+      host_stderr_line ("ccc-host-ocaml: parse error: " ^ msg);
+      host_exit 1
   | Compile_error msg ->
-      prerr_endline ("ccc-host-ocaml: compile error: " ^ msg);
-      exit 1
+      host_stderr_line ("ccc-host-ocaml: compile error: " ^ msg);
+      host_exit 1
