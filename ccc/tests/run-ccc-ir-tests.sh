@@ -9,7 +9,7 @@ HCPP=$BUILD/hcc-ref/bin/hcpp
 HCC1=$BUILD/hcc-ref/bin/hcc1
 mkdir -p "$BUILD/ccc"
 
-PARTS=$(ls ccc/cc/[0-9]*.ml | sort)
+PARTS=$(sed "s|^|ccc/cc/|" ccc/cc/PARTS-cc1)
 cat ccc/tests/prelude-ocaml.ml $PARTS ccc/cc/dev/cc1main.ml > "$BUILD/ccc/ccc-cc1-host.ml"
 cat $PARTS ccc/cc/dev/cc1main.ml > "$BUILD/ccc/ccc-cc1.ml"
 
@@ -47,12 +47,12 @@ if [ "${1:-}" = "--vm" ]; then
   sh -c '
     set -e
     gcc -O2 -o ccc/build/mzvm ccc/vm/mzvm.c 2>/dev/null || true
-    ccc/build/mlc-interp ccc/stages/02-ml0-compiler.ml ccc/stages/03-adt-compiler.ml ccc/build/ccc/03.mzs
-    ccc/build/mlc-interp ccc/stages/01-parenthetical.ml ccc/build/ccc/03.mzs ccc/build/ccc/03.mzbc
-    ccc/build/mzvm ccc/build/ccc/03.mzbc ccc/stages/04-pattern-compiler.ml ccc/build/ccc/04.mzs
-    ccc/build/mlc-interp ccc/stages/01-parenthetical.ml ccc/build/ccc/04.mzs ccc/build/ccc/04.mzbc
-    ccc/build/mzvm ccc/build/ccc/04.mzbc ccc/stages/01-parenthetical.ml ccc/build/ccc/01.mzs
-    ccc/build/mlc-interp ccc/stages/01-parenthetical.ml ccc/build/ccc/01.mzs ccc/build/ccc/01.mzbc
+    ccc/build/mlc-interp ccc/stages/ml0-compiler.ml ccc/stages/adt-compiler.ml ccc/build/ccc/03.mzs
+    ccc/build/mlc-interp ccc/stages/parenthetical.ml ccc/build/ccc/03.mzs ccc/build/ccc/03.mzbc
+    ccc/build/mzvm ccc/build/ccc/03.mzbc ccc/stages/pattern-compiler.ml ccc/build/ccc/04.mzs
+    ccc/build/mlc-interp ccc/stages/parenthetical.ml ccc/build/ccc/04.mzs ccc/build/ccc/04.mzbc
+    ccc/build/mzvm ccc/build/ccc/04.mzbc ccc/stages/parenthetical.ml ccc/build/ccc/01.mzs
+    ccc/build/mlc-interp ccc/stages/parenthetical.ml ccc/build/ccc/01.mzs ccc/build/ccc/01.mzbc
     ccc/build/mzvm ccc/build/ccc/04.mzbc ccc/build/ccc/ccc-cc1.ml ccc/build/ccc/ccc-cc1.mzs
     # assemble the big cc1 on the GC-backed VM, like the real chain
     ccc/build/mzvm ccc/build/ccc/01.mzbc ccc/build/ccc/ccc-cc1.mzs ccc/build/ccc/ccc-cc1.mzbc

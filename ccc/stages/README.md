@@ -4,10 +4,10 @@ Each stage is one small job with a real handoff artifact, Blynn-style:
 
 | stage | input dialect | job |
 |---|---|---|
-| 01-parenthetical | (runs on the C interpreter) | parenthesized MZBC assembly → `.mzbc` |
-| 02-ml0-compiler | ML0 (the interpreter's core dialect) | self-hosting single-pass compiler |
-| 03-adt-compiler | ML1 = ML0 + ADTs + shallow match | fork of 02 + the ADT delta |
-| 04-pattern-compiler | ML2 = ML1 + nested patterns, lists, refs, records | fork of 03 + the pattern delta |
+| parenthetical | (runs on the C interpreter) | parenthesized MZBC assembly → `.mzbc` |
+| ml0-compiler | ML0 (the interpreter's core dialect) | self-hosting single-pass compiler |
+| adt-compiler | ML1 = ML0 + ADTs + shallow match | fork of 02 + the ADT delta |
+| pattern-compiler | ML2 = ML1 + nested patterns, lists, refs, records | fork of 03 + the pattern delta |
 
 Each promoted stage recompiles itself to a fixpoint and is a conservative
 extension of its parent (byte-identical output on the parent's dialect);

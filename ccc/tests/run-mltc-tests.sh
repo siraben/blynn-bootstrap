@@ -12,14 +12,14 @@ mkdir -p "$BUILD/ccc"
 cat ccc/tests/prelude-ocaml.ml ccc/mlc/mltc.ml > "$BUILD/ccc/mltc-host.ml"
 
 # regenerate the concatenations being gated
-ls ccc/cc/[0-9]*.ml | sort | xargs cat > "$BUILD/ccc/gate-cc1.ml"
+sed "s|^|ccc/cc/|" ccc/cc/PARTS-cc1 | xargs cat > "$BUILD/ccc/gate-cc1.ml"
 cat ccc/cc/dev/cc1main.ml >> "$BUILD/ccc/gate-cc1.ml"
-cat ccc/cc/00-util.ml ccc/cc/05-prim.ml ccc/cc/10-lexer.ml ccc/cc/12-symtab.ml \
-    ccc/cc/18-literal.ml ccc/cc/20-ast.ml ccc/cc/22-constexpr.ml \
-    ccc/cc/70-preproc.ml ccc/cc/72-include.ml ccc/cc/dev/cppmain.ml > "$BUILD/ccc/gate-ccpp.ml"
+cat ccc/cc/util.ml ccc/cc/prim.ml ccc/cc/lexer.ml ccc/cc/symtab.ml \
+    ccc/cc/literal.ml ccc/cc/ast.ml ccc/cc/constexpr.ml \
+    ccc/cc/preproc.ml ccc/cc/include.ml ccc/cc/dev/cppmain.ml > "$BUILD/ccc/gate-ccpp.ml"
 
-GOOD="ccc/stages/01-parenthetical.ml ccc/stages/02-ml0-compiler.ml \
-      ccc/stages/03-adt-compiler.ml ccc/stages/04-pattern-compiler.ml \
+GOOD="ccc/stages/parenthetical.ml ccc/stages/ml0-compiler.ml \
+      ccc/stages/adt-compiler.ml ccc/stages/pattern-compiler.ml \
       $(ls ccc/tests/core/*.ml ccc/tests/adt/*.ml ccc/tests/pat/*.ml) \
       $BUILD/ccc/gate-cc1.ml $BUILD/ccc/gate-ccpp.ml ccc/mlc/mltc.ml"
 
@@ -49,7 +49,7 @@ run_all host_runner ""
 
 if [ "${1:-}" = "--vm" ]; then
   ccc/build/mzvm ccc/build/ccc/04.mzbc ccc/mlc/mltc.ml "$BUILD/ccc/mltc.mzs" &&
-  ccc/build/mlc-interp ccc/stages/01-parenthetical.ml "$BUILD/ccc/mltc.mzs" "$BUILD/ccc/mltc.mzbc" || { echo "FAIL vm build"; exit 1; }
+  ccc/build/mlc-interp ccc/stages/parenthetical.ml "$BUILD/ccc/mltc.mzs" "$BUILD/ccc/mltc.mzbc" || { echo "FAIL vm build"; exit 1; }
   vm_runner() { ccc/build/mzvm "$BUILD/ccc/mltc.mzbc" "$1"; }
   run_all vm_runner " (vm)"
 fi

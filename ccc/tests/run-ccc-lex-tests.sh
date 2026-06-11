@@ -10,8 +10,8 @@ BUILD=ccc/build
 HCPP=$BUILD/hcc-ref/bin/hcpp
 mkdir -p "$BUILD/ccc"
 
-cat ccc/tests/prelude-ocaml.ml ccc/cc/00-util.ml ccc/cc/10-lexer.ml ccc/cc/dev/lexmain.ml > "$BUILD/ccc/ccc-lex-host.ml"
-cat ccc/cc/00-util.ml ccc/cc/10-lexer.ml ccc/cc/dev/lexmain.ml > "$BUILD/ccc/ccc-lex.ml"
+cat ccc/tests/prelude-ocaml.ml ccc/cc/util.ml ccc/cc/lexer.ml ccc/cc/dev/lexmain.ml > "$BUILD/ccc/ccc-lex-host.ml"
+cat ccc/cc/util.ml ccc/cc/lexer.ml ccc/cc/dev/lexmain.ml > "$BUILD/ccc/ccc-lex.ml"
 
 fail=0
 files=$(grep -rL '#' tests/hcc/m1-smoke/examples/*.c)
@@ -32,12 +32,12 @@ if [ "${1:-}" = "--vm" ]; then
   # build through the staged chain and re-check one file on the VM
   sh -c '
     set -e
-    ccc/build/mlc-interp ccc/stages/02-ml0-compiler.ml ccc/stages/03-adt-compiler.ml ccc/build/ccc/03.mzs
-    ccc/build/mlc-interp ccc/stages/01-parenthetical.ml ccc/build/ccc/03.mzs ccc/build/ccc/03.mzbc
-    ccc/build/mzvm ccc/build/ccc/03.mzbc ccc/stages/04-pattern-compiler.ml ccc/build/ccc/04.mzs
-    ccc/build/mlc-interp ccc/stages/01-parenthetical.ml ccc/build/ccc/04.mzs ccc/build/ccc/04.mzbc
+    ccc/build/mlc-interp ccc/stages/ml0-compiler.ml ccc/stages/adt-compiler.ml ccc/build/ccc/03.mzs
+    ccc/build/mlc-interp ccc/stages/parenthetical.ml ccc/build/ccc/03.mzs ccc/build/ccc/03.mzbc
+    ccc/build/mzvm ccc/build/ccc/03.mzbc ccc/stages/pattern-compiler.ml ccc/build/ccc/04.mzs
+    ccc/build/mlc-interp ccc/stages/parenthetical.ml ccc/build/ccc/04.mzs ccc/build/ccc/04.mzbc
     ccc/build/mzvm ccc/build/ccc/04.mzbc ccc/build/ccc/ccc-lex.ml ccc/build/ccc/ccc-lex.mzs
-    ccc/build/mlc-interp ccc/stages/01-parenthetical.ml ccc/build/ccc/ccc-lex.mzs ccc/build/ccc/ccc-lex.mzbc
+    ccc/build/mlc-interp ccc/stages/parenthetical.ml ccc/build/ccc/ccc-lex.mzs ccc/build/ccc/ccc-lex.mzbc
   ' || { echo "FAIL vm chain build"; exit 1; }
   for f in $files; do
     n=$(basename "$f" .c)

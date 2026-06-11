@@ -34,7 +34,7 @@ done
 # on the chain (VM) or under host OCaml — this pins evaluation-order
 # equivalence of the dialect, not just fixture behavior
 if [ -f "$BUILD/ccc/04.mzbc" ] && [ -f "$BUILD/ccc/ccc-cc1.ml" ]; then
-  cat ccc/tests/prelude-ocaml.ml ccc/stages/04-pattern-compiler.ml > "$BUILD/xcheck/04.ml"
+  cat ccc/tests/prelude-ocaml.ml ccc/stages/pattern-compiler.ml > "$BUILD/xcheck/04.ml"
   ocaml "$BUILD/xcheck/04.ml" "$BUILD/ccc/ccc-cc1.ml" "$BUILD/xcheck/cc1.host.mzs"
   ccc/build/mzvm "$BUILD/ccc/04.mzbc" "$BUILD/ccc/ccc-cc1.ml" "$BUILD/xcheck/cc1.vm.mzs"
   if cmp -s "$BUILD/xcheck/cc1.host.mzs" "$BUILD/xcheck/cc1.vm.mzs"; then
