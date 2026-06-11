@@ -86,8 +86,7 @@ and expr_type expr =
         (let left_ty = expr_type left in
          let right_ty = expr_type right in
          let arithmetic_ty = usual_arithmetic_type left right in
-         if bytes_eq_str op "*" || bytes_eq_str op "/" || bytes_eq_str op "%" ||
-            bytes_eq_str op "&" || bytes_eq_str op "|" || bytes_eq_str op "^"
+         if bytes_eq_any op ["*"; "/"; "%"; "&"; "|"; "^"]
          then Some arithmetic_ty
          else
            (match (left_ty, right_ty) with
@@ -146,8 +145,7 @@ and function_result_type ty =
   | _ -> None
 
 and is_function_name_macro name =
-  bytes_eq_str name "__func__" || bytes_eq_str name "__FUNCTION__" ||
-  bytes_eq_str name "__PRETTY_FUNCTION__"
+  bytes_eq_any name ["__func__"; "__FUNCTION__"; "__PRETTY_FUNCTION__"]
 
 and maybe_member_type info =
   match info with

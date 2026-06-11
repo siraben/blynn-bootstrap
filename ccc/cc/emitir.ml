@@ -10,17 +10,9 @@ let temp_text out temp = buf_add_int out temp
 
 let block_id_text out bid = buf_add_int out bid
 
-let rec int_list_fields_rest out values =
-  match values with
-  | [] -> ()
-  | value :: rest ->
-      (buf_push out ch_space;
-       buf_add_int out value;
-       int_list_fields_rest out rest)
-
 let int_list_fields out values =
   buf_add_int out (list_length values);
-  int_list_fields_rest out values
+  list_iter (fun value -> (buf_push out ch_space; buf_add_int out value)) values
 
 let operand_ir_fields out op =
   match op with
@@ -30,17 +22,9 @@ let operand_ir_fields out op =
   | OGlobal name -> (buf_push out ch_G; buf_add_bytes out name)  (* G *)
   | OFunction name -> (buf_push out ch_F; buf_add_bytes out name) (* F *)
 
-let rec operands_ir_fields_rest out ops =
-  match ops with
-  | [] -> ()
-  | op :: rest ->
-      (buf_push out ch_space;
-       operand_ir_fields out op;
-       operands_ir_fields_rest out rest)
-
 let operands_ir_fields out ops =
   buf_add_int out (list_length ops);
-  operands_ir_fields_rest out ops
+  list_iter (fun op -> (buf_push out ch_space; operand_ir_fields out op)) ops
 
 let maybe_temp_text out maybe_temp =
   match maybe_temp with
@@ -244,11 +228,7 @@ let rec emit_instr_ir out instr =
        buf_push out ch_nl)
 
 and emit_instrs_ir out instrs =
-  match instrs with
-  | [] -> ()
-  | instr :: rest ->
-      (emit_instr_ir out instr;
-       emit_instrs_ir out rest)
+  list_iter (fun instr -> emit_instr_ir out instr) instrs
 
 let emit_block_ir out block =
   match block with
@@ -260,20 +240,13 @@ let emit_block_ir out block =
        terminator_ir_line out term;
        buf_push out ch_nl)
 
-let rec emit_blocks_ir out blocks =
-  match blocks with
-  | [] -> ()
-  | block :: rest ->
-      (emit_block_ir out block;
-       emit_blocks_ir out rest)
-
 let emit_function_ir out fn =
   match fn with
   | FunctionIr (name, blocks) ->
       (buf_add_str out "F ";
        buf_add_bytes out name;
        buf_push out ch_nl;
-       emit_blocks_ir out blocks;
+       list_iter (fun block -> emit_block_ir out block) blocks;
        buf_push out ch_E;   (* E *)
        buf_push out ch_nl)
 
@@ -282,14 +255,8 @@ let emit_top_item_ir out item =
   | TopData data_item -> emit_data_item_ir out data_item
   | TopFunction fn -> emit_function_ir out fn
 
-let rec emit_top_items_ir out items =
-  match items with
-  | [] -> ()
-  | item :: rest ->
-      (emit_top_item_ir out item;
-       emit_top_items_ir out rest)
-
-let emit_module_ir out items = emit_top_items_ir out items
+let emit_module_ir out items =
+  list_iter (fun item -> emit_top_item_ir out item) items
 
 let emit_m1ir_module items =
   let out = buf_new 65536 in

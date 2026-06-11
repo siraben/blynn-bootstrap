@@ -71,6 +71,61 @@ let ch_v = 118
 let ch_x = 120
 let ch_z = 122
 
+(* the option type used by every part (shadows host OCaml's) *)
+type 'a option = None | Some of 'a
+
+(* ---- iteration helpers ----
+   the function is applied left to right / in increasing index order on
+   BOTH the VM and host OCaml (list_map binds each head value before the
+   recursive call to pin that order). *)
+
+let rec iter_range i n f =
+  if i < n then (f i; iter_range (i + 1) n f)
+
+let rec list_iter f l =
+  match l with
+  | [] -> ()
+  | h :: t -> (f h; list_iter f t)
+
+let rec list_map f l =
+  match l with
+  | [] -> []
+  | h :: t ->
+      (let v = f h in
+       v :: list_map f t)
+
+let rec list_iteri_from i f l =
+  match l with
+  | [] -> ()
+  | h :: t -> (f i h; list_iteri_from (i + 1) f t)
+
+let list_iteri f l = list_iteri_from 0 f l
+
+let rec list_filter f l =
+  match l with
+  | [] -> []
+  | h :: t -> if f h then h :: list_filter f t else list_filter f t
+
+let rec list_exists f l =
+  match l with
+  | [] -> false
+  | h :: t -> f h || list_exists f t
+
+let rec list_for_all f l =
+  match l with
+  | [] -> true
+  | h :: t -> f h && list_for_all f t
+
+let rec list_fold_left f acc l =
+  match l with
+  | [] -> acc
+  | h :: t -> list_fold_left f (f acc h) t
+
+let rec list_find f l =
+  match l with
+  | [] -> None
+  | h :: t -> if f h then Some h else list_find f t
+
 (* ---- byte/string helpers ---- *)
 
 let rec bytes_blit_into src dst n i =
@@ -78,9 +133,7 @@ let rec bytes_blit_into src dst n i =
 
 let bytes_sub b start len =
   let out = bytes_create len in
-  let rec cp i =
-    if i < len then (bytes_set out i (bytes_get b (start + i)); cp (i + 1)) in
-  cp 0;
+  iter_range 0 len (fun i -> bytes_set out i (bytes_get b (start + i)));
   out
 
 let bytes_eq a b =
@@ -100,12 +153,13 @@ let bytes_eq_str b s =
   if bytes_length b = n then cmp 0 else false
 
 (* membership in a list of string literals (Haskell's elem) *)
-let bytes_eq_any b names =
-  let rec go l =
-    match l with
-    | [] -> false
-    | s :: rest -> bytes_eq_str b s || go rest in
-  go names
+let bytes_eq_any b names = list_exists (fun s -> bytes_eq_str b s) names
+
+(* lookup in a (bytes * 'a) assoc list (Haskell's lookup) *)
+let rec assoc_bytes k l =
+  match l with
+  | [] -> None
+  | (k2, v) :: t -> if bytes_eq k k2 then Some v else assoc_bytes k t
 
 (* ---- growable byte buffers ---- *)
 
@@ -130,17 +184,13 @@ let buf_push b c =
 let buf_add_bytes b s =
   let n = bytes_length s in
   buf_reserve b n;
-  let rec cp i =
-    if i < n then (bytes_set b.bdata (b.blen + i) (bytes_get s i); cp (i + 1)) in
-  cp 0;
+  iter_range 0 n (fun i -> bytes_set b.bdata (b.blen + i) (bytes_get s i));
   b.blen <- b.blen + n
 
 let buf_add_str b s =
   let n = string_length s in
   buf_reserve b n;
-  let rec cp i =
-    if i < n then (bytes_set b.bdata (b.blen + i) (string_get s i); cp (i + 1)) in
-  cp 0;
+  iter_range 0 n (fun i -> bytes_set b.bdata (b.blen + i) (string_get s i));
   b.blen <- b.blen + n
 
 let buf_add_int b n =
@@ -160,8 +210,7 @@ let buf_clear b = b.blen <- 0
 let str_to_bytes s =
   let n = string_length s in
   let out = bytes_create n in
-  let rec cp i = if i < n then (bytes_set out i (string_get s i); cp (i + 1)) in
-  cp 0;
+  iter_range 0 n (fun i -> bytes_set out i (string_get s i));
   out
 
 let int_to_bytes n =
@@ -190,17 +239,20 @@ let rec list_append a b =
   | [] -> b
   | h :: t -> h :: list_append t b
 
+let rec list_concat_map f l =
+  match l with
+  | [] -> []
+  | h :: t ->
+      (let v = f h in
+       list_append v (list_concat_map f t))
+
 (* ---- diagnostics and I/O ---- *)
 
-let rec err_str_from s i =
-  if i < string_length s then (write_byte 2 (string_get s i); err_str_from s (i + 1))
+let err_str s =
+  iter_range 0 (string_length s) (fun i -> write_byte 2 (string_get s i))
 
-let err_str s = err_str_from s 0
-
-let rec err_bytes_from b i =
-  if i < bytes_length b then (write_byte 2 (bytes_get b i); err_bytes_from b (i + 1))
-
-let err_bytes b = err_bytes_from b 0
+let err_bytes b =
+  iter_range 0 (bytes_length b) (fun i -> write_byte 2 (bytes_get b i))
 
 let die_bytes msg =
   err_bytes msg;
@@ -228,6 +280,4 @@ let read_file path =
 let out_chan = ref 1
 
 let write_buf b =
-  let rec go i =
-    if i < b.blen then (write_byte !out_chan (bytes_get b.bdata i); go (i + 1)) in
-  go 0
+  iter_range 0 b.blen (fun i -> write_byte !out_chan (bytes_get b.bdata i))

@@ -15,9 +15,7 @@ let hcc_take_file_name path =
     else start in
   let start = scan 0 0 in
   let out = buf_new 32 in
-  let rec cp i =
-    if i < n then (buf_push out (string_get path i); cp (i + 1)) in
-  cp start;
+  iter_range start n (fun i -> buf_push out (string_get path i));
   buf_take out
 
 let data_label_prefix path =
@@ -27,12 +25,10 @@ let data_label_prefix path =
   buf_add_str b "HCC_DATA_";
   (if n = 0 then buf_add_str b "unit"
    else
-     (let rec go i =
-        if i < n then
-          (let c = bytes_get base i in
-           (if is_ascii_alpha_num c then buf_push b c else buf_push b ch_uscore);
-           go (i + 1)) in
-      go 0));
+     iter_range 0 n
+       (fun i ->
+         (let c = bytes_get base i in
+          if is_ascii_alpha_num c then buf_push b c else buf_push b ch_uscore)));
   buf_take b
 
 let () =

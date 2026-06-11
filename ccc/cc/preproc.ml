@@ -25,13 +25,11 @@ let pp_show_quoted b =
   let out = buf_new (bytes_length b + 2) in
   buf_push out ch_dquote;
   let n = bytes_length b in
-  let rec go i =
-    if i < n then
+  iter_range 0 n
+    (fun i ->
       (let c = bytes_get b i in
        (if c = ch_dquote || c = ch_bslash then buf_push out ch_bslash);
-       buf_push out c;
-       go (i + 1)) in
-  go 0;
+       buf_push out c));
   buf_push out ch_dquote;
   buf_take out
 
@@ -110,10 +108,7 @@ let pp_ends_with_dots b =
   n >= 3 && bytes_get b (n - 1) = ch_dot && bytes_get b (n - 2) = ch_dot &&
   bytes_get b (n - 3) = ch_dot
 
-let rec pp_name_elem name names =
-  match names with
-  | [] -> false
-  | n :: rest -> if bytes_eq n name then true else pp_name_elem name rest
+let pp_name_elem name names = list_exists (fun n -> bytes_eq n name) names
 
 let rec pp_take_n n l =
   if n <= 0 then []
@@ -240,13 +235,8 @@ let pp_split_commas text =
        else (buf_push cur c; go depth (i + 1) acc)) in
   go 0 0 []
 
-let rec pp_trim_non_empty pieces =
-  match pieces with
-  | [] -> []
-  | piece :: rest ->
-      let trimmed = pp_trim piece in
-      if bytes_length trimmed = 0 then pp_trim_non_empty rest
-      else trimmed :: pp_trim_non_empty rest
+let pp_trim_non_empty pieces =
+  list_filter (fun t -> bytes_length t > 0) (list_map (fun p -> pp_trim p) pieces)
 
 let pp_parse_macro_params line col text =
   let pieces = pp_trim_non_empty (pp_split_commas text) in
@@ -316,10 +306,8 @@ let pp_same_single_token toks original =
   | [tok] -> pp_same_token tok original
   | _ -> false
 
-let rec pp_relocate line col toks =
-  match toks with
-  | [] -> []
-  | Tok (_, _, kind) :: rest -> Tok (line, col, kind) :: pp_relocate line col rest
+let pp_relocate line col toks =
+  list_map (fun t -> (match t with Tok (_, _, kind) -> Tok (line, col, kind))) toks
 
 let pp_take_defined_operand_source toks =
   match pp_pop_source toks with
@@ -354,12 +342,10 @@ let rec pp_argument_macro_names macros toks =
       else pp_argument_macro_names macros rest
   | _ :: rest -> pp_argument_macro_names macros rest
 
-let rec pp_macro_arg_hidden_names macros args =
-  match args with
-  | [] -> []
-  | MacroArg (raw, _) :: rest ->
-      list_append (pp_argument_macro_names macros raw)
-        (pp_macro_arg_hidden_names macros rest)
+let pp_macro_arg_hidden_names macros args =
+  list_concat_map
+    (fun a -> (match a with MacroArg (raw, _) -> pp_argument_macro_names macros raw))
+    args
 
 let pp_comma_token line col = Tok (line, col, TkPunct (str_to_bytes ","))
 
@@ -382,22 +368,16 @@ let pp_stringify_tokens toks =
   let out = buf_new 32 in
   buf_push out ch_dquote;
   let add_escaped text =
-    let n = bytes_length text in
-    let rec go i =
-      if i < n then
+    iter_range 0 (bytes_length text)
+      (fun i ->
         (let c = bytes_get text i in
          (if c = ch_bslash || c = ch_dquote then buf_push out ch_bslash);
-         buf_push out c;
-         go (i + 1)) in
-    go 0 in
-  let rec render ts first =
-    match ts with
-    | [] -> ()
-    | t :: rest ->
-        ((if not first then buf_push out ch_space);
-         add_escaped (token_text (tok_kind t));
-         render rest false) in
-  render toks true;
+         buf_push out c)) in
+  list_iteri
+    (fun i t ->
+      ((if i > 0 then buf_push out ch_space);
+       add_escaped (token_text (tok_kind t))))
+    toks;
   buf_push out ch_dquote;
   buf_take out
 
