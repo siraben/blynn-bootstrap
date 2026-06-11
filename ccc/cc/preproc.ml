@@ -19,7 +19,7 @@ let pp_die line col msg =
 
 let pp_die_str line col s = pp_die line col (str_to_bytes s)
 
-(* quoted rendering like Haskell's show; private copy of 30-parser's
+(* quoted rendering like Haskell's show; private copy of parser's
    show_quoted (the parser part is not in the ccpp concatenation) *)
 let pp_show_quoted b =
   let out = buf_new (bytes_length b + 2) in

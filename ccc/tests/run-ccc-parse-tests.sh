@@ -10,7 +10,7 @@ HCPP=$BUILD/hcc-ref/bin/hcpp
 HCC1=$BUILD/hcc-ref/bin/hcc1
 mkdir -p "$BUILD/ccc"
 
-PARTS="ccc/cc/00-util.ml ccc/cc/05-prim.ml ccc/cc/10-lexer.ml ccc/cc/12-symtab.ml ccc/cc/18-literal.ml ccc/cc/20-ast.ml ccc/cc/22-constexpr.ml ccc/cc/30-parser.ml"
+PARTS="ccc/cc/util.ml ccc/cc/prim.ml ccc/cc/lexer.ml ccc/cc/symtab.ml ccc/cc/literal.ml ccc/cc/ast.ml ccc/cc/constexpr.ml ccc/cc/parser.ml"
 cat ccc/tests/prelude-ocaml.ml $PARTS ccc/cc/dev/checkmain.ml > "$BUILD/ccc/ccc-check-host.ml"
 cat $PARTS ccc/cc/dev/checkmain.ml > "$BUILD/ccc/ccc-check.ml"
 
@@ -36,7 +36,7 @@ if [ "${1:-}" = "--vm" ]; then
   sh -c '
     set -e
     ccc/build/mzvm ccc/build/ccc/04.mzbc ccc/build/ccc/ccc-check.ml ccc/build/ccc/ccc-check.mzs
-    ccc/build/mlc-interp ccc/stages/01-parenthetical.ml ccc/build/ccc/ccc-check.mzs ccc/build/ccc/ccc-check.mzbc
+    ccc/build/mlc-interp ccc/stages/parenthetical.ml ccc/build/ccc/ccc-check.mzs ccc/build/ccc/ccc-check.mzbc
   ' || { echo "FAIL vm chain build"; exit 1; }
   for f in tests/hcc/m1-smoke/examples/*.c; do
     n=$(basename "$f" .c)

@@ -109,13 +109,13 @@ MZVM=$BUILD/mzvm-m2
 RINTERP=$BUILD/mlc-interp-gcc
 
 compile() { # compile $1.ml -> $BUILD/stage/$2.mzs + .mzbc via M2-run stages
-  "$INTERP" "$S/02-ml0-compiler.ml" "$1" "$BUILD/stage/$2.mzs" &&
-  "$INTERP" "$S/01-parenthetical.ml" "$BUILD/stage/$2.mzs" "$BUILD/stage/$2.mzbc"
+  "$INTERP" "$S/ml0-compiler.ml" "$1" "$BUILD/stage/$2.mzs" &&
+  "$INTERP" "$S/parenthetical.ml" "$BUILD/stage/$2.mzs" "$BUILD/stage/$2.mzbc"
 }
 
 ref_compile() { # same, with the gcc interpreter, into $BUILD/ref
-  "$RINTERP" "$S/02-ml0-compiler.ml" "$1" "$BUILD/ref/$2.mzs" &&
-  "$RINTERP" "$S/01-parenthetical.ml" "$BUILD/ref/$2.mzs" "$BUILD/ref/$2.mzbc"
+  "$RINTERP" "$S/ml0-compiler.ml" "$1" "$BUILD/ref/$2.mzs" &&
+  "$RINTERP" "$S/parenthetical.ml" "$BUILD/ref/$2.mzs" "$BUILD/ref/$2.mzbc"
 }
 
 cmp_ref() { # cmp_ref tag: stage/$tag.{mzs,mzbc} must equal ref/$tag.*
@@ -149,11 +149,11 @@ done
 
 # 3b. stage 02 compiles stage 01; the compiled assembler, run on the M2
 #     VM, must reproduce the M2 interp-run assembler byte-for-byte
-if compile "$S/01-parenthetical.ml" 01; then
+if compile "$S/parenthetical.ml" 01; then
   ok01=1
   for f in ccc/tests/vm/*.mzs; do
     n=$(basename "$f" .mzs)
-    "$INTERP" "$S/01-parenthetical.ml" "$f" "$BUILD/stage/$n.ref.mzbc"
+    "$INTERP" "$S/parenthetical.ml" "$f" "$BUILD/stage/$n.ref.mzbc"
     "$MZVM" "$BUILD/stage/01.mzbc" "$f" "$BUILD/stage/$n.via02.mzbc"
     cmp -s "$BUILD/stage/$n.ref.mzbc" "$BUILD/stage/$n.via02.mzbc" || { echo "FAIL compiled-01 on $n"; ok01=0; }
   done
@@ -164,9 +164,9 @@ else
 fi
 
 # 3c. stage 02 self-compilation fixpoint on the M2 binaries
-if compile "$S/02-ml0-compiler.ml" 02gen1 && ref_compile "$S/02-ml0-compiler.ml" 02gen1 && cmp_ref 02gen1; then
-  "$MZVM" "$BUILD/stage/02gen1.mzbc" "$S/02-ml0-compiler.ml" "$BUILD/stage/02gen2.mzs" &&
-  "$INTERP" "$S/01-parenthetical.ml" "$BUILD/stage/02gen2.mzs" "$BUILD/stage/02gen2.mzbc"
+if compile "$S/ml0-compiler.ml" 02gen1 && ref_compile "$S/ml0-compiler.ml" 02gen1 && cmp_ref 02gen1; then
+  "$MZVM" "$BUILD/stage/02gen1.mzbc" "$S/ml0-compiler.ml" "$BUILD/stage/02gen2.mzs" &&
+  "$INTERP" "$S/parenthetical.ml" "$BUILD/stage/02gen2.mzs" "$BUILD/stage/02gen2.mzbc"
   if cmp -s "$BUILD/stage/02gen1.mzbc" "$BUILD/stage/02gen2.mzbc"; then
     echo "ok   stage 02 self-compilation fixpoint (m2)"
   else
@@ -179,20 +179,20 @@ fi
 
 # 3d. stage 03: built by 02 on the M2 VM, conservative on ML0 fixtures,
 #     self-fixpoint, ML1 fixtures
-if compile "$S/03-adt-compiler.ml" 03gen1; then
+if compile "$S/adt-compiler.ml" 03gen1; then
   ok03=1
   for f in ccc/tests/core/*.ml; do
     n=$(basename "$f" .ml)
     "$MZVM" "$BUILD/stage/03gen1.mzbc" "$f" "$BUILD/stage/$n.via03.mzs"
     cmp -s "$BUILD/stage/$n.mzs" "$BUILD/stage/$n.via03.mzs" || { echo "FAIL stage03 not conservative on $n"; ok03=0; }
   done
-  "$MZVM" "$BUILD/stage/03gen1.mzbc" "$S/03-adt-compiler.ml" "$BUILD/stage/03gen2.mzs" &&
-  "$INTERP" "$S/01-parenthetical.ml" "$BUILD/stage/03gen2.mzs" "$BUILD/stage/03gen2.mzbc"
+  "$MZVM" "$BUILD/stage/03gen1.mzbc" "$S/adt-compiler.ml" "$BUILD/stage/03gen2.mzs" &&
+  "$INTERP" "$S/parenthetical.ml" "$BUILD/stage/03gen2.mzs" "$BUILD/stage/03gen2.mzbc"
   cmp -s "$BUILD/stage/03gen1.mzbc" "$BUILD/stage/03gen2.mzbc" || { echo "FAIL stage 03 self-compilation fixpoint (m2)"; ok03=0; }
   check_adt() {
     name=$1; want=$2
     "$MZVM" "$BUILD/stage/03gen1.mzbc" "ccc/tests/adt/$name.ml" "$BUILD/stage/$name.mzs" &&
-    "$INTERP" "$S/01-parenthetical.ml" "$BUILD/stage/$name.mzs" "$BUILD/stage/$name.mzbc" || { echo "FAIL $name (compile)"; ok03=0; return; }
+    "$INTERP" "$S/parenthetical.ml" "$BUILD/stage/$name.mzs" "$BUILD/stage/$name.mzbc" || { echo "FAIL $name (compile)"; ok03=0; return; }
     got=$("$MZVM" "$BUILD/stage/$name.mzbc")
     if [ "$got" = "$want" ]; then echo "ok   $name (adt m2)"; else echo "FAIL $name: '$got'"; ok03=0; fi
   }
@@ -214,18 +214,18 @@ fi
 #     self-fixpoint, ML2 fixtures
 asm04() { # asm04 src.ml out-tag
   "$MZVM" "$BUILD/stage/04gen1.mzbc" "$1" "$BUILD/stage/$2.mzs" &&
-  "$INTERP" "$S/01-parenthetical.ml" "$BUILD/stage/$2.mzs" "$BUILD/stage/$2.mzbc"
+  "$INTERP" "$S/parenthetical.ml" "$BUILD/stage/$2.mzs" "$BUILD/stage/$2.mzbc"
 }
-if "$MZVM" "$BUILD/stage/03gen1.mzbc" "$S/04-pattern-compiler.ml" "$BUILD/stage/04gen1.mzs" &&
-   "$INTERP" "$S/01-parenthetical.ml" "$BUILD/stage/04gen1.mzs" "$BUILD/stage/04gen1.mzbc"; then
+if "$MZVM" "$BUILD/stage/03gen1.mzbc" "$S/pattern-compiler.ml" "$BUILD/stage/04gen1.mzs" &&
+   "$INTERP" "$S/parenthetical.ml" "$BUILD/stage/04gen1.mzs" "$BUILD/stage/04gen1.mzbc"; then
   ok04=1
   for f in ccc/tests/core/*.ml ccc/tests/adt/*.ml; do
     n=$(basename "$f" .ml)
     "$MZVM" "$BUILD/stage/04gen1.mzbc" "$f" "$BUILD/stage/$n.via04.mzs"
     cmp -s "$BUILD/stage/$n.mzs" "$BUILD/stage/$n.via04.mzs" || { echo "FAIL stage04 not conservative on $n"; ok04=0; }
   done
-  "$MZVM" "$BUILD/stage/04gen1.mzbc" "$S/04-pattern-compiler.ml" "$BUILD/stage/04gen2.mzs" &&
-  "$INTERP" "$S/01-parenthetical.ml" "$BUILD/stage/04gen2.mzs" "$BUILD/stage/04gen2.mzbc"
+  "$MZVM" "$BUILD/stage/04gen1.mzbc" "$S/pattern-compiler.ml" "$BUILD/stage/04gen2.mzs" &&
+  "$INTERP" "$S/parenthetical.ml" "$BUILD/stage/04gen2.mzs" "$BUILD/stage/04gen2.mzbc"
   cmp -s "$BUILD/stage/04gen1.mzbc" "$BUILD/stage/04gen2.mzbc" || { echo "FAIL stage 04 self-compilation fixpoint (m2)"; ok04=0; }
   check_pat() {
     name=$1; want=$2

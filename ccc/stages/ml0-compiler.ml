@@ -1,23 +1,27 @@
-(* 03-adt-compiler: ML1 -> parenthesized MZBC assembly.
-   Third ML bootstrap stage; a fork of 02-ml0-compiler whose delta adds
-   algebraic data types and shallow pattern matching to the *input*
-   dialect (ML1 = ML0 + type declarations + constructors + one-level
-   match). Its own source stays within ML0, so stage 02 compiles it and
-   it recompiles itself; for ML0 inputs that avoid the new keywords its
-   code generation is byte-identical to stage 02's.
+(* ml0-compiler: ML0 -> parenthesized MZBC assembly.
+   Second ML bootstrap stage. Runs under mlc-interp-seed and compiles the
+   ML0 dialect (the same core dialect the interpreter executes, with the
+   restrictions below). Output is assembled by parenthetical.
 
-   The delta:
-     - "type t = A | B of int * int" declarations; constant constructors
-       number from 0 per type, constructors with arguments take block
-       tags from 0 per type (OCaml-style); type expressions after "of"
-       are only counted for arity (monomorphic, no type parameters)
-     - constructor expressions: A, B (e1, e2), C e
-     - "match e with | p -> e | ..." with one-level patterns: integer and
-       character literals, true/false, constant constructors,
-       C (x, y, _), variables, and _ (nesting arrives with stage 04)
-     - a fallen-through match exits with code 99
+   Usage: mlc-interp ml0-compiler.ml in.ml out.mzs
 
-   Usage: mlc-interp 03-adt-compiler.ml in.ml out.mzs *)
+   ML0 restrictions on top of the core dialect:
+     - builtins must be fully applied and are not first-class values
+     - local "let rec" defines a single self-recursive function
+       (mutual recursion is top-level only)
+     - an "if" or "let" whose branches sit in tail position cannot be
+       followed by a sequence semicolon; parenthesize instead
+     - tuples are made with (e1, .., en) and read with fst/snd only
+   This file is itself written in ML0, so the stage can compile itself
+   (the diverse-double-compilation check rides on that).
+
+   Compilation model: single pass, parse-and-emit, no AST. All functions
+   are unary closures (curried); applications are APPLY 1 with the callee
+   kept below the argument and popped after the call. Tail calls use
+   APPTERM. String literals become data globals 0..4095; top-level
+   bindings become globals from 4096 up. Free variables of a closure are
+   discovered while compiling its body and pushed for CLOSURE afterwards,
+   which is why the body is emitted before the capture loads. *)
 
 (* one-slot mutable cells: ML0 has no ref type, so a one-element array
    stands in; cell/get/set keep call sites readable *)
@@ -46,7 +50,7 @@ let err_int n = if n < 0 then (write_byte 2 45; err_int_rec (0 - n)) else err_in
 let line = cell 1
 
 let die msg =
-  err_str "03-adt-compiler: ";
+  err_str "ml0-compiler: ";
   err_str msg;
   err_str " at line ";
   err_int (get line);
@@ -54,7 +58,7 @@ let die msg =
   exit 1
 
 let die_name msg b =
-  err_str "03-adt-compiler: ";
+  err_str "ml0-compiler: ";
   err_str msg;
   err_str " ";
   err_bytes b;
@@ -117,10 +121,6 @@ let peekc () =
 let peekc2 () =
   if get pos + 1 >= get src_len then 0 - 1
   else bytes_get (get src_buf) (get pos + 1)
-
-let peekc3 () =
-  if get pos + 2 >= get src_len then 0 - 1
-  else bytes_get (get src_buf) (get pos + 2)
 
 let nextc () =
   let c = peekc () in
@@ -251,16 +251,6 @@ let next_token () =
      str_loop ();
      set tstr (tbuf_take ());
      set tk tk_str)
-  else if c = 39 && is_ident_start (peekc2 ()) && not (peekc3 () = 39) then
-    (* type variable like 'a: an identifier-shaped token kept only so
-       type declarations can mention parameters; types are never checked *)
-    (set tlen 0;
-     tbuf_push (nextc ());
-     let rec tv_loop () =
-       if is_ident_char (peekc ()) then (tbuf_push (nextc ()); tv_loop ()) in
-     tv_loop ();
-     set tstr (tbuf_take ());
-     set tk tk_ident)
   else if c = 39 then
     (let _ = nextc () in
      let d = nextc () in
@@ -295,8 +285,7 @@ let is_keyword b =
   bytes_eq_str b "else" || bytes_eq_str b "fun" || bytes_eq_str b "true" ||
   bytes_eq_str b "false" || bytes_eq_str b "mod" || bytes_eq_str b "land" ||
   bytes_eq_str b "lor" || bytes_eq_str b "lxor" || bytes_eq_str b "lsl" ||
-  bytes_eq_str b "lsr" || bytes_eq_str b "asr" || bytes_eq_str b "type" ||
-  bytes_eq_str b "match" || bytes_eq_str b "with" || bytes_eq_str b "of"
+  bytes_eq_str b "lsr" || bytes_eq_str b "asr"
 
 (* current token is a usable identifier (not a keyword) *)
 let at_ident () = get tk = tk_ident && not (is_keyword (get tstr))
@@ -558,48 +547,6 @@ let emit_opcode_builtin sel =
   else if sel = 8 then e1 "getfield" 1
   else die "bad builtin selector"
 
-(* ---- constructors ---- *)
-
-(* a name starting with an upper-case letter is a constructor *)
-let is_ctor_name b = bytes_length b > 0 && is_upper (bytes_get b 0)
-
-let ctor_names = cell (array_make 256 (bytes_create 1))
-let ctor_tag = cell (array_make 256 0)
-let ctor_arity = cell (array_make 256 0)   (* 0 = constant *)
-let ctor_count = cell 0
-
-let add_ctor name tag arity =
-  let n = get ctor_count in
-  let names = get ctor_names in
-  (if n >= array_length names then
-    (let cap = array_length names in
-     let nn = array_make (2 * cap) (bytes_create 1) in
-     let nt = array_make (2 * cap) 0 in
-     let na = array_make (2 * cap) 0 in
-     let rec cp i =
-       if i < n then
-         (array_set nn i (array_get names i);
-          array_set nt i (array_get (get ctor_tag) i);
-          array_set na i (array_get (get ctor_arity) i);
-          cp (i + 1)) in
-     cp 0;
-     set ctor_names nn;
-     set ctor_tag nt;
-     set ctor_arity na));
-  array_set (get ctor_names) n name;
-  array_set (get ctor_tag) n tag;
-  array_set (get ctor_arity) n arity;
-  set ctor_count (n + 1)
-
-let find_ctor name =
-  let n = get ctor_count in
-  let names = get ctor_names in
-  let rec go i =
-    if i >= n then 0 - 1
-    else if bytes_eq name (array_get names i) then i
-    else go (i + 1) in
-  go 0
-
 (* ---- data strings ---- *)
 
 let dcount = cell 0
@@ -815,7 +762,6 @@ and c_nosemi t =
   (if tok_is_ident "if" then c_if t
    else if tok_is_ident "let" then c_let t
    else if tok_is_ident "fun" then c_funexpr ()
-   else if tok_is_ident "match" then c_match t
    else c_or t);
   value_done t
 
@@ -1067,158 +1013,14 @@ and c_app_head t =
        not (is_keyword (get tstr)) &&
        not (tok_is_ident "true") && not (tok_is_ident "false") then
       (let name = take_ident () in
-       if is_ctor_name name then (c_ctor name; 1)
-       else
-         (resolve name;
-          if get res_kind = 3 then
-            (c_builtin (get res_idx); 1)
-          else (emit_var_load (); 0)))
+       resolve name;
+       if get res_kind = 3 then
+         (c_builtin (get res_idx); 1)
+       else (emit_var_load (); 0))
     else (c_atom (); 0) in
   (if was_builtin = 1 && starts_atom () then
-    die "builtin or constructor result cannot be applied");
+    die "builtin result cannot be applied");
   c_app_args t
-
-and c_ctor name =
-  let c = find_ctor name in
-  (if c < 0 then die_name "unknown constructor" name);
-  let tag = array_get (get ctor_tag) c in
-  let arity = array_get (get ctor_arity) c in
-  if arity = 0 then e1 "const" tag
-  else if arity = 1 then
-    ((if not (starts_atom ()) then die_name "constructor needs an argument" name);
-     c_atom ();
-     e0 "push";
-     bump 1;
-     e2 "makeblock" tag 1;
-     bump (0 - 1))
-  else
-    (expect_punct "(";
-     let rec fields i =
-       if i < arity then
-         ((if i > 0 then expect_punct ",");
-          c_expr 0;
-          e0 "push";
-          bump 1;
-          fields (i + 1)) in
-     fields 0;
-     expect_punct ")";
-     e2 "makeblock" tag arity;
-     bump (0 - arity))
-
-and c_match t =
-  next_token ();
-  c_expr 0;
-  (if not (tok_is_ident "with") then die "expected with");
-  next_token ();
-  e0 "push";
-  let s0 = get depth in
-  bump 1;
-  skip_punct "|";
-  let le = new_label () in
-  let subj () = e1 "acc" (get depth - 1 - s0) in
-  let rec arms () =
-    let ln = new_label () in
-    let v0 = get vcount in
-    let d0 = get depth in
-    (* ---- one-level pattern ---- *)
-    let nbind =
-      if get tk = tk_int then
-        (let k = get tint in
-         next_token ();
-         subj (); e0 "push"; bump 1;
-         e1 "const" k; e0 "eq"; bump (0 - 1);
-         ebranch "branchifnot" ln;
-         0)
-      else if tok_is_ident "true" || tok_is_ident "false" then
-        (let k = if tok_is_ident "true" then 1 else 0 in
-         next_token ();
-         subj (); e0 "push"; bump 1;
-         e1 "const" k; e0 "eq"; bump (0 - 1);
-         ebranch "branchifnot" ln;
-         0)
-      else if tok_is_punct "(" then
-        (next_token (); expect_punct ")"; 0)   (* unit: always matches *)
-      else if at_ident () then
-        (let name = take_ident () in
-         if is_ctor_name name then
-           (let c = find_ctor name in
-            (if c < 0 then die_name "unknown constructor" name);
-            let tag = array_get (get ctor_tag) c in
-            let arity = array_get (get ctor_arity) c in
-            if arity = 0 then
-              (subj (); e0 "push"; bump 1;
-               e1 "const" tag; e0 "eq"; bump (0 - 1);
-               ebranch "branchifnot" ln;
-               0)
-            else
-              (subj (); e0 "isint"; ebranch "branchif" ln;
-               subj (); e0 "gettag"; e0 "push"; bump 1;
-               e1 "const" tag; e0 "eq"; bump (0 - 1);
-               ebranch "branchifnot" ln;
-               (* field binders: x, _, comma-separated; arity 1 may skip
-                  the parentheses *)
-               let bind_field i =
-                 if tok_is_ident "_" then (next_token (); 0)
-                 else if get tk = tk_ident &&
-                         not (is_keyword (get tstr)) &&
-                         not (is_ctor_name (get tstr)) then
-                   (let v = take_ident () in
-                    subj ();
-                    e1 "getfield" i;
-                    e0 "push";
-                    bind_local v (get depth);
-                    bump 1;
-                    1)
-                 else die "patterns are one-level: expected a variable or _" in
-               if arity = 1 && not (tok_is_punct "(") then bind_field 0
-               else
-                 (expect_punct "(";
-                  let rec fields i nb =
-                    if i < arity then
-                      ((if i > 0 then expect_punct ",");
-                       fields (i + 1) (nb + bind_field i))
-                    else nb in
-                  let nb = fields 0 0 in
-                  expect_punct ")";
-                  nb)))
-         else if bytes_eq_str name "_" then 0
-         else
-           (* variable pattern: always matches, binds the subject *)
-           (subj ();
-            e0 "push";
-            bind_local name (get depth);
-            bump 1;
-            1))
-      else die "expected a pattern" in
-    (if not (tok_is_punct "->") then die "expected ->");
-    next_token ();
-    (if t = 1 then
-      (set exited 0;
-       c_expr 1;
-       (if get exited = 0 then
-         die "match arm did not exit in tail position; parenthesize the match"))
-     else
-      (c_expr 0;
-       (if nbind > 0 then (e1 "pop" nbind; bump (0 - nbind)));
-       ebranch "branch" le));
-    elabel ln;
-    set vcount v0;
-    set depth d0;
-    if tok_is_punct "|" then (next_token (); arms ()) in
-  arms ();
-  (* no arm matched *)
-  e1 "const" 99;
-  e0 "push";
-  bump 1;
-  e2 "ccall" 1 0;
-  bump (0 - 1);
-  elabel le;
-  if t = 1 then
-    (set depth s0;
-     set exited 1)
-  else
-    (e1 "pop" 1;
-     bump (0 - 1))
 
 and c_app_args t =
   if starts_atom () then
@@ -1267,9 +1069,6 @@ and c_atom () =
     (if tok_is_ident "true" then (e1 "const" 1; next_token ())
      else if tok_is_ident "false" then (e1 "const" 0; next_token ())
      else if is_keyword (get tstr) then die "unexpected keyword"
-     else if is_ctor_name (get tstr) then
-       (let name = take_ident () in
-        c_ctor name)
      else
        (let name = take_ident () in
         resolve name;
@@ -1337,58 +1136,6 @@ let rec top_bindings () =
   top_binding ();
   if tok_is_ident "and" then (next_token (); top_bindings ())
 
-(* a type declaration ends at the next top-level keyword *)
-let at_decl_end () =
-  get tk = tk_eof || tok_is_ident "let" || tok_is_ident "type" ||
-  tok_is_punct ";;"
-
-(* skip one constructor-argument type expression, counting its top-level
-   components: "of int * t" has arity 2. The expression is never checked. *)
-let skip_of_type () =
-  let rec go arity pdepth =
-    if pdepth = 0 && (at_decl_end () || tok_is_punct "|" || tok_is_ident "and") then arity
-    else if tok_is_punct "(" then (next_token (); go arity (pdepth + 1))
-    else if tok_is_punct ")" then (next_token (); go arity (pdepth - 1))
-    else if pdepth = 0 && tok_is_punct "*" then (next_token (); go (arity + 1) pdepth)
-    else (next_token (); go arity pdepth) in
-  go 1 0
-
-(* optional type parameters before the type name: 'a or ('a, 'b); the
-   parameters are recorded nowhere, types are never checked *)
-let skip_type_params () =
-  if get tk = tk_ident && bytes_get (get tstr) 0 = 39 then
-    next_token ()
-  else if tok_is_punct "(" &&
-          (let _ = next_token () in
-           let rec skip_params () =
-             if tok_is_punct ")" then (next_token (); true)
-             else (next_token (); skip_params ()) in
-           skip_params ()) then ()
-
-let rec top_type () =
-  (* "type" or "and" consumed; [params] name = constructors *)
-  skip_type_params ();
-  let _ = need_ident "expected a type name" in
-  expect_punct "=";
-  skip_punct "|";
-  let rec ctors next_const next_block =
-    ((if not (get tk = tk_ident) ||
-         not (is_ctor_name (get tstr)) then
-       die "expected a constructor name");
-     let name = get tstr in
-     (if find_ctor name >= 0 then die_name "duplicate constructor" name);
-     next_token ();
-     if tok_is_ident "of" then
-       (next_token ();
-        let arity = skip_of_type () in
-        add_ctor name next_block arity;
-        if tok_is_punct "|" then (next_token (); ctors next_const (next_block + 1)))
-     else
-       (add_ctor name next_const 0;
-        if tok_is_punct "|" then (next_token (); ctors (next_const + 1) next_block))) in
-  ctors 0 0;
-  if tok_is_ident "and" then (next_token (); top_type ())
-
 let rec top_loop () =
   if get tk = tk_eof then ()
   else if tok_is_punct ";;" then (next_token (); top_loop ())
@@ -1396,10 +1143,6 @@ let rec top_loop () =
     (next_token ();
      skip_ident "rec";
      top_bindings ();
-     top_loop ())
-  else if tok_is_ident "type" then
-    (next_token ();
-     top_type ();
      top_loop ())
   else die "expected a top-level let"
 
@@ -1414,7 +1157,7 @@ let check_all_defined () =
 
 let () =
   (if arg_count () < 2 then
-    (err_str "usage: 03-adt-compiler in.ml out.mzs"; write_byte 2 10; exit 1));
+    (err_str "usage: ml0-compiler in.ml out.mzs"; write_byte 2 10; exit 1));
   let h = open_in (arg_get 0) in
   (if h < 0 then die "cannot open input");
   read_all h;
