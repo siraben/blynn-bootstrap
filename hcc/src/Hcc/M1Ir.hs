@@ -6,6 +6,7 @@ module M1Ir
 import Base
 import TypesAst
 import CompileM
+import Target
 import TypesIr
 import Lower
 import LowerBootstrap
@@ -13,16 +14,17 @@ import LowerImplicit
 
 data CodegenError = CodegenError String
 
-emitM1IrWithDataPrefixTarget :: (String -> IO ()) -> String -> Int -> Program -> IO (Either CodegenError ())
+emitM1IrWithDataPrefixTarget :: (String -> IO ()) -> String -> Target -> Program -> IO (Either CodegenError ())
 emitM1IrWithDataPrefixTarget write prefix target ast =
   case buildM1IrModuleWithDataPrefixTarget prefix target ast of
     Left err -> pure (Left err)
     Right ir -> do
       write "HCCIR 1"
+      write ("T " ++ hccTargetName target)
       emitModuleIr write ir
       pure (Right ())
 
-buildM1IrModuleWithDataPrefixTarget :: String -> Int -> Program -> Either CodegenError ModuleIr
+buildM1IrModuleWithDataPrefixTarget :: String -> Target -> Program -> Either CodegenError ModuleIr
 buildM1IrModuleWithDataPrefixTarget prefix target ast = case ast of
   Program decls ->
     case mapCompileRun (runCompileM registerBuiltinStructs (initialCompileStateForTarget prefix target)) of

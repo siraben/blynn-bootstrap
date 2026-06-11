@@ -1,6 +1,7 @@
 blynn:inn/BasePrecisely.hs
 blynn:inn/System.hs
 hcc:src/Hcc/TextUtil.hs
+hcc:src/Hcc/Directive.hs
 hcc:src/Hcc/Literal.hs
 hcc:src/Hcc/TypesToken.hs
 hcc:src/Hcc/SymbolTable.hs
@@ -10,6 +11,7 @@ hcc:src/Hcc/ConstExpr.hs
 hcc:src/Hcc/Lexer.hs
 hcc:src/Hcc/IfFrame.hs
 hcc:src/Hcc/Preprocessor.hs
+hcc:src/Hcc/Target.hs
 hcc:src/Hcc/HccSystem.hs
 hcc:src/Hcc/DriverCommon.hs
 hcc:src/Hcc/IncludeExpand.hs
