@@ -2,7 +2,7 @@
 r"""Dev-only assembler for the parenthesized MZBC assembly format.
 
 This is the same source language that the first ML bootstrap stage
-(ccc/stages/01-parenthetical.ml) accepts; this Python copy exists so the VM
+(ccc/stages/parenthetical.ml) accepts; this Python copy exists so the VM
 can be tested before any ML stage runs, and so the two implementations can
 be diffed against each other on the test corpus.
 

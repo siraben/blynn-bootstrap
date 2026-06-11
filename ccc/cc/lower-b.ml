@@ -1,6 +1,6 @@
 (* ccc part 52 (segment b): expression lowering; port of Hcc.Lower
    lines 588-1302 (lowerExpr .. scaledIndex). Continues the mutually
-   recursive Lower group started in 50-lower-a.ml. Operator strings
+   recursive Lower group started in lower-a.ml. Operator strings
    cannot appear in match patterns, so the EUnary/EBinary/EPostfix
    dispatch becomes bytes_eq_str chains inside the arms. *)
 

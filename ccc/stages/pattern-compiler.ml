@@ -1,27 +1,22 @@
-(* 02-ml0-compiler: ML0 -> parenthesized MZBC assembly.
-   Second ML bootstrap stage. Runs under mlc-interp-seed and compiles the
-   ML0 dialect (the same core dialect the interpreter executes, with the
-   restrictions below). Output is assembled by 01-parenthetical.
+(* pattern-compiler: ML2 -> parenthesized MZBC assembly.
+   Fourth ML bootstrap stage; a fork of adt-compiler whose delta makes
+   patterns first-class (ML2 = ML1 + nested patterns + list sugar +
+   references + tuple/let destructuring). Its own source stays within
+   ML1, so stage 03 compiles it and it recompiles itself; for ML1 inputs
+   that avoid the new tokens its code generation is byte-identical to
+   stage 03's.
 
-   Usage: mlc-interp 02-ml0-compiler.ml in.ml out.mzs
+   The delta over ML1:
+     - patterns nest arbitrarily: constructors, tuples, list cells,
+       literals, variables and _ compose; tests jump to the next arm,
+       reached values are loaded through getfield paths
+     - list sugar: [] / e1 :: e2 / [e1; e2] in expressions, and the same
+       forms in patterns (a cons cell is a tag-0 block, [] is 0)
+     - references: ref e, !e, e1 := e2 (a one-field tag-0 block)
+     - "let (p1, .., pn) = e in" destructures through full patterns
+       (refutable ones exit 99, same as a fallen-through match)
 
-   ML0 restrictions on top of the core dialect:
-     - builtins must be fully applied and are not first-class values
-     - local "let rec" defines a single self-recursive function
-       (mutual recursion is top-level only)
-     - an "if" or "let" whose branches sit in tail position cannot be
-       followed by a sequence semicolon; parenthesize instead
-     - tuples are made with (e1, .., en) and read with fst/snd only
-   This file is itself written in ML0, so the stage can compile itself
-   (the diverse-double-compilation check rides on that).
-
-   Compilation model: single pass, parse-and-emit, no AST. All functions
-   are unary closures (curried); applications are APPLY 1 with the callee
-   kept below the argument and popped after the call. Tail calls use
-   APPTERM. String literals become data globals 0..4095; top-level
-   bindings become globals from 4096 up. Free variables of a closure are
-   discovered while compiling its body and pushed for CLOSURE afterwards,
-   which is why the body is emitted before the capture loads. *)
+   Usage: mlc-interp pattern-compiler.ml in.ml out.mzs *)
 
 (* one-slot mutable cells: ML0 has no ref type, so a one-element array
    stands in; cell/get/set keep call sites readable *)
@@ -50,7 +45,7 @@ let err_int n = if n < 0 then (write_byte 2 45; err_int_rec (0 - n)) else err_in
 let line = cell 1
 
 let die msg =
-  err_str "02-ml0-compiler: ";
+  err_str "pattern-compiler: ";
   err_str msg;
   err_str " at line ";
   err_int (get line);
@@ -58,7 +53,7 @@ let die msg =
   exit 1
 
 let die_name msg b =
-  err_str "02-ml0-compiler: ";
+  err_str "pattern-compiler: ";
   err_str msg;
   err_str " ";
   err_bytes b;
@@ -121,6 +116,10 @@ let peekc () =
 let peekc2 () =
   if get pos + 1 >= get src_len then 0 - 1
   else bytes_get (get src_buf) (get pos + 1)
+
+let peekc3 () =
+  if get pos + 2 >= get src_len then 0 - 1
+  else bytes_get (get src_buf) (get pos + 2)
 
 let nextc () =
   let c = peekc () in
@@ -202,6 +201,9 @@ let punct2 c d =
   else if c = 38 && d = 38 then "&&"
   else if c = 124 && d = 124 then "||"
   else if c = 59 && d = 59 then ";;"
+  else if c = 58 && d = 58 then "::"
+  else if c = 58 && d = 61 then ":="
+  else if c = 60 && d = 45 then "<-"
   else ""
 
 let str_to_bytes s =
@@ -251,6 +253,16 @@ let next_token () =
      str_loop ();
      set tstr (tbuf_take ());
      set tk tk_str)
+  else if c = 39 && is_ident_start (peekc2 ()) && not (peekc3 () = 39) then
+    (* type variable like 'a: an identifier-shaped token kept only so
+       type declarations can mention parameters; types are never checked *)
+    (set tlen 0;
+     tbuf_push (nextc ());
+     let rec tv_loop () =
+       if is_ident_char (peekc ()) then (tbuf_push (nextc ()); tv_loop ()) in
+     tv_loop ();
+     set tstr (tbuf_take ());
+     set tk tk_ident)
   else if c = 39 then
     (let _ = nextc () in
      let d = nextc () in
@@ -285,7 +297,8 @@ let is_keyword b =
   bytes_eq_str b "else" || bytes_eq_str b "fun" || bytes_eq_str b "true" ||
   bytes_eq_str b "false" || bytes_eq_str b "mod" || bytes_eq_str b "land" ||
   bytes_eq_str b "lor" || bytes_eq_str b "lxor" || bytes_eq_str b "lsl" ||
-  bytes_eq_str b "lsr" || bytes_eq_str b "asr"
+  bytes_eq_str b "lsr" || bytes_eq_str b "asr" || bytes_eq_str b "type" ||
+  bytes_eq_str b "match" || bytes_eq_str b "with" || bytes_eq_str b "of"
 
 (* current token is a usable identifier (not a keyword) *)
 let at_ident () = get tk = tk_ident && not (is_keyword (get tstr))
@@ -312,7 +325,8 @@ let starts_atom () =
     (let b = get tstr in
      if bytes_eq_str b "true" || bytes_eq_str b "false" then true
      else not (is_keyword b))
-  else tok_is_punct "("
+  else tok_is_punct "(" || tok_is_punct "[" || tok_is_punct "!" ||
+       tok_is_punct "{"
 
 (* does the current token continue the enclosing expression as an infix
    operator (or sequence/tuple separator)? used to veto tail calls *)
@@ -324,7 +338,8 @@ let op_follows () =
      bytes_eq_str b "/" || bytes_eq_str b "=" || bytes_eq_str b "<>" ||
      bytes_eq_str b "<" || bytes_eq_str b "<=" || bytes_eq_str b ">" ||
      bytes_eq_str b ">=" || bytes_eq_str b "&&" || bytes_eq_str b "||" ||
-     bytes_eq_str b ";" || bytes_eq_str b ",")
+     bytes_eq_str b ";" || bytes_eq_str b "," || bytes_eq_str b "::" ||
+     bytes_eq_str b ":=" || bytes_eq_str b "." || bytes_eq_str b "<-")
   else if k = tk_ident then
     (let b = get tstr in
      bytes_eq_str b "mod" || bytes_eq_str b "land" || bytes_eq_str b "lor" ||
@@ -489,7 +504,8 @@ let add_global name =
 
 (* kinds: 0 = C primitive (idx = prim number, all args pushed)
           1 = opcode (idx = selector, last arg stays in acc)
-          2 = arg_count: one unit argument, compiled but not passed *)
+          2 = arg_count: one unit argument, compiled but not passed
+          3 = ref: one argument, wrapped in a one-field block *)
 let bi_names = array_make 32 ""
 let bi_kind = array_make 32 0
 let bi_arity = array_make 32 0
@@ -526,7 +542,8 @@ let () =
   add_builtin "array_length" 1 1 5;
   add_builtin "not" 1 1 6;
   add_builtin "fst" 1 1 7;
-  add_builtin "snd" 1 1 8
+  add_builtin "snd" 1 1 8;
+  add_builtin "ref" 3 1 0
 
 let find_builtin name =
   let n = get bi_count in
@@ -546,6 +563,82 @@ let emit_opcode_builtin sel =
   else if sel = 7 then e1 "getfield" 0
   else if sel = 8 then e1 "getfield" 1
   else die "bad builtin selector"
+
+(* ---- constructors ---- *)
+
+(* a name starting with an upper-case letter is a constructor *)
+let is_ctor_name b = bytes_length b > 0 && is_upper (bytes_get b 0)
+
+let ctor_names = cell (array_make 256 (bytes_create 1))
+let ctor_tag = cell (array_make 256 0)
+let ctor_arity = cell (array_make 256 0)   (* 0 = constant *)
+let ctor_count = cell 0
+
+let add_ctor name tag arity =
+  let n = get ctor_count in
+  let names = get ctor_names in
+  (if n >= array_length names then
+    (let cap = array_length names in
+     let nn = array_make (2 * cap) (bytes_create 1) in
+     let nt = array_make (2 * cap) 0 in
+     let na = array_make (2 * cap) 0 in
+     let rec cp i =
+       if i < n then
+         (array_set nn i (array_get names i);
+          array_set nt i (array_get (get ctor_tag) i);
+          array_set na i (array_get (get ctor_arity) i);
+          cp (i + 1)) in
+     cp 0;
+     set ctor_names nn;
+     set ctor_tag nt;
+     set ctor_arity na));
+  array_set (get ctor_names) n name;
+  array_set (get ctor_tag) n tag;
+  array_set (get ctor_arity) n arity;
+  set ctor_count (n + 1)
+
+let find_ctor name =
+  let n = get ctor_count in
+  let names = get ctor_names in
+  let rec go i =
+    if i >= n then 0 - 1
+    else if bytes_eq name (array_get names i) then i
+    else go (i + 1) in
+  go 0
+
+(* record fields: globally unique names; a field knows its slot index,
+   its record (an id), and the record's total field count. Records are
+   blocks with tag 0, so projection/mutation are getfield/setfield. *)
+let fld_names = array_make 512 (bytes_create 1)
+let fld_index = array_make 512 0
+let fld_recid = array_make 512 0
+let fld_total = array_make 512 0
+let fld_count = cell 0
+let rec_count = cell 0
+
+let add_field name idx recid =
+  let n = get fld_count in
+  (if n >= 512 then die "too many record fields");
+  array_set fld_names n name;
+  array_set fld_index n idx;
+  array_set fld_recid n recid;
+  set fld_count (n + 1)
+
+let find_field name =
+  let n = get fld_count in
+  let rec go i =
+    if i >= n then 0 - 1
+    else if bytes_eq name (array_get fld_names i) then i
+    else go (i + 1) in
+  go 0
+
+let set_record_total recid total =
+  let n = get fld_count in
+  let rec go i =
+    if i < n then
+      ((if array_get fld_recid i = recid then array_set fld_total i total);
+       go (i + 1)) in
+  go 0
 
 (* ---- data strings ---- *)
 
@@ -700,6 +793,175 @@ let exit_level () =
   set lev (l - 1);
   set depth (array_get lev_saved_depth (l - 1))
 
+(* ---- patterns ----
+   Patterns are the one place a small AST is built before emitting: the
+   left side of "h :: t" is parsed before the :: is seen, so its tests
+   must be re-rooted under field 0 of the cell. Field chains of
+   constructors and tuples are PSeq/PSeqEnd lists so one declaration
+   suffices (stage 03 has no mutually recursive types). *)
+
+type pat =
+  | PAny
+  | PUnit
+  | PVar of bytes
+  | PLit of int
+  | PCtor0 of int
+  | PCtor of int * pat
+  | PTup of pat
+  | PListCell of pat * pat
+  | PSeq of pat * pat
+  | PSeqEnd
+
+(* path from the match subject to the value a sub-pattern constrains *)
+type ppath = PTop | PFld of int * ppath
+
+(* ---- pattern parser ---- *)
+
+let rec p_pat () =
+  let a = p_pat_atom () in
+  if tok_is_punct "::" then (next_token (); PListCell (a, p_pat ()))
+  else a
+
+(* "(" already consumed: unit, grouped pattern, or tuple *)
+and p_pat_paren () =
+  if tok_is_punct ")" then (next_token (); PUnit)
+  else
+    (let p1 = p_pat () in
+     if tok_is_punct "," then
+       (let rec elems () =
+          if tok_is_punct "," then
+            (next_token ();
+             let p = p_pat () in
+             PSeq (p, elems ()))
+          else (expect_punct ")"; PSeqEnd) in
+        PTup (PSeq (p1, elems ())))
+     else (expect_punct ")"; p1))
+
+and p_pat_atom () =
+  if get tk = tk_int then
+    (let k = get tint in next_token (); PLit k)
+  else if tok_is_ident "true" then (next_token (); PLit 1)
+  else if tok_is_ident "false" then (next_token (); PLit 0)
+  else if tok_is_punct "(" then (next_token (); p_pat_paren ())
+  else if tok_is_punct "[" then
+    (next_token ();
+     if tok_is_punct "]" then (next_token (); PLit 0)
+     else
+       (let rec elems () =
+          let p = p_pat () in
+          if tok_is_punct ";" then (next_token (); PListCell (p, elems ()))
+          else (expect_punct "]"; PListCell (p, PLit 0)) in
+        elems ()))
+  else if at_ident () then
+    (let name = take_ident () in
+     if is_ctor_name name then
+       (let c = find_ctor name in
+        (if c < 0 then die_name "unknown constructor" name);
+        let tag = array_get (get ctor_tag) c in
+        let arity = array_get (get ctor_arity) c in
+        if arity = 0 then PCtor0 tag
+        else if arity = 1 then
+          (let arg = p_pat_atom () in
+           PCtor (tag, PSeq (arg, PSeqEnd)))
+        else
+          (expect_punct "(";
+           let rec fields i =
+             if i < arity then
+               ((if i > 0 then expect_punct ",");
+                let p = p_pat () in
+                PSeq (p, fields (i + 1)))
+             else (expect_punct ")"; PSeqEnd) in
+           PCtor (tag, fields 0)))
+     else if bytes_eq_str name "_" then PAny
+     else PVar name)
+  else die "expected a pattern"
+
+(* ---- pattern emission ---- *)
+
+let rec load_path p s0 =
+  match p with
+  | PTop -> e1 "acc" (get depth - 1 - s0)
+  | PFld (i, parent) -> (load_path parent s0; e1 "getfield" i)
+
+(* Pattern emission is two-phase: first every test (failures jump to ln
+   with the stack untouched, so every arm starts at the same depth), then
+   every variable bind. For one-level patterns the resulting code is the
+   same as stage 03's. *)
+
+let rec emit_pat_tests p ln s0 path =
+  match p with
+  | PAny -> ()
+  | PUnit -> ()
+  | PVar _ -> ()
+  | PLit k ->
+      load_path path s0;
+      e0 "push"; bump 1;
+      e1 "const" k; e0 "eq"; bump (0 - 1);
+      ebranch "branchifnot" ln
+  | PCtor0 v ->
+      load_path path s0;
+      e0 "push"; bump 1;
+      e1 "const" v; e0 "eq"; bump (0 - 1);
+      ebranch "branchifnot" ln
+  | PCtor (tag, args) ->
+      load_path path s0;
+      e0 "isint";
+      ebranch "branchif" ln;
+      load_path path s0;
+      e0 "gettag";
+      e0 "push"; bump 1;
+      e1 "const" tag; e0 "eq"; bump (0 - 1);
+      ebranch "branchifnot" ln;
+      emit_fields_tests args ln s0 path 0
+  | PTup fields -> emit_fields_tests fields ln s0 path 0
+  | PListCell (h, t) ->
+      load_path path s0;
+      e0 "isint";
+      ebranch "branchif" ln;
+      emit_pat_tests h ln s0 (PFld (0, path));
+      emit_pat_tests t ln s0 (PFld (1, path))
+  | PSeq (_, _) -> die "internal: stray field chain"
+  | PSeqEnd -> die "internal: stray field end"
+
+and emit_fields_tests f ln s0 path i =
+  match f with
+  | PSeqEnd -> ()
+  | PSeq (p, rest) ->
+      emit_pat_tests p ln s0 (PFld (i, path));
+      emit_fields_tests rest ln s0 path (i + 1)
+  | _ -> die "internal: malformed field chain"
+
+let rec emit_pat_binds p s0 path =
+  match p with
+  | PVar name ->
+      load_path path s0;
+      e0 "push";
+      bind_local name (get depth);
+      bump 1;
+      1
+  | PCtor (_, args) -> emit_fields_binds args s0 path 0
+  | PTup fields -> emit_fields_binds fields s0 path 0
+  | PListCell (h, t) ->
+      (* bind left-to-right explicitly: both sides emit code, and host
+         OCaml may evaluate operator operands right-to-left *)
+      (let nh = emit_pat_binds h s0 (PFld (0, path)) in
+       let nt = emit_pat_binds t s0 (PFld (1, path)) in
+       nh + nt)
+  | _ -> 0
+
+and emit_fields_binds f s0 path i =
+  match f with
+  | PSeqEnd -> 0
+  | PSeq (p, rest) ->
+      (let np = emit_pat_binds p s0 (PFld (i, path)) in
+       let nr = emit_fields_binds rest s0 path (i + 1) in
+       np + nr)
+  | _ -> die "internal: malformed field chain"
+
+let emit_pat p ln s0 path =
+  emit_pat_tests p ln s0 path;
+  emit_pat_binds p s0 path
+
 (* operator tables for the binary levels *)
 let cmp_op () =
   if tok_is_punct "=" then "eq"
@@ -762,8 +1024,19 @@ and c_nosemi t =
   (if tok_is_ident "if" then c_if t
    else if tok_is_ident "let" then c_let t
    else if tok_is_ident "fun" then c_funexpr ()
-   else c_or t);
+   else if tok_is_ident "match" then c_match t
+   else c_assign t);
   value_done t
+
+and c_assign t =
+  c_or t;
+  if tok_is_punct ":=" then
+    (next_token ();
+     e0 "push";
+     bump 1;
+     c_or 0;
+     e1 "setfield" 0;
+     bump (0 - 1))
 
 (* a plain value sits in acc; in tail position emit its RETURN unless an
    appterm already exited or a sequence semicolon follows *)
@@ -853,15 +1126,46 @@ and c_let t =
      set vcount v0;
      if t = 0 then (e1 "pop" 1; bump (0 - 1))
      else set depth slot)
+  else if tok_is_punct "(" && (let _ = next_token () in not (tok_is_punct ")")) then
+    (* let (pattern) = e in body: full destructuring; refutable patterns
+       exit 99 like a fallen-through match. The open paren is consumed. *)
+    (let p = p_pat_paren () in
+     expect_punct "=";
+     c_expr 0;
+     let s0 = get depth in
+     e0 "push";
+     bump 1;
+     let v0 = get vcount in
+     let lfail = new_label () in
+     let lok = new_label () in
+     let nbind = emit_pat p lfail s0 PTop in
+     ebranch "branch" lok;
+     elabel lfail;
+     e1 "const" 99;
+     e0 "push";
+     bump 1;
+     e2 "ccall" 1 0;
+     bump (0 - 1);
+     elabel lok;
+     (if tok_is_ident "and" then die "pattern bindings cannot be in and-groups");
+     (if not (tok_is_ident "in") then die "expected in");
+     next_token ();
+     c_expr t;
+     set vcount v0;
+     if t = 0 then (e1 "pop" (nbind + 1); bump (0 - (nbind + 1)))
+     else set depth s0)
   else
-    (* non-recursive bindings; and-group binds after all values *)
-    (let bnames = array_make 16 (bytes_create 1) in
+    (* non-recursive bindings; and-group binds after all values; if the
+       branch above consumed "( )" the first binding is the unit binding *)
+    (let first_unit = if tok_is_punct ")" then (next_token (); 1) else 0 in
+     let bnames = array_make 16 (bytes_create 1) in
      let start = get depth in
      let rec bindings n =
        ((if n >= 16 then die "too many and-bindings");
         (* binding name *)
         let name =
-          if tok_is_punct "(" then
+          if n = 0 && first_unit = 1 then str_to_bytes "_"
+          else if tok_is_punct "(" then
             (next_token (); expect_punct ")"; str_to_bytes "_")
           else if at_ident () then
             take_ident ()
@@ -964,7 +1268,20 @@ and c_and_rest () =
      elabel le;
      c_and_rest ())
 
-and c_cmp t = c_binop_level t cmp_op c_add
+and c_cmp t = c_binop_level t cmp_op c_cons
+
+(* e1 :: e2, right associative; a cons cell is a tag-0 two-field block *)
+and c_cons t =
+  c_add t;
+  if tok_is_punct "::" then
+    (next_token ();
+     e0 "push";
+     bump 1;
+     c_cons 0;
+     e0 "push";
+     bump 1;
+     e2 "makeblock" 0 2;
+     bump (0 - 2))
 
 and c_add t = c_binop_level t add_op c_mul
 
@@ -1013,20 +1330,97 @@ and c_app_head t =
        not (is_keyword (get tstr)) &&
        not (tok_is_ident "true") && not (tok_is_ident "false") then
       (let name = take_ident () in
-       resolve name;
-       if get res_kind = 3 then
-         (c_builtin (get res_idx); 1)
-       else (emit_var_load (); 0))
-    else (c_atom (); 0) in
+       if is_ctor_name name then (c_ctor name; 1)
+       else
+         (resolve name;
+          if get res_kind = 3 then
+            (c_builtin (get res_idx); 1)
+          else (emit_var_load (); c_proj_rest (); 0)))
+    else (c_atom (); c_proj_rest (); 0) in
   (if was_builtin = 1 && starts_atom () then
-    die "builtin result cannot be applied");
+    die "builtin or constructor result cannot be applied");
   c_app_args t
+
+and c_ctor name =
+  let c = find_ctor name in
+  (if c < 0 then die_name "unknown constructor" name);
+  let tag = array_get (get ctor_tag) c in
+  let arity = array_get (get ctor_arity) c in
+  if arity = 0 then e1 "const" tag
+  else if arity = 1 then
+    ((if not (starts_atom ()) then die_name "constructor needs an argument" name);
+     c_atom ();
+     c_proj_rest ();
+     e0 "push";
+     bump 1;
+     e2 "makeblock" tag 1;
+     bump (0 - 1))
+  else
+    (expect_punct "(";
+     let rec fields i =
+       if i < arity then
+         ((if i > 0 then expect_punct ",");
+          c_expr 0;
+          e0 "push";
+          bump 1;
+          fields (i + 1)) in
+     fields 0;
+     expect_punct ")";
+     e2 "makeblock" tag arity;
+     bump (0 - arity))
+
+and c_match t =
+  next_token ();
+  c_expr 0;
+  (if not (tok_is_ident "with") then die "expected with");
+  next_token ();
+  e0 "push";
+  let s0 = get depth in
+  bump 1;
+  skip_punct "|";
+  let le = new_label () in
+  let rec arms () =
+    let ln = new_label () in
+    let v0 = get vcount in
+    let d0 = get depth in
+    let p = p_pat () in
+    let nbind = emit_pat p ln s0 PTop in
+    (if not (tok_is_punct "->") then die "expected ->");
+    next_token ();
+    (if t = 1 then
+      (set exited 0;
+       c_expr 1;
+       (if get exited = 0 then
+         die "match arm did not exit in tail position; parenthesize the match"))
+     else
+      (c_expr 0;
+       (if nbind > 0 then (e1 "pop" nbind; bump (0 - nbind)));
+       ebranch "branch" le));
+    elabel ln;
+    set vcount v0;
+    set depth d0;
+    if tok_is_punct "|" then (next_token (); arms ()) in
+  arms ();
+  (* no arm matched *)
+  e1 "const" 99;
+  e0 "push";
+  bump 1;
+  e2 "ccall" 1 0;
+  bump (0 - 1);
+  elabel le;
+  if t = 1 then
+    (set depth s0;
+     set exited 1)
+  else
+    (e1 "pop" 1;
+     bump (0 - 1))
 
 and c_app_args t =
   if starts_atom () then
     (e0 "push";
      bump 1;
      c_atom ();
+     c_proj_rest ();
      e0 "push";
      bump 1;
      if starts_atom () then
@@ -1054,12 +1448,68 @@ and c_builtin b =
     if j < arity then
       ((if not (starts_atom ()) then die "builtin applied to too few arguments");
        c_atom ();
-       (if kind = 0 || j < arity - 1 then (e0 "push"; bump 1));
+       c_proj_rest ();
+       (if kind = 0 || kind = 3 || j < arity - 1 then (e0 "push"; bump 1));
        args (j + 1)) in
   args 0;
   if kind = 0 then (e2 "ccall" arity prim; bump (0 - arity))
   else if kind = 2 then e2 "ccall" 0 prim
+  else if kind = 3 then (e2 "makeblock" 0 1; bump (0 - 1))
   else (emit_opcode_builtin prim; bump (0 - (arity - 1)))
+
+(* postfix projections: .f chains compile to getfield; ".f <- e" is the
+   record mutation, mirroring ":=" (the block is pushed, the right-hand
+   side evaluated, setfield stores and leaves unit in acc) *)
+and c_proj_rest () =
+  if tok_is_punct "." then
+    (next_token ();
+     let fname = need_ident "expected a field name" in
+     let f = find_field fname in
+     (if f < 0 then die_name "unknown record field" fname);
+     let idx = array_get fld_index f in
+     if tok_is_punct "<-" then
+       (next_token ();
+        e0 "push";
+        bump 1;
+        c_or 0;
+        e1 "setfield" idx;
+        bump (0 - 1))
+     else
+       (e1 "getfield" idx;
+        c_proj_rest ()))
+
+(* { f = e; ... }: fields must be complete and in declaration order, so
+   the literal builds like a tuple (push each value, makeblock) *)
+and c_record_literal () =
+  let rec fields k rid =
+    let fname = need_ident "expected a field name" in
+    let f = find_field fname in
+    (if f < 0 then die_name "unknown record field" fname);
+    (if k > 0 then
+      (if not (array_get fld_recid f = rid) then
+        die_name "field from a different record" fname));
+    (if not (array_get fld_index f = k) then
+      die_name "record fields must be complete and in declaration order" fname);
+    expect_punct "=";
+    c_nosemi 0;
+    e0 "push";
+    bump 1;
+    if tok_is_punct ";" then
+      (next_token ();
+       if tok_is_punct "}" then
+         (next_token ();
+          (if not (array_get fld_total f = k + 1) then
+            die "record literal must define every field");
+          k + 1)
+       else fields (k + 1) (array_get fld_recid f))
+    else
+      (expect_punct "}";
+       (if not (array_get fld_total f = k + 1) then
+         die "record literal must define every field");
+       k + 1) in
+  let n = fields 0 0 in
+  e2 "makeblock" 0 n;
+  bump (0 - n)
 
 and c_atom () =
   let k = get tk in
@@ -1069,6 +1519,9 @@ and c_atom () =
     (if tok_is_ident "true" then (e1 "const" 1; next_token ())
      else if tok_is_ident "false" then (e1 "const" 0; next_token ())
      else if is_keyword (get tstr) then die "unexpected keyword"
+     else if is_ctor_name (get tstr) then
+       (let name = take_ident () in
+        c_ctor name)
      else
        (let name = take_ident () in
         resolve name;
@@ -1094,6 +1547,38 @@ and c_atom () =
            bump (0 - n);
            expect_punct ")")
         else expect_punct ")"))
+  else if tok_is_punct "{" then
+    (next_token ();
+     c_record_literal ())
+  else if tok_is_punct "!" then
+    (* dereference: ! binds to the following atom (with projections,
+       so !r.f is !(r.f) like OCaml) *)
+    (next_token ();
+     c_atom ();
+     c_proj_rest ();
+     e1 "getfield" 0)
+  else if tok_is_punct "[" then
+    (* [e1; e2; ..]: push the elements, then fold cons cells from the
+       right starting with [] = 0 in acc *)
+    (next_token ();
+     if tok_is_punct "]" then (e1 "const" 0; next_token ())
+     else
+       (let rec elems n =
+          (c_nosemi 0;
+           e0 "push";
+           bump 1;
+           if tok_is_punct ";" then (next_token (); elems (n + 1))
+           else (expect_punct "]"; n + 1)) in
+        let n = elems 0 in
+        e1 "const" 0;
+        let rec fold i =
+          if i < n then
+            (e0 "push";
+             bump 1;
+             e2 "makeblock" 0 2;
+             bump (0 - 2);
+             fold (i + 1)) in
+        fold 0))
   else die "unexpected token"
 
 (* ---- top level ---- *)
@@ -1136,6 +1621,93 @@ let rec top_bindings () =
   top_binding ();
   if tok_is_ident "and" then (next_token (); top_bindings ())
 
+(* a type declaration ends at the next top-level keyword *)
+let at_decl_end () =
+  get tk = tk_eof || tok_is_ident "let" || tok_is_ident "type" ||
+  tok_is_punct ";;"
+
+(* skip one constructor-argument type expression, counting its top-level
+   components: "of int * t" has arity 2. The expression is never checked. *)
+let skip_of_type () =
+  let rec go arity pdepth =
+    if pdepth = 0 && (at_decl_end () || tok_is_punct "|" || tok_is_ident "and") then arity
+    else if tok_is_punct "(" then (next_token (); go arity (pdepth + 1))
+    else if tok_is_punct ")" then (next_token (); go arity (pdepth - 1))
+    else if pdepth = 0 && tok_is_punct "*" then (next_token (); go (arity + 1) pdepth)
+    else (next_token (); go arity pdepth) in
+  go 1 0
+
+(* optional type parameters before the type name: 'a or ('a, 'b); the
+   parameters are recorded nowhere, types are never checked *)
+let skip_type_params () =
+  if get tk = tk_ident && bytes_get (get tstr) 0 = 39 then
+    next_token ()
+  else if tok_is_punct "(" &&
+          (let _ = next_token () in
+           let rec skip_params () =
+             if tok_is_punct ")" then (next_token (); true)
+             else (next_token (); skip_params ()) in
+           skip_params ()) then ()
+
+(* skip one field type expression (never checked) up to the next
+   top-level ";" or "}" *)
+let skip_field_type () =
+  let rec go pdepth =
+    if pdepth = 0 && (tok_is_punct ";" || tok_is_punct "}") then ()
+    else if tok_is_punct "(" then (next_token (); go (pdepth + 1))
+    else if tok_is_punct ")" then (next_token (); go (pdepth - 1))
+    else (next_token (); go pdepth) in
+  go 0
+
+(* { mutable? name : type ; ... }: register the fields in slot order;
+   mutability is checked by mltc, not here. The open brace is consumed. *)
+let record_type_body () =
+  let recid = get rec_count in
+  set rec_count (recid + 1);
+  let rec fields idx =
+    (skip_ident "mutable";
+     let fname = need_ident "expected a field name" in
+     (if find_field fname >= 0 then die_name "duplicate record field" fname);
+     add_field fname idx recid;
+     expect_punct ":";
+     skip_field_type ();
+     if tok_is_punct ";" then
+       (next_token ();
+        if tok_is_punct "}" then (next_token (); idx + 1)
+        else fields (idx + 1))
+     else (expect_punct "}"; idx + 1)) in
+  let total = fields 0 in
+  set_record_total recid total
+
+let rec top_type () =
+  (* "type" or "and" consumed; [params] name = constructors or fields *)
+  skip_type_params ();
+  let _ = need_ident "expected a type name" in
+  expect_punct "=";
+  if tok_is_punct "{" then
+    (next_token ();
+     record_type_body ();
+     if tok_is_ident "and" then (next_token (); top_type ()))
+  else
+  (skip_punct "|";
+  let rec ctors next_const next_block =
+    ((if not (get tk = tk_ident) ||
+         not (is_ctor_name (get tstr)) then
+       die "expected a constructor name");
+     let name = get tstr in
+     (if find_ctor name >= 0 then die_name "duplicate constructor" name);
+     next_token ();
+     if tok_is_ident "of" then
+       (next_token ();
+        let arity = skip_of_type () in
+        add_ctor name next_block arity;
+        if tok_is_punct "|" then (next_token (); ctors next_const (next_block + 1)))
+     else
+       (add_ctor name next_const 0;
+        if tok_is_punct "|" then (next_token (); ctors (next_const + 1) next_block))) in
+  ctors 0 0;
+  if tok_is_ident "and" then (next_token (); top_type ()))
+
 let rec top_loop () =
   if get tk = tk_eof then ()
   else if tok_is_punct ";;" then (next_token (); top_loop ())
@@ -1143,6 +1715,10 @@ let rec top_loop () =
     (next_token ();
      skip_ident "rec";
      top_bindings ();
+     top_loop ())
+  else if tok_is_ident "type" then
+    (next_token ();
+     top_type ();
      top_loop ())
   else die "expected a top-level let"
 
@@ -1157,7 +1733,7 @@ let check_all_defined () =
 
 let () =
   (if arg_count () < 2 then
-    (err_str "usage: 02-ml0-compiler in.ml out.mzs"; write_byte 2 10; exit 1));
+    (err_str "usage: pattern-compiler in.ml out.mzs"; write_byte 2 10; exit 1));
   let h = open_in (arg_get 0) in
   (if h < 0 then die "cannot open input");
   read_all h;

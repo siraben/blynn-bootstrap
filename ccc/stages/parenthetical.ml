@@ -1,10 +1,10 @@
-(* 01-parenthetical: parenthesized MZBC assembly -> .mzbc image.
+(* parenthetical: parenthesized MZBC assembly -> .mzbc image.
    First ML bootstrap stage; runs under mlc-interp-seed. Mirrors Blynn's
    "parenthetically": a tiny parser that fully parses the next stage's
    source language (here: the assembly emitted by 02) and writes the next
    runnable artifact.
 
-   Usage: mlc-interp 01-parenthetical.ml in.mzs out.mzbc
+   Usage: mlc-interp parenthetical.ml in.mzs out.mzbc
 
    Core dialect only: no ADTs, no match, no records, no refs; mutable
    state lives in 1-element arrays. The format is described at the top of
@@ -35,7 +35,7 @@ let err_int n = if n < 0 then (write_byte 2 45; err_int_rec (0 - n)) else err_in
 let line = cell 1
 
 let die msg =
-  err_str "01-parenthetical: ";
+  err_str "parenthetical: ";
   err_str msg;
   err_str " at line ";
   err_int (get line);
@@ -386,7 +386,7 @@ let read_operand pass =
      else
        (let i = find_label (get tstr) in
         if i < 0 then
-          (err_str "01-parenthetical: undefined label ";
+          (err_str "parenthetical: undefined label ";
            err_bytes_from (get tstr) 0;
            write_byte 2 10;
            exit 1)
@@ -432,7 +432,7 @@ let handle_form pass =
      else
        (let i = find_op name in
         (if i < 0 then
-          (err_str "01-parenthetical: unknown mnemonic ";
+          (err_str "parenthetical: unknown mnemonic ";
            err_bytes_from name 0;
            write_byte 2 10;
            exit 1));
@@ -469,7 +469,7 @@ let wu32 v =
 
 let () =
   (if arg_count () < 2 then
-    (err_str "usage: 01-parenthetical in.mzs out.mzbc"; write_byte 2 10; exit 1));
+    (err_str "usage: parenthetical in.mzs out.mzbc"; write_byte 2 10; exit 1));
   let h = open_in (arg_get 0) in
   (if h < 0 then die "cannot open input");
   read_all h;

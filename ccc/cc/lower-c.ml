@@ -1,6 +1,6 @@
 (* ccc part 54 (segment c): expression typing, type layout and global
    data; port of Hcc.Lower lines 1304-2184 (exprType .. isUnsignedType).
-   Continues the mutually recursive Lower group started in 50-lower-a.ml:
+   Continues the mutually recursive Lower group started in lower-a.ml:
    only `and` definitions here. *)
 
 and expr_type expr =

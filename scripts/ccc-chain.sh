@@ -46,20 +46,20 @@ compile_m2 "$ccc_dir/vm/mzvm.c" mzvm
 compile_m2 "$ccc_dir/seed/mlc-interp-seed.c" mlc-interp
 
 stages=$ccc_dir/stages
-run01() { ./mlc-interp "$stages/01-parenthetical.ml" "$1" "$2"; }
+run01() { ./mlc-interp "$stages/parenthetical.ml" "$1" "$2"; }
 
 msg "ccc-chain: staged ML bootstrap"
-./mlc-interp "$stages/02-ml0-compiler.ml" "$stages/03-adt-compiler.ml" 03.mzs
+./mlc-interp "$stages/ml0-compiler.ml" "$stages/adt-compiler.ml" 03.mzs
 run01 03.mzs 03.mzbc
-./mzvm 03.mzbc "$stages/04-pattern-compiler.ml" 04.mzs
+./mzvm 03.mzbc "$stages/pattern-compiler.ml" 04.mzs
 run01 04.mzs 04.mzbc
-./mzvm 04.mzbc "$stages/04-pattern-compiler.ml" 04b.mzs
+./mzvm 04.mzbc "$stages/pattern-compiler.ml" 04b.mzs
 run01 04b.mzs 04b.mzbc
 cmp 04.mzbc 04b.mzbc
 msg "ccc-chain: stage 04 self-compilation fixpoint holds"
 
 # bytecode assembler so the large assemblies run on the GC-backed VM
-./mzvm 04.mzbc "$stages/01-parenthetical.ml" 01.mzs
+./mzvm 04.mzbc "$stages/parenthetical.ml" 01.mzs
 run01 01.mzs 01.mzbc
 runasm() { ./mzvm 01.mzbc "$1" "$2"; }
 
@@ -68,20 +68,17 @@ msg "ccc-chain: mltc type-check gate"
 runasm mltc.mzs mltc.mzbc
 typecheck() { ./mzvm mltc.mzbc "$1"; }
 typecheck "$ccc_dir/mlc/mltc.ml"
-typecheck "$stages/01-parenthetical.ml"
-typecheck "$stages/02-ml0-compiler.ml"
-typecheck "$stages/03-adt-compiler.ml"
-typecheck "$stages/04-pattern-compiler.ml"
+typecheck "$stages/parenthetical.ml"
+typecheck "$stages/ml0-compiler.ml"
+typecheck "$stages/adt-compiler.ml"
+typecheck "$stages/pattern-compiler.ml"
 
 msg "ccc-chain: ccc1 + ccpp bytecode (type-checked)"
-cat "$ccc_dir"/cc/[0-9]*.ml "$ccc_dir/cc/dev/cc1main.ml" > ccc-cc1.ml
+cat $(sed "s|^|$ccc_dir/cc/|" "$ccc_dir/cc/PARTS-cc1") "$ccc_dir/cc/dev/cc1main.ml" > ccc-cc1.ml
 typecheck ccc-cc1.ml
 ./mzvm 04.mzbc ccc-cc1.ml ccc-cc1.mzs
 runasm ccc-cc1.mzs ccc-cc1.mzbc
-cat "$ccc_dir/cc/00-util.ml" "$ccc_dir/cc/05-prim.ml" "$ccc_dir/cc/10-lexer.ml" \
-    "$ccc_dir/cc/12-symtab.ml" "$ccc_dir/cc/18-literal.ml" "$ccc_dir/cc/20-ast.ml" \
-    "$ccc_dir/cc/22-constexpr.ml" "$ccc_dir/cc/70-preproc.ml" \
-    "$ccc_dir/cc/72-include.ml" "$ccc_dir/cc/dev/cppmain.ml" > ccpp.ml
+cat $(sed "s|^|$ccc_dir/cc/|" "$ccc_dir/cc/PARTS-ccpp") "$ccc_dir/cc/dev/cppmain.ml" > ccpp.ml
 typecheck ccpp.ml
 ./mzvm 04.mzbc ccpp.ml ccpp.mzs
 runasm ccpp.mzs ccpp.mzbc
