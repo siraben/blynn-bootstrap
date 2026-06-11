@@ -2165,12 +2165,12 @@ let rec eval_preprocessor_if_at state =
   if (src.[pos] == '&') * (src.[pos + 1] == '&') then
     let parsed = eval_preprocessor_if_at (src, (defs, pos + 2)) in
     let (right, right_end) = parsed in
-    let value = if left * right == 0 then 0 else 1 in
+    let value = if left == 0 then 0 else if right == 0 then 0 else 1 in
     (value, right_end)
   else if (src.[pos] == '|') * (src.[pos + 1] == '|') then
     let parsed = eval_preprocessor_if_at (src, (defs, pos + 2)) in
     let (right, right_end) = parsed in
-    let value = if left + right == 0 then 0 else 1 in
+    let value = if left == 0 then if right == 0 then 0 else 1 else 1 in
     (value, right_end)
   else
     (left, pos)
