@@ -231,8 +231,7 @@ and lower_value_condition_block bid instrs cond true_id false_id =
   [BasicBlock (bid, list_append instrs cond_instrs, TBranch (cond_op, true_id, false_id))]
 
 and is_branch_comparison_op_string op =
-  bytes_eq_str op "==" || bytes_eq_str op "!=" || bytes_eq_str op "<" ||
-  bytes_eq_str op "<=" || bytes_eq_str op ">" || bytes_eq_str op ">="
+  bytes_eq_any op ["=="; "!="; "<"; "<="; ">"; ">="]
 
 and lower_branch_comparison op a b =
   let (instrs, ao, bo) = lower_comparison_operands a b in
@@ -353,24 +352,15 @@ and lower_indirect_side_effect callee args =
        [ICallIndirect (None, callee_op, lower_expr_results_ops lowered)])
 
 and lower_expr_results_instrs lowered =
-  match lowered with
-  | [] -> []
-  | (instrs, _) :: rest -> list_append instrs (lower_expr_results_instrs rest)
+  list_concat_map (fun r -> (let (instrs, _) = r in instrs)) lowered
 
 and lower_expr_results_ops lowered =
-  match lowered with
-  | [] -> []
-  | (_, op) :: rest -> op :: lower_expr_results_ops rest
+  list_map (fun r -> (let (_, op) = r in op)) lowered
 
 and lower_decls decls =
-  match decls with
-  | [] -> []
-  | decl :: rest ->
-      (match decl with
-       | (ty, name, init_expr) ->
-           let instrs = lower_decl ty name init_expr in
-           let tail_instrs = lower_decls rest in
-           list_append instrs tail_instrs)
+  list_concat_map
+    (fun decl -> (let (ty, name, init_expr) = decl in lower_decl ty name init_expr))
+    decls
 
 and lower_decl ty name init_expr =
   let aggregate_storage = is_aggregate_type_m ty in
@@ -561,30 +551,21 @@ and lower_aggregate_element_scalar_write addr field_ty expr =
   list_append expr_instrs (list_append coerce_instrs [store])
 
 and register_extern_globals globals =
-  match globals with
-  | [] -> ()
-  | global :: rest ->
-      (match global with
-       | (ty, name) ->
-           register_type_aggregates ty;
-           bind_global name ty;
-           register_extern_globals rest)
+  list_iter
+    (fun global ->
+      (let (ty, name) = global in
+       (register_type_aggregates ty; bind_global name ty)))
+    globals
 
 and register_constants constants =
-  match constants with
-  | [] -> ()
-  | constant :: rest ->
-      (match constant with
-       | (name, value) ->
-           bind_constant name value;
-           register_constants rest)
+  list_iter
+    (fun constant -> (let (name, value) = constant in bind_constant name value))
+    constants
 
 and register_field_aggregates fields =
-  match fields with
-  | [] -> ()
-  | Field (ty, _) :: rest ->
-      register_type_aggregates ty;
-      register_field_aggregates rest
+  list_iter
+    (fun f -> (match f with Field (ty, _) -> register_type_aggregates ty))
+    fields
 
 and register_type_aggregates ty =
   match ty with
@@ -606,8 +587,4 @@ and register_type_aggregates ty =
   | _ -> ()
 
 and register_types_aggregates types =
-  match types with
-  | [] -> ()
-  | ty :: rest ->
-      register_type_aggregates ty;
-      register_types_aggregates rest
+  list_iter (fun ty -> register_type_aggregates ty) types

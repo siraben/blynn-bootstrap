@@ -178,8 +178,7 @@ and lower_binary_expr op a b =
      | None -> cc_throw (lb_msg_name "unsupported binary operator in lowering: " op))
 
 and is_comparison_op_string op =
-  bytes_eq_str op "<" || bytes_eq_str op "<=" ||
-  bytes_eq_str op ">" || bytes_eq_str op ">="
+  bytes_eq_any op ["<"; "<="; ">"; ">="]
 
 and lower_comparison_expr op a b =
   let (instrs, ao, bo) = lower_comparison_operands a b in
@@ -203,13 +202,7 @@ and lower_direct_call_expr name args =
   let ops = lower_expr_results_ops lowered in
   (list_append instrs [ICall (Some out, name, ops)], OTemp out)
 
-and lower_exprs args =
-  match args with
-  | [] -> []
-  | x :: xs ->
-      let first = lower_expr x in
-      let rest = lower_exprs xs in
-      first :: rest
+and lower_exprs args = list_map (fun x -> lower_expr x) args
 
 and lower_indirect_call callee args =
   let (callee_instrs, callee_op) = lower_expr callee in
@@ -245,9 +238,7 @@ and expr_is_boolean expr =
   match expr with
   | EUnary (op, _) -> bytes_eq_str op "!"
   | EBinary (op, _, _) ->
-      bytes_eq_str op "==" || bytes_eq_str op "!=" || bytes_eq_str op "<" ||
-      bytes_eq_str op "<=" || bytes_eq_str op ">" || bytes_eq_str op ">=" ||
-      bytes_eq_str op "&&" || bytes_eq_str op "||"
+      bytes_eq_any op ["=="; "!="; "<"; "<="; ">"; ">="; "&&"; "||"]
   | _ -> false
 
 and expr_is_short_circuit_boolean expr =

@@ -113,12 +113,8 @@ let cs_current_function = ref None               (* bytes option *)
 let cc_contexts = ref []
 
 let cc_throw msg =
-  let rec emit ctxs =
-    match ctxs with
-    | [] -> ()
-    | c :: rest -> (emit rest; err_bytes c; err_str ": ") in
   err_str "ccc: ";
-  emit !cc_contexts;
+  list_iter (fun c -> (err_bytes c; err_str ": ")) (list_rev !cc_contexts);
   err_bytes msg;
   write_byte 2 ch_nl;
   exit 1
@@ -161,13 +157,8 @@ let fresh_data_label () =
 
 let add_data_item item =
   let label = (match item with DataItem (l, _) -> l) in
-  let rec remove items =
-    match items with
-    | [] -> []
-    | DataItem (l2, vs) :: rest ->
-        if bytes_eq l2 label then remove rest
-        else DataItem (l2, vs) :: remove rest in
-  cs_data_items := item :: remove !cs_data_items
+  let keep = (fun it -> (match it with DataItem (l2, _) -> not (bytes_eq l2 label))) in
+  cs_data_items := item :: list_filter keep !cs_data_items
 
 let bind_var name temp ty = cs_vars := scope_insert name (temp, ty) !cs_vars
 

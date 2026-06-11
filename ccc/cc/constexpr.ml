@@ -45,11 +45,6 @@ let ce_apply_op op a b =
   else if bytes_eq_str op "||" then Some (bool_to_int (a <> 0 || b <> 0))
   else None
 
-let rec ce_assoc_lookup name env =
-  match env with
-  | [] -> None
-  | (k, v) :: rest -> if bytes_eq k name then Some v else ce_assoc_lookup name rest
-
 let rec ce_expression minprec env toks =
   match ce_unary env toks with
   | None -> None
@@ -116,7 +111,7 @@ and ce_primary env toks =
            else ce_fail_str "unsupported token in constant expression"
        | TkIdent name ->
            if bytes_eq_str name "defined" then ce_defined env rest
-           else Some (opt_or (ce_assoc_lookup name env) 0, rest)
+           else Some (opt_or (assoc_bytes name env) 0, rest)
        | TkInt text -> Some (parse_int text, rest)
        | TkChar text -> Some (char_value text, rest)
        | _ -> ce_fail_str "unsupported token in constant expression")

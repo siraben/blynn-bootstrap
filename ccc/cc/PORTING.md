@@ -85,12 +85,17 @@ Foundation API (already written):
   naturalLiteralBytes → natural_literal_bytes, intBytes size v →
   int_bytes size v, takeInts → take_ints, shiftLeftInt → shift_left_int,
   boolToInt → bool_to_int, evalConstBinOp op a b with op : bytes).
-- Utilities: list_rev, list_append, list_length, buf_new/buf_push/
-  buf_add_bytes/buf_add_str/buf_add_int/buf_take, str_to_bytes,
-  int_to_bytes, bytes_eq, bytes_eq_str, opt_or, is_some, imax, imin,
-  bytes_prefix_of (in ir.ml), show_quoted (in parser.ml).
-- `lookup k assoclist` → write a small local helper or explicit recursion.
-- `elem x list-of-strings` on operator strings → chains of bytes_eq_str.
+- Utilities: list_rev, list_append, list_length, list_iter, list_map,
+  list_iteri (and list_iteri_from), list_filter, list_exists,
+  list_for_all, list_fold_left, list_find, list_concat_map, iter_range,
+  buf_new/buf_push/buf_add_bytes/buf_add_str/buf_add_int/buf_take,
+  str_to_bytes, int_to_bytes, bytes_eq, bytes_eq_str, bytes_eq_any,
+  assoc_bytes, opt_or, is_some, imax, imin, bytes_prefix_of (in ir.ml),
+  show_quoted (in parser.ml).
+- `mapM_`/`mapM` → list_iter/list_map (left-to-right: each head value is
+  bound before the recursive call); `concatMap` → list_concat_map.
+- `lookup k assoclist` on bytes keys → assoc_bytes (returns an option).
+- `elem x list-of-strings` on operator strings → bytes_eq_any.
 
 ## Mutually recursive group layout
 

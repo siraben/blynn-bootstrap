@@ -35,13 +35,11 @@ let show_quoted b =
   let out = buf_new (bytes_length b + 2) in
   buf_push out ch_dquote;
   let n = bytes_length b in
-  let rec go i =
-    if i < n then
+  iter_range 0 n
+    (fun i ->
       (let c = bytes_get b i in
        (if c = ch_dquote || c = ch_bslash then buf_push out ch_bslash);
-       buf_push out c;
-       go (i + 1)) in
-  go 0;
+       buf_push out c));
   buf_push out ch_dquote;
   buf_take out
 
@@ -366,16 +364,12 @@ and p_optional_initializer () =
       initializer_expr ())
 
 and global_decl is_extern decls =
-  let rec all_uninit ds =
-    match ds with
-    | [] -> true
-    | (_, _, i) :: rest -> (match i with None -> all_uninit rest | Some _ -> false) in
+  let all_uninit ds =
+    list_for_all
+      (fun d -> (let (_, _, i) = d in (match i with None -> true | Some _ -> false))) ds in
   if is_extern && all_uninit decls then
-    (let rec pairs ds =
-       match ds with
-       | [] -> []
-       | (ty, name, _) :: rest -> (ty, name) :: pairs rest in
-     DExternGlobals (pairs decls))
+    DExternGlobals
+      (list_map (fun d -> (let (ty, name, _) = d in (ty, name))) decls)
   else
     (match decls with
      | [(ty, name, init0)] -> DGlobal (ty, name, init0)
@@ -397,18 +391,13 @@ and typedef_decl () =
   pbind (parse_ctype ()) (fun ty0 ->
   pbind (typedef_item ty0) (fun first ->
   pbind (typedef_items_tail ty0) (fun rest ->
-    (let rec bind_all items =
-       match items with
-       | [] -> ()
-       | (name, ty) :: tl ->
-           ((if bytes_length name > 0 then bind_parser_type name ty);
-            bind_all tl) in
-     bind_all (first :: rest);
-     let rec types items =
-       match items with
-       | [] -> []
-       | (_, ty) :: tl -> ty :: types tl in
-     POk (DTypeDecl (types (first :: rest)))))))
+    (list_iter
+       (fun it ->
+         (let (name, ty) = it in
+          if bytes_length name > 0 then bind_parser_type name ty))
+       (first :: rest);
+     POk (DTypeDecl
+       (list_map (fun it -> (let (_, ty) = it in ty)) (first :: rest)))))))
 
 and typedef_item ty0 =
   pbind (declarator ty0) (fun ty_name ->
@@ -439,12 +428,7 @@ and standalone_aggregate_decl () =
 
 and aggregate_fields_until_close () =
   p_map (p_until_punct "}" field_decl)
-    (fun fss ->
-      let rec flat l =
-        match l with
-        | [] -> []
-        | fs :: rest -> list_append fs (flat rest) in
-      flat fss)
+    (fun fss -> list_concat_map (fun fs -> fs) fss)
 
 and field_decl () =
   pbind (parse_ctype ()) (fun ty0 ->
@@ -712,13 +696,11 @@ and parse_base_type () =
   pbind (p_peek ()) (fun tok ->
     match tok with
     | Tok (_, _, TkIdent name) ->
-        (let rec simple l =
-           match l with
-           | [] -> None
-           | (kw, cty) :: rest ->
-               if bytes_eq_str name kw then Some cty else simple rest in
-         match simple simple_base_types with
-         | Some cty -> (p_advance (); POk cty)
+        (match
+           list_find (fun kc -> (let (kw, _) = kc in bytes_eq_str name kw))
+             simple_base_types
+         with
+         | Some kc -> (let (_, cty) = kc in (p_advance (); POk cty))
          | None ->
              if bytes_eq_str name "signed" then (p_advance (); POk (signed_base_type ()))
              else if bytes_eq_str name "unsigned" then (p_advance (); POk (unsigned_base_type ()))
@@ -794,12 +776,13 @@ and enum_value next_value =
     (let toks = take_enum_value_expr () in
      match parse_const_expr !p_consts toks with
      | Some (value, trailing) ->
-         (let rec all_ignorable ts =
-            match ts with
-            | [] -> true
-            | Tok (_, _, TkPunct p) :: rest ->
-                if bytes_eq_str p ")" then all_ignorable rest else false
-            | _ -> false in
+         (let all_ignorable ts =
+            list_for_all
+              (fun t ->
+                match t with
+                | Tok (_, _, TkPunct p) -> bytes_eq_str p ")"
+                | _ -> false)
+              ts in
           if all_ignorable trailing then POk value
           else
             (match trailing with
@@ -967,13 +950,12 @@ and expr_climb minprec lhs =
 and assign_node op lhs rhs =
   if bytes_eq_str op "=" then EAssign (lhs, rhs)
   else
-    (let rec find l =
-       match l with
-       | [] -> EBinary (op, lhs, rhs)
-       | (full, base) :: rest ->
-           if bytes_eq_str op full then ECompoundAssign (str_to_bytes base, lhs, rhs)
-           else find rest in
-     find compound_assign_ops)
+    (match
+       list_find (fun fb -> (let (full, _) = fb in bytes_eq_str op full))
+         compound_assign_ops
+     with
+     | Some fb -> (let (_, base) = fb in ECompoundAssign (str_to_bytes base, lhs, rhs))
+     | None -> EBinary (op, lhs, rhs))
 
 and unary_expr () =
   pbind (p_peek ()) (fun tok ->
@@ -1125,11 +1107,7 @@ and join_strings strings =
            buf_push out (if h2 < 10 then ch_0 + h2 else ch_a + h2 - 10);
            emit rest) in
     emit bs in
-  let rec go l =
-    match l with
-    | [] -> ()
-    | s :: rest -> (one s; go rest) in
-  go strings;
+  list_iter one strings;
   buf_push out ch_dquote;
   buf_take out
 
@@ -1162,11 +1140,7 @@ let parse_program toks =
   (* token list -> array *)
   let n = list_length toks in
   let arr = array_make (imax 1 n) p_dummy_tok in
-  let rec fill l i =
-    match l with
-    | [] -> ()
-    | t :: rest -> (array_set arr i t; fill rest (i + 1)) in
-  fill toks 0;
+  list_iteri (fun i t -> array_set arr i t) toks;
   p_toks := arr;
   p_ntoks := n;
   p_pos := 0;
@@ -1177,23 +1151,14 @@ let parse_program toks =
      then the opaque named integer types, then the va_list family *)
   bind_parser_type (str_to_bytes "FILE") (CStruct (str_to_bytes "FILE"));
   bind_parser_type (str_to_bytes "FUNCTION") CLong;
-  let rec bind_named l =
-    match l with
-    | [] -> ()
-    | n :: rest ->
-        (bind_parser_type (str_to_bytes n) (CNamed (str_to_bytes n));
-         bind_named rest) in
-  bind_named
+  list_iter
+    (fun n -> bind_parser_type (str_to_bytes n) (CNamed (str_to_bytes n)))
     ["size_t"; "ssize_t"; "time_t"; "ptrdiff_t"; "intptr_t"; "uintptr_t";
      "int8_t"; "int16_t"; "int32_t"; "int64_t";
      "uint8_t"; "uint16_t"; "uint32_t"; "uint64_t"];
-  let rec bind_voidp l =
-    match l with
-    | [] -> ()
-    | n :: rest ->
-        (bind_parser_type (str_to_bytes n) (CPtr CVoid);
-         bind_voidp rest) in
-  bind_voidp ["va_list"; "__builtin_va_list"; "jmp_buf"];
+  list_iter
+    (fun n -> bind_parser_type (str_to_bytes n) (CPtr CVoid))
+    ["va_list"; "__builtin_va_list"; "jmp_buf"];
   p_failed := false;
   match parse_program_decls () with
   | PFail -> None
