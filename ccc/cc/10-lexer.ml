@@ -123,6 +123,25 @@ let lex_die_at line col msg =
 let lx_peek () = if !lx_i < !lx_n then bytes_get !lx_src !lx_i else 0 - 1
 let lx_peek2 () = if !lx_i + 1 < !lx_n then bytes_get !lx_src (!lx_i + 1) else 0 - 1
 
+let lx_peek_at k =
+  if !lx_i + k < !lx_n then bytes_get !lx_src (!lx_i + k) else 0 - 1
+
+(* does the input at the cursor start with this literal? *)
+let lx_looking_at s =
+  let n = string_length s in
+  let rec go i =
+    if i >= n then true
+    else if lx_peek_at i = string_get s i then go (i + 1)
+    else false in
+  go 0
+
+let char_in_str c s =
+  let n = string_length s in
+  let rec go i =
+    if i >= n then false
+    else string_get s i = c || go (i + 1) in
+  go 0
+
 let cc_is_space_no_nl c = c = 9 || c = 13 || c = 11 || c = 12
 let cc_is_space c = c = 32 || c = 10 || cc_is_space_no_nl c
 let cc_is_digit c = c >= 48 && c <= 57
@@ -258,32 +277,29 @@ let lx_quoted quote =
   else Tok (line, col, TkChar text)
 
 (* longest-match punctuation; mirrors Lexer.lexPunct's table *)
+let multi_char_puncts =
+  ["<<="; ">>="; "...";
+   "++"; "--"; "->"; "+="; "-="; "*="; "/="; "%="; "&="; "|="; "^=";
+   "=="; "!="; "<="; ">="; "&&"; "||"; "<<"; ">>"; "##"]
+
+let single_char_puncts = "{}[]().&*+-~!/%<>^|?:;=,#"
+
 let lx_punct () =
   let line = !lx_line in
   let col = !lx_col in
-  let c1 = lx_peek () in
-  let c2 = lx_peek2 () in
-  let c3 = if !lx_i + 2 < !lx_n then bytes_get !lx_src (!lx_i + 2) else 0 - 1 in
   let take k =
     let b = buf_new 4 in
     let rec go i = if i < k then (buf_push b (lx_adv ()); go (i + 1)) in
     go 0;
     Tok (line, col, TkPunct (buf_take b)) in
-  if (c1 = 60 && c2 = 60 && c3 = 61) || (c1 = 62 && c2 = 62 && c3 = 61) ||
-     (c1 = 46 && c2 = 46 && c3 = 46) then take 3
-  else if (c1 = 43 && c2 = 43) || (c1 = 45 && c2 = 45) || (c1 = 45 && c2 = 62) ||
-          (c2 = 61 && (c1 = 43 || c1 = 45 || c1 = 42 || c1 = 47 || c1 = 37 ||
-                       c1 = 38 || c1 = 124 || c1 = 94 || c1 = 61 || c1 = 33 ||
-                       c1 = 60 || c1 = 62)) ||
-          (c1 = 38 && c2 = 38) || (c1 = 124 && c2 = 124) ||
-          (c1 = 60 && c2 = 60) || (c1 = 62 && c2 = 62) ||
-          (c1 = 35 && c2 = 35) then take 2
-  else if c1 = 123 || c1 = 125 || c1 = 91 || c1 = 93 || c1 = 40 || c1 = 41 ||
-          c1 = 46 || c1 = 38 || c1 = 42 || c1 = 43 || c1 = 45 || c1 = 126 ||
-          c1 = 33 || c1 = 47 || c1 = 37 || c1 = 60 || c1 = 62 || c1 = 94 ||
-          c1 = 124 || c1 = 63 || c1 = 58 || c1 = 59 || c1 = 61 || c1 = 44 ||
-          c1 = 35 then take 1
-  else lex_die_at line col "unexpected character"
+  let rec first l =
+    match l with
+    | [] ->
+        if char_in_str (lx_peek ()) single_char_puncts then take 1
+        else lex_die_at line col "unexpected character"
+    | s :: rest ->
+        if lx_looking_at s then take (string_length s) else first rest in
+  first multi_char_puncts
 
 (* directive: bol '#' through end of line; newline consumed *)
 let lx_directive () =
