@@ -129,3 +129,18 @@ Match the existing parts: two-space indent, parenthesized multi-statement
 branches, comments only where the reference is subtle. Keep one ML2
 function per Haskell function; do not merge or inline functions, do not
 "optimize" — the port must be reviewable side by side.
+
+## VM cost model (why some loops stay first-order)
+
+The same source runs under native OCaml and on the ZINC VM, and their
+cost models differ sharply. Natively, closures inline and ~40% of time
+is GC/runtime; on the VM every closure call is a dispatched APPLY, so a
+higher-order helper costs several VM instructions PER ELEMENT on top of
+the body. Measured on the full chain: converting the per-byte loops
+(buf_add_*, bytes_sub, write_buf, emitir's data-byte fields) to
+iter_range/list_iter cost +20% ccpp+ccc1 runtime. Rule of thumb: use
+list_iter/list_map/iter_range for structural, per-declaration work;
+keep per-byte and per-token loops as direct `let rec` recursion.
+Profiling native cc1 (`ocamlopt` + perf) finds *algorithmic* hotspots
+that transfer (string-compare scans, copies, division helpers), but
+closure and GC costs do not transfer in either direction.
