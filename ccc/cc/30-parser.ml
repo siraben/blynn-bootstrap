@@ -1,13 +1,14 @@
 (* ccc part 30: C parser; port of Hcc.Parser.
    The ParseLite monad is explicit: every parser returns 'a presult
    (POk v / PFail) and steps are sequenced with pbind, which is the
-   direct spelling of the reference's >>= chain. Cursor and environment
-   (token array, typedef scope map, enum constants) remain global
-   mutable state; the error position/message refs record the FIRST
-   failure since the last backtrack, exactly like the old p_failed
-   flag did. Backtracking (pTry/pOptional) restores a snapshot of
-   cursor + environment and re-arms error recording; consumption is
-   "cursor moved". *)
+   direct spelling of the reference's >>= chain. Repetition and choice
+   come from a small combinator kit (p_many / p_optional / p_alt /
+   p_try_or / p_until_punct / p_parens) with Parsec's consumption rule:
+   failure without consumption backtracks, failure after consumption
+   propagates. Cursor and environment (token array, typedef scope map,
+   enum constants) remain global mutable state; the error
+   position/message refs record the FIRST failure since the last
+   backtrack, exactly like the old p_failed flag did. *)
 
 type 'a presult = POk of 'a | PFail
 
@@ -174,6 +175,42 @@ let p_alt p q =
       if !p_pos = snap_pos save then (p_restore save; p_failed := false; q ())
       else PFail
 
+let p_map r f =
+  match r with
+  | POk v -> POk (f v)
+  | PFail -> PFail
+
+(* manyP p: repeat until p fails; failure without consumption ends the
+   repetition, failure after consumption propagates *)
+let p_many p =
+  let rec go () =
+    let save = p_save () in
+    match p () with
+    | POk v -> p_map (go ()) (fun rest -> v :: rest)
+    | PFail ->
+        if !p_pos = snap_pos save then (p_restore save; p_failed := false; POk [])
+        else PFail in
+  go ()
+
+(* optionalP p: a missing item is None, consumed-then-failed propagates *)
+let p_optional p =
+  p_alt (fun () -> p_map (p ()) (fun v -> Some v)) (fun () -> POk None)
+
+(* repeat p until the closing punct, collecting results *)
+let p_until_punct close p =
+  let rec go () =
+    if eat_punct close then POk []
+    else
+      pbind (p ()) (fun v ->
+      pbind (go ()) (fun rest -> POk (v :: rest))) in
+  go ()
+
+(* "(" p ")" *)
+let p_parens p =
+  pbind (need_punct "(") (fun _ ->
+  pbind (p ()) (fun v ->
+  pbind (need_punct ")") (fun _ -> POk v)))
+
 (* monadic helpers that need only the primitives above *)
 
 let need_ident () =
@@ -311,11 +348,10 @@ and top_decl_no_struct () =
 (* optionalP (eatPunct "=" >> initializerExpr): the initializer parser
    runs even without '=', failing without consumption *)
 and p_optional_initializer () =
-  p_alt
+  p_optional
     (fun () ->
       let _eq = eat_punct "=" in
-      pbind (initializer_expr ()) (fun v -> POk (Some v)))
-    (fun () -> POk None)
+      initializer_expr ())
 
 and global_decl is_extern decls =
   let rec all_uninit ds =
@@ -370,12 +406,8 @@ and typedef_item ty0 =
     POk (name, ty2))))
 
 and typedef_items_tail ty0 =
-  if eat_punct ";" then POk []
-  else
-    pbind (need_punct ",") (fun _ ->
-    pbind (typedef_item ty0) (fun item ->
-    pbind (typedef_items_tail ty0) (fun rest ->
-    POk (item :: rest))))
+  p_until_punct ";" (fun () ->
+    pbind (need_punct ",") (fun _ -> typedef_item ty0))
 
 and standalone_aggregate_decl () =
   pbind (p_peek ()) (fun tok ->
@@ -394,11 +426,13 @@ and standalone_aggregate_decl () =
         POk (DStructDecl (is_union, tag, fields)))))))
 
 and aggregate_fields_until_close () =
-  if eat_punct "}" then POk []
-  else
-    pbind (field_decl ()) (fun fs ->
-    pbind (aggregate_fields_until_close ()) (fun rest ->
-    POk (list_append fs rest)))
+  p_map (p_until_punct "}" field_decl)
+    (fun fss ->
+      let rec flat l =
+        match l with
+        | [] -> []
+        | fs :: rest -> list_append fs (flat rest) in
+      flat fss)
 
 and field_decl () =
   pbind (parse_ctype ()) (fun ty0 ->
@@ -409,13 +443,8 @@ and field_decl () =
 
 (* manyP (needPunct "," >> fieldDeclarator ty0) *)
 and p_many_comma_field ty0 =
-  p_alt
-    (fun () ->
-      pbind (need_punct ",") (fun _ ->
-      pbind (field_declarator ty0) (fun f ->
-      pbind (p_many_comma_field ty0) (fun rest ->
-      POk (f :: rest)))))
-    (fun () -> POk [])
+  p_many (fun () ->
+    pbind (need_punct ",") (fun _ -> field_declarator ty0))
 
 and field_declarator ty0 =
   if eat_punct "(" then
@@ -504,12 +533,7 @@ and compound () =
     p_constmap := saved_cm;
     body)
 
-and stmts_until_close () =
-  if eat_punct "}" then POk []
-  else
-    pbind (parse_stmt ()) (fun s ->
-    pbind (stmts_until_close ()) (fun rest ->
-    POk (s :: rest)))
+and stmts_until_close () = p_until_punct "}" parse_stmt
 
 and parse_stmt () =
   pbind (p_peek ()) (fun tok ->
@@ -565,29 +589,23 @@ and parse_return () =
     pbind (need_punct ";") (fun _ -> POk (SReturn (Some e))))
 
 and parse_if () =
-  pbind (need_punct "(") (fun _ ->
-  pbind (p_expr ()) (fun cond ->
-  pbind (need_punct ")") (fun _ ->
+  pbind (p_parens p_expr) (fun cond ->
   pbind (stmt_as_block ()) (fun yes ->
     let has_else = eat_ident "else" in
     pbind (if has_else then stmt_as_block () else POk []) (fun no ->
-    POk (SIf (cond, yes, no)))))))
+    POk (SIf (cond, yes, no)))))
 
 and parse_while () =
-  pbind (need_punct "(") (fun _ ->
-  pbind (p_expr ()) (fun cond ->
-  pbind (need_punct ")") (fun _ ->
+  pbind (p_parens p_expr) (fun cond ->
   pbind (stmt_as_block ()) (fun body ->
-  POk (SWhile (cond, body))))))
+  POk (SWhile (cond, body))))
 
 and parse_do_while () =
   pbind (stmt_as_block ()) (fun body ->
   pbind (need_ident_value "while") (fun _ ->
-  pbind (need_punct "(") (fun _ ->
-  pbind (p_expr ()) (fun cond ->
-  pbind (need_punct ")") (fun _ ->
+  pbind (p_parens p_expr) (fun cond ->
   pbind (need_punct ";") (fun _ ->
-  POk (SDoWhile (body, cond))))))))
+  POk (SDoWhile (body, cond))))))
 
 and parse_for () =
   pbind (need_punct "(") (fun _ ->
@@ -598,11 +616,9 @@ and parse_for () =
   POk (SFor (init0, cond, step, body)))))))
 
 and parse_switch () =
-  pbind (need_punct "(") (fun _ ->
-  pbind (p_expr ()) (fun v ->
-  pbind (need_punct ")") (fun _ ->
+  pbind (p_parens p_expr) (fun v ->
   pbind (stmt_as_block ()) (fun body ->
-  POk (SSwitch (v, body))))))
+  POk (SSwitch (v, body))))
 
 and optional_expr_until punct =
   if eat_punct punct then POk None
@@ -669,12 +685,8 @@ and declaration_item ty0 =
     POk (ty, name, init0))))
 
 and declaration_items_tail ty0 =
-  if eat_punct ";" then POk []
-  else
-    pbind (need_punct ",") (fun _ ->
-    pbind (declaration_item ty0) (fun item ->
-    pbind (declaration_items_tail ty0) (fun rest ->
-    POk (item :: rest))))
+  p_until_punct ";" (fun () ->
+    pbind (need_punct ",") (fun _ -> declaration_item ty0))
 
 (* ---- types ---- *)
 
@@ -887,13 +899,9 @@ and pointer_stars ty =
 and array_suffixes ty =
   if eat_punct "[" then
     (* optionalP expr: empty bounds fail without consumption *)
-    pbind
-      (p_alt
-        (fun () -> pbind (p_expr ()) (fun e -> POk (Some e)))
-        (fun () -> POk None))
-      (fun bound ->
-        pbind (need_punct "]") (fun _ ->
-        array_suffixes (CArray (ty, bound))))
+    pbind (p_optional p_expr) (fun bound ->
+    pbind (need_punct "]") (fun _ ->
+    array_suffixes (CArray (ty, bound))))
   else POk ty
 
 (* ---- expressions ---- *)
@@ -1076,28 +1084,15 @@ and call_arguments () =
     POk (first :: rest))))
 
 and p_many_comma_args () =
-  p_alt
-    (fun () ->
-      pbind (need_punct ",") (fun _ ->
-      pbind (assign_expr ()) (fun a ->
-      pbind (p_many_comma_args ()) (fun rest ->
-      POk (a :: rest)))))
-    (fun () -> POk [])
+  p_many (fun () ->
+    pbind (need_punct ",") (fun _ -> assign_expr ()))
 
 (* adjacent string literals are concatenated; the result re-encodes every
    content byte as a hex escape *)
 and string_literal () =
   pbind (need_string ()) (fun first ->
-    let rest = p_many_strings () in
-    POk (join_strings (first :: rest)))
-
-and p_many_strings () =
-  match p_peek_maybe () with
-  | Some (Tok (_, _, TkString s)) ->
-      (p_advance ();
-       let rest = p_many_strings () in
-       s :: rest)
-  | _ -> []
+  pbind (p_many need_string) (fun rest ->
+  POk (join_strings (first :: rest))))
 
 and need_string () =
   pbind (p_peek ()) (fun tok ->
