@@ -29,7 +29,11 @@ enum {
   N_NEG = 21,
   N_EXIT = 22,
   N_WRITE_STRING = 23,
-  N_EXPECT_STRING = 24
+  N_EXPECT_STRING = 24,
+  N_PAIR = 25,
+  N_LETPAIR = 26,
+
+  INITIAL_PAIRS = 65536
 };
 
 static char *src;
@@ -61,6 +65,11 @@ static long *closure_param_start;
 static long *closure_param_len;
 static long *closure_body;
 static long *closure_env;
+
+static long pair_count;
+static long pair_cap;
+static long *pair_left;
+static long *pair_right;
 
 static void die(const char *msg)
 {
@@ -355,6 +364,9 @@ static long parse_atom(void)
   skip_space();
   if (take_char('(')) {
     node = parse_expr();
+    if (take_char(',')) {
+      node = new_binary(N_PAIR, node, parse_expr());
+    }
     expect_char(')');
     return node;
   }
@@ -537,6 +549,24 @@ static long parse_let(void)
     right[node] = body;
     return node;
   }
+  if (take_char('(')) {
+    parse_ident(&start, &len);
+    expect_char(',');
+    parse_ident(&start2, &len2);
+    expect_char(')');
+    expect_char('=');
+    rhs = parse_expr();
+    if (!take_keyword("in")) die("expected in");
+    body = parse_expr();
+    node = new_node(N_LETPAIR);
+    name_start[node] = start;
+    name_len[node] = len;
+    name2_start[node] = start2;
+    name2_len[node] = len2;
+    left[node] = rhs;
+    right[node] = body;
+    return node;
+  }
   parse_ident(&start, &len);
   expect_char('=');
   rhs = parse_expr();
@@ -659,6 +689,32 @@ static long make_closure(long start, long len, long body, long env)
   return closure_count << 1;
 }
 
+static void ensure_pair_capacity(void)
+{
+  long new_cap;
+  if (pair_count + 1 < pair_cap) return;
+  if (pair_cap == 0) new_cap = INITIAL_PAIRS;
+  else new_cap = pair_cap * 2;
+  pair_left = grow_long_array(pair_left, new_cap);
+  pair_right = grow_long_array(pair_right, new_cap);
+  pair_cap = new_cap;
+}
+
+static long make_pair(long a, long b)
+{
+  ensure_pair_capacity();
+  pair_count = pair_count + 1;
+  pair_left[pair_count] = a;
+  pair_right[pair_count] = b;
+  return 0 - (pair_count << 1);
+}
+
+static long pair_index(long value)
+{
+  if ((value & 1) != 0 || value >= 0) die("expected pair");
+  return (0 - value) >> 1;
+}
+
 static long eval(long node, long env)
 {
   long k = kind[node];
@@ -710,7 +766,7 @@ static long eval(long node, long env)
   if (k == N_CALL) {
     closure = eval(left[node], env);
     a = eval(right[node], env);
-    if ((closure & 1) != 0 || closure == 0) die("expected function");
+    if ((closure & 1) != 0 || closure <= 0) die("expected function");
     closure_index = closure >> 1;
     call_env = push_env(closure_param_start[closure_index], closure_param_len[closure_index], a, closure_env[closure_index]);
     return eval(closure_body[closure_index], call_env);
@@ -718,6 +774,16 @@ static long eval(long node, long env)
   if (k == N_SEQ) {
     eval(left[node], env);
     return eval(right[node], env);
+  }
+  if (k == N_PAIR) {
+    a = eval(left[node], env);
+    return make_pair(a, eval(right[node], env));
+  }
+  if (k == N_LETPAIR) {
+    a = pair_index(eval(left[node], env));
+    call_env = push_env(name_start[node], name_len[node], pair_left[a], env);
+    call_env = push_env(name2_start[node], name2_len[node], pair_right[a], call_env);
+    return eval(right[node], call_env);
   }
   if (k == N_WRITE_BYTE) {
     a = int_val(eval(left[node], env));
