@@ -87,10 +87,22 @@ scripts/bootstrap-blynn.sh
 ```
 
 On a fresh Alpine-style image with `wget`, this builds the native path from
-the branch archive without requiring `git`:
+the `master` branch archive without requiring `git`:
 
 ```sh
-apk add --no-cache ca-certificates wget patch && cd /tmp && wget -qO- https://github.com/siraben/blynn-bootstrap/archive/refs/heads/portability.tar.gz | tar xz && cd blynn-bootstrap-portability && M2_OS=Linux sh scripts/bootstrap-blynn.sh && test -x build/tinycc-boot-hcc/bin/tcc
+apk add --no-cache ca-certificates wget patch && cd /tmp && wget -qO- https://github.com/siraben/blynn-bootstrap/archive/refs/heads/master.tar.gz | tar xz && cd blynn-bootstrap-master && M2_OS=Linux sh scripts/bootstrap-blynn.sh && test -x build/tinycc-boot-hcc/bin/tcc
+```
+
+To run the same portable bootstrap in Docker on x86_64 Linux:
+
+```sh
+docker run --rm --platform linux/amd64 alpine:3.20 sh -lc 'apk add --no-cache ca-certificates wget patch >/dev/null && cd /tmp && wget -qO- https://github.com/siraben/blynn-bootstrap/archive/refs/heads/master.tar.gz | tar xz && cd blynn-bootstrap-master && M2_ARCH=amd64 M2_OS=Linux sh scripts/bootstrap-blynn.sh && build/tinycc-boot-hcc/bin/tcc -version'
+```
+
+To run it on aarch64 Linux:
+
+```sh
+docker run --rm --platform linux/arm64 alpine:3.20 sh -lc 'apk add --no-cache ca-certificates wget patch >/dev/null && cd /tmp && wget -qO- https://github.com/siraben/blynn-bootstrap/archive/refs/heads/master.tar.gz | tar xz && cd blynn-bootstrap-master && M2_ARCH=aarch64 M2_OS=Linux sh scripts/bootstrap-blynn.sh && build/tinycc-boot-hcc/bin/tcc -version'
 ```
 
 If you are preparing the TinyCC source used by the HCC bootstrap outside Nix,
