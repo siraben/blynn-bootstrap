@@ -304,7 +304,8 @@ let lx_punct () =
   let c1 = lx_peek () in
   let take k =
     let b = buf_new 4 in
-    iter_range 0 k (fun _ -> buf_push b (lx_adv ()));
+    let rec go i = if i < k then (buf_push b (lx_adv ()); go (i + 1)) in
+    go 0;
     Tok (line, col, TkPunct (buf_take b)) in
   let single () =
     if char_in_str c1 single_char_puncts then take 1
