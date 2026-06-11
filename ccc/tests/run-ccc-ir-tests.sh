@@ -51,8 +51,11 @@ if [ "${1:-}" = "--vm" ]; then
     ccc/build/mlc-interp ccc/stages/01-parenthetical.ml ccc/build/ccc/03.mzs ccc/build/ccc/03.mzbc
     ccc/build/mzvm ccc/build/ccc/03.mzbc ccc/stages/04-pattern-compiler.ml ccc/build/ccc/04.mzs
     ccc/build/mlc-interp ccc/stages/01-parenthetical.ml ccc/build/ccc/04.mzs ccc/build/ccc/04.mzbc
+    ccc/build/mzvm ccc/build/ccc/04.mzbc ccc/stages/01-parenthetical.ml ccc/build/ccc/01.mzs
+    ccc/build/mlc-interp ccc/stages/01-parenthetical.ml ccc/build/ccc/01.mzs ccc/build/ccc/01.mzbc
     ccc/build/mzvm ccc/build/ccc/04.mzbc ccc/build/ccc/ccc-cc1.ml ccc/build/ccc/ccc-cc1.mzs
-    ccc/build/mlc-interp ccc/stages/01-parenthetical.ml ccc/build/ccc/ccc-cc1.mzs ccc/build/ccc/ccc-cc1.mzbc
+    # assemble the big cc1 on the GC-backed VM, like the real chain
+    ccc/build/mzvm ccc/build/ccc/01.mzbc ccc/build/ccc/ccc-cc1.mzs ccc/build/ccc/ccc-cc1.mzbc
   ' || { echo "FAIL vm chain build"; exit 1; }
   vm_runner() { ccc/build/mzvm "$BUILD/ccc/ccc-cc1.mzbc" "$1" "$2"; }
   run_corpus vm_runner " (vm)"
