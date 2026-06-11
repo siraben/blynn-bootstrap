@@ -25,12 +25,7 @@ and lower_top_decls_ir decls =
   | _ :: rest -> lower_top_decls_ir rest
 
 and register_top_decls_ir decls =
-  match decls with
-  | [] -> []
-  | decl :: rest ->
-      let items = register_top_decl_ir decl in
-      let rest_items = register_top_decls_ir rest in
-      list_append items rest_items
+  list_concat_map (fun decl -> register_top_decl_ir decl) decls
 
 and register_top_decl_ir decl =
   match decl with
@@ -85,13 +80,7 @@ and pending_data_items_ir () =
   | [] -> []
   | items ->
       (cs_data_items := [];
-       let rec to_top l =
-         match l with
-         | [] -> []
-         | item :: rest -> TopData item :: to_top rest in
-       to_top (list_rev items))
+       list_map (fun item -> TopData item) (list_rev items))
 
 and param_decl_names_ir params =
-  match params with
-  | [] -> []
-  | Param (_, name) :: rest -> name :: param_decl_names_ir rest
+  list_map (fun p -> (match p with Param (_, name) -> name)) params

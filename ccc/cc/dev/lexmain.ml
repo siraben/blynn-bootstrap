@@ -7,13 +7,10 @@ let () =
   let src = read_file (arg_get 0) in
   let toks = lex_plain_source src in
   let out = buf_new 65536 in
-  let rec render ts =
-    match ts with
-    | [] -> buf_push out ch_nl
-    | t :: rest ->
-        buf_add_bytes out (token_text (tok_kind t));
-        buf_push out ch_space;
-        render rest in
-  render toks;
+  list_iter
+    (fun t ->
+      (buf_add_bytes out (token_text (tok_kind t)); buf_push out ch_space))
+    toks;
+  buf_push out ch_nl;
   write_buf out;
   exit 0

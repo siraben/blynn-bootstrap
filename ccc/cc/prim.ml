@@ -4,8 +4,6 @@
    bit-folds capped at 2^30 rather than native operators. Anything that
    must match hcc1's output byte-for-byte goes through these. *)
 
-type 'a option = None | Some of 'a
-
 let opt_or o d = match o with | None -> d | Some v -> v
 
 let is_some o = match o with | None -> false | Some _ -> true

@@ -16,6 +16,5 @@ let check_file path =
 let () =
   let n = arg_count () in
   (if n < 1 then die "usage: ccc-check FILE...");
-  let rec go i = if i < n then (check_file (arg_get i); go (i + 1)) in
-  go 0;
+  iter_range 0 n (fun i -> check_file (arg_get i));
   exit 0

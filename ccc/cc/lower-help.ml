@@ -17,26 +17,13 @@ let builtin_constant name =
   else None
 
 let is_ignored_side_effect_call name =
-  if bytes_eq_str name "asm" then true
-  else if bytes_eq_str name "oputs" then true
-  else if bytes_eq_str name "eputs" then true
-  else false
+  bytes_eq_any name ["asm"; "oputs"; "eputs"]
 
 let is_signed_named_integer name =
-  if bytes_eq_str name "signed_short" then true
-  else if bytes_eq_str name "int8_t" then true
-  else if bytes_eq_str name "int16_t" then true
-  else if bytes_eq_str name "int32_t" then true
-  else if bytes_eq_str name "int64_t" then true
-  else if bytes_eq_str name "ssize_t" then true
-  else if bytes_eq_str name "time_t" then true
-  else if bytes_eq_str name "ptrdiff_t" then true
-  else if bytes_eq_str name "intptr_t" then true
-  else if bytes_eq_str name "Elf32_Sword" then true
-  else if bytes_eq_str name "Elf64_Sword" then true
-  else if bytes_eq_str name "Elf32_Sxword" then true
-  else if bytes_eq_str name "Elf64_Sxword" then true
-  else false
+  bytes_eq_any name
+    ["signed_short"; "int8_t"; "int16_t"; "int32_t"; "int64_t"; "ssize_t";
+     "time_t"; "ptrdiff_t"; "intptr_t"; "Elf32_Sword"; "Elf64_Sword";
+     "Elf32_Sxword"; "Elf64_Sxword"]
 
 let named_integer_size name =
   if bytes_eq_str name "int8_t" then Some 1
@@ -81,10 +68,7 @@ let named_integer_size name =
 
 let rec zero_data n = if n <= 0 then [] else DByte 0 :: zero_data (n - 1)
 
-let rec bytes_data values =
-  match values with
-  | [] -> []
-  | byte :: rest -> DByte byte :: bytes_data rest
+let bytes_data values = list_map (fun byte -> DByte byte) values
 
 (* ---- Hcc.LowerLiterals ---- *)
 
@@ -253,19 +237,10 @@ let switch_body_statements body =
   | [SBlock stmts] -> stmts
   | _ -> body
 
-(* Haskell elem on a list of byte strings *)
-let rec lh_member_bytes name names =
-  match names with
-  | [] -> false
-  | n :: rest -> if bytes_eq n name then true else lh_member_bytes name rest
-
-(* the foldM over statements is inlined into register_implicit_calls *)
+(* the reference's foldM over statements *)
 let rec register_implicit_calls locals stmts =
-  match stmts with
-  | [] -> ()
-  | stmt :: rest ->
-      let locals2 = register_implicit_calls_stmt locals stmt in
-      register_implicit_calls locals2 rest
+  let _ = list_fold_left (fun ls stmt -> register_implicit_calls_stmt ls stmt) locals stmts in
+  ()
 
 and register_implicit_calls_stmt locals stmt =
   match stmt with
@@ -303,13 +278,12 @@ and register_implicit_calls_stmt locals stmt =
   | _ -> locals
 
 and register_implicit_calls_decls locals decls =
-  match decls with
-  | [] -> locals
-  | decl :: rest ->
-      (match decl with
-       | (_, name, init_expr) ->
-           (maybe_register_implicit_calls_expr locals init_expr;
-            register_implicit_calls_decls (name :: locals) rest))
+  list_fold_left
+    (fun ls decl ->
+      (let (_, name, init_expr) = decl in
+       maybe_register_implicit_calls_expr ls init_expr;
+       name :: ls))
+    locals decls
 
 and maybe_register_implicit_calls_expr locals expr =
   match expr with
@@ -319,7 +293,7 @@ and maybe_register_implicit_calls_expr locals expr =
 and register_implicit_calls_expr locals expr =
   match expr with
   | ECall (EVar name, args) ->
-      ((if lh_member_bytes name locals || is_ignored_side_effect_call name then ()
+      ((if list_exists (fun n -> bytes_eq n name) locals || is_ignored_side_effect_call name then ()
         else
           (match lookup_global_type name with
            | Some _ -> ()
@@ -353,11 +327,7 @@ and register_implicit_calls_expr locals expr =
   | _ -> ()
 
 and register_implicit_calls_exprs locals exprs =
-  match exprs with
-  | [] -> ()
-  | e :: rest ->
-      (register_implicit_calls_expr locals e;
-       register_implicit_calls_exprs locals rest)
+  list_iter (fun e -> register_implicit_calls_expr locals e) exprs
 
 (* ---- Hcc.LowerBootstrap ---- *)
 
