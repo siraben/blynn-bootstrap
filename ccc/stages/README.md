@@ -1,0 +1,52 @@
+# The staged ML bootstrap
+
+Each stage is one small job with a real handoff artifact, Blynn-style:
+
+| stage | input dialect | job |
+|---|---|---|
+| 01-parenthetical | (runs on the C interpreter) | parenthesized MZBC assembly → `.mzbc` |
+| 02-ml0-compiler | ML0 (the interpreter's core dialect) | self-hosting single-pass compiler |
+| 03-adt-compiler | ML1 = ML0 + ADTs + shallow match | fork of 02 + the ADT delta |
+| 04-pattern-compiler | ML2 = ML1 + nested patterns, lists, refs | fork of 03 + the pattern delta |
+
+Each promoted stage recompiles itself to a fixpoint and is a conservative
+extension of its parent (byte-identical output on the parent's dialect);
+`ccc/tests/run-stage-tests.sh` enforces both, and the OCaml cross-check
+pins host-OCaml/VM emission equivalence.
+
+## Style: why the parsing looks the way it does
+
+The stages are **single-pass parse-and-emit** compilers with mutable
+cursor state. That is a bootstrappability decision, not an accident:
+
+- Stage 02 must run on the tree-walking C interpreter and compile itself,
+  so it is written in ML0 — a dialect with **no ADTs, no match, no refs,
+  no polymorphism**. Building an AST without sum types is strictly worse
+  than not building one; emitting code during the parse keeps the
+  compiler small enough to audit and small enough to interpret.
+- Stages 03/04 are *forks* of their parent with reviewable deltas. The
+  shared text is kept aligned so `diff 02 03` and `diff 03 04` show the
+  dialect growth and nothing else. Rewriting a later stage in a fancier
+  style would destroy that review property.
+- Mutation is confined to a few well-named idioms: one-slot **cells**
+  (`cell`/`get`/`set` — ML0 has no `ref`, a one-element array stands in),
+  growable byte buffers (`push_byte`), and the token cursor
+  (`tk`/`tint`/`tstr` plus `at_ident`/`take_ident`/`need_ident`/
+  `skip_punct` accessors).
+
+Within those constraints the stages use the functional tools the dialect
+does provide:
+
+- the binary-operator levels are one **higher-order combinator**
+  (`c_binop_level`) instantiated with operator tables, not copy-pasted
+  level functions;
+- stage 04 parses patterns into a small **pattern AST** (`pat`/`ppath`)
+  and walks it twice (tests, then binds) — the one place lookahead makes
+  single-pass emission impossible;
+- scoping is save/restore over persistent values where possible, and
+  recursion — not loops — drives everything.
+
+The dialect itself stays a strict OCaml subset (see `ccc/cc/PORTING.md`,
+including the evaluation-order rule), so every stage also runs under host
+OCaml with `ccc/tests/prelude-ocaml.ml`, and `mltc` type-checks all of
+them with full let-polymorphic inference in-chain.
