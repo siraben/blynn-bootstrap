@@ -46,33 +46,33 @@ let eval_const_binop op a b =
 
 (* ---- digit classes (byte arguments) ---- *)
 
-let lit_is_dec c = c >= 48 && c <= 57
-let lit_is_oct c = c >= 48 && c <= 55
-let lit_is_hexlc c = c >= 97 && c <= 102
-let lit_is_hexuc c = c >= 65 && c <= 70
+let lit_is_dec c = c >= ch_0 && c <= ch_9
+let lit_is_oct c = c >= ch_0 && c <= ch_7
+let lit_is_hexlc c = c >= ch_a && c <= ch_f
+let lit_is_hexuc c = c >= ch_A && c <= ch_F
 let lit_is_hex c = lit_is_dec c || lit_is_hexlc c || lit_is_hexuc c
 
-let lit_dec_digit c = c - 48
+let lit_dec_digit c = c - ch_0
 
 let lit_hex_digit c =
-  if lit_is_dec c then c - 48
-  else if lit_is_hexlc c then 10 + c - 97
-  else if lit_is_hexuc c then 10 + c - 65
+  if lit_is_dec c then c - ch_0
+  else if lit_is_hexlc c then 10 + c - ch_a
+  else if lit_is_hexuc c then 10 + c - ch_A
   else 0
 
 let lit_digit_value c =
-  if lit_is_dec c then c - 48
-  else if lit_is_hexlc c then 10 + c - 97
-  else if lit_is_hexuc c then 10 + c - 65
+  if lit_is_dec c then c - ch_0
+  else if lit_is_hexlc c then 10 + c - ch_a
+  else if lit_is_hexuc c then 10 + c - ch_A
   else 99
 
 (* ---- integer literals ---- *)
 
-let lit_is_int_suffix c = c = 117 || c = 85 || c = 108 || c = 76
+let lit_is_int_suffix c = c = ch_u || c = ch_U || c = ch_l || c = ch_L
 
 let rec int_literal_is_unsigned_from t i =
   if i >= bytes_length t then false
-  else if bytes_get t i = 117 || bytes_get t i = 85 then true
+  else if bytes_get t i = ch_u || bytes_get t i = ch_U then true
   else int_literal_is_unsigned_from t (i + 1)
 
 let int_literal_is_unsigned t = int_literal_is_unsigned_from t 0
@@ -96,9 +96,9 @@ let parse_int t =
   let rec hex acc i =
     if i < e then hex (acc * 16 + lit_hex_digit (bytes_get t i)) (i + 1)
     else acc in
-  if e >= 2 && bytes_get t 0 = 48 && (bytes_get t 1 = 120 || bytes_get t 1 = 88)
+  if e >= 2 && bytes_get t 0 = ch_0 && (bytes_get t 1 = ch_x || bytes_get t 1 = ch_X)
   then hex 0 2
-  else if e >= 1 && bytes_get t 0 = 48 then oct 0 1
+  else if e >= 1 && bytes_get t 0 = ch_0 then oct 0 1
   else dec 0 0
 
 (* ---- byte words: little-endian lists of byte values ---- *)
@@ -140,10 +140,10 @@ let read_base_bytes base t i0 =
   go zero_byte_word i0
 
 let natural_literal_bytes t =
-  if bytes_length t >= 2 && bytes_get t 0 = 48 &&
-     (bytes_get t 1 = 120 || bytes_get t 1 = 88)
+  if bytes_length t >= 2 && bytes_get t 0 = ch_0 &&
+     (bytes_get t 1 = ch_x || bytes_get t 1 = ch_X)
   then read_base_bytes 16 t 2
-  else if bytes_length t >= 1 && bytes_get t 0 = 48 then read_base_bytes 8 t 1
+  else if bytes_length t >= 1 && bytes_get t 0 = ch_0 then read_base_bytes 8 t 1
   else read_base_bytes 10 t 0
 
 let rec int_bytes_from n count =
@@ -154,7 +154,7 @@ let int_bytes size value = int_bytes_from value size
 
 (* ---- float literals (bootstrap-grade: mantissa digits as integer) ---- *)
 
-let lit_is_float_suffix c = c = 102 || c = 70 || c = 108 || c = 76
+let lit_is_float_suffix c = c = ch_f || c = ch_F || c = ch_l || c = ch_L
 
 let strip_float_suffix_end t =
   let rec go i =
@@ -166,16 +166,16 @@ let float_literal_size t =
   if n = 0 then 8
   else
     (let last = bytes_get t (n - 1) in
-     if last = 102 || last = 70 then 4
-     else if last = 108 || last = 76 then 16
+     if last = ch_f || last = ch_F then 4
+     else if last = ch_l || last = ch_L then 16
      else 8)
 
 let float_literal_bytes size t =
   let e = strip_float_suffix_end t in
   let stripped = bytes_sub t 0 e in
   let word =
-    if bytes_length stripped >= 2 && bytes_get stripped 0 = 48 &&
-       (bytes_get stripped 1 = 120 || bytes_get stripped 1 = 88)
+    if bytes_length stripped >= 2 && bytes_get stripped 0 = ch_0 &&
+       (bytes_get stripped 1 = ch_x || bytes_get stripped 1 = ch_X)
     then read_base_bytes 16 stripped 2
     else read_base_bytes 10 stripped 0 in
   take_ints size word
@@ -191,24 +191,24 @@ let decode_escape_until t n i =
   if i >= n then (0, i)
   else
     (let c = bytes_get t i in
-     if c = 110 then (10, i + 1)
-     else if c = 116 then (9, i + 1)
-     else if c = 114 then (13, i + 1)
-     else if c = 102 then (12, i + 1)
-     else if c = 118 then (11, i + 1)
-     else if c = 97 then (7, i + 1)
-     else if c = 98 then (8, i + 1)
-     else if c = 92 then (92, i + 1)
-     else if c = 39 then (39, i + 1)
-     else if c = 34 then (34, i + 1)
-     else if c = 120 then
+     if c = ch_n then (ch_nl, i + 1)
+     else if c = ch_t then (ch_tab, i + 1)
+     else if c = ch_r then (ch_cr, i + 1)
+     else if c = ch_f then (ch_ff, i + 1)
+     else if c = ch_v then (ch_vt, i + 1)
+     else if c = ch_a then (ch_bel, i + 1)
+     else if c = ch_b then (ch_bs, i + 1)
+     else if c = ch_bslash then (ch_bslash, i + 1)
+     else if c = ch_squote then (ch_squote, i + 1)
+     else if c = ch_dquote then (ch_dquote, i + 1)
+     else if c = ch_x then
        (* \x...: any number of hex digits; bare x if none *)
        (let rec hexgo v j started =
           if j < n && lit_is_hex (bytes_get t j) then
             hexgo (v * 16 + lit_hex_digit (bytes_get t j)) (j + 1) true
           else (v, j, started) in
         let (v, j, started) = hexgo 0 (i + 1) false in
-        if started then (v, j) else (120, i + 1))
+        if started then (v, j) else (ch_x, i + 1))
      else if lit_is_oct c then
        (let rec octgo count v j =
           if count >= 3 then (v, j)
@@ -221,22 +221,22 @@ let decode_escape_until t n i =
 (* token text like 'a' or '\n' (quotes included) *)
 let char_value t =
   let n = bytes_length t in
-  if n >= 2 && bytes_get t 0 = 39 && bytes_get t 1 = 92 then
+  if n >= 2 && bytes_get t 0 = ch_squote && bytes_get t 1 = ch_bslash then
     (* drop the closing quote, then decode from index 2 *)
-    (let e = if n >= 3 && bytes_get t (n - 1) = 39 then n - 1 else n in
+    (let e = if n >= 3 && bytes_get t (n - 1) = ch_squote then n - 1 else n in
      let (v, _) = decode_escape_until t e 2 in
      v)
-  else if n = 3 && bytes_get t 0 = 39 && bytes_get t 2 = 39 then bytes_get t 1
+  else if n = 3 && bytes_get t 0 = ch_squote && bytes_get t 2 = ch_squote then bytes_get t 1
   else 0
 
 (* token text with surrounding quotes; decoded bytes plus a trailing 0 *)
 let string_bytes t =
   let n0 = bytes_length t in
-  let s = if n0 >= 1 && bytes_get t 0 = 34 then 1 else 0 in
-  let e = if n0 >= s + 1 && bytes_get t (n0 - 1) = 34 then n0 - 1 else n0 in
+  let s = if n0 >= 1 && bytes_get t 0 = ch_dquote then 1 else 0 in
+  let e = if n0 >= s + 1 && bytes_get t (n0 - 1) = ch_dquote then n0 - 1 else n0 in
   let rec go i =
     if i >= e then [0]
-    else if bytes_get t i = 92 then
+    else if bytes_get t i = ch_bslash then
       (let (v, j) = decode_escape_until t e (i + 1) in
        v :: go j)
     else bytes_get t i :: go (i + 1) in

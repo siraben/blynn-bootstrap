@@ -34,7 +34,7 @@ let inc_last_slash path =
   let n = bytes_length path in
   let rec go i best =
     if i >= n then best
-    else go (i + 1) (if bytes_get path i = 47 then i else best) in
+    else go (i + 1) (if bytes_get path i = ch_slash then i else best) in
   go 0 (0 - 1)
 
 let inc_take_directory path =
@@ -54,7 +54,7 @@ let inc_path_join left right =
   else
     (let b = buf_new (bytes_length left + bytes_length right + 1) in
      buf_add_bytes b left;
-     (if not (bytes_get left (bytes_length left - 1) = 47) then buf_push b 47);
+     (if not (bytes_get left (bytes_length left - 1) = ch_slash) then buf_push b ch_slash);
      buf_add_bytes b right;
      buf_take b)
 
@@ -98,7 +98,7 @@ let inc_prefix_str b s =
 let inc_word_is_hash w directive =
   let dl = string_length directive in
   if not (bytes_length w = dl + 1) then false
-  else if not (bytes_get w 0 = 35) then false
+  else if not (bytes_get w 0 = ch_hash) then false
   else
     (let rec cmp i =
        if i >= dl then true
@@ -127,7 +127,7 @@ let inc_directive_name_from_line line =
         (match rest with
          | w2 :: _ -> Some w2
          | [] -> Some (bytes_create 0))
-      else if bytes_length w1 > 0 && bytes_get w1 0 = 35 then
+      else if bytes_length w1 > 0 && bytes_get w1 0 = ch_hash then
         Some (bytes_sub w1 1 (bytes_length w1 - 1))
       else None
 
@@ -140,7 +140,7 @@ let inc_after_directive directive text =
 
 let inc_directive_rest directive line =
   let t = pp_drop_spaces line in
-  if bytes_length t > 0 && bytes_get t 0 = 35 then
+  if bytes_length t > 0 && bytes_get t 0 = ch_hash then
     inc_after_directive directive (bytes_sub t 1 (bytes_length t - 1))
   else bytes_create 0
 
@@ -159,9 +159,9 @@ let inc_take_until term b start =
   bytes_sub b start (e - start)
 
 let inc_strip_include_delims raw =
-  if bytes_length raw > 0 && bytes_get raw 0 = 34 then
+  if bytes_length raw > 0 && bytes_get raw 0 = ch_dquote then
     Some (QuoteInclude, inc_take_until 34 raw 1)
-  else if bytes_length raw > 0 && bytes_get raw 0 = 60 then
+  else if bytes_length raw > 0 && bytes_get raw 0 = ch_lt then
     Some (SystemInclude, inc_take_until 62 raw 1)
   else None
 
@@ -202,8 +202,8 @@ let inc_split_top_level sep text =
     if i >= n then list_rev (buf_take cur :: acc)
     else
       (let c = bytes_get text i in
-       if c = 40 then (buf_push cur c; go (depth + 1) (i + 1) acc)
-       else if c = 41 then (buf_push cur c; go (depth - 1) (i + 1) acc)
+       if c = ch_lparen then (buf_push cur c; go (depth + 1) (i + 1) acc)
+       else if c = ch_rparen then (buf_push cur c; go (depth - 1) (i + 1) acc)
        else if depth = 0 && sep_at i then
          (let piece = buf_take cur in
           buf_clear cur;
@@ -221,7 +221,7 @@ let rec inc_filter_non_null pieces =
 let inc_read_decimal b =
   let n = bytes_length b in
   let rec go acc i =
-    if i >= n then acc else go (acc * 10 + bytes_get b i - 48) (i + 1) in
+    if i >= n then acc else go (acc * 10 + bytes_get b i - ch_0) (i + 1) in
   go 0 0
 
 let rec inc_eval_include_if macros text =
@@ -243,11 +243,11 @@ and inc_eval_and macros text parts =
 and inc_eval_atom macros raw =
   let atom = pp_trim raw in
   let n = bytes_length atom in
-  if n > 0 && bytes_get atom 0 = 33 then
+  if n > 0 && bytes_get atom 0 = ch_bang then
     not (inc_eval_atom macros (bytes_sub atom 1 (n - 1)))
   else if inc_prefix_str atom "defined" then
     inc_eval_defined macros (bytes_sub atom 7 (n - 7))
-  else if n >= 2 && bytes_get atom 0 = 40 && bytes_get atom (n - 1) = 41 then
+  else if n >= 2 && bytes_get atom 0 = ch_lparen && bytes_get atom (n - 1) = ch_rparen then
     inc_eval_include_if macros (bytes_sub atom 1 (n - 2))
   else if pp_all_digits atom then inc_read_decimal atom <> 0
   else if pp_all_ident_chars atom then sym_member atom macros
@@ -255,7 +255,7 @@ and inc_eval_atom macros raw =
 
 and inc_eval_defined macros raw =
   let rest = pp_trim raw in
-  if bytes_length rest > 0 && bytes_get rest 0 = 40 then
+  if bytes_length rest > 0 && bytes_get rest 0 = ch_lparen then
     sym_member (pp_take_while_ident (bytes_sub rest 1 (bytes_length rest - 1))) macros
   else sym_member (pp_take_while_ident rest) macros
 
@@ -303,9 +303,9 @@ let inc_ifndef_guard_end guard lines_after =
        | None -> None)
   | [] -> None
 
-let inc_is_name_char c = (c >= 65 && c <= 90) || (c >= 48 && c <= 57)
+let inc_is_name_char c = (c >= ch_A && c <= ch_Z) || (c >= ch_0 && c <= ch_9)
 
-let inc_to_upper c = if c >= 97 && c <= 122 then c - 32 else c
+let inc_to_upper c = if c >= ch_a && c <= ch_z then c - (ch_a - ch_A) else c
 
 (* uppercase, then split on non-[A-Z0-9] runs, dropping empties *)
 let inc_name_tokens name =
@@ -369,7 +369,7 @@ let inc_out = ref (buf_new 1)
 
 let inc_keep_line line =
   buf_add_bytes !inc_out line;
-  buf_push !inc_out 10
+  buf_push !inc_out ch_nl
 
 (* candidates are probed in order: current dir first, then -I dirs *)
 let inc_find_include dirs current_dir name =

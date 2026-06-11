@@ -11,8 +11,8 @@ let cm_unescape_define_value value =
   let rec go i =
     if i < n then
       (let c = bytes_get value i in
-       if c = 92 && i + 1 < n && bytes_get value (i + 1) = 34 then
-         (buf_push out 34; go (i + 2))
+       if c = ch_bslash && i + 1 < n && bytes_get value (i + 1) = ch_dquote then
+         (buf_push out ch_dquote; go (i + 2))
        else (buf_push out c; go (i + 1))) in
   go 0;
   buf_take out
@@ -21,7 +21,7 @@ let cm_parse_define def =
   let n = bytes_length def in
   let rec find_eq i =
     if i >= n then 0 - 1
-    else if bytes_get def i = 61 then i
+    else if bytes_get def i = ch_eq then i
     else find_eq (i + 1) in
   let eq = find_eq 0 in
   if eq < 0 then (def, str_to_bytes "1")
@@ -77,15 +77,15 @@ let rec cm_assembly_args args out input includes defines target =
                    buf_add_str b "hcc: unsupported target: ";
                    buf_add_bytes b t;
                    die_bytes (buf_take b))))
-      else if bytes_length a > 2 && bytes_get a 0 = 45 && bytes_get a 1 = 73 then
+      else if bytes_length a > 2 && bytes_get a 0 = ch_minus && bytes_get a 1 = ch_I then
         cm_assembly_args rest out input
           (bytes_sub a 2 (bytes_length a - 2) :: includes) defines target
-      else if bytes_length a > 2 && bytes_get a 0 = 45 && bytes_get a 1 = 68 then
+      else if bytes_length a > 2 && bytes_get a 0 = ch_minus && bytes_get a 1 = ch_D then
         cm_assembly_args rest out input includes
           (cm_parse_define (bytes_sub a 2 (bytes_length a - 2)) :: defines) target
       else if cm_ignored_flag a then
         cm_assembly_args rest out input includes defines target
-      else if bytes_length a >= 1 && bytes_get a 0 = 45 then
+      else if bytes_length a >= 1 && bytes_get a 0 = ch_minus then
         (let b = buf_new 48 in
          buf_add_str b "hcc: unsupported option: ";
          buf_add_bytes b a;
@@ -98,15 +98,15 @@ let rec cm_render_defines out defines =
   | (name, value) :: rest ->
       buf_add_str out "#define ";
       buf_add_bytes out name;
-      buf_push out 32;
+      buf_push out ch_space;
       buf_add_bytes out value;
-      buf_push out 10;
+      buf_push out ch_nl;
       cm_render_defines out rest
 
 let cm_usage () =
   let b = buf_new 64 in
   buf_add_str b "usage: hcpp [CC-ARGS...] INPUT.c";
-  buf_push b 10;
+  buf_push b ch_nl;
   write_buf b
 
 let cm_preprocess_file args =
@@ -122,10 +122,10 @@ let cm_preprocess_file args =
   let out = buf_new 65536 in
   let rec render ts =
     match ts with
-    | [] -> buf_push out 10
+    | [] -> buf_push out ch_nl
     | t :: rest ->
         buf_add_bytes out (token_text (tok_kind t));
-        buf_push out 32;
+        buf_push out ch_space;
         render rest in
   render out_toks;
   write_buf out;

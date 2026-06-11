@@ -36,9 +36,9 @@ let splice_continuations src =
   let rec go i =
     if i < n then
       (let c = bytes_get src i in
-       if c = 92 && i + 2 < n && bytes_get src (i + 1) = 13 &&
-          bytes_get src (i + 2) = 10 then go (i + 3)
-       else if c = 92 && i + 1 < n && bytes_get src (i + 1) = 10 then go (i + 2)
+       if c = ch_bslash && i + 2 < n && bytes_get src (i + 1) = ch_cr &&
+          bytes_get src (i + 2) = ch_nl then go (i + 3)
+       else if c = ch_bslash && i + 1 < n && bytes_get src (i + 1) = ch_nl then go (i + 2)
        else (buf_push out c; go (i + 1))) in
   go 0;
   buf_take out
@@ -54,41 +54,41 @@ let sc_out = ref (buf_new 1)
 let rec sc_normal i =
   if i < !sc_n then
     (let c = bytes_get !sc_src i in
-     if c = 47 && i + 1 < !sc_n && bytes_get !sc_src (i + 1) = 47 then sc_line (i + 2)
-     else if c = 47 && i + 1 < !sc_n && bytes_get !sc_src (i + 1) = 42 then sc_block 1 (i + 2)
-     else if c = 34 then (buf_push !sc_out c; sc_strlit (i + 1))
-     else if c = 39 then (buf_push !sc_out c; sc_chrlit (i + 1))
+     if c = ch_slash && i + 1 < !sc_n && bytes_get !sc_src (i + 1) = ch_slash then sc_line (i + 2)
+     else if c = ch_slash && i + 1 < !sc_n && bytes_get !sc_src (i + 1) = ch_star then sc_block 1 (i + 2)
+     else if c = ch_dquote then (buf_push !sc_out c; sc_strlit (i + 1))
+     else if c = ch_squote then (buf_push !sc_out c; sc_chrlit (i + 1))
      else (buf_push !sc_out c; sc_normal (i + 1)))
 
 and sc_line i =
   if i < !sc_n then
-    (if bytes_get !sc_src i = 10 then (buf_push !sc_out 10; sc_normal (i + 1))
+    (if bytes_get !sc_src i = ch_nl then (buf_push !sc_out ch_nl; sc_normal (i + 1))
      else sc_line (i + 1))
 
 and sc_block depth i =
   if i < !sc_n then
     (let c = bytes_get !sc_src i in
-     if c = 47 && i + 1 < !sc_n && bytes_get !sc_src (i + 1) = 42 then sc_block (depth + 1) (i + 2)
-     else if c = 42 && i + 1 < !sc_n && bytes_get !sc_src (i + 1) = 47 then
-       (if depth = 1 then (buf_push !sc_out 32; sc_normal (i + 2))
+     if c = ch_slash && i + 1 < !sc_n && bytes_get !sc_src (i + 1) = ch_star then sc_block (depth + 1) (i + 2)
+     else if c = ch_star && i + 1 < !sc_n && bytes_get !sc_src (i + 1) = ch_slash then
+       (if depth = 1 then (buf_push !sc_out ch_space; sc_normal (i + 2))
         else sc_block (depth - 1) (i + 2))
-     else if c = 10 then (buf_push !sc_out 10; sc_block depth (i + 1))
+     else if c = ch_nl then (buf_push !sc_out ch_nl; sc_block depth (i + 1))
      else sc_block depth (i + 1))
 
 and sc_strlit i =
   if i < !sc_n then
     (let c = bytes_get !sc_src i in
-     if c = 92 && i + 1 < !sc_n then
+     if c = ch_bslash && i + 1 < !sc_n then
        (buf_push !sc_out c; buf_push !sc_out (bytes_get !sc_src (i + 1)); sc_strlit (i + 2))
-     else if c = 34 then (buf_push !sc_out c; sc_normal (i + 1))
+     else if c = ch_dquote then (buf_push !sc_out c; sc_normal (i + 1))
      else (buf_push !sc_out c; sc_strlit (i + 1)))
 
 and sc_chrlit i =
   if i < !sc_n then
     (let c = bytes_get !sc_src i in
-     if c = 92 && i + 1 < !sc_n then
+     if c = ch_bslash && i + 1 < !sc_n then
        (buf_push !sc_out c; buf_push !sc_out (bytes_get !sc_src (i + 1)); sc_chrlit (i + 2))
-     else if c = 39 then (buf_push !sc_out c; sc_normal (i + 1))
+     else if c = ch_squote then (buf_push !sc_out c; sc_normal (i + 1))
      else (buf_push !sc_out c; sc_chrlit (i + 1)))
 
 let strip_comments src =
@@ -114,10 +114,10 @@ let lex_die_at line col msg =
   err_str " at ";
   let b = buf_new 24 in
   buf_add_int b line;
-  buf_push b 58;
+  buf_push b ch_colon;
   buf_add_int b col;
   err_bytes (buf_take b);
-  write_byte 2 10;
+  write_byte 2 ch_nl;
   exit 1
 
 let lx_peek () = if !lx_i < !lx_n then bytes_get !lx_src !lx_i else 0 - 1
@@ -142,13 +142,13 @@ let char_in_str c s =
     else string_get s i = c || go (i + 1) in
   go 0
 
-let cc_is_space_no_nl c = c = 9 || c = 13 || c = 11 || c = 12
-let cc_is_space c = c = 32 || c = 10 || cc_is_space_no_nl c
-let cc_is_digit c = c >= 48 && c <= 57
+let cc_is_space_no_nl c = c = ch_tab || c = ch_cr || c = ch_vt || c = ch_ff
+let cc_is_space c = c = ch_space || c = ch_nl || cc_is_space_no_nl c
+let cc_is_digit c = c >= ch_0 && c <= ch_9
 let cc_is_hex_digit c =
-  cc_is_digit c || (c >= 97 && c <= 102) || (c >= 65 && c <= 70)
+  cc_is_digit c || (c >= ch_a && c <= ch_f) || (c >= ch_A && c <= ch_F)
 let cc_is_ident_start c =
-  (c >= 97 && c <= 122) || (c >= 65 && c <= 90) || c = 95
+  (c >= ch_a && c <= ch_z) || (c >= ch_A && c <= ch_Z) || c = ch_uscore
 let cc_is_ident_char c = cc_is_ident_start c || cc_is_digit c
 
 (* advance over one character as a token constituent: bol clears unless
@@ -156,18 +156,18 @@ let cc_is_ident_char c = cc_is_ident_start c || cc_is_digit c
 let lx_adv () =
   let c = bytes_get !lx_src !lx_i in
   lx_i := !lx_i + 1;
-  (if c = 10 then (lx_line := !lx_line + 1; lx_col := 1)
+  (if c = ch_nl then (lx_line := !lx_line + 1; lx_col := 1)
    else lx_col := !lx_col + 1);
-  lx_bol := c = 10 || (cc_is_space_no_nl c && !lx_bol);
+  lx_bol := c = ch_nl || (cc_is_space_no_nl c && !lx_bol);
   c
 
 (* advance over whitespace: any space preserves bol (Lexer.advanceSpace) *)
 let lx_adv_space () =
   let c = bytes_get !lx_src !lx_i in
   lx_i := !lx_i + 1;
-  (if c = 10 then (lx_line := !lx_line + 1; lx_col := 1)
+  (if c = ch_nl then (lx_line := !lx_line + 1; lx_col := 1)
    else lx_col := !lx_col + 1);
-  lx_bol := c = 10 || !lx_bol
+  lx_bol := c = ch_nl || !lx_bol
 
 let lx_take_while pred =
   let b = buf_new 16 in
@@ -178,18 +178,18 @@ let lx_take_while pred =
 
 (* numbers, mirroring takeNumber / takeHexNumber / takeDecimalNumber *)
 
-let is_int_suffix c = c = 117 || c = 85 || c = 108 || c = 76          (* uUlL *)
-let is_number_suffix c = is_int_suffix c || c = 102 || c = 70        (* +fF *)
-let is_float_suffix c = c = 102 || c = 70 || c = 108 || c = 76       (* fFlL *)
+let is_int_suffix c = c = ch_u || c = ch_U || c = ch_l || c = ch_L
+let is_number_suffix c = is_int_suffix c || c = ch_f || c = ch_F
+let is_float_suffix c = c = ch_f || c = ch_F || c = ch_l || c = ch_L
 
 let rec bytes_has_float_suffix b i =
   if i >= bytes_length b then false
-  else if bytes_get b i = 102 || bytes_get b i = 70 then true
+  else if bytes_get b i = ch_f || bytes_get b i = ch_F then true
   else bytes_has_float_suffix b (i + 1)
 
 (* fraction: '.' followed by digits, but not '..' *)
 let lx_take_fraction hexmode =
-  if lx_peek () = 46 && not (lx_peek2 () = 46) then
+  if lx_peek () = ch_dot && not (lx_peek2 () = ch_dot) then
     (let b = buf_new 8 in
      buf_push b (lx_adv ());
      let rec go () =
@@ -205,7 +205,7 @@ let lx_take_exponent m1 m2 =
   let c = lx_peek () in
   if c = m1 || c = m2 then
     (let c2 = lx_peek2 () in
-     let signed = c2 = 43 || c2 = 45 in
+     let signed = c2 = ch_plus || c2 = ch_minus in
      let digit_at = if signed then !lx_i + 2 else !lx_i + 1 in
      if digit_at < !lx_n && cc_is_digit (bytes_get !lx_src digit_at) then
        (let b = buf_new 8 in
@@ -223,7 +223,7 @@ let lx_number () =
   let col = !lx_col in
   let b = buf_new 16 in
   let isfloat =
-    if lx_peek () = 48 && (lx_peek2 () = 120 || lx_peek2 () = 88) then
+    if lx_peek () = ch_0 && (lx_peek2 () = ch_x || lx_peek2 () = ch_X) then
       (* hex *)
       (buf_push b (lx_adv ());
        buf_push b (lx_adv ());
@@ -231,7 +231,7 @@ let lx_number () =
        buf_add_bytes b digits;
        let fraction = lx_take_fraction true in
        buf_add_bytes b fraction;
-       let expo = lx_take_exponent 112 80 in       (* pP *)
+       let expo = lx_take_exponent ch_p ch_P in
        buf_add_bytes b expo;
        let isf = bytes_length fraction > 0 || bytes_length expo > 0 in
        let suffix =
@@ -246,7 +246,7 @@ let lx_number () =
        buf_add_bytes b digits;
        let fraction = lx_take_fraction false in
        buf_add_bytes b fraction;
-       let expo = lx_take_exponent 101 69 in       (* eE *)
+       let expo = lx_take_exponent ch_e ch_E in
        buf_add_bytes b expo;
        let suffix = lx_take_while is_number_suffix in
        buf_add_bytes b suffix;
@@ -264,16 +264,16 @@ let lx_quoted quote =
     let c = lx_peek () in
     if c < 0 then lex_die_at line col "unterminated literal"
     else if c = quote then (buf_push b (lx_adv ()); ())
-    else if c = 92 then
+    else if c = ch_bslash then
       (buf_push b (lx_adv ());
        (if lx_peek () < 0 then lex_die_at line col "unterminated literal");
        buf_push b (lx_adv ());
        go ())
-    else if c = 10 then lex_die_at !lx_line !lx_col "newline in literal"
+    else if c = ch_nl then lex_die_at !lx_line !lx_col "newline in literal"
     else (buf_push b (lx_adv ()); go ()) in
   go ();
   let text = buf_take b in
-  if quote = 34 then Tok (line, col, TkString text)
+  if quote = ch_dquote then Tok (line, col, TkString text)
   else Tok (line, col, TkChar text)
 
 (* longest-match punctuation; mirrors Lexer.lexPunct's table.
@@ -330,7 +330,7 @@ let lx_directive () =
   let rec go () =
     let c = lx_peek () in
     if c < 0 then ()
-    else if c = 10 then (let _ = lx_adv () in ())
+    else if c = ch_nl then (let _ = lx_adv () in ())
     else (buf_push b (lx_adv ()); go ()) in
   go ();
   Tok (line, col, TkDirective (buf_take b))
@@ -347,15 +347,15 @@ let lex_c src =
     let c = lx_peek () in
     if c < 0 then list_rev acc
     else if cc_is_space c then (lx_adv_space (); go acc)
-    else if !lx_bol && c = 35 then go (lx_directive () :: acc)
+    else if !lx_bol && c = ch_hash then go (lx_directive () :: acc)
     else if cc_is_ident_start c then
       (let line = !lx_line in
        let col = !lx_col in
        let text = lx_take_while cc_is_ident_char in
        go (Tok (line, col, TkIdent text) :: acc))
     else if cc_is_digit c then go (lx_number () :: acc)
-    else if c = 39 then go (lx_quoted 39 :: acc)
-    else if c = 34 then go (lx_quoted 34 :: acc)
+    else if c = ch_squote then go (lx_quoted ch_squote :: acc)
+    else if c = ch_dquote then go (lx_quoted ch_dquote :: acc)
     else go (lx_punct () :: acc) in
   go []
 

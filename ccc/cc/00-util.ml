@@ -4,6 +4,73 @@
    when prefixed with ccc/tests/prelude-ocaml.ml, which is how it is
    typechecked and iterated on during development. *)
 
+(* ---- character codes ----
+   The dialect cannot use 'c' literals: stage 04 lexes them as ints but
+   host OCaml types them as char. Name every code once, early, instead
+   of scattering magic numbers. *)
+
+let ch_bel = 7
+let ch_bs = 8
+let ch_tab = 9
+let ch_nl = 10
+let ch_vt = 11
+let ch_ff = 12
+let ch_cr = 13
+let ch_space = 32
+let ch_bang = 33
+let ch_dquote = 34
+let ch_hash = 35
+let ch_amp = 38
+let ch_squote = 39
+let ch_lparen = 40
+let ch_rparen = 41
+let ch_star = 42
+let ch_plus = 43
+let ch_comma = 44
+let ch_minus = 45
+let ch_dot = 46
+let ch_slash = 47
+let ch_0 = 48
+let ch_7 = 55
+let ch_9 = 57
+let ch_colon = 58
+let ch_lt = 60
+let ch_eq = 61
+let ch_gt = 62
+let ch_question = 63
+let ch_A = 65
+let ch_B = 66
+let ch_D = 68
+let ch_E = 69
+let ch_F = 70
+let ch_G = 71
+let ch_I = 73
+let ch_L = 76
+let ch_P = 80
+let ch_Q = 81
+let ch_R = 82
+let ch_T = 84
+let ch_U = 85
+let ch_X = 88
+let ch_Z = 90
+let ch_lbracket = 91
+let ch_bslash = 92
+let ch_rbracket = 93
+let ch_uscore = 95
+let ch_a = 97
+let ch_b = 98
+let ch_e = 101
+let ch_f = 102
+let ch_l = 108
+let ch_n = 110
+let ch_p = 112
+let ch_r = 114
+let ch_t = 116
+let ch_u = 117
+let ch_v = 118
+let ch_x = 120
+let ch_z = 122
+
 (* ---- byte/string helpers ---- *)
 
 let rec bytes_blit_into src dst n i =
@@ -83,8 +150,8 @@ let buf_add_str b s =
 let buf_add_int b n =
   let rec go v =
     (if v > 9 then go (v / 10));
-    buf_push b (48 + v mod 10) in
-  if n < 0 then (buf_push b 45; go (0 - n)) else go n
+    buf_push b (ch_0 + v mod 10) in
+  if n < 0 then (buf_push b ch_minus; go (0 - n)) else go n
 
 let buf_take b = bytes_sub !(fst b) 0 !(snd b)
 
@@ -141,12 +208,12 @@ let err_bytes b = err_bytes_from b 0
 
 let die_bytes msg =
   err_bytes msg;
-  write_byte 2 10;
+  write_byte 2 ch_nl;
   exit 1
 
 let die msg =
   err_str msg;
-  write_byte 2 10;
+  write_byte 2 ch_nl;
   exit 1
 
 (* read a whole file into bytes *)
