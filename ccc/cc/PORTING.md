@@ -28,7 +28,12 @@ ccc1's HCCIR text output must equal `hcc1 --m1-ir` byte-for-byte. That means:
 - No exceptions; fatal errors via cc_throw/cc_throw_str (they exit).
 - No local `let rec ... and ...` (mutual recursion is TOP-LEVEL only).
   Local single self-recursive `let rec f x = ... in` is fine.
-- No records; use tuples + let-pattern destructuring `let (a, b) = ... in`.
+- Records exist, restricted: monomorphic (no type parameters), field
+  names globally unique across all record types, literals must list
+  every field in declaration order. `e.f` projects, `e.f <- v` assigns
+  to a `mutable` field (rhs parsed at the `:=` level). At most ONE
+  effectful field expression per literal (see the evaluation-order
+  rule). No record patterns and no `{ e with ... }`; project instead.
 - No `function`, no `when` guards, no `as` patterns, no or-patterns `p1|p2`,
   no `begin/end`, no `if ... then ... else` without else when a value is
   needed, no labels/optional args, no partial application of these builtins:
