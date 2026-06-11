@@ -8,11 +8,16 @@ Each stage is one small job with a real handoff artifact, Blynn-style:
 | ml0-compiler | ML0 (the interpreter's core dialect) | self-hosting single-pass compiler |
 | adt-compiler | ML1 = ML0 + ADTs + shallow match | fork of 02 + the ADT delta |
 | pattern-compiler | ML2 = ML1 + nested patterns, lists, refs, records | fork of 03 + the pattern delta |
+| uncurry-compiler | ML2 (same language, optimizing codegen) | fork of 04 + uncurried known calls |
 
 Each promoted stage recompiles itself to a fixpoint and is a conservative
 extension of its parent (byte-identical output on the parent's dialect);
 `ccc/tests/run-stage-tests.sh` enforces both, and the OCaml cross-check
-pins host-OCaml/VM emission equivalence.
+pins host-OCaml/VM emission equivalence. Stage 05 is the exception by
+design: it changes CODE GENERATION (not the language), so it cannot be
+byte-compared against 04 — it is verified by its second-generation
+fixpoint (gen2 = gen3) and by every fixture behaving identically, and
+downstream by ccc1/ccpp reproducing the same HCCIR byte-for-byte.
 
 ## Style: why the parsing looks the way it does
 

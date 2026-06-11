@@ -61,11 +61,21 @@ stdenvNoCC.mkDerivation {
     ./mzvm 04.mzbc stages/parenthetical.ml 01.mzs
     run01 01.mzs 01.mzbc
     runasm() { ./mzvm 01.mzbc "$1" "$2"; }
-    mark "bootstrap bytecode assembler"
+
+    ./mzvm 04.mzbc stages/uncurry-compiler.ml 05.mzs
+    runasm 05.mzs 05.mzbc
+    ./mzvm 05.mzbc stages/uncurry-compiler.ml 05b.mzs
+    runasm 05b.mzs 05b.mzbc
+    ./mzvm 05b.mzbc stages/uncurry-compiler.ml 05c.mzs
+    cmp 05b.mzs 05c.mzs
+    ./mzvm 05b.mzbc stages/parenthetical.ml 01o.mzs
+    runasm 01o.mzs 01o.mzbc
+    runasm() { ./mzvm 01o.mzbc "$1" "$2"; }
+    mark "bytecode assembler + stage 05 optimizer"
 
     # type-check gate: every promoted ML source must pass the HM checker
     # (which is itself type-checked) before anything is compiled from it
-    ./mzvm 04.mzbc mlc/mltc.ml mltc.mzs
+    ./mzvm 05b.mzbc mlc/mltc.ml mltc.mzs
     runasm mltc.mzs mltc.mzbc
     typecheck() { ./mzvm mltc.mzbc "$1"; }
     typecheck mlc/mltc.ml
@@ -73,15 +83,16 @@ stdenvNoCC.mkDerivation {
     typecheck stages/ml0-compiler.ml
     typecheck stages/adt-compiler.ml
     typecheck stages/pattern-compiler.ml
+    typecheck stages/uncurry-compiler.ml
     mark "mltc type-check gate (stages)"
 
     cat $(sed "s|^|cc/|" cc/PARTS-cc1) cc/dev/cc1main.ml > ccc-cc1.ml
     typecheck ccc-cc1.ml
-    ./mzvm 04.mzbc ccc-cc1.ml ccc-cc1.mzs
+    ./mzvm 05b.mzbc ccc-cc1.ml ccc-cc1.mzs
     runasm ccc-cc1.mzs ccc-cc1.mzbc
     cat $(sed "s|^|cc/|" cc/PARTS-ccpp) cc/dev/cppmain.ml > ccpp.ml
     typecheck ccpp.ml
-    ./mzvm 04.mzbc ccpp.ml ccpp.mzs
+    ./mzvm 05b.mzbc ccpp.ml ccpp.mzs
     runasm ccpp.mzs ccpp.mzbc
     mark "ccc1 + ccpp bytecode (type-checked)"
 
@@ -98,7 +109,7 @@ stdenvNoCC.mkDerivation {
     runHook preInstall
     mkdir -p $out/bin $out/lib/ccc $out/share/ccc-as-hcc
     install -m755 mzvm mlc-interp hcc-m1 $out/bin/
-    install -m644 04.mzbc ccc-cc1.mzbc ccpp.mzbc $out/lib/ccc/
+    install -m644 04.mzbc 05b.mzbc ccc-cc1.mzbc ccpp.mzbc $out/lib/ccc/
     install -m644 timing $out/share/ccc-as-hcc/timing
 
     cat > $out/bin/hcpp <<EOF
