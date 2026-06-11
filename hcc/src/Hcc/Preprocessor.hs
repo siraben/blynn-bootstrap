@@ -5,6 +5,7 @@ module Preprocessor
 
 import Base
 import ConstExpr
+import Directive
 import IfFrame
 import Lexer
 import SymbolTable
@@ -63,14 +64,14 @@ preprocess toks = go symbolMapEmpty [] (sourceFromTokens toks) id where
       go macros frames xs acc
     Directive "ifdef" rest ->
       case directiveName rest of
-        Just name -> go macros (pushIfFrame frames (symbolMapMember name macros)) xs acc
+        Just name -> go macros (startIf frames (symbolMapMember name macros)) xs acc
         Nothing -> Left (PreprocessError (spanStart sp) "#ifdef without macro name")
     Directive "ifndef" rest ->
       case directiveName rest of
-        Just name -> go macros (pushIfFrame frames (not (symbolMapMember name macros))) xs acc
+        Just name -> go macros (startIf frames (not (symbolMapMember name macros))) xs acc
         Nothing -> Left (PreprocessError (spanStart sp) "#ifndef without macro name")
     Directive "if" rest ->
-      evalIf macros rest >>= \cond -> go macros (pushIfFrame frames cond) xs acc
+      evalIf macros rest >>= \cond -> go macros (startIf frames cond) xs acc
     Directive "elif" rest ->
       evalIf macros rest >>= \cond -> replaceElif sp frames cond >>= \frames' -> go macros frames' xs acc
     Directive "else" _ ->
@@ -91,39 +92,26 @@ dropInactiveToken toks = case toks of
   Chunk _ []:xs -> dropInactiveToken xs
   Chunk hidden (_:xs):rest -> prependChunk hidden xs rest
 
-data Directive = Directive String String
-
-parseDirective :: String -> Directive
-parseDirective text = case dropSpaces text of
-  '#':rest ->
-    let rest' = dropSpaces rest
-        (name, body) = span isDirectiveChar rest'
-    in Directive name (dropSpaces body)
-  _ -> Directive "" ""
-
-isDirectiveChar :: Char -> Bool
-isDirectiveChar c = isAsciiAlphaNum c || c == '_'
-
-directiveName :: String -> Maybe String
-directiveName text = case dropSpaces text of
-  c:_ | isIdentStart c -> Just (takeWhile isIdentChar text)
-  _ -> Nothing
-
 ignoredDirectives :: [String]
 ignoredDirectives = ["#line", "#pragma"]
 
+startIf :: [IfFrame] -> Bool -> [IfFrame]
+startIf frames cond = case applyIfDirective frames (IfCondition cond) of
+  Just frames' -> frames'
+  Nothing -> frames
+
 replaceElse :: Span -> [IfFrame] -> Either PreprocessError [IfFrame]
-replaceElse sp frames = case replaceElseFrame frames of
+replaceElse sp frames = case applyIfDirective frames ElseCondition of
   Nothing -> Left (PreprocessError (spanStart sp) "#else without #if")
   Just frames' -> Right frames'
 
 replaceElif :: Span -> [IfFrame] -> Bool -> Either PreprocessError [IfFrame]
-replaceElif sp frames cond = case replaceElifFrame frames cond of
+replaceElif sp frames cond = case applyIfDirective frames (ElifCondition cond) of
   Nothing -> Left (PreprocessError (spanStart sp) "#elif without #if")
   Just frames' -> Right frames'
 
 popIf :: Span -> [IfFrame] -> Either PreprocessError [IfFrame]
-popIf sp frames = case popIfFrame frames of
+popIf sp frames = case applyIfDirective frames EndifCondition of
   Nothing -> Left (PreprocessError (spanStart sp) "#endif without #if")
   Just frames' -> Right frames'
 
