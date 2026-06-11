@@ -3,11 +3,11 @@
 #include <string.h>
 
 #ifndef MZVM_HEAP_LIMIT
-#define MZVM_HEAP_LIMIT 2097152
+#define MZVM_HEAP_LIMIT 33554432
 #endif
 
 #ifndef MZVM_STACK_CAP
-#define MZVM_STACK_CAP 2097152
+#define MZVM_STACK_CAP 33554432
 #endif
 
 enum {
