@@ -120,7 +120,7 @@ let cc_throw msg =
   err_str "ccc: ";
   emit !cc_contexts;
   err_bytes msg;
-  write_byte 2 10;
+  write_byte 2 ch_nl;
   exit 1
 
 let cc_throw_str msg = cc_throw (str_to_bytes msg)
@@ -147,7 +147,7 @@ let fresh_label () =
   let n = !cs_next_label in
   cs_next_label := n + 1;
   let b = buf_new 8 in
-  buf_push b 76;   (* L *)
+  buf_push b ch_L;
   buf_add_int b n;
   buf_take b
 
@@ -155,7 +155,7 @@ let fresh_data_label () =
   let l = fresh_label () in
   let b = buf_new 32 in
   buf_add_bytes b !cs_data_prefix;
-  buf_push b 95;   (* _ *)
+  buf_push b ch_uscore;
   buf_add_bytes b l;
   buf_take b
 
