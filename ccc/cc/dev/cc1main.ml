@@ -4,14 +4,14 @@
    and Hcc.HccSystem.hccTakeFileName. *)
 
 let is_ascii_alpha_num c =
-  (c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122)
+  (c >= ch_0 && c <= ch_9) || (c >= ch_A && c <= ch_Z) || (c >= ch_a && c <= ch_z)
 
 (* everything after the last '/' *)
 let hcc_take_file_name path =
   let n = string_length path in
   let rec scan i start =
     if i < n then
-      scan (i + 1) (if string_get path i = 47 then i + 1 else start)
+      scan (i + 1) (if string_get path i = ch_slash then i + 1 else start)
     else start in
   let start = scan 0 0 in
   let out = buf_new 32 in
@@ -30,7 +30,7 @@ let data_label_prefix path =
      (let rec go i =
         if i < n then
           (let c = bytes_get base i in
-           (if is_ascii_alpha_num c then buf_push b c else buf_push b 95);
+           (if is_ascii_alpha_num c then buf_push b c else buf_push b ch_uscore);
            go (i + 1)) in
       go 0));
   buf_take b
@@ -44,9 +44,9 @@ let () =
   match parse_program toks with
   | None ->
       (err_str input;
-       write_byte 2 58;
+       write_byte 2 ch_colon;
        err_bytes (parse_error_render ());
-       write_byte 2 10;
+       write_byte 2 ch_nl;
        exit 1)
   | Some decls ->
       (let out = emit_hccir (data_label_prefix input) 64 decls in

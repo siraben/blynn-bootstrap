@@ -9,9 +9,9 @@ let pp_input = ref (bytes_create 0)
 let pp_die line col msg =
   let b = buf_new 64 in
   buf_add_bytes b !pp_input;
-  buf_push b 58;
+  buf_push b ch_colon;
   buf_add_int b line;
-  buf_push b 58;
+  buf_push b ch_colon;
   buf_add_int b col;
   buf_add_str b ": ";
   buf_add_bytes b msg;
@@ -23,16 +23,16 @@ let pp_die_str line col s = pp_die line col (str_to_bytes s)
    show_quoted (the parser part is not in the ccpp concatenation) *)
 let pp_show_quoted b =
   let out = buf_new (bytes_length b + 2) in
-  buf_push out 34;
+  buf_push out ch_dquote;
   let n = bytes_length b in
   let rec go i =
     if i < n then
       (let c = bytes_get b i in
-       (if c = 34 || c = 92 then buf_push out 92);
+       (if c = ch_dquote || c = ch_bslash then buf_push out ch_bslash);
        buf_push out c;
        go (i + 1)) in
   go 0;
-  buf_push out 34;
+  buf_push out ch_dquote;
   buf_take out
 
 (* ---- IfFrame: parent, taken, active ---- *)
@@ -107,8 +107,8 @@ let pp_all_ident_chars b =
 
 let pp_ends_with_dots b =
   let n = bytes_length b in
-  n >= 3 && bytes_get b (n - 1) = 46 && bytes_get b (n - 2) = 46 &&
-  bytes_get b (n - 3) = 46
+  n >= 3 && bytes_get b (n - 1) = ch_dot && bytes_get b (n - 2) = ch_dot &&
+  bytes_get b (n - 3) = ch_dot
 
 let rec pp_name_elem name names =
   match names with
@@ -136,7 +136,7 @@ let pp_strip_line_comment b =
   let rec go i =
     if i < n then
       (let c = bytes_get b i in
-       if c = 47 && i + 1 < n && bytes_get b (i + 1) = 47 then ()
+       if c = ch_slash && i + 1 < n && bytes_get b (i + 1) = ch_slash then ()
        else (buf_push out c; go (i + 1))) in
   go 0;
   buf_take out
@@ -185,7 +185,7 @@ let rec pp_drop_inactive_token toks =
 
 let pp_parse_directive text =
   let t = pp_drop_spaces text in
-  if bytes_length t > 0 && bytes_get t 0 = 35 then
+  if bytes_length t > 0 && bytes_get t 0 = ch_hash then
     (let rest = pp_drop_spaces (bytes_sub t 1 (bytes_length t - 1)) in
      let n = bytes_length rest in
      let rec go i = if i < n && cc_is_ident_char (bytes_get rest i) then go (i + 1) else i in
@@ -218,9 +218,9 @@ let pp_take_macro_params line col text =
     if i >= n then pp_die_str line col "unterminated macro parameter list"
     else
       (let c = bytes_get text i in
-       if c = 41 && depth = 1 then (buf_take b, bytes_sub text (i + 1) (n - i - 1))
-       else if c = 41 then (buf_push b c; go (depth - 1) (i + 1))
-       else if c = 40 then (buf_push b c; go (depth + 1) (i + 1))
+       if c = ch_rparen && depth = 1 then (buf_take b, bytes_sub text (i + 1) (n - i - 1))
+       else if c = ch_rparen then (buf_push b c; go (depth - 1) (i + 1))
+       else if c = ch_lparen then (buf_push b c; go (depth + 1) (i + 1))
        else (buf_push b c; go depth (i + 1))) in
   go 1 0
 
@@ -231,12 +231,12 @@ let pp_split_commas text =
     if i >= n then list_rev (buf_take cur :: acc)
     else
       (let c = bytes_get text i in
-       if c = 44 && depth = 0 then
+       if c = ch_comma && depth = 0 then
          (let piece = buf_take cur in
           buf_clear cur;
           go depth (i + 1) (piece :: acc))
-       else if c = 40 then (buf_push cur c; go (depth + 1) (i + 1) acc)
-       else if c = 41 then (buf_push cur c; go (imax 0 (depth - 1)) (i + 1) acc)
+       else if c = ch_lparen then (buf_push cur c; go (depth + 1) (i + 1) acc)
+       else if c = ch_rparen then (buf_push cur c; go (imax 0 (depth - 1)) (i + 1) acc)
        else (buf_push cur c; go depth (i + 1) acc)) in
   go 0 0 []
 
@@ -283,7 +283,7 @@ let pp_parse_macro_definition line col text =
   let t = pp_drop_spaces text in
   if bytes_length t > 0 && cc_is_ident_start (bytes_get t 0) then
     (let (name, after_name) = pp_span_ident t in
-     if bytes_length after_name > 0 && bytes_get after_name 0 = 40 then
+     if bytes_length after_name > 0 && bytes_get after_name 0 = ch_lparen then
        pp_parse_function_macro line col name
          (bytes_sub after_name 1 (bytes_length after_name - 1))
      else ObjectMacro (name, pp_lex_replacement after_name))
@@ -380,13 +380,13 @@ let pp_insert_bound_arg name arg bound =
 
 let pp_stringify_tokens toks =
   let out = buf_new 32 in
-  buf_push out 34;
+  buf_push out ch_dquote;
   let add_escaped text =
     let n = bytes_length text in
     let rec go i =
       if i < n then
         (let c = bytes_get text i in
-         (if c = 92 || c = 34 then buf_push out 92);
+         (if c = ch_bslash || c = ch_dquote then buf_push out ch_bslash);
          buf_push out c;
          go (i + 1)) in
     go 0 in
@@ -394,11 +394,11 @@ let pp_stringify_tokens toks =
     match ts with
     | [] -> ()
     | t :: rest ->
-        ((if not first then buf_push out 32);
+        ((if not first then buf_push out ch_space);
          add_escaped (token_text (tok_kind t));
          render rest false) in
   render toks true;
-  buf_push out 34;
+  buf_push out ch_dquote;
   buf_take out
 
 let pp_paste_tokens line col left right =
