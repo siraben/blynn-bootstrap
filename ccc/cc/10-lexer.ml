@@ -276,36 +276,51 @@ let lx_quoted quote =
   if quote = 34 then Tok (line, col, TkString text)
   else Tok (line, col, TkChar text)
 
-(* longest-match punctuation; mirrors Lexer.lexPunct's table *)
-let multi_char_puncts =
-  ["<<="; ">>="; "...";
-   "++"; "--"; "->"; "+="; "-="; "*="; "/="; "%="; "&="; "|="; "^=";
-   "=="; "!="; "<="; ">="; "&&"; "||"; "<<"; ">>"; "##"]
+(* longest-match punctuation; mirrors Lexer.lexPunct's table.
+   Multi-char operators are grouped by leading character (longest first
+   within a group, groups ordered by rough frequency), so each token
+   inspects at most one small group before the single-char fallback. *)
+let multi_punct_groups =
+  [("=", ["=="]);
+   ("-", ["--"; "->"; "-="]);
+   ("+", ["++"; "+="]);
+   ("<", ["<<="; "<="; "<<"]);
+   (">", [">>="; ">="; ">>"]);
+   ("!", ["!="]);
+   ("&", ["&&"; "&="]);
+   ("|", ["||"; "|="]);
+   ("*", ["*="]);
+   ("/", ["/="]);
+   ("%", ["%="]);
+   ("^", ["^="]);
+   (".", ["..."]);
+   ("#", ["##"])]
 
-let single_char_puncts = "{}[]().&*+-~!/%<>^|?:;=,#"
-
-(* only these characters can begin a multi-char operator; everything else
-   skips the table scan (the common (){};, tokens take this fast path) *)
-let multi_start_chars = "+-*/%&|^=!<>.#"
+let single_char_puncts = "();,{}[]=*.&-+<>!:?~/%^|#"
 
 let lx_punct () =
   let line = !lx_line in
   let col = !lx_col in
+  let c1 = lx_peek () in
   let take k =
     let b = buf_new 4 in
     let rec go i = if i < k then (buf_push b (lx_adv ()); go (i + 1)) in
     go 0;
     Tok (line, col, TkPunct (buf_take b)) in
   let single () =
-    if char_in_str (lx_peek ()) single_char_puncts then take 1
+    if char_in_str c1 single_char_puncts then take 1
     else lex_die_at line col "unexpected character" in
-  let rec first l =
+  let rec try_ops l =
     match l with
     | [] -> single ()
     | s :: rest ->
-        if lx_looking_at s then take (string_length s) else first rest in
-  if char_in_str (lx_peek ()) multi_start_chars then first multi_char_puncts
-  else single ()
+        if lx_looking_at s then take (string_length s) else try_ops rest in
+  let rec groups l =
+    match l with
+    | [] -> single ()
+    | (k, ops) :: rest ->
+        if string_get k 0 = c1 then try_ops ops else groups rest in
+  groups multi_punct_groups
 
 (* directive: bol '#' through end of line; newline consumed *)
 let lx_directive () =
