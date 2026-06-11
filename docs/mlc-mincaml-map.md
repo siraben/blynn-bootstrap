@@ -113,7 +113,7 @@ steps as `ch -> kon -> result` values and using `parse_bind` to thread the
 one-character lookahead state. Its own streaming identifiers are represented as
 closure-encoded character lists and compared by spelling, so the stage no
 longer relies on arithmetic identifier hashes.
-The next checked successor, `mlc/stages/03-ast-compiler.ml`, is compiled by
+The next checked successor, `mlc/stages/05-ast-compiler.ml`, is compiled by
 the committed fixed-point `mlc.byte` and deliberately introduces a MinCaml-like
 front-end split: parse source into ML ADT nodes, run a small static type check,
 then emit VM bytecode. Its first typed core distinguishes `int`, `bool`,
@@ -191,7 +191,7 @@ literal bytes to repeated `write_byte` calls. It exists to pin the M2 path,
 bytecode writer, expression codegen, and local stack environment before the
 real MinCaml-shaped passes are ported into `mlc.ml`.
 
-`02-ml0-compiler.ml` is the staged ML compiler path. In addition to the seed
+`04-ml0-compiler.ml` is the staged ML compiler path. In addition to the seed
 fixture subset, it now emits first-class unary closures for anonymous
 `fun x -> ...` expressions. The VM represents closures as heap blocks with a
 bytecode target and a bounded captured stack environment; `APPLY` pushes the

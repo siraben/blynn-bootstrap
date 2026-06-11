@@ -35,21 +35,36 @@ rec {
     inherit stageRun mlcSrc mlcInterpSeedM2 mzvmSeedM2;
   };
 
-  mlcStage02Ml0Compiler = pkgs.callPackage ./mlc-stage-02-ml0-compiler.nix {
+  mlcStage02CoreLambda = pkgs.callPackage ./mlc-stage-02-core-lambda.nix {
+    inherit stageRun mlcSrc mlcInterpSeedM2 mzvmSeedM2;
+  };
+
+  mlcStage03CoreHandoff = pkgs.callPackage ./mlc-stage-03-core-handoff.nix {
+    inherit stageRun mlcSrc mlcInterpSeedM2 mlcStage02CoreLambda mzvmSeedM2;
+  };
+
+  mlcStage04Ok = pkgs.callPackage ./mlc-stage-04-ok.nix {
+    inherit stageRun mlcSrc mlcStage03CoreHandoff mzvmSeedM2;
+  };
+
+  mlcStage04Ml0Compiler = pkgs.callPackage ./mlc-stage-04-ml0-compiler.nix {
     inherit stageRun mlcSrc mlcInterpSeedM2 mzvmSeedM2 testsMlc;
   };
 
-  mlcStage03CoreLambda = pkgs.callPackage ./mlc-stage-03-core-lambda.nix {
-    inherit stageRun mlcSrc mlcStage02Ml0Compiler mzvmSeedM2;
-  };
-
-  mlcStage04CoreHandoff = pkgs.callPackage ./mlc-stage-04-core-handoff.nix {
-    inherit stageRun mlcSrc mlcStage03CoreLambda mzvmSeedM2;
-  };
-
-  mlcStage05Ok = pkgs.callPackage ./mlc-stage-05-ok.nix {
-    inherit stageRun mlcSrc mlcStage04CoreHandoff mzvmSeedM2;
-  };
+  mlcCoreLambdaRootVsMl0 = pkgs.runCommand "mlc-core-lambda-root-vs-ml0" { } ''
+    ${mzvmSeedM2}/bin/mzvm-seed ${mlcStage04Ml0Compiler}/share/mlc/stages/04-self.mzbc < ${mlcSrc}/stages/02-core-lambda.ml > core-lambda-ml0.mzbc
+    check() {
+      printf '%s' "$1" | ${mlcInterpSeedM2}/bin/mlc-interp-seed ${mlcSrc}/stages/02-core-lambda.ml > root.mzbc
+      printf '%s' "$1" | ${mzvmSeedM2}/bin/mzvm-seed core-lambda-ml0.mzbc > ml0.mzbc
+      cmp root.mzbc ml0.mzbc
+    }
+    check "(20 (write-byte 'O'))"
+    check '(34 (write-string "OK"))'
+    check '(38 (let 40 (write-byte (+ (var 0) 39))))'
+    check "(49 (app (fun 5 26 (write-byte (+ (var 0) 39))) 40))"
+    check '(120 (seq (need-string "OK") (write-byte 89)))'
+    install -Dm644 core-lambda-ml0.mzbc "$out/share/mlc/stages/core-lambda-ml0.mzbc"
+  '';
 
   mlcSeedHost = pkgs.callPackage ./mlc-seed-host.nix {
     inherit mlcSrc mzvmHost testsMlc;
@@ -65,7 +80,7 @@ rec {
   };
 
   mlcByteSeed = pkgs.callPackage ./mlc-byte-seed.nix {
-    inherit stageRun mlcSrc mlcStage02Ml0Compiler mzvmSeedM2;
+    inherit stageRun mlcSrc mlcStage04Ml0Compiler mzvmSeedM2;
   };
 
   mlcByteCorpus = pkgs.callPackage ./mlc-byte-corpus.nix {
@@ -78,6 +93,24 @@ rec {
     install -Dm644 ${mlcSrc}/mlc.byte "$out/share/mlc/mlc.byte"
   '';
 
+  mlcByteCommittedSmoke = pkgs.runCommand "mlc-byte-committed-smoke" { } ''
+    cp ${mlcSrc}/mlc.byte mlc.byte
+
+    printf 'let x = 79 in write_byte x' | ${mzvmSeedM2}/bin/mzvm-seed mlc.byte > good.mzbc
+    actual="$(${mzvmSeedM2}/bin/mzvm-seed good.mzbc)"
+    test "$actual" = O
+
+    if printf 'let x = 79 in write_byte x.' | ${mzvmSeedM2}/bin/mzvm-seed mlc.byte > bad-consumed-dot.mzbc; then
+      echo "mlc.byte should reject consumed-dot postfixes" >&2
+      exit 1
+    else
+      :
+    fi
+
+    mkdir -p "$out/share/mlc"
+    printf '%s\n' OK > "$out/share/mlc/committed-smoke.txt"
+  '';
+
   mlcByteSelfhost = pkgs.runCommand "mlc-byte-selfhost" { } ''
     ${mzvmSeedM2}/bin/mzvm-seed ${mlcByteSeed}/share/mlc/mlc.byte < ${mlcSrc}/mlc.ml > compiled-selfhost.mzbc
     cmp ${mlcByteSeed}/share/mlc/mlc.byte compiled-selfhost.mzbc
@@ -85,7 +118,7 @@ rec {
     install -Dm644 compiled-selfhost.mzbc "$out/share/mlc/compiled-selfhost.mzbc"
   '';
 
-  mlcStage03AstCompiler = pkgs.callPackage ./mlc-stage-03-ast-compiler.nix {
+  mlcStage05AstCompiler = pkgs.callPackage ./mlc-stage-05-ast-compiler.nix {
     inherit stageRun mlcSrc mzvmSeedM2;
     mlcByte = mlcSrc + "/mlc.byte";
   };

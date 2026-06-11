@@ -648,18 +648,20 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           mlcInterpSeedHostVsM2
           mlcStage00Core
           mlcStage01Parenthetical
-          mlcStage02Ml0Compiler
-          mlcStage03CoreLambda
-          mlcStage04CoreHandoff
-          mlcStage05Ok
+          mlcStage02CoreLambda
+          mlcStage03CoreHandoff
+          mlcStage04Ok
+          mlcStage04Ml0Compiler
+          mlcCoreLambdaRootVsMl0
           mlcSeedHost
           mlcSeedM2
           mlcSeedHostVsM2
           mlcByteSeed
           mlcByteCorpus
           mlcByteCommitted
+          mlcByteCommittedSmoke
           mlcByteSelfhost
-          mlcStage03AstCompiler
+          mlcStage05AstCompiler
           cccByteSeed
           cccByteCommitted
           tccM1CccSeed
@@ -1304,27 +1306,28 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             interp-seed.m2 = mlcInterpSeedM2;
             stage.core00 = mlcStage00Core;
             stage.parenthetical01 = mlcStage01Parenthetical;
-            stage.ml0Compiler02 = mlcStage02Ml0Compiler;
-            stage.coreLambda03 = mlcStage03CoreLambda;
-            stage.coreHandoff04 = mlcStage04CoreHandoff;
-            stage.ok05 = mlcStage05Ok;
-            stage.astCompiler03 = mlcStage03AstCompiler;
+            stage.coreLambda02 = mlcStage02CoreLambda;
+            stage.coreHandoff03 = mlcStage03CoreHandoff;
+            stage.ok04 = mlcStage04Ok;
+            stage.ml0Compiler04 = mlcStage04Ml0Compiler;
+            stage.astCompiler05 = mlcStage05AstCompiler;
             seed.host = mlcSeedHost;
             seed.m2 = mlcSeedM2;
             byte.seed = mlcByteSeed;
             byte.corpus = mlcByteCorpus;
             byte.committed = mlcByteCommitted;
+            byte.committed-smoke = mlcByteCommittedSmoke;
             byte.selfhost = mlcByteSelfhost;
           };
           mlc-interp-seed.host = mlcInterpSeedHost;
           mlc-interp-seed.m2 = mlcInterpSeedM2;
           mlc-stage-00-core = mlcStage00Core;
           mlc-stage-01-parenthetical = mlcStage01Parenthetical;
-          mlc-stage-02-ml0-compiler = mlcStage02Ml0Compiler;
-          mlc-stage-03-core-lambda = mlcStage03CoreLambda;
-          mlc-stage-04-core-handoff = mlcStage04CoreHandoff;
-          mlc-stage-05-ok = mlcStage05Ok;
-          mlc-stage-03-ast-compiler = mlcStage03AstCompiler;
+          mlc-stage-02-core-lambda = mlcStage02CoreLambda;
+          mlc-stage-03-core-handoff = mlcStage03CoreHandoff;
+          mlc-stage-04-ok = mlcStage04Ok;
+          mlc-stage-04-ml0-compiler = mlcStage04Ml0Compiler;
+          mlc-stage-05-ast-compiler = mlcStage05AstCompiler;
           mlc-seed.host = mlcSeedHost;
           mlc-seed.m2 = mlcSeedM2;
 
@@ -1379,14 +1382,16 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             tinyccM1.native-vs-faithful = tinyccM1CompareNativeFaithful;
             mzvm.host-vs-seed = mzvmHostVsSeed;
             mlc.interp-seed.host-vs-m2 = mlcInterpSeedHostVsM2;
+            mlc.core-lambda.root-vs-ml0 = mlcCoreLambdaRootVsMl0;
             mlc.stage.core00 = mlcStage00Core;
             mlc.stage.parenthetical01 = mlcStage01Parenthetical;
-            mlc.stage.ml0Compiler02 = mlcStage02Ml0Compiler;
-            mlc.stage.astCompiler03 = mlcStage03AstCompiler;
+            mlc.stage.ml0Compiler04 = mlcStage04Ml0Compiler;
+            mlc.stage.astCompiler05 = mlcStage05AstCompiler;
             mlc.seed.host-vs-m2 = mlcSeedHostVsM2;
             mlc.byte.seed = mlcByteSeed;
             mlc.byte.corpus = mlcByteCorpus;
             mlc.byte.committed = mlcByteCommitted;
+            mlc.byte.committed-smoke = mlcByteCommittedSmoke;
             mlc.byte.selfhost = mlcByteSelfhost;
             ccc.byte.seed = cccByteSeed;
             ccc.byte.committed = cccByteCommitted;
@@ -1405,16 +1410,18 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           mlc-interp-seed-host-vs-m2 = mlcInterpSeedHostVsM2;
           mlc-stage-00-core = mlcStage00Core;
           mlc-stage-01-parenthetical = mlcStage01Parenthetical;
-          mlc-stage-02-ml0-compiler = mlcStage02Ml0Compiler;
-          mlc-stage-03-core-lambda = mlcStage03CoreLambda;
-          mlc-stage-04-core-handoff = mlcStage04CoreHandoff;
-          mlc-stage-05-ok = mlcStage05Ok;
-          mlc-stage-03-ast-compiler = mlcStage03AstCompiler;
+          mlc-stage-02-core-lambda = mlcStage02CoreLambda;
+          mlc-stage-03-core-handoff = mlcStage03CoreHandoff;
+          mlc-stage-04-ok = mlcStage04Ok;
+          mlc-stage-04-ml0-compiler = mlcStage04Ml0Compiler;
+          mlc-stage-05-ast-compiler = mlcStage05AstCompiler;
+          mlc-core-lambda-root-vs-ml0 = mlcCoreLambdaRootVsMl0;
           mlc-seed-m2 = mlcSeedM2;
           mlc-seed-host-vs-m2 = mlcSeedHostVsM2;
           mlc-byte-seed = mlcByteSeed;
           mlc-byte-corpus = mlcByteCorpus;
           mlc-byte-committed = mlcByteCommitted;
+          mlc-byte-committed-smoke = mlcByteCommittedSmoke;
           mlc-byte-selfhost = mlcByteSelfhost;
           ccc-byte-seed = cccByteSeed;
           ccc-byte-committed = cccByteCommitted;

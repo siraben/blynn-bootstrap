@@ -8,9 +8,9 @@ that construct and have a check for it.
 
 ## Current evidence
 
-- `mlc/stages/02-ml0-compiler.ml` already compiles ordinary char literals.
+- `mlc/stages/04-ml0-compiler.ml` already compiles ordinary char literals.
   Its own parser uses char literals for whitespace, delimiters, keyword heads,
-  and MZBC syntax, and `nix/mlc-stage-02-ml0-compiler.nix` checks
+  and MZBC syntax, and `nix/mlc-stage-04-ml0-compiler.nix` checks
   `write_byte 'O'`.
 - Decimal escaped char literals such as `'\013'` are now covered on both sides
   of the handoff: stage 02 compiles them, and the `mlc.ml` parser accepts them
@@ -96,6 +96,31 @@ These can move directly into `mlc.ml` because stage 02 already compiles them:
   source-byte probes.
 - Expression-start lookahead and constructor payload tuple parsing now use
   `p_has_char` / `p_optional_char_pos` for quoted and parenthesized forms.
+  Active expression entry points also now use `p_try_char` / `p_has_char` for
+  parenthesized primaries, string-literal starts, match-case bars, wildcard
+  patterns, record-literal openers, and `let (x, y)` destructuring openers
+  rather than raw source indexing.
+- Infix expression continuations now use a shared `p_try_infix_op` parser plus
+  `emit_infix_op` dispatch, replacing the repeated source-byte operator ladders
+  in `compile_simple_expr` and the main expression parser. This is still
+  first-order, but it moves the active fixed-point compiler closer to the
+  Parsec-style parser surface already present in stage 03. The operator parser
+  itself now uses `p_with_value`, `p_alt`, and `p_alt5`, the
+  stage-02-compatible spelling of parser result mapping and fixed-arity choice.
+  Rejection of malformed one-character `!` / `=` infix tails is also centralized
+  through `reject_partial_infix`, rather than duplicated at each expression
+  continuation.
+- Postfix starts for `.field`, `.[index]`, and `.(index)` now go through a
+  shared `p_try_postfix` parser reply, so expression parsing no longer
+  hand-probes `next1` and `next1 + 1` for those forms. The emitted code still
+  has separate store/load paths until the active compiler can use stronger
+  local abstractions, but the source recognition is now parser-combinator
+  shaped. The parser also carries the parsed field name in its reply, avoiding
+  per-call-site reparsing, and treats a consumed `.` without a valid postfix as
+  a parse error instead of silently ending the expression before the dot. The
+  bytecode corpus now has a negative `x.` fixture for that consumed-dot
+  behavior, and `mlc.byte.committed-smoke` provides a faster committed-bytecode
+  gate for the same parser invariant without rebuilding the seed chain.
 
 ## Promote before use
 

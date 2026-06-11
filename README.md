@@ -76,7 +76,11 @@ nix build .#mlc-interp-seed.m2
 nix build .#tests.mlc.interp-seed.host-vs-m2
 nix build .#mlc-stage-00-core
 nix build .#mlc-stage-01-parenthetical
-nix build .#mlc-stage-02-ml0-compiler
+nix build .#mlc-stage-02-core-lambda
+nix build .#mlc-stage-03-core-handoff
+nix build .#mlc-stage-04-ok
+nix build .#mlc-stage-04-ml0-compiler
+nix build .#tests.mlc.core-lambda.root-vs-ml0
 nix build .#mlc-seed.host
 nix build .#mlc-seed.m2
 nix build .#tests.mlc.seed.host-vs-m2
@@ -106,10 +110,14 @@ for temporary compiler breadcrumbs when stdout is bytecode or M1 output. VM
 fatal errors also report `pc`, `op`, `sp`, `rp`, and heap use on stderr.
 Native VM crashes should still be debugged under `nix develop` with `gdb`.
 The mini-ML sources are not yet valid OCaml, but `ccc/host/ccc_host.ml` is the
-HCC/GHC-style host-language debugging path for CCC feature work. That host path
-is kept in a small ML subset: no OCaml `Buffer`, optional arguments, labelled
-arguments, `function` shorthand, pattern guards, OCaml bitwise operators, or
-newer option/list conveniences.
+HCC/GHC-style host-language debugging path for CCC feature work. It is the
+functional reference C compiler we can run with `ocamlc` before porting the
+same structure into `ccc.ml`. That host path is kept in a small ML subset: no
+OCaml `Buffer`, optional arguments, labelled arguments, `function` shorthand,
+pattern guards, OCaml bitwise operators, or newer option/list conveniences.
+Direct Standard ML syntax compatibility is not claimed yet; the current rule is
+to keep dependencies and idioms close enough that an SML/mini-ML port is
+mechanical instead of a redesign.
 
 ## Portable Bootstrap
 

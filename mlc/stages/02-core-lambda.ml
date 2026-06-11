@@ -114,22 +114,6 @@ let rec p_between left =
   fun ch ->
   p_right left (p_left inner right) ch
 in
-let rec p_string_loop text =
-  fun index ->
-  fun ch ->
-  if index = String.length text then (1, (text, ch)) else
-    p_right (p_char text.[index]) (p_string_loop text (index + 1)) ch
-in
-let rec p_string text =
-  fun ch ->
-  p_string_loop text 0 ch
-in
-let rec expect_string text =
-  fun ch ->
-  let parsed = p_need (p_string text) ch in
-  let (_value, next_ch) = parsed in
-  next_ch
-in
 let rec p_number_loop acc =
   fun ch ->
   let reply = p_raw_digit ch in

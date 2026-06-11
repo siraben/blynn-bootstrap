@@ -7,7 +7,7 @@
 }:
 
 stageRun {
-  pname = "mlc-stage-02-ml0-compiler";
+  pname = "mlc-stage-04-ml0-compiler";
   nativeBuildInputs = [
     mlcInterpSeedM2
     mzvmSeedM2
@@ -15,38 +15,38 @@ stageRun {
   description = "First MLC stage that compiles an ML source subset to MZBC";
   buildScript = ''
     ulimit -s unlimited || true
-    cp ${mlcSrc}/stages/02-ml0-compiler.ml 02-ml0-compiler.ml
-    cp ${mlcSrc}/stages/03-ok.ml0 03-ok.ml0
-    cp ${mlcSrc}/stages/03-char-string.ml0 03-char-string.ml0
-    ${mlcInterpSeedM2}/bin/mlc-interp-seed 02-ml0-compiler.ml < 03-ok.ml0 > 03-ok.mzbc
-    actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-ok.mzbc)"
+    cp ${mlcSrc}/stages/04-ml0-compiler.ml 04-ml0-compiler.ml
+    cp ${mlcSrc}/stages/05-ok.ml0 05-ok.ml0
+    cp ${mlcSrc}/stages/05-char-string.ml0 05-char-string.ml0
+    ${mlcInterpSeedM2}/bin/mlc-interp-seed 04-ml0-compiler.ml < 05-ok.ml0 > 05-ok.mzbc
+    actual="$(${mzvmSeedM2}/bin/mzvm-seed 05-ok.mzbc)"
     test "$actual" = OK
-    ${mlcInterpSeedM2}/bin/mlc-interp-seed 02-ml0-compiler.ml < 03-char-string.ml0 > 03-char-string.mzbc
-    actual="$(${mzvmSeedM2}/bin/mzvm-seed 03-char-string.mzbc)"
+    ${mlcInterpSeedM2}/bin/mlc-interp-seed 04-ml0-compiler.ml < 05-char-string.ml0 > 05-char-string.mzbc
+    actual="$(${mzvmSeedM2}/bin/mzvm-seed 05-char-string.mzbc)"
     test "$actual" = OK
-    printf 'let f = fun x -> write_byte x in f 79' | ${mlcInterpSeedM2}/bin/mlc-interp-seed 02-ml0-compiler.ml > closure.mzbc
+    printf 'let f = fun x -> write_byte x in f 79' | ${mlcInterpSeedM2}/bin/mlc-interp-seed 04-ml0-compiler.ml > closure.mzbc
     ${mzvmSeedM2}/bin/mzvm-seed closure.mzbc > closure.out
-    printf 'let f = fun x -> let f2 = fun y -> write_byte (x + y) in f2 39 in f 40' | ${mlcInterpSeedM2}/bin/mlc-interp-seed 02-ml0-compiler.ml > closure-capture.mzbc
+    printf 'let f = fun x -> let f2 = fun y -> write_byte (x + y) in f2 39 in f 40' | ${mlcInterpSeedM2}/bin/mlc-interp-seed 04-ml0-compiler.ml > closure-capture.mzbc
     ${mzvmSeedM2}/bin/mzvm-seed closure-capture.mzbc > closure-capture.out
-    printf 'let f = fun x -> write_byte x in let elsewhere = 79 in let thenable = 75 in let input = 10 in let _ = f elsewhere in let _ = f thenable in f input' | ${mlcInterpSeedM2}/bin/mlc-interp-seed 02-ml0-compiler.ml > closure-lookahead.mzbc
+    printf 'let f = fun x -> write_byte x in let elsewhere = 79 in let thenable = 75 in let input = 10 in let _ = f elsewhere in let _ = f thenable in f input' | ${mlcInterpSeedM2}/bin/mlc-interp-seed 04-ml0-compiler.ml > closure-lookahead.mzbc
     ${mzvmSeedM2}/bin/mzvm-seed closure-lookahead.mzbc > closure-lookahead.out
-    printf 'let rec k x = x in let rec apply f = fun x -> f x in write_byte (apply k 79)' | ${mlcInterpSeedM2}/bin/mlc-interp-seed 02-ml0-compiler.ml > function-value.mzbc
+    printf 'let rec k x = x in let rec apply f = fun x -> f x in write_byte (apply k 79)' | ${mlcInterpSeedM2}/bin/mlc-interp-seed 04-ml0-compiler.ml > function-value.mzbc
     ${mzvmSeedM2}/bin/mzvm-seed function-value.mzbc > function-value.out
-    printf 'let x = 79 in let rec f y = write_byte (x + y) in f 0' | ${mlcInterpSeedM2}/bin/mlc-interp-seed 02-ml0-compiler.ml > letrec-capture.mzbc
+    printf 'let x = 79 in let rec f y = write_byte (x + y) in f 0' | ${mlcInterpSeedM2}/bin/mlc-interp-seed 04-ml0-compiler.ml > letrec-capture.mzbc
     ${mzvmSeedM2}/bin/mzvm-seed letrec-capture.mzbc > letrec-capture.out
-    printf 'let rec f ch = if ch = 79 then write_byte ch else write_byte 88 in f 79' | ${mlcInterpSeedM2}/bin/mlc-interp-seed 02-ml0-compiler.ml > single-eq.mzbc
+    printf 'let rec f ch = if ch = 79 then write_byte ch else write_byte 88 in f 79' | ${mlcInterpSeedM2}/bin/mlc-interp-seed 04-ml0-compiler.ml > single-eq.mzbc
     ${mzvmSeedM2}/bin/mzvm-seed single-eq.mzbc > single-eq.out
-    printf '%s' "write_byte (if '\013' = 13 then 'O' else 'X')" | ${mlcInterpSeedM2}/bin/mlc-interp-seed 02-ml0-compiler.ml > decimal-char-stage02.mzbc
-    ${mzvmSeedM2}/bin/mzvm-seed decimal-char-stage02.mzbc > decimal-char-stage02.out
-    printf 'write_byte -1' | ${mlcInterpSeedM2}/bin/mlc-interp-seed 02-ml0-compiler.ml > negative-immediate.mzbc
+    printf '%s' "write_byte (if '\013' = 13 then 'O' else 'X')" | ${mlcInterpSeedM2}/bin/mlc-interp-seed 04-ml0-compiler.ml > decimal-char-stage04.mzbc
+    ${mzvmSeedM2}/bin/mzvm-seed decimal-char-stage04.mzbc > decimal-char-stage04.out
+    printf 'write_byte -1' | ${mlcInterpSeedM2}/bin/mlc-interp-seed 04-ml0-compiler.ml > negative-immediate.mzbc
     ${mzvmSeedM2}/bin/mzvm-seed negative-immediate.mzbc > negative-immediate.out
     for name in ok arithmetic conditional comparison let-binding sequence negative identifiers keyword-prefix-infix string string-value length exit tuple bytes array dynamic-create dynamic-index function function-tuple function-nested function-string; do
-      ${mlcInterpSeedM2}/bin/mlc-interp-seed 02-ml0-compiler.ml < ${testsMlc}/$name.ml > $name.mzbc
+      ${mlcInterpSeedM2}/bin/mlc-interp-seed 04-ml0-compiler.ml < ${testsMlc}/$name.ml > $name.mzbc
       ${mzvmSeedM2}/bin/mzvm-seed $name.mzbc > $name.out
     done
-    ${mlcInterpSeedM2}/bin/mlc-interp-seed 02-ml0-compiler.ml < ${testsMlc}/read-byte.ml > read-byte.mzbc
+    ${mlcInterpSeedM2}/bin/mlc-interp-seed 04-ml0-compiler.ml < ${testsMlc}/read-byte.ml > read-byte.mzbc
     printf O | ${mzvmSeedM2}/bin/mzvm-seed read-byte.mzbc > read-byte.out
-    ${mlcInterpSeedM2}/bin/mlc-interp-seed 02-ml0-compiler.ml < ${mlcSrc}/mlc.ml > mlc-stage.mzbc
+    ${mlcInterpSeedM2}/bin/mlc-interp-seed 04-ml0-compiler.ml < ${mlcSrc}/mlc.ml > mlc-stage.mzbc
     printf 'write_byte (40+39)' | ${mzvmSeedM2}/bin/mzvm-seed mlc-stage.mzbc > mlc-stage-compiled.mzbc
     ${mzvmSeedM2}/bin/mzvm-seed mlc-stage-compiled.mzbc > mlc-stage.out
     printf "write_byte 'O'" | ${mzvmSeedM2}/bin/mzvm-seed mlc-stage.mzbc > mlc-stage-char.mzbc
@@ -91,13 +91,13 @@ stageRun {
     ${mzvmSeedM2}/bin/mzvm-seed mlc-stage-if-gt.mzbc > mlc-stage-if-gt.out
     printf "write_byte (if 41 >= 40 then 'O' else 'X')" | ${mzvmSeedM2}/bin/mzvm-seed mlc-stage.mzbc > mlc-stage-if-ge.mzbc
     ${mzvmSeedM2}/bin/mzvm-seed mlc-stage-if-ge.mzbc > mlc-stage-if-ge.out
-    ${mlcInterpSeedM2}/bin/mlc-interp-seed 02-ml0-compiler.ml < 02-ml0-compiler.ml > 02-self.mzbc
-    ${mzvmSeedM2}/bin/mzvm-seed 02-self.mzbc < 02-ml0-compiler.ml > 02-self-again.mzbc
-    printf 'write_byte 79' | ${mzvmSeedM2}/bin/mzvm-seed 02-self-again.mzbc > 02-self-smoke.mzbc
-    ${mzvmSeedM2}/bin/mzvm-seed 02-self-smoke.mzbc > 02-self-smoke.out
-    ${mzvmSeedM2}/bin/mzvm-seed 02-self.mzbc < ${mlcSrc}/mlc.ml > mlc-stage-from-02-self.mzbc
-    printf 'write_byte 79' | ${mzvmSeedM2}/bin/mzvm-seed mlc-stage-from-02-self.mzbc > mlc-stage-from-02-self-smoke.mzbc
-    ${mzvmSeedM2}/bin/mzvm-seed mlc-stage-from-02-self-smoke.mzbc > mlc-stage-from-02-self-smoke.out
+    ${mlcInterpSeedM2}/bin/mlc-interp-seed 04-ml0-compiler.ml < 04-ml0-compiler.ml > 04-self.mzbc
+    ${mzvmSeedM2}/bin/mzvm-seed 04-self.mzbc < 04-ml0-compiler.ml > 04-self-again.mzbc
+    printf 'write_byte 79' | ${mzvmSeedM2}/bin/mzvm-seed 04-self-again.mzbc > 04-self-smoke.mzbc
+    ${mzvmSeedM2}/bin/mzvm-seed 04-self-smoke.mzbc > 04-self-smoke.out
+    ${mzvmSeedM2}/bin/mzvm-seed 04-self.mzbc < ${mlcSrc}/mlc.ml > mlc-stage-from-04-self.mzbc
+    printf 'write_byte 79' | ${mzvmSeedM2}/bin/mzvm-seed mlc-stage-from-04-self.mzbc > mlc-stage-from-04-self-smoke.mzbc
+    ${mzvmSeedM2}/bin/mzvm-seed mlc-stage-from-04-self-smoke.mzbc > mlc-stage-from-04-self-smoke.out
     test "$(cat ok.out)" = OK
     test "$(cat arithmetic.out)" = H-
     test "$(cat conditional.out)" = OK
@@ -110,7 +110,7 @@ OK"
     test "$(cat function-value.out)" = O
     test "$(cat letrec-capture.out)" = O
     test "$(cat single-eq.out)" = O
-    test "$(cat decimal-char-stage02.out)" = O
+    test "$(cat decimal-char-stage04.out)" = O
     printf '\377' > negative-immediate.expected
     test "$(cat negative-immediate.out)" = "$(cat negative-immediate.expected)"
     test "$(cat sequence.out)" = OK
@@ -153,15 +153,15 @@ OK"
     test "$(cat mlc-stage-if-le.out)" = O
     test "$(cat mlc-stage-if-gt.out)" = O
     test "$(cat mlc-stage-if-ge.out)" = O
-    test "$(cat 02-self-smoke.out)" = O
-    test "$(cat mlc-stage-from-02-self-smoke.out)" = O
+    test "$(cat 04-self-smoke.out)" = O
+    test "$(cat mlc-stage-from-04-self-smoke.out)" = O
   '';
   installScript = ''
-    install -Dm644 02-ml0-compiler.ml "$out/share/mlc/stages/02-ml0-compiler.ml"
-    install -Dm644 03-ok.ml0 "$out/share/mlc/stages/03-ok.ml0"
-    install -Dm644 03-char-string.ml0 "$out/share/mlc/stages/03-char-string.ml0"
-    install -Dm644 03-ok.mzbc "$out/share/mlc/stages/03-ok.mzbc"
-    install -Dm644 03-char-string.mzbc "$out/share/mlc/stages/03-char-string.mzbc"
+    install -Dm644 04-ml0-compiler.ml "$out/share/mlc/stages/04-ml0-compiler.ml"
+    install -Dm644 05-ok.ml0 "$out/share/mlc/stages/05-ok.ml0"
+    install -Dm644 05-char-string.ml0 "$out/share/mlc/stages/05-char-string.ml0"
+    install -Dm644 05-ok.mzbc "$out/share/mlc/stages/05-ok.mzbc"
+    install -Dm644 05-char-string.mzbc "$out/share/mlc/stages/05-char-string.mzbc"
     install -Dm644 closure.mzbc "$out/share/mlc/stages/closure.mzbc"
     install -Dm644 closure.out "$out/share/mlc/stages/closure.out"
     install -Dm644 closure-capture.mzbc "$out/share/mlc/stages/closure-capture.mzbc"
@@ -174,17 +174,17 @@ OK"
     install -Dm644 letrec-capture.out "$out/share/mlc/stages/letrec-capture.out"
     install -Dm644 single-eq.mzbc "$out/share/mlc/stages/single-eq.mzbc"
     install -Dm644 single-eq.out "$out/share/mlc/stages/single-eq.out"
-    install -Dm644 decimal-char-stage02.mzbc "$out/share/mlc/stages/decimal-char-stage02.mzbc"
-    install -Dm644 decimal-char-stage02.out "$out/share/mlc/stages/decimal-char-stage02.out"
+    install -Dm644 decimal-char-stage04.mzbc "$out/share/mlc/stages/decimal-char-stage04.mzbc"
+    install -Dm644 decimal-char-stage04.out "$out/share/mlc/stages/decimal-char-stage04.out"
     install -Dm644 negative-immediate.mzbc "$out/share/mlc/stages/negative-immediate.mzbc"
     install -Dm644 negative-immediate.out "$out/share/mlc/stages/negative-immediate.out"
-    install -Dm644 02-self.mzbc "$out/share/mlc/stages/02-self.mzbc"
-    install -Dm644 02-self-again.mzbc "$out/share/mlc/stages/02-self-again.mzbc"
-    install -Dm644 02-self-smoke.mzbc "$out/share/mlc/stages/02-self-smoke.mzbc"
-    install -Dm644 02-self-smoke.out "$out/share/mlc/stages/02-self-smoke.out"
-    install -Dm644 mlc-stage-from-02-self.mzbc "$out/share/mlc/stages/mlc-stage-from-02-self.mzbc"
-    install -Dm644 mlc-stage-from-02-self-smoke.mzbc "$out/share/mlc/stages/mlc-stage-from-02-self-smoke.mzbc"
-    install -Dm644 mlc-stage-from-02-self-smoke.out "$out/share/mlc/stages/mlc-stage-from-02-self-smoke.out"
+    install -Dm644 04-self.mzbc "$out/share/mlc/stages/04-self.mzbc"
+    install -Dm644 04-self-again.mzbc "$out/share/mlc/stages/04-self-again.mzbc"
+    install -Dm644 04-self-smoke.mzbc "$out/share/mlc/stages/04-self-smoke.mzbc"
+    install -Dm644 04-self-smoke.out "$out/share/mlc/stages/04-self-smoke.out"
+    install -Dm644 mlc-stage-from-04-self.mzbc "$out/share/mlc/stages/mlc-stage-from-04-self.mzbc"
+    install -Dm644 mlc-stage-from-04-self-smoke.mzbc "$out/share/mlc/stages/mlc-stage-from-04-self-smoke.mzbc"
+    install -Dm644 mlc-stage-from-04-self-smoke.out "$out/share/mlc/stages/mlc-stage-from-04-self-smoke.out"
     install -Dm644 string-value.mzbc "$out/share/mlc/stages/string-value.mzbc"
     install -Dm644 length.mzbc "$out/share/mlc/stages/length.mzbc"
     install -Dm644 keyword-prefix-infix.mzbc "$out/share/mlc/stages/keyword-prefix-infix.mzbc"

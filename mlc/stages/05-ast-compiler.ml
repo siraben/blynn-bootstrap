@@ -357,14 +357,14 @@ let rec p_expect_string_loop_parser state =
   let (parser_state, pair2) = pair in
   let (text, index) = pair2 in
   if index == String.length text then p_unconsumed_ok (text, parser_state) else
-    let pos = parser_pos parser_state in
-    if src.[pos] == text.[index] then
-      let tail = p_expect_string_loop_parser (src, (parser_at (pos + 1), (text, index + 1))) in
-      match tail with
-        Consumed inner -> Consumed inner
-      | Unconsumed inner -> Consumed inner
-    else
-      p_unconsumed_err 0
+	    let pos = parser_pos parser_state in
+	    if src.[pos] == text.[index] then
+	      let tail = p_expect_string_loop_parser (src, (parser_at (pos + 1), (text, index + 1))) in
+	      match tail with
+	        Consumed inner -> Consumed inner
+	      | Unconsumed inner -> Consumed inner
+	    else
+	      p_unconsumed_err 0
 in
 let rec p_expect_string_parser state =
   let (src, pair) = state in
