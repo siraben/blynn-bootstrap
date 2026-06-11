@@ -1,6 +1,6 @@
 (* ccc part 56: module construction; port of Hcc.M1Ir (the build/register
    half). Continues the mutually recursive lowering group started in
-   50-lower-a.ml. The Either CodegenError plumbing of the reference is
+   lower-a.ml. The Either CodegenError plumbing of the reference is
    gone: errors are fatal via cc_throw. The processing order is the
    reference's exactly: register all top decls first (collecting the
    registered data items), then lower the functions, draining pending

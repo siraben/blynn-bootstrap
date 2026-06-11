@@ -1,6 +1,6 @@
 (* mltc: a Hindley-Milner type checker (algorithm W, let-polymorphism
    with the value restriction) for ML2, the dialect compiled by
-   ccc/stages/04-pattern-compiler.ml. Written in ML2 itself, so stage 04
+   ccc/stages/pattern-compiler.ml. Written in ML2 itself, so stage 04
    compiles it and it can typecheck itself; it also typechecks as host
    OCaml when prefixed with ccc/tests/prelude-ocaml.ml.
 

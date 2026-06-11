@@ -1,11 +1,12 @@
 # ccc porting contract (Haskell → ML2)
 
-ccc is HCC ported to ML2, the dialect compiled by ccc/stages/04-pattern-compiler.ml.
-The parts in ccc/cc/*.ml are concatenated in lexical filename order; the result
-must ALSO typecheck as host OCaml when prefixed with ccc/tests/prelude-ocaml.ml
+ccc is HCC ported to ML2, the dialect compiled by ccc/stages/pattern-compiler.ml.
+The parts in ccc/cc/*.ml are concatenated in the order given by the
+PARTS-cc1 / PARTS-ccpp manifests in this directory; the result must ALSO
+typecheck as host OCaml when prefixed with ccc/tests/prelude-ocaml.ml
 (that is the dev loop). Read these foundation files before porting anything:
-00-util.ml, 05-prim.ml, 10-lexer.ml, 12-symtab.ml, 18-literal.ml, 20-ast.ml,
-22-constexpr.ml, 30-parser.ml (for show_quoted), 40-ir.ml.
+util.ml, prim.ml, lexer.ml, symtab.ml, literal.ml, ast.ml,
+constexpr.ml, parser.ml (for show_quoted), ir.ml.
 
 ## Output-parity rule (the prime directive)
 
@@ -18,9 +19,9 @@ ccc1's HCCIR text output must equal `hcc1 --m1-ir` byte-for-byte. That means:
   left to right.
 - Diagnostic strings must match the reference character for character
   (including `show` quoting via show_quoted, ints via buf_add_int).
-- Haskell `div`/`mod` are FLOORING: use hdiv/hmod from 05-prim.ml, never the
+- Haskell `div`/`mod` are FLOORING: use hdiv/hmod from prim.ml, never the
   native `/`/`mod` (which truncate) unless both operands are provably >= 0.
-- Bitwise/shift helpers come from 18-literal.ml (bit_and_int etc.), never
+- Bitwise/shift helpers come from literal.ml (bit_and_int etc.), never
   native land/lor/lsl.
 
 ## ML2 dialect restrictions (the stage 04 compiler rejects violations)
@@ -41,7 +42,7 @@ ccc1's HCCIR text output must equal `hcc1 --m1-ir` byte-for-byte. That means:
 - `match` arms: nested patterns of constructors/tuples/lists/literals/_/vars
   only. Bind-and-test (`as`) must be rewritten.
 - Strings are bytes. Literals "..." are immutable; build text with the buf_*
-  API from 00-util.ml. Compare with bytes_eq / bytes_eq_str.
+  API from util.ml. Compare with bytes_eq / bytes_eq_str.
 - `'a option` (None/Some) and lists ([], ::, [a; b]) are available.
 - Type declarations: `type a = ... and b = ...` groups are supported,
   parameters like 'a allowed; types are erased on the VM but must typecheck
@@ -57,7 +58,7 @@ This must be applied consistently so independently ported segments link.
 
 Foundation API (already written):
 - CompileM disappears: `CompileM a` functions become plain `... -> a`
-  functions that touch the cs_* refs from 40-ir.ml. `pure x` → `x`.
+  functions that touch the cs_* refs from ir.ml. `pure x` → `x`.
 - throwC msg → cc_throw_str "..." (or cc_throw for built byte strings).
   withErrorContext ctx act → with_error_context ctx (fun () -> ...).
 - freshTemp/freshBlock/freshLabel/freshDataLabel → fresh_temp () etc.
@@ -69,17 +70,17 @@ Foundation API (already written):
   targetWordSize, currentFunctionName/currentReturnType,
   withCurrentFunction/withFunctionScope/withVarScope/withLoopTargets/
   withBreakTarget, currentBreakTarget/currentContinueTarget, labelBlock,
-  addDataItem → snake_case versions in 40-ir.ml (with_* take thunks:
+  addDataItem → snake_case versions in ir.ml (with_* take thunks:
   `with_var_scope (fun () -> ...)`).
 - TypesIr: Operand → operand (OTemp/OImm/OImmBytes/OGlobal/OFunction),
   Instr → instr (same constructor names, Temp fields are ints),
-  BinOp constructors → the irop_* integer codes from 40-ir.ml
+  BinOp constructors → the irop_* integer codes from ir.ml
   (IAdd → irop_add, IULt → irop_ult, ...). `IBin t op a b` →
   `IBin (t, op_code, a, b)`. Terminator → terminator, BasicBlock,
-  DataValue (DByte/DAddress), DataItem, FunctionIr as in 40-ir.ml.
+  DataValue (DByte/DAddress), DataItem, FunctionIr as in ir.ml.
 - TypesLower: LValue → lvalue (LLocal/LAddress), SwitchClause.
-- TypesAst: see 20-ast.ml (TopDecl ctors are prefixed D: DFunction, ...).
-- Literal: see 18-literal.ml (parseInt → parse_int on bytes, charValue →
+- TypesAst: see ast.ml (TopDecl ctors are prefixed D: DFunction, ...).
+- Literal: see literal.ml (parseInt → parse_int on bytes, charValue →
   char_value, stringBytes → string_bytes returns int list incl. trailing 0,
   naturalLiteralBytes → natural_literal_bytes, intBytes size v →
   int_bytes size v, takeInts → take_ints, shiftLeftInt → shift_left_int,
@@ -87,19 +88,19 @@ Foundation API (already written):
 - Utilities: list_rev, list_append, list_length, buf_new/buf_push/
   buf_add_bytes/buf_add_str/buf_add_int/buf_take, str_to_bytes,
   int_to_bytes, bytes_eq, bytes_eq_str, opt_or, is_some, imax, imin,
-  bytes_prefix_of (in 40-ir.ml), show_quoted (in 30-parser.ml).
+  bytes_prefix_of (in ir.ml), show_quoted (in parser.ml).
 - `lookup k assoclist` → write a small local helper or explicit recursion.
 - `elem x list-of-strings` on operator strings → chains of bytes_eq_str.
 
 ## Mutually recursive group layout
 
 Lower.hs becomes ONE ML2 `let rec ... and ...` group spanning files:
-- 50-lower-a.ml — starts with `let rec ...`; everything after is `and ...`.
-- 52-lower-b.ml, 54-lower-c.ml, 56-lower-d.ml — contain ONLY `and ...`
+- lower-a.ml — starts with `let rec ...`; everything after is `and ...`.
+- lower-b.ml, lower-c.ml, lower-d.ml — contain ONLY `and ...`
   definitions continuing that same group (no plain `let` at top level).
 Helper modules with no calls into Lower (LowerBuiltins, LowerDataValues,
 LowerLiterals, LowerParams, LowerTypeInfo, LowerSwitchHelpers,
-LowerImplicit, LowerBootstrap) live in 45-lower-help.ml as ordinary
+LowerImplicit, LowerBootstrap) live in lower-help.ml as ordinary
 top-level lets/let recs BEFORE the group.
 New private helpers you invent must be prefixed (la_, lb_, lc_, ld_) to
 avoid collisions between segments. Functions from OTHER segments are

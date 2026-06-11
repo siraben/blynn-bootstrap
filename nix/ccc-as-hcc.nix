@@ -45,20 +45,20 @@ stdenvNoCC.mkDerivation {
     # for the small early-stage assemblies. As soon as stage 04 (a real
     # bytecode compiler) exists, stage 01 is itself compiled to bytecode and
     # all large assemblies run on the GC-backed VM instead.
-    run01() { ./mlc-interp stages/01-parenthetical.ml "$1" "$2"; }
+    run01() { ./mlc-interp stages/parenthetical.ml "$1" "$2"; }
 
-    ./mlc-interp stages/02-ml0-compiler.ml stages/03-adt-compiler.ml 03.mzs
+    ./mlc-interp stages/ml0-compiler.ml stages/adt-compiler.ml 03.mzs
     run01 03.mzs 03.mzbc
-    ./mzvm 03.mzbc stages/04-pattern-compiler.ml 04.mzs
+    ./mzvm 03.mzbc stages/pattern-compiler.ml 04.mzs
     run01 04.mzs 04.mzbc
-    ./mzvm 04.mzbc stages/04-pattern-compiler.ml 04b.mzs
+    ./mzvm 04.mzbc stages/pattern-compiler.ml 04b.mzs
     run01 04b.mzs 04b.mzbc
     cmp 04.mzbc 04b.mzbc
     mark "staged ML bootstrap + fixpoint"
 
     # Bootstrap a bytecode stage-01 assembler (small input, fine under the
     # interpreter), then assemble everything large on the VM.
-    ./mzvm 04.mzbc stages/01-parenthetical.ml 01.mzs
+    ./mzvm 04.mzbc stages/parenthetical.ml 01.mzs
     run01 01.mzs 01.mzbc
     runasm() { ./mzvm 01.mzbc "$1" "$2"; }
     mark "bootstrap bytecode assembler"
@@ -69,19 +69,17 @@ stdenvNoCC.mkDerivation {
     runasm mltc.mzs mltc.mzbc
     typecheck() { ./mzvm mltc.mzbc "$1"; }
     typecheck mlc/mltc.ml
-    typecheck stages/01-parenthetical.ml
-    typecheck stages/02-ml0-compiler.ml
-    typecheck stages/03-adt-compiler.ml
-    typecheck stages/04-pattern-compiler.ml
+    typecheck stages/parenthetical.ml
+    typecheck stages/ml0-compiler.ml
+    typecheck stages/adt-compiler.ml
+    typecheck stages/pattern-compiler.ml
     mark "mltc type-check gate (stages)"
 
-    cat cc/[0-9]*.ml cc/dev/cc1main.ml > ccc-cc1.ml
+    cat $(sed "s|^|cc/|" cc/PARTS-cc1) cc/dev/cc1main.ml > ccc-cc1.ml
     typecheck ccc-cc1.ml
     ./mzvm 04.mzbc ccc-cc1.ml ccc-cc1.mzs
     runasm ccc-cc1.mzs ccc-cc1.mzbc
-    cat cc/00-util.ml cc/05-prim.ml cc/10-lexer.ml cc/12-symtab.ml \
-        cc/18-literal.ml cc/20-ast.ml cc/22-constexpr.ml \
-        cc/70-preproc.ml cc/72-include.ml cc/dev/cppmain.ml > ccpp.ml
+    cat $(sed "s|^|cc/|" cc/PARTS-ccpp) cc/dev/cppmain.ml > ccpp.ml
     typecheck ccpp.ml
     ./mzvm 04.mzbc ccpp.ml ccpp.mzs
     runasm ccpp.mzs ccpp.mzbc
