@@ -256,6 +256,10 @@ let prefix_unary_ops = ["++"; "--"; "+"; "-"; "!"; "~"; "*"; "&"]
 
 let postfix_start_puncts = ["("; "["; "."; "->"; "++"; "--"]
 
+let simple_base_types =
+  [("void", CVoid); ("_Bool", CBool); ("int", CInt); ("char", CChar);
+   ("float", CFloat); ("double", CDouble)]
+
 let is_builtin_type_name n = bytes_eq_any n builtin_type_names
 
 let is_storage_or_qualifier n = bytes_eq_any n storage_and_qualifiers
@@ -708,24 +712,26 @@ and parse_base_type () =
   pbind (p_peek ()) (fun tok ->
     match tok with
     | Tok (_, _, TkIdent name) ->
-        if bytes_eq_str name "void" then (p_advance (); POk CVoid)
-        else if bytes_eq_str name "_Bool" then (p_advance (); POk CBool)
-        else if bytes_eq_str name "int" then (p_advance (); POk CInt)
-        else if bytes_eq_str name "char" then (p_advance (); POk CChar)
-        else if bytes_eq_str name "signed" then (p_advance (); POk (signed_base_type ()))
-        else if bytes_eq_str name "unsigned" then (p_advance (); POk (unsigned_base_type ()))
-        else if bytes_eq_str name "short" then (p_advance (); POk (optional_kw "int" CShort))
-        else if bytes_eq_str name "long" then (p_advance (); POk (long_base_type ()))
-        else if bytes_eq_str name "float" then (p_advance (); POk CFloat)
-        else if bytes_eq_str name "double" then (p_advance (); POk CDouble)
-        else if bytes_eq_str name "struct" then aggregate_type false
-        else if bytes_eq_str name "union" then aggregate_type true
-        else if bytes_eq_str name "enum" then enum_type ()
-        else
-          (p_advance ();
-           match lookup_parser_type name with
-           | Some ty -> POk ty
-           | None -> POk (CNamed name))
+        (let rec simple l =
+           match l with
+           | [] -> None
+           | (kw, cty) :: rest ->
+               if bytes_eq_str name kw then Some cty else simple rest in
+         match simple simple_base_types with
+         | Some cty -> (p_advance (); POk cty)
+         | None ->
+             if bytes_eq_str name "signed" then (p_advance (); POk (signed_base_type ()))
+             else if bytes_eq_str name "unsigned" then (p_advance (); POk (unsigned_base_type ()))
+             else if bytes_eq_str name "short" then (p_advance (); POk (optional_kw "int" CShort))
+             else if bytes_eq_str name "long" then (p_advance (); POk (long_base_type ()))
+             else if bytes_eq_str name "struct" then aggregate_type false
+             else if bytes_eq_str name "union" then aggregate_type true
+             else if bytes_eq_str name "enum" then enum_type ()
+             else
+               (p_advance ();
+                match lookup_parser_type name with
+                | Some ty -> POk ty
+                | None -> POk (CNamed name)))
     | _ -> p_fail_tok_str tok "expected type")
 
 and optional_kw kw ty = ((if eat_ident kw then ()); ty)
