@@ -110,19 +110,21 @@ let rec take_ints count values =
      | [] -> []
      | v :: rest -> v :: take_ints (count - 1) rest)
 
+(* totals are always non-negative here, so native / and mod agree with
+   the flooring hdiv/hmod and skip their sign corrections *)
 let rec byteword_mul_small factor carry bytes =
   match bytes with
   | [] -> []
   | b :: rest ->
       let total = b * factor + carry in
-      hmod total 256 :: byteword_mul_small factor (hdiv total 256) rest
+      total mod 256 :: byteword_mul_small factor (total / 256) rest
 
 let rec byteword_add_small carry bytes =
   match bytes with
   | [] -> []
   | b :: rest ->
       let total = b + carry in
-      hmod total 256 :: byteword_add_small (hdiv total 256) rest
+      total mod 256 :: byteword_add_small (total / 256) rest
 
 let zero_byte_word = [0; 0; 0; 0; 0; 0; 0; 0]
 
