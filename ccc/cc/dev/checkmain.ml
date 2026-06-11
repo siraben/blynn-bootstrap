@@ -8,9 +8,9 @@ let check_file path =
   | Some _ -> ()
   | None ->
       (err_str path;
-       write_byte 2 58;
+       write_byte 2 ch_colon;
        err_bytes (parse_error_render ());
-       write_byte 2 10;
+       write_byte 2 ch_nl;
        exit 1)
 
 let () =

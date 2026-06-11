@@ -9,10 +9,10 @@ let () =
   let out = buf_new 65536 in
   let rec render ts =
     match ts with
-    | [] -> buf_push out 10
+    | [] -> buf_push out ch_nl
     | t :: rest ->
         buf_add_bytes out (token_text (tok_kind t));
-        buf_push out 32;
+        buf_push out ch_space;
         render rest in
   render toks;
   write_buf out;

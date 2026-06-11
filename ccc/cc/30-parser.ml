@@ -33,16 +33,16 @@ let p_emsg = ref p_dummy_bytes
 (* quoted rendering of a string, like Haskell's show *)
 let show_quoted b =
   let out = buf_new (bytes_length b + 2) in
-  buf_push out 34;
+  buf_push out ch_dquote;
   let n = bytes_length b in
   let rec go i =
     if i < n then
       (let c = bytes_get b i in
-       (if c = 34 || c = 92 then buf_push out 92);
+       (if c = ch_dquote || c = ch_bslash then buf_push out ch_bslash);
        buf_push out c;
        go (i + 1)) in
   go 0;
-  buf_push out 34;
+  buf_push out ch_dquote;
   buf_take out
 
 (* error recording: first failure since the last backtrack wins *)
@@ -1108,7 +1108,7 @@ and need_string () =
 
 and join_strings strings =
   let out = buf_new 64 in
-  buf_push out 34;
+  buf_push out ch_dquote;
   let one s =
     (* decoded content bytes minus the trailing NUL *)
     let bs = string_bytes s in
@@ -1117,12 +1117,12 @@ and join_strings strings =
       | [] -> ()
       | [_] -> ()   (* drop terminator *)
       | b :: rest ->
-          (buf_push out 92;
-           buf_push out 120;
+          (buf_push out ch_bslash;
+           buf_push out ch_x;
            let h1 = hdiv b 16 in
            let h2 = hmod b 16 in
-           buf_push out (if h1 < 10 then 48 + h1 else 97 + h1 - 10);
-           buf_push out (if h2 < 10 then 48 + h2 else 97 + h2 - 10);
+           buf_push out (if h1 < 10 then ch_0 + h1 else ch_a + h1 - 10);
+           buf_push out (if h2 < 10 then ch_0 + h2 else ch_a + h2 - 10);
            emit rest) in
     emit bs in
   let rec go l =
@@ -1130,7 +1130,7 @@ and join_strings strings =
     | [] -> ()
     | s :: rest -> (one s; go rest) in
   go strings;
-  buf_push out 34;
+  buf_push out ch_dquote;
   buf_take out
 
 (* ---- declaration-start prediction ---- *)
@@ -1207,7 +1207,7 @@ let parse_program toks =
 let parse_error_render () =
   let b = buf_new 64 in
   buf_add_int b !p_eline;
-  buf_push b 58;
+  buf_push b ch_colon;
   buf_add_int b !p_ecol;
   buf_add_str b ": ";
   buf_add_bytes b !p_emsg;
