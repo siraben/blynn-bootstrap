@@ -78,4 +78,7 @@ OUT_DIR=$TINYCC
 export TINYCC_DIR HCC_BIN_DIR MES_LIBC_DIR M2LIBC_PATH OUT_DIR
 sh "$script_dir/tinycc-boot-hcc.sh"
 
-printf 'ccc-bootstrapped tcc version %s\n' "$("$TINYCC/bin/tcc" -dumpversion)"
+# smoke check: the bootstrapped tcc must run (its self-recompile fixpoint
+# was already verified inside tinycc-boot-hcc.sh)
+"$TINYCC/bin/tcc" -dumpversion >/dev/null
+printf 'ccc bootstrap complete: %s/bin/tcc\n' "$TINYCC"
