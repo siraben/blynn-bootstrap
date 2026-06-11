@@ -237,22 +237,30 @@ let need_ident_value expected =
 
 (* ---- keyword tables ---- *)
 
-let is_builtin_type_name n =
-  bytes_eq_str n "void" || bytes_eq_str n "_Bool" || bytes_eq_str n "int" ||
-  bytes_eq_str n "char" || bytes_eq_str n "signed" || bytes_eq_str n "unsigned" ||
-  bytes_eq_str n "short" || bytes_eq_str n "long" || bytes_eq_str n "float" ||
-  bytes_eq_str n "double" || bytes_eq_str n "struct" || bytes_eq_str n "union" ||
-  bytes_eq_str n "enum"
+let builtin_type_names =
+  ["void"; "_Bool"; "int"; "char"; "signed"; "unsigned"; "short"; "long";
+   "float"; "double"; "struct"; "union"; "enum"]
 
-let is_storage_or_qualifier n =
-  bytes_eq_str n "const" || bytes_eq_str n "volatile" || bytes_eq_str n "static" ||
-  bytes_eq_str n "extern" || bytes_eq_str n "register" || bytes_eq_str n "inline" ||
-  bytes_eq_str n "auto" || bytes_eq_str n "restrict" ||
-  bytes_eq_str n "_Noreturn" || bytes_eq_str n "_Atomic"
+let storage_and_qualifiers =
+  ["const"; "volatile"; "static"; "extern"; "register"; "inline"; "auto";
+   "restrict"; "_Noreturn"; "_Atomic"]
 
-let is_unsupported_qualifier n =
-  bytes_eq_str n "_Thread_local" || bytes_eq_str n "__thread" ||
-  bytes_eq_str n "_Alignas" || bytes_eq_str n "_Generic"
+let unsupported_qualifiers =
+  ["_Thread_local"; "__thread"; "_Alignas"; "_Generic"]
+
+let compound_assign_ops =
+  [("+=", "+"); ("-=", "-"); ("*=", "*"); ("/=", "/"); ("%=", "%");
+   ("<<=", "<<"); (">>=", ">>"); ("&=", "&"); ("^=", "^"); ("|=", "|")]
+
+let prefix_unary_ops = ["++"; "--"; "+"; "-"; "!"; "~"; "*"; "&"]
+
+let postfix_start_puncts = ["("; "["; "."; "->"; "++"; "--"]
+
+let is_builtin_type_name n = bytes_eq_any n builtin_type_names
+
+let is_storage_or_qualifier n = bytes_eq_any n storage_and_qualifiers
+
+let is_unsupported_qualifier n = bytes_eq_any n unsupported_qualifiers
 
 let starts_type_name n =
   is_builtin_type_name n || is_storage_or_qualifier n || bytes_eq_str n "typedef"
@@ -952,26 +960,20 @@ and expr_climb minprec lhs =
 
 and assign_node op lhs rhs =
   if bytes_eq_str op "=" then EAssign (lhs, rhs)
-  else if bytes_eq_str op "+=" then ECompoundAssign (str_to_bytes "+", lhs, rhs)
-  else if bytes_eq_str op "-=" then ECompoundAssign (str_to_bytes "-", lhs, rhs)
-  else if bytes_eq_str op "*=" then ECompoundAssign (str_to_bytes "*", lhs, rhs)
-  else if bytes_eq_str op "/=" then ECompoundAssign (str_to_bytes "/", lhs, rhs)
-  else if bytes_eq_str op "%=" then ECompoundAssign (str_to_bytes "%", lhs, rhs)
-  else if bytes_eq_str op "<<=" then ECompoundAssign (str_to_bytes "<<", lhs, rhs)
-  else if bytes_eq_str op ">>=" then ECompoundAssign (str_to_bytes ">>", lhs, rhs)
-  else if bytes_eq_str op "&=" then ECompoundAssign (str_to_bytes "&", lhs, rhs)
-  else if bytes_eq_str op "^=" then ECompoundAssign (str_to_bytes "^", lhs, rhs)
-  else if bytes_eq_str op "|=" then ECompoundAssign (str_to_bytes "|", lhs, rhs)
-  else EBinary (op, lhs, rhs)
+  else
+    (let rec find l =
+       match l with
+       | [] -> EBinary (op, lhs, rhs)
+       | (full, base) :: rest ->
+           if bytes_eq_str op full then ECompoundAssign (str_to_bytes base, lhs, rhs)
+           else find rest in
+     find compound_assign_ops)
 
 and unary_expr () =
   pbind (p_peek ()) (fun tok ->
     match tok with
     | Tok (_, _, TkPunct op) ->
-        if bytes_eq_str op "++" || bytes_eq_str op "--" ||
-           bytes_eq_str op "+" || bytes_eq_str op "-" ||
-           bytes_eq_str op "!" || bytes_eq_str op "~" ||
-           bytes_eq_str op "*" || bytes_eq_str op "&" then
+        if bytes_eq_any op prefix_unary_ops then
           (p_advance ();
            pbind (unary_expr ()) (fun inner ->
            pbind (parse_postfix inner) (fun inner2 ->
@@ -1043,9 +1045,7 @@ and sizeof_paren_expr () =
 
 and postfix_continues () =
   match p_peek_maybe () with
-  | Some (Tok (_, _, TkPunct p)) ->
-      bytes_eq_str p "(" || bytes_eq_str p "[" || bytes_eq_str p "." ||
-      bytes_eq_str p "->" || bytes_eq_str p "++" || bytes_eq_str p "--"
+  | Some (Tok (_, _, TkPunct p)) -> bytes_eq_any p postfix_start_puncts
   | _ -> false
 
 and parse_postfix base =
@@ -1167,26 +1167,27 @@ let parse_program toks =
   p_types := scope_empty;
   p_constmap := SymE;
   p_consts := [];
-  (* builtin type aliases, inserted in list order *)
+  (* builtin type aliases, inserted in list order: FILE and FUNCTION,
+     then the opaque named integer types, then the va_list family *)
   bind_parser_type (str_to_bytes "FILE") (CStruct (str_to_bytes "FILE"));
   bind_parser_type (str_to_bytes "FUNCTION") CLong;
-  bind_parser_type (str_to_bytes "size_t") (CNamed (str_to_bytes "size_t"));
-  bind_parser_type (str_to_bytes "ssize_t") (CNamed (str_to_bytes "ssize_t"));
-  bind_parser_type (str_to_bytes "time_t") (CNamed (str_to_bytes "time_t"));
-  bind_parser_type (str_to_bytes "ptrdiff_t") (CNamed (str_to_bytes "ptrdiff_t"));
-  bind_parser_type (str_to_bytes "intptr_t") (CNamed (str_to_bytes "intptr_t"));
-  bind_parser_type (str_to_bytes "uintptr_t") (CNamed (str_to_bytes "uintptr_t"));
-  bind_parser_type (str_to_bytes "int8_t") (CNamed (str_to_bytes "int8_t"));
-  bind_parser_type (str_to_bytes "int16_t") (CNamed (str_to_bytes "int16_t"));
-  bind_parser_type (str_to_bytes "int32_t") (CNamed (str_to_bytes "int32_t"));
-  bind_parser_type (str_to_bytes "int64_t") (CNamed (str_to_bytes "int64_t"));
-  bind_parser_type (str_to_bytes "uint8_t") (CNamed (str_to_bytes "uint8_t"));
-  bind_parser_type (str_to_bytes "uint16_t") (CNamed (str_to_bytes "uint16_t"));
-  bind_parser_type (str_to_bytes "uint32_t") (CNamed (str_to_bytes "uint32_t"));
-  bind_parser_type (str_to_bytes "uint64_t") (CNamed (str_to_bytes "uint64_t"));
-  bind_parser_type (str_to_bytes "va_list") (CPtr CVoid);
-  bind_parser_type (str_to_bytes "__builtin_va_list") (CPtr CVoid);
-  bind_parser_type (str_to_bytes "jmp_buf") (CPtr CVoid);
+  let rec bind_named l =
+    match l with
+    | [] -> ()
+    | n :: rest ->
+        (bind_parser_type (str_to_bytes n) (CNamed (str_to_bytes n));
+         bind_named rest) in
+  bind_named
+    ["size_t"; "ssize_t"; "time_t"; "ptrdiff_t"; "intptr_t"; "uintptr_t";
+     "int8_t"; "int16_t"; "int32_t"; "int64_t";
+     "uint8_t"; "uint16_t"; "uint32_t"; "uint64_t"];
+  let rec bind_voidp l =
+    match l with
+    | [] -> ()
+    | n :: rest ->
+        (bind_parser_type (str_to_bytes n) (CPtr CVoid);
+         bind_voidp rest) in
+  bind_voidp ["va_list"; "__builtin_va_list"; "jmp_buf"];
   p_failed := false;
   match parse_program_decls () with
   | PFail -> None

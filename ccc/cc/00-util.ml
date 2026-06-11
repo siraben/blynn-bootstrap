@@ -32,6 +32,14 @@ let bytes_eq_str b s =
     else false in
   if bytes_length b = n then cmp 0 else false
 
+(* membership in a list of string literals (Haskell's elem) *)
+let bytes_eq_any b names =
+  let rec go l =
+    match l with
+    | [] -> false
+    | s :: rest -> bytes_eq_str b s || go rest in
+  go names
+
 (* ---- growable byte buffers: (bytes ref, length ref) ---- *)
 
 let buf_new n = (ref (bytes_create n), ref 0)
