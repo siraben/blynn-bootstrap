@@ -37,6 +37,11 @@ stageRun {
     else
       :
     fi
+    if printf 'let x = 79 in write_byte x.' | ${mzvmSeedM2}/bin/mzvm-seed mlc.byte > bad-consumed-dot.mzbc; then
+      exit 1
+    else
+      :
+    fi
     if printf 'write_byte (Bytes.length "OK")' | ${mzvmSeedM2}/bin/mzvm-seed mlc.byte > bad-bytes-length-string.mzbc; then
       exit 1
     else
