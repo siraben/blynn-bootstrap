@@ -284,6 +284,10 @@ let multi_char_puncts =
 
 let single_char_puncts = "{}[]().&*+-~!/%<>^|?:;=,#"
 
+(* only these characters can begin a multi-char operator; everything else
+   skips the table scan (the common (){};, tokens take this fast path) *)
+let multi_start_chars = "+-*/%&|^=!<>.#"
+
 let lx_punct () =
   let line = !lx_line in
   let col = !lx_col in
@@ -292,14 +296,16 @@ let lx_punct () =
     let rec go i = if i < k then (buf_push b (lx_adv ()); go (i + 1)) in
     go 0;
     Tok (line, col, TkPunct (buf_take b)) in
+  let single () =
+    if char_in_str (lx_peek ()) single_char_puncts then take 1
+    else lex_die_at line col "unexpected character" in
   let rec first l =
     match l with
-    | [] ->
-        if char_in_str (lx_peek ()) single_char_puncts then take 1
-        else lex_die_at line col "unexpected character"
+    | [] -> single ()
     | s :: rest ->
         if lx_looking_at s then take (string_length s) else first rest in
-  first multi_char_puncts
+  if char_in_str (lx_peek ()) multi_start_chars then first multi_char_puncts
+  else single ()
 
 (* directive: bol '#' through end of line; newline consumed *)
 let lx_directive () =
