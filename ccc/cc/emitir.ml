@@ -10,9 +10,15 @@ let temp_text out temp = buf_add_int out temp
 
 let block_id_text out bid = buf_add_int out bid
 
+(* hot per-data-byte path: keep first-order (closure applies cost on
+   the VM; see util.ml's per-byte loops) *)
 let int_list_fields out values =
   buf_add_int out (list_length values);
-  list_iter (fun value -> (buf_push out ch_space; buf_add_int out value)) values
+  let rec go l =
+    match l with
+    | [] -> ()
+    | value :: rest -> (buf_push out ch_space; buf_add_int out value; go rest) in
+  go values
 
 let operand_ir_fields out op =
   match op with
@@ -24,7 +30,11 @@ let operand_ir_fields out op =
 
 let operands_ir_fields out ops =
   buf_add_int out (list_length ops);
-  list_iter (fun op -> (buf_push out ch_space; operand_ir_fields out op)) ops
+  let rec go l =
+    match l with
+    | [] -> ()
+    | op :: rest -> (buf_push out ch_space; operand_ir_fields out op; go rest) in
+  go ops
 
 let maybe_temp_text out maybe_temp =
   match maybe_temp with
@@ -228,7 +238,9 @@ let rec emit_instr_ir out instr =
        buf_push out ch_nl)
 
 and emit_instrs_ir out instrs =
-  list_iter (fun instr -> emit_instr_ir out instr) instrs
+  match instrs with
+  | [] -> ()
+  | instr :: rest -> (emit_instr_ir out instr; emit_instrs_ir out rest)
 
 let emit_block_ir out block =
   match block with

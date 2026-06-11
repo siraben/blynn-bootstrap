@@ -131,9 +131,13 @@ let rec list_find f l =
 let rec bytes_blit_into src dst n i =
   if i < n then (bytes_set dst i (bytes_get src i); bytes_blit_into src dst n (i + 1))
 
+(* per-byte loops stay first-order: on the VM a closure apply per byte
+   costs more than the loop body itself (native OCaml inlines it) *)
 let bytes_sub b start len =
   let out = bytes_create len in
-  iter_range 0 len (fun i -> bytes_set out i (bytes_get b (start + i)));
+  let rec cp i =
+    if i < len then (bytes_set out i (bytes_get b (start + i)); cp (i + 1)) in
+  cp 0;
   out
 
 let bytes_eq a b =
@@ -184,13 +188,17 @@ let buf_push b c =
 let buf_add_bytes b s =
   let n = bytes_length s in
   buf_reserve b n;
-  iter_range 0 n (fun i -> bytes_set b.bdata (b.blen + i) (bytes_get s i));
+  let rec cp i =
+    if i < n then (bytes_set b.bdata (b.blen + i) (bytes_get s i); cp (i + 1)) in
+  cp 0;
   b.blen <- b.blen + n
 
 let buf_add_str b s =
   let n = string_length s in
   buf_reserve b n;
-  iter_range 0 n (fun i -> bytes_set b.bdata (b.blen + i) (string_get s i));
+  let rec cp i =
+    if i < n then (bytes_set b.bdata (b.blen + i) (string_get s i); cp (i + 1)) in
+  cp 0;
   b.blen <- b.blen + n
 
 let buf_add_int b n =
@@ -210,7 +218,8 @@ let buf_clear b = b.blen <- 0
 let str_to_bytes s =
   let n = string_length s in
   let out = bytes_create n in
-  iter_range 0 n (fun i -> bytes_set out i (string_get s i));
+  let rec cp i = if i < n then (bytes_set out i (string_get s i); cp (i + 1)) in
+  cp 0;
   out
 
 let int_to_bytes n =
@@ -249,10 +258,14 @@ let rec list_concat_map f l =
 (* ---- diagnostics and I/O ---- *)
 
 let err_str s =
-  iter_range 0 (string_length s) (fun i -> write_byte 2 (string_get s i))
+  let n = string_length s in
+  let rec go i = if i < n then (write_byte 2 (string_get s i); go (i + 1)) in
+  go 0
 
 let err_bytes b =
-  iter_range 0 (bytes_length b) (fun i -> write_byte 2 (bytes_get b i))
+  let n = bytes_length b in
+  let rec go i = if i < n then (write_byte 2 (bytes_get b i); go (i + 1)) in
+  go 0
 
 let die_bytes msg =
   err_bytes msg;
@@ -280,4 +293,6 @@ let read_file path =
 let out_chan = ref 1
 
 let write_buf b =
-  iter_range 0 b.blen (fun i -> write_byte !out_chan (bytes_get b.bdata i))
+  let rec go i =
+    if i < b.blen then (write_byte !out_chan (bytes_get b.bdata i); go (i + 1)) in
+  go 0
