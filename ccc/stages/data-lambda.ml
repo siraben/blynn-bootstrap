@@ -23,6 +23,12 @@
        compile as nested unary closures, each inner closure RETURNed by
        its enclosing one, exactly as ml0-compiler's compile_fun.
      - `()` is accepted as a parameter and binds nothing.
+     - `not b` is a builtin (the BOOLNOT opcode), like the other
+       opcode-kind builtins.
+     - top-level `let [rec] b1 and b2 and ...` groups: each binding is
+       compiled and SETGLOBAL'd in turn (mutual recursion goes through
+       forward globals checked at end of file, as in ml0-compiler);
+       `and` stays rejected in local lets.
 
    Grammar decisions carried over from core-lambda:
      - `()` is an atom (the unit value, compiled as the integer 0).
@@ -33,9 +39,10 @@
        unary minus (write `0 - 1`).
      - identifiers are at most 64 bytes long; `_` is rejected as a
        binder (`let _ = e in` is not Lambda-1; sequence with `;`).
-     - reserved words of fuller MLs (and, match, with, land, ...) are
+     - reserved words of fuller MLs (match, with, land, ...) are
        rejected so non-Lambda-1 sources fail loudly: still no tuples,
-       ADTs, match, refs or records.
+       ADTs, match, refs or records; `and` is a keyword, valid only as
+       the top-level group separator.
 
    Compilation model: single pass, parse-and-emit, no AST; the ZINC code
    shapes are byte-for-byte those of ml0-compiler + parenthetical, so the
@@ -567,6 +574,7 @@ let bi_desc = fun q ->
      else if n = 9 && a = 480082905 && b = 15827 then 291      (* array_get *)
      else if n = 9 && a = 480082905 && b = 15839 then 308      (* array_set *)
      else if n = 12 && a = 480082905 && b = 150140856 then 277 (* array_length *)
+     else if n = 3 && a = 16114 then 278                       (* not *)
      else 0 - 1)
 
 let genv = fun q ->
@@ -647,7 +655,8 @@ let c_builtin = fun re -> fun env -> fun d ->
       else if idx = 2 then emitw 44              (* setbytes *)
       else if idx = 3 then emitw 41              (* getvectitem *)
       else if idx = 4 then emitw 42              (* setvectitem *)
-      else emitw 40);                            (* vectlength *)
+      else if idx = 5 then emitw 40              (* vectlength *)
+      else emitw 30);                            (* boolnot *)
      bump (0 - (ar - 1)))
 
 let c_app = fun re -> fun env -> fun t ->
@@ -923,35 +932,40 @@ let rec cexp m = fun env -> fun t ->
 
 (* ---- top level ---- *)
 
+(* one binding of a top-level let group: name params* = expr, or () = expr;
+   `rec` is consumed by top_loop and changes nothing (the body resolves
+   its own name as a global, defined by the time any call runs) *)
+let top_binding = fun u ->
+  if t_punct 40 then
+    (* let () = expr *)
+    (next_token 0;
+     expect_p 41;
+     expect_p 61;
+     cexp 0 genv 0)
+  else
+    (let name = need_ident 0 in
+     let g = mark_defined name in
+     (if at_param 0 then
+        (let pname = param_ident 0 in
+         compile_fun cexp genv pname 61)
+      else
+        (expect_p 61;
+         cexp 0 genv 0));
+     emit1 46 (gbase + g))
+
+(* `and` chains further bindings onto the group (top level only) *)
+let rec top_bindings u =
+  top_binding 0;
+  if kw_at 3529 (* and *) then (next_token 0; top_bindings 0)
+
 let rec top_loop u =
   if rg r_tk = 0 then ()
   else
     ((if bnot (kw_at 15832) then
         (err_str "data-lambda: expected a top-level let"; die 0));
      next_token 0;
-     (if kw_at 2510 (* rec *) then
-        (next_token 0;
-         let name = need_ident 0 in
-         let pname = param_ident 0 in
-         let g = mark_defined name in
-         compile_fun cexp genv pname 61;
-         emit1 46 (gbase + g))
-      else if t_punct 40 then
-        (* let () = expr *)
-        (next_token 0;
-         expect_p 41;
-         expect_p 61;
-         cexp 0 genv 0)
-      else
-        (let name = need_ident 0 in
-         let g = mark_defined name in
-         (if at_param 0 then
-            (let pname = param_ident 0 in
-             compile_fun cexp genv pname 61)
-          else
-            (expect_p 61;
-             cexp 0 genv 0));
-         emit1 46 (gbase + g)));
+     (if kw_at 2510 (* rec *) then next_token 0);
+     top_bindings 0;
      top_loop 0)
 
 (* ---- output ---- *)
