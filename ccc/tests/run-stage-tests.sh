@@ -188,4 +188,28 @@ else
   echo "FAIL compiling stage 05"; fail=1
 fi
 
+# 7. core-lambda rung (L0): the lambda-calculus compiler self-hosts on
+#    the seed interpreter, agrees byte-for-byte with the ML-path compile
+#    of itself (diversity anchor), and its fixtures behave identically
+#    interpreted and compiled
+if "$INTERP" "$S/core-lambda.ml" "$S/core-lambda.ml" "$BUILD/stage/cl-gen1.mzbc"; then
+  okcl=1
+  "$MZVM" "$BUILD/stage/cl-gen1.mzbc" "$S/core-lambda.ml" "$BUILD/stage/cl-gen2.mzbc"
+  cmp -s "$BUILD/stage/cl-gen1.mzbc" "$BUILD/stage/cl-gen2.mzbc" || { echo "FAIL core-lambda self-host fixpoint"; okcl=0; }
+  "$MZVM" "$BUILD/stage/04gen1.mzbc" "$S/core-lambda.ml" "$BUILD/stage/cl.mzs" &&
+  "$INTERP" "$S/parenthetical.ml" "$BUILD/stage/cl.mzs" "$BUILD/stage/cl-via-ml.mzbc"
+  cmp -s "$BUILD/stage/cl-gen1.mzbc" "$BUILD/stage/cl-via-ml.mzbc" || { echo "FAIL core-lambda DDC anchor (lambda path != ML path)"; okcl=0; }
+  for f in ccc/tests/lambda/*.ml; do
+    n=$(basename "$f" .ml)
+    want=$("$INTERP" "$f" 2>&1; echo "exit=$?")
+    "$MZVM" "$BUILD/stage/cl-gen1.mzbc" "$f" "$BUILD/stage/$n.l0.mzbc" >/dev/null 2>&1 || { echo "FAIL $n (L0 compile)"; okcl=0; continue; }
+    got=$("$MZVM" "$BUILD/stage/$n.l0.mzbc" 2>&1; echo "exit=$?")
+    if [ "$want" = "$got" ]; then echo "ok   $n (L0)"; else echo "FAIL $n (L0): '$got' vs '$want'"; okcl=0; fi
+  done
+  [ "$okcl" = 1 ] && echo "ok   core-lambda self-host + DDC anchor"
+  [ "$okcl" = 1 ] || fail=1
+else
+  echo "FAIL compiling core-lambda"; fail=1
+fi
+
 if [ "$fail" = 0 ]; then echo "all stage tests passed"; else exit 1; fi
