@@ -32,7 +32,12 @@ if [ "${1:-}" = "--vm" ]; then
   # build through the staged chain and re-check one file on the VM
   sh -c '
     set -e
-    ccc/build/mlc-interp ccc/stages/ml0-compiler.ml ccc/stages/adt-compiler.ml ccc/build/ccc/03.mzs
+    # lambda ladder: core-lambda self-hosts on the seed interpreter,
+    # builds data-lambda, which builds ml0 (stage 02)
+    ccc/build/mlc-interp ccc/stages/core-lambda.ml ccc/stages/core-lambda.ml ccc/build/ccc/cl.mzbc
+    ccc/build/mzvm ccc/build/ccc/cl.mzbc ccc/stages/data-lambda.ml ccc/build/ccc/dl.mzbc
+    ccc/build/mzvm ccc/build/ccc/dl.mzbc ccc/stages/ml0-compiler.ml ccc/build/ccc/02.mzbc
+    ccc/build/mzvm ccc/build/ccc/02.mzbc ccc/stages/adt-compiler.ml ccc/build/ccc/03.mzs
     ccc/build/mlc-interp ccc/stages/parenthetical.ml ccc/build/ccc/03.mzs ccc/build/ccc/03.mzbc
     ccc/build/mzvm ccc/build/ccc/03.mzbc ccc/stages/pattern-compiler.ml ccc/build/ccc/04.mzs
     ccc/build/mlc-interp ccc/stages/parenthetical.ml ccc/build/ccc/04.mzs ccc/build/ccc/04.mzbc

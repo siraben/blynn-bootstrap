@@ -18,7 +18,8 @@ cat ccc/cc/util.ml ccc/cc/prim.ml ccc/cc/lexer.ml ccc/cc/symtab.ml \
     ccc/cc/literal.ml ccc/cc/ast.ml ccc/cc/constexpr.ml \
     ccc/cc/preproc.ml ccc/cc/include.ml ccc/cc/dev/cppmain.ml > "$BUILD/ccc/gate-ccpp.ml"
 
-GOOD="ccc/stages/parenthetical.ml ccc/stages/ml0-compiler.ml \
+GOOD="ccc/stages/core-lambda.ml ccc/stages/data-lambda.ml \
+      ccc/stages/parenthetical.ml ccc/stages/ml0-compiler.ml \
       ccc/stages/adt-compiler.ml ccc/stages/pattern-compiler.ml \
       $(ls ccc/tests/core/*.ml ccc/tests/adt/*.ml ccc/tests/pat/*.ml) \
       $BUILD/ccc/gate-cc1.ml $BUILD/ccc/gate-ccpp.ml ccc/mlc/mltc.ml"
