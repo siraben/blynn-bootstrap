@@ -212,4 +212,26 @@ else
   echo "FAIL compiling core-lambda"; fail=1
 fi
 
+# 8. data-lambda rung (L1): compiled by core-lambda, gen fixpoint, DDC
+#    anchor vs the ML path, and L1 fixtures behave as interpreted
+if "$MZVM" "$BUILD/stage/cl-gen1.mzbc" "$S/data-lambda.ml" "$BUILD/stage/dl-gen1.mzbc"; then
+  okdl=1
+  "$MZVM" "$BUILD/stage/dl-gen1.mzbc" "$S/data-lambda.ml" "$BUILD/stage/dl-gen2.mzbc"
+  cmp -s "$BUILD/stage/dl-gen1.mzbc" "$BUILD/stage/dl-gen2.mzbc" || { echo "FAIL data-lambda fixpoint"; okdl=0; }
+  "$MZVM" "$BUILD/stage/04gen1.mzbc" "$S/data-lambda.ml" "$BUILD/stage/dl.mzs" &&
+  "$INTERP" "$S/parenthetical.ml" "$BUILD/stage/dl.mzs" "$BUILD/stage/dl-via-ml.mzbc"
+  cmp -s "$BUILD/stage/dl-gen1.mzbc" "$BUILD/stage/dl-via-ml.mzbc" || { echo "FAIL data-lambda DDC anchor"; okdl=0; }
+  for f in ccc/tests/lambda1/*.ml; do
+    n=$(basename "$f" .ml)
+    want=$("$INTERP" "$f" 2>&1; echo "exit=$?")
+    "$MZVM" "$BUILD/stage/dl-gen1.mzbc" "$f" "$BUILD/stage/$n.l1.mzbc" >/dev/null 2>&1 || { echo "FAIL $n (L1 compile)"; okdl=0; continue; }
+    got=$("$MZVM" "$BUILD/stage/$n.l1.mzbc" 2>&1; echo "exit=$?")
+    if [ "$want" = "$got" ]; then echo "ok   $n (L1)"; else echo "FAIL $n (L1): '$got' vs '$want'"; okdl=0; fi
+  done
+  [ "$okdl" = 1 ] && echo "ok   data-lambda fixpoint + DDC anchor"
+  [ "$okdl" = 1 ] || fail=1
+else
+  echo "FAIL compiling data-lambda"; fail=1
+fi
+
 if [ "$fail" = 0 ]; then echo "all stage tests passed"; else exit 1; fi
