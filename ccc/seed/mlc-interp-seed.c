@@ -1,19 +1,24 @@
-/* mlc-interp-seed - tree-walking interpreter for the core ML bootstrap
- * dialect (plan.md §5). This is the weak C root that runs the first ML
- * bootstrap stages; it must stay a tiny strict core:
+/* mlc-interp-seed - tree-walking interpreter for the lambda-ladder root
+ * (ccc/docs/lambda-ladder.md). This is the weak C root that runs exactly
+ * two programs: core-lambda.ml (the Lambda-0 compiler, which self-hosts
+ * here) and parenthetical.ml (the MZBC assembler). Its dialect is the
+ * union of what those two sources use and nothing more:
  *
- *   - variables, int/char/string literals, true/false, ()
+ *   - variables, decimal int literals, string literals, true/false, ()
  *   - fun x y -> e (curried), application
- *   - if/then/else, e1; e2
- *   - let / let rec ... and ... (both top-level and "in" form)
- *   - tuples (e1, e2) with fst/snd only
+ *   - if/then/else (else optional), e1; e2
+ *   - let / let rec (both top-level and "in" form), multi-parameter
+ *     bindings as nested closures
  *   - bytes and arrays via builtin functions (no a.(i) syntax)
+ *   - operators: + - * / mod, comparisons, && || (short-circuit),
+ *     land, asr
  *   - primitive I/O: open_in/open_out/close_chan/read_byte/write_byte,
  *     exit, arg_count/arg_get
  *
- * No ADT declarations, no pattern matching, no records, no modules, no
- * type inference. The dialect is a subset of OCaml so stage sources can be
- * cross-checked under a real OCaml with a small prelude.
+ * No tuples, no char or hex literals, no `and` bindings, no ADTs, no
+ * pattern matching, no records, no modules, no type inference. The
+ * dialect is a subset of OCaml so stage sources can be cross-checked
+ * under a real OCaml with a small prelude.
  *
  * Written in the C subset accepted by both gcc and M2-Planet (via
  * M2-Mesoplanet): while loops, switch, malloc-only arena, no designated
@@ -194,32 +199,12 @@ static void skip_ws_comments(void) {
 
 static int read_escape(void) {
   int e = nextc();
-  int h;
-  int v;
   if (e == 'n') return 10;
   if (e == 't') return 9;
   if (e == 'r') return 13;
   if (e == '\\') return 92;
   if (e == '\'') return 39;
   if (e == '"') return 34;
-  if (e == 'x') {
-    v = 0;
-    h = 0;
-    while (h < 2) {
-      int d = nextc();
-      if (d >= '0' && d <= '9') {
-        v = v * 16 + (d - '0');
-      } else if (d >= 'a' && d <= 'f') {
-        v = v * 16 + (d - 'a' + 10);
-      } else if (d >= 'A' && d <= 'F') {
-        v = v * 16 + (d - 'A' + 10);
-      } else {
-        lex_error("bad hex escape");
-      }
-      h = h + 1;
-    }
-    return v;
-  }
   lex_error("bad escape");
   return 0;
 }
@@ -235,30 +220,8 @@ static void next_token(void) {
   }
   if (is_digit(c)) {
     long v = 0;
-    if (c == '0' && (peekc2() == 'x' || peekc2() == 'X')) {
-      nextc();
-      nextc();
-      c = peekc();
-      if (!is_digit(c) && !(c >= 'a' && c <= 'f') && !(c >= 'A' && c <= 'F')) {
-        lex_error("empty hex literal");
-      }
-      while (1) {
-        c = peekc();
-        if (is_digit(c)) {
-          v = v * 16 + (c - '0');
-        } else if (c >= 'a' && c <= 'f') {
-          v = v * 16 + (c - 'a' + 10);
-        } else if (c >= 'A' && c <= 'F') {
-          v = v * 16 + (c - 'A' + 10);
-        } else {
-          break;
-        }
-        nextc();
-      }
-    } else {
-      while (is_digit(peekc())) {
-        v = v * 10 + (nextc() - '0');
-      }
+    while (is_digit(peekc())) {
+      v = v * 10 + (nextc() - '0');
     }
     tok_kind = T_INT;
     tok_int = v;
@@ -310,20 +273,6 @@ static void next_token(void) {
     tok_strlen = len;
     return;
   }
-  if (c == '\'') {
-    /* char literal: 'c' or escape; identifiers never start with ' */
-    nextc();
-    c = nextc();
-    if (c == '\\') {
-      c = read_escape();
-    }
-    if (nextc() != '\'') {
-      lex_error("unterminated char literal");
-    }
-    tok_kind = T_INT;
-    tok_int = c;
-    return;
-  }
   /* punctuation, longest match first */
   {
     char *two = NULL;
@@ -334,7 +283,6 @@ static void next_token(void) {
     if (c == '>' && peekc() == '=') two = ">=";
     if (c == '&' && peekc() == '&') two = "&&";
     if (c == '|' && peekc() == '|') two = "||";
-    if (c == ';' && peekc() == ';') two = ";;";
     if (two != NULL) {
       nextc();
       tok_kind = T_PUNCT;
@@ -362,14 +310,13 @@ enum {
   A_SEQ = 8,
   A_BINOP = 9,
   A_AND = 10,   /* short-circuit && */
-  A_OR = 11,    /* short-circuit || */
-  A_TUPLE = 12
+  A_OR = 11     /* short-circuit || */
 };
 
 enum {
   B_ADD = 1, B_SUB = 2, B_MUL = 3, B_DIV = 4, B_MOD = 5,
   B_EQ = 6, B_NE = 7, B_LT = 8, B_LE = 9, B_GT = 10, B_GE = 11,
-  B_LAND = 12, B_LOR = 13, B_LXOR = 14, B_LSL = 15, B_LSR = 16, B_ASR = 17
+  B_LAND = 12, B_ASR = 17
 };
 
 /* M2-Planet rejects pointer-to-pointer-to-struct types (Ast **), so
@@ -384,7 +331,7 @@ struct Ast {
   Ast *b;
   Ast *c;
   char **names;    /* A_LET binding names */
-  char **exprs;    /* really Ast *: A_LET binding exprs; A_TUPLE elements */
+  char **exprs;    /* really Ast *: A_LET binding exprs */
   long nbind;
   long lineno;
 };
@@ -435,7 +382,6 @@ static void expect_punct(char *s) {
 static int is_keyword(char *s) {
   if (strcmp(s, "let") == 0) return 1;
   if (strcmp(s, "rec") == 0) return 1;
-  if (strcmp(s, "and") == 0) return 1;
   if (strcmp(s, "in") == 0) return 1;
   if (strcmp(s, "if") == 0) return 1;
   if (strcmp(s, "then") == 0) return 1;
@@ -445,10 +391,6 @@ static int is_keyword(char *s) {
   if (strcmp(s, "false") == 0) return 1;
   if (strcmp(s, "mod") == 0) return 1;
   if (strcmp(s, "land") == 0) return 1;
-  if (strcmp(s, "lor") == 0) return 1;
-  if (strcmp(s, "lxor") == 0) return 1;
-  if (strcmp(s, "lsl") == 0) return 1;
-  if (strcmp(s, "lsr") == 0) return 1;
   if (strcmp(s, "asr") == 0) return 1;
   return 0;
 }
@@ -463,7 +405,7 @@ static Ast *mk_binop(long op, Ast *l, Ast *r) {
   return n;
 }
 
-/* atom := int | string | ident | true | false | ( ) | ( expr ) | (e1, e2) */
+/* atom := int | string | ident | true | false | ( ) | ( expr ) */
 static Ast *parse_atom(void) {
   Ast *n;
   if (tok_kind == T_INT) {
@@ -509,22 +451,6 @@ static Ast *parse_atom(void) {
       return n;
     }
     n = parse_expr();
-    if (tok_is_punct(",")) {
-      Ast *t = new_ast(A_TUPLE);
-      t->exprs = xalloc(8 * (long)sizeof(char *));
-      t->exprs[0] = (char *)n;
-      t->nbind = 1;
-      while (tok_is_punct(",")) {
-        next_token();
-        if (t->nbind >= 8) {
-          parse_error("tuple too wide for seed dialect");
-        }
-        t->exprs[t->nbind] = (char *)parse_expr();
-        t->nbind = t->nbind + 1;
-      }
-      expect_punct(")");
-      return t;
-    }
     expect_punct(")");
     return n;
   }
@@ -551,33 +477,18 @@ static Ast *parse_app(void) {
   return f;
 }
 
-static Ast *parse_unary(void) {
-  if (tok_is_punct("-")) {
-    Ast *z;
-    next_token();
-    z = new_ast(A_INT);
-    z->ival = 0;
-    return mk_binop(B_SUB, z, parse_unary());
-  }
-  return parse_app();
-}
-
 static Ast *parse_mul(void) {
-  Ast *l = parse_unary();
+  Ast *l = parse_app();
   while (1) {
     long op = 0;
     if (tok_is_punct("*")) op = B_MUL;
     else if (tok_is_punct("/")) op = B_DIV;
     else if (tok_is_ident("mod")) op = B_MOD;
     else if (tok_is_ident("land")) op = B_LAND;
-    else if (tok_is_ident("lor")) op = B_LOR;
-    else if (tok_is_ident("lxor")) op = B_LXOR;
-    else if (tok_is_ident("lsl")) op = B_LSL;
-    else if (tok_is_ident("lsr")) op = B_LSR;
     else if (tok_is_ident("asr")) op = B_ASR;
     else return l;
     next_token();
-    l = mk_binop(op, l, parse_unary());
+    l = mk_binop(op, l, parse_app());
   }
 }
 
@@ -690,31 +601,20 @@ static void parse_binding(void) {
 
 static Ast *parse_let_common(void) {
   /* caller consumed "let"; returns A_LET with body NULL (filled by caller
-   * for the "in" form, or left NULL at top level). */
+   * for the "in" form, or left NULL at top level). Exactly one binding:
+   * the dialect has no `and`. */
   Ast *n = new_ast(A_LET);
-  long cap = 64;
-  n->names = xalloc(cap * (long)sizeof(char *));
-  n->exprs = xalloc(cap * (long)sizeof(char *));
-  n->nbind = 0;
+  n->names = xalloc(1 * (long)sizeof(char *));
+  n->exprs = xalloc(1 * (long)sizeof(char *));
   n->ival = 0;
   if (tok_is_ident("rec")) {
     n->ival = 1;
     next_token();
   }
-  while (1) {
-    if (n->nbind >= cap) {
-      parse_error("too many and-bindings");
-    }
-    parse_binding();
-    n->names[n->nbind] = bind_name;
-    n->exprs[n->nbind] = (char *)bind_expr;
-    n->nbind = n->nbind + 1;
-    if (tok_is_ident("and")) {
-      next_token();
-    } else {
-      break;
-    }
-  }
+  parse_binding();
+  n->names[0] = bind_name;
+  n->exprs[0] = (char *)bind_expr;
+  n->nbind = 1;
   return n;
 }
 
@@ -816,10 +716,6 @@ static void parse_program(void) {
   ntoplevels = 0;
   next_token();
   while (tok_kind != T_EOF) {
-    if (tok_is_punct(";;")) {
-      next_token();
-      continue;
-    }
     if (!tok_is_ident("let")) {
       parse_error("expected top-level let");
     }
@@ -965,14 +861,11 @@ enum {
   P_BYTES_SET = 10,
   P_ARG_COUNT = 11,
   P_ARG_GET = 12,
-  P_FST = 13,
-  P_SND = 14,
   P_NOT = 15,
   P_ARRAY_MAKE = 16,
   P_ARRAY_GET = 17,
   P_ARRAY_SET = 18,
-  P_ARRAY_LENGTH = 19,
-  P_BYTES_OF_STRING = 20
+  P_ARRAY_LENGTH = 19
 };
 
 enum { NCHANS = 256 };
@@ -1124,16 +1017,6 @@ static Val *apply_prim(long prim, char **a) {
     v = mk_bytes((long)strlen(vm_argv[i + 2]));
     memcpy(v->bdata, vm_argv[i + 2], strlen(vm_argv[i + 2]));
     return v;
-  case P_FST:
-    if (a0->tag != V_BLOCK || a0->nfields < 2) {
-      run_error("fst: not a pair");
-    }
-    return val_at(a0->fields, 0);
-  case P_SND:
-    if (a0->tag != V_BLOCK || a0->nfields < 2) {
-      run_error("snd: not a pair");
-    }
-    return val_at(a0->fields, 1);
   case P_NOT:
     if (val_int(a0) == 0) {
       return val_true;
@@ -1177,13 +1060,6 @@ static Val *apply_prim(long prim, char **a) {
       run_error("array_length: not an array");
     }
     return mk_int(a0->nfields);
-  case P_BYTES_OF_STRING:
-    if (a0->tag != V_BYTES) {
-      run_error("bytes_of_string: not a string");
-    }
-    v = mk_bytes(a0->blen);
-    memcpy(v->bdata, a0->bdata, (size_t)(a0->blen));
-    return v;
   default:
     run_error("unknown primitive");
     return NULL;
@@ -1261,17 +1137,6 @@ static Val *eval(Ast *ast, Env *env) {
       }
       ast = ast->b;
       break;
-    case A_TUPLE: {
-      Val *v = new_val(V_BLOCK);
-      long i = 0;
-      v->nfields = ast->nbind;
-      v->fields = xalloc(ast->nbind * (long)sizeof(char *));
-      while (i < ast->nbind) {
-        v->fields[i] = (char *)eval(ast_at(ast->exprs, i), env);
-        i = i + 1;
-      }
-      return v;
-    }
     case A_BINOP: {
       long l = val_int(eval(ast->a, env));
       long r = val_int(eval(ast->b, env));
@@ -1304,38 +1169,18 @@ static Val *eval(Ast *ast, Env *env) {
         if (l >= r) { return val_true; }
         return val_false;
       case B_LAND: return mk_int(l & r);
-      case B_LOR: return mk_int(l | r);
-      case B_LXOR: return mk_int(l ^ r);
-      case B_LSL: return mk_int((long)(((unsigned long)l) << r));
-      case B_LSR: return mk_int((long)(((unsigned long)l) >> r));
       case B_ASR: return mk_int(l >> r);
       default: run_error("bad operator");
       }
       return NULL;
     }
     case A_LET: {
-      long i;
       if (ast->ival == 0) {
-        i = 0;
-        while (i < ast->nbind) {
-          env = env_bind(env, ast->names[i], eval(ast_at(ast->exprs, i), env));
-          i = i + 1;
-        }
+        env = env_bind(env, ast->names[0], eval(ast_at(ast->exprs, 0), env));
       } else {
-        Env *cell;
-        i = 0;
-        while (i < ast->nbind) {
-          env = env_bind(env, ast->names[i], NULL);
-          i = i + 1;
-        }
-        /* evaluate in the extended env, then patch */
-        cell = env;
-        i = ast->nbind - 1;
-        while (i >= 0) {
-          cell->val = eval(ast_at(ast->exprs, i), env);
-          cell = cell->next;
-          i = i - 1;
-        }
+        /* evaluate in the extended env, then patch the cell */
+        env = env_bind(env, ast->names[0], NULL);
+        env->val = eval(ast_at(ast->exprs, 0), env);
       }
       ast = ast->c;
       break;
@@ -1408,8 +1253,6 @@ static Env *global_env(void) {
   env = env_bind(env, "bytes_set", mk_prim(P_BYTES_SET));
   env = env_bind(env, "arg_count", mk_prim(P_ARG_COUNT));
   env = env_bind(env, "arg_get", mk_prim(P_ARG_GET));
-  env = env_bind(env, "fst", mk_prim(P_FST));
-  env = env_bind(env, "snd", mk_prim(P_SND));
   env = env_bind(env, "not", mk_prim(P_NOT));
   env = env_bind(env, "array_make", mk_prim(P_ARRAY_MAKE));
   env = env_bind(env, "array_get", mk_prim(P_ARRAY_GET));
@@ -1417,7 +1260,6 @@ static Env *global_env(void) {
   env = env_bind(env, "array_length", mk_prim(P_ARRAY_LENGTH));
   env = env_bind(env, "string_length", mk_prim(P_BYTES_LENGTH));
   env = env_bind(env, "string_get", mk_prim(P_BYTES_GET));
-  env = env_bind(env, "bytes_of_string", mk_prim(P_BYTES_OF_STRING));
   return env;
 }
 
@@ -1471,27 +1313,11 @@ int main(int argc, char **argv) {
   t = 0;
   while (t < ntoplevels) {
     Ast *d = ast_at(toplevels, t);
-    long i;
     if (d->ival == 0) {
-      i = 0;
-      while (i < d->nbind) {
-        env = env_bind(env, d->names[i], eval(ast_at(d->exprs, i), env));
-        i = i + 1;
-      }
+      env = env_bind(env, d->names[0], eval(ast_at(d->exprs, 0), env));
     } else {
-      Env *cell;
-      i = 0;
-      while (i < d->nbind) {
-        env = env_bind(env, d->names[i], NULL);
-        i = i + 1;
-      }
-      cell = env;
-      i = d->nbind - 1;
-      while (i >= 0) {
-        cell->val = eval(ast_at(d->exprs, i), env);
-        cell = cell->next;
-        i = i - 1;
-      }
+      env = env_bind(env, d->names[0], NULL);
+      env->val = eval(ast_at(d->exprs, 0), env);
     }
     t = t + 1;
   }

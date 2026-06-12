@@ -3,9 +3,10 @@
 # M2-Mesoplanet and check that the M2-built binaries behave byte-identically
 # to the gcc builds on
 #   1. the VM smoke tests (ccc/tests/vm/*.mzs),
-#   2. the core-dialect fixtures (ccc/tests/core/*.ml),
-#   3. the full staged bootstrap chain (02 -> 01 -> 03 -> 04 self-fixpoint),
-#      with the M2 binaries doing all the interpreting/VM work.
+#   2. the lambda-dialect fixtures (ccc/tests/lambda*/),
+#   3. the full bootstrap chain (lambda ladder -> 02 -> 01 -> 03 -> 04
+#      self-fixpoint), with the M2 binaries doing all the interpreting/VM
+#      work.
 # Run from the repo root, e.g.:
 #   nix develop -c sh ccc/tests/run-m2-seed-tests.sh
 # M2LIBC_PATH may be overridden via the environment. M2-Mesoplanet is taken
@@ -73,48 +74,66 @@ vm_check tailcall 8388608
 vm_check gclist   4096
 vm_check bytesio  8388608
 
-# ---- 2. core fixtures: M2 mlc-interp must match the gcc build exactly ----
+# ---- 2. lambda fixtures: M2 mlc-interp must match the gcc build exactly ----
 
-core_check() { # core_check name stdin_file
-  name=$1; stdin_file=$2
-  want=$("$BUILD/mlc-interp-gcc" "ccc/tests/core/$name.ml" <"$stdin_file"; echo "exit=$?")
-  got=$("$BUILD/mlc-interp-m2" "ccc/tests/core/$name.ml" <"$stdin_file"; echo "exit=$?")
+lam_check() { # lam_check fixture.ml
+  f=$1; name=$(basename "$f" .ml)
+  want=$("$BUILD/mlc-interp-gcc" "$f" 2>&1; echo "exit=$?")
+  got=$("$BUILD/mlc-interp-m2" "$f" 2>&1; echo "exit=$?")
   if [ "$want" = "$got" ]; then
-    echo "ok   $name (core m2 = gcc)"
+    echo "ok   $name (lambda m2 = gcc)"
   else
     echo "FAIL $name: gcc '$want' vs m2 '$got'"
     fail=1
   fi
 }
 
-core_check hello  /dev/null
-core_check fib    /dev/null
-core_check sieve  /dev/null
-core_check tuples /dev/null
+for f in ccc/tests/lambda/*.ml ccc/tests/lambda1/*.ml; do
+  lam_check "$f"
+done
 
-# echo: round-trip a non-trivial file (its own source), byte-exact
+# echo: round-trip a non-trivial file (the seed's own source), byte-exact
 "$BUILD/mlc-interp-m2" ccc/tests/core/echo.ml <ccc/seed/mlc-interp-seed.c >"$BUILD/echo.out"
 if cmp -s "$BUILD/echo.out" ccc/seed/mlc-interp-seed.c; then
-  echo "ok   echo (core m2 round-trip)"
+  echo "ok   echo (m2 round-trip)"
 else
-  echo "FAIL echo (core m2 round-trip)"
+  echo "FAIL echo (m2 round-trip)"
   fail=1
 fi
 
-# ---- 3. staged bootstrap chain, all interp/VM work on the M2 binaries ----
+# ---- 3. bootstrap chain, all interp/VM work on the M2 binaries ----
 # Every artifact must be byte-identical to one produced by the gcc builds.
 
 INTERP=$BUILD/mlc-interp-m2
 MZVM=$BUILD/mzvm-m2
 RINTERP=$BUILD/mlc-interp-gcc
+RMZVM=$BUILD/mzvm-gcc
+
+# lambda ladder: core-lambda self-hosts on the seed interpreter, builds
+# data-lambda, which builds ml0 (stage 02)
+okl=1
+"$INTERP" "$S/core-lambda.ml" "$S/core-lambda.ml" "$BUILD/stage/cl.mzbc" &&
+"$RINTERP" "$S/core-lambda.ml" "$S/core-lambda.ml" "$BUILD/ref/cl.mzbc" &&
+cmp -s "$BUILD/stage/cl.mzbc" "$BUILD/ref/cl.mzbc" || { echo "FAIL core-lambda (m2 vs gcc)"; okl=0; }
+"$MZVM" "$BUILD/stage/cl.mzbc" "$S/data-lambda.ml" "$BUILD/stage/dl.mzbc" &&
+"$RMZVM" "$BUILD/ref/cl.mzbc" "$S/data-lambda.ml" "$BUILD/ref/dl.mzbc" &&
+cmp -s "$BUILD/stage/dl.mzbc" "$BUILD/ref/dl.mzbc" || { echo "FAIL data-lambda (m2 vs gcc)"; okl=0; }
+"$MZVM" "$BUILD/stage/dl.mzbc" "$S/ml0-compiler.ml" "$BUILD/stage/02gen1.mzbc" &&
+"$RMZVM" "$BUILD/ref/dl.mzbc" "$S/ml0-compiler.ml" "$BUILD/ref/02gen1.mzbc" &&
+cmp -s "$BUILD/stage/02gen1.mzbc" "$BUILD/ref/02gen1.mzbc" || { echo "FAIL stage 02 via lambda ladder (m2 vs gcc)"; okl=0; }
+if [ "$okl" = 1 ]; then
+  echo "ok   lambda ladder (m2 = gcc)"
+else
+  echo "FAIL lambda ladder"; exit 1
+fi
 
 compile() { # compile $1.ml -> $BUILD/stage/$2.mzs + .mzbc via M2-run stages
-  "$INTERP" "$S/ml0-compiler.ml" "$1" "$BUILD/stage/$2.mzs" &&
+  "$MZVM" "$BUILD/stage/02gen1.mzbc" "$1" "$BUILD/stage/$2.mzs" &&
   "$INTERP" "$S/parenthetical.ml" "$BUILD/stage/$2.mzs" "$BUILD/stage/$2.mzbc"
 }
 
-ref_compile() { # same, with the gcc interpreter, into $BUILD/ref
-  "$RINTERP" "$S/ml0-compiler.ml" "$1" "$BUILD/ref/$2.mzs" &&
+ref_compile() { # same, with the gcc binaries, into $BUILD/ref
+  "$RMZVM" "$BUILD/ref/02gen1.mzbc" "$1" "$BUILD/ref/$2.mzs" &&
   "$RINTERP" "$S/parenthetical.ml" "$BUILD/ref/$2.mzs" "$BUILD/ref/$2.mzbc"
 }
 
@@ -137,12 +156,12 @@ for f in ccc/tests/core/*.ml; do
   if ! cmp_ref "$name"; then
     echo "FAIL $name: M2-compiled artifacts differ from gcc-compiled"; fail=1; continue
   fi
-  want=$("$RINTERP" "$f" <"$stdin"; echo "exit=$?")
+  want=$("$RMZVM" "$BUILD/ref/$name.mzbc" <"$stdin"; echo "exit=$?")
   got=$("$MZVM" "$BUILD/stage/$name.mzbc" <"$stdin"; echo "exit=$?")
   if [ "$want" = "$got" ]; then
-    echo "ok   $name (m2 chain = gcc interp)"
+    echo "ok   $name (m2 chain = gcc chain)"
   else
-    echo "FAIL $name: interp '$want' vs m2 chain '$got'"
+    echo "FAIL $name: gcc chain '$want' vs m2 chain '$got'"
     fail=1
   fi
 done
@@ -163,18 +182,15 @@ else
   echo "FAIL compiling stage 01"; fail=1
 fi
 
-# 3c. stage 02 self-compilation fixpoint on the M2 binaries
-if compile "$S/ml0-compiler.ml" 02gen1 && ref_compile "$S/ml0-compiler.ml" 02gen1 && cmp_ref 02gen1; then
-  "$MZVM" "$BUILD/stage/02gen1.mzbc" "$S/ml0-compiler.ml" "$BUILD/stage/02gen2.mzs" &&
-  "$INTERP" "$S/parenthetical.ml" "$BUILD/stage/02gen2.mzs" "$BUILD/stage/02gen2.mzbc"
-  if cmp -s "$BUILD/stage/02gen1.mzbc" "$BUILD/stage/02gen2.mzbc"; then
-    echo "ok   stage 02 self-compilation fixpoint (m2)"
-  else
-    echo "FAIL stage 02 self-compilation fixpoint (m2)"
-    fail=1
-  fi
+# 3c. stage 02 self-recompile through the ML path (text .mzs + interp-run
+#     parenthetical) must reproduce the lambda-path image (DDC anchor)
+"$MZVM" "$BUILD/stage/02gen1.mzbc" "$S/ml0-compiler.ml" "$BUILD/stage/02gen2.mzs" &&
+"$INTERP" "$S/parenthetical.ml" "$BUILD/stage/02gen2.mzs" "$BUILD/stage/02gen2.mzbc"
+if cmp -s "$BUILD/stage/02gen1.mzbc" "$BUILD/stage/02gen2.mzbc"; then
+  echo "ok   stage 02 lambda-path = ML-path (m2)"
 else
-  echo "FAIL compiling stage 02 (or differs from gcc)"; fail=1
+  echo "FAIL stage 02 lambda-path vs ML-path (m2)"
+  fail=1
 fi
 
 # 3d. stage 03: built by 02 on the M2 VM, conservative on ML0 fixtures,

@@ -42,12 +42,21 @@ stdenvNoCC.mkDerivation {
     mark "m2: seeds (mzvm, mlc-interp)"
 
     # The tree-walking mlc-interp never frees its arena, so it is only used
-    # for the small early-stage assemblies. As soon as stage 04 (a real
-    # bytecode compiler) exists, stage 01 is itself compiled to bytecode and
-    # all large assemblies run on the GC-backed VM instead.
+    # for the lambda ladder and the small early-stage assemblies. As soon as
+    # stage 04 (a real bytecode compiler) exists, stage 01 is itself compiled
+    # to bytecode and all large assemblies run on the GC-backed VM instead.
     run01() { ./mlc-interp stages/parenthetical.ml "$1" "$2"; }
 
-    ./mlc-interp stages/ml0-compiler.ml stages/adt-compiler.ml 03.mzs
+    # lambda ladder: the seed only interprets Lambda-0 (plus the assembler);
+    # core-lambda self-hosts, builds data-lambda, which builds ml0 (stage 02)
+    ./mlc-interp stages/core-lambda.ml stages/core-lambda.ml cl.mzbc
+    ./mzvm cl.mzbc stages/core-lambda.ml clb.mzbc
+    cmp cl.mzbc clb.mzbc
+    ./mzvm cl.mzbc stages/data-lambda.ml dl.mzbc
+    ./mzvm dl.mzbc stages/ml0-compiler.ml 02.mzbc
+    mark "lambda ladder + fixpoint"
+
+    ./mzvm 02.mzbc stages/adt-compiler.ml 03.mzs
     run01 03.mzs 03.mzbc
     ./mzvm 03.mzbc stages/pattern-compiler.ml 04.mzs
     run01 04.mzs 04.mzbc
@@ -79,6 +88,8 @@ stdenvNoCC.mkDerivation {
     runasm mltc.mzs mltc.mzbc
     typecheck() { ./mzvm mltc.mzbc "$1"; }
     typecheck mlc/mltc.ml
+    typecheck stages/core-lambda.ml
+    typecheck stages/data-lambda.ml
     typecheck stages/parenthetical.ml
     typecheck stages/ml0-compiler.ml
     typecheck stages/adt-compiler.ml

@@ -7,6 +7,17 @@ core, so the named-language machinery (data structures, multi-argument
 functions, the assembler) is *earned inside the chain* instead of
 granted by the seed.
 
+**Status: landed.** The cutover is complete: the seed (1326 lines, down
+from 1500) interprets only the union of what `core-lambda.ml` and
+`parenthetical.ml` use — gone are tuples/`fst`/`snd`, char and hex
+literals, `\xNN` escapes, `and`-bindings, unary minus, `;;`,
+`lor`/`lxor`/`lsl`/`lsr` and `bytes_of_string`; kept (for the assembler
+and the Λ1 fixtures) are multi-parameter bindings, arrays, string
+values, `not`, `land` and `asr`. The canonical chain is the ladder
+below; ML0 sources no longer run on the interpreter anywhere
+(`scripts/ccc-chain.sh`, the nix builds and every test suite go through
+core-lambda → data-lambda → ml0).
+
 ## Dialects
 
 **Λ0 (core lambda)** — what the shrunken seed interprets and what
@@ -48,7 +59,8 @@ match, refs or records. ML0's *source* (the existing
 ## The new ladder
 
 ```
-mlc-interp-seed.c    C seed: interprets Λ0 ONLY (target ≈ 900 lines, from 1500)
+mlc-interp-seed.c    C seed: interprets Λ0 + the assembler's needs
+                     (1326 lines, from 1500)
   → core-lambda.ml   Λ0→MZBC compiler, WRITTEN in Λ0; emits binary .mzbc
                      directly (no assembler exists yet); self-compiles to
                      a fixpoint on the seed
@@ -75,11 +87,12 @@ mlc-interp-seed.c    C seed: interprets Λ0 ONLY (target ≈ 900 lines, from 150
 - host OCaml: Λ0 and Λ1 are OCaml subsets, so both new stages also run
   under `ocaml` with the existing prelude (crosscheck gate extended)
 
-## Transition plan
+## Transition plan (historical)
 
-The new rungs land additively (each gated) while the current
-interp-runs-ML0 chain keeps working; the seed shrink and chain rewire
-are the last, single cutover commit. If the Λ0 rewrite of a stage source
-costs more readability than it pays in seed lines, the cutover stops at
-"λ rung as diversity anchor" and the seed keeps ML0 — that decision gets
-made on measured line counts, not aspiration.
+The new rungs landed additively (each gated) while the then-current
+interp-runs-ML0 chain kept working; the seed shrink and chain rewire
+were the last, single cutover commit. The measured outcome: the seed
+keeps the assembler's data machinery (multi-parameter bindings, arrays,
+strings), so it interprets Λ1-shaped programs rather than bare Λ0 —
+rewriting `parenthetical.ml` onto bytes alone would have cost far more
+source than the ~170 C lines it could save.
