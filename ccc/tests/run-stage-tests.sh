@@ -234,4 +234,18 @@ else
   echo "FAIL compiling data-lambda"; fail=1
 fi
 
+# 9. ml0 via data-lambda DDC: data-lambda (built on the lambda path)
+#    compiles ml0-compiler.ml and must agree byte-for-byte with the ML
+#    path's compile of it (02gen1 from section 3)
+if "$MZVM" "$BUILD/stage/dl-gen1.mzbc" "$S/ml0-compiler.ml" "$BUILD/stage/ml0-via-dl.mzbc"; then
+  if cmp -s "$BUILD/stage/02gen1.mzbc" "$BUILD/stage/ml0-via-dl.mzbc"; then
+    echo "ok   ml0 via data-lambda DDC"
+  else
+    echo "FAIL ml0 via data-lambda DDC (lambda path != ML path)"
+    fail=1
+  fi
+else
+  echo "FAIL compiling ml0 via data-lambda"; fail=1
+fi
+
 if [ "$fail" = 0 ]; then echo "all stage tests passed"; else exit 1; fi

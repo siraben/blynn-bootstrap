@@ -29,6 +29,9 @@ let cell v = array_make 1 v
 let get c = array_get c 0
 let set c v = array_set c 0 v
 
+(* discard a value in statement position (Lambda-1 has no `let _ =`) *)
+let ign v = ()
+
 (* ---- diagnostics ---- *)
 
 let rec err_str_from s i =
@@ -160,16 +163,16 @@ let rec skip_comment depth =
   if depth > 0 then
     (let c = nextc () in
      (if c < 0 then die "unterminated comment");
-     if c = 40 && peekc () = 42 then (let _ = nextc () in skip_comment (depth + 1))
-     else if c = 42 && peekc () = 41 then (let _ = nextc () in skip_comment (depth - 1))
+     if c = 40 && peekc () = 42 then (ign (nextc ()); skip_comment (depth + 1))
+     else if c = 42 && peekc () = 41 then (ign (nextc ()); skip_comment (depth - 1))
      else skip_comment depth)
 
 let rec skip_ws () =
   let c = peekc () in
-  if c = 32 || c = 9 || c = 13 || c = 10 then (let _ = nextc () in skip_ws ())
+  if c = 32 || c = 9 || c = 13 || c = 10 then (ign (nextc ()); skip_ws ())
   else if c = 40 && peekc2 () = 42 then
-    (let _ = nextc () in
-     let _ = nextc () in
+    (ign (nextc ());
+     ign (nextc ());
      skip_comment 1;
      skip_ws ())
 
@@ -218,8 +221,8 @@ let next_token () =
   else if is_digit c then
     (let v =
        if c = 48 && (peekc2 () = 120 || peekc2 () = 88) then
-         (let _ = nextc () in
-          let _ = nextc () in
+         (ign (nextc ());
+          ign (nextc ());
           (if not (is_ident_char (peekc ())) then die "empty hex literal");
           let rec hex_loop acc =
             if is_ident_char (peekc ()) then hex_loop (acc * 16 + hexval (nextc ()))
@@ -240,29 +243,29 @@ let next_token () =
      set tstr (tbuf_take ());
      set tk tk_ident)
   else if c = 34 then
-    (let _ = nextc () in
+    (ign (nextc ());
      set tlen 0;
      let rec str_loop () =
        let d = peekc () in
        if d < 0 then die "unterminated string"
-       else if d = 34 then (let _ = nextc () in ())
-       else if d = 92 then (let _ = nextc () in tbuf_push (read_escape ()); str_loop ())
-       else (let _ = nextc () in tbuf_push d; str_loop ()) in
+       else if d = 34 then ign (nextc ())
+       else if d = 92 then (ign (nextc ()); tbuf_push (read_escape ()); str_loop ())
+       else (ign (nextc ()); tbuf_push d; str_loop ()) in
      str_loop ();
      set tstr (tbuf_take ());
      set tk tk_str)
   else if c = 39 then
-    (let _ = nextc () in
+    (ign (nextc ());
      let d = nextc () in
      let v = if d = 92 then read_escape () else d in
      (if not (nextc () = 39) then die "unterminated char literal");
      set tint v;
      set tk tk_int)
   else
-    (let _ = nextc () in
+    (ign (nextc ());
      let two = punct2 c (peekc ()) in
      if string_length two > 0 then
-       (let _ = nextc () in
+       (ign (nextc ());
         set tstr (str_to_bytes two);
         set tk tk_punct)
      else
