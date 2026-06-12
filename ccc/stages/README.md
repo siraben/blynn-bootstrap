@@ -1,11 +1,16 @@
 # The staged ML bootstrap
 
-Each stage is one small job with a real handoff artifact, Blynn-style:
+Each stage is one small job with a real handoff artifact, Blynn-style.
+The ladder starts with the λ rungs (ccc/docs/lambda-ladder.md): the C
+seed interprets only Λ0 plus what the assembler needs, and everything
+named is earned in-chain:
 
 | stage | input dialect | job |
 |---|---|---|
+| core-lambda | Λ0 (unary `fun`, ints, bytes; runs on the C interpreter, self-hosts) | Λ0 → binary `.mzbc`, no assembler needed |
+| data-lambda | Λ1 = Λ0 + strings/arrays/multi-parameter (written in Λ0, built by core-lambda) | Λ1 → binary `.mzbc` |
 | parenthetical | (runs on the C interpreter) | parenthesized MZBC assembly → `.mzbc` |
-| ml0-compiler | ML0 (the interpreter's core dialect) | self-hosting single-pass compiler |
+| ml0-compiler | ML0, source restricted to Λ1 (built by data-lambda) | self-hosting single-pass compiler |
 | adt-compiler | ML1 = ML0 + ADTs + shallow match | fork of 02 + the ADT delta |
 | pattern-compiler | ML2 = ML1 + nested patterns, lists, refs, records | fork of 03 + the pattern delta |
 | uncurry-compiler | ML2 (same language, optimizing codegen) | fork of 04 + uncurried known calls |
@@ -13,7 +18,11 @@ Each stage is one small job with a real handoff artifact, Blynn-style:
 Each promoted stage recompiles itself to a fixpoint and is a conservative
 extension of its parent (byte-identical output on the parent's dialect);
 `ccc/tests/run-stage-tests.sh` enforces both, and the OCaml cross-check
-pins host-OCaml/VM emission equivalence. Stage 05 is the exception by
+pins host-OCaml/VM emission equivalence. The λ rungs are additionally
+double-checked by diversity anchors: stage 02 built by data-lambda must
+byte-equal its own self-recompile through the text-assembly path, and
+stage 04 recompiles core-lambda/data-lambda back to their lambda-path
+images. Stage 05 is the exception by
 design: it changes CODE GENERATION (not the language), so it cannot be
 byte-compared against 04 — it is verified by its second-generation
 fixpoint (gen2 = gen3) and by every fixture behaving identically, and
@@ -24,10 +33,11 @@ downstream by ccc1/ccpp reproducing the same HCCIR byte-for-byte.
 The stages are **single-pass parse-and-emit** compilers with mutable
 cursor state. That is a bootstrappability decision, not an accident:
 
-- Stage 02 must run on the tree-walking C interpreter and compile itself,
-  so it is written in ML0 — a dialect with **no ADTs, no match, no refs,
-  no polymorphism**. Building an AST without sum types is strictly worse
-  than not building one; emitting code during the parse keeps the
+- core-lambda must run on the tree-walking C interpreter and compile
+  itself, and stage 02 is written in the Λ1 subset that data-lambda
+  compiles — dialects with **no ADTs, no match, no refs, no
+  polymorphism**. Building an AST without sum types is strictly worse
+  than not building one; emitting code during the parse keeps each
   compiler small enough to audit and small enough to interpret.
 - Stages 03/04 are *forks* of their parent with reviewable deltas. The
   shared text is kept aligned so `diff 02 03` and `diff 03 04` show the

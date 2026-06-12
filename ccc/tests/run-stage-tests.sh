@@ -1,11 +1,17 @@
 #!/bin/sh
-# Staged bootstrap checks:
-#  1. every core fixture compiled by stage 02 + assembled by stage 01 must
-#     behave on mzvm exactly as it does under mlc-interp-seed
-#  2. stage 02 compiles stage 01; the compiled assembler must produce
-#     byte-identical .mzbc output
-#  3. stage 02 compiles itself; the compiled compiler must reproduce its
-#     own bytecode (diverse double-compilation anchor)
+# Staged bootstrap checks for the lambda-ladder chain:
+#  1. core-lambda (L0) self-hosts on the seed interpreter; its fixtures
+#     behave identically interpreted and compiled
+#  2. data-lambda (L1), compiled by core-lambda, reaches a fixpoint and
+#     passes its fixtures
+#  3. data-lambda compiles ml0-compiler (stage 02); 02's self-recompile
+#     through the ML path (text .mzs + interp-run parenthetical) must be
+#     byte-identical -- the lambda-path vs ML-path diversity anchor
+#  4. ML0 fixtures compiled by 02 + assembled by 01 reproduce their
+#     pinned outputs on mzvm
+#  5-8. stages 01/03/04/05: conservative extensions + fixpoints
+#  9. stage 04 recompiles the lambda rungs; via-ML images must equal the
+#     lambda-path images (second diversity anchor)
 #   nix develop -c sh ccc/tests/run-stage-tests.sh
 set -u
 cd "$(dirname "$0")/../.."
@@ -20,32 +26,107 @@ INTERP=$BUILD/mlc-interp
 MZVM=$BUILD/mzvm
 fail=0
 
-compile() { # compile $1.ml -> $2.mzbc via interp-run stages
-  "$INTERP" "$S/ml0-compiler.ml" "$1" "$BUILD/stage/$2.mzs" &&
+# 1. core-lambda rung (L0): the lambda-calculus compiler self-hosts on
+#    the seed interpreter and its fixtures behave identically interpreted
+#    and compiled
+if "$INTERP" "$S/core-lambda.ml" "$S/core-lambda.ml" "$BUILD/stage/cl-gen1.mzbc"; then
+  okcl=1
+  "$MZVM" "$BUILD/stage/cl-gen1.mzbc" "$S/core-lambda.ml" "$BUILD/stage/cl-gen2.mzbc"
+  cmp -s "$BUILD/stage/cl-gen1.mzbc" "$BUILD/stage/cl-gen2.mzbc" || { echo "FAIL core-lambda self-host fixpoint"; okcl=0; }
+  for f in ccc/tests/lambda/*.ml; do
+    n=$(basename "$f" .ml)
+    want=$("$INTERP" "$f" 2>&1; echo "exit=$?")
+    "$MZVM" "$BUILD/stage/cl-gen1.mzbc" "$f" "$BUILD/stage/$n.l0.mzbc" >/dev/null 2>&1 || { echo "FAIL $n (L0 compile)"; okcl=0; continue; }
+    got=$("$MZVM" "$BUILD/stage/$n.l0.mzbc" 2>&1; echo "exit=$?")
+    if [ "$want" = "$got" ]; then echo "ok   $n (L0)"; else echo "FAIL $n (L0): '$got' vs '$want'"; okcl=0; fi
+  done
+  [ "$okcl" = 1 ] && echo "ok   core-lambda self-host fixpoint"
+  [ "$okcl" = 1 ] || fail=1
+else
+  echo "FAIL compiling core-lambda"; fail=1; exit 1
+fi
+
+# 2. data-lambda rung (L1): compiled by core-lambda, gen fixpoint, and
+#    L1 fixtures behave as interpreted
+if "$MZVM" "$BUILD/stage/cl-gen1.mzbc" "$S/data-lambda.ml" "$BUILD/stage/dl-gen1.mzbc"; then
+  okdl=1
+  "$MZVM" "$BUILD/stage/dl-gen1.mzbc" "$S/data-lambda.ml" "$BUILD/stage/dl-gen2.mzbc"
+  cmp -s "$BUILD/stage/dl-gen1.mzbc" "$BUILD/stage/dl-gen2.mzbc" || { echo "FAIL data-lambda fixpoint"; okdl=0; }
+  for f in ccc/tests/lambda1/*.ml; do
+    n=$(basename "$f" .ml)
+    want=$("$INTERP" "$f" 2>&1; echo "exit=$?")
+    "$MZVM" "$BUILD/stage/dl-gen1.mzbc" "$f" "$BUILD/stage/$n.l1.mzbc" >/dev/null 2>&1 || { echo "FAIL $n (L1 compile)"; okdl=0; continue; }
+    got=$("$MZVM" "$BUILD/stage/$n.l1.mzbc" 2>&1; echo "exit=$?")
+    if [ "$want" = "$got" ]; then echo "ok   $n (L1)"; else echo "FAIL $n (L1): '$got' vs '$want'"; okdl=0; fi
+  done
+  [ "$okdl" = 1 ] && echo "ok   data-lambda fixpoint"
+  [ "$okdl" = 1 ] || fail=1
+else
+  echo "FAIL compiling data-lambda"; fail=1; exit 1
+fi
+
+# 3. stage 02 (ml0) is compiled by data-lambda; its self-recompile goes
+#    through the OTHER pipeline (text .mzs assembled by the interp-run
+#    parenthetical) and must agree byte-for-byte: this is the lambda-path
+#    vs ML-path diverse-double-compilation anchor
+if "$MZVM" "$BUILD/stage/dl-gen1.mzbc" "$S/ml0-compiler.ml" "$BUILD/stage/02gen1.mzbc"; then
+  "$MZVM" "$BUILD/stage/02gen1.mzbc" "$S/ml0-compiler.ml" "$BUILD/stage/02gen2.mzs" &&
+  "$INTERP" "$S/parenthetical.ml" "$BUILD/stage/02gen2.mzs" "$BUILD/stage/02gen2.mzbc"
+  if cmp -s "$BUILD/stage/02gen1.mzbc" "$BUILD/stage/02gen2.mzbc"; then
+    echo "ok   stage 02 lambda-path = ML-path (DDC anchor)"
+  else
+    echo "FAIL stage 02 DDC anchor (lambda path != ML path)"
+    fail=1
+  fi
+else
+  echo "FAIL compiling stage 02 via data-lambda"; fail=1; exit 1
+fi
+
+compile() { # compile $1.ml -> $2.mzbc via stage 02 + interp-run stage 01
+  "$MZVM" "$BUILD/stage/02gen1.mzbc" "$1" "$BUILD/stage/$2.mzs" &&
   "$INTERP" "$S/parenthetical.ml" "$BUILD/stage/$2.mzs" "$BUILD/stage/$2.mzbc"
 }
 
-# 1. fixtures
+# 4. ML0 fixtures: compiled by stage 02 + assembled by stage 01, run on
+#    mzvm against outputs pinned from the pre-cutover seed interpreter
+#    (the shrunken interp no longer runs ML0)
+core_want() {
+  case "$1" in
+    hello) want="hello, core
+exit=0" ;;
+    fib) want="6765
+1
+1
+42
+exit=0" ;;
+    sieve) want="168
+exit=0" ;;
+    tuples) want="0k
+exit=0" ;;
+    echo) want=$(cat ccc/tests/core/echo.ml; echo "exit=0") ;;
+    *) want="(no pinned output for $1)" ;;
+  esac
+}
 for f in ccc/tests/core/*.ml; do
   name=$(basename "$f" .ml)
   case "$name" in
     echo) stdin=ccc/tests/core/echo.ml ;;
     *)    stdin=/dev/null ;;
   esac
-  want=$("$INTERP" "$f" <"$stdin"; echo "exit=$?")
+  core_want "$name"
   if ! compile "$f" "$name"; then
     echo "FAIL $name (compile)"; fail=1; continue
   fi
   got=$("$MZVM" "$BUILD/stage/$name.mzbc" <"$stdin"; echo "exit=$?")
   if [ "$want" = "$got" ]; then
-    echo "ok   $name (interp = compiled)"
+    echo "ok   $name (pinned = compiled)"
   else
-    echo "FAIL $name: interp '$want' vs compiled '$got'"
+    echo "FAIL $name: pinned '$want' vs compiled '$got'"
     fail=1
   fi
 done
 
-# 2. stage 02 compiles stage 01; compiled assembler must agree byte-for-byte
+# 5. stage 02 compiles stage 01; compiled assembler must agree byte-for-byte
 if compile "$S/parenthetical.ml" 01; then
   ok01=1
   for f in ccc/tests/vm/*.mzs; do
@@ -60,22 +141,7 @@ else
   echo "FAIL compiling stage 01"; fail=1
 fi
 
-# 3. self-compilation fixpoint: interp-run 02 and VM-run 02 must emit the
-#    same assembly for 02 itself, and again one generation later
-if compile "$S/ml0-compiler.ml" 02gen1; then
-  "$MZVM" "$BUILD/stage/02gen1.mzbc" "$S/ml0-compiler.ml" "$BUILD/stage/02gen2.mzs" &&
-  "$INTERP" "$S/parenthetical.ml" "$BUILD/stage/02gen2.mzs" "$BUILD/stage/02gen2.mzbc"
-  if cmp -s "$BUILD/stage/02gen1.mzbc" "$BUILD/stage/02gen2.mzbc"; then
-    echo "ok   stage 02 self-compilation fixpoint"
-  else
-    echo "FAIL stage 02 self-compilation fixpoint"
-    fail=1
-  fi
-else
-  echo "FAIL compiling stage 02"; fail=1
-fi
-
-# 4. stage 03 (ADTs + shallow match): built by 02, must be a conservative
+# 6. stage 03 (ADTs + shallow match): built by 02, must be a conservative
 #    extension (byte-identical .mzs for ML0 inputs), recompile itself to a
 #    fixpoint, and pass the ML1 fixtures
 if compile "$S/adt-compiler.ml" 03gen1; then
@@ -112,7 +178,7 @@ else
   echo "FAIL compiling stage 03"; fail=1
 fi
 
-# 5. stage 04 (nested patterns, list sugar, refs): built by stage 03,
+# 7. stage 04 (nested patterns, list sugar, refs): built by stage 03,
 #    conservative on ML0/ML1 inputs, self-fixpoint, ML2 fixtures
 asm04() { # asm04 src.ml out-tag
   "$MZVM" "$BUILD/stage/04gen1.mzbc" "$1" "$BUILD/stage/$2.mzs" &&
@@ -157,7 +223,7 @@ else
   echo "FAIL compiling stage 04"; fail=1
 fi
 
-# 6. stage 05 (uncurrying optimizer): same language, different codegen,
+# 8. stage 05 (uncurrying optimizer): same language, different codegen,
 #    so verification is behavioral: second-generation fixpoint and every
 #    fixture must produce the same output as it did through stage 04
 asm05() {
@@ -188,64 +254,22 @@ else
   echo "FAIL compiling stage 05"; fail=1
 fi
 
-# 7. core-lambda rung (L0): the lambda-calculus compiler self-hosts on
-#    the seed interpreter, agrees byte-for-byte with the ML-path compile
-#    of itself (diversity anchor), and its fixtures behave identically
-#    interpreted and compiled
-if "$INTERP" "$S/core-lambda.ml" "$S/core-lambda.ml" "$BUILD/stage/cl-gen1.mzbc"; then
-  okcl=1
-  "$MZVM" "$BUILD/stage/cl-gen1.mzbc" "$S/core-lambda.ml" "$BUILD/stage/cl-gen2.mzbc"
-  cmp -s "$BUILD/stage/cl-gen1.mzbc" "$BUILD/stage/cl-gen2.mzbc" || { echo "FAIL core-lambda self-host fixpoint"; okcl=0; }
-  "$MZVM" "$BUILD/stage/04gen1.mzbc" "$S/core-lambda.ml" "$BUILD/stage/cl.mzs" &&
-  "$INTERP" "$S/parenthetical.ml" "$BUILD/stage/cl.mzs" "$BUILD/stage/cl-via-ml.mzbc"
-  cmp -s "$BUILD/stage/cl-gen1.mzbc" "$BUILD/stage/cl-via-ml.mzbc" || { echo "FAIL core-lambda DDC anchor (lambda path != ML path)"; okcl=0; }
-  for f in ccc/tests/lambda/*.ml; do
-    n=$(basename "$f" .ml)
-    want=$("$INTERP" "$f" 2>&1; echo "exit=$?")
-    "$MZVM" "$BUILD/stage/cl-gen1.mzbc" "$f" "$BUILD/stage/$n.l0.mzbc" >/dev/null 2>&1 || { echo "FAIL $n (L0 compile)"; okcl=0; continue; }
-    got=$("$MZVM" "$BUILD/stage/$n.l0.mzbc" 2>&1; echo "exit=$?")
-    if [ "$want" = "$got" ]; then echo "ok   $n (L0)"; else echo "FAIL $n (L0): '$got' vs '$want'"; okcl=0; fi
-  done
-  [ "$okcl" = 1 ] && echo "ok   core-lambda self-host + DDC anchor"
-  [ "$okcl" = 1 ] || fail=1
+# 9. via-ML diversity anchors: the ML-path compiler (stage 04, descended
+#    from the same seed through 02/03) recompiles the lambda rungs; the
+#    images must equal the lambda-path images byte-for-byte
+"$MZVM" "$BUILD/stage/04gen1.mzbc" "$S/core-lambda.ml" "$BUILD/stage/cl.mzs" &&
+"$INTERP" "$S/parenthetical.ml" "$BUILD/stage/cl.mzs" "$BUILD/stage/cl-via-ml.mzbc"
+if cmp -s "$BUILD/stage/cl-gen1.mzbc" "$BUILD/stage/cl-via-ml.mzbc"; then
+  echo "ok   core-lambda via-ML DDC anchor"
 else
-  echo "FAIL compiling core-lambda"; fail=1
+  echo "FAIL core-lambda DDC anchor (lambda path != ML path)"; fail=1
 fi
-
-# 8. data-lambda rung (L1): compiled by core-lambda, gen fixpoint, DDC
-#    anchor vs the ML path, and L1 fixtures behave as interpreted
-if "$MZVM" "$BUILD/stage/cl-gen1.mzbc" "$S/data-lambda.ml" "$BUILD/stage/dl-gen1.mzbc"; then
-  okdl=1
-  "$MZVM" "$BUILD/stage/dl-gen1.mzbc" "$S/data-lambda.ml" "$BUILD/stage/dl-gen2.mzbc"
-  cmp -s "$BUILD/stage/dl-gen1.mzbc" "$BUILD/stage/dl-gen2.mzbc" || { echo "FAIL data-lambda fixpoint"; okdl=0; }
-  "$MZVM" "$BUILD/stage/04gen1.mzbc" "$S/data-lambda.ml" "$BUILD/stage/dl.mzs" &&
-  "$INTERP" "$S/parenthetical.ml" "$BUILD/stage/dl.mzs" "$BUILD/stage/dl-via-ml.mzbc"
-  cmp -s "$BUILD/stage/dl-gen1.mzbc" "$BUILD/stage/dl-via-ml.mzbc" || { echo "FAIL data-lambda DDC anchor"; okdl=0; }
-  for f in ccc/tests/lambda1/*.ml; do
-    n=$(basename "$f" .ml)
-    want=$("$INTERP" "$f" 2>&1; echo "exit=$?")
-    "$MZVM" "$BUILD/stage/dl-gen1.mzbc" "$f" "$BUILD/stage/$n.l1.mzbc" >/dev/null 2>&1 || { echo "FAIL $n (L1 compile)"; okdl=0; continue; }
-    got=$("$MZVM" "$BUILD/stage/$n.l1.mzbc" 2>&1; echo "exit=$?")
-    if [ "$want" = "$got" ]; then echo "ok   $n (L1)"; else echo "FAIL $n (L1): '$got' vs '$want'"; okdl=0; fi
-  done
-  [ "$okdl" = 1 ] && echo "ok   data-lambda fixpoint + DDC anchor"
-  [ "$okdl" = 1 ] || fail=1
+"$MZVM" "$BUILD/stage/04gen1.mzbc" "$S/data-lambda.ml" "$BUILD/stage/dl.mzs" &&
+"$INTERP" "$S/parenthetical.ml" "$BUILD/stage/dl.mzs" "$BUILD/stage/dl-via-ml.mzbc"
+if cmp -s "$BUILD/stage/dl-gen1.mzbc" "$BUILD/stage/dl-via-ml.mzbc"; then
+  echo "ok   data-lambda via-ML DDC anchor"
 else
-  echo "FAIL compiling data-lambda"; fail=1
-fi
-
-# 9. ml0 via data-lambda DDC: data-lambda (built on the lambda path)
-#    compiles ml0-compiler.ml and must agree byte-for-byte with the ML
-#    path's compile of it (02gen1 from section 3)
-if "$MZVM" "$BUILD/stage/dl-gen1.mzbc" "$S/ml0-compiler.ml" "$BUILD/stage/ml0-via-dl.mzbc"; then
-  if cmp -s "$BUILD/stage/02gen1.mzbc" "$BUILD/stage/ml0-via-dl.mzbc"; then
-    echo "ok   ml0 via data-lambda DDC"
-  else
-    echo "FAIL ml0 via data-lambda DDC (lambda path != ML path)"
-    fail=1
-  fi
-else
-  echo "FAIL compiling ml0 via data-lambda"; fail=1
+  echo "FAIL data-lambda DDC anchor (lambda path != ML path)"; fail=1
 fi
 
 if [ "$fail" = 0 ]; then echo "all stage tests passed"; else exit 1; fi

@@ -1,6 +1,8 @@
 #!/usr/bin/env sh
 # Build the CCC toolchain from the stage0 tools alone (no host C compiler,
-# no ML tooling): M2-Mesoplanet compiles the two C seeds, the staged ML
+# no ML tooling): M2-Mesoplanet compiles the two C seeds, the lambda
+# ladder earns the named-language machinery (core-lambda self-hosts on the
+# seed interpreter, builds data-lambda, which builds ml0), the staged ML
 # bootstrap runs 02 -> 01 -> 03 -> 04 with a fixpoint check, every
 # promoted source passes the mltc type-check gate, and the result is an
 # hcc-compatible bin/ directory (hcpp/hcc1 wrappers over the VM plus the
@@ -48,8 +50,18 @@ compile_m2 "$ccc_dir/seed/mlc-interp-seed.c" mlc-interp
 stages=$ccc_dir/stages
 run01() { ./mlc-interp "$stages/parenthetical.ml" "$1" "$2"; }
 
+# The seed interpreter only runs Lambda-0 (plus the assembler): the lambda
+# ladder bootstraps the named-language machinery in-chain.
+msg "ccc-chain: lambda ladder (core-lambda -> data-lambda -> ml0)"
+./mlc-interp "$stages/core-lambda.ml" "$stages/core-lambda.ml" cl.mzbc
+./mzvm cl.mzbc "$stages/core-lambda.ml" clb.mzbc
+cmp cl.mzbc clb.mzbc
+msg "ccc-chain: core-lambda self-compilation fixpoint holds"
+./mzvm cl.mzbc "$stages/data-lambda.ml" dl.mzbc
+./mzvm dl.mzbc "$stages/ml0-compiler.ml" 02.mzbc
+
 msg "ccc-chain: staged ML bootstrap"
-./mlc-interp "$stages/ml0-compiler.ml" "$stages/adt-compiler.ml" 03.mzs
+./mzvm 02.mzbc "$stages/adt-compiler.ml" 03.mzs
 run01 03.mzs 03.mzbc
 ./mzvm 03.mzbc "$stages/pattern-compiler.ml" 04.mzs
 run01 04.mzs 04.mzbc
@@ -85,6 +97,8 @@ msg "ccc-chain: mltc type-check gate"
 runasm mltc.mzs mltc.mzbc
 typecheck() { ./mzvm mltc.mzbc "$1"; }
 typecheck "$ccc_dir/mlc/mltc.ml"
+typecheck "$stages/core-lambda.ml"
+typecheck "$stages/data-lambda.ml"
 typecheck "$stages/parenthetical.ml"
 typecheck "$stages/ml0-compiler.ml"
 typecheck "$stages/adt-compiler.ml"

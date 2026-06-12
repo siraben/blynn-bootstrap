@@ -1,6 +1,7 @@
 # Build the CCC bootstrap chain with a host C compiler (dev path):
-#   mzvm + mlc-interp-seed, then the staged ML compilers
-#   ml0 -> parenthetical -> adt -> pattern,
+#   mzvm + mlc-interp-seed, then the lambda ladder
+#   core-lambda -> data-lambda -> ml0,
+# then the staged ML compilers parenthetical -> adt -> pattern,
 # then the concatenated ccc sources compiled to bytecode by stage 04.
 # Outputs:
 #   bin/mzvm, bin/mlc-interp
@@ -24,7 +25,15 @@ stdenv.mkDerivation {
 
     run01() { ./mlc-interp stages/parenthetical.ml "$1" "$2"; }
 
-    ./mlc-interp stages/ml0-compiler.ml stages/adt-compiler.ml 03.mzs
+    # lambda ladder: core-lambda self-hosts on the seed interpreter,
+    # builds data-lambda, which builds ml0 (stage 02)
+    ./mlc-interp stages/core-lambda.ml stages/core-lambda.ml cl.mzbc
+    ./mzvm cl.mzbc stages/core-lambda.ml clb.mzbc
+    cmp cl.mzbc clb.mzbc
+    ./mzvm cl.mzbc stages/data-lambda.ml dl.mzbc
+    ./mzvm dl.mzbc stages/ml0-compiler.ml 02.mzbc
+
+    ./mzvm 02.mzbc stages/adt-compiler.ml 03.mzs
     run01 03.mzs 03.mzbc
     ./mzvm 03.mzbc stages/pattern-compiler.ml 04.mzs
     run01 04.mzs 04.mzbc
