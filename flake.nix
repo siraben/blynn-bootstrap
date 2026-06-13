@@ -1103,23 +1103,6 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           src = hccSrc;
         };
 
-        gnuHelloFromBootstrap = pname: bootstrap:
-          pkgs.callPackage ./nix/gnu-hello-minboot.nix {
-            stdenvNoCC = rawStdenvNoCC;
-            buildPlatform = pkgs.stdenv.buildPlatform;
-            hostPlatform = pkgs.stdenv.hostPlatform;
-            inherit pname bootstrap;
-          };
-
-        gnuHelloBy = {
-          host.ghc.native =
-            gnuHelloFromBootstrap "gnu-hello-host-ghc-native" minimalBootstrapBy.host.ghc.native;
-          m2.precisely.m2 =
-            gnuHelloFromBootstrap "gnu-hello-m2-precisely-m2" minimalBootstrapBy.m2.precisely.m2;
-          m2.precisely.gccm2 =
-            gnuHelloFromBootstrap "gnu-hello-m2-precisely-gccm2" minimalBootstrapBy.m2.precisely.gccm2;
-        };
-
         bootstrapBy = {
           host.ghc.native = {
             minimal = minimalBootstrapBy.host.ghc.native;
@@ -1152,6 +1135,12 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             };
             glibc = glibcBy.m2.precisely.gccm2;
           };
+        };
+
+        trustRoots = {
+          host.ghc.native = bootstrapBy.host.ghc.native;
+          m2.precisely.m2 = bootstrapBy.m2.precisely.m2;
+          m2.precisely.gccm2 = bootstrapBy.m2.precisely.gccm2;
         };
 
         hccM1SmokeFor = pname: hcc: target: pkgs.callPackage ./nix/hcc-m1-smoke.nix {
@@ -1190,6 +1179,27 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           target = nativeM1Target;
         };
 
+        cccChain = pkgs.callPackage ./nix/ccc-chain.nix {
+          stdenv = pkgs.stdenv;
+          cccSrc = ./ccc;
+        };
+
+        cccAsHcc = pkgs.callPackage ./nix/ccc-as-hcc.nix {
+          stdenvNoCC = pkgs.stdenvNoCC;
+          inherit minimalBootstrap;
+          cccSrc = ./ccc;
+          hccSrc = ./hcc;
+        };
+
+        tinyccBootCcc = tinyccFromHcc "tinycc-boot-ccc-m2" cccAsHcc;
+        tinyccM1Ccc = tinyccM1FromHcc "tinycc-m1-ccc-m2" cccAsHcc;
+
+        tinyccPreprocInputs = pkgs.callPackage ./nix/tinycc-preproc-inputs.nix {
+          stdenvNoCC = pkgs.stdenvNoCC;
+          inherit (pkgs) fetchgit;
+          mesLibc = mesLibcSrc;
+        };
+
         precisely-dialect-tests = pkgs.callPackage ./nix/precisely-dialect-tests.nix {
           stdenv = pkgs.stdenv;
           precisely = preciselyGhcDebug;
@@ -1210,6 +1220,14 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
 
           m2.mesoplanet.gcc = m2MesoplanetGcc;
 
+          ccc = {
+            chain = cccChain;
+            asHcc = cccAsHcc;
+            tinycc = tinyccBootCcc;
+            tinyccM1 = tinyccM1Ccc;
+            tinyccPreprocInputs = tinyccPreprocInputs;
+          };
+
           hcc = hccBy // {
             profile.host.ghc.native = hccProfileHostGhcNative;
             blynn = {
@@ -1229,11 +1247,11 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           gcc46Cxx = gcc46CxxBy;
           gcc10 = gcc10By;
           gccLatest = gccLatestBy;
-          gnuHello = gnuHelloBy;
           glibc = glibcBy;
           gccGlibc = gccGlibcBy;
 
           bootstrap = bootstrapBy;
+          inherit trustRoots;
 
           tests = {
             smoke.m1 = hcc-m1-smoke;
@@ -1301,5 +1319,44 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             pkgs.time
           ];
         };
-      });
+      }) // {
+        overlays = rec {
+          packages = final: _prev: {
+            blynn-bootstrap = self.legacyPackages.${final.stdenv.buildPlatform.system};
+          };
+
+          trustRoot = final: _prev:
+            let
+              blynnBootstrap = self.legacyPackages.${final.stdenv.buildPlatform.system};
+            in {
+              blynn-bootstrap = blynnBootstrap;
+              minimal-bootstrap = blynnBootstrap.trustRoots.m2.precisely.m2.minimal;
+            };
+
+          default = trustRoot;
+        };
+
+        nixpkgsArgs = {
+          trustRoot = system: {
+            inherit system;
+            overlays = [ self.overlays.default ];
+            config.replaceStdenv = { pkgs }:
+              let
+                trustRoot = self.legacyPackages.${system}.trustRoots.m2.precisely.m2;
+                bintools = pkgs.wrapBintoolsWith {
+                  bintools = trustRoot.minimal.binutils;
+                  libc = trustRoot.glibc;
+                };
+                cc = pkgs.wrapCCWith {
+                  cc = trustRoot.gcc.glibc;
+                  inherit bintools;
+                  libc = trustRoot.glibc;
+                };
+              in
+                pkgs.stdenvAdapters.overrideCC pkgs.stdenv cc;
+          };
+
+          default = system: self.nixpkgsArgs.trustRoot system;
+        };
+      };
 }

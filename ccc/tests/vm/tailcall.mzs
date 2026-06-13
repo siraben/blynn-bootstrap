@@ -1,0 +1,20 @@
+; 1,000,000 self tail calls through APPTERM; exit 42.
+; Return stack must not grow (would overflow long before 1e6 frames).
+(branch :main)
+
+(:loop)                         ; arg: n
+(acc 0) (push) (const 0) (eq) (branchifnot :rec)
+(const 42) (return 1)
+(:rec)
+(acc 0) (push) (const 1) (subint) (push)   ; new arg n-1 on top
+(envacc 1)
+(appterm 1 1)                   ; slide arg over the old frame word
+
+(:main)
+(const 0) (push)
+(closure :loop 1)
+(push) (push)
+(setfield 1)
+(const 1000000) (push)
+(acc 1) (apply 1)
+(stop)
