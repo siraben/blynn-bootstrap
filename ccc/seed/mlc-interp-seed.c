@@ -10,12 +10,16 @@
  *   - let / let rec (both top-level and "in" form), multi-parameter
  *     bindings as nested closures
  *   - bytes and arrays via builtin functions (no a.(i) syntax)
+ *   - lists and pairs via builtin functions (cons/nil/null/hd/tl and
+ *     pair/fst/snd; a cons cell or pair is a 2-field block, nil is 0,
+ *     matching the VM's representation so Lambda-0 programs behave the
+ *     same interpreted and compiled)
  *   - operators: + - * / mod, comparisons, && || (short-circuit),
  *     land, asr
  *   - primitive I/O: open_in/open_out/close_chan/read_byte/write_byte,
  *     exit, arg_count/arg_get
  *
- * No tuples, no char or hex literals, no `and` bindings, no ADTs, no
+ * No tuple syntax, no char or hex literals, no `and` bindings, no ADTs, no
  * pattern matching, no records, no modules, no type inference. The
  * dialect is a subset of OCaml so stage sources can be cross-checked
  * under a real OCaml with a small prelude.
@@ -865,7 +869,11 @@ enum {
   P_ARRAY_MAKE = 16,
   P_ARRAY_GET = 17,
   P_ARRAY_SET = 18,
-  P_ARRAY_LENGTH = 19
+  P_ARRAY_LENGTH = 19,
+  P_CONS = 20,
+  P_NULL = 21,
+  P_HD = 22,
+  P_TL = 23
 };
 
 enum { NCHANS = 256 };
@@ -1060,6 +1068,38 @@ static Val *apply_prim(long prim, char **a) {
       run_error("array_length: not an array");
     }
     return mk_int(a0->nfields);
+  case P_CONS:
+    /* a cons cell or pair: a 2-field block, like the VM's MAKEBLOCK 0 2 */
+    v = new_val(V_BLOCK);
+    v->nfields = 2;
+    v->fields = xalloc(2 * (long)sizeof(char *));
+    v->fields[0] = (char *)a0;
+    v->fields[1] = (char *)a1;
+    return v;
+  case P_NULL:
+    /* nil is the integer 0; any block is a non-empty list */
+    if (a0->tag == V_INT) {
+      if (a0->ival == 0) {
+        return val_true;
+      }
+    }
+    return val_false;
+  case P_HD:
+    if (a0->tag != V_BLOCK) {
+      run_error("hd/fst: not a cons cell or pair");
+    }
+    if (a0->nfields != 2) {
+      run_error("hd/fst: not a cons cell or pair");
+    }
+    return val_at(a0->fields, 0);
+  case P_TL:
+    if (a0->tag != V_BLOCK) {
+      run_error("tl/snd: not a cons cell or pair");
+    }
+    if (a0->nfields != 2) {
+      run_error("tl/snd: not a cons cell or pair");
+    }
+    return val_at(a0->fields, 1);
   default:
     run_error("unknown primitive");
     return NULL;
@@ -1072,6 +1112,7 @@ static long prim_arity_of(long prim) {
   case P_BYTES_GET:
   case P_ARRAY_MAKE:
   case P_ARRAY_GET:
+  case P_CONS:
     return 2;
   case P_BYTES_SET:
   case P_ARRAY_SET:
@@ -1260,6 +1301,16 @@ static Env *global_env(void) {
   env = env_bind(env, "array_length", mk_prim(P_ARRAY_LENGTH));
   env = env_bind(env, "string_length", mk_prim(P_BYTES_LENGTH));
   env = env_bind(env, "string_get", mk_prim(P_BYTES_GET));
+  /* lists and pairs share one block shape: pair/fst/snd are aliases of
+   * cons/hd/tl, and nil is the integer 0 */
+  env = env_bind(env, "cons", mk_prim(P_CONS));
+  env = env_bind(env, "nil", val_unit);
+  env = env_bind(env, "null", mk_prim(P_NULL));
+  env = env_bind(env, "hd", mk_prim(P_HD));
+  env = env_bind(env, "tl", mk_prim(P_TL));
+  env = env_bind(env, "pair", mk_prim(P_CONS));
+  env = env_bind(env, "fst", mk_prim(P_HD));
+  env = env_bind(env, "snd", mk_prim(P_TL));
   return env;
 }
 

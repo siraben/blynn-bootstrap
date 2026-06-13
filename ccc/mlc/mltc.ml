@@ -748,6 +748,14 @@ let init_builtins () =
   glob_add (str_to_bytes "exit") 1 (TFun (t_int, TQVar 0));
   glob_add (str_to_bytes "fst") 2 (TFun (TTup [TQVar 0; TQVar 1], TQVar 0));
   glob_add (str_to_bytes "snd") 2 (TFun (TTup [TQVar 0; TQVar 1], TQVar 1));
+  glob_add (str_to_bytes "cons") 1
+    (TFun (TQVar 0, TFun (t_list (TQVar 0), t_list (TQVar 0))));
+  glob_add (str_to_bytes "nil") 1 (t_list (TQVar 0));
+  glob_add (str_to_bytes "null") 1 (TFun (t_list (TQVar 0), t_bool));
+  glob_add (str_to_bytes "hd") 1 (TFun (t_list (TQVar 0), TQVar 0));
+  glob_add (str_to_bytes "tl") 1 (TFun (t_list (TQVar 0), t_list (TQVar 0)));
+  glob_add (str_to_bytes "pair") 2
+    (TFun (TQVar 0, TFun (TQVar 1, TTup [TQVar 0; TQVar 1])));
   glob_add (str_to_bytes "not") 0 (TFun (t_bool, t_bool));
   glob_add (str_to_bytes "ref") 1 (TFun (TQVar 0, t_ref (TQVar 0)))
 

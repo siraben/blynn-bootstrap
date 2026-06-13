@@ -69,8 +69,19 @@ let array_length = Array.length
 let arg_count () : int = max 0 (Array.length Sys.argv - 1)
 let arg_get (i : int) : string = Sys.argv.(i + 1)
 
+(* lists and pairs as builtins (Lambda-0 v2): cons cells and pairs are
+   2-field blocks on the chain; under OCaml they are real lists/tuples.
+   fst/snd come from Stdlib. *)
+let cons h t = h :: t
+let nil = []
+let null l = match l with [] -> true | _ -> false
+let hd l = match l with x :: _ -> x | [] -> failwith "hd: empty list"
+let tl l = match l with _ :: t -> t | [] -> failwith "tl: empty list"
+let pair a b = (a, b)
+
 (* silence unused-prelude warnings in programs that use only part of it *)
 let _ = (open_in, open_out, close_chan, read_byte, write_byte,
          bytes_create, bytes_length, bytes_get, bytes_set, bytes_of_string,
          string_length, string_get, array_make, array_get, array_set,
          array_length, arg_count, arg_get)
+let _ = (cons, null, hd, tl, pair, nil)

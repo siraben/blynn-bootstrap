@@ -14,7 +14,10 @@
      - string literals are first-class atoms anywhere (not only after
        `err_str`); each compiles to a data-section global (a GETGLOBAL
        of slots 0..4095), read with the `string_length`/`string_get`
-       builtin aliases of `bytes_length`/`bytes_get`.
+       builtins.
+     - byte buffers return: `bytes_create n`, `bytes_get b i`,
+       `bytes_set b i v` and `bytes_length b` (ml0-compiler is written
+       against them; Lambda-0 itself stays bytes-free).
      - arrays: `array_make n v` (C primitive 10), `array_get a i`
        (GETVECTITEM), `array_set a i v` (SETVECTITEM) and
        `array_length a` (VECTLENGTH).
@@ -23,89 +26,47 @@
        compile as nested unary closures, each inner closure RETURNed by
        its enclosing one, exactly as ml0-compiler's compile_fun.
      - `()` is accepted as a parameter and binds nothing.
-     - `not b` is a builtin (the BOOLNOT opcode), like the other
-       opcode-kind builtins.
+     - `not b` is a builtin (the BOOLNOT opcode), like `null`.
      - top-level `let [rec] b1 and b2 and ...` groups: each binding is
        compiled and SETGLOBAL'd in turn (mutual recursion goes through
        forward globals checked at end of file, as in ml0-compiler);
        `and` stays rejected in local lets.
 
-   Grammar decisions carried over from core-lambda:
-     - `()` is an atom (the unit value, compiled as the integer 0).
-     - `true`/`false` are atoms (integers 1/0).
-     - `if c then e` without `else` is accepted (the missing branch is
-       unit), since Lambda-1 needs conditional side effects.
-     - integer literals are decimal only: no hex, no char literals, no
-       unary minus (write `0 - 1`).
-     - identifiers are at most 64 bytes long; `_` is rejected as a
-       binder (`let _ = e in` is not Lambda-1; sequence with `;`).
-     - reserved words of fuller MLs (match, with, land, ...) are
-       rejected so non-Lambda-1 sources fail loudly: still no tuples,
-       ADTs, match, refs or records; `and` is a keyword, valid only as
-       the top-level group separator.
+   Grammar decisions carried over from core-lambda: `()`/`true`/`false`/
+   `nil` are atoms, `if` without `else` is unit, decimal integers only,
+   `_` is rejected as a binder, and the reserved words of fuller MLs
+   (match, with, land, ...) are rejected: still no tuple syntax, ADTs,
+   match, refs or records; `and` is a keyword, valid only as the
+   top-level group separator.  Lists and pairs are the same builtins
+   compiling to the same tag-0 blocks.
 
-   Compilation model: single pass, parse-and-emit, no AST; the ZINC code
-   shapes are byte-for-byte those of ml0-compiler + parenthetical, so the
-   diverse-double-compilation anchor can compare images directly.  All
-   mutable state lives in byte buffers (Lambda-0 has no refs or arrays):
-   scalar registers are 32-bit little-endian slots of `st`, the code is
-   built in `code` and backpatched with bytes_set, and capture lists and
-   the global table live in byte pools.  Compile-time environments are
-   closures from name to an encoded resolution (kind * 2^20 + index),
-   extended functionally at binders; each `fun` boundary threads captured
-   names into its level's pool, which is replayed after the body to push
-   the CLOSURE captures. *)
-
-(* ---- mutable state: byte buffers and 32-bit registers ---- *)
-
-let st = bytes_create 4096          (* scalar registers, 4-byte LE slots *)
-let src = bytes_create 1048576      (* source text *)
-let code = bytes_create 4194304     (* emitted code words, 4-byte LE *)
-let dat = bytes_create 262144       (* data section, ready-to-write records *)
-let gpool = bytes_create 65536      (* global names: [flag][len][bytes] *)
-let gofs = bytes_create 8192        (* per-global offset into gpool *)
-let cpool = bytes_create 266240     (* capture names: 64 levels * 64 * 65 *)
-let tbuf = bytes_create 256         (* current token text *)
-
-let rg = fun i ->
-  bytes_get st (4 * i) + 256 * bytes_get st (4 * i + 1)
-  + 65536 * bytes_get st (4 * i + 2) + 16777216 * bytes_get st (4 * i + 3)
-
-let rs = fun i -> fun v ->
-  bytes_set st (4 * i) v;
-  bytes_set st (4 * i + 1) (v / 256);
-  bytes_set st (4 * i + 2) (v / 65536);
-  bytes_set st (4 * i + 3) (v / 16777216)
-
-let r_pos = 0                       (* scanner position *)
-let r_line = 1                      (* current line *)
-let r_srclen = 2                    (* source length *)
-let r_tk = 3                        (* token kind: 0 eof 1 int 2 str 3 ident 4 punct *)
-let r_tint = 4                      (* int value / packed punct chars *)
-let r_tlen = 5                      (* token text length *)
-let r_ik0 = 6                       (* ident chars 0-5, base-28 packed *)
-let r_ik1 = 7                       (* ident chars 6-11 *)
-let r_ik2 = 8                       (* ident chars 12-17 *)
-let r_clen = 9                      (* code length in words *)
-let r_datlen = 10                   (* data section length in bytes *)
-let r_datcount = 11                 (* number of data records *)
-let r_gplen = 12                    (* global name pool length *)
-let r_gcount = 13                   (* number of globals *)
-let r_depth = 14                    (* current stack depth *)
-let r_lev = 15                      (* current function nesting level *)
-let r_exited = 16                   (* 1 after RETURN/APPTERM in tail pos *)
-let r_outh = 17                     (* output channel *)
-let r_svpos = 19                    (* scanner save for tail lookahead *)
-let r_svline = 20
-let r_ccount0 = 32                  (* capture counts: slot 32+level *)
-let r_sdepth0 = 96                  (* saved depths: slot 96+level *)
-
-let gbase = 4096                    (* first non-data global *)
+   Compilation model: identical to core-lambda -- purely functional,
+   two passes (sizes then emission), the token stream an immutable int
+   list, every table built from pairs and lists and threaded through
+   one state value.  See core-lambda.ml for the full description. *)
 
 (* ---- tiny helpers ---- *)
 
-let ign = fun v -> ()
 let bnot = fun b -> if b then false else true
+
+let rec rev_onto l = fun acc ->
+  if null l then acc else rev_onto (tl l) (cons (hd l) acc)
+
+let rev_list = fun l -> rev_onto l nil
+
+let rec cat a = fun b ->
+  if null a then b else cons (hd a) (cat (tl a) b)
+
+let rec list_eq a = fun b ->
+  if null a then null b
+  else if null b then false
+  else if hd a = hd b then list_eq (tl a) (tl b)
+  else false
+
+let rec len_from l = fun n ->
+  if null l then n else len_from (tl l) (n + 1)
+
+let list_len = fun l -> len_from l 0
 
 (* ---- diagnostics ---- *)
 
@@ -115,11 +76,8 @@ let rec err_str_from s = fun i ->
 
 let err_str = fun s -> err_str_from s 0
 
-let rec err_bytes_from b = fun i ->
-  if i < bytes_length b then
-    (write_byte 2 (bytes_get b i); err_bytes_from b (i + 1))
-
-let err_bytes = fun b -> err_bytes_from b 0
+let rec err_name l =
+  if null l then () else (write_byte 2 (hd l); err_name (tl l))
 
 let rec err_int_rec n =
   (if n > 9 then err_int_rec (n / 10));
@@ -129,96 +87,212 @@ let err_int = fun n ->
   if n < 0 then (write_byte 2 45; err_int_rec (0 - n)) else err_int_rec n
 
 (* finish a diagnostic: caller has already err_str'd the message *)
-let die = fun u ->
+let die_line = fun line ->
   err_str " at line ";
-  err_int (rg r_line);
+  err_int line;
   write_byte 2 10;
   exit 1
 
-(* ---- bytes equality and base-28 identifier packing ---- *)
+(* ---- names, spelled from character codes ---- *)
 
-let bytes_eq = fun a -> fun b ->
-  let n = bytes_length a in
-  if bytes_length b = n then
-    (let rec cmp i =
-       if i >= n then true
-       else if bytes_get a i = bytes_get b i then cmp (i + 1)
-       else false in
-     cmp 0)
-  else false
+let ch_a = 97
+let ch_b = 98
+let ch_c = 99
+let ch_d = 100
+let ch_e = 101
+let ch_f = 102
+let ch_g = 103
+let ch_h = 104
+let ch_i = 105
+let ch_k = 107
+let ch_l = 108
+let ch_m = 109
+let ch_n = 110
+let ch_o = 111
+let ch_p = 112
+let ch_r = 114
+let ch_s = 115
+let ch_t = 116
+let ch_u = 117
+let ch_w = 119
+let ch_x = 120
+let ch_y = 121
+let ch_us = 95                      (* underscore *)
 
-(* a-z -> 1..26, _ -> 27, anything else 0 (never matches a name code) *)
-let chv = fun c ->
-  if c = 95 then 27
-  else if c >= 97 && c <= 122 then c - 96
-  else 0
+let l1 = fun a -> cons a nil
+let l2 = fun a -> fun b -> cons a (l1 b)
+let l3 = fun a -> fun b -> fun c -> cons a (l2 b c)
+let l4 = fun a -> fun b -> fun c -> fun d -> cons a (l3 b c d)
+let l5 = fun a -> fun b -> fun c -> fun d -> fun e -> cons a (l4 b c d e)
+let l6 = fun a -> fun b -> fun c -> fun d -> fun e -> fun f -> cons a (l5 b c d e f)
 
-let rec limbg b = fun stop -> fun i -> fun acc -> fun m ->
-  if i >= stop then acc
-  else limbg b stop (i + 1) (acc + chv (bytes_get b i) * m) (m * 28)
+(* the Lambda-0 keywords *)
+let n_let = l3 ch_l ch_e ch_t
+let n_rec = l3 ch_r ch_e ch_c
+let n_in = l2 ch_i ch_n
+let n_if = l2 ch_i ch_f
+let n_then = l4 ch_t ch_h ch_e ch_n
+let n_else = l4 ch_e ch_l ch_s ch_e
+let n_fun = l3 ch_f ch_u ch_n
+let n_true = l4 ch_t ch_r ch_u ch_e
+let n_false = l5 ch_f ch_a ch_l ch_s ch_e
+let n_mod = l3 ch_m ch_o ch_d
 
-(* limb p of a name: chars [6p, 6p+6) packed little-endian in base 28 *)
-let limbn = fun b -> fun n -> fun p ->
-  let s = p * 6 + 6 in
-  limbg b (if n < s then n else s) (p * 6) 0 1
+(* reserved words of fuller MLs, rejected so non-Lambda-0 fails loudly *)
+let n_and = l3 ch_a ch_n ch_d
+let n_as = l2 ch_a ch_s
+let n_asr = l3 ch_a ch_s ch_r
+let n_begin = l5 ch_b ch_e ch_g ch_i ch_n
+let n_do = l2 ch_d ch_o
+let n_done = l4 ch_d ch_o ch_n ch_e
+let n_downto = l6 ch_d ch_o ch_w ch_n ch_t ch_o
+let n_end = l3 ch_e ch_n ch_d
+let n_for = l3 ch_f ch_o ch_r
+let n_land = l4 ch_l ch_a ch_n ch_d
+let n_lor = l3 ch_l ch_o ch_r
+let n_lsl = l3 ch_l ch_s ch_l
+let n_lsr = l3 ch_l ch_s ch_r
+let n_lxor = l4 ch_l ch_x ch_o ch_r
+let n_match = l5 ch_m ch_a ch_t ch_c ch_h
+let n_module = l6 ch_m ch_o ch_d ch_u ch_l ch_e
+let n_of = l2 ch_o ch_f
+let n_open = l4 ch_o ch_p ch_e ch_n
+let n_ref = l3 ch_r ch_e ch_f
+let n_to = l2 ch_t ch_o
+let n_try = l3 ch_t ch_r ch_y
+let n_type = l4 ch_t ch_y ch_p ch_e
+let n_when = l4 ch_w ch_h ch_e ch_n
+let n_while = l5 ch_w ch_h ch_i ch_l ch_e
+let n_with = l4 ch_w ch_i ch_t ch_h
 
-(* ---- input ---- *)
+(* atoms and builtins *)
+let n_us = l1 ch_us
+let n_nil = l3 ch_n ch_i ch_l
+let n_cons = l4 ch_c ch_o ch_n ch_s
+let n_null = l4 ch_n ch_u ch_l ch_l
+let n_hd = l2 ch_h ch_d
+let n_tl = l2 ch_t ch_l
+let n_pair = l4 ch_p ch_a ch_i ch_r
+let n_fst = l3 ch_f ch_s ch_t
+let n_snd = l3 ch_s ch_n ch_d
+let n_exit = l4 ch_e ch_x ch_i ch_t
+let n_open_in = cat n_open (l3 ch_us ch_i ch_n)
+let n_open_out = cat n_open (l4 ch_us ch_o ch_u ch_t)
+let n_close_chan = cat (l5 ch_c ch_l ch_o ch_s ch_e) (l5 ch_us ch_c ch_h ch_a ch_n)
+let n_byte = l4 ch_b ch_y ch_t ch_e
+let n_read_byte = cat (l4 ch_r ch_e ch_a ch_d) (cons ch_us n_byte)
+let n_write_byte = cat (l5 ch_w ch_r ch_i ch_t ch_e) (cons ch_us n_byte)
+let n_arg = l3 ch_a ch_r ch_g
+let n_arg_count = cat n_arg (l6 ch_us ch_c ch_o ch_u ch_n ch_t)
+let n_arg_get = cat n_arg (l4 ch_us ch_g ch_e ch_t)
+let n_string = l6 ch_s ch_t ch_r ch_i ch_n ch_g
+let n_string_length = cat n_string (cons ch_us (l6 ch_l ch_e ch_n ch_g ch_t ch_h))
+let n_string_get = cat n_string (l4 ch_us ch_g ch_e ch_t)
+let n_not = l3 ch_n ch_o ch_t
+let n_bytes = l5 ch_b ch_y ch_t ch_e ch_s
+let n_bytes_create = cat n_bytes (cons ch_us (l6 ch_c ch_r ch_e ch_a ch_t ch_e))
+let n_bytes_length = cat n_bytes (cons ch_us (l6 ch_l ch_e ch_n ch_g ch_t ch_h))
+let n_bytes_get = cat n_bytes (l4 ch_us ch_g ch_e ch_t)
+let n_bytes_set = cat n_bytes (l4 ch_us ch_s ch_e ch_t)
+let n_array = l5 ch_a ch_r ch_r ch_a ch_y
+let n_array_make = cat n_array (l5 ch_us ch_m ch_a ch_k ch_e)
+let n_array_get = cat n_array (l4 ch_us ch_g ch_e ch_t)
+let n_array_set = cat n_array (l4 ch_us ch_s ch_e ch_t)
+let n_array_length = cat n_array (cons ch_us (l6 ch_l ch_e ch_n ch_g ch_t ch_h))
 
-let rec read_all h =
-  let b = read_byte h in
-  if b >= 0 then
-    ((if rg r_srclen >= 1048576 then (err_str "data-lambda: source too large"; die 0));
-     bytes_set src (rg r_srclen) b;
-     rs r_srclen (rg r_srclen + 1);
-     read_all h)
+(* keyword test, dispatched on the first character *)
+let is_kw = fun t ->
+  if null t then false
+  else
+    (let c = hd t in
+     if c = ch_a then list_eq t n_and || list_eq t n_as || list_eq t n_asr
+     else if c = ch_b then list_eq t n_begin
+     else if c = ch_d then
+       list_eq t n_do || list_eq t n_done || list_eq t n_downto
+     else if c = ch_e then list_eq t n_else || list_eq t n_end
+     else if c = ch_f then
+       list_eq t n_fun || list_eq t n_false || list_eq t n_for
+     else if c = ch_i then list_eq t n_if || list_eq t n_in
+     else if c = ch_l then
+       list_eq t n_let || list_eq t n_land || list_eq t n_lor
+       || list_eq t n_lxor || list_eq t n_lsl || list_eq t n_lsr
+     else if c = ch_m then
+       list_eq t n_mod || list_eq t n_match || list_eq t n_module
+     else if c = ch_o then list_eq t n_of || list_eq t n_open
+     else if c = ch_r then list_eq t n_rec || list_eq t n_ref
+     else if c = ch_t then
+       list_eq t n_then || list_eq t n_true || list_eq t n_try
+       || list_eq t n_type || list_eq t n_to
+     else if c = ch_w then
+       list_eq t n_with || list_eq t n_while || list_eq t n_when
+     else false)
 
-(* ---- scanner ---- *)
-
-let peekc = fun u ->
-  if rg r_pos >= rg r_srclen then 0 - 1 else bytes_get src (rg r_pos)
-
-let peekc2 = fun u ->
-  if rg r_pos + 1 >= rg r_srclen then 0 - 1 else bytes_get src (rg r_pos + 1)
-
-let nextc = fun u ->
-  let c = peekc 0 in
-  rs r_pos (rg r_pos + 1);
-  (if c = 10 then rs r_line (rg r_line + 1));
-  c
+(* ---- scanner ----
+   The source is an int list; scanning is pure: scan_token takes the
+   remaining characters and the current line and returns a token state
+   pair ((kind/value, text), (rest, line)).  Kinds: 0 eof, 1 int,
+   2 string, 3 ident, 4 punct (value = char code, or c + 256*d for the
+   two-character operators). *)
 
 let is_digit = fun c -> c >= 48 && c <= 57
 let is_istart = fun c -> (c >= 97 && c <= 122) || (c >= 65 && c <= 90) || c = 95
 let is_ichar = fun c -> is_istart c || is_digit c || c = 39
 
-let rec skip_comment depth =
-  if depth > 0 then
-    (let c = nextc 0 in
-     (if c < 0 then (err_str "data-lambda: unterminated comment"; die 0));
-     if c = 40 && peekc 0 = 42 then (ign (nextc 0); skip_comment (depth + 1))
-     else if c = 42 && peekc 0 = 41 then (ign (nextc 0); skip_comment (depth - 1))
-     else skip_comment depth)
+let rec skip_comment cs = fun line -> fun depth ->
+  if null cs then (err_str "data-lambda: unterminated comment"; die_line line)
+  else
+    (let c = hd cs in
+     let r = tl cs in
+     if c = 10 then skip_comment r (line + 1) depth
+     else if c = 40 && bnot (null r) && hd r = 42 then
+       skip_comment (tl r) line (depth + 1)
+     else if c = 42 && bnot (null r) && hd r = 41 then
+       (if depth = 1 then pair (tl r) line
+        else skip_comment (tl r) line (depth - 1))
+     else skip_comment r line depth)
 
-let rec skip_ws u =
-  let c = peekc 0 in
-  if c = 32 || c = 9 || c = 13 || c = 10 then (ign (nextc 0); skip_ws 0)
-  else if c = 40 && peekc2 0 = 42 then
-    (ign (nextc 0); ign (nextc 0); skip_comment 1; skip_ws 0)
+let rec skip_ws cs = fun line ->
+  if null cs then pair cs line
+  else
+    (let c = hd cs in
+     if c = 32 || c = 9 || c = 13 then skip_ws (tl cs) line
+     else if c = 10 then skip_ws (tl cs) (line + 1)
+     else if c = 40 && bnot (null (tl cs)) && hd (tl cs) = 42 then
+       (let r = skip_comment (tl (tl cs)) line 1 in
+        skip_ws (fst r) (snd r))
+     else pair cs line)
 
-let read_escape = fun u ->
-  let e = nextc 0 in
+let rec scan_number cs = fun acc ->
+  if bnot (null cs) && is_digit (hd cs) then
+    scan_number (tl cs) (acc * 10 + (hd cs - 48))
+  else pair acc cs
+
+let rec scan_ident cs = fun acc ->
+  if bnot (null cs) && is_ichar (hd cs) then
+    scan_ident (tl cs) (cons (hd cs) acc)
+  else pair (rev_list acc) cs
+
+let read_escape = fun e -> fun line ->
   if e = 110 then 10
   else if e = 116 then 9
   else if e = 114 then 13
   else if e = 92 then 92
   else if e = 34 then 34
   else if e = 39 then 39
-  else (err_str "data-lambda: bad escape"; die 0)
+  else (err_str "data-lambda: bad escape"; die_line line)
 
-let tpush = fun b ->
-  let n = rg r_tlen in
-  (if n >= 250 then (err_str "data-lambda: token too long"; die 0));
-  bytes_set tbuf n b;
-  rs r_tlen (n + 1)
+(* body of a string literal; the opening quote is consumed *)
+let rec scan_string cs = fun line -> fun acc ->
+  if null cs then (err_str "data-lambda: unterminated string"; die_line line)
+  else
+    (let d = hd cs in
+     if d = 34 then pair (rev_list acc) (pair (tl cs) line)
+     else if d = 92 then
+       (let r = tl cs in
+        let e = read_escape (if null r then 0 - 1 else hd r) line in
+        scan_string (tl r) line (cons e acc))
+     else if d = 10 then scan_string (tl cs) (line + 1) (cons d acc)
+     else scan_string (tl cs) line (cons d acc))
 
 (* two-character punctuation, packed c + 256*d; 0 = not a pair *)
 let pair2 = fun c -> fun d ->
@@ -230,779 +304,882 @@ let pair2 = fun c -> fun d ->
   else if c = 124 && d = 124 then 31868   (* || *)
   else 0
 
-let next_token = fun u ->
-  skip_ws 0;
-  let c = peekc 0 in
-  if c < 0 then rs r_tk 0
-  else if is_digit c then
-    (let rec dec acc =
-       if is_digit (peekc 0) then dec (acc * 10 + (nextc 0 - 48))
-       else acc in
-     let v = dec 0 in
-     (if is_ichar (peekc 0) then (err_str "data-lambda: bad number"; die 0));
-     rs r_tint v;
-     rs r_tk 1)
-  else if is_istart c then
-    (rs r_tlen 0;
-     let rec idloop u2 =
-       if is_ichar (peekc 0) then
-         ((if rg r_tlen >= 64 then (err_str "data-lambda: identifier too long"; die 0));
-          tpush (nextc 0);
-          idloop 0) in
-     idloop 0;
-     rs r_ik0 (limbn tbuf (rg r_tlen) 0);
-     rs r_ik1 (limbn tbuf (rg r_tlen) 1);
-     rs r_ik2 (limbn tbuf (rg r_tlen) 2);
-     rs r_tk 3)
-  else if c = 34 then
-    (ign (nextc 0);
-     rs r_tlen 0;
-     let rec sloop u2 =
-       let d = peekc 0 in
-       if d < 0 then (err_str "data-lambda: unterminated string"; die 0)
-       else if d = 34 then ign (nextc 0)
-       else if d = 92 then (ign (nextc 0); tpush (read_escape 0); sloop 0)
-       else (ign (nextc 0); tpush d; sloop 0) in
-     sloop 0;
-     rs r_tk 2)
+let mk_ts = fun kind -> fun v -> fun text -> fun cs -> fun line ->
+  pair (pair (pair kind v) text) (pair cs line)
+
+(* the (text, (rest, line)) result of scan_string *)
+let sr_text = fun r -> fst r
+let sr_chars = fun r -> fst (snd r)
+let sr_line = fun r -> snd (snd r)
+
+let scan_token = fun cs0 -> fun line0 ->
+  let w = skip_ws cs0 line0 in
+  let cs = fst w in
+  let line = snd w in
+  if null cs then mk_ts 0 0 nil cs line
   else
-    (ign (nextc 0);
-     let two = pair2 c (peekc 0) in
-     (if two > 0 then (ign (nextc 0); rs r_tint two) else rs r_tint c);
-     rs r_tk 4)
+    (let c = hd cs in
+     if is_digit c then
+       (let r = scan_number cs 0 in
+        (if bnot (null (snd r)) && is_ichar (hd (snd r)) then
+           (err_str "data-lambda: bad number"; die_line line));
+        mk_ts 1 (fst r) nil (snd r) line)
+     else if is_istart c then
+       (let r = scan_ident cs nil in
+        mk_ts 3 0 (fst r) (snd r) line)
+     else if c = 34 then
+       (let r = scan_string (tl cs) line nil in
+        mk_ts 2 0 (sr_text r) (sr_chars r) (sr_line r))
+     else
+       (let rest = tl cs in
+        let two = if null rest then 0 else pair2 c (hd rest) in
+        if two > 0 then mk_ts 4 two nil (tl rest) line
+        else mk_ts 4 c nil rest line))
 
-(* ---- token predicates ----
-   Keywords are matched by their base-28 packed code; every keyword is at
-   most 6 chars so limbs 1 and 2 are zero, which no longer identifier can
-   fake (present chars always pack nonzero). *)
+(* ---- the compile state ----
+   One value threads through the whole compiler:
+     s = (ts, (regs, (globs, (dats, levels))))
+   ts     = ((kind/value, text), (rest-of-source, line)) -- current token
+   regs   = (addr, (depth, (exited, outh))) -- code address in words,
+            stack depth, 1 after RETURN/APPTERM in tail position, and
+            the output channel (used only when emitting)
+   globs  = (count, [(name, defined-flag)]) -- newest first
+   dats   = (count, [string]) -- data-section records, newest first
+   levels = [(binds, caps)] -- innermost function scope first; binds are
+            (name, stack slot) newest first, caps are captured names in
+            discovery order.  The bottom of the list is the top level:
+            names not found anywhere become forward globals. *)
 
-let t_punct = fun p -> rg r_tk = 4 && rg r_tint = p
+(* each layer gets named accessors so no use site spells a fst/snd chain *)
+let tok_kind = fun tok -> fst (fst tok)
+let tok_val = fun tok -> snd (fst tok)
+let tok_text = fun tok -> snd tok
 
-let kw_at = fun k ->
-  rg r_tk = 3 && rg r_ik1 = 0 && rg r_ik2 = 0 && rg r_ik0 = k
+let s_ts = fun s -> fst s
+let s_tok = fun s -> fst (s_ts s)
+let s_rem = fun s -> snd (s_ts s)
+let s_kind = fun s -> tok_kind (s_tok s)
+let s_ival = fun s -> tok_val (s_tok s)
+let s_text = fun s -> tok_text (s_tok s)
+let s_chars = fun s -> fst (s_rem s)
+let s_line = fun s -> snd (s_rem s)
 
-(* Lambda-0 keywords plus rejected reserved words of fuller MLs *)
-let is_kw_tok = fun u ->
-  if rg r_tk = 3 && rg r_ik1 = 0 && rg r_ik2 = 0 then
-    (let k = rg r_ik0 in
-     k = 15832 (* let *) || k = 2510 (* rec *) || k = 401 (* in *)
-     || k = 177 (* if *) || k = 311492 (* then *) || k = 124997 (* else *)
-     || k = 11570 (* fun *) || k = 126748 (* true *) || k = 3499810 (* false *)
-     || k = 3569 (* mod *)
-     || k = 3529 (* and *) || k = 4998825 (* match *) || k = 191571 (* with *)
-     || k = 123024 (* type *) || k = 8808382 (* begin *) || k = 3533 (* end *)
-     || k = 3344007 (* while *) || k = 424 (* do *) || k = 121160 (* done *)
-     || k = 98824 (* land *) || k = 14544 (* lor *) || k = 407580 (* lxor *)
-     || k = 9952 (* lsl *) || k = 14656 (* lsr *) || k = 14645 (* asr *)
-     || k = 20124 (* try *) || k = 311495 (* when *) || k = 533 (* as *)
-     || k = 183 (* of *) || k = 311711 (* open *) || k = 93892273 (* module *)
-     || k = 440 (* to *) || k = 270774424 (* downto *) || k = 14538 (* for *)
-     || k = 4862 (* ref *))
-  else false
+let s_regs = fun s -> fst (snd s)
+let s_addr = fun s -> fst (s_regs s)
+let s_depth = fun s -> fst (snd (s_regs s))
+let s_exited = fun s -> fst (snd (snd (s_regs s)))
+let s_outh = fun s -> snd (snd (snd (s_regs s)))
 
-let at_ident = fun u -> rg r_tk = 3 && bnot (is_kw_tok 0)
+let s_tables = fun s -> snd (snd s)
+let s_globs = fun s -> fst (s_tables s)
+let s_dats = fun s -> fst (snd (s_tables s))
+let s_levels = fun s -> snd (snd (s_tables s))
 
-let starts_atom = fun u ->
-  let k = rg r_tk in
+let mk_regs = fun a -> fun d -> fun e -> fun outh ->
+  pair a (pair d (pair e outh))
+
+let set_ts = fun ts -> fun s -> pair ts (snd s)
+let set_regs = fun r -> fun s -> pair (s_ts s) (pair r (s_tables s))
+let set_addr = fun a -> fun s ->
+  set_regs (mk_regs a (s_depth s) (s_exited s) (s_outh s)) s
+let set_depth = fun d -> fun s ->
+  set_regs (mk_regs (s_addr s) d (s_exited s) (s_outh s)) s
+let set_exited = fun e -> fun s ->
+  set_regs (mk_regs (s_addr s) (s_depth s) e (s_outh s)) s
+let set_globs = fun g -> fun s ->
+  pair (s_ts s) (pair (s_regs s) (pair g (pair (s_dats s) (s_levels s))))
+let set_dats = fun d -> fun s ->
+  pair (s_ts s) (pair (s_regs s) (pair (s_globs s) (pair d (s_levels s))))
+let set_levels = fun l -> fun s ->
+  pair (s_ts s) (pair (s_regs s) (pair (s_globs s) (pair (s_dats s) l)))
+
+(* the remaining structures: globals, data records, scope levels *)
+let g_count = fun globs -> fst globs
+let g_list = fun globs -> snd globs
+let gn_name = fun ent -> fst ent
+let gn_flag = fun ent -> snd ent
+
+let d_count = fun dats -> fst dats
+let d_list = fun dats -> snd dats
+
+let lev_binds = fun lev -> fst lev
+let lev_caps = fun lev -> snd lev
+let bind_name = fun b -> fst b
+let bind_slot = fun b -> snd b
+
+let bump = fun n -> fun s -> set_depth (s_depth s + n) s
+
+let next_token = fun s -> set_ts (scan_token (s_chars s) (s_line s)) s
+
+(* ---- token predicates ---- *)
+
+let t_punct = fun s -> fun p -> s_kind s = 4 && s_ival s = p
+
+let kw_at = fun s -> fun n -> s_kind s = 3 && list_eq (s_text s) n
+
+let at_ident = fun s -> s_kind s = 3 && bnot (is_kw (s_text s))
+
+let is_atom_start = fun s ->
+  let k = s_kind s in
   if k = 1 || k = 2 then true
   else if k = 3 then
-    (if kw_at 126748 (* true *) || kw_at 3499810 (* false *) then true
-     else bnot (is_kw_tok 0))
-  else t_punct 40
+    (if kw_at s n_true || kw_at s n_false then true
+     else bnot (is_kw (s_text s)))
+  else t_punct s 40
 
 (* does the current token continue the enclosing expression as an infix
    operator or sequence separator? used to veto tail calls *)
-let op_follows = fun u ->
-  if rg r_tk = 4 then
-    (let p = rg r_tint in
+let op_follows = fun s ->
+  if s_kind s = 4 then
+    (let p = s_ival s in
      p = 43 || p = 45 || p = 42 || p = 47          (* + - * / *)
      || p = 61 || p = 15932 || p = 60 || p = 15676 (* = <> < <= *)
      || p = 62 || p = 15678                        (* > >= *)
      || p = 9766 || p = 31868 || p = 59)           (* && || ; *)
-  else kw_at 3569 (* mod *)
-
-(* fresh copy of the current identifier's text, then advance *)
-let take_ident = fun u ->
-  let n = rg r_tlen in
-  let b = bytes_create n in
-  let rec cp i = if i < n then (bytes_set b i (bytes_get tbuf i); cp (i + 1)) in
-  cp 0;
-  next_token 0;
-  b
-
-let need_ident = fun u ->
-  if at_ident 0 then
-    ((if rg r_tlen = 1 && bytes_get tbuf 0 = 95 then
-        (err_str "data-lambda: _ is not a Lambda-1 binder; sequence with ; instead"; die 0));
-     take_ident 0)
-  else (err_str "data-lambda: expected an identifier"; die 0)
+  else kw_at s n_mod
 
 (* write a (possibly two-char) punctuation spelling to stderr *)
 let wp2 = fun c ->
   write_byte 2 (c mod 256);
   if c > 255 then write_byte 2 (c / 256)
 
-let expect_p = fun c ->
-  if t_punct c then next_token 0
-  else (err_str "data-lambda: expected "; wp2 c; die 0)
+let expect_p = fun c -> fun s ->
+  if t_punct s c then next_token s
+  else (err_str "data-lambda: expected "; wp2 c; die_line (s_line s))
+
+(* require an identifier; returns (name, state-after) *)
+let need_ident = fun s ->
+  if at_ident s then
+    ((if list_eq (s_text s) n_us then
+        (err_str "data-lambda: _ is not a Lambda-1 binder; sequence with ; instead";
+         die_line (s_line s)));
+     pair (s_text s) (next_token s))
+  else (err_str "data-lambda: expected an identifier"; die_line (s_line s))
 
 (* one formal parameter: an identifier, or `()` which binds nothing (the
    empty name can never collide with a source identifier) *)
-let param_ident = fun u ->
-  if t_punct 40 then (next_token 0; expect_p 41; bytes_create 0)
-  else need_ident 0
+let param_ident = fun s ->
+  if t_punct s 40 then pair nil (expect_p 41 (next_token s))
+  else need_ident s
 
 (* does another parameter follow? *)
-let at_param = fun u -> at_ident 0 || t_punct 40
+let at_param = fun s -> at_ident s || t_punct s 40
 
 (* ---- tail lookahead ----
    Decides whether a parenthesized expression in tail position can be
    compiled as a tail expression: scan to the matching close paren and
-   require that no operator or atom follows.  Only the scanner position
-   needs saving; the current token is the open paren and is re-made. *)
+   require that no operator or atom follows.  The token stream is a
+   value, so the lookahead just walks ahead and drops its state. *)
 
-let ptc = fun u ->
-  rs r_svpos (rg r_pos);
-  rs r_svline (rg r_line);
-  next_token 0;
-  let r =
-    if t_punct 41 then 0
-    else
-      (let rec scan depth =
-         if rg r_tk = 0 then 0
-         else if t_punct 40 then (next_token 0; scan (depth + 1))
-         else if t_punct 41 then
-           (if depth = 1 then
-              (next_token 0;
-               if op_follows 0 || starts_atom 0 then 0 else 1)
-            else (next_token 0; scan (depth - 1)))
-         else (next_token 0; scan depth) in
-       scan 1) in
-  rs r_pos (rg r_svpos);
-  rs r_line (rg r_svline);
-  rs r_tk 4;
-  rs r_tint 40;
-  r
+let ptc = fun s ->
+  let s1 = next_token s in
+  if t_punct s1 41 then 0
+  else
+    (let rec scan st = fun depth ->
+       if s_kind st = 0 then 0
+       else if t_punct st 40 then scan (next_token st) (depth + 1)
+       else if t_punct st 41 then
+         (if depth = 1 then
+            (let st2 = next_token st in
+             if op_follows st2 || is_atom_start st2 then 0 else 1)
+          else scan (next_token st) (depth - 1))
+       else scan (next_token st) depth in
+     scan s1 1)
 
-(* ---- code emission ---- *)
+(* ---- code emission ----
+   m = 0: size pass, nothing is written, only the address advances.
+   m = 1: emit pass, each word goes out as 4 little-endian bytes. *)
 
-let emitw = fun v ->
-  let n = rg r_clen in
-  (if n >= 1048575 then (err_str "data-lambda: code too large"; die 0));
-  bytes_set code (4 * n) v;
-  bytes_set code (4 * n + 1) (v / 256);
-  bytes_set code (4 * n + 2) (v / 65536);
-  bytes_set code (4 * n + 3) (v / 16777216);
-  rs r_clen (n + 1)
+let op_stop = 0
+let op_const = 1
+let op_acc = 2
+let op_push = 3
+let op_pop = 4
+let op_assign = 5
+let op_envacc = 6
+let op_closure = 7
+let op_apply = 8
+let op_appterm = 9
+let op_return = 10
+let op_makeblock = 11
+let op_getfield = 12
+let op_setfield = 13
+let op_branch = 14
+let op_branchif = 15
+let op_branchifnot = 16
+let op_boolnot = 30
+let op_vectlength = 40
+let op_getvectitem = 41
+let op_setvectitem = 42
+let op_getbytes = 43
+let op_setbytes = 44
+let op_getglobal = 45
+let op_setglobal = 46
+let op_ccall = 47
 
-let emit1 = fun op -> fun a -> (emitw op; emitw a)
-let emit2 = fun op -> fun a -> fun b -> (emitw op; emitw a; emitw b)
+let ew = fun m -> fun v -> fun s ->
+  (if m = 1 then
+     (write_byte (s_outh s) v;
+      write_byte (s_outh s) (v / 256);
+      write_byte (s_outh s) (v / 65536);
+      write_byte (s_outh s) (v / 16777216)));
+  set_addr (s_addr s + 1) s
 
-(* emit a branch opcode with a hole; returns the hole's word index *)
-let hole = fun op -> (emitw op; emitw 0; rg r_clen - 1)
+let em1 = fun m -> fun op -> fun a -> fun s -> ew m a (ew m op s)
+let em2 = fun m -> fun op -> fun a -> fun b -> fun s ->
+  ew m b (ew m a (ew m op s))
 
-(* point a hole at the current address *)
-let patch_here = fun h ->
-  let v = rg r_clen in
-  bytes_set code (4 * h) v;
-  bytes_set code (4 * h + 1) (v / 256);
-  bytes_set code (4 * h + 2) (v / 65536);
-  bytes_set code (4 * h + 3) (v / 16777216)
-
-let bump = fun n -> rs r_depth (rg r_depth + n)
+let gbase = 4096                    (* first non-data global *)
 
 (* current string token -> data record + GETGLOBAL of its slot *)
-let emit_strlit = fun u ->
-  let i = rg r_datcount in
-  (if i >= gbase then (err_str "data-lambda: too many string literals"; die 0));
-  let n = rg r_tlen in
-  let o = rg r_datlen in
-  (if o + 4 + n > 262144 then (err_str "data-lambda: data section too large"; die 0));
-  bytes_set dat o n;
-  bytes_set dat (o + 1) (n / 256);
-  bytes_set dat (o + 2) 0;
-  bytes_set dat (o + 3) 0;
-  let rec cp j = if j < n then (bytes_set dat (o + 4 + j) (bytes_get tbuf j); cp (j + 1)) in
-  cp 0;
-  rs r_datlen (o + 4 + n);
-  rs r_datcount (i + 1);
-  emit1 45 i
+let emit_strlit = fun m -> fun s ->
+  let d = s_dats s in
+  let i = d_count d in
+  (if i >= gbase then
+     (err_str "data-lambda: too many string literals"; die_line (s_line s)));
+  em1 m op_getglobal i
+    (set_dats (pair (i + 1) (cons (s_text s) (d_list d))) s)
 
-(* ---- global table: [defined-flag][len][name] entries in gpool ---- *)
+(* ---- global table: (count, [(name, defined-flag)]) newest first ---- *)
 
-let gofs_get = fun i ->
-  bytes_get gofs (4 * i) + 256 * bytes_get gofs (4 * i + 1)
-  + 65536 * bytes_get gofs (4 * i + 2)
-
-let gname_eq = fun i -> fun q ->
-  let o = gofs_get i in
-  let n = bytes_get gpool (o + 1) in
-  if bytes_length q = n then
-    (let rec cmp j =
-       if j >= n then true
-       else if bytes_get gpool (o + 2 + j) = bytes_get q j then cmp (j + 1)
-       else false in
-     cmp 0)
-  else false
+let rec g_find_from q = fun lst -> fun i ->
+  if null lst then 0 - 1
+  else if list_eq (gn_name (hd lst)) q then i
+  else g_find_from q (tl lst) (i - 1)
 
 (* newest first so later definitions shadow earlier ones *)
-let find_global = fun q ->
-  let rec go i =
-    if i < 0 then 0 - 1
-    else if gname_eq i q then i
-    else go (i - 1) in
-  go (rg r_gcount - 1)
+let g_find = fun q -> fun globs ->
+  g_find_from q (g_list globs) (g_count globs - 1)
 
-let add_global = fun q ->
-  let i = rg r_gcount in
-  (if i >= 2048 then (err_str "data-lambda: too many globals"; die 0));
-  let n = bytes_length q in
-  let o = rg r_gplen in
-  (if o + 2 + n > 65536 then (err_str "data-lambda: global name pool full"; die 0));
-  bytes_set gofs (4 * i) o;
-  bytes_set gofs (4 * i + 1) (o / 256);
-  bytes_set gofs (4 * i + 2) (o / 65536);
-  bytes_set gofs (4 * i + 3) 0;
-  bytes_set gpool o 0;
-  bytes_set gpool (o + 1) n;
-  let rec cp j = if j < n then (bytes_set gpool (o + 2 + j) (bytes_get q j); cp (j + 1)) in
-  cp 0;
-  rs r_gplen (o + 2 + n);
-  rs r_gcount (i + 1);
-  i
+(* add a global; returns (index, globs') *)
+let g_add = fun q -> fun flag -> fun globs ->
+  pair (g_count globs)
+    (pair (g_count globs + 1) (cons (pair q flag) (g_list globs)))
 
-let gdefined = fun i -> bytes_get gpool (gofs_get i)
-let set_gdefined = fun i -> bytes_set gpool (gofs_get i) 1
+let rec g_flag_from lst = fun k ->
+  if k = 0 then gn_flag (hd lst) else g_flag_from (tl lst) (k - 1)
 
-let mark_defined = fun q ->
-  let g = find_global q in
+let g_defined = fun i -> fun globs ->
+  g_flag_from (g_list globs) (g_count globs - 1 - i)
+
+let rec g_set_from lst = fun k ->
+  if k = 0 then cons (pair (gn_name (hd lst)) 1) (tl lst)
+  else cons (hd lst) (g_set_from (tl lst) (k - 1))
+
+let g_set_defined = fun i -> fun globs ->
+  pair (g_count globs) (g_set_from (g_list globs) (g_count globs - 1 - i))
+
+(* define name; returns (index, globs') *)
+let mark_defined = fun q -> fun globs ->
+  let g = g_find q globs in
   if g >= 0 then
-    (if gdefined g = 1 then
+    (if g_defined g globs = 1 then
        (* already defined: shadow with a fresh global *)
-       (let g2 = add_global q in set_gdefined g2; g2)
-     else (set_gdefined g; g))
-  else (let g2 = add_global q in set_gdefined g2; g2)
+       g_add q 1 globs
+     else pair g (g_set_defined g globs))
+  else g_add q 1 globs
 
-let check_all_defined = fun u ->
-  let n = rg r_gcount in
-  let rec go i =
-    if i < n then
-      ((if gdefined i = 0 then
-          (let o = gofs_get i in
-           err_str "data-lambda: undefined name ";
-           let len = bytes_get gpool (o + 1) in
-           let rec wr j = if j < len then (write_byte 2 (bytes_get gpool (o + 2 + j)); wr (j + 1)) in
-           wr 0;
-           ign (die 0)));
-       go (i + 1)) in
-  go 0
+let check_all_defined = fun globs -> fun line ->
+  let rec go lst =
+    if null lst then ()
+    else
+      ((if gn_flag (hd lst) = 0 then
+          (err_str "data-lambda: undefined name ";
+           err_name (gn_name (hd lst));
+           die_line line));
+       go (tl lst)) in
+  go (rev_list (g_list globs))
 
-(* ---- capture pools: per level, [len][name bytes] in 65-byte slots ---- *)
+(* ---- builtins ----
+   Descriptor: ckind * 256 + arity * 16 + index, kinds:
+     0 = C primitive (all args pushed, CCALL)
+     1 = opcode (last arg stays in acc; index selects the opcode)
+     2 = arg_count (unit argument compiled but not passed)
+     3 = block maker (all args pushed, MAKEBLOCK 0 arity)
+   Opcode selectors (kind 1) follow ml0-compiler's numbering:
+     1 getbytes, 6 boolnot, 7 getfield 0, 8 getfield 1. *)
 
-let cap_eq = fun l -> fun j -> fun q ->
-  let a = l * 4160 + j * 65 in
-  let n = bytes_get cpool a in
-  if bytes_length q = n then
-    (let rec cmp i =
-       if i >= n then true
-       else if bytes_get cpool (a + 1 + i) = bytes_get q i then cmp (i + 1)
-       else false in
-     cmp 0)
-  else false
+let mk_bi = fun kind -> fun ar -> fun idx -> kind * 256 + ar * 16 + idx
 
-let cap_find = fun l -> fun q ->
-  let n = rg (r_ccount0 + l) in
-  let rec go j =
-    if j >= n then 0 - 1
-    else if cap_eq l j q then j
-    else go (j + 1) in
-  go 0
-
-let cap_add = fun l -> fun q ->
-  let n = rg (r_ccount0 + l) in
-  (if n >= 64 then (err_str "data-lambda: too many captured variables"; die 0));
-  let a = l * 4160 + n * 65 in
-  let len = bytes_length q in
-  bytes_set cpool a len;
-  let rec cp i = if i < len then (bytes_set cpool (a + 1 + i) (bytes_get q i); cp (i + 1)) in
-  cp 0;
-  rs (r_ccount0 + l) (n + 1);
-  n
-
-let cap_name = fun l -> fun j ->
-  let a = l * 4160 + j * 65 in
-  let n = bytes_get cpool a in
-  let b = bytes_create n in
-  let rec cp i = if i < n then (bytes_set b i (bytes_get cpool (a + 1 + i)); cp (i + 1)) in
-  cp 0;
-  b
+let bi_desc = fun q ->
+  if null q then 0 - 1
+  else
+    (let c = hd q in
+     if c = ch_a then
+       (if list_eq q n_arg_count then mk_bi 2 1 8
+        else if list_eq q n_arg_get then mk_bi 0 1 9
+        else if list_eq q n_array_make then mk_bi 0 2 10
+        else if list_eq q n_array_get then mk_bi 1 2 3
+        else if list_eq q n_array_set then mk_bi 1 3 4
+        else if list_eq q n_array_length then mk_bi 1 1 5
+        else 0 - 1)
+     else if c = ch_b then
+       (if list_eq q n_bytes_create then mk_bi 0 1 6
+        else if list_eq q n_bytes_length then mk_bi 0 1 7
+        else if list_eq q n_bytes_get then mk_bi 1 2 1
+        else if list_eq q n_bytes_set then mk_bi 1 3 2
+        else 0 - 1)
+     else if c = ch_c then
+       (if list_eq q n_cons then mk_bi 3 2 0
+        else if list_eq q n_close_chan then mk_bi 0 1 3
+        else 0 - 1)
+     else if c = ch_e then
+       (if list_eq q n_exit then mk_bi 0 1 0 else 0 - 1)
+     else if c = ch_f then
+       (if list_eq q n_fst then mk_bi 1 1 7 else 0 - 1)
+     else if c = ch_h then
+       (if list_eq q n_hd then mk_bi 1 1 7 else 0 - 1)
+     else if c = ch_n then
+       (if list_eq q n_null then mk_bi 1 1 6
+        else if list_eq q n_not then mk_bi 1 1 6
+        else 0 - 1)
+     else if c = ch_o then
+       (if list_eq q n_open_in then mk_bi 0 1 1
+        else if list_eq q n_open_out then mk_bi 0 1 2
+        else 0 - 1)
+     else if c = ch_p then
+       (if list_eq q n_pair then mk_bi 3 2 0 else 0 - 1)
+     else if c = ch_r then
+       (if list_eq q n_read_byte then mk_bi 0 1 4 else 0 - 1)
+     else if c = ch_s then
+       (if list_eq q n_snd then mk_bi 1 1 8
+        else if list_eq q n_string_length then mk_bi 0 1 7
+        else if list_eq q n_string_get then mk_bi 1 2 1
+        else 0 - 1)
+     else if c = ch_t then
+       (if list_eq q n_tl then mk_bi 1 1 8 else 0 - 1)
+     else if c = ch_w then
+       (if list_eq q n_write_byte then mk_bi 0 2 5 else 0 - 1)
+     else 0 - 1)
 
 (* ---- name resolution ----
-   An environment is a closure from name to an encoded resolution
-   kind * 2^20 + index.  Kinds: 0 stack slot, 1 capture index, 2 global
-   (absolute), 3 builtin descriptor.  The bottom environment resolves
-   globals and builtins and turns unknown names into forward globals. *)
+   A resolution is kind * 2^20 + index; kinds: 0 stack slot, 1 capture
+   index, 2 global (absolute), 3 builtin descriptor.  Resolving may
+   extend capture lists (a free name threads through every enclosing
+   function boundary) and the global table (an unknown name becomes a
+   forward global), so it returns the updated levels and globals. *)
 
 let mk_res = fun k -> fun i -> k * 1048576 + i
 
-(* builtin descriptor: ckind * 256 + arity * 16 + index.
-   ckind 0 = C primitive (all args pushed, CCALL), 1 = opcode (last arg
-   stays in acc), 2 = arg_count (unit argument compiled but not passed).
-   Names are matched by length plus base-28 limbs (see limbn). *)
-let bi_desc = fun q ->
-  let n = bytes_length q in
-  if n > 13 then 0 - 1
-  else
-    (let a = limbn q n 0 in
-     let b = limbn q n 1 in
-     let c = limbn q n 2 in
-     if n = 4 && a = 446773 then 16                            (* exit *)
-     else if n = 7 && a = 171800735 && b = 14 then 17          (* open_in *)
-     else if n = 8 && a = 275062943 && b = 581 then 18         (* open_out *)
-     else if n = 10 && a = 468182403 && b = 308339 then 19     (* close_chan *)
-     else if n = 9 && a = 51105198 && b = 4505 then 20         (* read_byte *)
-     else if n = 10 && a = 468199839 && b = 126142 then 37     (* write_byte *)
-     else if n = 12 && a = 476484542 && b = 98371339 then 22   (* bytes_create *)
-     else if n = 12 && a = 476484542 && b = 150140856 then 23  (* bytes_length *)
-     else if n = 13 && a = 129290019 && b = 348821563 && c = 8 then 23 (* string_length *)
-     else if n = 9 && a = 260598185 && b = 16093 then 536      (* arg_count *)
-     else if n = 7 && a = 90953129 && b = 20 then 25           (* arg_get *)
-     else if n = 9 && a = 476484542 && b = 15827 then 289      (* bytes_get *)
-     else if n = 10 && a = 129290019 && b = 443183 then 289    (* string_get *)
-     else if n = 9 && a = 476484542 && b = 15839 then 306      (* bytes_set *)
-     else if n = 10 && a = 480082905 && b = 118425 then 42     (* array_make *)
-     else if n = 9 && a = 480082905 && b = 15827 then 291      (* array_get *)
-     else if n = 9 && a = 480082905 && b = 15839 then 308      (* array_set *)
-     else if n = 12 && a = 480082905 && b = 150140856 then 277 (* array_length *)
-     else if n = 3 && a = 16114 then 278                       (* not *)
-     else 0 - 1)
+let rec assoc_slot q = fun binds ->
+  if null binds then 0 - 1
+  else if list_eq q (bind_name (hd binds)) then bind_slot (hd binds)
+  else assoc_slot q (tl binds)
 
-let genv = fun q ->
-  let g = find_global q in
-  if g >= 0 then mk_res 2 (gbase + g)
-  else
-    (let d = bi_desc q in
-     if d >= 0 then mk_res 3 d
+let rec cap_index q = fun caps -> fun i ->
+  if null caps then 0 - 1
+  else if list_eq q (hd caps) then i
+  else cap_index q (tl caps) (i + 1)
+
+(* the (res, (levels, globs)) result of resolve_in *)
+let ri_res = fun r -> fst r
+let ri_levels = fun r -> fst (snd r)
+let ri_globs = fun r -> snd (snd r)
+
+let rec resolve_in q = fun levels -> fun globs -> fun line ->
+  if null levels then
+    (* the top level: globals, then builtins, then a forward global *)
+    (let g = g_find q globs in
+     if g >= 0 then pair (mk_res 2 (gbase + g)) (pair levels globs)
      else
-       (* forward reference: assume a later top-level binding *)
-       mk_res 2 (gbase + add_global q))
+       (let d = bi_desc q in
+        if d >= 0 then pair (mk_res 3 d) (pair levels globs)
+        else
+          (let a = g_add q 0 globs in
+           pair (mk_res 2 (gbase + fst a)) (pair levels (snd a)))))
+  else
+    (let lev = hd levels in
+     let slot = assoc_slot q (lev_binds lev) in
+     if slot >= 0 then pair (mk_res 0 slot) (pair levels globs)
+     else
+       (let cj = cap_index q (lev_caps lev) 0 in
+        if cj >= 0 then pair (mk_res 1 cj) (pair levels globs)
+        else
+          (let rr = resolve_in q (tl levels) globs line in
+           let r = ri_res rr in
+           let outer = ri_levels rr in
+           let globs2 = ri_globs rr in
+           if r / 1048576 >= 2 then pair r (pair (cons lev outer) globs2)
+           else
+             (* an outer local: capture it at this boundary *)
+             (let nj = list_len (lev_caps lev) in
+              pair (mk_res 1 nj)
+                (pair
+                   (cons (pair (lev_binds lev) (cat (lev_caps lev) (l1 q)))
+                      outer)
+                   globs2)))))
 
-let env_bind = fun n -> fun r -> fun outer ->
-  fun q -> if bytes_eq q n then r else outer q
+(* resolve in the current state; returns (res, state') *)
+let resolve = fun q -> fun s ->
+  let rr = resolve_in q (s_levels s) (s_globs s) (s_line s) in
+  pair (ri_res rr) (set_globs (ri_globs rr) (set_levels (ri_levels rr) s))
 
-(* function boundary at level l: names bound outside become captures *)
-let boundary = fun l -> fun outer ->
-  fun q ->
-    let c = cap_find l q in
-    if c >= 0 then mk_res 1 c
-    else
-      (let r = outer q in
-       if r / 1048576 >= 2 then r
-       else mk_res 1 (cap_add l q))
-
-let load_res = fun r ->
+let load_res = fun m -> fun r -> fun s ->
   let k = r / 1048576 in
   let i = r mod 1048576 in
-  if k = 0 then emit1 2 (rg r_depth - 1 - i)       (* acc *)
-  else if k = 1 then emit1 6 (i + 1)               (* envacc *)
-  else if k = 2 then emit1 45 i                    (* getglobal *)
-  else (err_str "data-lambda: builtin used as a value"; die 0)
+  if k = 0 then em1 m op_acc (s_depth s - 1 - i) s
+  else if k = 1 then em1 m op_envacc (i + 1) s
+  else if k = 2 then em1 m op_getglobal i s
+  else (err_str "data-lambda: builtin used as a value"; die_line (s_line s))
+
+(* bind a name to a stack slot in the current level *)
+let add_bind = fun q -> fun slot -> fun s ->
+  let lev = hd (s_levels s) in
+  set_levels
+    (cons (pair (cons (pair q slot) (lev_binds lev)) (lev_caps lev))
+       (tl (s_levels s)))
+    s
+
+(* drop the newest binding of the current level (scope exit) *)
+let strip_bind = fun s ->
+  let lev = hd (s_levels s) in
+  set_levels
+    (cons (pair (tl (lev_binds lev)) (lev_caps lev)) (tl (s_levels s))) s
 
 (* a plain value sits in acc; in tail position emit its RETURN unless an
    appterm already exited or a sequence semicolon follows *)
-let value_done = fun t ->
-  if t = 1 && rg r_exited = 0 then
-    (if t_punct 59 then ()
-     else (emit1 10 (rg r_depth); rs r_exited 1))
+let value_done = fun m -> fun t -> fun s ->
+  if t = 1 && s_exited s = 0 then
+    (if t_punct s 59 then s
+     else set_exited 1 (em1 m op_return (s_depth s) s))
+  else s
 
 (* ---- parser / code generator ----
-   The expression compiler is one mutually recursive family; Lambda-0 has
-   no `and`, so each helper takes the single recursive entry point `re`
-   as its first argument: `re 0 env t` compiles a full expression
-   (sequences included), `re 1 env t` one sequence element. *)
+   One mutually recursive family; Lambda-0 has no `and`, so each helper
+   takes the single recursive entry point `re` as its first argument:
+   `re m 0 t s` compiles a full expression (sequences included),
+   `re m 1 t s` one sequence element.  In the emit pass (m = 1) a
+   forward branch target is found by running the size pass (m = 0) over
+   the subexpression about to be emitted; the size pass never needs
+   targets, so it stays linear. *)
 
-let c_atom = fun re -> fun env ->
-  let k = rg r_tk in
-  if k = 1 then (emit1 1 (rg r_tint); next_token 0)
-  else if k = 2 then (emit_strlit 0; next_token 0)
+let c_atom = fun re -> fun m -> fun s ->
+  let k = s_kind s in
+  if k = 1 then next_token (em1 m op_const (s_ival s) s)
+  else if k = 2 then next_token (emit_strlit m s)
   else if k = 3 then
-    (if kw_at 126748 (* true *) then (emit1 1 1; next_token 0)
-     else if kw_at 3499810 (* false *) then (emit1 1 0; next_token 0)
-     else if is_kw_tok 0 then (err_str "data-lambda: unexpected keyword"; die 0)
-     else (let name = take_ident 0 in load_res (env name)))
-  else if t_punct 40 then
-    (next_token 0;
-     if t_punct 41 then (emit1 1 0; next_token 0)
-     else (ign (re 0 env 0); expect_p 41))
-  else (err_str "data-lambda: unexpected token"; die 0)
+    (if kw_at s n_true then next_token (em1 m op_const 1 s)
+     else if kw_at s n_false then next_token (em1 m op_const 0 s)
+     else if kw_at s n_nil then next_token (em1 m op_const 0 s)
+     else if is_kw (s_text s) then
+       (err_str "data-lambda: unexpected keyword"; die_line (s_line s))
+     else
+       (let q = s_text s in
+        let s1 = next_token s in
+        let rr = resolve q s1 in
+        load_res m (fst rr) (snd rr)))
+  else if t_punct s 40 then
+    (let s1 = next_token s in
+     if t_punct s1 41 then next_token (em1 m op_const 0 s1)
+     else expect_p 41 (re m 0 0 s1))
+  else (err_str "data-lambda: unexpected token"; die_line (s_line s))
 
-let c_builtin = fun re -> fun env -> fun d ->
+let c_builtin = fun re -> fun m -> fun d -> fun s ->
   let kind = d / 256 in
   let ar = d / 16 mod 16 in
   let idx = d mod 16 in
-  let rec args j =
+  let rec args j = fun st ->
     if j < ar then
-      ((if bnot (starts_atom 0) then
-          (err_str "data-lambda: builtin applied to too few arguments"; die 0));
-       c_atom re env;
-       (if kind = 0 || j < ar - 1 then (emitw 3; bump 1));
-       args (j + 1)) in
-  args 0;
-  if kind = 0 then (emit2 47 ar idx; bump (0 - ar))
-  else if kind = 2 then emit2 47 0 idx
+      ((if bnot (is_atom_start st) then
+          (err_str "data-lambda: builtin applied to too few arguments";
+           die_line (s_line st)));
+       let st1 = c_atom re m st in
+       let st2 =
+         if kind = 0 || kind = 3 || j < ar - 1 then
+           bump 1 (ew m op_push st1)
+         else st1 in
+       args (j + 1) st2)
+    else st in
+  let s1 = args 0 s in
+  if kind = 0 then bump (0 - ar) (em2 m op_ccall ar idx s1)
+  else if kind = 2 then em2 m op_ccall 0 idx s1
+  else if kind = 3 then bump (0 - ar) (em2 m op_makeblock 0 ar s1)
   else
-    ((if idx = 1 then emitw 43                   (* getbytes *)
-      else if idx = 2 then emitw 44              (* setbytes *)
-      else if idx = 3 then emitw 41              (* getvectitem *)
-      else if idx = 4 then emitw 42              (* setvectitem *)
-      else if idx = 5 then emitw 40              (* vectlength *)
-      else emitw 30);                            (* boolnot *)
-     bump (0 - (ar - 1)))
+    (let s2 =
+       if idx = 1 then ew m op_getbytes s1
+       else if idx = 2 then ew m op_setbytes s1
+       else if idx = 3 then ew m op_getvectitem s1
+       else if idx = 4 then ew m op_setvectitem s1
+       else if idx = 5 then ew m op_vectlength s1
+       else if idx = 6 then ew m op_boolnot s1
+       else if idx = 7 then em1 m op_getfield 0 s1
+       else em1 m op_getfield 1 s1 in
+     bump (0 - (ar - 1)) s2)
 
-let c_app = fun re -> fun env -> fun t ->
-  if t = 1 && t_punct 40 && ptc 0 = 1 then
+let c_app = fun re -> fun m -> fun t -> fun s ->
+  if t = 1 && t_punct s 40 && ptc s = 1 then
     (* tail expression through parentheses: (effects; call args) *)
-    (next_token 0; ign (re 0 env 1); expect_p 41)
+    expect_p 41 (re m 0 1 (next_token s))
   else
-    (let was_builtin =
-       if at_ident 0 && bnot (kw_at 126748) && bnot (kw_at 3499810) then
-         (let name = take_ident 0 in
-          let r = env name in
-          if r / 1048576 = 3 then (c_builtin re env (r mod 1048576); 1)
-          else (load_res r; 0))
-       else (c_atom re env; 0) in
-     (if was_builtin = 1 && starts_atom 0 then
-        (err_str "data-lambda: builtin result cannot be applied"; die 0));
-     let rec app_args u =
-       if starts_atom 0 then
-         (emitw 3; bump 1;                        (* push the callee *)
-          c_atom re env;
-          emitw 3; bump 1;                        (* push the argument *)
-          if starts_atom 0 then
-            (emit1 2 1; emit1 8 1; emit1 4 1;     (* acc 1; apply 1; pop 1 *)
-             bump (0 - 2);
-             app_args 0)
-          else if t = 1 && bnot (op_follows 0) then
-            (emit1 2 1;
-             emit2 9 1 (rg r_depth - 1);          (* appterm 1, depth-1 *)
-             rs r_exited 1;
-             bump (0 - 2))
+    (let rec app_args u = fun st ->
+       if is_atom_start st then
+         (let sa = bump 1 (ew m op_push st) in        (* push the callee *)
+          let sb = c_atom re m sa in
+          let sc = bump 1 (ew m op_push sb) in        (* push the argument *)
+          if is_atom_start sc then
+            app_args 0
+              (bump (0 - 2)
+                 (em1 m op_pop 1 (em1 m op_apply 1 (em1 m op_acc 1 sc))))
+          else if t = 1 && bnot (op_follows sc) then
+            set_exited 1
+              (bump (0 - 2)
+                 (em2 m op_appterm 1 (s_depth sc - 1) (em1 m op_acc 1 sc)))
           else
-            (emit1 2 1; emit1 8 1; emit1 4 1;
-             bump (0 - 2))) in
-     app_args 0)
+            bump (0 - 2)
+              (em1 m op_pop 1 (em1 m op_apply 1 (em1 m op_acc 1 sc))))
+       else st in
+     if at_ident s && bnot (kw_at s n_true) && bnot (kw_at s n_false)
+        && bnot (kw_at s n_nil) then
+       (let q = s_text s in
+        let s1 = next_token s in
+        let rr = resolve q s1 in
+        let r = fst rr in
+        let s2 = snd rr in
+        if r / 1048576 = 3 then
+          (let s3 = c_builtin re m (r mod 1048576) s2 in
+           (if is_atom_start s3 then
+              (err_str "data-lambda: builtin result cannot be applied";
+               die_line (s_line s3)));
+           s3)
+        else app_args 0 (load_res m r s2))
+     else app_args 0 (c_atom re m s))
 
 (* one left-associative binary level; opcode 0 = token is not this level *)
-let mul_op = fun u ->
-  if t_punct 42 then 20                            (* mulint *)
-  else if t_punct 47 then 21                       (* divint *)
-  else if kw_at 3569 then 22                       (* modint *)
+let mul_op = fun s ->
+  if t_punct s 42 then 20                            (* mulint *)
+  else if t_punct s 47 then 21                       (* divint *)
+  else if kw_at s n_mod then 22                      (* modint *)
   else 0
 
-let add_op = fun u ->
-  if t_punct 43 then 18                            (* addint *)
-  else if t_punct 45 then 19                       (* subint *)
+let add_op = fun s ->
+  if t_punct s 43 then 18                            (* addint *)
+  else if t_punct s 45 then 19                       (* subint *)
   else 0
 
-let cmp_op = fun u ->
-  if t_punct 61 then 31                            (* eq *)
-  else if t_punct 15932 then 32                    (* neq *)
-  else if t_punct 60 then 33                       (* ltint *)
-  else if t_punct 15676 then 34                    (* leint *)
-  else if t_punct 62 then 35                       (* gtint *)
-  else if t_punct 15678 then 36                    (* geint *)
+let cmp_op = fun s ->
+  if t_punct s 61 then 31                            (* eq *)
+  else if t_punct s 15932 then 32                    (* neq *)
+  else if t_punct s 60 then 33                       (* ltint *)
+  else if t_punct s 15676 then 34                    (* leint *)
+  else if t_punct s 62 then 35                       (* gtint *)
+  else if t_punct s 15678 then 36                    (* geint *)
   else 0
 
-let c_mul = fun re -> fun env -> fun t ->
-  c_app re env t;
-  let rec more u =
-    let op = mul_op 0 in
+let c_mul = fun re -> fun m -> fun t -> fun s ->
+  let rec more st =
+    let op = mul_op st in
     if op > 0 then
-      (next_token 0; emitw 3; bump 1;
-       c_app re env 0;
-       emitw op; bump (0 - 1);
-       more 0) in
-  more 0
+      more (bump (0 - 1)
+              (ew m op (c_app re m 0 (bump 1 (ew m op_push (next_token st))))))
+    else st in
+  more (c_app re m t s)
 
-let c_add = fun re -> fun env -> fun t ->
-  c_mul re env t;
-  let rec more u =
-    let op = add_op 0 in
+let c_add = fun re -> fun m -> fun t -> fun s ->
+  let rec more st =
+    let op = add_op st in
     if op > 0 then
-      (next_token 0; emitw 3; bump 1;
-       c_mul re env 0;
-       emitw op; bump (0 - 1);
-       more 0) in
-  more 0
+      more (bump (0 - 1)
+              (ew m op (c_mul re m 0 (bump 1 (ew m op_push (next_token st))))))
+    else st in
+  more (c_mul re m t s)
 
-let c_cmp = fun re -> fun env -> fun t ->
-  c_add re env t;
-  let rec more u =
-    let op = cmp_op 0 in
+let c_cmp = fun re -> fun m -> fun t -> fun s ->
+  let rec more st =
+    let op = cmp_op st in
     if op > 0 then
-      (next_token 0; emitw 3; bump 1;
-       c_add re env 0;
-       emitw op; bump (0 - 1);
-       more 0) in
-  more 0
+      more (bump (0 - 1)
+              (ew m op (c_add re m 0 (bump 1 (ew m op_push (next_token st))))))
+    else st in
+  more (c_add re m t s)
 
-let c_and = fun re -> fun env -> fun t ->
-  c_cmp re env t;
-  let rec more u =
-    if t_punct 9766 then                           (* && *)
-      (next_token 0;
-       let hf = hole 16 in                         (* branchifnot *)
-       c_cmp re env 0;
-       let he = hole 14 in                         (* branch *)
-       patch_here hf;
-       emit1 1 0;
-       patch_here he;
-       more 0) in
-  more 0
+let c_and = fun re -> fun m -> fun t -> fun s ->
+  let rec more st =
+    if t_punct st 9766 then                          (* && *)
+      (let s1 = next_token st in
+       let sz = if m = 1 then s_addr (c_cmp re 0 0 s1) - s_addr s1 else 0 in
+       (* [branchifnot T1] rhs [branch T2] [const 0]; T1 = the const,
+          T2 = after it *)
+       let s2 = em1 m op_branchifnot (s_addr s1 + 2 + sz + 2) s1 in
+       let s3 = c_cmp re m 0 s2 in
+       let s4 = em1 m op_branch (s_addr s3 + 2 + 2) s3 in
+       more (em1 m op_const 0 s4))
+    else st in
+  more (c_cmp re m t s)
 
-let c_or = fun re -> fun env -> fun t ->
-  c_and re env t;
-  let rec more u =
-    if t_punct 31868 then                          (* || *)
-      (next_token 0;
-       let ht = hole 15 in                         (* branchif *)
-       c_and re env 0;
-       let he = hole 14 in                         (* branch *)
-       patch_here ht;
-       emit1 1 1;
-       patch_here he;
-       more 0) in
-  more 0
+let c_or = fun re -> fun m -> fun t -> fun s ->
+  let rec more st =
+    if t_punct st 31868 then                         (* || *)
+      (let s1 = next_token st in
+       let sz = if m = 1 then s_addr (c_and re 0 0 s1) - s_addr s1 else 0 in
+       let s2 = em1 m op_branchif (s_addr s1 + 2 + sz + 2) s1 in
+       let s3 = c_and re m 0 s2 in
+       let s4 = em1 m op_branch (s_addr s3 + 2 + 2) s3 in
+       more (em1 m op_const 1 s4))
+    else st in
+  more (c_and re m t s)
 
 (* compile `fun pname .. -> body` (term 15917) or `pname .. = body`
-   (term 61) into a closure value; pname is already taken, the remaining
-   parameters and the terminator are still in the token stream.  The body
-   is emitted first (behind a branch) so its free variables are
-   discovered, then the captured values are pushed and CLOSURE built.
-   Each extra parameter nests one more unary closure, RETURNed by its
-   enclosing one, exactly as ml0-compiler's compile_fun. *)
-let rec compile_fun re = fun env -> fun pname -> fun term ->
-  let hs = hole 14 in                              (* branch over the body *)
-  let lf = rg r_clen in
-  let saved_ex = rg r_exited in
-  let l = rg r_lev in
-  (if l + 1 >= 64 then (err_str "data-lambda: functions nested too deeply"; die 0));
-  rs (r_sdepth0 + l) (rg r_depth);
-  rs (r_ccount0 + l + 1) 0;
-  rs r_lev (l + 1);
-  rs r_depth 1;
-  rs r_exited 0;
-  let env2 = env_bind pname (mk_res 0 0) (boundary (l + 1) env) in
-  (if at_param 0 then
-     (let p2 = param_ident 0 in
-      compile_fun re env2 p2 term;
-      emit1 10 (rg r_depth))
-   else
-     (expect_p term;
-      ign (re 0 env2 1)));
-  rs r_exited saved_ex;
-  let fl = rg r_lev in
-  rs r_lev (fl - 1);
-  rs r_depth (rg (r_sdepth0 + fl - 1));
-  patch_here hs;
+   (term 61) into a closure value: a branch jumps over the body, the
+   body runs at depth 1 in a fresh level, and the names it captured are
+   pushed afterwards for CLOSURE.  Each extra parameter nests one more
+   unary closure, RETURNed by its enclosing one, exactly as
+   ml0-compiler's compile_fun.  Returns (captures, s') because let rec
+   must patch its self-references. *)
+let rec compile_fun re = fun m -> fun pname -> fun term -> fun s ->
+  let d0 = s_depth s in
+  let ex0 = s_exited s in
+  let lf = s_addr s + 2 in
+  let enter = fun st ->
+    set_exited 0
+      (set_depth 1
+         (set_levels (cons (pair (l1 (pair pname 0)) nil) (s_levels st)) st)) in
+  let body = fun mm -> fun st ->
+    if at_param st then
+      (let pr = param_ident st in
+       let cf = compile_fun re mm (fst pr) term (snd pr) in
+       em1 mm op_return (s_depth (snd cf)) (snd cf))
+    else re mm 0 1 (expect_p term st) in
+  let szb =
+    if m = 1 then s_addr (body 0 (enter s)) - s_addr s else 0 in
+  let s1 = body m (enter (em1 m op_branch (lf + szb) s)) in
+  let caps = lev_caps (hd (s_levels s1)) in
+  let s2 = set_exited ex0 (set_depth d0 (set_levels (tl (s_levels s1)) s1)) in
   (* push the captured values in the enclosing frame, then build *)
-  let nc = rg (r_ccount0 + fl) in
-  let rec caps j =
-    if j < nc then
-      (load_res (env (cap_name fl j));
-       emitw 3; bump 1;
-       caps (j + 1)) in
-  caps 0;
-  emit2 7 lf nc;
-  bump (0 - nc)
+  let rec push_caps lst = fun st ->
+    if null lst then st
+    else
+      (let rr = resolve (hd lst) st in
+       push_caps (tl lst) (bump 1 (ew m op_push (load_res m (fst rr) (snd rr))))) in
+  let s3 = push_caps caps s2 in
+  let nc = list_len caps in
+  pair caps (bump (0 - nc) (em2 m op_closure lf nc s3))
 
-let c_funexpr = fun re -> fun env ->
-  next_token 0;
-  let pname = param_ident 0 in
-  compile_fun re env pname 15917
+let c_funexpr = fun re -> fun m -> fun s ->
+  let pr = param_ident (next_token s) in
+  snd (compile_fun re m (fst pr) 15917 (snd pr))
 
-let c_if = fun re -> fun env -> fun t ->
-  next_token 0;
-  ign (re 0 env 0);
-  (if bnot (kw_at 311492) then (err_str "data-lambda: expected then"; die 0));
-  next_token 0;
+let c_if = fun re -> fun m -> fun t -> fun s ->
+  let s1 = re m 0 0 (next_token s) in
+  (if bnot (kw_at s1 n_then) then
+     (err_str "data-lambda: expected then"; die_line (s_line s1)));
+  let s2 = next_token s1 in
   if t = 1 then
     (* arms are tail expressions; an arm that exits needs no join, a live
        arm joins after the else.  One exited arm plus a following
        sequence semicolon is rejected (the live path would run the rest
        of the sequence while the exited one skipped it). *)
-    (let d0 = rg r_depth in
-     let ha = hole 16 in                           (* branchifnot *)
-     rs r_exited 0;
-     ign (re 1 env 1);
-     let then_ex = rg r_exited in
-     let hb = if then_ex = 0 then hole 14 else 0 - 1 in
-     patch_here ha;
-     rs r_depth d0;
-     rs r_exited 0;
-     (if kw_at 124997 (* else *) then (next_token 0; ign (re 1 env 1))
-      else emit1 1 0);
-     let else_ex = rg r_exited in
-     (if hb >= 0 then patch_here hb);
-     rs r_depth d0;
-     if then_ex = 1 && else_ex = 1 then rs r_exited 1
+    (let d0 = s_depth s2 in
+     let s3 = set_exited 0 s2 in
+     let pre = if m = 1 then re 0 1 1 s3 else s3 in
+     let szt = s_addr pre - s_addr s3 in
+     let tex = s_exited pre in
+     let ta =
+       if tex = 0 then s_addr s2 + 2 + szt + 2 else s_addr s2 + 2 + szt in
+     let s4 = re m 1 1 (em1 m op_branchifnot ta s3) in
+     let then_ex = s_exited s4 in
+     let s5 = set_exited 0 (set_depth d0 s4) in
+     let s6 =
+       if then_ex = 0 then
+         (let sze =
+            if m = 1 then
+              (if kw_at s5 n_else then
+                 s_addr (re 0 1 1 (next_token s5)) - s_addr s5
+               else 2)
+            else 0 in
+          em1 m op_branch (s_addr s5 + 2 + sze) s5)
+       else s5 in
+     let s7 =
+       if kw_at s6 n_else then re m 1 1 (next_token s6)
+       else em1 m op_const 0 s6 in
+     let else_ex = s_exited s7 in
+     let s8 = set_depth d0 s7 in
+     if then_ex = 1 && else_ex = 1 then set_exited 1 s8
      else
-       ((if (then_ex = 1 || else_ex = 1) && t_punct 59 then
-           (err_str "data-lambda: one branch of this if exits in tail position but the other falls into a sequence; parenthesize"; die 0));
-        rs r_exited 0))
+       ((if (then_ex = 1 || else_ex = 1) && t_punct s8 59 then
+           (err_str "data-lambda: one branch of this if exits in tail position but the other falls into a sequence; parenthesize";
+            die_line (s_line s8)));
+        set_exited 0 s8))
   else
-    (let ha = hole 16 in
-     ign (re 1 env 0);
-     let hb = hole 14 in
-     patch_here ha;
-     (if kw_at 124997 then (next_token 0; ign (re 1 env 0))
-      else emit1 1 0);
-     patch_here hb)
+    (let szt = if m = 1 then s_addr (re 0 1 0 s2) - s_addr s2 else 0 in
+     let s4 = re m 1 0 (em1 m op_branchifnot (s_addr s2 + 2 + szt + 2) s2) in
+     let sze =
+       if m = 1 then
+         (if kw_at s4 n_else then
+            s_addr (re 0 1 0 (next_token s4)) - s_addr s4
+          else 2)
+       else 0 in
+     let s5 = em1 m op_branch (s_addr s4 + 2 + sze) s4 in
+     if kw_at s5 n_else then re m 1 0 (next_token s5)
+     else em1 m op_const 0 s5)
 
-let c_let = fun re -> fun env -> fun t ->
-  next_token 0;
-  if kw_at 2510 (* rec *) then
-    (next_token 0;
-     (* single self-recursive local function *)
-     let name = need_ident 0 in
-     let slot = rg r_depth in
-     emit1 1 0;
-     emitw 3;
-     bump 1;
-     let env2 = env_bind name (mk_res 0 slot) env in
-     let pname = param_ident 0 in
-     compile_fun re env2 pname 61;
+let c_let = fun re -> fun m -> fun t -> fun s ->
+  let s1 = next_token s in
+  if kw_at s1 n_rec then
+    (* single self-recursive local function *)
+    (let nr = need_ident (next_token s1) in
+     let name = fst nr in
+     let s2 = snd nr in
+     let slot = s_depth s2 in
+     let s3 = add_bind name slot (bump 1 (ew m op_push (em1 m op_const 0 s2))) in
+     let pr = param_ident s3 in
+     let cf = compile_fun re m (fst pr) 61 (snd pr) in
+     let caps = fst cf in
+     let s5 = snd cf in
      (* store the closure in its slot, then patch self captures *)
-     let fidx = rg r_depth - 1 - slot in
-     emit1 5 fidx;                                 (* assign *)
-     let fl = rg r_lev + 1 in
-     let nc = rg (r_ccount0 + fl) in
-     let rec patch j =
-       if j < nc then
-         ((if cap_eq fl j name then
-             (emit1 2 fidx;                        (* acc fidx *)
-              emitw 3;                             (* push *)
-              emit1 2 0;                           (* acc 0 *)
-              emit1 13 (j + 1)));                  (* setfield j+1 *)
-          patch (j + 1)) in
-     patch 0;
-     (if bnot (kw_at 401) then (err_str "data-lambda: expected in"; die 0));
-     next_token 0;
-     ign (re 0 env2 t);
-     if t = 0 then (emit1 4 1; bump (0 - 1))
-     else rs r_depth slot)
+     let fidx = s_depth s5 - 1 - slot in
+     let s6 = em1 m op_assign fidx s5 in
+     let rec patch lst = fun j -> fun st ->
+       if null lst then st
+       else
+         (let st2 =
+            if list_eq (hd lst) name then
+              em1 m op_setfield (j + 1)
+                (em1 m op_acc 0 (ew m op_push (em1 m op_acc fidx st)))
+            else st in
+          patch (tl lst) (j + 1) st2) in
+     let s7 = patch caps 0 s6 in
+     (if bnot (kw_at s7 n_in) then
+        (err_str "data-lambda: expected in"; die_line (s_line s7)));
+     let s8 = strip_bind (re m 0 t (next_token s7)) in
+     if t = 0 then bump (0 - 1) (em1 m op_pop 1 s8)
+     else set_depth slot s8)
   else
     (* single non-recursive binding: a value or a function *)
-    (let name = need_ident 0 in
-     let start = rg r_depth in
-     (if at_param 0 then
-        (let pname = param_ident 0 in
-         compile_fun re env pname 61)
-      else
-        (expect_p 61;
-         ign (re 0 env 0)));
-     emitw 3;
-     bump 1;
-     let env2 = env_bind name (mk_res 0 start) env in
-     (if bnot (kw_at 401) then (err_str "data-lambda: expected in"; die 0));
-     next_token 0;
-     ign (re 0 env2 t);
-     if t = 0 then (emit1 4 1; bump (0 - 1))
-     else rs r_depth start)
+    (let nr = need_ident s1 in
+     let name = fst nr in
+     let s2 = snd nr in
+     let start = s_depth s2 in
+     let s3 =
+       if at_param s2 then
+         (let pr = param_ident s2 in
+          snd (compile_fun re m (fst pr) 61 (snd pr)))
+       else re m 0 0 (expect_p 61 s2) in
+     let s4 = add_bind name start (bump 1 (ew m op_push s3)) in
+     (if bnot (kw_at s4 n_in) then
+        (err_str "data-lambda: expected in"; die_line (s_line s4)));
+     let s5 = strip_bind (re m 0 t (next_token s4)) in
+     if t = 0 then bump (0 - 1) (em1 m op_pop 1 s5)
+     else set_depth start s5)
 
 (* the single recursive entry point: mode 0 = expression with sequencing,
    mode 1 = one sequence element *)
-let rec cexp m = fun env -> fun t ->
-  if m = 1 then
-    ((if kw_at 177 (* if *) then c_if cexp env t
-      else if kw_at 15832 (* let *) then c_let cexp env t
-      else if kw_at 11570 (* fun *) then c_funexpr cexp env
-      else c_or cexp env t);
-     value_done t)
+let rec cexp m = fun mode -> fun t -> fun s ->
+  if mode = 1 then
+    (let s1 =
+       if kw_at s n_if then c_if cexp m t s
+       else if kw_at s n_let then c_let cexp m t s
+       else if kw_at s n_fun then c_funexpr cexp m s
+       else c_or cexp m t s in
+     value_done m t s1)
   else
-    (cexp 1 env t;
-     let rec seq u =
-       if t_punct 59 then
-         ((if rg r_exited = 1 then
-             (err_str "data-lambda: tail branch followed by a sequence; parenthesize the if/let"; die 0));
-          next_token 0;
-          cexp 1 env t;
-          seq 0) in
-     seq 0)
+    (let rec seq st =
+       if t_punct st 59 then
+         ((if s_exited st = 1 then
+             (err_str "data-lambda: tail branch followed by a sequence; parenthesize the if/let";
+              die_line (s_line st)));
+          seq (cexp m 1 t (next_token st)))
+       else st in
+     seq (cexp m 1 t s))
 
 (* ---- top level ---- *)
 
-(* one binding of a top-level let group: name params* = expr, or () = expr;
-   `rec` is consumed by top_loop and changes nothing (the body resolves
-   its own name as a global, defined by the time any call runs) *)
-let top_binding = fun u ->
-  if t_punct 40 then
+(* one binding of a top-level let group: name params* = expr, or
+   () = expr; `rec` is consumed by top_loop and changes nothing (the
+   body resolves its own name as a global, defined by the time any call
+   runs) *)
+let top_binding = fun m -> fun s ->
+  if t_punct s 40 then
     (* let () = expr *)
-    (next_token 0;
-     expect_p 41;
-     expect_p 61;
-     cexp 0 genv 0)
+    cexp m 0 0 (expect_p 61 (expect_p 41 (next_token s)))
   else
-    (let name = need_ident 0 in
-     let g = mark_defined name in
-     (if at_param 0 then
-        (let pname = param_ident 0 in
-         compile_fun cexp genv pname 61)
-      else
-        (expect_p 61;
-         cexp 0 genv 0));
-     emit1 46 (gbase + g))
+    (let nr = need_ident s in
+     let s1 = snd nr in
+     let md = mark_defined (fst nr) (s_globs s1) in
+     let s2 = set_globs (snd md) s1 in
+     let s3 =
+       if at_param s2 then
+         (let pr = param_ident s2 in
+          snd (compile_fun cexp m (fst pr) 61 (snd pr)))
+       else cexp m 0 0 (expect_p 61 s2) in
+     em1 m op_setglobal (gbase + fst md) s3)
 
 (* `and` chains further bindings onto the group (top level only) *)
-let rec top_bindings u =
-  top_binding 0;
-  if kw_at 3529 (* and *) then (next_token 0; top_bindings 0)
+let rec top_bindings m = fun s ->
+  let s1 = top_binding m s in
+  if kw_at s1 n_and then top_bindings m (next_token s1) else s1
 
-let rec top_loop u =
-  if rg r_tk = 0 then ()
-  else
-    ((if bnot (kw_at 15832) then
-        (err_str "data-lambda: expected a top-level let"; die 0));
-     next_token 0;
-     (if kw_at 2510 (* rec *) then next_token 0);
-     top_bindings 0;
-     top_loop 0)
+let top_one = fun m -> fun s ->
+  (if bnot (kw_at s n_let) then
+     (err_str "data-lambda: expected a top-level let"; die_line (s_line s)));
+  let s1 = next_token s in
+  let s2 = if kw_at s1 n_rec then next_token s1 else s1 in
+  top_bindings m s2
 
-(* ---- output ---- *)
+let rec top_loop m = fun s ->
+  if s_kind s = 0 then s else top_loop m (top_one m s)
 
-let wb = fun b -> write_byte (rg r_outh) b
+(* trailing entry code, part of both passes so the size pass counts it *)
+let finish = fun m -> fun s -> ew m op_stop (em1 m op_const 0 s)
 
-let w32 = fun v ->
-  wb v; wb (v / 256); wb (v / 65536); wb (v / 16777216)
-
-let rec wseg b = fun i -> fun n ->
-  if i < n then (wb (bytes_get b i); wseg b (i + 1) n)
+(* ---- driver ---- *)
 
 let () =
-  (if arg_count () < 2 then
-     (err_str "usage: data-lambda in.ml out.mzbc";
-      write_byte 2 10;
-      exit 1));
-  rs r_line 1;
-  let h = open_in (arg_get 0) in
-  (if h < 0 then (err_str "data-lambda: cannot open input"; die 0));
-  read_all h;
-  close_chan h;
-  next_token 0;
-  top_loop 0;
-  check_all_defined 0;
-  emit1 1 0;                                       (* const 0 *)
-  emitw 0;                                         (* stop *)
-  let o = open_out (arg_get 1) in
-  (if o < 0 then (err_str "data-lambda: cannot open output"; die 0));
-  rs r_outh o;
-  wb 77; wb 90; wb 66; wb 67;                      (* M Z B C *)
-  w32 1;                                           (* version *)
-  w32 (rg r_clen);
-  w32 12;                                          (* primcount *)
-  w32 (gbase + rg r_gcount);
-  w32 (rg r_datcount);
-  wseg code 0 (4 * rg r_clen);
-  wseg dat 0 (rg r_datlen);
-  close_chan o;
+  if arg_count () < 2 then
+    (err_str "usage: data-lambda in.ml out.mzbc";
+     write_byte 2 10;
+     exit 1)
+
+let inh = open_in (arg_get 0)
+
+let () =
+  if inh < 0 then
+    (err_str "data-lambda: cannot open input"; die_line 1)
+
+let source =
+  let rec rd acc =
+    let b = read_byte inh in
+    if b >= 0 then rd (cons b acc) else rev_list acc in
+  rd nil
+
+let () = close_chan inh
+
+(* both passes start from the same first token and empty tables; the
+   bottom (top-level) scope never captures, it only resolves globals *)
+let start_state = fun outh ->
+  pair (scan_token source 1)
+    (pair (pair 0 (pair 0 (pair 0 outh)))
+       (pair (pair 0 nil) (pair (pair 0 nil) (l1 (pair nil nil)))))
+
+let w32 = fun h -> fun v ->
+  write_byte h v;
+  write_byte h (v / 256);
+  write_byte h (v / 65536);
+  write_byte h (v / 16777216)
+
+let rec write_data h = fun lst ->
+  if null lst then ()
+  else
+    (w32 h (list_len (hd lst));
+     let rec wr l2 = if null l2 then () else (write_byte h (hd l2); wr (tl l2)) in
+     wr (hd lst);
+     write_data h (tl lst))
+
+let () =
+  (* pass 1: sizes, global table, data section *)
+  let s1 = finish 0 (top_loop 0 (start_state 0)) in
+  check_all_defined (s_globs s1) (s_line s1);
+  let outh = open_out (arg_get 1) in
+  (if outh < 0 then
+     (err_str "data-lambda: cannot open output"; die_line 1));
+  write_byte outh 77; write_byte outh 90;             (* M Z B C *)
+  write_byte outh 66; write_byte outh 67;
+  w32 outh 1;                                         (* version *)
+  w32 outh (s_addr s1);                               (* code words *)
+  w32 outh 12;                                        (* primcount *)
+  w32 outh (gbase + g_count (s_globs s1));
+  w32 outh (d_count (s_dats s1));
+  (* pass 2: emit the code words, then the data records *)
+  let s2 = finish 1 (top_loop 1 (start_state outh)) in
+  write_data outh (rev_list (d_list (s_dats s2)));
+  close_chan outh;
   exit 0

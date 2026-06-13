@@ -543,7 +543,13 @@ let () =
   add_builtin "not" 1 1 6;
   add_builtin "fst" 1 1 7;
   add_builtin "snd" 1 1 8;
-  add_builtin "ref" 3 1 0
+  add_builtin "ref" 3 1 0;
+  (* lists and pairs: tag-0 2-blocks; nil is a const-0 atom in c_atom *)
+  add_builtin "null" 1 1 6;
+  add_builtin "hd" 1 1 7;
+  add_builtin "tl" 1 1 8;
+  add_builtin "cons" 3 2 0;
+  add_builtin "pair" 3 2 0
 
 let find_builtin name =
   let n = get bi_count in
@@ -1328,7 +1334,8 @@ and c_app_head t =
   let was_builtin =
     if get tk = tk_ident &&
        not (is_keyword (get tstr)) &&
-       not (tok_is_ident "true") && not (tok_is_ident "false") then
+       not (tok_is_ident "true") && not (tok_is_ident "false") &&
+       not (tok_is_ident "nil") then
       (let name = take_ident () in
        if is_ctor_name name then (c_ctor name; 1)
        else
@@ -1454,7 +1461,7 @@ and c_builtin b =
   args 0;
   if kind = 0 then (e2 "ccall" arity prim; bump (0 - arity))
   else if kind = 2 then e2 "ccall" 0 prim
-  else if kind = 3 then (e2 "makeblock" 0 1; bump (0 - 1))
+  else if kind = 3 then (e2 "makeblock" 0 arity; bump (0 - arity))
   else (emit_opcode_builtin prim; bump (0 - (arity - 1)))
 
 (* postfix projections: .f chains compile to getfield; ".f <- e" is the
@@ -1518,6 +1525,7 @@ and c_atom () =
   else if k = tk_ident then
     (if tok_is_ident "true" then (e1 "const" 1; next_token ())
      else if tok_is_ident "false" then (e1 "const" 0; next_token ())
+     else if tok_is_ident "nil" then (e1 "const" 0; next_token ())
      else if is_keyword (get tstr) then die "unexpected keyword"
      else if is_ctor_name (get tstr) then
        (let name = take_ident () in

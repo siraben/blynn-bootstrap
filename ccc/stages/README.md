@@ -7,8 +7,8 @@ named is earned in-chain:
 
 | stage | input dialect | job |
 |---|---|---|
-| core-lambda | Λ0 (unary `fun`, ints, bytes; runs on the C interpreter, self-hosts) | Λ0 → binary `.mzbc`, no assembler needed |
-| data-lambda | Λ1 = Λ0 + strings/arrays/multi-parameter (written in Λ0, built by core-lambda) | Λ1 → binary `.mzbc` |
+| core-lambda | Λ0 (unary `fun`, ints, lists/pairs as builtins; runs on the C interpreter, self-hosts) | Λ0 → binary `.mzbc`, no assembler needed |
+| data-lambda | Λ1 = Λ0 + strings/bytes/arrays/multi-parameter (written in Λ0, built by core-lambda) | Λ1 → binary `.mzbc` |
 | parenthetical | (runs on the C interpreter) | parenthesized MZBC assembly → `.mzbc` |
 | ml0-compiler | ML0, source restricted to Λ1 (built by data-lambda) | self-hosting single-pass compiler |
 | adt-compiler | ML1 = ML0 + ADTs + shallow match | fork of 02 + the ADT delta |
