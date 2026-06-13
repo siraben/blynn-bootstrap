@@ -529,7 +529,13 @@ let () =
   add_builtin "array_length" 1 1 5;
   add_builtin "not" 1 1 6;
   add_builtin "fst" 1 1 7;
-  add_builtin "snd" 1 1 8
+  add_builtin "snd" 1 1 8;
+  (* lists and pairs: tag-0 2-blocks; nil is a const-0 atom in c_atom *)
+  add_builtin "null" 1 1 6;
+  add_builtin "hd" 1 1 7;
+  add_builtin "tl" 1 1 8;
+  add_builtin "cons" 3 2 0;
+  add_builtin "pair" 3 2 0
 
 let find_builtin name =
   let n = get bi_count in
@@ -1014,7 +1020,8 @@ and c_app_head t =
   let was_builtin =
     if get tk = tk_ident &&
        not (is_keyword (get tstr)) &&
-       not (tok_is_ident "true") && not (tok_is_ident "false") then
+       not (tok_is_ident "true") && not (tok_is_ident "false") &&
+       not (tok_is_ident "nil") then
       (let name = take_ident () in
        resolve name;
        if get res_kind = 3 then
@@ -1057,11 +1064,12 @@ and c_builtin b =
     if j < arity then
       ((if not (starts_atom ()) then die "builtin applied to too few arguments");
        c_atom ();
-       (if kind = 0 || j < arity - 1 then (e0 "push"; bump 1));
+       (if kind = 0 || kind = 3 || j < arity - 1 then (e0 "push"; bump 1));
        args (j + 1)) in
   args 0;
   if kind = 0 then (e2 "ccall" arity prim; bump (0 - arity))
   else if kind = 2 then e2 "ccall" 0 prim
+  else if kind = 3 then (e2 "makeblock" 0 arity; bump (0 - arity))
   else (emit_opcode_builtin prim; bump (0 - (arity - 1)))
 
 and c_atom () =
@@ -1071,6 +1079,7 @@ and c_atom () =
   else if k = tk_ident then
     (if tok_is_ident "true" then (e1 "const" 1; next_token ())
      else if tok_is_ident "false" then (e1 "const" 0; next_token ())
+     else if tok_is_ident "nil" then (e1 "const" 0; next_token ())
      else if is_keyword (get tstr) then die "unexpected keyword"
      else
        (let name = take_ident () in

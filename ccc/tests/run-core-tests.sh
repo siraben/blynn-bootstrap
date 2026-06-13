@@ -35,8 +35,14 @@ check lambda arith "14
 2
 3
 exit=0"
-check lambda bytesio "ABCDEFGHIJKLMNOPQRSTUVWXYZABCD
-DCBAZYXWVUTSRQPONMLKJIHGFEDCBA
+check lambda lists "55
+110
+10
+1
+0
+42
+22
+0
 exit=0"
 check lambda closures "5
 42
