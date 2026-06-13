@@ -7,20 +7,23 @@ core, so the named-language machinery (data structures, multi-argument
 functions, the assembler) is *earned inside the chain* instead of
 granted by the seed.
 
-**Status: landed.** The cutover is complete: the seed (1326 lines, down
-from 1500) interprets only the union of what `core-lambda.ml` and
-`parenthetical.ml` use — gone are tuples/`fst`/`snd`, char and hex
-literals, `\xNN` escapes, `and`-bindings, unary minus, `;;`,
+**Status: landed** (and revised: Λ0 is now the *symbolic* core, v2
+below). The seed interprets only the union of what `core-lambda.ml` and
+`parenthetical.ml` use — gone are tuple syntax, char and hex literals,
+`\xNN` escapes, `and`-bindings, unary minus, `;;`,
 `lor`/`lxor`/`lsl`/`lsr` and `bytes_of_string`; kept (for the assembler
 and the Λ1 fixtures) are multi-parameter bindings, arrays, string
-values, `not`, `land` and `asr`. The canonical chain is the ladder
-below; ML0 sources no longer run on the interpreter anywhere
+values, bytes, `not`, `land` and `asr`; added for Λ0 v2 are the
+list/pair cell builtins (`cons`/`nil`/`null`/`hd`/`tl`,
+`pair`/`fst`/`snd` — 2-field blocks matching the VM, so programs behave
+identically interpreted and compiled). The canonical chain is the
+ladder below; ML0 sources no longer run on the interpreter anywhere
 (`scripts/ccc-chain.sh`, the nix builds and every test suite go through
 core-lambda → data-lambda → ml0).
 
 ## Dialects
 
-**Λ0 (core lambda)** — what the shrunken seed interprets and what
+**Λ0 (core lambda, v2)** — what the shrunken seed interprets and what
 `core-lambda.ml` compiles and is written in. A strict subset of ML0 and
 of OCaml:
 
@@ -30,37 +33,47 @@ of OCaml:
   (left-assoc), `fun x -> e`, `let x = e in e` / `let rec f x = e in e`
   (single self-recursive), `if c then e else e`, `(e)`, `e; e`
 - operators: `+ - * / mod`, `= <> < <= > >=`, `&& ||` (short-circuit)
-- byte buffers: `bytes_create n`, `bytes_get b i`, `bytes_set b i v`,
-  `bytes_length b` — the ONE data structure. A self-hosting compiler
-  cannot exist as a typed OCaml subset on closures alone (closure
-  encodings of sum types need polymorphism Λ0 does not have), and a
-  compiler needs identifiers and backpatchable output; bytes are both.
+- lists and pairs as builtins (no new syntax): `cons h t`, `nil` (= []),
+  `null l`, `hd l`, `tl l`, and `pair a b`, `fst p`, `snd p` — the ONE
+  compound datum is the heap cell, exactly Lynn's discipline: his chain
+  (`parenthetically → exponentially → …`) runs symbolic programs over a
+  uniform heap of two-field cells from the very first rung, with no
+  manual allocation in sight. A cons cell or pair compiles to the same
+  tag-0 two-field block ML0 tuples and stage-04 list cells use
+  (MAKEBLOCK 0 2; `nil` is the integer 0; `hd`/`fst` are GETFIELD), so
+  symbolic Λ0 data and ML0 data share one representation and one
+  emitted shape.
+- strings (read-only): `string_length s`, `string_get s i`, enough to
+  define `err_str`
 - builtins (fully applied): `arg_count`, `arg_get`, `open_in`,
   `open_out`, `read_byte`, `write_byte`, `close_chan`, `exit`, and
   `err_str "literal"` (string literals appear ONLY there)
-- nothing else: no strings-as-values/arrays/tuples/records/ADTs/match/
-  refs, no multi-parameter `let f x y`, no partial application of
-  builtins
+- nothing else: no `bytes_*` (rejected by name — the seed keeps bytes
+  for the assembler, but they are no longer part of Λ0), no
+  strings-as-values/arrays/tuple-syntax/records/ADTs/match/refs, no
+  multi-parameter `let f x y`, no partial application of builtins
 
 Functions are unary; multi-argument functions are written as nested
-`fun`. Compound data beyond bytes is closures: environments are
-FUNCTIONS from name to slot (`fun q -> if bytes_eq q n then v else
-old q`), capture lists are functions from index to name. Control-flow
-backpatch positions are plain ints held in recursion locals — the
-recursion is the stack. This is the textbook rung.
+`fun`. The first revision of Λ0 had byte buffers instead of cells, which
+forced the compiler into base-28 integer-packed identifiers, byte-pool
+allocators and hand-rolled 32-bit registers; v2 replaces all of that
+with symbolic data — identifiers are int lists compared recursively,
+tables are association lists, and the whole compiler is purely
+functional (two passes over the immutable token stream: sizes, then
+emission — no backpatching, no mutation). This is the textbook rung.
 
 **Λ1 (data lambda)** — Λ0 plus the machinery a real compiler wants:
-string literals as values, `bytes_*`, `array_*`, `string_*` builtins,
-multi-parameter `let f x y = …` with curried semantics, and `'c'`-free
-character handling as in the rest of the chain. Still no tuples, ADTs,
-match, refs or records. ML0's *source* (the existing
-`ml0-compiler.ml`) must be Λ1 after removing its two tuple-lets.
+string literals as values, `bytes_*` (ml0-compiler is written against
+them), `array_*` and `not` builtins, multi-parameter `let f x y = …`
+with curried semantics, `()` parameters, and top-level `and` groups.
+Still no tuple syntax, ADTs, match, refs or records. ML0's *source*
+(the existing `ml0-compiler.ml`) must be Λ1 after removing its two
+tuple-lets.
 
 ## The new ladder
 
 ```
 mlc-interp-seed.c    C seed: interprets Λ0 + the assembler's needs
-                     (1326 lines, from 1500)
   → core-lambda.ml   Λ0→MZBC compiler, WRITTEN in Λ0; emits binary .mzbc
                      directly (no assembler exists yet); self-compiles to
                      a fixpoint on the seed
