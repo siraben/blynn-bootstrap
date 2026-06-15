@@ -109,3 +109,30 @@ keeps the assembler's data machinery (multi-parameter bindings, arrays,
 strings), so it interprets Λ1-shaped programs rather than bare Λ0 —
 rewriting `parenthetical.ml` onto bytes alone would have cost far more
 source than the ~170 C lines it could save.
+
+## Performance characteristic (accepted, by design)
+
+`core-lambda`'s self-compile is **O(N²) in the number of top-level
+globals**: the global table is a flat `(name, flag)` list and `g_find`
+scans it linearly on every variable reference. Measured natively
+(`ocamlopt`): compile time is flat in expression *nesting depth* but
+quadratic in program *width* (500→4000 globals: 22ms→806ms). On the seed
+interpreter this is the chain's most expensive single step
+(~31s of the M2-built `lambda ladder + fixpoint` stage; the symbolic
+cell heap costs more per operation than the former byte-pool version,
+but the O(N²) *shape* is the same in both — it predates the symbolic
+rewrite).
+
+This is not cleanly fixable while Λ0 stays pure. Every sub-linear
+persistent map needs either a recursive sum type (a balanced tree is
+`Leaf | Node`) or random access (a hash table needs arrays). Λ0 has
+neither: it is lists + tuples + closures, it must also typecheck as host
+OCaml (no `-rectypes`, so no equirecursive tree type), and the shrunken
+seed has no `match`/`type`. A persistent BST was implemented and
+rejected on exactly this — `null t` forces the tree to a list while a
+node is a tuple, and there is no Λ0 representation that unifies them.
+
+The decision is to keep Λ0 pure and accept the cost: it is the price of
+the minimal symbolic rung, the chain remains correct and well inside its
+margin over the HCC/MesCC paths, and `core-lambda` stays lambda + cons
+cells with no manual data structures.
