@@ -119,6 +119,31 @@ let ch_x = 120
 let ch_y = 121
 let ch_us = 95                      (* underscore *)
 
+(* punctuation character codes, and the operator/two-character token
+   spellings built from them so the lexer and parser read symbolically *)
+let ch_plus = 43
+let ch_minus = 45
+let ch_star = 42
+let ch_slash = 47
+let ch_eq = 61
+let ch_lt = 60
+let ch_gt = 62
+let ch_amp = 38
+let ch_bar = 124
+let ch_semi = 59
+
+(* two-character punctuation tokens, packed low byte first (c + 256*d),
+   exactly as scan_token's pair2 produces them *)
+let tok_arrow = ch_minus + ch_gt * 256   (* -> *)
+let tok_ne = ch_lt + ch_gt * 256         (* <> *)
+let tok_le = ch_lt + ch_eq * 256         (* <= *)
+let tok_ge = ch_gt + ch_eq * 256         (* >= *)
+let tok_and = ch_amp + ch_amp * 256      (* && *)
+let tok_or = ch_bar + ch_bar * 256       (* || *)
+
+(* a resolution result packs (kind, index) as kind * res_shift + index *)
+let res_shift = 1048576
+
 let l1 = fun a -> cons a nil
 let l2 = fun a -> fun b -> cons a (l1 b)
 let l3 = fun a -> fun b -> fun c -> cons a (l2 b c)
@@ -296,12 +321,12 @@ let rec scan_string cs = fun line -> fun acc ->
 
 (* two-character punctuation, packed c + 256*d; 0 = not a pair *)
 let pair2 = fun c -> fun d ->
-  if c = 45 && d = 62 then 15917          (* -> *)
-  else if c = 60 && d = 62 then 15932     (* <> *)
-  else if c = 60 && d = 61 then 15676     (* <= *)
-  else if c = 62 && d = 61 then 15678     (* >= *)
-  else if c = 38 && d = 38 then 9766      (* && *)
-  else if c = 124 && d = 124 then 31868   (* || *)
+  if c = ch_minus && d = ch_gt then tok_arrow
+  else if c = ch_lt && d = ch_gt then tok_ne
+  else if c = ch_lt && d = ch_eq then tok_le
+  else if c = ch_gt && d = ch_eq then tok_ge
+  else if c = ch_amp && d = ch_amp then tok_and
+  else if c = ch_bar && d = ch_bar then tok_or
   else 0
 
 let mk_ts = fun kind -> fun v -> fun text -> fun cs -> fun line ->
@@ -432,10 +457,10 @@ let is_atom_start = fun s ->
 let op_follows = fun s ->
   if s_kind s = 4 then
     (let p = s_ival s in
-     p = 43 || p = 45 || p = 42 || p = 47          (* + - * / *)
-     || p = 61 || p = 15932 || p = 60 || p = 15676 (* = <> < <= *)
-     || p = 62 || p = 15678                        (* > >= *)
-     || p = 9766 || p = 31868 || p = 59)           (* && || ; *)
+     p = ch_plus || p = ch_minus || p = ch_star || p = ch_slash
+     || p = ch_eq || p = tok_ne || p = ch_lt || p = tok_le
+     || p = ch_gt || p = tok_ge
+     || p = tok_and || p = tok_or || p = ch_semi)
   else kw_at s n_mod
 
 (* write a (possibly two-char) punctuation spelling to stderr *)
@@ -659,7 +684,7 @@ let bi_desc = fun q ->
    function boundary) and the global table (an unknown name becomes a
    forward global), so it returns the updated levels and globals. *)
 
-let mk_res = fun k -> fun i -> k * 1048576 + i
+let mk_res = fun k -> fun i -> k * res_shift + i
 
 let rec assoc_slot q = fun binds ->
   if null binds then 0 - 1
@@ -699,7 +724,7 @@ let rec resolve_in q = fun levels -> fun globs -> fun line ->
            let r = ri_res rr in
            let outer = ri_levels rr in
            let globs2 = ri_globs rr in
-           if r / 1048576 >= 2 then pair r (pair (cons lev outer) globs2)
+           if r / res_shift >= 2 then pair r (pair (cons lev outer) globs2)
            else
              (* an outer local: capture it at this boundary *)
              (let nj = list_len (lev_caps lev) in
@@ -715,8 +740,8 @@ let resolve = fun q -> fun s ->
   pair (ri_res rr) (set_globs (ri_globs rr) (set_levels (ri_levels rr) s))
 
 let load_res = fun m -> fun r -> fun s ->
-  let k = r / 1048576 in
-  let i = r mod 1048576 in
+  let k = r / res_shift in
+  let i = r mod res_shift in
   if k = 0 then em1 m op_acc (s_depth s - 1 - i) s
   else if k = 1 then em1 m op_envacc (i + 1) s
   else if k = 2 then em1 m op_getglobal i s
@@ -835,8 +860,8 @@ let c_app = fun re -> fun m -> fun t -> fun s ->
         let rr = resolve q s1 in
         let r = fst rr in
         let s2 = snd rr in
-        if r / 1048576 = 3 then
-          (let s3 = c_builtin re m (r mod 1048576) s2 in
+        if r / res_shift = 3 then
+          (let s3 = c_builtin re m (r mod res_shift) s2 in
            (if is_atom_start s3 then
               (err_str "data-lambda: builtin result cannot be applied";
                die_line (s_line s3)));
@@ -857,12 +882,12 @@ let add_op = fun s ->
   else 0
 
 let cmp_op = fun s ->
-  if t_punct s 61 then 31                            (* eq *)
-  else if t_punct s 15932 then 32                    (* neq *)
-  else if t_punct s 60 then 33                       (* ltint *)
-  else if t_punct s 15676 then 34                    (* leint *)
-  else if t_punct s 62 then 35                       (* gtint *)
-  else if t_punct s 15678 then 36                    (* geint *)
+  if t_punct s ch_eq then 31                         (* eq *)
+  else if t_punct s tok_ne then 32                   (* neq *)
+  else if t_punct s ch_lt then 33                    (* ltint *)
+  else if t_punct s tok_le then 34                   (* leint *)
+  else if t_punct s ch_gt then 35                    (* gtint *)
+  else if t_punct s tok_ge then 36                   (* geint *)
   else 0
 
 let c_mul = fun re -> fun m -> fun t -> fun s ->
@@ -894,7 +919,7 @@ let c_cmp = fun re -> fun m -> fun t -> fun s ->
 
 let c_and = fun re -> fun m -> fun t -> fun s ->
   let rec more st =
-    if t_punct st 9766 then                          (* && *)
+    if t_punct st tok_and then                        (* && *)
       (let s1 = next_token st in
        let sz = if m = 1 then s_addr (c_cmp re 0 0 s1) - s_addr s1 else 0 in
        (* [branchifnot T1] rhs [branch T2] [const 0]; T1 = the const,
@@ -908,7 +933,7 @@ let c_and = fun re -> fun m -> fun t -> fun s ->
 
 let c_or = fun re -> fun m -> fun t -> fun s ->
   let rec more st =
-    if t_punct st 31868 then                         (* || *)
+    if t_punct st tok_or then                         (* || *)
       (let s1 = next_token st in
        let sz = if m = 1 then s_addr (c_and re 0 0 s1) - s_addr s1 else 0 in
        let s2 = em1 m op_branchif (s_addr s1 + 2 + sz + 2) s1 in
@@ -918,8 +943,8 @@ let c_or = fun re -> fun m -> fun t -> fun s ->
     else st in
   more (c_and re m t s)
 
-(* compile `fun pname .. -> body` (term 15917) or `pname .. = body`
-   (term 61) into a closure value: a branch jumps over the body, the
+(* compile `fun pname .. -> body` (term tok_arrow) or `pname .. = body`
+   (term ch_eq) into a closure value: a branch jumps over the body, the
    body runs at depth 1 in a fresh level, and the names it captured are
    pushed afterwards for CLOSURE.  Each extra parameter nests one more
    unary closure, RETURNed by its enclosing one, exactly as
@@ -956,7 +981,7 @@ let rec compile_fun re = fun m -> fun pname -> fun term -> fun s ->
 
 let c_funexpr = fun re -> fun m -> fun s ->
   let pr = param_ident (next_token s) in
-  snd (compile_fun re m (fst pr) 15917 (snd pr))
+  snd (compile_fun re m (fst pr) tok_arrow (snd pr))
 
 let c_if = fun re -> fun m -> fun t -> fun s ->
   let s1 = re m 0 0 (next_token s) in
@@ -1022,7 +1047,7 @@ let c_let = fun re -> fun m -> fun t -> fun s ->
      let slot = s_depth s2 in
      let s3 = add_bind name slot (bump 1 (ew m op_push (em1 m op_const 0 s2))) in
      let pr = param_ident s3 in
-     let cf = compile_fun re m (fst pr) 61 (snd pr) in
+     let cf = compile_fun re m (fst pr) ch_eq (snd pr) in
      let caps = fst cf in
      let s5 = snd cf in
      (* store the closure in its slot, then patch self captures *)
@@ -1052,7 +1077,7 @@ let c_let = fun re -> fun m -> fun t -> fun s ->
      let s3 =
        if at_param s2 then
          (let pr = param_ident s2 in
-          snd (compile_fun re m (fst pr) 61 (snd pr)))
+          snd (compile_fun re m (fst pr) ch_eq (snd pr)))
        else re m 0 0 (expect_p 61 s2) in
      let s4 = add_bind name start (bump 1 (ew m op_push s3)) in
      (if bnot (kw_at s4 n_in) then
@@ -1099,7 +1124,7 @@ let top_binding = fun m -> fun s ->
      let s3 =
        if at_param s2 then
          (let pr = param_ident s2 in
-          snd (compile_fun cexp m (fst pr) 61 (snd pr)))
+          snd (compile_fun cexp m (fst pr) ch_eq (snd pr)))
        else cexp m 0 0 (expect_p 61 s2) in
      em1 m op_setglobal (gbase + fst md) s3)
 
