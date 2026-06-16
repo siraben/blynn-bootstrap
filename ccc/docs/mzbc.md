@@ -145,3 +145,32 @@ are preopened as stdin, stdout, stderr.
 | 9  | arg_get      | i               | program arg i as bytes |
 | 10 | array_make   | n, init         | fresh tag-0 block of n fields, all = init; n ≥ 1 (zero-size blocks have no field for the GC forwarding pointer) |
 | 11 | bytes_of_string | b            | fresh mutable copy of b |
+
+## Trust model (why the VM does not validate every operand)
+
+`.mzbc` is **trusted, well-formed compiler output**, not adversarial input —
+it is produced only by the chain's own compilers, whose correctness is pinned
+by the byte-parity, self-host-fixpoint and diverse-double-compilation gates.
+So, like OCaml's own bytecode interpreter, the VM does **not** bounds-check the
+hot dispatch path: `GETFIELD`/`ENVACC` field reads, the `APPLY`/`APPTERM` jump
+target (a closure's code word), and per-opcode operand fetches are taken on
+faith. The sentinel `STOP` at `code[codelen]` (in place of a per-dispatch `pc`
+bound check) is a deliberate, measured speed win (see `m2-codegen.md`); adding
+per-dispatch validation would regress the whole chain, which runs on this VM.
+
+The integrity guarantee therefore lives in the compilers that *emit* the
+bytecode, not in VM-side validation. What the VM *does* check is the cheap,
+cold, or allocation-path cases where the failure mode would be silent memory
+**corruption** rather than a clean fault: `alloc_block` bounds the requested
+size with integer math before any pointer arithmetic; `SETFIELD` bounds its
+field index (the lone heap-*write* opcode, matching `SETVECTITEM`/`SETBYTES`);
+`CLOSURE` rejects a capture count larger than the stack; and `bytes_length`
+type-checks its argument (matching the seed interpreter). These cost nothing on
+the dispatch path and turn "a compiler bug corrupts the heap" into "the bug
+aborts with a diagnostic." Out-of-range *reads* on the hot path remain
+unchecked by design: at worst they fault, they cannot corrupt.
+
+Fixnum arithmetic (the tagged `ADDINT`/`SUBINT`/… opcodes) wraps on signed
+overflow exactly as OCaml's does; shift counts are assumed in range. These
+match the source dialects' semantics and are never exercised out of range by
+compiled chain programs.
