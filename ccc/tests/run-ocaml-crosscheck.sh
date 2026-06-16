@@ -64,16 +64,20 @@ done
 # the promoted compiler must emit byte-identical assembly whether it runs
 # on the chain (VM) or under host OCaml — this pins evaluation-order
 # equivalence of the dialect, not just fixture behavior
-if [ -f "$BUILD/ccc/04.mzbc" ] && [ -f "$BUILD/ccc/ccc-cc1.ml" ]; then
+if [ -f "$BUILD/stage/04gen1.mzbc" ]; then
+  cat $(sed "s|^|ccc/cc/|" ccc/cc/PARTS-cc1) ccc/cc/dev/cc1main.ml > "$BUILD/xcheck/ccc-cc1.ml"
   cat ccc/tests/prelude-ocaml.ml ccc/stages/pattern-compiler.ml > "$BUILD/xcheck/04.ml"
-  ocaml "$BUILD/xcheck/04.ml" "$BUILD/ccc/ccc-cc1.ml" "$BUILD/xcheck/cc1.host.mzs"
-  ccc/build/mzvm "$BUILD/ccc/04.mzbc" "$BUILD/ccc/ccc-cc1.ml" "$BUILD/xcheck/cc1.vm.mzs"
+  ocaml "$BUILD/xcheck/04.ml" "$BUILD/xcheck/ccc-cc1.ml" "$BUILD/xcheck/cc1.host.mzs"
+  ccc/build/mzvm "$BUILD/stage/04gen1.mzbc" "$BUILD/xcheck/ccc-cc1.ml" "$BUILD/xcheck/cc1.vm.mzs"
   if cmp -s "$BUILD/xcheck/cc1.host.mzs" "$BUILD/xcheck/cc1.vm.mzs"; then
     echo "ok   stage04 host/VM emission identical"
   else
     echo "FAIL stage04 host/VM emission differs"
     fail=1
   fi
+else
+  echo "FAIL stage04 host/VM emission: $BUILD/stage/04gen1.mzbc missing (run run-stage-tests.sh first)"
+  fail=1
 fi
 
 # the lambda rungs are OCaml subsets too: host-OCaml core-lambda must
@@ -87,6 +91,9 @@ if [ -f "$BUILD/stage/cl-gen1.mzbc" ]; then
     echo "FAIL core-lambda host/chain emission differs"
     fail=1
   fi
+else
+  echo "FAIL core-lambda host/chain emission: $BUILD/stage/cl-gen1.mzbc missing (run run-stage-tests.sh first)"
+  fail=1
 fi
 if [ -f "$BUILD/stage/dl-gen1.mzbc" ]; then
   cat ccc/tests/prelude-ocaml.ml ccc/stages/data-lambda.ml > "$BUILD/xcheck/dl.ml"
@@ -97,6 +104,9 @@ if [ -f "$BUILD/stage/dl-gen1.mzbc" ]; then
     echo "FAIL data-lambda host/chain emission differs"
     fail=1
   fi
+else
+  echo "FAIL data-lambda host/chain emission: $BUILD/stage/dl-gen1.mzbc missing (run run-stage-tests.sh first)"
+  fail=1
 fi
 
 if [ "$fail" = 0 ]; then echo "ocaml cross-check passed"; else exit 1; fi
