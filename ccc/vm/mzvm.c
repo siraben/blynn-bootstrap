@@ -314,6 +314,12 @@ static void gc(void) {
 
 static word alloc_block(word wosize, word tag) {
   word *p;
+  /* bound the size with integer math before any pointer arithmetic: a
+   * huge or negative wosize would otherwise overflow word_ptr_add and
+   * wrap below alloc_end, slipping past the heap-overflow guard */
+  if (wosize < 0 || wosize >= heap_words) {
+    die("alloc_block: size out of range");
+  }
   if (word_ptr_add(alloc_ptr, wosize + 1) > alloc_end) {
     gc();
     if (word_ptr_add(alloc_ptr, wosize + 1) > alloc_end) {
@@ -489,6 +495,12 @@ static word do_prim(word prim, word nargs, word argbase) {
     return alloc_bytes(untag(a0));
   }
   if (prim == PRIM_BYTES_LENGTH) {
+    if (is_int(a0)) {
+      die("bytes_length: not bytes");
+    }
+    if (block_tag(a0) != TAG_BYTES) {
+      die("bytes_length: not bytes");
+    }
     return mkint(bytes_len(a0));
   }
   if (prim == PRIM_ARG_COUNT) {
@@ -860,6 +872,9 @@ static word run(void) {
       if (is_int(v)) {
         die("SETFIELD of integer");
       }
+      if (n < 0 || n >= block_wosize(v)) {
+        die("SETFIELD out of range");
+      }
       block_set_field(v, n, acc);
       acc = mkint(0);
       break;
@@ -868,6 +883,9 @@ static word run(void) {
       n = code[pc + 1];
       pc = pc + 2;
       check_code_addr(t);
+      if (n < 0 || n > sp) {
+        die("CLOSURE bad capture count");
+      }
       v = alloc_block(n + 1, TAG_CLOSURE);
       wp = (word *)v;
       wp[0] = t + t + 1;

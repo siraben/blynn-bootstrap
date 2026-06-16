@@ -1332,6 +1332,10 @@ int main(int argc, char **argv) {
   }
   fseek(f, 0, SEEK_END);
   srclen = ftell(f);
+  if (srclen < 0) {
+    fputs("mlc-interp: cannot determine input size\n", stderr);
+    return 2;
+  }
   fseek(f, 0, SEEK_SET);
   src = xalloc(srclen + 1);
   n = (long)fread(src, 1, (size_t)srclen, f);
