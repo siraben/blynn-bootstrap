@@ -2046,7 +2046,9 @@ constExprValue expr = case expr of
   EBinary op left right -> do
     a <- constExprValue left
     b <- constExprValue right
-    pure (maybe 0 id (evalConstBinOp op a b))
+    case evalConstBinOp op a b of
+      Just value -> pure value
+      Nothing -> throwC ("invalid constant expression: " ++ op)
   ECond cond yes no -> do
     c <- constExprValue cond
     constExprValue (if c /= 0 then yes else no)

@@ -41,7 +41,7 @@ stripComments = stripCommentNormal
 stripCommentNormal :: String -> String
 stripCommentNormal [] = []
 stripCommentNormal ('/':'/':rest) = stripLineComment rest
-stripCommentNormal ('/':'*':rest) = stripBlockComment 1 rest
+stripCommentNormal ('/':'*':rest) = stripBlockComment rest
 stripCommentNormal ('"':rest) = '"' : stripStringLiteral rest
 stripCommentNormal ('\'':rest) = '\'' : stripCharLiteral rest
 stripCommentNormal (c:rest) = c : stripCommentNormal rest
@@ -51,15 +51,11 @@ stripLineComment [] = []
 stripLineComment ('\n':rest) = '\n' : stripCommentNormal rest
 stripLineComment (_:rest) = stripLineComment rest
 
-stripBlockComment :: Int -> String -> String
-stripBlockComment _ [] = []
-stripBlockComment depth ('/':'*':rest) = stripBlockComment (depth + 1) rest
-stripBlockComment depth ('*':'/':rest) =
-  if depth == 1
-    then ' ' : stripCommentNormal rest
-    else stripBlockComment (depth - 1) rest
-stripBlockComment depth ('\n':rest) = '\n' : stripBlockComment depth rest
-stripBlockComment depth (_:rest) = stripBlockComment depth rest
+stripBlockComment :: String -> String
+stripBlockComment [] = []
+stripBlockComment ('*':'/':rest) = ' ' : stripCommentNormal rest
+stripBlockComment ('\n':rest) = '\n' : stripBlockComment rest
+stripBlockComment (_:rest) = stripBlockComment rest
 
 stripStringLiteral :: String -> String
 stripStringLiteral = stripQuotedLiteral '"'
