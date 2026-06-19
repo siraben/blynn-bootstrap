@@ -87,17 +87,20 @@ patch_top() {
 prepare_m2_source() {
   file=$1
   tmp=$file.body
+  found=0
   cp "$file" "$tmp"
   printf '%s\n' '#define HCC_RTS_USE_EXTERNAL_ALLOC 1' > "$file"
   while IFS= read -r line || [ -n "$line" ]; do
     case $line in
       "static inline u isAddr(u n) { return n>=128; }")
         printf '%s\n' "static inline u isAddr(u n) { return n>=128 && n<TOP; }" >> "$file"
+        found=1
         ;;
       *) printf '%s\n' "$line" >> "$file" ;;
     esac
   done < "$tmp"
   rm "$tmp"
+  [ "$found" = 1 ] || die "isAddr definition not found in $file"
 }
 
 (
