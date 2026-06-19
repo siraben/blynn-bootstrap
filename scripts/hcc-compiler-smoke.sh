@@ -81,6 +81,23 @@ expect_hcc1_fail() {
   log "DONE  expect hcc1 failure $name"
 }
 
+expect_hcpp_fail() {
+  name=$1
+  pattern=$2
+  src=$3
+  log "START expect hcpp failure $name"
+  set +e
+  "$HCPP" "$src" > "$name.i" 2> "$name.err"
+  code=$?
+  set -e
+  if test "$code" = 0; then
+    echo "$name: expected hcpp failure" >&2
+    exit 1
+  fi
+  expect_file_contains "$pattern" "$name.err"
+  log "DONE  expect hcpp failure $name"
+}
+
 run_check_case pp-smoke "$TESTS_DIR/pp-smoke.c"
 run_check_case parse-smoke "$TESTS_DIR/parse-smoke.c"
 
@@ -99,9 +116,12 @@ expect_hcpp_contains pp-macro-include "pp_included_value" "$TESTS_DIR/pp-smoke.c
 expect_hcpp_contains pp-paste-left-raw "paste_left_raw = Ab" "$TESTS_DIR/pp-smoke.c"
 expect_hcpp_contains pp-empty-arg "empty_arg = 0" "$TESTS_DIR/pp-smoke.c"
 expect_hcpp_contains pp-if-mod-ternary "pp_if_mod = 1" "$TESTS_DIR/pp-smoke.c"
+expect_hcpp_contains pp-short-circuit "short_circuit_and" "$TESTS_DIR/pp-short-circuit.c"
 
 expect_hcc1_fail unknown-identifier "unknown identifier: missing_global" "$TESTS_DIR/diagnostics/unknown-identifier.c"
 expect_hcc1_fail unknown-global-initializer "unknown constant: missing_global" "$TESTS_DIR/diagnostics/unknown-global-initializer.c"
 expect_hcc1_fail unsupported-inline-asm "unsupported inline assembly" "$TESTS_DIR/diagnostics/unsupported-inline-asm.c"
+expect_hcpp_fail multi-char-constant "invalid character constant" "$TESTS_DIR/diagnostics/multi-char-constant.c"
+expect_hcpp_fail invalid-octal-constant "invalid digit in octal constant" "$TESTS_DIR/diagnostics/invalid-octal-constant.c"
 
 log "all compiler smoke checks passed"
