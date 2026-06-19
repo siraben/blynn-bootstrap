@@ -36,6 +36,23 @@ expect_hcpp_contains() {
   log "DONE  hcpp output contains $name"
 }
 
+expect_hcpp_absent() {
+  name=$1
+  pattern=$2
+  src=$3
+  log "START hcpp output absent $name"
+  "$HCPP" "$src" > "$name.i"
+  while IFS= read -r line; do
+    case "$line" in
+      *"$pattern"*)
+        echo "$name.i: unexpected output containing: $pattern" >&2
+        exit 1
+        ;;
+    esac
+  done < "$name.i"
+  log "DONE  hcpp output absent $name"
+}
+
 run_check_case() {
   name=$1
   src=$2
@@ -111,12 +128,14 @@ run_m1_case for-decl-scope "$TESTS_DIR/m1-smoke/examples/for-decl-scope.c"
 run_m1_case asm-nop "$TESTS_DIR/m1-smoke/examples/asm-nop.c"
 run_m1_case scalar-immediate-smoke "$TESTS_DIR/scalar-immediate-smoke.c"
 run_m1_case float-literals "$TESTS_DIR/m1-smoke/examples/float-literals.c"
+run_m1_case literal-acceptance "$TESTS_DIR/m1-smoke/examples/literal-acceptance.c"
 
 expect_hcpp_contains pp-macro-include "pp_included_value" "$TESTS_DIR/pp-smoke.c"
 expect_hcpp_contains pp-paste-left-raw "paste_left_raw = Ab" "$TESTS_DIR/pp-smoke.c"
 expect_hcpp_contains pp-empty-arg "empty_arg = 0" "$TESTS_DIR/pp-smoke.c"
 expect_hcpp_contains pp-if-mod-ternary "pp_if_mod = 1" "$TESTS_DIR/pp-smoke.c"
 expect_hcpp_contains pp-short-circuit "short_circuit_and" "$TESTS_DIR/pp-short-circuit.c"
+expect_hcpp_absent pp-short-circuit-dead "dead_and" "$TESTS_DIR/pp-short-circuit.c"
 
 expect_hcc1_fail unknown-identifier "unknown identifier: missing_global" "$TESTS_DIR/diagnostics/unknown-identifier.c"
 expect_hcc1_fail unknown-global-initializer "unknown constant: missing_global" "$TESTS_DIR/diagnostics/unknown-global-initializer.c"
