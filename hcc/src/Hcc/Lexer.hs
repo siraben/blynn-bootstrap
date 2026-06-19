@@ -91,7 +91,7 @@ takeNumber :: LexState -> Either LexError (String, NumberClass, LexState)
 takeNumber st = case lsInput st of
   '0':'x':rest -> takeHexNumber "0x" rest st
   '0':'X':rest -> takeHexNumber "0X" rest st
-  _ -> Right (takeDecimalNumber st)
+  _ -> takeDecimalNumber st
 
 takeHexNumber :: String -> String -> LexState -> Either LexError (String, NumberClass, LexState)
 takeHexNumber prefix rest st =
@@ -117,17 +117,25 @@ takeHexFraction st = case lsInput st of
     in ('.':digits, st1)
   _ -> ("", st)
 
-takeDecimalNumber :: LexState -> (String, NumberClass, LexState)
+takeDecimalNumber :: LexState -> Either LexError (String, NumberClass, LexState)
 takeDecimalNumber st =
   let (digits, st1) = takeWhileState isDigitChar st
       (fraction, st2) = takeFraction st1
       (exponentText, st3) = takeExponent "eE" st2
       (suffix, st4) = takeWhileState isNumberSuffix st3
-      cls =
-        if null fraction && null exponentText && not (hasFloatSuffix suffix)
-          then NumberInt
-          else NumberFloat
-  in (digits ++ fraction ++ exponentText ++ suffix, cls, st4)
+      isFloat = not (null fraction) || not (null exponentText) || hasFloatSuffix suffix
+      cls = if isFloat then NumberFloat else NumberInt
+  in if not isFloat && hasInvalidOctalDigit digits
+     then Left (LexError (lsPos st) ("invalid digit in octal constant: " ++ digits))
+     else Right (digits ++ fraction ++ exponentText ++ suffix, cls, st4)
+
+hasInvalidOctalDigit :: String -> Bool
+hasInvalidOctalDigit digits = case digits of
+  '0':rest@(_:_) -> not (all isOctalDigitChar rest)
+  _ -> False
+
+isOctalDigitChar :: Char -> Bool
+isOctalDigitChar c = c >= '0' && c <= '7'
 
 isIntSuffix :: Char -> Bool
 isIntSuffix c = c `elem` "uUlL"
@@ -175,7 +183,9 @@ lexQuoted quote mkKind st = go (advance quote st { lsInput = drop 1 (lsInput st)
       | c == quote ->
           let st' = advance c cur { lsInput = cs }
               text = reverse (c:acc)
-          in Right (Token (Span start (lsPos st')) (mkKind text), st')
+          in if quote == '\'' && not (validCharBody (charLiteralBody text))
+             then Left (LexError start ("invalid character constant: " ++ text))
+             else Right (Token (Span start (lsPos st')) (mkKind text), st')
       | c == '\\' -> case cs of
           [] -> Left (LexError start ("unterminated " ++ quotedName quote))
           e:rest -> go (advance e (advance c cur { lsInput = rest })) (e:c:acc)
@@ -184,6 +194,21 @@ lexQuoted quote mkKind st = go (advance quote st { lsInput = drop 1 (lsInput st)
 
 quotedName :: Char -> String
 quotedName quote = if quote == '"' then "string literal" else "character literal"
+
+charLiteralBody :: String -> String
+charLiteralBody text = case text of
+  '\'':rest -> reverse (dropClosingQuote (reverse rest))
+  _ -> text
+  where dropClosingQuote chars = case chars of
+          '\'':more -> more
+          _ -> chars
+
+validCharBody :: String -> Bool
+validCharBody body = case body of
+  [] -> False
+  '\\':rest -> not (null rest)
+  [_] -> True
+  _ -> False
 
 lexPunct :: LexState -> Maybe (Token, LexState)
 lexPunct st = case lsInput st of
