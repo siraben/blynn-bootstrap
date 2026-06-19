@@ -2043,6 +2043,16 @@ constExprValue expr = case expr of
   EUnary "!" value -> do
     n <- constExprValue value
     pure (if n == 0 then 1 else 0)
+  EBinary "&&" left right -> do
+    a <- constExprValue left
+    if a == 0 then pure 0 else do
+      b <- constExprValue right
+      pure (boolToInt (b /= 0))
+  EBinary "||" left right -> do
+    a <- constExprValue left
+    if a /= 0 then pure 1 else do
+      b <- constExprValue right
+      pure (boolToInt (b /= 0))
   EBinary op left right -> do
     a <- constExprValue left
     b <- constExprValue right
