@@ -61,10 +61,13 @@ wrap the same source pins and, for HCC binary construction, the same portable
 script, so Nix is an orchestration/cache layer rather than the only description
 of the build.
 
-Shared source pins live in `data/bootstrap-sources.env`. The portable scripts
-source that file directly, and `flake.nix` parses the same file. Patch files
-under `patches/upstreams/` are applied by the portable source-prep stage and by
-the matching Nix stages.
+Source pins live in `data/bootstrap-sources.env`. The portable scripts source
+that file directly. `flake.nix` does not parse it; it carries its own pinned
+`fetchurl`/`fetchgit` copies of the same upstreams, so the two pin sets are
+maintained in parallel and must be kept in step by hand. Patch files under
+`patches/upstreams/` are applied by the portable source-prep stage and by the
+matching Nix stages; note the Nix Blynn stage additionally applies the
+`crossly`/RTS performance patches that the portable path does not.
 
 Host environment requirements:
 

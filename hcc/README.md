@@ -7,8 +7,6 @@ Current status:
 - The frontend supports lexing, object-like macro expansion, conditional
   preprocessing, and a small recursive-descent C parser.
 - `--check` exercises the frontend directly.
-- `--expand-dump` expands includes and command-line defines for the TinyCC
-  bootstrap path.
 - `--m1-ir` emits HCC's textual M1 IR, which `hcc-m1` lowers to M1 assembly.
 
 The stable call-site goal is:
