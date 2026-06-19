@@ -4,17 +4,18 @@ module ConstExpr
 
 import Base
 import Literal
+import Operators (binopArith)
 import ParseLite
 import TypesToken
 
 type ConstParser a = P [(String, Int)] Token String a
 
 parseConstExpr :: [(String, Int)] -> [Token] -> Either String (Int, [Token])
-parseConstExpr = parseRest (expression 0)
+parseConstExpr = parseRest (expression True 0)
 
-expression :: Int -> ConstParser Int
-expression minPrec = do
-  lhs <- parseUnary
+expression :: Bool -> Int -> ConstParser Int
+expression live minPrec = do
+  lhs <- parseUnary live
   climb lhs
   where
     climb lhs = do
@@ -23,47 +24,31 @@ expression minPrec = do
         Just tok -> case constTokenKind tok of
           TokPunct "?" | minPrec <= 2 -> do
             advance
-            yes <- expression 0
+            yes <- expression (live && lhs /= 0) 0
             constNeedPunct ":" "expected ':' in constant expression"
-            no <- expression 2
+            no <- expression (live && lhs == 0) 2
             climb (if lhs /= 0 then yes else no)
-          TokPunct op | Just prec <- binop op, prec >= minPrec -> do
+          TokPunct op | Just (prec, _) <- binopArith op, prec >= minPrec -> do
             advance
-            rhs <- expression (prec + 1)
-            value <- applyOp op lhs rhs
+            rhs <- expression (live && rhsLive op lhs) (prec + 1)
+            value <- applyOp live op lhs rhs
             climb value
           _ -> pure lhs
         Nothing -> pure lhs
 
-binop :: String -> Maybe Int
-binop op = case op of
-  "||" -> Just 3
-  "&&" -> Just 4
-  "|" -> Just 5
-  "^" -> Just 6
-  "&" -> Just 7
-  "==" -> Just 8
-  "!=" -> Just 8
-  "<" -> Just 9
-  "<=" -> Just 9
-  ">" -> Just 9
-  ">=" -> Just 9
-  "<<" -> Just 10
-  ">>" -> Just 10
-  "+" -> Just 11
-  "-" -> Just 11
-  "*" -> Just 12
-  "/" -> Just 12
-  "%" -> Just 12
-  _ -> Nothing
+rhsLive :: String -> Int -> Bool
+rhsLive op lhs = case op of
+  "&&" -> lhs /= 0
+  "||" -> lhs == 0
+  _ -> True
 
-applyOp :: String -> Int -> Int -> ConstParser Int
-applyOp op a b = case op of
+applyOp :: Bool -> String -> Int -> Int -> ConstParser Int
+applyOp live op a b = case op of
   "+" -> pure (a + b)
   "-" -> pure (a - b)
   "*" -> pure (a * b)
-  "/" -> if b == 0 then pFail "division by zero in constant expression" else pure (a `div` b)
-  "%" -> if b == 0 then pFail "modulo by zero in constant expression" else pure (a `mod` b)
+  "/" -> if b == 0 then divByZero live "division by zero in constant expression" else pure (a `div` b)
+  "%" -> if b == 0 then divByZero live "modulo by zero in constant expression" else pure (a `mod` b)
   "<<" -> pure (shiftLeftInt a (max 0 b))
   ">>" -> pure (shiftRightInt a (max 0 b))
   "<" -> pure (boolToInt (a < b))
@@ -79,24 +64,27 @@ applyOp op a b = case op of
   "||" -> pure (boolToInt (a /= 0 || b /= 0))
   _ -> pFail ("unhandled operator in constant expression: " ++ op)
 
-parseUnary :: ConstParser Int
-parseUnary = do
+divByZero :: Bool -> String -> ConstParser Int
+divByZero live msg = if live then pFail msg else pure 0
+
+parseUnary :: Bool -> ConstParser Int
+parseUnary live = do
   mtok <- pPeekMaybe
   case mtok of
     Just tok -> case constTokenKind tok of
-      TokPunct "!" -> advance >> (boolToInt . (== 0) <$> parseUnary)
-      TokPunct "+" -> advance >> parseUnary
-      TokPunct "-" -> advance >> (negate <$> parseUnary)
-      TokPunct "~" -> advance >> (bitNotInt <$> parseUnary)
-      _ -> parsePrimary
+      TokPunct "!" -> advance >> (boolToInt . (== 0) <$> parseUnary live)
+      TokPunct "+" -> advance >> parseUnary live
+      TokPunct "-" -> advance >> (negate <$> parseUnary live)
+      TokPunct "~" -> advance >> (bitNotInt <$> parseUnary live)
+      _ -> parsePrimary live
     Nothing -> pFail "empty constant expression"
 
-parsePrimary :: ConstParser Int
-parsePrimary = do
+parsePrimary :: Bool -> ConstParser Int
+parsePrimary live = do
   paren <- constEatPunct "("
   if paren
     then do
-      value <- expression 0
+      value <- expression live 0
       constNeedPunct ")" "expected ')' in constant expression"
       pure value
     else do
