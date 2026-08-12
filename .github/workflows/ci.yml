@@ -185,3 +185,24 @@ jobs:
       - name: Build ${{ matrix.attr }}
         continue-on-error: ${{ matrix.allow_failure == true }}
         run: nix build --print-build-logs ".#${{ matrix.attr }}"
+
+  ccc:
+    name: CCC phase and target tests (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31.5.2
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build CCC phase and target tests
+        run: nix build --print-build-logs ".#tests.ccc.golden"

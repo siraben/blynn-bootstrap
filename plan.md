@@ -1,6 +1,7 @@
 # Plan — CCC Bootstrap Path
 
-This plan replaces the existing Blynn/HCC path with **CCC** (the **Caml C
+This plan describes the intended replacement of the existing Blynn/HCC path
+with **CCC** (the **Caml C
 Compiler**), a C compiler written in a MinCaml-style mini-OCaml subset and
 hosted on a small ZINC-based bytecode VM. The motivating reference is Sumii's
 *MinCaml: A Simple and Efficient Compiler for a Minimal Functional Language*
@@ -76,10 +77,11 @@ The two pieces we own end-to-end:
     reproduces.
 
 **ccc** is the actual C compiler, structured as a port of HCC's pass list onto
-mini-OCaml. It emits M1 assembly directly — no textual IR layer — feeding the
-stage0 `M1` + `hex2` chain to native machine code. Dropping HCC's IR removes
-one whole pass (`hcc-m1` and the `TypesIr` / `M1Ir` modules) and the file
-boundary it implies; codegen is just the last pass of `ccc`.
+mini-OCaml. PR #68 currently emits textual HCCIR and uses the existing
+M2-buildable `hcc-m1` backend. This preserves the HCC phase boundary while the
+frontend is validated. The intended end state remains direct M1 emission,
+which would remove the textual IR boundary and the `hcc-m1` dependency; that
+is a follow-up milestone, not a claim about the current `ccc.asHcc` artifact.
 
 ---
 
@@ -293,19 +295,21 @@ To keep this sane:
 
 ---
 
-## 6. `ccc`: C → M1 assembly
+## 6. `ccc`: C → HCCIR (current) → M1 assembly
 
-Structurally a port of HCC, collapsed into two stages instead of three:
+Structurally a port of HCC. PR #68 currently retains the textual HCCIR
+boundary and the legacy M2 backend:
 
 ```
 ccpp  preprocess
-cc1   lex → parse → semantic → lower → emit M1
+cc1   lex → parse → semantic → lower → emit HCCIR
+hcc-m1 HCCIR → emit M1
 ```
 
-No textual IR. Lowering produces M1 directly into an output buffer. This
-diverges from HCC, which serialises a typed IR through `hcc-m1.c` so that
-backend was implementable in C. With `ccc` already in mini-OCaml, that
-intermediate hop has no purpose — we delete it.
+The planned direct-M1 variant would diverge from HCC, which serialises a typed
+IR through `hcc-m1.c` so that the backend can remain in C. With `ccc` already
+in mini-OCaml, that intermediate hop can eventually be removed; for PR #68 it
+remains the parity boundary.
 
 Mapping HCC → CCC:
 
@@ -315,10 +319,10 @@ Mapping HCC → CCC:
 | `Hcc.Preprocessor`        | direct port                                  |
 | `Hcc.Parser` / `ParseLite`| direct port; drop laziness                   |
 | `Hcc.TypesAst`            | direct mini-OCaml ADTs; proper `match` forms compiled by `mlc` |
-| `Hcc.TypesIr` / `M1Ir`    | **deleted**; replaced by direct M1 emission  |
+| `Hcc.TypesIr` / `M1Ir`    | retained for the current HCCIR parity boundary; delete in the direct-M1 milestone |
 | `Hcc.SymbolTable` / `ScopeMap` | reuse algorithm, swap `Map` → assoc lists or sorted arrays |
-| `Hcc.Lower*`              | direct port; this is the bulk of the LoC. Output target changes from `M1Ir` constructors to M1 text fragments. |
-| `hcc-m1.c` (C backend)    | **deleted**; its logic folds into `Lower*`'s emission helpers |
+| `Hcc.Lower*`              | direct port; this is the bulk of the LoC. Current output uses HCCIR constructors/text; the direct-M1 milestone changes the final emission target. |
+| `hcc-m1.c` (C backend)    | retained by PR #68; fold its logic into CCC for the direct-M1 milestone |
 | `Hcc.IncludeExpand`       | direct port                                  |
 | `CompileM` (monad stack)  | becomes explicit state-threaded `(state, x)` returns |
 

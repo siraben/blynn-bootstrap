@@ -1103,6 +1103,24 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           src = hccSrc;
         };
 
+        # Keep the pre-PR output namespace stable while CCC is introduced.
+        gnuHelloFromBootstrap = pname: bootstrap:
+          pkgs.callPackage ./nix/gnu-hello-minboot.nix {
+            stdenvNoCC = rawStdenvNoCC;
+            buildPlatform = pkgs.stdenv.buildPlatform;
+            hostPlatform = pkgs.stdenv.hostPlatform;
+            inherit pname bootstrap;
+          };
+
+        gnuHelloBy = {
+          host.ghc.native =
+            gnuHelloFromBootstrap "gnu-hello-host-ghc-native" minimalBootstrapBy.host.ghc.native;
+          m2.precisely.m2 =
+            gnuHelloFromBootstrap "gnu-hello-m2-precisely-m2" minimalBootstrapBy.m2.precisely.m2;
+          m2.precisely.gccm2 =
+            gnuHelloFromBootstrap "gnu-hello-m2-precisely-gccm2" minimalBootstrapBy.m2.precisely.gccm2;
+        };
+
         bootstrapBy = {
           host.ghc.native = {
             minimal = minimalBootstrapBy.host.ghc.native;
@@ -1191,6 +1209,12 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           hccSrc = ./hcc;
         };
 
+        cccGoldenTests = pkgs.callPackage ./nix/ccc-golden-tests.nix {
+          inherit cccAsHcc;
+          cccSrc = ./ccc;
+          testsSrc = ./tests;
+        };
+
         tinyccBootCcc = tinyccFromHcc "tinycc-boot-ccc-m2" cccAsHcc;
         tinyccM1Ccc = tinyccM1FromHcc "tinycc-m1-ccc-m2" cccAsHcc;
 
@@ -1226,6 +1250,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             tinycc = tinyccBootCcc;
             tinyccM1 = tinyccM1Ccc;
             tinyccPreprocInputs = tinyccPreprocInputs;
+            goldenTests = cccGoldenTests;
           };
 
           hcc = hccBy // {
@@ -1247,6 +1272,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           gcc46Cxx = gcc46CxxBy;
           gcc10 = gcc10By;
           gccLatest = gccLatestBy;
+          gnuHello = gnuHelloBy;
           glibc = glibcBy;
           gccGlibc = gccGlibcBy;
 
@@ -1254,6 +1280,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           inherit trustRoots;
 
           tests = {
+            ccc.golden = cccGoldenTests;
             smoke.m1 = hcc-m1-smoke;
             smoke.m1-i386 = hcc-m1-smoke-i386;
             smoke.m1-aarch64 = hcc-m1-smoke-aarch64;

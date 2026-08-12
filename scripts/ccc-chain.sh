@@ -136,11 +136,12 @@ cat > "$out_dir/bin/hcc1" <<EOF
 #!/bin/sh
 out=""
 input=""
+target="amd64"
 while [ \$# -gt 0 ]; do
   case "\$1" in
     -o) out=\$2; shift 2 ;;
     --m1-ir|--trace|-S|-c) shift ;;
-    --target) shift 2 ;;
+    --target) target=\$2; shift 2 ;;
     -*) echo "hcc1: unsupported option: \$1" >&2; exit 1 ;;
     *) input=\$1; shift ;;
   esac
@@ -148,7 +149,7 @@ done
 if [ -z "\$input" ] || [ -z "\$out" ]; then
   echo "usage: hcc1 --m1-ir -o FILE INPUT.i" >&2; exit 1
 fi
-exec "$out_dir/bin/mzvm" "$out_dir/lib/ccc-cc1.mzbc" "\$input" "\$out"
+exec "$out_dir/bin/mzvm" "$out_dir/lib/ccc-cc1.mzbc" --target "\$target" -o "\$out" "\$input"
 EOF
 chmod 555 "$out_dir/bin/hcpp" "$out_dir/bin/hcc1"
 
