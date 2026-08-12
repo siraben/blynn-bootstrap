@@ -78,9 +78,10 @@ OUT_DIR=$TINYCC
 export TINYCC_DIR HCC_BIN_DIR MES_LIBC_DIR M2LIBC_PATH OUT_DIR
 sh "$script_dir/tinycc-boot-hcc.sh"
 
-# smoke check: the bootstrapped tcc must run. (The full self-host fixpoint
-# — a tcc-built tcc rebuilding itself byte-for-byte — is checked by the nix
-# build and by tinycc-boot-hcc.sh when TINYCC_SELFHOST=1; the default
-# portable path only verifies the binary runs.)
+# smoke check: the bootstrapped tcc must run. Set TINYCC_SELFHOST=1 to run
+# the byte-for-byte tcc self-host fixpoint as well. That mode is supported by
+# the portable amd64 path; tinycc-boot-hcc.sh rejects it on aarch64 until the
+# target-specific libc/archive setup is completed. The default portable path
+# intentionally remains a smoke check so it is usable on both architectures.
 "$TINYCC/bin/tcc" -dumpversion >/dev/null
 printf 'ccc bootstrap complete: %s/bin/tcc\n' "$TINYCC"

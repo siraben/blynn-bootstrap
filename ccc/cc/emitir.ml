@@ -275,11 +275,16 @@ let emit_m1ir_module items =
   emit_module_ir out items;
   out
 
-(* port of emitM1IrWithDataPrefixTarget, into a buffer *)
-let emit_hccir prefix target decls =
-  let items = build_m1ir_module prefix target decls in
+(* port of emitM1IrWithDataPrefixTarget, into a buffer.  HCCIR carries both
+   the canonical target name and its word size: the latter drives lowering,
+   while the former is consumed by parity tests and downstream tools. *)
+let emit_hccir prefix target_name target_bits decls =
+  let items = build_m1ir_module prefix target_bits decls in
   let out = buf_new 65536 in
   buf_add_str out "HCCIR 1";
+  buf_push out ch_nl;
+  buf_add_str out "T ";
+  buf_add_bytes out target_name;
   buf_push out ch_nl;
   emit_module_ir out items;
   out

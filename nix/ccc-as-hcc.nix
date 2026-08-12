@@ -133,11 +133,12 @@ stdenvNoCC.mkDerivation {
     #!${stdenvNoCC.shell}
     out=""
     input=""
+    target="amd64"
     while [ \$# -gt 0 ]; do
       case "\$1" in
         -o) out=\$2; shift 2 ;;
         --m1-ir|--trace|-S|-c) shift ;;
-        --target) shift 2 ;;
+        --target) target=\$2; shift 2 ;;
         -*) echo "hcc1: unsupported option: \$1" >&2; exit 1 ;;
         *) input=\$1; shift ;;
       esac
@@ -145,7 +146,7 @@ stdenvNoCC.mkDerivation {
     if [ -z "\$input" ] || [ -z "\$out" ]; then
       echo "usage: hcc1 --m1-ir -o FILE INPUT.i" >&2; exit 1
     fi
-    exec $out/bin/mzvm $out/lib/ccc/ccc-cc1.mzbc "\$input" "\$out"
+    exec $out/bin/mzvm $out/lib/ccc/ccc-cc1.mzbc --target "\$target" -o "\$out" "\$input"
     EOF
     chmod +x $out/bin/hcpp $out/bin/hcc1
     runHook postInstall
