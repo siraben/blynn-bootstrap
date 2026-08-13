@@ -8,42 +8,72 @@ let out_chans : out_channel option array = Array.make 256 None
 let () = in_chans.(0) <- Some stdin
 let () = out_chans.(1) <- Some stdout
 let () = out_chans.(2) <- Some stderr
-let chan_next = ref 3
+
+(* Keep the host adapter's channel table aligned with the VM: descriptors
+   are allocated from the first free slot and slots above stderr are reused
+   after close_chan. *)
+let channel_slot_used (h : int) : bool =
+  match in_chans.(h), out_chans.(h) with
+  | None, None -> false
+  | _, _ -> true
+
+let find_channel_slot () : int =
+  let rec scan h =
+    if h >= Array.length in_chans then failwith "out of channel slots"
+    else if channel_slot_used h then scan (h + 1)
+    else h
+  in
+  scan 3
+
+let valid_channel_handle (h : int) : unit =
+  if h < 0 || h >= Array.length in_chans then failwith "bad channel handle"
 
 let open_in (p : string) : int =
   try
     let c = Stdlib.open_in_bin p in
-    let h = !chan_next in
-    chan_next := h + 1;
-    in_chans.(h) <- Some c;
-    h
-  with _ -> -1
+    (try
+       let h = find_channel_slot () in
+       in_chans.(h) <- Some c;
+       h
+     with Failure _ as exn ->
+       close_in_noerr c;
+       raise exn)
+  with Sys_error _ -> -1
 
 let open_out (p : string) : int =
   try
     let c = Stdlib.open_out_bin p in
-    let h = !chan_next in
-    chan_next := h + 1;
-    out_chans.(h) <- Some c;
-    h
-  with _ -> -1
+    (try
+       let h = find_channel_slot () in
+       out_chans.(h) <- Some c;
+       h
+     with Failure _ as exn ->
+       close_out_noerr c;
+       raise exn)
+  with Sys_error _ -> -1
 
 let close_chan (h : int) : unit =
-  (match in_chans.(h) with
-   | Some c -> close_in c; in_chans.(h) <- None
-   | None -> ());
-  (match out_chans.(h) with
-   | Some c -> close_out c; out_chans.(h) <- None
-   | None -> ())
+  valid_channel_handle h;
+  if not (channel_slot_used h) then failwith "close_chan: bad handle";
+  if h >= 3 then begin
+    (match in_chans.(h) with
+     | Some c -> close_in c; in_chans.(h) <- None
+     | None -> ());
+    (match out_chans.(h) with
+     | Some c -> close_out c; out_chans.(h) <- None
+     | None -> ())
+  end
 
 let read_byte (h : int) : int =
+  valid_channel_handle h;
   match in_chans.(h) with
   | Some c -> (try input_byte c with End_of_file -> -1)
   | None -> failwith "read_byte: bad handle"
 
 let write_byte (h : int) (b : int) : unit =
+  valid_channel_handle h;
   match out_chans.(h) with
-  | Some c -> output_byte c b
+  | Some c -> output_byte c (b land 255)
   | None -> failwith "write_byte: bad handle"
 
 let bytes_create (n : int) : bytes = Bytes.make n '\000'

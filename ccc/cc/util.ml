@@ -175,8 +175,13 @@ let buf_len b = b.blen
 
 let buf_reserve b extra =
   if b.blen + extra > bytes_length b.bdata then
-    (let rec newcap c = if c >= b.blen + extra then c else newcap (2 * c) in
-     let nb = bytes_create (newcap (2 * bytes_length b.bdata)) in
+    (* Keep growth total for an empty buffer: doubling zero never makes
+       progress. Start at one byte, then use geometric growth. *)
+    (let needed = b.blen + extra in
+     let oldcap = bytes_length b.bdata in
+     let initial = if oldcap > 0 then oldcap else 1 in
+     let rec newcap c = if c >= needed then c else newcap (2 * c) in
+     let nb = bytes_create (newcap initial) in
      bytes_blit_into b.bdata nb b.blen 0;
      b.bdata <- nb)
 
