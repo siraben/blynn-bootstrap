@@ -1257,6 +1257,20 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           default = packageTree.default;
         };
 
+        checks =
+          let
+            flattenTestTree = prefix: attrs:
+              lib.concatMapAttrs (name: value:
+                let path = prefix ++ [ name ]; in
+                if lib.isDerivation value then {
+                  "${lib.concatStringsSep "." path}" = value;
+                } else if lib.isAttrs value then
+                  flattenTestTree path value
+                else
+                  { }) attrs;
+          in
+          flattenTestTree [ ] packageTree.tests;
+
         legacyPackages = packageTree;
 
         apps.blynn-precisely-gcc = {
