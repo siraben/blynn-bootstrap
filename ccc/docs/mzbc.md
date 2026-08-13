@@ -1,7 +1,7 @@
-# MZBC — mzvm bytecode format and instruction set (version 1)
+# MZBC bytecode format and instruction set (version 1)
 
 This document locks the `.mzbc` container layout and the instruction set
-executed by `mzvm` (see plan.md §4). The format is fully reproducible: no
+executed by `mzvm`. The format is fully reproducible: no
 timestamps, no path-dependent strings.
 
 ## Container

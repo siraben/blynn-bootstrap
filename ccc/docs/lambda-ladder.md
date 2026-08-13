@@ -1,25 +1,14 @@
-# The λ ladder: shrinking the C trust root
+# The λ ladder and the C trust root
 
-Goal: make the first programming language in the chain a recognizable
-core λ-calculus (Blynn's `parenthetically → exponentially → …`
-discipline), and shrink the C interpreter seed to interpret only that
-core, so the named-language machinery (data structures, multi-argument
-functions, the assembler) is *earned inside the chain* instead of
-granted by the seed.
+The first programming language in the chain is a small core λ-calculus. The C
+interpreter seed implements only that core and the assembler operations needed
+by the first handoff. Strings, arrays, and named-language features are added by
+later stages.
 
-**Status: landed** (and revised: Λ0 is now the *symbolic* core, v2
-below). The seed interprets only the union of what `core-lambda.ml` and
-`parenthetical.ml` use — gone are tuple syntax, char and hex literals,
-`\xNN` escapes, `and`-bindings, unary minus, `;;`,
-`lor`/`lxor`/`lsl`/`lsr` and `bytes_of_string`; kept (for the assembler
-and the Λ1 fixtures) are multi-parameter bindings, arrays, string
-values, bytes, `not`, `land` and `asr`; added for Λ0 v2 are the
-list/pair cell builtins (`cons`/`nil`/`null`/`hd`/`tl`,
-`pair`/`fst`/`snd` — 2-field blocks matching the VM, so programs behave
-identically interpreted and compiled). The canonical chain is the
-ladder below; ML0 sources no longer run on the interpreter anywhere
-(`scripts/ccc-chain.sh`, the nix builds and every test suite go through
-core-lambda → data-lambda → ml0).
+The current seed implements the union of the operations used by
+`core-lambda.ml` and the assembler. It does not implement the full ML2
+language. The canonical chain is the ladder below; ML0 sources run through
+`core-lambda` and `data-lambda`, not directly on the C interpreter.
 
 ## Dialects
 
@@ -34,11 +23,8 @@ of OCaml:
   (single self-recursive), `if c then e else e`, `(e)`, `e; e`
 - operators: `+ - * / mod`, `= <> < <= > >=`, `&& ||` (short-circuit)
 - lists and pairs as builtins (no new syntax): `cons h t`, `nil` (= []),
-  `null l`, `hd l`, `tl l`, and `pair a b`, `fst p`, `snd p` — the ONE
-  compound datum is the heap cell, exactly Lynn's discipline: his chain
-  (`parenthetically → exponentially → …`) runs symbolic programs over a
-  uniform heap of two-field cells from the very first rung, with no
-  manual allocation in sight. A cons cell or pair compiles to the same
+  `null l`, `hd l`, `tl l`, and `pair a b`, `fst p`, `snd p`. The only
+  compound datum is a two-field heap cell. A cons cell or pair compiles to the same
   tag-0 two-field block ML0 tuples and stage-04 list cells use
   (MAKEBLOCK 0 2; `nil` is the integer 0; `hd`/`fst` are GETFIELD), so
   symbolic Λ0 data and ML0 data share one representation and one
@@ -89,7 +75,7 @@ mlc-interp-seed.c    C seed: interprets Λ0 + the assembler's needs
 ## Verification
 
 - `core-lambda` self-compilation fixpoint on the seed interpreter
-- DIVERSITY ANCHOR: `ml0-compiler` (descended from the same seed via the
+- Diversity anchor: `ml0-compiler` (descended from the same seed via the
   other path during transition, and via Λ1 after cutover) also compiles
   `core-lambda.ml`; the two `.mzbc` must be byte-identical. This replaces
   stage 02's interp-vs-VM anchor as the cross-implementation check.
@@ -100,15 +86,11 @@ mlc-interp-seed.c    C seed: interprets Λ0 + the assembler's needs
 - host OCaml: Λ0 and Λ1 are OCaml subsets, so both new stages also run
   under `ocaml` with the existing prelude (crosscheck gate extended)
 
-## Transition plan (historical)
+## Implementation note
 
-The new rungs landed additively (each gated) while the then-current
-interp-runs-ML0 chain kept working; the seed shrink and chain rewire
-were the last, single cutover commit. The measured outcome: the seed
-keeps the assembler's data machinery (multi-parameter bindings, arrays,
-strings), so it interprets Λ1-shaped programs rather than bare Λ0 —
-rewriting `parenthetical.ml` onto bytes alone would have cost far more
-source than the ~170 C lines it could save.
+The seed retains a small amount of data machinery for the assembler. That
+keeps the first handoff compact while leaving the compiler's named-language
+features to the staged ML path.
 
 ## Performance characteristic (accepted, by design)
 
@@ -123,16 +105,14 @@ cell heap costs more per operation than the former byte-pool version,
 but the O(N²) *shape* is the same in both — it predates the symbolic
 rewrite).
 
-This is not cleanly fixable while Λ0 stays pure. Every sub-linear
+The cost is not cleanly reduced while Λ0 stays pure. Every sub-linear
 persistent map needs either a recursive sum type (a balanced tree is
 `Leaf | Node`) or random access (a hash table needs arrays). Λ0 has
 neither: it is lists + tuples + closures, it must also typecheck as host
 OCaml (no `-rectypes`, so no equirecursive tree type), and the shrunken
-seed has no `match`/`type`. A persistent BST was implemented and
-rejected on exactly this — `null t` forces the tree to a list while a
-node is a tuple, and there is no Λ0 representation that unifies them.
+seed has no `match`/`type`. A persistent BST does not fit Λ0: `null t` would
+need to distinguish a list from a node tuple, and Λ0 has no sum-type
+representation for that distinction.
 
-The decision is to keep Λ0 pure and accept the cost: it is the price of
-the minimal symbolic rung, the chain remains correct and well inside its
-margin over the HCC/MesCC paths, and `core-lambda` stays lambda + cons
-cells with no manual data structures.
+Λ0 therefore remains pure. The chain accepts this cost, and `core-lambda`
+remains lambda plus cons cells with no manual data structures.
