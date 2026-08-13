@@ -24,6 +24,18 @@
             || lib.hasSuffix ".hs" (baseNameOf path)
             || lib.hasSuffix ".modules" (baseNameOf path);
         };
+        repoPortableSrc = lib.cleanSourceWith {
+          src = ./.;
+          filter = path: type:
+            let
+              rel = lib.removePrefix ((toString ./.) + "/") (toString path);
+              base = baseNameOf path;
+            in
+            type == "directory" || !(lib.hasPrefix "build/" rel)
+              && !(lib.hasPrefix "result" rel)
+              && !(lib.hasPrefix ".git/" rel)
+              && base != "flake.lock~";
+        };
         upstreamPatches = ./patches/upstreams;
         upstreamSources = {
           oriansjBlynnCompiler = pkgs.fetchgit {
@@ -924,6 +936,48 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           m2.precisely.m2 = tinyccM1FromHcc "tinycc-m1-hcc-m2-precisely-m2" hccBy.m2.precisely.m2;
         };
 
+        jslinuxHccRiscv64Checkpoint = pkgs.callPackage ./nix/jslinux-hcc-checkpoint.nix {
+          stdenvNoCC = rawStdenvNoCC;
+          inherit minimalBootstrap;
+          generatedC = hccBlynnCBy.m2.precisely;
+          hccSrc = hccSrc;
+          repoSrc = repoPortableSrc;
+          m2libcSrc = m2libcSrc;
+          riscv64Binutils = pkgs.pkgsCross.riscv64.buildPackages.binutils;
+          bootstrapShell = minimalShell;
+        };
+
+        jslinuxBlynnDemo = pkgs.callPackage ./nix/jslinux-blynn-demo.nix {
+          repoSrc = repoPortableSrc;
+          oriansjBlynnSrc = blynnSrc;
+          blynnSrc = blynnUpstreamSrc;
+          mesccTools = minimalBootstrap.stage0-posix.mescc-tools;
+          tinyccSrc = patchedUpstreamSource {
+            name = "janneke-tinycc-jslinux-demo";
+            src = pkgs.fetchgit {
+              url = "https://github.com/TinyCC/tinycc.git";
+              rev = "cb41cbfe717e4c00d7bb70035cda5ee5f0ff9341";
+              hash = "sha256-LgYeX6Q80Z6VNJ7iPk46fPpEr/dEAezqvR6jQddSsxI=";
+            };
+            patches = [ (upstreamPatches + "/tinycc-mescc-source.patch") ];
+          };
+          gnuMesSrc = mesLibcSrc;
+          stage0M2libcSrc = "${minimalBootstrap.stage0-posix.src}/M2libc";
+          stage0PosixSrc = minimalBootstrap.stage0-posix.src;
+          stage0Riscv64Src = pkgs.fetchgit {
+            url = "https://github.com/oriansj/stage0-posix-riscv64.git";
+            rev = "4688bc66bdfd00efd5964350c9d76bdb90a0f72e";
+            hash = "sha256-/zsKoZJYXCvtmRNSEd65wEVF5DVMc9DyPr4c1P0qRd8=";
+          };
+          bootstrapSeedsSrc = pkgs.fetchgit {
+            url = "https://github.com/oriansj/bootstrap-seeds.git";
+            rev = "cedec6b8066d1db229b6c77d42d120a23c6980ed";
+            hash = "sha256-0RVjc5eTPD2AXFdQ4/rKyeiGrll7Fj62NY5RISvGNSg=";
+          };
+          nixBuiltTinycc = tinyccBy.riscv64.host.ghc.native;
+          hccCheckpoint = jslinuxHccRiscv64Checkpoint;
+        };
+
         tinyccM1CompareNativeFaithful = pkgs.runCommand "tinycc-m1-compare-native-faithful" { } ''
           mkdir -p $out
           native=${tinyccM1By.host.ghc.native}/share/tinycc-hcc-m1
@@ -1255,6 +1309,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
       in {
         packages = {
           default = packageTree.default;
+          jslinux-blynn-demo = jslinuxBlynnDemo;
         };
 
         legacyPackages = packageTree;

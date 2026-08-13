@@ -1,0 +1,27 @@
+
+Project:
+  blynn-bootstrap portable checkpoint shell
+
+Environment:
+  Alpine Linux riscv64 running in Bellard JSLinux/WASM
+  Sources and pinned upstream snapshots are already in /bootstrap
+  Work directory: /work/blynn
+  The TinyCC checkpoint is materialized at boot.
+
+Commands:
+  blynn-tcc -dumpversion
+                     use the prebuilt TinyCC checkpoint
+  cat /work/blynn/tinycc-boot-hcc/tcc.sha256
+                     show the checkpoint compiler hash
+  bootstrap          verify HCC checkpoint, rebuild/self-host TinyCC, print hash
+  bootstrap --from-seed
+                     full hex0 -> Blynn/HCC -> TinyCC proof run
+  bootstrap --help   print detailed bootstrap command help
+
+Checkpoint:
+  This shell already contains a Nix-built TinyCC checkpoint.
+  The bootstrap command reproduces the Blynn/HCC path inside the VM
+  when you want the log.
+
+Compiler:
+  blynn-tcc points at /work/blynn/tinycc-boot-hcc/bin/tcc.
