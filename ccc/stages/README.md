@@ -1,6 +1,8 @@
-# The staged ML bootstrap
+# Staged ML bootstrap
 
-Each stage is one small job with a real handoff artifact, Blynn-style.
+Each stage has one job and a real handoff artifact. The ladder follows the
+repository's Blynn-inspired audit discipline without requiring the Blynn
+runtime or reproducing its stage names.
 The ladder starts with the λ rungs (ccc/docs/lambda-ladder.md): the C
 seed interprets only Λ0 plus what the assembler needs, and everything
 named is earned in-chain:
@@ -23,12 +25,12 @@ double-checked by diversity anchors: stage 02 built by data-lambda must
 byte-equal its own self-recompile through the text-assembly path, and
 stage 04 recompiles core-lambda/data-lambda back to their lambda-path
 images. Stage 05 is the exception by
-design: it changes CODE GENERATION (not the language), so it cannot be
+design: it changes code generation (not the language), so it cannot be
 byte-compared against 04 — it is verified by its second-generation
 fixpoint (gen2 = gen3) and by every fixture behaving identically, and
 downstream by ccc1/ccpp reproducing the same HCCIR byte-for-byte.
 
-## Style: why the parsing looks the way it does
+## Implementation style
 
 The stages are **single-pass parse-and-emit** compilers with mutable
 cursor state. That is a bootstrappability decision, not an accident:
