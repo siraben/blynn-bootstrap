@@ -1,8 +1,8 @@
-# M2-Planet: accepted subset and codegen cost model
+# M2-Planet subset and code-generation cost model
 
-Working notes for the two seed programs (`ccc/vm/mzvm.c`,
-`ccc/seed/mlc-interp-seed.c`), distilled from making them M2-Planet-clean
-and from hand-tuning the VM's hot paths. Numbers were measured on the
+This document describes the accepted M2-Planet subset for the two seed
+programs (`ccc/vm/mzvm.c`, `ccc/seed/mlc-interp-seed.c`) and the VM's measured
+code-generation costs. Numbers were measured on the
 amd64 backend of mescc-tools 1.9.1; the benchmark is the M2-built VM
 running ccc1 over all of preprocessed TinyCC (737 KB of C).
 
@@ -58,7 +58,7 @@ Consequences:
   x < y iff a < b). Unsigned comparisons must still untag (the tag shift
   drops the top bit).
 
-## switch lowering (the big one)
+## Switch lowering
 
 `switch` compiles to a **linear comparison chain executed in REVERSE
 source order** — the last `case` in the source is the first compared at

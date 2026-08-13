@@ -1,4 +1,4 @@
-# ccc porting contract (Haskell → ML2)
+# CCC porting contract (Haskell → ML2)
 
 ccc is HCC ported to ML2, the dialect compiled by ccc/stages/pattern-compiler.ml.
 The parts in ccc/cc/*.ml are concatenated in the order given by the

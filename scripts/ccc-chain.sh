@@ -1,12 +1,11 @@
 #!/usr/bin/env sh
 # Build the CCC toolchain from the stage0 tools alone (no host C compiler,
-# no ML tooling): M2-Mesoplanet compiles the two C seeds, the lambda
-# ladder earns the named-language machinery (core-lambda self-hosts on the
-# seed interpreter, builds data-lambda, which builds ml0), the staged ML
-# bootstrap runs 02 -> 01 -> 03 -> 04 with a fixpoint check, every
-# promoted source passes the mltc type-check gate, and the result is an
-# hcc-compatible bin/ directory (hcpp/hcc1 wrappers over the VM plus the
-# M2-built hcc-m1 backend) ready for scripts/tinycc-boot-hcc.sh.
+# no ML tooling): M2-Mesoplanet compiles the two C seeds, the lambda ladder
+# earns the named-language machinery, and the staged ML bootstrap builds
+# stages 02, 01, 03, 04, and 05 with fixpoint checks. Every promoted source
+# passes the mltc type-check gate. The result is an hcc-compatible bin/
+# directory: hcpp/hcc1 wrappers over the VM plus the M2-built hcc-m1 backend,
+# ready for scripts/tinycc-boot-hcc.sh.
 #
 # Inputs (environment):
 #   OUT_DIR       output directory (default build/ccc-chain)

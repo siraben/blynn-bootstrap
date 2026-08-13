@@ -37,6 +37,28 @@ Debug alternatives are separate targets:
 
 These are useful for testing but are not seed-only compiler paths.
 
+## CCC alternative frontend
+
+CCC is a C frontend written in a small ML dialect. M2 builds its bytecode
+VM and seed interpreter; a staged ML compiler ladder builds `ccpp` and
+`ccc1`. CCC emits HCCIR and still reuses the C `hcc-m1` backend—it is not
+yet an independent M1 backend.
+
+```sh
+nix build .#ccc.asHcc .#tests.ccc.golden
+nix build .#ccc.tinyccM1 .#ccc.tinycc
+```
+
+The golden tests reuse HCC's phase-boundary fixtures, adding CCC's required
+`T amd64` record to the expected IR. Separate checks cover target handling
+for amd64, i386, AArch64, and RISC-V. These are
+not full C-conformance tests. The existing `tinycc.m2.precisely.m2` and GCC
+targets continue to use Blynn/HCC, not CCC.
+
+See the [staged ML bootstrap](ccc/stages/README.md),
+[lambda ladder](ccc/docs/lambda-ladder.md), and
+[CCC porting notes](ccc/cc/PORTING.md) for the dialect and handoff contracts.
+
 ## Downstream overlay
 
 `nixpkgsArgs.default` selects the stage0/M2 bootstrap compiler and libc for
@@ -147,6 +169,7 @@ last stage.
 ## Layout
 
 - `hcc/`: compiler, runtime, and target support sources.
+- `ccc/`: alternative frontend, staged ML compilers, bytecode VM, and tests.
 - `scripts/`: portable stages and benchmark drivers.
 - `nix/` and `flake.nix`: derivations and package graph.
 - `patches/`: upstream source changes and patch series.
