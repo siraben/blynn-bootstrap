@@ -1,0 +1,124 @@
+diff --git a/inn/RTSPrecisely.hs b/inn/RTSPrecisely.hs
+--- a/inn/RTSPrecisely.hs
++++ b/inn/RTSPrecisely.hs
+@@ -200,6 +200,27 @@
+     E (Lit (_, s)) -> (s++)
+   ) . ("break;\n"++)
+
++hotDispatch = ["B","I","S","C","R","NUM","BK","T","Q","KI","CONS","K","EQ","V"]
++
++hotBodies = [
++  ("B", "{u *p=(u*)((char*)sp+sizeof(u));p=(u*)((char*)mem+(*p+1)*sizeof(u));u xa=*p;p=(u*)((char*)sp+2*sizeof(u));p=(u*)((char*)mem+(*p+1)*sizeof(u));u xb=*p;u *q=(u*)((char*)sp+3*sizeof(u));u n=*q;u *t=(u*)((char*)mem+n*sizeof(u));u *t1=(u*)((char*)t+sizeof(u));u xc=*t1;u *h=(u*)((char*)mem+hp*sizeof(u));*h=xb;h=(u*)((char*)h+sizeof(u));*h=xc;*t=xa;*t1=hp;hp=hp+2;sp=(u*)((char*)q-sizeof(u));*sp=xa;}"),
++  ("I", "{u *p=(u*)((char*)sp+sizeof(u));u *q=(u*)((char*)mem+(*p+1)*sizeof(u));u v=*q;*p=v;sp=p;}"),
++  ("S", "{u *p1=(u*)((char*)sp+sizeof(u));u *p=(u*)((char*)mem+(*p1+1)*sizeof(u));u xa=*p;u *p2=(u*)((char*)sp+2*sizeof(u));p=(u*)((char*)mem+(*p2+1)*sizeof(u));u xb=*p;u *q=(u*)((char*)sp+3*sizeof(u));u n=*q;u *t=(u*)((char*)mem+n*sizeof(u));u *t1=(u*)((char*)t+sizeof(u));u xc=*t1;u *h=(u*)((char*)mem+hp*sizeof(u));*h=xb;h=(u*)((char*)h+sizeof(u));*h=xc;h=(u*)((char*)h+sizeof(u));*h=xa;h=(u*)((char*)h+sizeof(u));*h=xc;u ap=hp+2;*p2=ap;*t=ap;*t1=hp;hp=hp+4;sp=p1;*sp=xa;}"),
++  ("C", "{u *p1=(u*)((char*)sp+sizeof(u));u *p=(u*)((char*)mem+(*p1+1)*sizeof(u));u xa=*p;u *p2=(u*)((char*)sp+2*sizeof(u));p=(u*)((char*)mem+(*p2+1)*sizeof(u));u xb=*p;u *q=(u*)((char*)sp+3*sizeof(u));u n=*q;u *t=(u*)((char*)mem+n*sizeof(u));u *t1=(u*)((char*)t+sizeof(u));u xc=*t1;u *h=(u*)((char*)mem+hp*sizeof(u));*h=xa;h=(u*)((char*)h+sizeof(u));*h=xc;*p2=hp;*t=hp;*t1=xb;hp=hp+2;sp=p1;*sp=xa;}"),
++  ("R", "{u *p1=(u*)((char*)sp+sizeof(u));u *p=(u*)((char*)mem+(*p1+1)*sizeof(u));u xa=*p;u *p2=(u*)((char*)sp+2*sizeof(u));p=(u*)((char*)mem+(*p2+1)*sizeof(u));u xb=*p;u *q=(u*)((char*)sp+3*sizeof(u));u n=*q;u *t=(u*)((char*)mem+n*sizeof(u));u *t1=(u*)((char*)t+sizeof(u));u xc=*t1;u *h=(u*)((char*)mem+hp*sizeof(u));*h=xb;h=(u*)((char*)h+sizeof(u));*h=xc;*p2=hp;*t=hp;*t1=xa;hp=hp+2;sp=p1;*sp=xb;}"),
++  ("NUM", "{u *p1=(u*)((char*)sp+sizeof(u));u xn=*p1;u *p2=(u*)((char*)sp+2*sizeof(u));u n=*p2;u *t=(u*)((char*)mem+n*sizeof(u));u *t1=(u*)((char*)t+sizeof(u));u f=*t1;*t=f;*t1=xn;sp=p1;*sp=f;}"),
++  ("BK", "{u *p=(u*)((char*)sp+sizeof(u));p=(u*)((char*)mem+(*p+1)*sizeof(u));u xa=*p;p=(u*)((char*)sp+2*sizeof(u));p=(u*)((char*)mem+(*p+1)*sizeof(u));u xb=*p;u *q=(u*)((char*)sp+3*sizeof(u));u n=*q;u *t=(u*)((char*)mem+n*sizeof(u));*t=xa;t=(u*)((char*)t+sizeof(u));*t=xb;sp=(u*)((char*)q-sizeof(u));*sp=xa;}"),
++  ("T", "{u *p1=(u*)((char*)sp+sizeof(u));u *p=(u*)((char*)mem+(*p1+1)*sizeof(u));u xa=*p;u *p2=(u*)((char*)sp+2*sizeof(u));u n=*p2;u *t=(u*)((char*)mem+n*sizeof(u));u *t1=(u*)((char*)t+sizeof(u));u xb=*t1;*t=xb;*t1=xa;sp=p1;*sp=xb;}"),
++  ("Q", "{u *p=(u*)((char*)sp+sizeof(u));p=(u*)((char*)mem+(*p+1)*sizeof(u));u xa=*p;p=(u*)((char*)sp+2*sizeof(u));p=(u*)((char*)mem+(*p+1)*sizeof(u));u xb=*p;u *q=(u*)((char*)sp+3*sizeof(u));u n=*q;u *t=(u*)((char*)mem+n*sizeof(u));u *t1=(u*)((char*)t+sizeof(u));u xc=*t1;u *h=(u*)((char*)mem+hp*sizeof(u));*h=xb;h=(u*)((char*)h+sizeof(u));*h=xa;*t=xc;*t1=hp;hp=hp+2;sp=(u*)((char*)q-sizeof(u));*sp=xc;}"),
++  ("KI", "{u *p2=(u*)((char*)sp+2*sizeof(u));u n=*p2;u *t=(u*)((char*)mem+n*sizeof(u));*t=_I;sp=(u*)((char*)sp+sizeof(u));*sp=_I;}"),
++  ("CONS", "{u *p=(u*)((char*)sp+sizeof(u));p=(u*)((char*)mem+(*p+1)*sizeof(u));u xa=*p;u *p2=(u*)((char*)sp+2*sizeof(u));p=(u*)((char*)mem+(*p2+1)*sizeof(u));u xb=*p;u *p3=(u*)((char*)sp+3*sizeof(u));u *q=(u*)((char*)sp+4*sizeof(u));u n=*q;u *t=(u*)((char*)mem+n*sizeof(u));u *t1=(u*)((char*)t+sizeof(u));u xd=*t1;u *h=(u*)((char*)mem+hp*sizeof(u));*h=xd;h=(u*)((char*)h+sizeof(u));*h=xa;*p3=hp;*t=hp;*t1=xb;hp=hp+2;sp=p2;*sp=xd;}"),
++  ("K", "{u *p1=(u*)((char*)sp+sizeof(u));u *p=(u*)((char*)mem+(*p1+1)*sizeof(u));u xa=*p;u *p2=(u*)((char*)sp+2*sizeof(u));u n=*p2;u *t=(u*)((char*)mem+n*sizeof(u));*t=_I;t=(u*)((char*)t+sizeof(u));*t=xa;sp=p1;*sp=_I;}"),
++  ("EQ", "{u *p=(u*)((char*)sp+sizeof(u));p=(u*)((char*)mem+(*p+1)*sizeof(u));p=(u*)((char*)mem+(*p+1)*sizeof(u));u a=*p;u *p2=(u*)((char*)sp+2*sizeof(u));u n=*p2;u *t=(u*)((char*)mem+n*sizeof(u));u *t1=(u*)((char*)t+sizeof(u));p=(u*)((char*)mem+(*t1+1)*sizeof(u));u b=*p;u r=_KI;if(a==b)r=_K;*t=_I;*t1=r;sp=(u*)((char*)sp+sizeof(u));*sp=_I;}"),
++  ("V", "{u *p1=(u*)((char*)sp+sizeof(u));u *p=(u*)((char*)mem+(*p1+1)*sizeof(u));u xa=*p;u *p2=(u*)((char*)sp+2*sizeof(u));p=(u*)((char*)mem+(*p2+1)*sizeof(u));u xb=*p;u *q=(u*)((char*)sp+3*sizeof(u));u n=*q;u *t=(u*)((char*)mem+n*sizeof(u));u *t1=(u*)((char*)t+sizeof(u));u xc=*t1;u *h=(u*)((char*)mem+hp*sizeof(u));*h=xc;h=(u*)((char*)h+sizeof(u));*h=xa;*p2=hp;*t=hp;*t1=xb;hp=hp+2;sp=p1;*sp=xc;}")]
++
++genHotComb name = ("if (x == _"++) . (name++) . (") {"++)
++  . ((maybe undefined id $ lookup name hotBodies)++) . ("continue;}\n"++)
++
+ comb = (,) <$> conId <*> ((,) <$> many varId <*> (res "=" *> combExpr))
+ combExpr = foldl1 A <$> some
+   (V <$> varId <|> litstr <$> lexeme tokStr <|> paren combExpr)
+@@ -253,14 +274,21 @@
+ #define RTS_NOTE_SCRATCH 0
+ static void rts_report_stats() {}
+ #endif
++#ifdef HCC_RTS_USE_EXTERNAL_ALLOC
++#define IS_ADDR_N (n >= 128 && n < TOP)
++#define IS_ADDR_X (x >= 128 && x < TOP)
++#else
+ static inline u isAddr(u n) { return n>=128; }
++#define IS_ADDR_N isAddr(n)
++#define IS_ADDR_X isAddr(x)
++#endif
+ static u evac(u n) {
+-  if (!isAddr(n)) return n;
++  if (!IS_ADDR_N) return n;
+   u *pn = (u*)((char*)mem + n * sizeof(u));
+   u *pn1 = (u*)((char*)pn + sizeof(u));
+   u *px;
+   u x = *pn;
+-  while (isAddr(x)) {
++  while (IS_ADDR_X) {
+     px = (u*)((char*)mem + x * sizeof(u));
+     if (*px != _T) break;
+     *pn = *pn1;
+@@ -268,7 +296,7 @@
+     *pn1 = *px;
+     x = *pn;
+   }
+-  if (isAddr(x)) {
++  if (IS_ADDR_X) {
+     px = (u*)((char*)mem + x * sizeof(u));
+     if (*px == _K) {
+       px = (u*)((char*)px + sizeof(u));
+@@ -351,7 +379,7 @@
+   u usage = 0;
+   while(1) {
+     u x = *sp;
+-    if (isAddr(x)) { u *p = (u*)((char*)mem + x * sizeof(u)); sp = (u*)((char*)sp - sizeof(u)); *sp = *p; } else {
++    if (IS_ADDR_X) { u *p = (u*)((char*)mem + x * sizeof(u)); sp = (u*)((char*)sp - sizeof(u)); *sp = *p; } else {
+       RTS_NOTE_LIVE;
+       RTS_NOTE_STACK;
+       return usage + hp + 8 >= TOP;
+@@ -415,7 +443,7 @@
+ static inline u ite(int cond) { if(cond) return _K; return _KI; }
+ static inline int ashr(int x, int y) { if (x < 0) return ~(~x >> y); return x >> y; }
+ static inline u tagcheck(u x) {
+-  if (isAddr(x)) {
++  if (IS_ADDR_X) {
+     if (x & 1) { u *p = (u*)((char*)vmroot + ((x - 128 - 1)/2) * sizeof(u)); return *p; }
+     return x - 128 + hp;
+   }
+@@ -484,11 +505,11 @@
+     . ("\n  }\n}\n" ++)
+     . (if "warts" `elem` opts then
+       ("static u step(){u kibi=1024;do{" ++)
+-      . giantSwitch
++      . giantSwitch opts
+       . ("kibi = kibi - 1;}while(kibi);return 0;}\n" ++)
+       else id)
+     . ("static u run(){while(1){" ++)
+-    . giantSwitch
++    . giantSwitch opts
+     . ("}return 0;}\n" ++)
+     . (if "warts" `elem` opts then ([r|
+ void run_gas(u gas) { while(!suspend_status && gas) { gas = gas - 1; suspend_status = step(); } }
+@@ -496,7 +517,7 @@
+   . rtsInit opts
+   . rtsReduce opts
+
+-giantSwitch = ([r|
++giantSwitch opts = ([r|
+   if (hp - major_base >= HCC_RTS_ADAPTIVE_MAJOR_WORDS) {
+     RTS_NOTE_HP;
+     if (gc()) return 3;
+@@ -506,7 +534,7 @@
+     if (gc()) return 3;
+   }
+   u x = *sp;
+-  while (isAddr(x)) {
++  while (IS_ADDR_X) {
+     u *p = (u*)((char*)mem + x * sizeof(u));
+     sp = (u*)((char*)sp - sizeof(u));
+     x = *p;
+@@ -516,8 +537,9 @@
+       x = *sp;
+     }
+   }
+-  switch(x) {
+ |]++)
++  . (if "warts" `elem` opts then id else foldr (.) id (genHotComb <$> hotDispatch))
++  . ("  switch(x) {\n"++)
+   . foldr (.) id (genComb <$> comdefs)
+   . ("  }\n"++)

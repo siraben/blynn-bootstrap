@@ -1,6 +1,29 @@
 diff --git a/inn/RTS2.hs b/inn/RTS2.hs
 --- a/inn/RTS2.hs
 +++ b/inn/RTS2.hs
+@@ -49,11 +49,11 @@ void *malloc(unsigned long);
+ enum { FORWARD = 127, REDUCING = 126 };
+ static u *mem, *altmem, *sp, *spTop, hp;
+ static inline u isAddr(u n) { return n>=128; }
+ static u evac(u n) {
+-  if (!isAddr(n)) return n;
++  if (!(n >= 128)) return n;
+   u *pn = mem + n * sizeof(u);
+   u x = *pn;
+-  while (isAddr(x)) {
++  while (x >= 128) {
+     u *px = mem + x * sizeof(u);
+     if (*px != _T) break;
+     u *pn1 = mem + (n + 1) * sizeof(u);
+@@ -62,7 +62,7 @@ static u evac(u n) {
+     *pn1 = *px1;
+     x = *pn;
+   }
+-  if (isAddr(x)) {
++  if (x >= 128) {
+     u *px = mem + x * sizeof(u);
+     if (*px == _K) {
+       u *pn1 = mem + (n + 1) * sizeof(u);
 @@ -198,23 +198,13 @@
  
  -- Main VM loop.
