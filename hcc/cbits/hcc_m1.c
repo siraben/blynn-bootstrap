@@ -200,6 +200,7 @@ struct Loc {
   int kind;
   int slot;
   int slots;
+  int uses;
 };
 
 struct LocArray {
@@ -209,6 +210,7 @@ struct LocArray {
 
 struct EmitState {
   int rax_temp;
+  int omit_store_temp;
 };
 
 static void die(const char *msg)
@@ -964,6 +966,7 @@ static void ensure_loc(LocArray *locs, int temp)
     loc->kind = LOC_NONE;
     loc->slot = 0;
     loc->slots = 0;
+    loc->uses = 0;
     old = old + 1;
   }
 }
@@ -1035,6 +1038,94 @@ static void allocate_instrs(InstrList *list, LocArray *locs, int *next_slot)
   }
 }
 
+static Loc *lookup_loc(LocArray *locs, int temp);
+
+static void count_operand_use(LocArray *locs, Operand *op)
+{
+  Loc *loc;
+  if (op->kind != OP_TEMP) return;
+  loc = lookup_loc(locs, op->value);
+  loc->uses = loc->uses + 1;
+}
+
+static void count_instr_uses(InstrList *list, LocArray *locs)
+{
+  int i = 0;
+  while (i < list->len) {
+    Instr *in = instr_at(list->items, i);
+    int j;
+    switch (in->kind) {
+      case IK_COPY:
+      case IK_LOAD64:
+      case IK_LOAD32:
+      case IK_LOADS32:
+      case IK_LOAD16:
+      case IK_LOADS16:
+      case IK_LOAD8:
+      case IK_LOADS8:
+      case IK_SEXT:
+      case IK_ZEXT:
+      case IK_TRUNC:
+        count_operand_use(locs, instr_a_ptr(in));
+        break;
+      case IK_ADDROF:
+        {
+          Loc *loc = lookup_loc(locs, in->temp2);
+          loc->uses = loc->uses + 1;
+        }
+        break;
+      case IK_STORE64:
+      case IK_STORE32:
+      case IK_STORE16:
+      case IK_STORE8:
+      case IK_BIN:
+        count_operand_use(locs, instr_a_ptr(in));
+        count_operand_use(locs, instr_b_ptr(in));
+        break;
+      case IK_CALL:
+        j = 0;
+        while (j < in->argc) {
+          count_operand_use(locs, operand_at(in->args, j));
+          j = j + 1;
+        }
+        break;
+      case IK_CALLI:
+        count_operand_use(locs, instr_callee_ptr(in));
+        j = 0;
+        while (j < in->argc) {
+          count_operand_use(locs, operand_at(in->args, j));
+          j = j + 1;
+        }
+        break;
+      case IK_COND:
+        count_instr_uses(instr_cond_instrs_ptr(in), locs);
+        count_operand_use(locs, instr_cond_op_ptr(in));
+        count_instr_uses(instr_true_instrs_ptr(in), locs);
+        count_operand_use(locs, instr_true_op_ptr(in));
+        count_instr_uses(instr_false_instrs_ptr(in), locs);
+        count_operand_use(locs, instr_false_op_ptr(in));
+        break;
+    }
+    i = i + 1;
+  }
+}
+
+static void count_function_uses(Function *fn, LocArray *locs)
+{
+  int i = 0;
+  while (i < fn->len) {
+    Block *block = block_at(fn->blocks, i);
+    count_instr_uses(block_instrs_ptr(block), locs);
+    if (block->term_kind == TK_RET || block->term_kind == TK_BRANCH) {
+      count_operand_use(locs, block_term_op_ptr(block));
+    } else if (block->term_kind == TK_BRANCH_CMP) {
+      count_operand_use(locs, block_term_op_ptr(block));
+      count_operand_use(locs, block_term_b_ptr(block));
+    }
+    i = i + 1;
+  }
+}
+
 static int allocate_function(Function *fn, LocArray *locs)
 {
   int next_slot = 0;
@@ -1046,6 +1137,7 @@ static int allocate_function(Function *fn, LocArray *locs)
     allocate_instrs(block_instrs_ptr(block), locs, &next_slot);
     i = i + 1;
   }
+  count_function_uses(fn, locs);
   return next_slot;
 }
 
@@ -1061,6 +1153,7 @@ static Loc *lookup_loc(LocArray *locs, int temp)
 static void emit_state_init(EmitState *state)
 {
   state->rax_temp = -1;
+  state->omit_store_temp = -1;
 }
 
 static void emit_forget_rax(EmitState *state)
@@ -1201,6 +1294,7 @@ static void emit_header(FILE *out)
   fprintf(out, "DEFINE XCHG_rax_rbx 4893\n");
   fprintf(out, "DEFINE HCC_ADD_IMMEDIATE_to_rsp 4881C4\n");
   fprintf(out, "DEFINE HCC_SUB_IMMEDIATE_from_rsp 4881EC\n");
+  fprintf(out, "DEFINE HCC_ADD_IMMEDIATE_to_rax 4805\n");
   fprintf(out, "DEFINE HCC_STORE_RSP_IMMEDIATE_from_rax 48898424\n");
   fprintf(out, "DEFINE HCC_LOAD_EFFECTIVE_ADDRESS_rax 488D8424\n");
   fprintf(out, "DEFINE HCC_COPY_rax_to_rsi 4889C6\n");
@@ -1454,6 +1548,10 @@ static void emit_store_temp(FILE *out, EmitState *state, LocArray *locs, int tem
 {
   Loc *loc = lookup_loc(locs, temp);
   if (loc->kind == LOC_STACK) {
+    if (state->omit_store_temp == temp) {
+      emit_remember_rax_temp(state, temp);
+      return;
+    }
     if (target_arch == TARGET_I386) fprintf(out, "  HCC_STORE_ESP_IMMEDIATE_from_eax %%%d\n", 4 * loc->slot);
     else if (target_arch == TARGET_AARCH64) aarch64_emit_store_stack(out, 8 * loc->slot);
     else if (target_arch == TARGET_RISCV64) riscv64_emit_store_stack(out, 8 * loc->slot);
@@ -1672,9 +1770,16 @@ static int invert_binop(int op)
 
 static void emit_compare(FILE *out, EmitState *state, LocArray *locs, Operand *a, Operand *b)
 {
-  emit_load_operand(out, state, locs, 0, a);
-  emit_copy_acc_to_scratch(out);
-  emit_load_operand(out, state, locs, 0, b);
+  if (target_arch == TARGET_AMD64 && b->kind == OP_TEMP && b->value == state->rax_temp) {
+    emit_copy_acc_to_scratch(out);
+    emit_load_operand(out, state, locs, 0, a);
+    fprintf(out, "  XCHG_rax_rbx\n");
+    emit_forget_rax(state);
+  } else {
+    emit_load_operand(out, state, locs, 0, a);
+    emit_copy_acc_to_scratch(out);
+    emit_load_operand(out, state, locs, 0, b);
+  }
   if (target_arch == TARGET_I386) fprintf(out, "  cmp_ebx,eax\n");
   else if (target_arch == TARGET_AARCH64) fprintf(out, "  CMP_X1_X0\n");
   else if (target_arch == TARGET_RISCV64) {
@@ -1917,7 +2022,7 @@ static void emit_memory_load(FILE *out, EmitState *state, LocArray *locs, Instr 
 {
   if (width == 8 && target_arch == TARGET_I386) die("i386 M1 backend cannot lower 64-bit load");
   emit_load_operand(out, state, locs, 0, instr_a_ptr(in));
-  if (target_arch == TARGET_I386 && i386_op) fprintf(out, "%s", i386_op);
+  if (target_arch == TARGET_I386) fprintf(out, "%s", i386_op);
   else if (target_arch == TARGET_AARCH64) aarch64_emit_load_store(out, 1, width, is_signed, 0, 0);
   else if (target_arch == TARGET_RISCV64) riscv64_emit_load_store(out, 1, width, is_signed, 10, 0);
   else fprintf(out, "%s", other_op);
@@ -1935,12 +2040,22 @@ static void emit_memory_store(FILE *out, EmitState *state, LocArray *locs, Instr
   else fprintf(out, "%s", other_op);
 }
 
-static void emit_instrs(FILE *out, const char *fn_name, EmitState *state, LocArray *locs, int total_slots, InstrList *list);
+static void emit_instrs(FILE *out, const char *fn_name, EmitState *state, LocArray *locs, int total_slots, InstrList *list, int final_temp);
+static int binop_is_commutative(int op);
+
+static int operand_temp(Operand *op)
+{
+  if (op->kind == OP_TEMP) return op->value;
+  return -1;
+}
 
 static void emit_instr(FILE *out, const char *fn_name, EmitState *state, LocArray *locs, int total_slots, Instr *in)
 {
   int param_offset;
   int width;
+  Operand *left;
+  Operand *right;
+  long immediate;
 
   if (in->kind == IK_SEXT) {
     width = in->value;
@@ -2019,7 +2134,7 @@ static void emit_instr(FILE *out, const char *fn_name, EmitState *state, LocArra
       emit_memory_load(out, state, locs, in, 4, 0, "  mov_eax,[eax]\n", "  HCC_LOAD_WORD\n");
       break;
     case IK_LOADS32:
-      emit_memory_load(out, state, locs, in, 4, 1, 0, "  HCC_LOAD_SIGNED_WORD\n");
+      emit_memory_load(out, state, locs, in, 4, 1, "  mov_eax,[eax]\n", "  HCC_LOAD_SIGNED_WORD\n");
       break;
     case IK_LOAD16:
       emit_memory_load(out, state, locs, in, 2, 0, "  movzx_eax,WORD_PTR_[eax]\n", "  HCC_LOAD_HALF\n");
@@ -2046,12 +2161,44 @@ static void emit_instr(FILE *out, const char *fn_name, EmitState *state, LocArra
       emit_memory_store(out, state, locs, in, 1, "  HCC_STORE_CHAR\n");
       break;
     case IK_BIN:
-      emit_load_operand(out, state, locs, 0, instr_a_ptr(in));
-      if (target_arch == TARGET_I386) fprintf(out, "  mov_ebx,eax\n");
-      else if (target_arch == TARGET_AARCH64) fprintf(out, "  SET_X1_FROM_X0\n");
-      else if (target_arch == TARGET_RISCV64) riscv64_emit_mov_reg(out, 11, 10);
-      else fprintf(out, "  HCC_M_RAX_RBX\n");
-      emit_load_operand(out, state, locs, 0, instr_b_ptr(in));
+      left = instr_a_ptr(in);
+      right = instr_b_ptr(in);
+      if (target_arch == TARGET_AMD64 && in->binop == BK_ADD) {
+        if (left->kind == OP_IMM && right->kind != OP_IMM) {
+          Operand *tmp = left;
+          left = right;
+          right = tmp;
+        }
+        if (right->kind == OP_IMM) {
+          immediate = right->value;
+          if (immediate >= -2147483647 - 1 && immediate <= 2147483647) {
+            emit_load_operand(out, state, locs, 0, left);
+            fprintf(out, "  HCC_ADD_IMMEDIATE_to_rax %%%d\n", (int)immediate);
+            emit_forget_rax(state);
+            emit_store_temp(out, state, locs, in->temp);
+            break;
+          }
+        }
+      }
+      if (binop_is_commutative(in->binop) && right->kind == OP_TEMP &&
+          right->value == state->rax_temp) {
+        left = instr_b_ptr(in);
+        right = instr_a_ptr(in);
+      }
+      if (target_arch == TARGET_AMD64 && right->kind == OP_TEMP &&
+          right->value == state->rax_temp && left != instr_b_ptr(in)) {
+        emit_copy_acc_to_scratch(out);
+        emit_load_operand(out, state, locs, 0, left);
+        fprintf(out, "  XCHG_rax_rbx\n");
+        emit_forget_rax(state);
+      } else {
+        emit_load_operand(out, state, locs, 0, left);
+        if (target_arch == TARGET_I386) fprintf(out, "  mov_ebx,eax\n");
+        else if (target_arch == TARGET_AARCH64) fprintf(out, "  SET_X1_FROM_X0\n");
+        else if (target_arch == TARGET_RISCV64) riscv64_emit_mov_reg(out, 11, 10);
+        else fprintf(out, "  HCC_M_RAX_RBX\n");
+        emit_load_operand(out, state, locs, 0, right);
+      }
       emit_binop(out, in->binop);
       emit_store_temp(out, state, locs, in->temp);
       break;
@@ -2093,17 +2240,17 @@ static void emit_instr(FILE *out, const char *fn_name, EmitState *state, LocArra
       if (in->result >= 0) emit_store_temp(out, state, locs, in->result);
       break;
     case IK_COND:
-      emit_instrs(out, fn_name, state, locs, total_slots, instr_cond_instrs_ptr(in));
+      emit_instrs(out, fn_name, state, locs, total_slots, instr_cond_instrs_ptr(in), operand_temp(instr_cond_op_ptr(in)));
       emit_load_operand(out, state, locs, 0, instr_cond_op_ptr(in));
       emit_truth_jump_named(out, "HCC_COND_ELSE", fn_name, in->temp, 0);
       emit_forget_rax(state);
-      emit_instrs(out, fn_name, state, locs, total_slots, instr_true_instrs_ptr(in));
+      emit_instrs(out, fn_name, state, locs, total_slots, instr_true_instrs_ptr(in), operand_temp(instr_true_op_ptr(in)));
       emit_load_operand(out, state, locs, 0, instr_true_op_ptr(in));
       emit_store_temp(out, state, locs, in->temp);
       emit_jump_named(out, "HCC_COND_DONE", fn_name, in->temp);
       emit_named_label(out, "HCC_COND_ELSE", fn_name, in->temp);
       emit_forget_rax(state);
-      emit_instrs(out, fn_name, state, locs, total_slots, instr_false_instrs_ptr(in));
+      emit_instrs(out, fn_name, state, locs, total_slots, instr_false_instrs_ptr(in), operand_temp(instr_false_op_ptr(in)));
       emit_load_operand(out, state, locs, 0, instr_false_op_ptr(in));
       emit_store_temp(out, state, locs, in->temp);
       emit_named_label(out, "HCC_COND_DONE", fn_name, in->temp);
@@ -2112,11 +2259,95 @@ static void emit_instr(FILE *out, const char *fn_name, EmitState *state, LocArra
   }
 }
 
-static void emit_instrs(FILE *out, const char *fn_name, EmitState *state, LocArray *locs, int total_slots, InstrList *list)
+static int instr_def_temp(Instr *in)
+{
+  switch (in->kind) {
+    case IK_PARAM:
+    case IK_CONST:
+    case IK_COPY:
+    case IK_ADDROF:
+    case IK_LOAD64:
+    case IK_LOAD32:
+    case IK_LOADS32:
+    case IK_LOAD16:
+    case IK_LOADS16:
+    case IK_LOAD8:
+    case IK_LOADS8:
+    case IK_SEXT:
+    case IK_ZEXT:
+    case IK_TRUNC:
+    case IK_BIN:
+      return in->temp;
+    case IK_CALL:
+    case IK_CALLI:
+      return in->result;
+  }
+  return -1;
+}
+
+static int binop_is_commutative(int op)
+{
+  return op == BK_ADD || op == BK_MUL || op == BK_EQ || op == BK_NE ||
+         op == BK_AND || op == BK_OR || op == BK_XOR;
+}
+
+static int instr_consumes_rax_temp(Instr *in, int temp)
+{
+  Operand *op;
+  switch (in->kind) {
+    case IK_COPY:
+    case IK_LOAD64:
+    case IK_LOAD32:
+    case IK_LOADS32:
+    case IK_LOAD16:
+    case IK_LOADS16:
+    case IK_LOAD8:
+    case IK_LOADS8:
+    case IK_SEXT:
+    case IK_ZEXT:
+    case IK_TRUNC:
+    case IK_STORE64:
+    case IK_STORE32:
+    case IK_STORE16:
+    case IK_STORE8:
+    case IK_BIN:
+      op = instr_a_ptr(in);
+      if (op->kind == OP_TEMP && op->value == temp) return 1;
+      if (in->kind == IK_BIN && binop_is_commutative(in->binop)) {
+        op = instr_b_ptr(in);
+        if (op->kind == OP_TEMP && op->value == temp) return 1;
+      }
+      break;
+    case IK_CALL:
+    case IK_CALLI:
+      if (target_arch == TARGET_AMD64 && in->argc > 0 && in->argc <= 6) {
+        op = operand_at(in->args, 0);
+        if (op->kind == OP_TEMP && op->value == temp) return 1;
+      }
+      break;
+  }
+  return 0;
+}
+
+static void emit_instrs(FILE *out, const char *fn_name, EmitState *state, LocArray *locs, int total_slots, InstrList *list, int final_temp)
 {
   int i = 0;
   while (i < list->len) {
-    emit_instr(out, fn_name, state, locs, total_slots, instr_at(list->items, i));
+    Instr *in = instr_at(list->items, i);
+    int def = instr_def_temp(in);
+    Loc *def_loc;
+    state->omit_store_temp = -1;
+    if (def >= 0 && i + 1 < list->len) {
+      def_loc = lookup_loc(locs, def);
+      if (def_loc->uses == 1 && instr_consumes_rax_temp(instr_at(list->items, i + 1), def)) {
+        state->omit_store_temp = def;
+      }
+    } else if (def >= 0 && i + 1 == list->len && def == final_temp) {
+      def_loc = lookup_loc(locs, def);
+      if (def_loc->uses == 1) state->omit_store_temp = def;
+    }
+    emit_instr(out, fn_name, state, locs, total_slots, in);
+    state->omit_store_temp = -1;
     i = i + 1;
   }
 }
@@ -2165,6 +2396,21 @@ static void emit_terminator(FILE *out, Function *fn, int block_index, EmitState 
   emit_forget_rax(state);
 }
 
+static int block_first_term_temp(Block *block)
+{
+  if ((block->term_kind == TK_RET || block->term_kind == TK_BRANCH) && block->term_op.kind == OP_TEMP) {
+    return block->term_op.value;
+  }
+  if (block->term_kind == TK_BRANCH_CMP) {
+    InstrList *list = block_instrs_ptr(block);
+    int final_def = -1;
+    if (list->len > 0) final_def = instr_def_temp(instr_at(list->items, list->len - 1));
+    if (block->term_op.kind == OP_TEMP && block->term_op.value == final_def) return final_def;
+    if (target_arch == TARGET_AMD64 && block->term_b.kind == OP_TEMP && block->term_b.value == final_def) return final_def;
+  }
+  return -1;
+}
+
 static void emit_function(FILE *out, Function *fn)
 {
   LocArray locs;
@@ -2185,13 +2431,15 @@ static void emit_function(FILE *out, Function *fn)
   i = 0;
   while (i < fn->len) {
     Block *block = block_at(fn->blocks, i);
+    InstrList *instrs = block_instrs_ptr(block);
+    int term_temp = block_first_term_temp(block);
     if (block->id != 0) {
       emit_forget_rax(&state);
       fprintf(out, ":");
       emit_block_ref(out, fn->name, block->id);
       fputc('\n', out);
     }
-    emit_instrs(out, fn->name, &state, &locs, total_slots, block_instrs_ptr(block));
+    emit_instrs(out, fn->name, &state, &locs, total_slots, instrs, term_temp);
     emit_terminator(out, fn, i, &state, &locs, total_slots, block);
     i = i + 1;
   }
