@@ -1,0 +1,28 @@
+diff --git a/methodically.hs b/methodically.hs
+--- a/methodically.hs
++++ b/methodically.hs
+@@ -1603,6 +1603,13 @@
+-
++
+ |]
+-
++
++dispatchOrder = ["B","I","C","S","K","V","T","R","NUM","CONS","Q","EQ","LE","F","ADD","DIV","MOD","MUL","Y","SUB"]
++
++findComb name = maybe undefined id $ find ((name ==) . fst) comdefs
++
++dispatchDefs = map findComb dispatchOrder
++  ++ filter (\p -> not $ elem (fst p) dispatchOrder) comdefs
++
+ runFun = ([r|void run() {
+   unsigned x;
+   while(TRUE)
+@@ -1618,7 +1625,7 @@
+       sp[0] = mem[x];
+     }
+ |]++)
+-  . foldr (.) id (genComb <$> comdefs)
++  . foldr (.) id (genComb <$> dispatchDefs)
+   . ([r|
+   }
+ }

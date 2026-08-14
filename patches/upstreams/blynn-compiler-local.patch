@@ -125,7 +125,7 @@ index 812ccfa..434006b 100644
 +  *pa = y;
    return z;
  }
- 
+
  static void gc() {
    hp = 128;
    u di = hp;
@@ -154,7 +154,7 @@ index 812ccfa..434006b 100644
 @@ -99,23 +120,50 @@ static void gc() {
    altmem = tmp;
  }
- 
+
 -static inline u app(u f, u x) { mem[hp] = f; mem[hp + 1] = x; return (hp += 2) - 2; }
 -static inline u arg(u n) { return mem[sp [n] + 1]; }
 -static inline int num(u n) { return mem[arg(n) + 1]; }
@@ -202,7 +202,7 @@ index 812ccfa..434006b 100644
 +  *sp = x1;
 +}
  |]
- 
+
  -- Main VM loop.
  comdefsrc = [r|
  F x = "foreign(num(1));"
@@ -244,7 +244,7 @@ index 812ccfa..434006b 100644
  ERREND = "errexit(); return;"
 @@ -216,10 +264,10 @@ comEnum s = maybe (error s) id $ lookup s $ zip (fst <$> comdefs) [1..]
  comName i = maybe undefined id $ lookup i $ zip [1..] (fst <$> comdefs)
- 
+
  runFun = ([r|static void run() {
 -  for(;;) {
 -    if (mem + hp > sp - 8) gc();
@@ -265,7 +265,7 @@ index 812ccfa..434006b 100644
 +  for (u i = 0; i < prog_size; i = i + 1) { u *p = mem + hp * sizeof(u); *p = prog[i]; hp = hp + 1; }
 +  spTop = mem + (TOP - 1) * sizeof(u);
  }
- 
+
  void rts_reduce(u n) {
    static u ready;if (!ready){ready=1;rts_init();}
 -  *(sp = spTop) = app(app(n, _UNDEFINED), _END);
@@ -375,7 +375,7 @@ index 8e8fc90..5cb6f9b 100644
 +  *pa = y;
    return z;
  }
- 
+
  static void gc() {
    hp = 128;
    u di = hp;
@@ -404,7 +404,7 @@ index 8e8fc90..5cb6f9b 100644
 @@ -101,23 +122,50 @@ static void gc() {
    altmem = tmp;
  }
- 
+
 -static inline u app(u f, u x) { mem[hp] = f; mem[hp + 1] = x; return (hp += 2) - 2; }
 -static inline u arg(u n) { return mem[sp [n] + 1]; }
 -static inline int num(u n) { return mem[arg(n) + 1]; }
@@ -452,7 +452,7 @@ index 8e8fc90..5cb6f9b 100644
 +  *sp = x1;
 +}
  |]
- 
+
  -- Main VM loop.
  comdefsrc = [r|
  F x = "foreign(num(1));"
@@ -496,7 +496,7 @@ index 8e8fc90..5cb6f9b 100644
  ERREND = "errexit(); return;"
 @@ -232,10 +280,10 @@ static int div(int a, int b) { int q = a/b; return q - (((u)(a^b)) >> 31)*(q*b!=
  static int mod(int a, int b) { int r = a%b; return r + (((u)(a^b)) >> 31)*(!!r)*b; }
- 
+
  static void run() {
 -  for(;;) {
 -    if (mem + hp > sp - 8) gc();
@@ -517,7 +517,7 @@ index 8e8fc90..5cb6f9b 100644
 +  for (u i = 0; i < prog_size; i = i + 1) { u *p = mem + hp * sizeof(u); *p = prog[i]; hp = hp + 1; }
 +  spTop = mem + (TOP - 1) * sizeof(u);
  }
- 
+
  void rts_reduce(u n) {
    static u ready;if (!ready){ready=1;rts_init();}
 -  *(sp = spTop) = app(app(n, _UNDEFINED), _END);
@@ -621,7 +621,7 @@ index 54de649..d5c8c16 100644
 +  *pa = y;
    return z;
  }
- 
+
  static void gc() {
    hp = 128;
    u di = hp;
@@ -650,7 +650,7 @@ index 54de649..d5c8c16 100644
 @@ -109,33 +130,76 @@ static void gc() {
    altmem = tmp;
  }
- 
+
 -static inline u app(u f, u x) { mem[hp] = f; mem[hp + 1] = x; return (hp += 2) - 2; }
 -static inline u arg(u n) { return mem[sp [n] + 1]; }
 -static inline int num(u n) { return mem[arg(n) + 1]; }
@@ -731,7 +731,7 @@ index 54de649..d5c8c16 100644
 +static inline u ule(int x, int y) { return ite((u)x <= (u)y); }
 +static inline int ashr(int x, int y) { if (x < 0) return ~(~x >> y); return x >> y; }
  |]
- 
+
  -- Main VM loop.
  comdefsrc = [r|
  F x = "foreign(num(1));"
@@ -799,7 +799,7 @@ index 54de649..d5c8c16 100644
  ERREND = "errexit(); return;"
 @@ -274,10 +338,10 @@ static int div(int a, int b) { int q = a/b; return q - (((u)(a^b)) >> 31)*(q*b!=
  static int mod(int a, int b) { int r = a%b; return r + (((u)(a^b)) >> 31)*(!!r)*b; }
- 
+
  static void run() {
 -  for(;;) {
 -    if (mem + hp > sp - 8) gc();
@@ -834,10 +834,10 @@ index 54de649..d5c8c16 100644
 @@ -415,14 +479,14 @@ compileWith topSize libc opts mods = do
      . foldr (.) id (zipWith (\(expName, (_, ourType)) n -> ("EXPORT(f"++) . shows n . (", \""++) . (expName++) . ("\")\n"++) . genExport ourType n) (toAscList ffes) [0..])
      $ mainStr
- 
+
 -compile = compileWith "1<<24" libcHost []
 +compile = compileWith "16777216" libcHost []
- 
+
  declWarts = ([r|#define IMPORT(m,n) __attribute__((import_module(m))) __attribute__((import_name(n)));
  enum {
 -  ROOT_BASE = 1<<9,  // 0-terminated array of exported functions
@@ -859,7 +859,7 @@ index 54de649..d5c8c16 100644
 +  { u *p = mem + 127 * sizeof(u); hp = 128 + *p; }
 +  spTop = mem + (TOP - 1) * sizeof(u);
  }
- 
+
  // Export so we can later find it in the wasm binary.
 @@ -445,7 +509,8 @@ rtsReduce opts =
    . ([r|
@@ -961,9 +961,9 @@ index fd2d391..fe57c42 100644
 -SUSPEND = "*(sp = spTop) = app(app(arg(1), _UNDEFINED), _END); suspend_status = 0; return 1;"
 +SUSPEND = "sp = spTop; *sp = app(app(arg(1), _UNDEFINED), _END); suspend_status = 0; return 1;"
  |]
- 
+
  argList t = case t of
-@@ -214,123 +214,242 @@ runFun opts ffis = ("enum{_UNDEFINED=0,"++)
+@@ -214,123 +214,246 @@ runFun opts ffis = ("enum{_UNDEFINED=0,"++)
    . ("};\n"++)
    . ([r|#define EXPORT(f, sym) void f() asm(sym) __attribute__((export_name(sym)));
  void *malloc(unsigned long);
@@ -995,11 +995,15 @@ index fd2d391..fe57c42 100644
 +    rts_gc_count, rts_major_gc_count, rts_peak_hp, rts_peak_live,
 +    rts_peak_stack, rts_peak_scratch, TOP, HCC_RTS_ADAPTIVE_MAJOR_WORDS, PROGSZ, ROOTSZ);
 +}
++#define RTS_NOTE_HP rts_note_hp()
++#define RTS_NOTE_LIVE rts_note_live()
++#define RTS_NOTE_STACK rts_note_stack(usage)
++#define RTS_NOTE_SCRATCH rts_note_scratch()
 +#else
-+static void rts_note_hp() {}
-+static void rts_note_live() {}
-+static void rts_note_stack(u used) {}
-+static void rts_note_scratch() {}
++#define RTS_NOTE_HP 0
++#define RTS_NOTE_LIVE 0
++#define RTS_NOTE_STACK 0
++#define RTS_NOTE_SCRATCH 0
 +static void rts_report_stats() {}
 +#endif
  static inline u isAddr(u n) { return n>=128; }
@@ -1094,7 +1098,7 @@ index fd2d391..fe57c42 100644
    }
    return z;
  }
- 
+
  static u gc() {
 +#ifdef HCC_RTS_STATS
 +  rts_gc_count = rts_gc_count + 1;
@@ -1134,8 +1138,8 @@ index fd2d391..fe57c42 100644
      u x = *sp;
 -    if (isAddr(x)) *--sp = mem[x]; else return usage + hp + 8 >= TOP;
 +    if (isAddr(x)) { u *p = (u*)((char*)mem + x * sizeof(u)); sp = (u*)((char*)sp - sizeof(u)); *sp = *p; } else {
-+      rts_note_live();
-+      rts_note_stack(usage);
++      RTS_NOTE_LIVE;
++      RTS_NOTE_STACK;
 +      return usage + hp + 8 >= TOP;
 +    }
 +    usage = usage + 1;
@@ -1152,7 +1156,7 @@ index fd2d391..fe57c42 100644
 -static inline u app(u f, u x) { mem[hp] = f; mem[hp + 1] = x; return (hp += 2) - 2; }
 -static inline u arg(u n) { return mem[sp [n] + 1]; }
 -static inline int num(u n) { return mem[arg(n) + 1]; }
-+static inline u app(u f, u x) { u z = hp; u *p = (u*)((char*)mem + hp * sizeof(u)); *p = f; p = (u*)((char*)mem + (hp + 1) * sizeof(u)); *p = x; hp += 2; rts_note_hp(); return z; }
++static inline u app(u f, u x) { u z = hp; u *p = (u*)((char*)mem + hp * sizeof(u)); *p = f; p = (u*)((char*)mem + (hp + 1) * sizeof(u)); *p = x; hp += 2; RTS_NOTE_HP; return z; }
 +static inline u arg(u n) { u *p = (u*)((char*)sp + n * sizeof(u)); p = (u*)((char*)mem + (*p + 1) * sizeof(u)); return *p; }
 +static inline int num(u n) { u a = arg(n); u *p = (u*)((char*)mem + (a + 1) * sizeof(u)); return *p; }
  static inline void lazy2(u height, u f, u x) {
@@ -1198,7 +1202,7 @@ index fd2d391..fe57c42 100644
 +  uu *q = (uu*) p;
 +  *q = n;
 +  hp += 4;
-+  rts_note_hp();
++  RTS_NOTE_HP;
 +  return z;
  }
 -static inline u app64d(double d) { return app64uu(*((uu*) &d)); }
@@ -1260,11 +1264,11 @@ index fd2d391..fe57c42 100644
    }
 -  hp = heapptr - mem;
 +  hp = out;
-+  rts_note_hp();
++  RTS_NOTE_HP;
  }
  void vmrun() {
    u x = tagcheck(num(1));
-@@ -341,34 +626,47 @@ void vmrun() {
+@@ -341,34 +626,59 @@ void vmrun() {
  void vmgcroot() {
    gc();
    u *p = scratchpad;
@@ -1283,46 +1287,61 @@ index fd2d391..fe57c42 100644
  }
 -void vmscratch(u n) { *scratchpadend++ = n; }
 -void vmscratchroot(u n) { *scratchpadend++ = 2*n + 128 + 1; }
-+void vmscratch(u n) { *scratchpadend = n; scratchpadend = (u*)((char*)scratchpadend + sizeof(u)); rts_note_scratch(); }
-+void vmscratchroot(u n) { *scratchpadend = 2*n + 128 + 1; scratchpadend = (u*)((char*)scratchpadend + sizeof(u)); rts_note_scratch(); }
++void vmscratch(u n) { *scratchpadend = n; scratchpadend = (u*)((char*)scratchpadend + sizeof(u)); RTS_NOTE_SCRATCH; }
++void vmscratchroot(u n) { *scratchpadend = 2*n + 128 + 1; scratchpadend = (u*)((char*)scratchpadend + sizeof(u)); RTS_NOTE_SCRATCH; }
  |]++)
      . foldr (.) id (ffiDeclare opts <$> ffis)
      . ("static void foreign(u n) {\n  switch(n) {\n" ++)
      . foldr (.) id (zipWith ffiDefine [0..] ffis)
      . ("\n  }\n}\n" ++)
 -    . ("static u step(){u kibi=1<<10;do{" ++)
-+    . ("static u step(){u kibi=1024;do{" ++)
-     . giantSwitch
++    . (if "warts" `elem` opts then
++      ("static u step(){u kibi=1024;do{" ++)
++      . giantSwitch
++      . ("kibi = kibi - 1;}while(kibi);return 0;}\n" ++)
++      else id)
+-    . giantSwitch
 -    . ("}while(--kibi);return 0;}\n" ++)
 -    . ("static u run(){for(;;){" ++)
-+    . ("kibi = kibi - 1;}while(kibi);return 0;}\n" ++)
 +    . ("static u run(){while(1){" ++)
      . giantSwitch
      . ("}return 0;}\n" ++)
-     . ([r|
+-    . ([r|
 -void run_gas(u gas) { while(!suspend_status && gas--) suspend_status = step(); }
+-|]++)
++    . (if "warts" `elem` opts then ([r|
 +void run_gas(u gas) { while(!suspend_status && gas) { gas = gas - 1; suspend_status = step(); } }
- |]++)
++|]++) else id)
    . rtsInit opts
    . rtsReduce opts
- 
+
  giantSwitch = ([r|
 -  if (mem + hp > sp - 8 && gc()) return 3;
 +  if (hp - major_base >= HCC_RTS_ADAPTIVE_MAJOR_WORDS) {
-+    rts_note_hp();
++    RTS_NOTE_HP;
 +    if (gc()) return 3;
 +  }
 +  if ((u*)((char*)mem + hp * sizeof(u)) > (u*)((char*)sp - 8 * sizeof(u))) {
-+    rts_note_hp();
++    RTS_NOTE_HP;
 +    if (gc()) return 3;
 +  }
    u x = *sp;
 -  if (isAddr(x)) *--sp = mem[x]; else switch(x) {
-+  if (isAddr(x)) { u *p = (u*)((char*)mem + x * sizeof(u)); sp = (u*)((char*)sp - sizeof(u)); *sp = *p; } else switch(x) {
++  while (isAddr(x)) {
++    u *p = (u*)((char*)mem + x * sizeof(u));
++    sp = (u*)((char*)sp - sizeof(u));
++    x = *p;
++    *sp = x;
++    if ((u*)((char*)mem + hp * sizeof(u)) > sp) {
++      if (gc()) return 3;
++      x = *sp;
++    }
++  }
++  switch(x) {
  |]++)
    . foldr (.) id (genComb <$> comdefs)
    . ("  }\n"++)
-@@ -376,33 +677,58 @@ giantSwitch = ([r|
+@@ -376,33 +677,65 @@ giantSwitch = ([r|
  rtsInit opts
    | "warts" `elem` opts = ([r|void rts_init() {
    mem = (u*) HEAP_BASE;
@@ -1367,13 +1386,20 @@ index fd2d391..fe57c42 100644
    hp = 128;
 -  unsigned char *p = (void *)rootend;
 +  u *p = rootend;
++  u packed = 0, byte_count = 0;
    do {
      u n = 0, b = 0;
 -    for(;;) {
 -      u m = *p++;
 +    while(1) {
-+      u m = *p;
-+      p = (u*)((char*)p + sizeof(u));
++      if (!byte_count) {
++        packed = *p;
++        p = (u*)((char*)p + sizeof(u));
++        byte_count = 4;
++      }
++      u m = packed & 255;
++      packed = packed >> 8;
++      byte_count = byte_count - 1;
        n += (m & ~128) << b;
        if (m < 128) break;
        b += 7;
@@ -1393,7 +1419,7 @@ index fd2d391..fe57c42 100644
 +  major_base = hp;
  }
  |]++)
- 
+
 @@ -412,9 +763,12 @@ rtsReduce opts =
  |]++) else id)
    . ([r|
@@ -1406,10 +1432,10 @@ index fd2d391..fe57c42 100644
    . (if "pre-post-run" `elem` opts then ("pre_run();run();post_run();"++) else ("run();"++))
 +  . ("rts_report_stats();"++)
    . ("\n}\n"++)
- 
+
  -- Hash consing.
 @@ -532,10 +886,10 @@ getIOType q = Left $ "main : " ++ show q
- 
+
  libcWarts = ([r|#define IMPORT(m,n) __attribute__((import_module(m))) __attribute__((import_name(n)));
  enum {
 -  ROOT_BASE = 1<<9,  // 0-terminated array of exported functions
@@ -1422,7 +1448,21 @@ index fd2d391..fe57c42 100644
  };
  static u *root = (u*) ROOT_BASE, *vmroot, *rootend, *scratchpad, *scratchpadend;
  void errchar(int c) {}
-@@ -616,12 +970,13 @@ compile topSize libc opts s = do
+@@ -558,2 +912,13 @@ leb128Shows n
+   where w128 = wordFromInt 128
++leb128Bytes n
++  | n < w128 = [n]
++  | otherwise, (q, r) <- divMod n w128 = w128 + r : leb128Bytes q
++  where w128 = wordFromInt 128
++
++packBytes (a:b:c:d:rest) = a + b*wordFromInt 256 + c*wordFromInt 65536 + d*wordFromInt 16777216 : packBytes rest
++packBytes [a,b,c] = [a + b*wordFromInt 256 + c*wordFromInt 65536]
++packBytes [a,b] = [a + b*wordFromInt 256]
++packBytes [a] = [a]
++packBytes [] = []
++
+ topoModules tab seed = reverse <$> go [] [] (keys tab) where
+@@ -616,12 +981,13 @@ compile topSize libc opts s = do
      $ ("typedef unsigned u;\n"++)
      . ("enum{TOP="++) . (topSize++) . ("};\n"++)
      . ("enum{PROGSZ="++) . shows (length mem) . ("};\n"++)
@@ -1431,7 +1471,8 @@ index fd2d391..fe57c42 100644
 +    . ("enum{ROOTSZ="++) . shows (size ffes) . ("};\n"++)
 +    . ("static u root8[]={" ++)
 +    . foldr (.) id (map (\(addr, _) -> shows addr . (", "++)) $ elems ffes)
-     . foldr (.) id (leb128Shows . wordFromInt <$> mem)
+-    . foldr (.) id (leb128Shows . wordFromInt <$> mem)
++    . foldr (.) id (map (\n -> shows n . (", "++)) $ packBytes $ concatMap (leb128Bytes . wordFromInt) mem)
      . ("};\n"++)
 -    . ("static u *root = (u*)root8, *rootend = ((u*)root8) + " ++) . shows (size ffes) . (", *vmroot;\n" ++)
 -    . ("u scratchpad[1<<20], *scratchpadend = scratchpad;\n" ++)
@@ -1457,7 +1498,7 @@ index b1748f4..3345da3 100644
 @@ -11,11 +11,11 @@ infixl 2 ||
  infixl 1 >> , >>=
  infixr 0 $
- 
+
 -foreign import ccall "putchar_shim" putChar :: Char -> IO ()
 -foreign import ccall "getchar_shim" getChar :: IO Char
 -foreign import ccall "eof_shim" isEOFInt :: IO Int
@@ -1468,7 +1509,7 @@ index b1748f4..3345da3 100644
 +ffi "eof_shim" isEOFInt :: IO Int
 +ffi "getargcount" getArgCount :: IO Int
 +ffi "getargchar" getArgChar :: Int -> Int -> IO Char
- 
+
  libc = [r|#include<stdio.h>
  static int env_argc;
 @@ -1479,7 +1479,7 @@ arrCount = \case
@@ -1599,7 +1640,7 @@ index b1748f4..3345da3 100644
 +  *pa = y;
    return z;
  }
- 
+
  static void gc() {
    hp = 128;
    u di = hp;
@@ -1628,7 +1669,7 @@ index b1748f4..3345da3 100644
 @@ -1586,24 +1607,51 @@ static void gc() {
    altmem = tmp;
  }
- 
+
 -static inline u app(u f, u x) { mem[hp] = f; mem[hp + 1] = x; return (hp += 2) - 2; }
 -static inline u arg(u n) { return mem[sp [n] + 1]; }
 -static inline int num(u n) { return mem[arg(n) + 1]; }
@@ -1676,7 +1717,7 @@ index b1748f4..3345da3 100644
 +  *sp = x1;
 +}
  |]
- 
+
  runFun = ([r|static void run() {
 -  for(;;) {
 -    if (mem + hp > sp - 8) gc();
@@ -1697,7 +1738,7 @@ index b1748f4..3345da3 100644
 +  for (u i = 0; i < prog_size; i = i + 1) { u *p = mem + hp * sizeof(u); *p = prog[i]; hp = hp + 1; }
 +  spTop = mem + (TOP - 1) * sizeof(u);
  }
- 
+
  void rts_reduce(u n) {
    static u ready;if (!ready){ready=1;rts_init();}
 -  *(sp = spTop) = app(app(n, _UNDEFINED), _END);

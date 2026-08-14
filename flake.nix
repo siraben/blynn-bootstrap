@@ -87,6 +87,9 @@
         blynnSrc = patchedUpstreamSource {
           name = "oriansj-blynn-compiler-hcc";
           src = upstreamSources.oriansjBlynnCompiler;
+          patches = [
+            (upstreamPatches + "/oriansj-blynn-methodically-dispatch.patch")
+          ];
         };
         blynnUpstreamSrc = patchedUpstreamSource {
           name = "blynn-compiler-hcc";
@@ -94,7 +97,9 @@
           patches = [
             (upstreamPatches + "/blynn-compiler-local.patch")
             (upstreamPatches + "/blynn-compiler-crossly-perf.patch")
+            (upstreamPatches + "/blynn-compiler-rts1-vm-speed.patch")
             (upstreamPatches + "/blynn-compiler-rts2-vm-speed.patch")
+            (upstreamPatches + "/blynn-compiler-rts-precisely-speed.patch")
           ];
         };
         m2libcSrc = "${blynnSrc}/M2libc";
