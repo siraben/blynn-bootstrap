@@ -1,3 +1,38 @@
+diff --git a/inn/ParserPrecisely.hs b/inn/ParserPrecisely.hs
+index 16dae41..f88663e 100644
+--- a/inn/ParserPrecisely.hs
++++ b/inn/ParserPrecisely.hs
+@@ -12,18 +12,22 @@ data ParserState = ParserState
+   , openClose :: (Bool, Bool)
+   } deriving Show
+ data Parser a = Parser { getParser :: ParserState -> Either (String, ParserState) (a, ParserState) }
+-instance Functor Parser where fmap f x = pure f <*> x
++instance Functor Parser where
++  fmap f (Parser x) = Parser \inp -> case x inp of
++    Left err -> Left err
++    Right (a, t) -> Right (f a, t)
+ instance Applicative Parser where
+   pure x = Parser \inp -> Right (x, inp)
+-  (Parser f) <*> (Parser x) = Parser \inp -> do
+-    (fun, t) <- f inp
+-    (arg, u) <- x t
+-    pure (fun arg, u)
++  (Parser f) <*> (Parser x) = Parser \inp -> case f inp of
++    Left err -> Left err
++    Right (fun, t) -> case x t of
++      Left err -> Left err
++      Right (arg, u) -> Right (fun arg, u)
+ instance Monad Parser where
+   return = pure
+-  (Parser x) >>= f = Parser \inp -> do
+-    (a, t) <- x inp
+-    getParser (f a) t
++  (Parser x) >>= f = Parser \inp -> case x inp of
++    Left err -> Left err
++    Right (a, t) -> getParser (f a) t
+ instance Alternative Parser where
+   empty = bad ""
+   x <|> y = Parser \inp -> case getParser x inp of
 diff --git a/inn/RTS.hs b/inn/RTS.hs
 index 812ccfa..434006b 100644
 --- a/inn/RTS.hs
