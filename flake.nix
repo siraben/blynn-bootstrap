@@ -1186,6 +1186,11 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
         hcc-mescc-tests = hccMesccTestsFor "hcc-mescc-tests" hccBy.m2.precisely.m2 "amd64";
         hcc-mescc-tests-native = hccMesccTestsFor "hcc-mescc-tests-host-ghc-native" hccBy.host.ghc.native nativeM1Target;
 
+        hcc-golden-tests = pkgs.callPackage ./nix/hcc-golden-tests.nix {
+          stdenvNoCC = rawStdenvNoCC;
+          hcc = hccBy.m2.precisely.m2;
+        };
+
         hcc-tinycc-tests2-stat = pkgs.callPackage ./nix/hcc-tinycc-tests2-stat.nix {
           inherit (pkgs) stdenvNoCC fetchgit python3;
           hcc = hccBy.host.ghc.native;
@@ -1251,6 +1256,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             host.ghc.native.smoke.m1-aarch64 = hcc-m1-smoke-native-aarch64;
             host.ghc.native.smoke.m1-riscv64 = hcc-m1-smoke-native-riscv64;
             host.ghc.native.mescc = hcc-mescc-tests-native;
+            hcc.golden = hcc-golden-tests;
             hcc.tinycc-tests2-stat = hcc-tinycc-tests2-stat;
             host.ghc.native.tinycc-riscv64 = tinyccBy.riscv64.host.ghc.native;
             precisely.dialect = precisely-dialect-tests;
@@ -1261,6 +1267,8 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
         packages = {
           default = packageTree.default;
         };
+
+        checks.hcc-golden = hcc-golden-tests;
 
         legacyPackages = packageTree;
 

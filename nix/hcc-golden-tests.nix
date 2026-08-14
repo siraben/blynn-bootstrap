@@ -2,6 +2,7 @@
   stdenvNoCC,
   lib,
   hcc,
+  bash,
   coreutils,
   diffutils,
   gnused,
@@ -21,6 +22,7 @@ stdenvNoCC.mkDerivation (
 
     nativeBuildInputs = [
       hcc
+      bash
       coreutils
       diffutils
       gnused
@@ -32,7 +34,8 @@ stdenvNoCC.mkDerivation (
       export HCPP=${hcc}/bin/hcpp
       export HCC1=${hcc}/bin/hcc1
       export HCC_M1=${hcc}/bin/hcc-m1
-      sh ${../tests/hcc/golden/run.sh} ${../tests/hcc/golden}
+      WORK_DIR="$PWD/golden-work" \
+        ${bash}/bin/sh ${../tests/hcc/golden/run.sh} ${../tests/hcc/golden}
 
       runHook postBuild
     '';
