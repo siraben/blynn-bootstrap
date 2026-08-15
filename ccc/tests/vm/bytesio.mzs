@@ -1,0 +1,40 @@
+; bytes_create/setbytes/getbytes plus a data global; prints "HI!\nDATA\n".
+(globals 2)
+(data "DATA\n")
+
+; b = bytes_create 4; fill "HI!\n"
+(const 4) (push) (ccall 1 bytes_create)
+(push)                          ; stack: [b]
+(acc 0) (push) (const 0) (push) (const 'H') (setbytes)
+(acc 0) (push) (const 1) (push) (const 'I') (setbytes)
+(acc 0) (push) (const 2) (push) (const '!') (setbytes)
+(acc 0) (push) (const 3) (push) (const 10) (setbytes)
+; write b[0..3]
+(const 0) (push)                ; i; stack: [b, i]
+(:wloop)
+(acc 0) (push) (acc 2) (push) (ccall 1 bytes_length) (ltint) (branchifnot :next)
+(const 1) (push)                ; handle; stack: [b, i, 1]
+(acc 2) (push)                  ; b
+(acc 2)                         ; i
+(getbytes) (push)               ; stack: [b, i, 1, b[i]]
+(ccall 2 write_byte)
+(acc 0) (push) (const 1) (addint) (assign 0)
+(branch :wloop)
+
+(:next)
+(pop 2)
+; write global 0 the same way
+(getglobal 0) (push)
+(const 0) (push)
+(:dloop)
+(acc 0) (push) (acc 2) (push) (ccall 1 bytes_length) (ltint) (branchifnot :done)
+(const 1) (push)                ; handle; stack: [g, i, 1]
+(acc 2) (push)                  ; g
+(acc 2)                         ; i
+(getbytes) (push)
+(ccall 2 write_byte)
+(acc 0) (push) (const 1) (addint) (assign 0)
+(branch :dloop)
+
+(:done)
+(const 0) (stop)

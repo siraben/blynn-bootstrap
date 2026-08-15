@@ -1,26 +1,29 @@
 # blynn-bootstrap
 
-A Nix bootstrap chain that replaces the MesCC edge in nixpkgs'
-minimal-bootstrap path with `hcc`, a C compiler written in Blynn's
-`precisely` Haskell dialect.
+A Nix bootstrap chain for auditable stage0, HCC, and CCC compiler paths.
+The repository keeps the existing Blynn/HCC path and adds CCC, a C compiler
+written in a small ML dialect and bootstrapped on an M2-built bytecode VM.
 
 The goal is an auditable path from the stage0 seed tools to TinyCC and then
-through the usual minimal-bootstrap GCC chain.
+through the usual minimal-bootstrap GCC chain. The CCC path is currently a
+frontend replacement: it emits textual HCCIR and reuses the M2-buildable
+`hcc-m1` backend. Direct M1 emission is a follow-up milestone.
 
 ## Status
 
-- `precisely_up` is built from the Blynn bootstrap chain, including a
-  stage0/M2-Planet path.
-- `hcc` is split into `hcpp`, `hcc1`, and `hcc-m1`. `hcpp` preprocesses C,
-  `hcc1` lowers preprocessed C to M1 IR, and `hcc-m1` writes M1 assembly for
-  the stage0 `M1`/`hex2` tools.
-- `tinycc.m2.precisely.m2` builds TinyCC through the stage0-built
-  `precisely_up` and HCC path.
-- `gcc46.m2.precisely.m2` has built successfully from the HCC-built TinyCC.
-- The rest of nixpkgs' minimal-bootstrap chain is exposed as flake targets:
-  `gcc46Cxx`, `gcc10`, `gccLatest`, `glibc`, and `gccGlibc`.
-- HCC emits stage0 M1 for amd64 and i386 smoke targets. The full TinyCC
-  bootstrap path is still wired for amd64.
+- The Blynn/HCC path remains available through `precisely_up`, `hcpp`,
+  `hcc1`, and `hcc-m1`.
+- The CCC path builds `mzvm`, the staged ML compilers, `ccpp`, `ccc1`, and the
+  existing `hcc-m1` backend from M2-Planet. Its phase-boundary output is
+  compared byte-for-byte with HCC on the checked-in fixtures.
+- `ccc.asHcc`, `ccc.chain`, `ccc.tinycc`, and `ccc.tinyccM1` expose the CCC
+  derivations. `tests.ccc.golden` runs the required CCC golden and target
+  checks.
+- The existing `tinycc.m2.precisely.m2` and related GCC targets continue to
+  describe the Blynn/HCC path.
+- CCC target plumbing is covered for amd64, aarch64, riscv64, and i386. The
+  portable smoke path is documented for amd64 and aarch64; its TinyCC
+  self-host fixpoint is currently enabled only on amd64.
 
 ## Layout
 
@@ -30,6 +33,7 @@ nix/                              # derivations and bootstrap patches
 scripts/                          # portable bootstrap drivers, independent of Nix
 hcc/                              # HCC sources and smoke fixtures
 hcc/*.modules                     # ordered source manifests for Blynn stages
+ccc/                              # CCC sources, ML stages, VM, and tests
 tests/                            # HCC and MesCC reference tests
 upstream/                         # pinned upstream mirrors used to refresh patches
 ```
@@ -52,6 +56,34 @@ nix build .#gccLatest.m2.precisely.gccm2
 `nix develop` provides the GHC-built HCC tools for local profiling and
 byte-for-byte output checks. Upstream Blynn and Mes sources are fetched by
 fixed-output derivations and patched with `patches/upstreams`.
+
+## Downstream Overlay
+
+Downstream flakes can use `nixpkgsArgs.default` to import nixpkgs with its
+`minimal-bootstrap` and `stdenv` rooted in the stage0/M2 `blynn-bootstrap`
+chain. Normal nixpkgs packages, such as `pkgs.hello`, then use nixpkgs'
+own package expressions:
+
+```nix
+{
+  inputs.blynn-bootstrap.url = "github:siraben/blynn-bootstrap";
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+
+  outputs = { nixpkgs, blynn-bootstrap, ... }:
+    let
+      system = "x86_64-linux";
+      pkgs = import nixpkgs (blynn-bootstrap.nixpkgsArgs.default system);
+    in {
+      packages.${system}.default = pkgs.hello;
+    };
+}
+```
+
+The default args also apply `overlays.default`, which exposes this flake's
+bootstrap package tree at `pkgs.blynn-bootstrap` and replaces nixpkgs'
+`minimal-bootstrap` with `pkgs.blynn-bootstrap.trustRoots.m2.precisely.m2.minimal`.
+If a consumer only wants the namespace and does not want stdenv replacement,
+use `blynn-bootstrap.overlays.packages`.
 
 ## Portable Bootstrap
 

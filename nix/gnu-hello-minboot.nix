@@ -18,7 +18,6 @@ stdenvNoCC.mkDerivation (
   }
   // nixLib.scriptOnly
   // {
-
     src = fetchurl {
       url = "mirror://gnu/hello/hello-2.12.3.tar.gz";
       hash = "sha256-DV9gFUOC/uELEUocNOeF2LH0kgc64tOm97FHaHs2aqA=";
@@ -42,7 +41,6 @@ stdenvNoCC.mkDerivation (
 
     buildPhase = ''
       runHook preBuild
-
       export PATH="${bootstrap.coreutils-musl}/bin:${bootstrap.gnused}/bin:${bootstrap.gnugrep}/bin:${bootstrap.gawk}/bin:${bootstrap.findutils}/bin:${bootstrap.gnumake}/bin:${bootstrap.gnutar}/bin:${bootstrap.gzip}/bin:${bootstrap.xz}/bin:$PATH"
       export CONFIG_SHELL="${bootstrap.bash}/bin/bash"
       export SHELL="$CONFIG_SHELL"
@@ -59,16 +57,13 @@ stdenvNoCC.mkDerivation (
         --host="${hostPlatform.config}" \
         --disable-nls
       make
-
       runHook postBuild
     '';
 
     installPhase = ''
       runHook preInstall
-
       make install
       "$out/bin/hello" --version
-
       runHook postInstall
     '';
   }

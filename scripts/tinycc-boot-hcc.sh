@@ -221,6 +221,10 @@ EOF
 
   ./tcc -B bootstrap-libs -I . -I include -I "$mes_libc/include" $(tcc_defs "$include_dir") tcc.c -o tcc-stage2
   ./tcc-stage2 -B bootstrap-libs -I . -I include -I "$mes_libc/include" $(tcc_defs "$include_dir") tcc.c -o tcc-stage3
+  # self-host fixpoint: a tcc built by tcc must rebuild itself byte-for-byte
+  if ! cmp -s tcc-stage2 tcc-stage3; then
+    die "tcc self-host fixpoint failed: tcc-stage2 != tcc-stage3"
+  fi
   build_libs ./tcc-stage3 final-libs
 
   cp tcc-stage2 "$bin_dir/tcc-stage2"
