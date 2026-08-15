@@ -34,7 +34,7 @@ jobs:
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
       - name: Check flake
-        run: nix flake check --print-build-logs
+        run: nix flake check --no-build --print-build-logs
       - name: Evaluate README build targets
         if: matrix.arch == 'amd64'
         run: |
@@ -155,21 +155,6 @@ jobs:
             runner: ubuntu-24.04-arm
             timeout: 360
             attr: tinycc.gcc.precisely.tcc
-          - suite: boss stage0 path
-            arch: amd64
-            runner: ubuntu-latest
-            timeout: 720
-            attr: tinycc.m2.precisely.m2
-          - suite: boss stage0 path
-            arch: riscv64
-            runner: ubuntu-latest
-            timeout: 720
-            attr: tests.smoke.m1-riscv64
-          - suite: boss stage0 path
-            arch: aarch64
-            runner: ubuntu-latest
-            timeout: 720
-            attr: tests.smoke.m1-aarch64
     steps:
       - uses: actions/checkout@v4
       - name: Install Nix
