@@ -1,0 +1,17 @@
+--- a/gcc/libgcc2.c
++++ b/gcc/libgcc2.c
+@@ -1249,0 +1250,14 @@ __fixxfdi (XFtype a)
++#if defined(L_fixxfdi) && LIBGCC2_HAS_XF_MODE && LIBGCC2_UNITS_PER_WORD == 8
++/* On 64-bit targets GCC maps the libgcc2 "di" double-word helper name to
++   the "ti" symbol.  The seed musl libc in this bootstrap chain was built by
++   TCC and references the conventional signed XFmode-to-DImode helper name. */
++#undef __fixxfdi
++extern DWtype __fixxfti (XFtype);
++
++DItype
++__fixxfdi (XFtype a)
++{
++  return (DItype) __fixxfti (a);
++}
++#endif
++

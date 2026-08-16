@@ -10,36 +10,74 @@ import TypesIr
 import Lower
 import LowerBootstrap
 import LowerImplicit
+import SymbolTable
 
 data CodegenError = CodegenError String
 
-emitM1IrWithDataPrefixTarget :: (String -> IO ()) -> String -> Int -> Program -> IO (Either CodegenError ())
-emitM1IrWithDataPrefixTarget write prefix target ast =
-  case buildM1IrModuleWithDataPrefixTarget prefix target ast of
+emitM1IrWithDataPrefixTarget :: (String -> IO ()) -> String -> Int -> Bool -> Program -> IO (Either CodegenError ())
+emitM1IrWithDataPrefixTarget write prefix target softFloatRuntime ast =
+  case buildM1IrModuleWithDataPrefixTarget prefix target softFloatRuntime ast of
     Left err -> pure (Left err)
     Right ir -> do
       write "HCCIR 1"
       emitModuleIr write ir
       pure (Right ())
 
-buildM1IrModuleWithDataPrefixTarget :: String -> Int -> Program -> Either CodegenError ModuleIr
-buildM1IrModuleWithDataPrefixTarget prefix target ast = case ast of
+buildM1IrModuleWithDataPrefixTarget :: String -> Int -> Bool -> Program -> Either CodegenError ModuleIr
+buildM1IrModuleWithDataPrefixTarget prefix target softFloatRuntime ast = case ast of
   Program decls ->
-    case mapCompileRun (runCompileM registerBuiltinStructs (initialCompileStateForTarget prefix target)) of
+    case mapCompileRun (runCompileM registerBuiltinStructs (initialCompileStateForTarget prefix target softFloatRuntime)) of
       Left err -> Left err
       Right (_, st0) ->
-        case registerTopDeclsIr st0 decls of
+        case mapCompileRun (runCompileM (registerInternalAliases prefix decls) st0) of
           Left err -> Left err
-          Right (st, registeredItems) ->
-            case lowerTopDeclsIr st decls of
+          Right (_, stAliases) ->
+            case registerTopDeclsIr stAliases decls of
               Left err -> Left err
-              Right (_, functionItems) -> Right (ModuleIr (registeredItems ++ functionItems))
+              Right (st, registeredItems) ->
+                case lowerTopDeclsIr st decls of
+                  Left err -> Left err
+                  Right (_, functionItems) ->
+                    normalizeAddressAddends target (ModuleIr (registeredItems ++ functionItems))
+
+registerInternalAliases :: String -> [TopDecl] -> CompileM ()
+registerInternalAliases prefix decls = case decls of
+  [] -> pure ()
+  decl:rest -> do
+    registerInternalAlias prefix decl
+    registerInternalAliases prefix rest
+
+registerInternalAlias :: String -> TopDecl -> CompileM ()
+registerInternalAlias prefix decl = case decl of
+  Function InternalLinkage _ name _ _ ->
+    bindSymbolAlias name (internalSymbolName prefix name)
+  Prototype InternalLinkage _ name _ ->
+    bindSymbolAlias name (internalSymbolName prefix name)
+  Global InternalLinkage _ name _ ->
+    bindSymbolAlias name (internalSymbolName prefix name)
+  Globals InternalLinkage globals ->
+    registerInternalGlobalAliases prefix globals
+  _ -> pure ()
+
+registerInternalGlobalAliases :: String -> [(CType, String, Maybe Expr)] -> CompileM ()
+registerInternalGlobalAliases prefix globals = case globals of
+  [] -> pure ()
+  (_, name, _):rest -> do
+    bindSymbolAlias name (internalSymbolName prefix name)
+    registerInternalGlobalAliases prefix rest
+
+internalSymbolName :: String -> String -> String
+internalSymbolName prefix name = "HCC_INTERNAL_" ++ prefix ++ "_" ++ name
 
 lowerTopDeclsIr :: CompileState -> [TopDecl] -> Either CodegenError (CompileState, [TopItemIr])
 lowerTopDeclsIr st decls = case decls of
   [] -> Right (st, [])
-  Function _ name params body:rest ->
-    case mapCompileRun (runCompileM (registerImplicitCalls (map (\(Param _ paramName) -> paramName) params) body >> lowerFunction name params body) st) of
+  Function _ _ name params body:rest ->
+    case mapCompileRun (runCompileM (do
+      resolved <- resolveSymbolName name
+      registerImplicitCalls (map (\(Param _ paramName) -> paramName) params) body
+      fn <- lowerFunction name params body
+      pure (renameFunctionIr resolved fn)) st) of
       Left err -> Left err
       Right (fn, st') ->
         case pendingDataItemsIr st' of
@@ -62,13 +100,20 @@ registerTopDeclsIr st decls = case decls of
 
 registerTopDeclIr :: CompileState -> TopDecl -> Either CodegenError (CompileState, [TopItemIr])
 registerTopDeclIr st decl = case decl of
-  Global ty name initExpr ->
-    case mapCompileRun (runCompileM (registerTypeAggregates ty >> bindGlobal name ty >> globalData ty initExpr) st) of
+  Global _ declaredTy name initExpr ->
+    let ty = completeObjectType declaredTy initExpr
+    in
+    case mapCompileRun (runCompileM (do
+      registerTypeAggregates ty
+      bindGlobal name ty
+      values <- withErrorContext ("global " ++ name) (globalData ty initExpr)
+      resolved <- resolveSymbolName name
+      pure (resolved, values)) st) of
       Left err -> Left err
-      Right (values, st') -> do
+      Right ((resolved, values), st') -> do
         case pendingDataItemsIr st' of
-          (pending, st'') -> Right (st'', TopData (DataItem name values) : pending)
-  Globals globals ->
+          (pending, st'') -> Right (st'', TopData (DataItem resolved values) : pending)
+  Globals _ globals ->
     registerGlobalsIr st globals
   _ ->
     case mapCompileRun (registerTopDeclShallowState st decl) of
@@ -77,9 +122,9 @@ registerTopDeclIr st decl = case decl of
 
 registerTopDeclShallowState :: CompileState -> TopDecl -> Either CompileError ((), CompileState)
 registerTopDeclShallowState st decl = case decl of
-  Function ty name params _ ->
+  Function _ ty name params _ ->
     runCompileM (registerFunctionDecl ty name params) st
-  Prototype ty name params ->
+  Prototype _ ty name params ->
     runCompileM (registerFunctionDecl ty name params) st
   StructDecl isUnion name fields ->
     runCompileM (registerFieldAggregates fields >> bindStruct name isUnion fields) st
@@ -101,15 +146,26 @@ registerFunctionDecl ty name params = do
 registerGlobalsIr :: CompileState -> [(CType, String, Maybe Expr)] -> Either CodegenError (CompileState, [TopItemIr])
 registerGlobalsIr st globals = case globals of
   [] -> Right (st, [])
-  (ty, name, initExpr):rest ->
-    case mapCompileRun (runCompileM (registerTypeAggregates ty >> bindGlobal name ty >> globalData ty initExpr) st) of
+  (declaredTy, name, initExpr):rest ->
+    let ty = completeObjectType declaredTy initExpr
+    in
+    case mapCompileRun (runCompileM (do
+      registerTypeAggregates ty
+      bindGlobal name ty
+      values <- withErrorContext ("global " ++ name) (globalData ty initExpr)
+      resolved <- resolveSymbolName name
+      pure (resolved, values)) st) of
       Left err -> Left err
-      Right (values, st') ->
+      Right ((resolved, values), st') ->
         case pendingDataItemsIr st' of
           (pending, st'') ->
             case registerGlobalsIr st'' rest of
               Left err -> Left err
-              Right (stFinal, restItems) -> Right (stFinal, TopData (DataItem name values) : pending ++ restItems)
+              Right (stFinal, restItems) -> Right (stFinal, TopData (DataItem resolved values) : pending ++ restItems)
+
+renameFunctionIr :: String -> FunctionIr -> FunctionIr
+renameFunctionIr resolved fn = case fn of
+  FunctionIr _ blocks -> FunctionIr resolved blocks
 
 pendingDataItemsIr :: CompileState -> ([TopItemIr], CompileState)
 pendingDataItemsIr st = case csDataItems st of
@@ -150,7 +206,8 @@ emitDataValuesIr write values = case values of
 dataValueIrLine :: DataValue -> String
 dataValueIrLine value = case value of
   DByte byte -> "b " ++ show byte
-  DAddress label -> "a " ++ label
+  DAddress label offset -> "a " ++ label ++ " " ++ show offset
+  DLabel label -> "l " ++ label
 
 zeroRun :: [DataValue] -> (Int, [DataValue])
 zeroRun values = case values of
@@ -158,6 +215,140 @@ zeroRun values = case values of
     case zeroRun rest of
       (count, tailValues) -> (count + 1, tailValues)
   _ -> (0, values)
+
+normalizeAddressAddends :: Int -> ModuleIr -> Either CodegenError ModuleIr
+normalizeAddressAddends target ir = case ir of
+  ModuleIr items ->
+    let refs = addressAddendRefsTopItems items
+        word = if target == 32 then 4 else 8
+    in case normalizeAddressAddendTopItems word refs items of
+      Left err -> Left err
+      Right normalized -> Right (ModuleIr normalized)
+
+addressAddendRefsTopItems :: [TopItemIr] -> SymbolMap [Int]
+addressAddendRefsTopItems = collectTopItems symbolMapEmpty
+
+collectTopItems :: SymbolMap [Int] -> [TopItemIr] -> SymbolMap [Int]
+collectTopItems refs items = case items of
+  [] -> refs
+  TopData (DataItem _ values):rest ->
+    collectTopItems (collectDataValues refs values) rest
+  _:rest -> collectTopItems refs rest
+
+collectDataValues :: SymbolMap [Int] -> [DataValue] -> SymbolMap [Int]
+collectDataValues refs values = case values of
+  [] -> refs
+  DAddress label offset:rest ->
+    if offset == 0
+      then collectDataValues refs rest
+      else
+        let offsets = case symbolMapLookup label refs of
+              Nothing -> []
+              Just existing -> existing
+            refs' = symbolMapInsert label (insertOffset offset offsets) refs
+        in collectDataValues refs' rest
+  _:rest -> collectDataValues refs rest
+
+normalizeAddressAddendTopItems :: Int -> SymbolMap [Int] -> [TopItemIr] -> Either CodegenError [TopItemIr]
+normalizeAddressAddendTopItems word refs items = case items of
+  [] -> Right []
+  TopData item:rest ->
+    case normalizeAddressAddendDataItem word refs item of
+      Left err -> Left err
+      Right normalizedItem ->
+        case normalizeAddressAddendTopItems word refs rest of
+          Left err -> Left err
+          Right normalizedRest -> Right (TopData normalizedItem : normalizedRest)
+  TopFunction fn:rest ->
+    case normalizeAddressAddendTopItems word refs rest of
+      Left err -> Left err
+      Right normalizedRest -> Right (TopFunction fn : normalizedRest)
+
+normalizeAddressAddendDataItem :: Int -> SymbolMap [Int] -> DataItem -> Either CodegenError DataItem
+normalizeAddressAddendDataItem word refs item = case item of
+  DataItem label values ->
+    let offsets = case symbolMapLookup label refs of
+          Nothing -> []
+          Just existing -> existing
+        size = dataValuesSize word values
+    in case validateOffsets word label size values offsets of
+      Left err -> Left err
+      Right () -> Right (DataItem label (rewriteAddressAddends (insertInteriorLabels word label offsets 0 values)))
+
+insertOffset :: Int -> [Int] -> [Int]
+insertOffset value values = case values of
+  [] -> [value]
+  x:xs ->
+    if value == x
+      then values
+      else if value < x
+        then value : values
+        else x : insertOffset value xs
+
+validateOffsets :: Int -> String -> Int -> [DataValue] -> [Int] -> Either CodegenError ()
+validateOffsets word label size values offsets = case offsets of
+  [] -> Right ()
+  offset:rest ->
+    if offset < 0 || offset > size
+      then Left (CodegenError ("global address initializer points outside data object " ++ label))
+      else if not (offsetIsDataBoundary word offset 0 values)
+        then Left (CodegenError ("global address initializer points inside an indivisible data value in " ++ label))
+        else validateOffsets word label size values rest
+
+offsetIsDataBoundary :: Int -> Int -> Int -> [DataValue] -> Bool
+offsetIsDataBoundary word offset pos values =
+  if offset == pos
+    then True
+    else case values of
+      [] -> False
+      value:rest -> offsetIsDataBoundary word offset (pos + dataValueSize word value) rest
+
+insertInteriorLabels :: Int -> String -> [Int] -> Int -> [DataValue] -> [DataValue]
+insertInteriorLabels word label offsets pos values =
+  let (here, later) = splitOffsetsAt pos offsets
+      labels = dataInteriorLabels label here
+  in case values of
+    [] -> labels
+    value:rest ->
+      let next = pos + dataValueSize word value
+      in labels ++ value : insertInteriorLabels word label later next rest
+
+splitOffsetsAt :: Int -> [Int] -> ([Int], [Int])
+splitOffsetsAt pos offsets = case offsets of
+  [] -> ([], [])
+  offset:rest ->
+    if offset == pos
+      then case splitOffsetsAt pos rest of
+        (same, later) -> (offset:same, later)
+      else ([], offsets)
+
+dataInteriorLabels :: String -> [Int] -> [DataValue]
+dataInteriorLabels label offsets = case offsets of
+  [] -> []
+  offset:rest -> DLabel (dataInteriorLabel label offset) : dataInteriorLabels label rest
+
+rewriteAddressAddends :: [DataValue] -> [DataValue]
+rewriteAddressAddends values = case values of
+  [] -> []
+  DAddress label offset:rest ->
+    if offset == 0
+      then DAddress label 0 : rewriteAddressAddends rest
+      else DAddress (dataInteriorLabel label offset) 0 : rewriteAddressAddends rest
+  value:rest -> value : rewriteAddressAddends rest
+
+dataInteriorLabel :: String -> Int -> String
+dataInteriorLabel label offset = "HCC_DATA_" ++ label ++ "_" ++ show offset
+
+dataValuesSize :: Int -> [DataValue] -> Int
+dataValuesSize word values = case values of
+  [] -> 0
+  value:rest -> dataValueSize word value + dataValuesSize word rest
+
+dataValueSize :: Int -> DataValue -> Int
+dataValueSize word value = case value of
+  DByte _ -> 1
+  DAddress _ _ -> word
+  DLabel _ -> 0
 
 emitFunctionIr :: (String -> IO ()) -> FunctionIr -> IO ()
 emitFunctionIr write fn = case fn of
@@ -200,6 +391,9 @@ emitInstrIr write instr = case instr of
   ISExt temp size op -> emitExt write 22 temp size op
   IZExt temp size op -> emitExt write 23 temp size op
   ITrunc temp size op -> emitExt write 24 temp size op
+  IVaStart temp fixed -> write ("25 " ++ tempText temp ++ " " ++ show fixed)
+  IVaEnd temp -> write ("26 " ++ tempText temp)
+  IVaOverflow temp -> write ("27 " ++ tempText temp)
   IBin temp op left right -> write ("18 " ++ tempText temp ++ " " ++ show (binOpCode op) ++ " " ++ operandIrFields left ++ " " ++ operandIrFields right)
   ICall result name args -> write ("19 " ++ maybe "-" tempText result ++ " " ++ name ++ " " ++ listIrFields operandIrFields args)
   ICallIndirect result callee args -> write ("20 " ++ maybe "-" tempText result ++ " " ++ operandIrFields callee ++ " " ++ listIrFields operandIrFields args)

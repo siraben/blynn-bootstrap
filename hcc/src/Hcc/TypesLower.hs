@@ -1,6 +1,5 @@
 module TypesLower
   ( LValue(..)
-  , SwitchClause(..)
   ) where
 
 import Base
@@ -10,5 +9,4 @@ import TypesIr
 data LValue
   = LLocal Temp CType
   | LAddress Operand CType
-
-data SwitchClause = SwitchClause (Maybe Expr) [Stmt]
+  | LBitField Operand CType Int Int

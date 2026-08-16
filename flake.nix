@@ -692,7 +692,12 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             runtimeFile = "cbits/hcc_runtime.c";
             scriptEnv = ''HCC_C_BACKEND=gcc HOST_CC="$CC"'';
             top = 536870912;
-            hcppTop = 134217728;
+            # GCC's configured targhooks.c preprocessor state peaks above the
+            # old 2^27-word arena.  Leaving only a few million words above the
+            # live set makes the copying collector thrash indefinitely; a
+            # 2^28-word arena completes the same workload in seconds without
+            # changing HCPP output.
+            hcppTop = 268435456;
             hcc1Top = 134217728;
             description = "HCC compiled from Blynn output by the normal GCC C toolchain";
           };
@@ -980,6 +985,11 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
                 libs = tinycc;
               };
             };
+            gnutar-musl = final.callPackage ./nix/minimal-bootstrap/gnutar-musl.nix {
+              bash = final.bash_2_05;
+              tinycc = final.tinycc-musl;
+              gnused = final.gnused-mes;
+            };
             musl-tcc-intermediate = final.callPackage ./nix/minimal-bootstrap/musl-tcc.nix {
               bash = final.bash_2_05;
               tinycc = final.tinycc-mes;
@@ -1107,24 +1117,6 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           microhs = microhsStage1;
           src = hccSrc;
         };
-
-        gnuHelloFromBootstrap = pname: bootstrap:
-          pkgs.callPackage ./nix/gnu-hello-minboot.nix {
-            stdenvNoCC = rawStdenvNoCC;
-            buildPlatform = pkgs.stdenv.buildPlatform;
-            hostPlatform = pkgs.stdenv.hostPlatform;
-            inherit pname bootstrap;
-          };
-
-        gnuHelloBy = {
-          host.ghc.native =
-            gnuHelloFromBootstrap "gnu-hello-host-ghc-native" minimalBootstrapBy.host.ghc.native;
-          m2.precisely.m2 =
-            gnuHelloFromBootstrap "gnu-hello-m2-precisely-m2" minimalBootstrapBy.m2.precisely.m2;
-          m2.precisely.gccm2 =
-            gnuHelloFromBootstrap "gnu-hello-m2-precisely-gccm2" minimalBootstrapBy.m2.precisely.gccm2;
-        };
-
         bootstrapBy = {
           host.ghc.native = {
             minimal = minimalBootstrapBy.host.ghc.native;
@@ -1159,6 +1151,12 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           };
         };
 
+        trustRoots = {
+          host.ghc.native = bootstrapBy.host.ghc.native;
+          m2.precisely.m2 = bootstrapBy.m2.precisely.m2;
+          m2.precisely.gccm2 = bootstrapBy.m2.precisely.gccm2;
+        };
+
         hccM1SmokeFor = pname: hcc: target: pkgs.callPackage ./nix/hcc-m1-smoke.nix {
           stdenvNoCC = rawStdenvNoCC;
           inherit pname hcc target;
@@ -1174,6 +1172,15 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           mesTests = ./tests/mescc;
         };
 
+        hccGcc46SourceSmokeFor = pname: hcc: extraArgs: pkgs.callPackage ./nix/hcc-gcc46-source-smoke.nix ({
+          inherit pname hcc;
+        } // extraArgs);
+
+        gcc46SelfhostFor = pname: seedGcc: seedLibc: extraArgs: pkgs.callPackage ./nix/gcc46-selfhost.nix ({
+          stdenvNoCC = pkgs.stdenvNoCC;
+          inherit pname seedGcc seedLibc;
+        } // extraArgs);
+
         hcc-m1-smoke = hccM1SmokeFor "hcc-m1-smoke" hccBy.m2.precisely.m2 "amd64";
         hcc-m1-smoke-i386 = hccM1SmokeFor "hcc-m1-smoke-i386" hccBy.m2.precisely.m2 "i386";
         hcc-m1-smoke-aarch64 = hccM1SmokeFor "hcc-m1-smoke-aarch64" hccBy.m2.precisely.m2 "aarch64";
@@ -1185,10 +1192,154 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
 
         hcc-mescc-tests = hccMesccTestsFor "hcc-mescc-tests" hccBy.m2.precisely.m2 "amd64";
         hcc-mescc-tests-native = hccMesccTestsFor "hcc-mescc-tests-host-ghc-native" hccBy.host.ghc.native nativeM1Target;
+        hcc-gcc46-source-smoke-native =
+          hccGcc46SourceSmokeFor "hcc-gcc46-source-smoke-host-ghc-native" hccBy.host.ghc.native { };
+        hcc-gcc46-m1-frontier-native =
+          hccGcc46SourceSmokeFor "hcc-gcc46-m1-frontier-host-ghc-native" hccBy.host.ghc.native {
+            keepArtifacts = true;
+            target = nativeM1Target;
+          };
+        hcc-gcc46-m1-frontier-faithful =
+          hccGcc46SourceSmokeFor "hcc-gcc46-m1-frontier-hcc-m2-precisely-gcc" hccBy.m2.precisely.gcc {
+            keepArtifacts = true;
+            target = nativeM1Target;
+          };
+        hcc-gcc46-m1-full-native =
+          hccGcc46SourceSmokeFor "hcc-gcc46-m1-full-host-ghc-native" hccBy.host.ghc.native {
+            fullManifest = true;
+            keepArtifacts = false;
+            softFloatRuntime = true;
+            target = nativeM1Target;
+          };
+        hcc-gcc46-m1-full-artifacts-native =
+          hccGcc46SourceSmokeFor "hcc-gcc46-m1-full-artifacts-host-ghc-native" hccBy.host.ghc.native {
+            fullManifest = true;
+            keepArtifacts = true;
+            softFloatRuntime = true;
+            target = nativeM1Target;
+          };
+        hcc-gcc46-m1-full-artifacts-faithful =
+          hccGcc46SourceSmokeFor "hcc-gcc46-m1-full-artifacts-m2-precisely-m2" hccBy.m2.precisely.m2 {
+            fullManifest = true;
+            keepArtifacts = true;
+            softFloatRuntime = true;
+            target = nativeM1Target;
+          };
+        gcc46GmpStatic = (pkgs.gmp.override { cxx = false; }).overrideAttrs (old: {
+          doCheck = false;
+          dontDisableStatic = true;
+          configureFlags = (old.configureFlags or [ ]) ++ [ "--enable-static" "--disable-shared" ];
+        });
+        gcc46MpfrStatic = (pkgs.mpfr.override { gmp = gcc46GmpStatic; }).overrideAttrs (old: {
+          doCheck = false;
+          dontDisableStatic = true;
+          configureFlags = (old.configureFlags or [ ]) ++ [ "--enable-static" "--disable-shared" ];
+        });
+        gcc46LibmpcStatic = (pkgs.libmpc.override {
+          gmp = gcc46GmpStatic;
+          mpfr = gcc46MpfrStatic;
+        }).overrideAttrs (old: {
+          doCheck = false;
+          dontDisableStatic = true;
+          configureFlags = (old.configureFlags or [ ]) ++ [ "--enable-static" "--disable-shared" ];
+        });
+        hcc-gcc46-direct-link-native = pkgs.callPackage ./nix/hcc-gcc46-direct-link.nix {
+          glibcStatic = pkgs.glibc.static;
+          gmpStatic = gcc46GmpStatic;
+          libmpcStatic = gcc46LibmpcStatic;
+          m1Artifacts = hcc-gcc46-m1-full-artifacts-native;
+          mpfrStatic = gcc46MpfrStatic;
+          zlibStatic = pkgs.zlib.static;
+        };
+        hcc-gcc46-direct-link-faithful = pkgs.callPackage ./nix/hcc-gcc46-direct-link.nix {
+          glibcStatic = pkgs.glibc.static;
+          gmpStatic = gcc46GmpStatic;
+          libmpcStatic = gcc46LibmpcStatic;
+          m1Artifacts = hcc-gcc46-m1-full-artifacts-faithful;
+          mpfrStatic = gcc46MpfrStatic;
+          pname = "hcc-gcc46-direct-link-faithful";
+          zlibStatic = pkgs.zlib.static;
+        };
+        gcc46-selfhost-hcc-direct-native =
+          gcc46SelfhostFor
+            "gcc46-selfhost-hcc-direct-native"
+            hcc-gcc46-direct-link-native
+            pkgs.glibc
+            {
+              wrapSeedFixxfdi = false;
+              patchGlibcUcontext = true;
+              seedLibcDev = pkgs.glibc.dev;
+            };
+        gcc46-selfhost-hcc-direct-faithful =
+          gcc46SelfhostFor
+            "gcc46-selfhost-hcc-direct-faithful"
+            hcc-gcc46-direct-link-faithful
+            pkgs.glibc
+            {
+              wrapSeedFixxfdi = false;
+              patchGlibcUcontext = true;
+              seedLibcDev = pkgs.glibc.dev;
+            };
+        hccGcc46M1Compare = pname: nativeDrv: faithfulDrv: pkgs.runCommand pname { } ''
+          native=${nativeDrv}/share/hcc-gcc46-source-smoke
+          faithful=${faithfulDrv}/share/hcc-gcc46-source-smoke
+          cmp "$native/m1-files.txt" "$faithful/m1-files.txt"
+
+          mkdir -p "$out"
+          {
+            echo "native: ${nativeDrv}"
+            echo "faithful: ${faithfulDrv}"
+            cat "$native/summary.txt"
+            echo
+            echo "sha256:"
+          } > "$out/summary.txt"
+
+          while IFS= read -r file; do
+            cmp "$native/m1/$file" "$faithful/m1/$file"
+            native_hash=$(sha256sum "$native/m1/$file" | cut -d' ' -f1)
+            faithful_hash=$(sha256sum "$faithful/m1/$file" | cut -d' ' -f1)
+            echo "$file native=$native_hash faithful=$faithful_hash" >> "$out/summary.txt"
+          done < "$native/m1-files.txt"
+        '';
+        hccGcc46M1CompareNativeFaithful = hccGcc46M1Compare
+          "hcc-gcc46-m1-compare-native-faithful"
+          hcc-gcc46-m1-frontier-native
+          hcc-gcc46-m1-frontier-faithful;
+        hccGcc46M1FullCompareNativeFaithful = hccGcc46M1Compare
+          "hcc-gcc46-m1-full-compare-native-faithful"
+          hcc-gcc46-m1-full-artifacts-native
+          hcc-gcc46-m1-full-artifacts-faithful;
+        gcc46-selfhost-native =
+          gcc46SelfhostFor
+            "gcc46-selfhost-host-ghc-native"
+            bootstrapBy.host.ghc.native.minimal.gcc46
+            bootstrapBy.host.ghc.native.tinycc.musl.libs
+            { };
+        gcc46-selfhost-faithful =
+          gcc46SelfhostFor
+            "gcc46-selfhost-m2-precisely-m2"
+            gcc46By.m2.precisely.m2
+            bootstrapBy.m2.precisely.m2.tinycc.musl.libs
+            { };
+        faithful-bootstrap-e2e = pkgs.callPackage ./nix/faithful-bootstrap-e2e.nix {
+          faithfulHcc = hccBy.m2.precisely.m2;
+          tinycc = tinyccBy.m2.precisely.m2;
+          gcc46 = gcc46By.m2.precisely.m2;
+          gcc46Selfhost = gcc46-selfhost-faithful;
+        };
+        hcc-gcc46-direct-e2e = pkgs.callPackage ./nix/hcc-gcc46-direct-e2e.nix {
+          directGcc = hcc-gcc46-direct-link-faithful;
+          faithfulHcc = hccBy.m2.precisely.m2;
+          gcc46Selfhost = gcc46-selfhost-hcc-direct-faithful;
+          m1Artifacts = hcc-gcc46-m1-full-artifacts-faithful;
+        };
 
         hcc-golden-tests = pkgs.callPackage ./nix/hcc-golden-tests.nix {
           stdenvNoCC = rawStdenvNoCC;
           hcc = hccBy.m2.precisely.m2;
+        };
+        hcc-elf-smoke = pkgs.callPackage ./nix/hcc-elf-smoke.nix {
+          hcc = hccBy.host.ghc.native;
         };
 
         hcc-tinycc-tests2-stat = pkgs.callPackage ./nix/hcc-tinycc-tests2-stat.nix {
@@ -1239,11 +1390,11 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           gcc46Cxx = gcc46CxxBy;
           gcc10 = gcc10By;
           gccLatest = gccLatestBy;
-          gnuHello = gnuHelloBy;
           glibc = glibcBy;
           gccGlibc = gccGlibcBy;
 
           bootstrap = bootstrapBy;
+          inherit trustRoots;
 
           tests = {
             smoke.m1 = hcc-m1-smoke;
@@ -1256,11 +1407,27 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             host.ghc.native.smoke.m1-aarch64 = hcc-m1-smoke-native-aarch64;
             host.ghc.native.smoke.m1-riscv64 = hcc-m1-smoke-native-riscv64;
             host.ghc.native.mescc = hcc-mescc-tests-native;
+            host.ghc.native.smoke.elf = hcc-elf-smoke;
             hcc.golden = hcc-golden-tests;
+            host.ghc.native.gcc46-source-smoke = hcc-gcc46-source-smoke-native;
+            host.ghc.native.gcc46-m1-frontier = hcc-gcc46-m1-frontier-native;
+            host.ghc.native.gcc46-m1-full = hcc-gcc46-m1-full-native;
+            host.ghc.native.gcc46-m1-full-artifacts = hcc-gcc46-m1-full-artifacts-native;
+            gcc46.m1-full-artifacts.faithful = hcc-gcc46-m1-full-artifacts-faithful;
+            host.ghc.native.gcc46-direct-link = hcc-gcc46-direct-link-native;
+            gcc46.direct-link.faithful = hcc-gcc46-direct-link-faithful;
+            host.ghc.native.gcc46-selfhost-direct = gcc46-selfhost-hcc-direct-native;
+            gcc46.selfhost-direct.faithful = gcc46-selfhost-hcc-direct-faithful;
             hcc.tinycc-tests2-stat = hcc-tinycc-tests2-stat;
             host.ghc.native.tinycc-riscv64 = tinyccBy.riscv64.host.ghc.native;
             precisely.dialect = precisely-dialect-tests;
             tinyccM1.native-vs-faithful = tinyccM1CompareNativeFaithful;
+            gcc46M1.native-vs-faithful = hccGcc46M1CompareNativeFaithful;
+            gcc46M1.full-native-vs-faithful = hccGcc46M1FullCompareNativeFaithful;
+            host.ghc.native.gcc46-selfhost = gcc46-selfhost-native;
+            gcc46.selfhost.faithful = gcc46-selfhost-faithful;
+            e2e.faithful = faithful-bootstrap-e2e;
+            e2e.hcc-gcc46-direct = hcc-gcc46-direct-e2e;
           };
         };
       in {
@@ -1268,7 +1435,11 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           default = packageTree.default;
         };
 
-        checks.hcc-golden = hcc-golden-tests;
+        checks = {
+          hcc-golden = hcc-golden-tests;
+        } // lib.optionalAttrs (system == "x86_64-linux") {
+          hcc-elf = hcc-elf-smoke;
+        };
 
         legacyPackages = packageTree;
 
@@ -1314,5 +1485,44 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             pkgs.time
           ];
         };
-      });
+      }) // {
+        overlays = rec {
+          packages = final: _prev: {
+            blynn-bootstrap = self.legacyPackages.${final.stdenv.buildPlatform.system};
+          };
+
+          trustRoot = final: _prev:
+            let
+              blynnBootstrap = self.legacyPackages.${final.stdenv.buildPlatform.system};
+            in {
+              blynn-bootstrap = blynnBootstrap;
+              minimal-bootstrap = blynnBootstrap.trustRoots.m2.precisely.m2.minimal;
+            };
+
+          default = trustRoot;
+        };
+
+        nixpkgsArgs = {
+          trustRoot = system: {
+            inherit system;
+            overlays = [ self.overlays.default ];
+            config.replaceStdenv = { pkgs }:
+              let
+                trustRoot = self.legacyPackages.${system}.trustRoots.m2.precisely.m2;
+                bintools = pkgs.wrapBintoolsWith {
+                  bintools = trustRoot.minimal.binutils;
+                  libc = trustRoot.glibc;
+                };
+                cc = pkgs.wrapCCWith {
+                  cc = trustRoot.gcc.glibc;
+                  inherit bintools;
+                  libc = trustRoot.glibc;
+                };
+              in
+                pkgs.stdenvAdapters.overrideCC pkgs.stdenv cc;
+          };
+
+          default = system: self.nixpkgsArgs.trustRoot system;
+        };
+      };
 }

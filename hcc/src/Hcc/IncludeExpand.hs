@@ -25,17 +25,20 @@ readSourceWithIncludes includeDirs defines path = do
       then pure (id, guards, macros)
       else do
         source <- hccReadFile key
-        case includeGuard key source of
+        let splicedSource = spliceContinuations source
+            cleanSource = stripComments splicedSource
+            sourceLines = lines cleanSource
+        case includeGuard key splicedSource of
           Just (PragmaOnce guard) | symbolSetMember guard guards ->
             pure (id, guards, macros)
           Just (IfndefGuard guard start end) | symbolSetMember guard guards ->
-            expandLines (hccTakeDirectory key) (key:stack) guards macros [] (skipLineRange start end (lines source))
+            expandLines (hccTakeDirectory key) (key:stack) guards macros [] (skipLineRange start end sourceLines)
           guardInfo -> do
             let guards' = case guardInfo of
                   Nothing -> guards
                   Just (PragmaOnce guard) -> symbolSetInsert guard guards
                   Just (IfndefGuard guard _ _) -> symbolSetInsert guard guards
-            expandLines (hccTakeDirectory key) (key:stack) guards' macros [] (lines source)
+            expandLines (hccTakeDirectory key) (key:stack) guards' macros [] sourceLines
 
   expandLines currentDir stack guards macros frames ls = case ls of
     [] -> pure (id, guards, macros)

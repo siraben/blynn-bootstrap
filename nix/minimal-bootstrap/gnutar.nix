@@ -42,6 +42,7 @@ bash.runCommand "${pname}-${version}"
     untar --file tar.tar
     rm tar.tar
     cd tar-${version}
+    chmod +x install-sh missing mkinstalldirs
 
     touch aclocal.m4 configure config.h.in \
       Makefile.in doc/Makefile.in intl/Makefile.in lib/Makefile.in \

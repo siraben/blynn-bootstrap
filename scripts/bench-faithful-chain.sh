@@ -10,7 +10,7 @@ fi
 repo=$1
 label=$2
 out_dir=$3
-flake_attr=${4:-tinycc.m2.precisely.m2}
+flake_attr=${4:-tests.e2e.faithful}
 time_bin=${TIME_BIN:-$(type -P time)}
 rg_bin=${RG_BIN:-$(type -P rg)}
 
@@ -21,7 +21,7 @@ times="$out_dir/$label.tsv"
 metadata="$out_dir/$label.meta"
 
 nix-store -qR "$top_drv" \
-  | "$rg_bin" '/nix/store/[a-z0-9]+-(oriansj-blynn-compiler-hcc|blynn-compiler-hcc|gnu-mes-libc-hcc|blynn-(pack-blobs|blob-|raw-|vm-|marginally-|methodically-|upstream-)|hcc-blynn-(sources|objs-m2-precisely|c-m2-precisely)|hcc-m2-precisely-m2-|tinycc-boot-hcc-m2-precisely-m2-).*\.drv$' \
+  | "$rg_bin" '/nix/store/[a-z0-9]+-(oriansj-blynn-compiler-hcc|blynn-compiler-hcc|gnu-mes-libc-hcc|blynn-(pack-blobs|blob-|raw-|vm-|marginally-|methodically-|upstream-)|hcc-blynn-(sources|objs-m2-precisely|c-m2-precisely)|hcc-m2-precisely-m2-|tinycc-boot-hcc-m2-precisely-m2-|gcc-4\.6\.4|gcc46-selfhost-|faithful-bootstrap-e2e).*\.drv$' \
   > "$drv_list"
 
 {
@@ -70,3 +70,15 @@ awk -F '\t' -v label="$label" '
   { elapsed += $3; user_time += $4; sys_time += $5; if ($6 > rss) rss = $6 }
   END { printf "%s TOTAL\t%.2f\t%.2f\t%.2f\t%d\n", label, elapsed, user_time, sys_time, rss }
 ' "$times"
+
+# The E2E check carries finer-grained in-derivation timings for HCC, each
+# TinyCC self-build, and the GCC bootstrap stages. Preserve them next to the
+# outer derivation timings so contribution analysis does not have to infer
+# subsecond compiler steps from Nix wall times.
+top_out=$(nix-store -q --outputs "$top_drv")
+e2e_metrics="$top_out/share/faithful-bootstrap-e2e"
+if [[ -d "$e2e_metrics" ]]; then
+  artifact_dir="$out_dir/$label-e2e"
+  mkdir -p "$artifact_dir"
+  cp -R "$e2e_metrics/." "$artifact_dir/"
+fi

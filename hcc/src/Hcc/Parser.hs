@@ -63,11 +63,23 @@ bindParserType name ty = do
     ParserEnv types constants constantMap ->
       pSetEnv (ParserEnv (scopeMapInsert name ty types) constants constantMap)
 
-lookupParserConstant :: String -> Parser (Maybe Int)
-lookupParserConstant name = do
+-- C tags and typedefs occupy separate namespaces.  A separator that cannot
+-- occur in an identifier keeps both namespaces in the same scoped map.
+enumTagKey :: String -> String
+enumTagKey name = "enum:" ++ name
+
+lookupParserEnum :: String -> Parser (Maybe CType)
+lookupParserEnum name = lookupParserType (enumTagKey name)
+
+bindParserEnum :: String -> CType -> Parser ()
+bindParserEnum name ty = bindParserType (enumTagKey name) ty
+
+hideParserTypeName :: String -> Parser ()
+hideParserTypeName name = do
   env <- pEnv
-  pure (case env of
-    ParserEnv _ _ constantMap -> symbolMapLookup name constantMap)
+  case env of
+    ParserEnv types constants constantMap ->
+      pSetEnv (ParserEnv (scopeMapHide name types) constants constantMap)
 
 bindParserConstant :: String -> Int -> Parser ()
 bindParserConstant name value = do
@@ -189,45 +201,76 @@ topDeclNoTypedef = do
 
 topDeclNoStruct :: Parser TopDecl
 topDeclNoStruct = do
-  isExtern <- leadingExternQualifier
+  storage <- leadingStorageClass
   ty0 <- ctype
+  skipAttributes
   standalone <- eatPunct ";"
   if standalone
     then pure (TypeDecl [ty0])
     else do
       (ty, name) <- declarator ty0
+      hideParserTypeName name
       ifM (eatPunct "(")
         (do
           params <- parameters
           skipAttributes
           isPrototype <- eatPunct ";"
           if isPrototype
-            then pure (Prototype ty name params)
-            else Function ty name params <$> compound)
+            then pure (Prototype (storageLinkage storage) ty name params)
+            else do
+              body <- compoundWithOrdinaryNames (map paramName params)
+              if storage == StorageExternInline
+                then pure (Prototype ExternalLinkage ty name params)
+                else pure (Function (storageLinkage storage) ty name params body))
         (do
           initExpr <- optionalP (eatPunct "=" >> initializerExpr)
           rest <- declarationItemsTail ty0
-          pure (globalDecl isExtern ((ty, name, initExpr):rest)))
+          case (ty, initExpr, rest) of
+            (CFunc ret paramTys, Nothing, []) ->
+              pure (Prototype (storageLinkage storage) ret name
+                (map (\paramTy -> Param paramTy "") paramTys))
+            _ -> pure (globalDecl storage ((ty, name, initExpr):rest)))
 
-globalDecl :: Bool -> [(CType, String, Maybe Expr)] -> TopDecl
-globalDecl isExtern decls =
-  if isExtern && all uninitialized decls
+data StorageClass
+  = StorageDefault
+  | StorageExtern
+  | StorageInline
+  | StorageExternInline
+  | StorageStatic
+  deriving Eq
+
+storageLinkage :: StorageClass -> Linkage
+storageLinkage storage = case storage of
+  StorageStatic -> InternalLinkage
+  _ -> ExternalLinkage
+
+globalDecl :: StorageClass -> [(CType, String, Maybe Expr)] -> TopDecl
+globalDecl storage decls =
+  if storage == StorageExtern && all uninitialized decls
     then ExternGlobals (map externPair decls)
     else case decls of
-      [(ty, name, initExpr)] -> Global ty name initExpr
-      _ -> Globals decls
+      [(ty, name, initExpr)] -> Global (storageLinkage storage) ty name initExpr
+      _ -> Globals (storageLinkage storage) decls
   where
     uninitialized (_, _, initExpr) = case initExpr of
       Nothing -> True
       Just _ -> False
     externPair (ty, name, _) = (ty, name)
 
-leadingExternQualifier :: Parser Bool
-leadingExternQualifier = pRaw $ \env toks -> Unconsumed (Ok (go toks) env toks) where
-  go ts = case ts of
-    Token _ (TokIdent "extern"):_ -> True
-    Token _ (TokIdent name):rest | name `elem` storageAndTypeQualifiers -> go rest
-    _ -> False
+leadingStorageClass :: Parser StorageClass
+leadingStorageClass = pRaw $ \env toks -> Unconsumed (Ok (go StorageDefault toks) env toks) where
+  go storage ts = case ts of
+    Token _ (TokIdent "extern"):rest ->
+      go (if storage == StorageInline then StorageExternInline else StorageExtern) rest
+    Token _ (TokIdent "static"):rest -> go StorageStatic rest
+    Token _ (TokIdent name):rest | name `elem` ["inline", "__inline", "__inline__"] ->
+      go (if storage == StorageExtern then StorageExternInline else storageInline storage) rest
+    Token _ (TokIdent name):rest | name `elem` storageAndTypeQualifiers -> go storage rest
+    _ -> storage
+
+  storageInline storage = case storage of
+    StorageStatic -> StorageStatic
+    _ -> StorageInline
 
 typedefDecl :: Parser TopDecl
 typedefDecl = do
@@ -242,6 +285,7 @@ typedefDecl = do
 
 typedefItem :: CType -> Parser (String, CType)
 typedefItem ty0 = do
+  skipAttributes
   (ty, name) <- declarator ty0
   ty' <- optionalFunctionSuffix ty
   skipAttributes
@@ -266,8 +310,10 @@ bindTypedef item = case item of
 standaloneAggregateDecl :: Parser TopDecl
 standaloneAggregateDecl = do
   isUnion <- aggregateKeyword
+  skipAttributes
   tag <- optionalIdent
   fields <- aggregateBody
+  skipAttributes
   needPunct ";"
   pure (StructDecl isUnion tag fields)
 
@@ -297,30 +343,47 @@ fieldDeclarators ty0 = do
   rest <- manyP (needPunct "," >> fieldDeclarator ty0)
   pure (first:rest)
 
+-- A declarator is a transformation of its declaration's base type.  Keeping
+-- that transformation intact lets a suffix outside parentheses compose at
+-- the parenthesis boundary: `T (*p)[N]` becomes pointer-to-array, while
+-- `T *p[N]` remains array-of-pointers, for any number of pointer layers.
+type TypeBuilder = CType -> CType
+
 fieldDeclarator :: CType -> Parser Field
 fieldDeclarator ty0 = do
+  (build, name, bitWidth) <- fieldDeclaratorBuilder
+  pure (Field (build ty0) name bitWidth)
+
+fieldDeclaratorBuilder :: Parser (TypeBuilder, String, Maybe Expr)
+fieldDeclaratorBuilder = do
+  skipAttributes
+  pointer <- pointerTypeBuilder
   grouped <- eatPunct "("
   if grouped
     then do
-      ty <- pointerStars ty0
-      name <- optionalIdent
+      (inner, name, bitWidth) <- fieldDeclaratorBuilder
       needPunct ")"
-      fnTail <- eatPunct "("
-      fnParams <- if fnTail then parameters else pure []
-      let fnTy = if fnTail then functionSuffixType ty fnParams else CPtr ty
-      ty' <- arraySuffixes fnTy
-      pure (Field ty' name)
+      suffix <- groupedSuffixTypeBuilder
+      skipAttributes
+      pure (\ty -> inner (suffix (pointer ty)), name, bitWidth)
     else do
-      ty <- pointerStars ty0
       name <- optionalIdent
       bitfield <- eatPunct ":"
-      ty' <- if bitfield
-        then assignExpr >> pure ty
-        else arraySuffixes ty
-      pure (Field ty' name)
+      if bitfield
+        then do
+          width <- assignExpr
+          skipAttributes
+          pure (pointer, name, Just width)
+        else do
+          suffix <- arraySuffixTypeBuilder
+          skipAttributes
+          pure (\ty -> suffix (pointer ty), name, Nothing)
 
 parameters :: Parser [Param]
-parameters = do
+parameters = withParserScope parametersInScope
+
+parametersInScope :: Parser [Param]
+parametersInScope = do
   done <- eatPunct ")"
   if done
     then pure []
@@ -359,31 +422,52 @@ parameterTail = do
 parameter :: Parser Param
 parameter = do
   ty0 <- ctype
+  skipAttributes
   (ty, name) <- parameterDeclarator ty0
-  pure (Param ty name)
+  hideParserTypeName name
+  pure (Param (adjustParameterType ty) name)
+
+paramName :: Param -> String
+paramName param = case param of
+  Param _ name -> name
+
+adjustParameterType :: CType -> CType
+adjustParameterType ty = case ty of
+  CArray elemTy _ -> CPtr elemTy
+  CFunc ret params -> CPtr (CFunc ret params)
+  _ -> ty
 
 parameterDeclarator :: CType -> Parser (CType, String)
 parameterDeclarator ty0 = do
+  (build, name) <- parameterDeclaratorBuilder
+  pure (build ty0, name)
+
+parameterDeclaratorBuilder :: Parser (TypeBuilder, String)
+parameterDeclaratorBuilder = do
+  pointer <- pointerTypeBuilder
   grouped <- eatPunct "("
   if grouped
     then do
-      ty <- pointerStars ty0
-      name <- optionalIdent
+      (inner, name) <- parameterDeclaratorBuilder
       needPunct ")"
-      fnTail <- eatPunct "("
-      fnParams <- if fnTail then parameters else pure []
-      pure (if fnTail then functionSuffixType ty fnParams else CPtr ty, name)
+      suffix <- groupedSuffixTypeBuilder
+      skipAttributes
+      pure (\ty -> inner (suffix (pointer ty)), name)
     else do
-      ty <- pointerStars ty0
       name <- optionalIdent
-      fnTail <- eatPunct "("
-      fnParams <- if fnTail then parameters else pure []
-      let tyWithFunction = if fnTail then CPtr (CFunc ty (paramTypes fnParams)) else ty
-      ty' <- arraySuffixes tyWithFunction
-      pure (ty', name)
+      suffix <- groupedSuffixTypeBuilder
+      skipAttributes
+      pure (\ty -> suffix (pointer ty), name)
 
 compound :: Parser [Stmt]
-compound = needPunct "{" >> withParserScope (manyUntil (eatPunct "}") stmt)
+compound = compoundWithOrdinaryNames []
+
+compoundWithOrdinaryNames :: [String] -> Parser [Stmt]
+compoundWithOrdinaryNames names = do
+  needPunct "{"
+  withParserScope $ do
+    mapM_ hideParserTypeName names
+    manyUntil (eatPunct "}") stmt
 
 stmt :: Parser Stmt
 stmt = do
@@ -398,7 +482,10 @@ stmt = do
     TokIdent "for" -> advanceToken >> parseFor
     TokIdent "switch" -> advanceToken >> parseSwitch
     TokIdent "case" -> advanceToken >> parseCase
-    TokIdent "default" -> advanceToken >> needPunct ":" >> pure SDefault
+    TokIdent "default" -> advanceToken >> needPunct ":" >> skipAttributes >> pure SDefault
+    TokIdent "asm" -> advanceToken >> parseAsmStmt
+    TokIdent "__asm" -> advanceToken >> parseAsmStmt
+    TokIdent "__asm__" -> advanceToken >> parseAsmStmt
     TokIdent "break" -> advanceToken >> needPunct ";" >> pure SBreak
     TokIdent "continue" -> advanceToken >> needPunct ";" >> pure SContinue
     TokIdent "goto" -> advanceToken >> parseGoto
@@ -406,7 +493,7 @@ stmt = do
     TokIdent name -> do
       isLabel <- peekSecondPunct ":"
       if isLabel
-        then advanceToken >> needPunct ":" >> pure (SLabel name)
+        then advanceToken >> needPunct ":" >> skipAttributes >> pure (SLabel name)
         else do
           startsDecl <- identifierStartsDeclaration
           if startsDecl then parseDeclStmt else parseExprStmt
@@ -415,7 +502,11 @@ stmt = do
     _ -> parseExprStmt
 
 typedefStmt :: Parser Stmt
-typedefStmt = typedefDecl >> pure STypedef
+typedefStmt = do
+  decl <- typedefDecl
+  pure (case decl of
+    TypeDecl types -> STypedef types
+    _ -> STypedef [])
 
 parseExprStmt :: Parser Stmt
 parseExprStmt = do
@@ -438,6 +529,37 @@ parseReturn = do
       e <- expr
       needPunct ";"
       pure (SReturn (Just e))
+
+parseAsmStmt :: Parser Stmt
+parseAsmStmt = do
+  _ <- optionalP (eatIdent "volatile")
+  needPunct "("
+  toks <- pRaw $ \env tokens -> case takeAsmTokens 0 [] tokens of
+    Just (taken, rest) -> Consumed (Ok taken env rest)
+    Nothing -> Unconsumed (Ok [] env tokens)
+  needPunct ")"
+  needPunct ";"
+  pure (asmStmt toks)
+
+takeAsmTokens :: Int -> [Token] -> [Token] -> Maybe ([Token], [Token])
+takeAsmTokens depth acc toks = case toks of
+  [] -> Nothing
+  tok:rest -> case tokenKind tok of
+    TokPunct "(" -> takeAsmTokens (depth + 1) (tok:acc) rest
+    TokPunct ")" | depth == 0 -> Just (reverse acc, toks)
+    TokPunct ")" -> takeAsmTokens (depth - 1) (tok:acc) rest
+    _ -> takeAsmTokens depth (tok:acc) rest
+
+asmStmt :: [Token] -> Stmt
+asmStmt toks = case toks of
+  Token _ (TokString text):_ -> asmStringStmt text
+  _ -> SExpr (ECall (EVar "asm") [])
+
+asmStringStmt :: String -> Stmt
+asmStringStmt text =
+  if stringBytes text == [0]
+    then SExpr (EInt "0")
+    else SExpr (ECall (EVar "asm") [EString text])
 
 parseIf :: Parser Stmt
 parseIf = do
@@ -485,10 +607,11 @@ forInit = do
       startsDecl <- tokenStartsType tok
       if startsDecl
         then do
+          storage <- leadingStorageClass
           ty0 <- ctype
           first <- declarationItem ty0
           rest <- declarationItemsTail ty0
-          pure (ForDecls (first:rest))
+          pure (ForDecls (localStorage storage) (first:rest))
         else do
           initExpr <- expr
           needPunct ";"
@@ -505,6 +628,7 @@ parseCase :: Parser Stmt
 parseCase = do
   value <- expr
   needPunct ":"
+  skipAttributes
   pure (SCase value)
 
 optionalExprUntil :: String -> Parser (Maybe Expr)
@@ -532,10 +656,11 @@ stmtAsBlock = do
 
 parseDeclStmt :: Parser Stmt
 parseDeclStmt = do
+  storage <- leadingStorageClass
   ty0 <- ctype
   standalone <- eatPunct ";"
   if standalone
-    then pure (SExpr (EInt "0"))
+    then pure (STypedef [ty0])
     else do
       prototype <- optionalP (tryP (localPrototype ty0))
       case prototype of
@@ -543,25 +668,35 @@ parseDeclStmt = do
         Nothing -> do
           first <- declarationItem ty0
           rest <- declarationItemsTail ty0
-          pure (declStmt (first:rest))
+          pure (declStmt (localStorage storage) (first:rest))
 
 localPrototype :: CType -> Parser ()
 localPrototype ty0 = do
   _ty <- pointerStars ty0
-  _name <- needIdent
+  name <- needIdent
+  hideParserTypeName name
   needPunct "("
   skipBalanced "(" ")"
   skipAttributes
   needPunct ";"
 
-declStmt :: [(CType, String, Maybe Expr)] -> Stmt
-declStmt decls = case decls of
-  [(ty, name, initExpr)] -> SDecl ty name initExpr
-  _ -> SDecls decls
+localStorage :: StorageClass -> LocalStorage
+localStorage storage = case storage of
+  StorageStatic -> StaticStorage
+  StorageExtern -> ExternalStorage
+  StorageExternInline -> ExternalStorage
+  _ -> AutomaticStorage
+
+declStmt :: LocalStorage -> [(CType, String, Maybe Expr)] -> Stmt
+declStmt storage decls = case decls of
+  [(ty, name, initExpr)] -> SDecl storage ty name initExpr
+  _ -> SDecls storage decls
 
 declarationItem :: CType -> Parser (CType, String, Maybe Expr)
 declarationItem ty0 = do
+  skipAttributes
   (ty, name) <- declarator ty0
+  hideParserTypeName name
   skipAttributes
   initExpr <- optionalP (eatPunct "=" >> initializerExpr)
   pure (ty, name, initExpr)
@@ -609,26 +744,66 @@ ctype = do
       _ -> failAt tok "expected type"
 
 typeName :: Parser CType
-typeName = ctype >>= pointerStars
+typeName = ctype >>= abstractDeclarator
+
+abstractDeclarator :: CType -> Parser CType
+abstractDeclarator ty0 = do
+  build <- abstractDeclaratorBuilder
+  pure (build ty0)
+
+abstractDeclaratorBuilder :: Parser TypeBuilder
+abstractDeclaratorBuilder = do
+  pointer <- pointerTypeBuilder
+  grouped <- eatPunct "("
+  if grouped
+    then do
+      inner <- abstractDeclaratorBuilder
+      needPunct ")"
+      suffix <- groupedSuffixTypeBuilder
+      pure (\ty -> inner (suffix (pointer ty)))
+    else do
+      suffix <- groupedSuffixTypeBuilder
+      pure (\ty -> suffix (pointer ty))
 
 signedBaseType :: Parser CType
 signedBaseType = do
+  skipQualifiers
   mtok <- peekMaybe
   case fmap tokenKind mtok of
     Just (TokIdent "char") -> advanceToken >> pure CChar
     Just (TokIdent "short") -> advanceToken >> optionalShortInt
+    Just (TokIdent "long") -> advanceToken >> signedLongTail
     Just (TokIdent "int") -> advanceToken >> pure CInt
     _ -> pure CInt
 
 optionalShortInt :: Parser CType
 optionalShortInt = do
+  skipQualifiers
   mtok <- peekMaybe
   case fmap tokenKind mtok of
     Just (TokIdent "int") -> advanceToken >> pure CShort
     _ -> pure CShort
 
+signedLongTail :: Parser CType
+signedLongTail = do
+  skipQualifiers
+  mtok <- peekMaybe
+  case fmap tokenKind mtok of
+    Just (TokIdent "long") -> advanceToken >> optionalSignedLongLongInt
+    Just (TokIdent "int") -> advanceToken >> pure CLong
+    _ -> pure CLong
+
+optionalSignedLongLongInt :: Parser CType
+optionalSignedLongLongInt = do
+  skipQualifiers
+  mtok <- peekMaybe
+  case fmap tokenKind mtok of
+    Just (TokIdent "int") -> advanceToken >> pure CLongLong
+    _ -> pure CLongLong
+
 unsignedBaseType :: Parser CType
 unsignedBaseType = do
+  skipQualifiers
   mtok <- peekMaybe
   case fmap tokenKind mtok of
     Just (TokIdent "char") -> advanceToken >> pure CUnsignedChar
@@ -639,6 +814,7 @@ unsignedBaseType = do
 
 optionalUnsignedShortInt :: Parser CType
 optionalUnsignedShortInt = do
+  skipQualifiers
   mtok <- peekMaybe
   case fmap tokenKind mtok of
     Just (TokIdent "int") -> advanceToken >> pure CUnsignedShort
@@ -646,6 +822,7 @@ optionalUnsignedShortInt = do
 
 unsignedLongTail :: Parser CType
 unsignedLongTail = do
+  skipQualifiers
   mtok <- peekMaybe
   case fmap tokenKind mtok of
     Just (TokIdent "long") -> advanceToken >> optionalUnsignedLongLongInt
@@ -654,6 +831,7 @@ unsignedLongTail = do
 
 optionalUnsignedLongLongInt :: Parser CType
 optionalUnsignedLongLongInt = do
+  skipQualifiers
   mtok <- peekMaybe
   case fmap tokenKind mtok of
     Just (TokIdent "int") -> advanceToken >> pure CUnsignedLongLong
@@ -661,15 +839,53 @@ optionalUnsignedLongLongInt = do
 
 longBaseType :: Parser CType
 longBaseType = do
+  skipQualifiers
   mtok <- peekMaybe
   case fmap tokenKind mtok of
     Just (TokIdent "double") -> advanceToken >> pure CLongDouble
+    Just (TokIdent "unsigned") -> advanceToken >> optionalLongUnsignedInt
+    Just (TokIdent "signed") -> advanceToken >> optionalLongSignedInt
     Just (TokIdent "int") -> advanceToken >> pure CLong
     Just (TokIdent "long") -> advanceToken >> optionalLongLongTail
     _ -> pure CLong
 
+optionalLongUnsignedInt :: Parser CType
+optionalLongUnsignedInt = do
+  skipQualifiers
+  mtok <- peekMaybe
+  case fmap tokenKind mtok of
+    Just (TokIdent "int") -> advanceToken >> pure CUnsignedLong
+    _ -> pure CUnsignedLong
+
+optionalLongSignedInt :: Parser CType
+optionalLongSignedInt = do
+  skipQualifiers
+  mtok <- peekMaybe
+  case fmap tokenKind mtok of
+    Just (TokIdent "int") -> advanceToken >> pure CLong
+    _ -> pure CLong
+
 optionalLongLongTail :: Parser CType
 optionalLongLongTail = do
+  skipQualifiers
+  mtok <- peekMaybe
+  case fmap tokenKind mtok of
+    Just (TokIdent "unsigned") -> advanceToken >> optionalLongLongUnsignedInt
+    Just (TokIdent "signed") -> advanceToken >> optionalLongLongSignedInt
+    Just (TokIdent "int") -> advanceToken >> pure CLongLong
+    _ -> pure CLongLong
+
+optionalLongLongUnsignedInt :: Parser CType
+optionalLongLongUnsignedInt = do
+  skipQualifiers
+  mtok <- peekMaybe
+  case fmap tokenKind mtok of
+    Just (TokIdent "int") -> advanceToken >> pure CUnsignedLongLong
+    _ -> pure CUnsignedLongLong
+
+optionalLongLongSignedInt :: Parser CType
+optionalLongLongSignedInt = do
+  skipQualifiers
   mtok <- peekMaybe
   case fmap tokenKind mtok of
     Just (TokIdent "int") -> advanceToken >> pure CLongLong
@@ -678,6 +894,7 @@ optionalLongLongTail = do
 aggregateType :: (String -> CType) -> (String -> [Field] -> CType) -> ([Field] -> CType) -> Parser CType
 aggregateType mkType mkNamed mkInline = do
   advanceToken
+  skipAttributes
   name <- optionalIdent
   hasBody <- eatPunct "{"
   if hasBody
@@ -692,16 +909,28 @@ aggregateBodyAfterOpen = concat <$> manyUntil (eatPunct "}") fieldDecl
 enumType :: Parser CType
 enumType = do
   advanceToken
+  skipAttributes
   name <- optionalIdent
   hasBody <- eatPunct "{"
-  when hasBody (parseEnumBody 0)
-  pure (CEnum name)
+  if hasBody
+    then do
+      constants <- parseEnumBody 0
+      let ty = CEnum name constants
+      when (name /= "") (bindParserEnum name ty)
+      pure ty
+    else if name == ""
+      then pure (CEnum "" [])
+      else do
+        known <- lookupParserEnum name
+        pure (case known of
+          Just ty -> ty
+          Nothing -> CEnum name [])
 
-parseEnumBody :: Int -> Parser ()
+parseEnumBody :: Int -> Parser [(String, Int)]
 parseEnumBody nextValue = do
   done <- eatPunct "}"
   if done
-    then pure ()
+    then pure []
     else do
       comma <- eatPunct ","
       if comma
@@ -711,12 +940,14 @@ parseEnumBody nextValue = do
           value <- enumValue nextValue
           bindParserConstant name value
           after <- eatPunct ","
-          if after
+          rest <- if after
             then do
               end <- eatPunct "}"
-              if end then pure () else parseEnumBody (value + 1)
+              if end then pure [] else parseEnumBody (value + 1)
             else do
               needPunct "}"
+              pure []
+          pure ((name, value):rest)
 
 enumValue :: Int -> Parser Int
 enumValue nextValue = do
@@ -798,38 +1029,61 @@ skipOptionalBalancedParens = do
 
 declarator :: CType -> Parser (CType, String)
 declarator ty0 = do
-  ty <- pointerStars ty0
-  directDeclarator ty
+  (build, name) <- declaratorBuilder
+  pure (build ty0, name)
 
-directDeclarator :: CType -> Parser (CType, String)
-directDeclarator ty = do
+declaratorBuilder :: Parser (TypeBuilder, String)
+declaratorBuilder = do
+  pointer <- pointerTypeBuilder
   grouped <- eatPunct "("
   if grouped
     then do
-      (innerTy, name) <- declarator ty
+      (inner, name) <- declaratorBuilder
       needPunct ")"
-      ty' <- groupedDeclaratorSuffixes innerTy
+      suffix <- groupedSuffixTypeBuilder
       skipAttributes
-      pure (ty', name)
+      pure (\ty -> inner (suffix (pointer ty)), name)
     else do
       name <- needIdent
-      ty' <- arraySuffixes ty
+      suffix <- arraySuffixTypeBuilder
       skipAttributes
-      pure (ty', name)
+      pure (\ty -> suffix (pointer ty), name)
 
-groupedDeclaratorSuffixes :: CType -> Parser CType
-groupedDeclaratorSuffixes ty = do
+pointerTypeBuilder :: Parser TypeBuilder
+pointerTypeBuilder = do
+  star <- eatPunct "*"
+  if star
+    then do
+      skipQualifiers
+      rest <- pointerTypeBuilder
+      pure (\ty -> rest (CPtr ty))
+    else pure (\ty -> ty)
+
+groupedSuffixTypeBuilder :: Parser TypeBuilder
+groupedSuffixTypeBuilder = do
   open <- eatPunct "("
   if open
     then do
       params <- parameters
-      groupedDeclaratorSuffixes (functionSuffixType ty params)
-    else arraySuffixes ty
+      rest <- groupedSuffixTypeBuilder
+      pure (\ty -> rest (CFunc ty (paramTypes params)))
+    else arraySuffixTypeBuilder
 
-functionSuffixType :: CType -> [Param] -> CType
-functionSuffixType ty params = case ty of
-  CPtr inner -> CPtr (CFunc inner (paramTypes params))
-  _ -> CFunc ty (paramTypes params)
+arraySuffixTypeBuilder :: Parser TypeBuilder
+arraySuffixTypeBuilder = do
+  open <- eatPunct "["
+  if open
+    then do
+      emptyBound <- eatPunct "]"
+      boundExpr <- if emptyBound
+        then pure Nothing
+        else do
+          value <- expr
+          needPunct "]"
+          pure (Just value)
+      rest <- arraySuffixTypeBuilder
+      pure (\ty -> CArray (rest ty) boundExpr)
+    else pure (\ty -> ty)
 
 optionalFunctionSuffix :: CType -> Parser CType
 optionalFunctionSuffix ty = do
@@ -840,20 +1094,8 @@ optionalFunctionSuffix ty = do
 
 pointerStars :: CType -> Parser CType
 pointerStars ty = do
-  star <- eatPunct "*"
-  if star
-    then skipQualifiers >> pointerStars (CPtr ty)
-    else pure ty
-
-arraySuffixes :: CType -> Parser CType
-arraySuffixes ty = do
-  open <- eatPunct "["
-  if open
-    then do
-      boundExpr <- optionalP expr
-      needPunct "]"
-      arraySuffixes (CArray ty boundExpr)
-    else pure ty
+  build <- pointerTypeBuilder
+  pure (build ty)
 
 expr :: Parser Expr
 expr = expression 0
@@ -938,29 +1180,50 @@ unary = do
       advanceToken >> EUnary op <$> (postfix =<< unary)
     TokIdent "sizeof" ->
       advanceToken >> parseSizeof
+    TokIdent "__alignof__" ->
+      advanceToken >> parseAlignof
+    TokIdent "__alignof" ->
+      advanceToken >> parseAlignof
+    TokIdent "va_arg" ->
+      advanceToken >> parseVaArg
+    TokIdent "__builtin_va_arg" ->
+      advanceToken >> parseVaArg
+    TokIdent "__extension__" ->
+      advanceToken >> (postfix =<< unary)
     TokInt s -> advanceToken >> pure (EInt s)
     TokFloat s -> advanceToken >> pure (EFloat s)
     TokChar s -> advanceToken >> pure (EChar s)
     TokString _ -> EString <$> stringLiteral
     TokIdent s -> do
       advanceToken
-      constant <- lookupParserConstant s
-      pure (case constant of
-        Just value -> EInt (show value)
-        Nothing -> EVar s)
+      pure (EVar s)
     TokPunct "(" -> do
       advanceToken
-      isCast <- nextStartsType
-      if isCast
+      statementExpr <- eatPunct "{"
+      if statementExpr
         then do
-          ty <- typeName
+          body <- withParserScope (manyUntil (eatPunct "}") stmt)
           needPunct ")"
-          ECast ty <$> (postfix =<< unary)
-        else do
-          e <- expr
-          needPunct ")"
-          pure e
+          pure (EStmtExpr body)
+        else parenCastOrExpr
     _ -> failAt tok "expected expression"
+
+parenCastOrExpr :: Parser Expr
+parenCastOrExpr = pRaw $ \env toks ->
+  case toks of
+    tok:_ | tokenStartsTypeInEnv env tok ->
+      case forceConsumed (runP (typeName <* needPunct ")") env toks) of
+        Ok ty env' rest -> case forceConsumed (runP (postfix =<< unary) env' rest) of
+          Ok value env'' rest' -> Consumed (Ok (ECast ty value) env'' rest')
+          Error _ -> runP parenExpr env toks
+        Error _ -> runP parenExpr env toks
+    _ -> runP parenExpr env toks
+
+parenExpr :: Parser Expr
+parenExpr = do
+  e <- expr
+  needPunct ")"
+  pure e
 
 parseSizeof :: Parser Expr
 parseSizeof = do
@@ -968,6 +1231,22 @@ parseSizeof = do
   if paren
     then sizeofParen
     else ESizeofExpr <$> (postfix =<< unary)
+
+parseAlignof :: Parser Expr
+parseAlignof = do
+  paren <- eatPunct "("
+  if paren
+    then alignofParen
+    else EAlignofExpr <$> (postfix =<< unary)
+
+parseVaArg :: Parser Expr
+parseVaArg = do
+  needPunct "("
+  list <- assignExpr
+  needPunct ","
+  ty <- typeName
+  needPunct ")"
+  pure (EVaArg list ty)
 
 sizeofParen :: Parser Expr
 sizeofParen = pRaw $ \env toks ->
@@ -978,11 +1257,26 @@ sizeofParen = pRaw $ \env toks ->
         _ -> runP sizeofParenExpr env toks
     _ -> runP sizeofParenExpr env toks
 
+alignofParen :: Parser Expr
+alignofParen = pRaw $ \env toks ->
+  case toks of
+    tok:_ | tokenStartsTypeInEnv env tok ->
+      case forceConsumed (runP (typeName <* needPunct ")") env toks) of
+        Ok ty env' rest | not (postfixContinues rest) -> Consumed (Ok (EAlignofType ty) env' rest)
+        _ -> runP alignofParenExpr env toks
+    _ -> runP alignofParenExpr env toks
+
 sizeofParenExpr :: Parser Expr
 sizeofParenExpr = do
   value <- expr
   needPunct ")"
   ESizeofExpr <$> postfix value
+
+alignofParenExpr :: Parser Expr
+alignofParenExpr = do
+  value <- expr
+  needPunct ")"
+  EAlignofExpr <$> postfix value
 
 postfixContinues :: [Token] -> Bool
 postfixContinues toks = case toks of
@@ -1096,7 +1390,8 @@ builtinTypeNames =
 storageAndTypeQualifiers :: [String]
 storageAndTypeQualifiers =
   [ "const", "volatile", "static", "extern", "register", "inline", "auto"
-  , "restrict", "_Noreturn", "_Atomic"
+  , "__inline", "__inline__", "restrict", "__restrict", "__restrict__"
+  , "_Noreturn", "_Atomic"
   ]
 
 unsupportedQualifiers :: [String]
@@ -1128,6 +1423,7 @@ identifierStartsDeclaration = pRaw $ \env toks -> Unconsumed (Ok (go env toks) e
 
   typedefDeclaratorFollows toks = case dropLeadingQualifiers toks of
     Token _ (TokPunct "*"):_ -> True
+    Token _ (TokPunct "("):_ -> True
     Token _ (TokIdent _):_ -> True
     _ -> False
 
@@ -1215,13 +1511,6 @@ peekSecondPunct :: String -> Parser Bool
 peekSecondPunct punct = pRaw $ \env toks -> case toks of
   _:Token _ (TokPunct p):_ | p == punct -> Unconsumed (Ok True env toks)
   _ -> Unconsumed (Ok False env toks)
-
-nextStartsType :: Parser Bool
-nextStartsType = do
-  mtok <- peekMaybe
-  case mtok of
-    Just tok -> tokenStartsType tok
-    Nothing -> pure False
 
 advanceToken :: Parser ()
 advanceToken = pSkip unexpectedEof

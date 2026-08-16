@@ -1,9 +1,11 @@
 module TypesAst
   ( Program(..)
   , TopDecl(..)
+  , Linkage(..)
   , Param(..)
   , Field(..)
   , CType(..)
+  , LocalStorage(..)
   , ForInit(..)
   , Stmt(..)
   , Expr(..)
@@ -16,11 +18,13 @@ import Base
 
 data Program = Program [TopDecl]
 
+data Linkage = ExternalLinkage | InternalLinkage
+
 data TopDecl
-  = Function CType String [Param] [Stmt]
-  | Prototype CType String [Param]
-  | Global CType String (Maybe Expr)
-  | Globals [(CType, String, Maybe Expr)]
+  = Function Linkage CType String [Param] [Stmt]
+  | Prototype Linkage CType String [Param]
+  | Global Linkage CType String (Maybe Expr)
+  | Globals Linkage [(CType, String, Maybe Expr)]
   | ExternGlobals [(CType, String)]
   | StructDecl Bool String [Field]
   | EnumConstants [(String, Int)]
@@ -28,7 +32,11 @@ data TopDecl
 
 data Param = Param CType String
 
-data Field = Field CType String
+-- The optional expression is the declared width of a C bit-field.  Keeping it
+-- in the AST matters even for translation units that never read the field:
+-- bit-fields participate in aggregate size, alignment, and every following
+-- member offset.
+data Field = Field CType String (Maybe Expr)
 
 data CType
   = CVoid
@@ -52,21 +60,26 @@ data CType
   | CUnionNamed String [Field]
   | CStructDef [Field]
   | CUnionDef [Field]
-  | CEnum String
+  | CEnum String [(String, Int)]
   | CNamed String
   | CArray CType (Maybe Expr)
   | CFunc CType [CType]
   | CPtr CType
 
+data LocalStorage
+  = AutomaticStorage
+  | StaticStorage
+  | ExternalStorage
+
 data ForInit
   = ForNoInit
   | ForExpr Expr
-  | ForDecls [(CType, String, Maybe Expr)]
+  | ForDecls LocalStorage [(CType, String, Maybe Expr)]
 
 data Stmt
-  = SDecl CType String (Maybe Expr)
-  | SDecls [(CType, String, Maybe Expr)]
-  | STypedef
+  = SDecl LocalStorage CType String (Maybe Expr)
+  | SDecls LocalStorage [(CType, String, Maybe Expr)]
+  | STypedef [CType]
   | SReturn (Maybe Expr)
   | SExpr Expr
   | SIf Expr [Stmt] [Stmt]
@@ -95,6 +108,10 @@ data Expr
   | EUnary String Expr
   | ESizeofType CType
   | ESizeofExpr Expr
+  | EAlignofType CType
+  | EAlignofExpr Expr
+  | EVaArg Expr CType
+  | EStmtExpr [Stmt]
   | ECast CType Expr
   | EPostfix String Expr
   | EBinary String Expr Expr
@@ -108,9 +125,9 @@ paramTypes = map (\(Param ty _) -> ty)
 
 renderStmtTag :: Stmt -> String
 renderStmtTag stmt = case stmt of
-  SDecl _ _ _ -> "SDecl"
-  SDecls _ -> "SDecls"
-  STypedef -> "STypedef"
+  SDecl _ _ _ _ -> "SDecl"
+  SDecls _ _ -> "SDecls"
+  STypedef _ -> "STypedef"
   SReturn _ -> "SReturn"
   SExpr _ -> "SExpr"
   SIf _ _ _ -> "SIf"
@@ -140,6 +157,10 @@ renderExprTag expr = case expr of
   EUnary _ _ -> "EUnary"
   ESizeofType _ -> "ESizeofType"
   ESizeofExpr _ -> "ESizeofExpr"
+  EAlignofType _ -> "EAlignofType"
+  EAlignofExpr _ -> "EAlignofExpr"
+  EVaArg _ _ -> "EVaArg"
+  EStmtExpr _ -> "EStmtExpr"
   ECast _ _ -> "ECast"
   EPostfix _ _ -> "EPostfix"
   EBinary _ _ _ -> "EBinary"

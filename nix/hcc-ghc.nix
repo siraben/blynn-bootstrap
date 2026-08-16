@@ -83,6 +83,7 @@ stdenv.mkDerivation (
       install -Dm555 hcpp $out/bin/hcpp
       install -Dm555 hcc1 $out/bin/hcc1
       install -Dm555 hcc-m1 $out/bin/hcc-m1
+      install -Dm555 ${../scripts/hcc-cc-frontier.sh} $out/bin/hcc-cc-frontier
       runHook postInstall
     '';
 

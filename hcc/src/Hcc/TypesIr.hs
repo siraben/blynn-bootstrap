@@ -71,6 +71,9 @@ data Instr
   | ISExt Temp Int Operand
   | IZExt Temp Int Operand
   | ITrunc Temp Int Operand
+  | IVaStart Temp Int
+  | IVaEnd Temp
+  | IVaOverflow Temp
   | IBin Temp BinOp Operand Operand
   | ICond Temp [Instr] Operand [Instr] Operand [Instr] Operand
   | ICall (Maybe Temp) String [Operand]
@@ -86,7 +89,8 @@ data BasicBlock = BasicBlock BlockId [Instr] Terminator
 
 data DataValue
   = DByte Int
-  | DAddress String
+  | DAddress String Int
+  | DLabel String
 
 data DataItem = DataItem String [DataValue]
 
