@@ -692,7 +692,12 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             runtimeFile = "cbits/hcc_runtime.c";
             scriptEnv = ''HCC_C_BACKEND=gcc HOST_CC="$CC"'';
             top = 536870912;
-            hcppTop = 134217728;
+            # GCC's configured targhooks.c preprocessor state peaks above the
+            # old 2^27-word arena.  Leaving only a few million words above the
+            # live set makes the copying collector thrash indefinitely; a
+            # 2^28-word arena completes the same workload in seconds without
+            # changing HCPP output.
+            hcppTop = 268435456;
             hcc1Top = 134217728;
             description = "HCC compiled from Blynn output by the normal GCC C toolchain";
           };
@@ -980,6 +985,11 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
                 libs = tinycc;
               };
             };
+            gnutar-musl = final.callPackage ./nix/minimal-bootstrap/gnutar-musl.nix {
+              bash = final.bash_2_05;
+              tinycc = final.tinycc-musl;
+              gnused = final.gnused-mes;
+            };
             musl-tcc-intermediate = final.callPackage ./nix/minimal-bootstrap/musl-tcc.nix {
               bash = final.bash_2_05;
               tinycc = final.tinycc-mes;
@@ -1162,6 +1172,15 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           mesTests = ./tests/mescc;
         };
 
+        hccGcc46SourceSmokeFor = pname: hcc: extraArgs: pkgs.callPackage ./nix/hcc-gcc46-source-smoke.nix ({
+          inherit pname hcc;
+        } // extraArgs);
+
+        gcc46SelfhostFor = pname: seedGcc: seedLibc: extraArgs: pkgs.callPackage ./nix/gcc46-selfhost.nix ({
+          stdenvNoCC = pkgs.stdenvNoCC;
+          inherit pname seedGcc seedLibc;
+        } // extraArgs);
+
         hcc-m1-smoke = hccM1SmokeFor "hcc-m1-smoke" hccBy.m2.precisely.m2 "amd64";
         hcc-m1-smoke-i386 = hccM1SmokeFor "hcc-m1-smoke-i386" hccBy.m2.precisely.m2 "i386";
         hcc-m1-smoke-aarch64 = hccM1SmokeFor "hcc-m1-smoke-aarch64" hccBy.m2.precisely.m2 "aarch64";
@@ -1173,6 +1192,63 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
 
         hcc-mescc-tests = hccMesccTestsFor "hcc-mescc-tests" hccBy.m2.precisely.m2 "amd64";
         hcc-mescc-tests-native = hccMesccTestsFor "hcc-mescc-tests-host-ghc-native" hccBy.host.ghc.native nativeM1Target;
+        hcc-gcc46-source-smoke-native =
+          hccGcc46SourceSmokeFor "hcc-gcc46-source-smoke-host-ghc-native" hccBy.host.ghc.native { };
+        hcc-gcc46-m1-frontier-native =
+          hccGcc46SourceSmokeFor "hcc-gcc46-m1-frontier-host-ghc-native" hccBy.host.ghc.native {
+            keepArtifacts = true;
+            target = nativeM1Target;
+          };
+        hcc-gcc46-m1-frontier-faithful =
+          hccGcc46SourceSmokeFor "hcc-gcc46-m1-frontier-hcc-m2-precisely-gcc" hccBy.m2.precisely.gcc {
+            keepArtifacts = true;
+            target = nativeM1Target;
+          };
+        hcc-gcc46-m1-full-native =
+          hccGcc46SourceSmokeFor "hcc-gcc46-m1-full-host-ghc-native" hccBy.host.ghc.native {
+            fullManifest = true;
+            keepArtifacts = false;
+            target = nativeM1Target;
+          };
+        hccGcc46M1CompareNativeFaithful = pkgs.runCommand "hcc-gcc46-m1-compare-native-faithful" { } ''
+          native=${hcc-gcc46-m1-frontier-native}/share/hcc-gcc46-source-smoke
+          faithful=${hcc-gcc46-m1-frontier-faithful}/share/hcc-gcc46-source-smoke
+          cmp "$native/m1-files.txt" "$faithful/m1-files.txt"
+
+          mkdir -p "$out"
+          {
+            echo "native: ${hcc-gcc46-m1-frontier-native}"
+            echo "faithful: ${hcc-gcc46-m1-frontier-faithful}"
+            cat "$native/summary.txt"
+            echo
+            echo "sha256:"
+          } > "$out/summary.txt"
+
+          while IFS= read -r file; do
+            cmp "$native/m1/$file" "$faithful/m1/$file"
+            native_hash=$(sha256sum "$native/m1/$file" | cut -d' ' -f1)
+            faithful_hash=$(sha256sum "$faithful/m1/$file" | cut -d' ' -f1)
+            echo "$file native=$native_hash faithful=$faithful_hash" >> "$out/summary.txt"
+          done < "$native/m1-files.txt"
+        '';
+        gcc46-selfhost-native =
+          gcc46SelfhostFor
+            "gcc46-selfhost-host-ghc-native"
+            bootstrapBy.host.ghc.native.minimal.gcc46
+            bootstrapBy.host.ghc.native.tinycc.musl.libs
+            { };
+        gcc46-selfhost-faithful =
+          gcc46SelfhostFor
+            "gcc46-selfhost-m2-precisely-m2"
+            gcc46By.m2.precisely.m2
+            bootstrapBy.m2.precisely.m2.tinycc.musl.libs
+            { };
+        faithful-bootstrap-e2e = pkgs.callPackage ./nix/faithful-bootstrap-e2e.nix {
+          faithfulHcc = hccBy.m2.precisely.m2;
+          tinycc = tinyccBy.m2.precisely.m2;
+          gcc46 = gcc46By.m2.precisely.m2;
+          gcc46Selfhost = gcc46-selfhost-faithful;
+        };
 
         hcc-golden-tests = pkgs.callPackage ./nix/hcc-golden-tests.nix {
           stdenvNoCC = rawStdenvNoCC;
@@ -1245,10 +1321,17 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             host.ghc.native.smoke.m1-riscv64 = hcc-m1-smoke-native-riscv64;
             host.ghc.native.mescc = hcc-mescc-tests-native;
             hcc.golden = hcc-golden-tests;
+            host.ghc.native.gcc46-source-smoke = hcc-gcc46-source-smoke-native;
+            host.ghc.native.gcc46-m1-frontier = hcc-gcc46-m1-frontier-native;
+            host.ghc.native.gcc46-m1-full = hcc-gcc46-m1-full-native;
             hcc.tinycc-tests2-stat = hcc-tinycc-tests2-stat;
             host.ghc.native.tinycc-riscv64 = tinyccBy.riscv64.host.ghc.native;
             precisely.dialect = precisely-dialect-tests;
             tinyccM1.native-vs-faithful = tinyccM1CompareNativeFaithful;
+            gcc46M1.native-vs-faithful = hccGcc46M1CompareNativeFaithful;
+            host.ghc.native.gcc46-selfhost = gcc46-selfhost-native;
+            gcc46.selfhost.faithful = gcc46-selfhost-faithful;
+            e2e.faithful = faithful-bootstrap-e2e;
           };
         };
       in {

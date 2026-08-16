@@ -135,6 +135,26 @@ jobs:
             runner: ubuntu-24.04-arm
             timeout: 360
             attr: tinycc.m2.precisely.gcc
+          - suite: gcc46 frontier
+            arch: amd64
+            runner: ubuntu-latest
+            timeout: 360
+            attr: tests.gcc46M1.native-vs-faithful
+          - suite: gcc46 full HCC source coverage
+            arch: amd64
+            runner: ubuntu-latest
+            timeout: 360
+            attr: tests.host.ghc.native.gcc46-m1-full
+          - suite: gcc46 selfhost native
+            arch: amd64
+            runner: ubuntu-latest
+            timeout: 360
+            attr: tests.host.ghc.native.gcc46-selfhost
+          - suite: faithful e2e
+            arch: amd64
+            runner: ubuntu-latest
+            timeout: 720
+            attr: tests.e2e.faithful
           - suite: tcc backend
             arch: amd64
             runner: ubuntu-latest
