@@ -134,6 +134,11 @@ expect_hcpp_contains pp-macro-include "pp_included_value" "$TESTS_DIR/pp-smoke.c
 expect_hcpp_contains pp-paste-left-raw "paste_left_raw = Ab" "$TESTS_DIR/pp-smoke.c"
 expect_hcpp_contains pp-empty-arg "empty_arg = 0" "$TESTS_DIR/pp-smoke.c"
 expect_hcpp_contains pp-if-mod-ternary "pp_if_mod = 1" "$TESTS_DIR/pp-smoke.c"
+expect_hcpp_contains pp-mutual-object-cycle "int HCC_CYCLE_A" "$TESTS_DIR/pp-smoke.c"
+expect_hcpp_contains pp-standard-variadic "standard_variadic = 1 + 2" "$TESTS_DIR/pp-smoke.c"
+expect_hcpp_contains pp-named-variadic "named_variadic = 3 + 4" "$TESTS_DIR/pp-smoke.c"
+expect_hcpp_contains pp-self-member "self_member_rescan = object . SELF_MEMBER" "$TESTS_DIR/pp-smoke.c"
+expect_hcpp_absent pp-no-double-self-member "state -> state -> text_section" "$TESTS_DIR/pp-smoke.c"
 expect_hcpp_contains pp-short-circuit "short_circuit_and" "$TESTS_DIR/pp-short-circuit.c"
 expect_hcpp_absent pp-short-circuit-dead "dead_and" "$TESTS_DIR/pp-short-circuit.c"
 
