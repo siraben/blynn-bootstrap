@@ -14,6 +14,7 @@ CASES = [
     ("signed-char-cast", 0),
     ("sizeof-member-array-bound", 0),
     ("address-written-scalar", 0),
+    ("global-address-addend", 0),
     ("escaped-string-magic", 0),
     ("archive-header-layout", 0),
     ("scoped-typedef-enum", 0),
@@ -24,7 +25,18 @@ CASES = [
     ("pointer-to-pointer-callback", 0),
     ("bootstrap-qsort-pointer", 0),
     ("for-decl-scope", 0),
+    ("typedef-shadow", 3),
     ("asm-nop", 0),
+    ("static-internal-linkage", 0),
+]
+
+MULTI_TU_CASES = [
+    ("static-conflict", ["static-conflict-left", "static-conflict-right", "static-conflict-main"], 0),
+    (
+        "static-same-basename",
+        ["static-same-basename-left/unit", "static-same-basename-right/unit", "static-same-basename-main"],
+        0,
+    ),
 ]
 
 
@@ -81,6 +93,97 @@ def log(message):
     print(f"hcc-m1-smoke: {message}", flush=True)
 
 
+def assert_static_internal_linkage(m1):
+    text = m1.read_text()
+    forbidden = [":FUNCTION_helper", ":internal_value"]
+    for label in forbidden:
+        if label in text:
+            raise SystemExit(f"{m1.name}: static label was emitted externally: {label}")
+    if ":FUNCTION_HCC_INTERNAL_" not in text:
+        raise SystemExit(f"{m1.name}: static function label was not internalized")
+    if ":HCC_INTERNAL_" not in text:
+        raise SystemExit(f"{m1.name}: static object label was not internalized")
+
+
+def assert_static_conflict_unit(m1):
+    text = m1.read_text()
+    forbidden = [":FUNCTION_helper", ":shared"]
+    for label in forbidden:
+        if label in text:
+            raise SystemExit(f"{m1.name}: static label was emitted externally: {label}")
+    if ":FUNCTION_HCC_INTERNAL_" not in text:
+        raise SystemExit(f"{m1.name}: static function label was not internalized")
+    if ":HCC_INTERNAL_" not in text:
+        raise SystemExit(f"{m1.name}: static object label was not internalized")
+
+
+def compile_to_m1(args, target, examples_dir, work_dir, name):
+    src = examples_dir / f"{name}.c"
+    preprocessed = work_dir / f"{name}.i"
+    hccir = work_dir / f"{name}.hccir"
+    m1 = work_dir / f"{name}.M1"
+    preprocessed.parent.mkdir(parents=True, exist_ok=True)
+
+    with preprocessed.open("w") as handle:
+        log(f"{name}: hcpp {src.name} -> {preprocessed.name}")
+        subprocess.run([args.hcpp, str(src)], check=True, stdout=handle)
+    log(f"{name}: hcc1 --m1-ir -> {hccir.name}")
+    run([
+        args.hcc1,
+        "--target", target["hcc_target"],
+        "--data-prefix", str(hccir),
+        "--m1-ir", "-o", str(hccir), str(preprocessed),
+    ])
+    log(f"{name}: hcc-m1 -> {m1.name}")
+    run([args.hcc_m1, "--target", target["hcc_target"], str(hccir), str(m1)])
+    if name == "static-internal-linkage":
+        assert_static_internal_linkage(m1)
+    if name in ("static-conflict-left", "static-conflict-right") or name.endswith("/unit"):
+        assert_static_conflict_unit(m1)
+    return m1
+
+
+def assemble_and_run(args, target, m2libc, work_dir, name, m1_files, expected):
+    hex2 = work_dir / f"{name}.hex2"
+    end = work_dir / f"{name}-end.hex2"
+    exe = work_dir / name
+
+    log(f"{name}: M1 -> {hex2.name}")
+    m1_argv = [
+        "M1",
+        "--architecture", target["m1_arch"],
+        "--little-endian",
+        "-f", str(m2libc / target["m2_dir"] / target["defs"]),
+        "-f", str(m2libc / target["m2_dir"] / target["libc_core"]),
+    ]
+    for m1 in m1_files:
+        m1_argv.extend(["-f", str(m1)])
+    m1_argv.extend(["--output", str(hex2)])
+    run(m1_argv)
+
+    end.write_text(":ELF_end\n")
+    log(f"{name}: hex2 -> {exe.name}")
+    run([
+        "hex2",
+        "--architecture", target["m1_arch"],
+        "--little-endian",
+        "--base-address", target["base"],
+        "--file", str(m2libc / target["m2_dir"] / target["elf"]),
+        "--file", str(hex2),
+        "--file", str(end),
+        "--output", str(exe),
+    ])
+    exe.chmod(0o755)
+    if args.no_run:
+        log(f"{name}: assembled")
+        return
+    log(f"{name}: execute, expect exit {expected}")
+    runner = args.runner or target["runner"]
+    result = subprocess.run(runner + [str(exe.resolve())])
+    if result.returncode != expected:
+        raise SystemExit(f"{name}: got exit {result.returncode}, expected {expected}")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--hcpp", default="hcpp")
@@ -101,56 +204,16 @@ def main():
     m2libc = pathlib.Path(args.m2libc)
 
     work_dir.mkdir(parents=True, exist_ok=True)
-    log(f"running {len(CASES)} cases for {args.target}")
+    log(f"running {len(CASES)} cases and {len(MULTI_TU_CASES)} multi-tu cases for {args.target}")
     for name, expected in CASES:
         log(f"START {name}")
-        src = examples_dir / f"{name}.c"
-        preprocessed = work_dir / f"{name}.i"
-        hccir = work_dir / f"{name}.hccir"
-        m1 = work_dir / f"{name}.M1"
-        hex2 = work_dir / f"{name}.hex2"
-        end = work_dir / f"{name}-end.hex2"
-        exe = work_dir / name
-
-        with preprocessed.open("w") as handle:
-            log(f"{name}: hcpp {src.name} -> {preprocessed.name}")
-            subprocess.run([args.hcpp, str(src)], check=True, stdout=handle)
-        log(f"{name}: hcc1 --m1-ir -> {hccir.name}")
-        run([args.hcc1, "--target", target["hcc_target"], "--m1-ir", "-o", str(hccir), str(preprocessed)])
-        log(f"{name}: hcc-m1 -> {m1.name}")
-        run([args.hcc_m1, "--target", target["hcc_target"], str(hccir), str(m1)])
-        log(f"{name}: M1 -> {hex2.name}")
-        run([
-            "M1",
-            "--architecture", target["m1_arch"],
-            "--little-endian",
-            "-f", str(m2libc / target["m2_dir"] / target["defs"]),
-            "-f", str(m2libc / target["m2_dir"] / target["libc_core"]),
-            "-f", str(m1),
-            "--output", str(hex2),
-        ])
-        end.write_text(":ELF_end\n")
-        log(f"{name}: hex2 -> {exe.name}")
-        run([
-            "hex2",
-            "--architecture", target["m1_arch"],
-            "--little-endian",
-            "--base-address", target["base"],
-            "--file", str(m2libc / target["m2_dir"] / target["elf"]),
-            "--file", str(hex2),
-            "--file", str(end),
-            "--output", str(exe),
-        ])
-        exe.chmod(0o755)
-        if args.no_run:
-            log(f"{name}: assembled")
-            log(f"DONE  {name}")
-            continue
-        log(f"{name}: execute, expect exit {expected}")
-        runner = args.runner or target["runner"]
-        result = subprocess.run(runner + [str(exe.resolve())])
-        if result.returncode != expected:
-            raise SystemExit(f"{name}: got exit {result.returncode}, expected {expected}")
+        m1 = compile_to_m1(args, target, examples_dir, work_dir, name)
+        assemble_and_run(args, target, m2libc, work_dir, name, [m1], expected)
+        log(f"DONE  {name}")
+    for name, units, expected in MULTI_TU_CASES:
+        log(f"START {name}")
+        m1_files = [compile_to_m1(args, target, examples_dir, work_dir, unit) for unit in units]
+        assemble_and_run(args, target, m2libc, work_dir, name, m1_files, expected)
         log(f"DONE  {name}")
     log("all cases passed")
 

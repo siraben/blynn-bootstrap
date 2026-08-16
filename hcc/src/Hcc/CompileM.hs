@@ -19,6 +19,8 @@ module CompileM
   , bindConstant
   , bindFunction
   , bindFunctionType
+  , bindSymbolAlias
+  , resolveSymbolName
   , lookupVarMaybe
   , lookupVarType
   , lookupGlobalType
@@ -34,12 +36,16 @@ module CompileM
   , currentFunctionName
   , withCurrentFunction
   , currentReturnType
+  , currentReturnSlot
+  , withCurrentReturnSlot
   , withFunctionScope
   , withVarScope
   , withLoopTargets
   , withBreakTarget
+  , withSwitchCaseTargets
   , currentBreakTarget
   , currentContinueTarget
+  , nextSwitchCaseTarget
   , labelBlock
   ) where
 
@@ -65,12 +71,15 @@ data CompileState = CompileState
   , csConstants :: SymbolMap Int
   , csFunctions :: SymbolSet
   , csFunctionTypes :: SymbolMap CType
+  , csSymbolAliases :: SymbolMap String
   , csLabels :: SymbolMap BlockId
   , csDataItems :: [DataItem]
   , csBreakTargets :: [BlockId]
   , csContinueTargets :: [BlockId]
+  , csSwitchCaseTargets :: [[(Maybe Expr, BlockId)]]
   , csTargetBits :: Int
   , csCurrentFunction :: Maybe String
+  , csCurrentReturnSlot :: Maybe Temp
   }
 
 -- | Result of one CompileM step. Uses a single constructor instead of
@@ -123,12 +132,15 @@ initialCompileState = CompileState
   , csConstants = symbolMapEmpty
   , csFunctions = symbolSetEmpty
   , csFunctionTypes = symbolMapEmpty
+  , csSymbolAliases = symbolMapEmpty
   , csLabels = symbolMapEmpty
   , csDataItems = []
   , csBreakTargets = []
   , csContinueTargets = []
+  , csSwitchCaseTargets = []
   , csTargetBits = 64
   , csCurrentFunction = Nothing
+  , csCurrentReturnSlot = Nothing
   }
 
 initialCompileStateForTarget :: String -> Int -> CompileState
@@ -172,8 +184,12 @@ freshDataLabel = do
   pure (prefix ++ "_" ++ label)
 
 addDataItem :: DataItem -> CompileM ()
-addDataItem item@(DataItem label _) =
-  modifyC $ \st -> st { csDataItems = item : filter (\(DataItem label' _) -> label' /= label) (csDataItems st) }
+addDataItem item =
+  -- Every caller obtains the label immediately beforehand with
+  -- freshDataLabel, so it cannot replace an existing pending item.  Filtering
+  -- the whole list here made translation units with many string literals
+  -- quadratic in their pending data count.
+  modifyC $ \st -> st { csDataItems = item : csDataItems st }
 
 bindVar :: String -> Temp -> CType -> CompileM ()
 bindVar name temp ty =
@@ -190,7 +206,8 @@ bindStruct name isUnion fields =
 bindGlobal :: String -> CType -> CompileM ()
 bindGlobal name ty = do
   rejectReservedSymbol "global" name
-  modifyC $ \st -> st { csGlobals = symbolMapInsert name ty (csGlobals st) }
+  resolved <- resolveSymbolName name
+  modifyC $ \st -> st { csGlobals = symbolMapInsert resolved ty (csGlobals st) }
 
 rejectReservedSymbol :: String -> String -> CompileM ()
 rejectReservedSymbol kind name =
@@ -204,15 +221,29 @@ bindConstant name value =
 bindFunction :: String -> CompileM ()
 bindFunction name = do
   rejectReservedSymbol "function" name
-  modifyC $ \st -> st { csFunctions = symbolSetInsert name (csFunctions st) }
+  resolved <- resolveSymbolName name
+  modifyC $ \st -> st { csFunctions = symbolSetInsert resolved (csFunctions st) }
 
 bindFunctionType :: String -> CType -> [Param] -> CompileM ()
 bindFunctionType name retTy params = do
   rejectReservedSymbol "function" name
+  resolved <- resolveSymbolName name
   modifyC $ \st -> st
-    { csFunctions = symbolSetInsert name (csFunctions st)
-    , csFunctionTypes = symbolMapInsert name (CFunc retTy (paramTypes params)) (csFunctionTypes st)
+    { csFunctions = symbolSetInsert resolved (csFunctions st)
+    , csFunctionTypes = symbolMapInsert resolved (CFunc retTy (paramTypes params)) (csFunctionTypes st)
     }
+
+bindSymbolAlias :: String -> String -> CompileM ()
+bindSymbolAlias public resolved = do
+  rejectReservedSymbol "symbol alias" public
+  rejectReservedSymbol "symbol alias" resolved
+  modifyC $ \st -> st { csSymbolAliases = symbolMapInsert public resolved (csSymbolAliases st) }
+
+resolveSymbolName :: String -> CompileM String
+resolveSymbolName name = getC $ \st ->
+  case symbolMapLookup name (csSymbolAliases st) of
+    Just resolved -> resolved
+    Nothing -> name
 
 lookupVarMaybe :: String -> CompileM (Maybe Temp)
 lookupVarMaybe name = getC (fmap fst . scopeMapLookup name . csVars)
@@ -221,16 +252,22 @@ lookupVarType :: String -> CompileM (Maybe CType)
 lookupVarType name = getC (fmap snd . scopeMapLookup name . csVars)
 
 lookupGlobalType :: String -> CompileM (Maybe CType)
-lookupGlobalType name = getC (symbolMapLookup name . csGlobals)
+lookupGlobalType name = do
+  resolved <- resolveSymbolName name
+  getC (symbolMapLookup resolved . csGlobals)
 
 lookupConstant :: String -> CompileM (Maybe Int)
 lookupConstant name = getC (symbolMapLookup name . csConstants)
 
 lookupFunction :: String -> CompileM Bool
-lookupFunction name = getC (symbolSetMember name . csFunctions)
+lookupFunction name = do
+  resolved <- resolveSymbolName name
+  getC (symbolSetMember resolved . csFunctions)
 
 lookupFunctionType :: String -> CompileM (Maybe CType)
-lookupFunctionType name = getC (symbolMapLookup name . csFunctionTypes)
+lookupFunctionType name = do
+  resolved <- resolveSymbolName name
+  getC (symbolMapLookup resolved . csFunctionTypes)
 
 lookupStruct :: String -> CompileM (Maybe (Bool, [Field]))
 lookupStruct name = getC (symbolMapLookup name . csStructs)
@@ -285,22 +322,50 @@ currentReturnType = do
         Just (CFunc retTy _) -> pure (Just retTy)
         _ -> pure Nothing
 
+currentReturnSlot :: CompileM (Maybe Temp)
+currentReturnSlot = getC csCurrentReturnSlot
+
+withCurrentReturnSlot :: Maybe Temp -> CompileM a -> CompileM a
+withCurrentReturnSlot slot action = CompileM $ \st ->
+  case unCompileM action st { csCurrentReturnSlot = slot } of
+    StepErr err -> StepErr err
+    StepOk x st' -> StepOk x (st' { csCurrentReturnSlot = csCurrentReturnSlot st })
+
 withFunctionScope :: CompileM a -> CompileM a
 withFunctionScope action = CompileM $ \st ->
-  case unCompileM action st { csVars = scopeMapEmpty, csLabels = symbolMapEmpty, csBreakTargets = [], csContinueTargets = [] } of
+  case unCompileM action st
+    { csVars = scopeMapEmpty
+    , csLabels = symbolMapEmpty
+    , csBreakTargets = []
+    , csContinueTargets = []
+    , csSwitchCaseTargets = []
+    , csCurrentReturnSlot = Nothing
+    } of
     StepErr err -> StepErr err
     StepOk x st' -> StepOk x (st'
       { csVars = csVars st
       , csLabels = csLabels st
+      , csStructs = csStructs st
+      , csStructSizes = csStructSizes st
+      , csStructMembers = csStructMembers st
+      , csConstants = csConstants st
       , csBreakTargets = csBreakTargets st
       , csContinueTargets = csContinueTargets st
+      , csSwitchCaseTargets = csSwitchCaseTargets st
+      , csCurrentReturnSlot = csCurrentReturnSlot st
       })
 
 withVarScope :: CompileM a -> CompileM a
 withVarScope action = CompileM $ \st ->
   case unCompileM action st { csVars = scopeMapEnter (csVars st) } of
     StepErr err -> StepErr err
-    StepOk x st' -> StepOk x (st' { csVars = scopeMapLeave (csVars st') })
+    StepOk x st' -> StepOk x (st'
+      { csVars = scopeMapLeave (csVars st')
+      , csStructs = csStructs st
+      , csStructSizes = csStructSizes st
+      , csStructMembers = csStructMembers st
+      , csConstants = csConstants st
+      })
 
 withLoopTargets :: BlockId -> BlockId -> CompileM a -> CompileM a
 withLoopTargets breakTarget continueTarget action = CompileM $ \st ->
@@ -320,6 +385,12 @@ withBreakTarget breakTarget action = CompileM $ \st ->
     StepErr err -> StepErr err
     StepOk x st' -> StepOk x (st' { csBreakTargets = csBreakTargets st })
 
+withSwitchCaseTargets :: [(Maybe Expr, BlockId)] -> CompileM a -> CompileM a
+withSwitchCaseTargets targets action = CompileM $ \st ->
+  case unCompileM action st { csSwitchCaseTargets = targets : csSwitchCaseTargets st } of
+    StepErr err -> StepErr err
+    StepOk x st' -> StepOk x (st' { csSwitchCaseTargets = csSwitchCaseTargets st })
+
 currentBreakTarget :: CompileM (Maybe BlockId)
 currentBreakTarget = getC (listHead . csBreakTargets)
 
@@ -329,6 +400,40 @@ currentContinueTarget = getC (listHead . csContinueTargets)
 listHead :: [a] -> Maybe a
 listHead [] = Nothing
 listHead (x:_) = Just x
+
+nextSwitchCaseTarget :: Maybe Expr -> CompileM BlockId
+nextSwitchCaseTarget label = CompileM $ \st -> case csSwitchCaseTargets st of
+  [] -> StepErr (CompileError "case label outside switch")
+  []:_ -> StepErr (CompileError "unexpected switch case label")
+  targets:_ -> case lookupSwitchCaseTarget label targets of
+    Just target -> StepOk target st
+    Nothing -> StepErr (CompileError "case label outside switch")
+
+lookupSwitchCaseTarget :: Maybe Expr -> [(Maybe Expr, BlockId)] -> Maybe BlockId
+lookupSwitchCaseTarget label targets = case targets of
+  [] -> Nothing
+  (targetLabel, target):rest ->
+    if sameSwitchLabel label targetLabel
+      then Just target
+      else lookupSwitchCaseTarget label rest
+
+sameSwitchLabel :: Maybe Expr -> Maybe Expr -> Bool
+sameSwitchLabel a b = case (a, b) of
+  (Nothing, Nothing) -> True
+  (Just x, Just y) -> sameExpr x y
+  _ -> False
+
+sameExpr :: Expr -> Expr -> Bool
+sameExpr a b = case (a, b) of
+  (EInt x, EInt y) -> x == y
+  (EChar x, EChar y) -> x == y
+  (EString x, EString y) -> x == y
+  (EVar x, EVar y) -> x == y
+  (EUnary opX x, EUnary opY y) -> opX == opY && sameExpr x y
+  (EBinary opX xl xr, EBinary opY yl yr) -> opX == opY && sameExpr xl yl && sameExpr xr yr
+  (ECond xc xy xn, ECond yc yy yn) -> sameExpr xc yc && sameExpr xy yy && sameExpr xn yn
+  (ECast _ x, ECast _ y) -> sameExpr x y
+  _ -> False
 
 labelBlock :: String -> CompileM BlockId
 labelBlock name = CompileM $ \st -> case symbolMapLookup name (csLabels st) of
