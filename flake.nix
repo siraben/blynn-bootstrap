@@ -1208,17 +1208,87 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           hccGcc46SourceSmokeFor "hcc-gcc46-m1-full-host-ghc-native" hccBy.host.ghc.native {
             fullManifest = true;
             keepArtifacts = false;
+            softFloatRuntime = true;
             target = nativeM1Target;
           };
-        hccGcc46M1CompareNativeFaithful = pkgs.runCommand "hcc-gcc46-m1-compare-native-faithful" { } ''
-          native=${hcc-gcc46-m1-frontier-native}/share/hcc-gcc46-source-smoke
-          faithful=${hcc-gcc46-m1-frontier-faithful}/share/hcc-gcc46-source-smoke
+        hcc-gcc46-m1-full-artifacts-native =
+          hccGcc46SourceSmokeFor "hcc-gcc46-m1-full-artifacts-host-ghc-native" hccBy.host.ghc.native {
+            fullManifest = true;
+            keepArtifacts = true;
+            softFloatRuntime = true;
+            target = nativeM1Target;
+          };
+        hcc-gcc46-m1-full-artifacts-faithful =
+          hccGcc46SourceSmokeFor "hcc-gcc46-m1-full-artifacts-m2-precisely-m2" hccBy.m2.precisely.m2 {
+            fullManifest = true;
+            keepArtifacts = true;
+            softFloatRuntime = true;
+            target = nativeM1Target;
+          };
+        gcc46GmpStatic = (pkgs.gmp.override { cxx = false; }).overrideAttrs (old: {
+          doCheck = false;
+          dontDisableStatic = true;
+          configureFlags = (old.configureFlags or [ ]) ++ [ "--enable-static" "--disable-shared" ];
+        });
+        gcc46MpfrStatic = (pkgs.mpfr.override { gmp = gcc46GmpStatic; }).overrideAttrs (old: {
+          doCheck = false;
+          dontDisableStatic = true;
+          configureFlags = (old.configureFlags or [ ]) ++ [ "--enable-static" "--disable-shared" ];
+        });
+        gcc46LibmpcStatic = (pkgs.libmpc.override {
+          gmp = gcc46GmpStatic;
+          mpfr = gcc46MpfrStatic;
+        }).overrideAttrs (old: {
+          doCheck = false;
+          dontDisableStatic = true;
+          configureFlags = (old.configureFlags or [ ]) ++ [ "--enable-static" "--disable-shared" ];
+        });
+        hcc-gcc46-direct-link-native = pkgs.callPackage ./nix/hcc-gcc46-direct-link.nix {
+          glibcStatic = pkgs.glibc.static;
+          gmpStatic = gcc46GmpStatic;
+          libmpcStatic = gcc46LibmpcStatic;
+          m1Artifacts = hcc-gcc46-m1-full-artifacts-native;
+          mpfrStatic = gcc46MpfrStatic;
+          zlibStatic = pkgs.zlib.static;
+        };
+        hcc-gcc46-direct-link-faithful = pkgs.callPackage ./nix/hcc-gcc46-direct-link.nix {
+          glibcStatic = pkgs.glibc.static;
+          gmpStatic = gcc46GmpStatic;
+          libmpcStatic = gcc46LibmpcStatic;
+          m1Artifacts = hcc-gcc46-m1-full-artifacts-faithful;
+          mpfrStatic = gcc46MpfrStatic;
+          pname = "hcc-gcc46-direct-link-faithful";
+          zlibStatic = pkgs.zlib.static;
+        };
+        gcc46-selfhost-hcc-direct-native =
+          gcc46SelfhostFor
+            "gcc46-selfhost-hcc-direct-native"
+            hcc-gcc46-direct-link-native
+            pkgs.glibc
+            {
+              wrapSeedFixxfdi = false;
+              patchGlibcUcontext = true;
+              seedLibcDev = pkgs.glibc.dev;
+            };
+        gcc46-selfhost-hcc-direct-faithful =
+          gcc46SelfhostFor
+            "gcc46-selfhost-hcc-direct-faithful"
+            hcc-gcc46-direct-link-faithful
+            pkgs.glibc
+            {
+              wrapSeedFixxfdi = false;
+              patchGlibcUcontext = true;
+              seedLibcDev = pkgs.glibc.dev;
+            };
+        hccGcc46M1Compare = pname: nativeDrv: faithfulDrv: pkgs.runCommand pname { } ''
+          native=${nativeDrv}/share/hcc-gcc46-source-smoke
+          faithful=${faithfulDrv}/share/hcc-gcc46-source-smoke
           cmp "$native/m1-files.txt" "$faithful/m1-files.txt"
 
           mkdir -p "$out"
           {
-            echo "native: ${hcc-gcc46-m1-frontier-native}"
-            echo "faithful: ${hcc-gcc46-m1-frontier-faithful}"
+            echo "native: ${nativeDrv}"
+            echo "faithful: ${faithfulDrv}"
             cat "$native/summary.txt"
             echo
             echo "sha256:"
@@ -1231,6 +1301,14 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             echo "$file native=$native_hash faithful=$faithful_hash" >> "$out/summary.txt"
           done < "$native/m1-files.txt"
         '';
+        hccGcc46M1CompareNativeFaithful = hccGcc46M1Compare
+          "hcc-gcc46-m1-compare-native-faithful"
+          hcc-gcc46-m1-frontier-native
+          hcc-gcc46-m1-frontier-faithful;
+        hccGcc46M1FullCompareNativeFaithful = hccGcc46M1Compare
+          "hcc-gcc46-m1-full-compare-native-faithful"
+          hcc-gcc46-m1-full-artifacts-native
+          hcc-gcc46-m1-full-artifacts-faithful;
         gcc46-selfhost-native =
           gcc46SelfhostFor
             "gcc46-selfhost-host-ghc-native"
@@ -1249,10 +1327,19 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           gcc46 = gcc46By.m2.precisely.m2;
           gcc46Selfhost = gcc46-selfhost-faithful;
         };
+        hcc-gcc46-direct-e2e = pkgs.callPackage ./nix/hcc-gcc46-direct-e2e.nix {
+          directGcc = hcc-gcc46-direct-link-faithful;
+          faithfulHcc = hccBy.m2.precisely.m2;
+          gcc46Selfhost = gcc46-selfhost-hcc-direct-faithful;
+          m1Artifacts = hcc-gcc46-m1-full-artifacts-faithful;
+        };
 
         hcc-golden-tests = pkgs.callPackage ./nix/hcc-golden-tests.nix {
           stdenvNoCC = rawStdenvNoCC;
           hcc = hccBy.m2.precisely.m2;
+        };
+        hcc-elf-smoke = pkgs.callPackage ./nix/hcc-elf-smoke.nix {
+          hcc = hccBy.host.ghc.native;
         };
 
         hcc-tinycc-tests2-stat = pkgs.callPackage ./nix/hcc-tinycc-tests2-stat.nix {
@@ -1320,18 +1407,27 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             host.ghc.native.smoke.m1-aarch64 = hcc-m1-smoke-native-aarch64;
             host.ghc.native.smoke.m1-riscv64 = hcc-m1-smoke-native-riscv64;
             host.ghc.native.mescc = hcc-mescc-tests-native;
+            host.ghc.native.smoke.elf = hcc-elf-smoke;
             hcc.golden = hcc-golden-tests;
             host.ghc.native.gcc46-source-smoke = hcc-gcc46-source-smoke-native;
             host.ghc.native.gcc46-m1-frontier = hcc-gcc46-m1-frontier-native;
             host.ghc.native.gcc46-m1-full = hcc-gcc46-m1-full-native;
+            host.ghc.native.gcc46-m1-full-artifacts = hcc-gcc46-m1-full-artifacts-native;
+            gcc46.m1-full-artifacts.faithful = hcc-gcc46-m1-full-artifacts-faithful;
+            host.ghc.native.gcc46-direct-link = hcc-gcc46-direct-link-native;
+            gcc46.direct-link.faithful = hcc-gcc46-direct-link-faithful;
+            host.ghc.native.gcc46-selfhost-direct = gcc46-selfhost-hcc-direct-native;
+            gcc46.selfhost-direct.faithful = gcc46-selfhost-hcc-direct-faithful;
             hcc.tinycc-tests2-stat = hcc-tinycc-tests2-stat;
             host.ghc.native.tinycc-riscv64 = tinyccBy.riscv64.host.ghc.native;
             precisely.dialect = precisely-dialect-tests;
             tinyccM1.native-vs-faithful = tinyccM1CompareNativeFaithful;
             gcc46M1.native-vs-faithful = hccGcc46M1CompareNativeFaithful;
+            gcc46M1.full-native-vs-faithful = hccGcc46M1FullCompareNativeFaithful;
             host.ghc.native.gcc46-selfhost = gcc46-selfhost-native;
             gcc46.selfhost.faithful = gcc46-selfhost-faithful;
             e2e.faithful = faithful-bootstrap-e2e;
+            e2e.hcc-gcc46-direct = hcc-gcc46-direct-e2e;
           };
         };
       in {
@@ -1339,7 +1435,11 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           default = packageTree.default;
         };
 
-        checks.hcc-golden = hcc-golden-tests;
+        checks = {
+          hcc-golden = hcc-golden-tests;
+        } // lib.optionalAttrs (system == "x86_64-linux") {
+          hcc-elf = hcc-elf-smoke;
+        };
 
         legacyPackages = packageTree;
 

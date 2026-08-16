@@ -12,6 +12,7 @@
 , fullManifest ? false
 , keepArtifacts ? false
 , pname ? "hcc-gcc46-source-smoke"
+, softFloatRuntime ? false
 , sourceFiles ? [
     "alias.c"
     "alloc-pool.c"
@@ -26,6 +27,7 @@
     "targhooks.c"
     "timevar.c"
     "tree.c"
+    "tree-ssa-operands.c"
     "unwind-dw2.c"
     "vmsdbgout.c"
   ]
@@ -70,6 +72,9 @@ stdenv.mkDerivation {
 
   configurePhase = ''
     runHook preConfigure
+
+    mkdir -p work
+    printf 'gcc-configure-start\t%s\n' "$(date +%s)" > work/source-events.tsv
 
     export CFLAGS="-g -std=gnu89"
     export CFLAGS_FOR_BUILD="-g -std=gnu89"
@@ -145,6 +150,8 @@ const unsigned char executable_checksum[16] = {
 EOF_CC1_CHECKSUM
     ''}
 
+    printf 'gcc-configure-end\t%s\n' "$(date +%s)" >> work/source-events.tsv
+
     runHook postConfigure
   '';
 
@@ -152,6 +159,7 @@ EOF_CC1_CHECKSUM
     runHook preBuild
 
     mkdir -p probe/include/sys work
+    ${lib.optionalString softFloatRuntime "export HCC_SOFT_FLOAT_RUNTIME=1"}
     ${lib.optionalString fullManifest "export HCC_KEEP_FAILED_TEMPS=1"}
 
     cat > probe/include/limits.h <<'EOF_LIMITS'
@@ -208,7 +216,13 @@ EOF_STDDEF
     cat > probe/include/stdarg.h <<'EOF_STDARG'
 #ifndef HCC_PROBE_STDARG_H
 #define HCC_PROBE_STDARG_H
-typedef void *__gnuc_va_list;
+struct __hcc_va_state {
+  unsigned int gp_offset;
+  unsigned int fp_offset;
+  void *overflow_arg_area;
+  void *reg_save_area;
+};
+typedef struct __hcc_va_state __gnuc_va_list[1];
 typedef __gnuc_va_list va_list;
 #define va_start(ap, last) __builtin_va_start(ap, last)
 #define va_end(ap) __builtin_va_end(ap)
@@ -309,7 +323,8 @@ EOF_STDIO
     cat > probe/include/errno.h <<'EOF_ERRNO'
 #ifndef HCC_PROBE_ERRNO_H
 #define HCC_PROBE_ERRNO_H
-extern int errno;
+int *__errno_location(void);
+#define errno (*__errno_location())
 #define ENOENT 2
 #define EINTR 4
 #define E2BIG 7
@@ -714,6 +729,7 @@ EOF_UNWIND
     : > work/selected.txt
 
     ${if fullManifest then ''
+      hcc_sweep_start=$(date +%s)
       # Ask the configured GCC makefile for the exact objects linked into the
       # driver, C front end, and collect2.  Keep the roles as well as a unique
       # object list so the manifest is both auditable and directly executable.
@@ -804,6 +820,11 @@ EOF_UNWIND
         echo "$object" >> work/selected.txt
         compiled=$((compiled + 1))
       done < work/stage1-objects.txt
+      hcc_sweep_end=$(date +%s)
+      {
+        printf 'hcc-source-to-m1-start\t%s\n' "$hcc_sweep_start"
+        printf 'hcc-source-to-m1-end\t%s\n' "$hcc_sweep_end"
+      } >> work/source-events.tsv
     '' else ''
       for src in ${lib.escapeShellArgs sourceFiles}; do
         path="gcc-4.6.4/gcc/$src"
@@ -832,9 +853,17 @@ EOF_UNWIND
       echo "gcc: gcc-4.6.4"
       echo "mode: ${if fullManifest then "make-derived stage1 source-to-M1 manifest" else "configured source-to-M1 frontier"}"
       echo "target: ${target}"
+      echo "soft-float-runtime: ${if softFloatRuntime then "enabled" else "disabled"}"
       echo "compiled: $compiled"
       echo "selected: ${if fullManifest then "$compiled" else toString (builtins.length sourceFiles)}"
       echo "artifacts: ${if keepArtifacts then "kept" else "discarded"}"
+      gcc_configure_start=$(gawk '$1 == "gcc-configure-start" { print $2; exit }' work/source-events.tsv)
+      gcc_configure_end=$(gawk '$1 == "gcc-configure-end" { print $2; exit }' work/source-events.tsv)
+      echo "gcc-configure-seconds: $((gcc_configure_end - gcc_configure_start))"
+      ${lib.optionalString fullManifest ''
+        echo "hcc-source-to-m1-seconds: $((hcc_sweep_end - hcc_sweep_start))"
+        echo "hcc-jobs: $hcc_jobs"
+      ''}
       echo "note: ${if fullManifest then "the configured GCC make graph derives this manifest from every object role linked into xgcc, cc1, and collect2" else "this is the bounded flake test for representative GCC 4.6.4 C compiler sources; the full make-derived stage1 sweep is a separate test target"}."
     } > work/summary.txt
 
@@ -851,6 +880,7 @@ EOF_UNWIND
       install -Dm644 work/stage1-link-manifest.txt "$out/share/hcc-gcc46-source-smoke/stage1-link-manifest.txt"
       install -Dm644 work/stage1-objects.txt "$out/share/hcc-gcc46-source-smoke/stage1-objects.txt"
       install -Dm644 work/stage1-source-manifest.txt "$out/share/hcc-gcc46-source-smoke/stage1-source-manifest.txt"
+      install -Dm644 work/source-events.tsv "$out/share/hcc-gcc46-source-smoke/source-events.tsv"
     ''}
     if [ "${if keepArtifacts then "1" else "0"}" = 1 ]; then
       mkdir -p "$out/share/hcc-gcc46-source-smoke/m1"

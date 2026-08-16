@@ -11,6 +11,10 @@ HCPP=${HCPP:-$bindir/hcpp}
 HCC1=${HCC1:-$bindir/hcc1}
 HCC_M1=${HCC_M1:-$bindir/hcc-m1}
 target=${HCC_TARGET:-amd64}
+soft_float_arg=
+if test "${HCC_SOFT_FLOAT_RUNTIME:-0}" = 1; then
+  soft_float_arg=--soft-float-runtime
+fi
 
 mode=compile
 input=
@@ -180,7 +184,7 @@ case "$input" in
     ;;
 esac
 
-"$HCC1" --target "$target" --data-prefix "$output" --m1-ir -o "$ir" "$preprocessed"
+"$HCC1" $soft_float_arg --target "$target" --data-prefix "$output" --m1-ir -o "$ir" "$preprocessed"
 "$HCC_M1" --target "$target" "$ir" "$m1"
 
 {
