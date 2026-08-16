@@ -6,22 +6,22 @@
   bash,
   tinycc,
   gnumake,
-  gnused,
   gnugrep,
+  gnused,
 }:
 let
   common = import ./common.nix { inherit lib; };
-  pname = "gnutar";
+  pname = "gnutar-musl";
   version = "1.12";
   meta = common.mkMeta {
-    description = "GNU implementation of the tar archiver";
+    description = "GNU implementation of the tar archiver, built against musl";
     homepage = "https://www.gnu.org/software/tar/";
     mainProgram = "tar";
   };
 
   src = fetchurl {
     url = "mirror://gnu/tar/tar-${version}.tar.gz";
-    sha256 = "02m6gajm647n8l9a5bnld6fnbgdpyi4i3i83p7xcwv0kif47xhy6";
+    hash = "sha256-xsN+iIsTbM76uQPFEUn0t71lnWnUrqISRfYQU6V6pgo=";
   };
 in
 bash.runCommand "${pname}-${version}"
@@ -49,12 +49,16 @@ bash.runCommand "${pname}-${version}"
       po/Makefile.in scripts/Makefile.in src/Makefile.in tests/Makefile.in
 
     export CC="tcc -B ${tinycc.libs}/lib"
+    export LD=tcc
+    export ac_cv_sizeof_unsigned_long=4
+    export ac_cv_sizeof_long_long=8
+    export ac_cv_header_netdb_h=no
     bash ./configure \
+      --prefix=$out \
       --build=${buildPlatform.config} \
       --host=${hostPlatform.config} \
       --disable-dependency-tracking \
-      --disable-nls \
-      --prefix=$out
+      --disable-nls
 
     make AR="tcc -ar"
     make install

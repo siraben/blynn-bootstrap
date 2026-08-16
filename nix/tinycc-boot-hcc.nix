@@ -18,6 +18,7 @@
 }:
 
 let
+  nixLib = import ./lib.nix { inherit lib; };
   version = "unstable-2025-12-03";
   rev = "cb41cbfe717e4c00d7bb70035cda5ee5f0ff9341";
   shortRev = builtins.substring 0 7 rev;
@@ -116,30 +117,12 @@ stdenvNoCC.mkDerivation {
 
     ulimit -s unlimited
 
-    log_step() {
-      printf 'tinycc-boot-hcc: %s\n' "$1"
-    }
-
-    run_step() {
-      label="$1"
-      shift
-      log_step "START $label"
-      "$@"
-      log_step "DONE  $label"
-    }
-
-    run_step_shell() {
-      label="$1"
-      command="$2"
-      log_step "START $label"
-      eval "$command"
-      log_step "DONE  $label"
-    }
-
-    log_file() {
-      file="$1"
-      log_step "FILE  $file"
-    }
+    : > bootstrap-metrics.tsv
+    ${nixLib.shellHelpers {
+      name = "tinycc-boot-hcc";
+      timed = true;
+      metricsFile = "bootstrap-metrics.tsv";
+    }}
 
     m1_artifacts_only="${if m1ArtifactsOnly then "1" else "0"}"
     target_is_aarch64="${if targetCfg.buildArm64Lib then "1" else "0"}"
@@ -389,7 +372,8 @@ stdenvNoCC.mkDerivation {
       $bootstrap_link_suffix \
       -o tcc-stage3
 
-    if [ "$target_is_aarch64" = 1 ]; then
+    # Stage 2 is the transition away from the bootstrap compiler's historical
+    # double-for-long-double fallback; stage 4 proves the new stage is stable.
     run_step "tcc-stage3 self-build stage4" run_target ./tcc-stage3 $bootstrap_link_prefix \
       -I . \
       -I "$tcc_include_src" \
@@ -423,9 +407,6 @@ stdenvNoCC.mkDerivation {
       -o tcc-stage4
 
     run_step "fixpoint check tcc-stage3 == tcc-stage4" cmp tcc-stage3 tcc-stage4
-    else
-    run_step "fixpoint check tcc-stage2 == tcc-stage3" cmp tcc-stage2 tcc-stage3
-    fi
 
     mkdir -p final-libs
     if [ "$target_is_aarch64" = 1 ]; then
@@ -505,6 +486,31 @@ stdenvNoCC.mkDerivation {
     install -Dm555 tcc-stage3 $out/bin/tcc
     install -Dm555 tcc $out/bin/tcc-hcc-stage1
     install -Dm555 tcc-stage2 $out/bin/tcc-stage2
+    mkdir -p $out/share/tinycc-hcc
+    install -Dm644 bootstrap-metrics.tsv $out/share/tinycc-hcc/bootstrap-metrics.tsv
+    stage1_hash=$(sha256sum tcc)
+    stage1_hash="''${stage1_hash%% *}"
+    stage2_hash=$(sha256sum tcc-stage2)
+    stage2_hash="''${stage2_hash%% *}"
+    stage3_hash=$(sha256sum tcc-stage3)
+    stage3_hash="''${stage3_hash%% *}"
+    stage4_hash=$(sha256sum tcc-stage4)
+    stage4_hash="''${stage4_hash%% *}"
+    test "$stage3_hash" = "$stage4_hash"
+    {
+      echo "hcc: ${hcc}"
+      echo "target: ${targetCfg.hcc}"
+      echo "stage1-producer: HCC"
+      echo "stage2-producer: tcc-hcc-stage1"
+      echo "stage3-producer: tcc-stage2"
+      echo "stage4-producer: tcc-stage3"
+      echo "stage1-sha256: $stage1_hash"
+      echo "stage2-sha256: $stage2_hash"
+      echo "stage3-sha256: $stage3_hash"
+      echo "stage4-sha256: $stage4_hash"
+      echo "stage3-stage4: identical"
+      echo "result: ok"
+    } > $out/share/tinycc-hcc/summary.txt
     mkdir -p $out/lib
     cp final-libs/crt1.o final-libs/crti.o final-libs/crtn.o $out/lib/
     cp final-libs/libc.a final-libs/libgetopt.a final-libs/libtcc1.a $out/lib/
@@ -564,6 +570,17 @@ stdenvNoCC.mkDerivation {
     EOF
     run_target ./tcc $check_include_flags -c float-const-smoke.c -o float-const-smoke.o
     test -s float-const-smoke.o
+
+    cat > long-double-smoke.c <<'EOF'
+    #include <float.h>
+    #define HCC_LDBL_MATCHES(m, s) (m == LDBL_MANT_DIG && s == sizeof(long double))
+    typedef char hcc_long_double_matches_float_h[
+      (HCC_LDBL_MATCHES(53, 8) || HCC_LDBL_MATCHES(64, 12) ||
+       HCC_LDBL_MATCHES(64, 16) || HCC_LDBL_MATCHES(113, 16)) ? 1 : -1
+    ];
+    EOF
+    run_target ./tcc-stage3 $check_include_flags -c long-double-smoke.c -o long-double-smoke.o
+    test -s long-double-smoke.o
 
     cat > hex-float-smoke.c <<'EOF'
     struct hcc_hex_float_smoke { double value; };
