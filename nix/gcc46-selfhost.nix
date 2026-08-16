@@ -15,6 +15,9 @@
 , gzip
 , seedGcc
 , seedLibc
+, seedLibcDev ? seedLibc
+, wrapSeedFixxfdi ? true
+, patchGlibcUcontext ? false
 , bootstrap ? true
 , pname ? "gcc46-selfhost"
 }:
@@ -44,8 +47,8 @@ let
   configureFlags = [
     "--build=x86_64-unknown-linux-gnu"
     "--host=x86_64-unknown-linux-gnu"
-    "--with-native-system-header-dir=${seedLibc}/include"
-    "--with-build-sysroot=${seedLibc}/include"
+    "--with-native-system-header-dir=${seedLibcDev}/include"
+    "--with-build-sysroot=${seedLibcDev}/include"
     "--disable-decimal-float"
     "--disable-dependency-tracking"
     "--disable-libatomic"
@@ -99,6 +102,9 @@ stdenvNoCC.mkDerivation {
 
     echo "gcc46-selfhost: seedGcc=${seedGcc}"
     echo "gcc46-selfhost: seedLibc=${seedLibc}"
+    echo "gcc46-selfhost: seedLibcDev=${seedLibcDev}"
+    echo "gcc46-selfhost: wrapSeedFixxfdi=${if wrapSeedFixxfdi then "yes" else "no"}"
+    echo "gcc46-selfhost: patchGlibcUcontext=${if patchGlibcUcontext then "yes" else "no"}"
     echo "gcc46-selfhost: bootstrap=${if bootstrap then "yes" else "no"}"
 
     tar xzf ${gccCore}
@@ -115,6 +121,9 @@ stdenvNoCC.mkDerivation {
     patch -Np1 --fuzz=0 -i ${./patches/gcc46-libiberty-musl-psignal.patch}
     patch -Np1 --fuzz=0 -i ${./patches/gcc46-libgcc-fixxfdi-compat.patch}
     patch -Np1 --fuzz=0 -i ${./patches/gcc46-host-linux-ssize-max.patch}
+    ${lib.optionalString patchGlibcUcontext ''
+      patch -Np1 --fuzz=0 -i ${./patches/gcc46-glibc-ucontext-compat.patch}
+    ''}
     cd ..
 
     mkdir obj
@@ -123,34 +132,38 @@ stdenvNoCC.mkDerivation {
     export CC="${seedGcc}/bin/gcc -B ${seedLibc}/lib"
     export CFLAGS="-g -O2"
     export CFLAGS_FOR_BUILD="$CFLAGS"
-    export C_INCLUDE_PATH="${seedLibc}/include:$(pwd)/../mpfr-2.4.2/src"
+    export C_INCLUDE_PATH="${seedLibcDev}/include:$(pwd)/../mpfr-2.4.2/src"
     export CPLUS_INCLUDE_PATH="$C_INCLUDE_PATH"
     export LIBRARY_PATH="${seedLibc}/lib"
 
-    # The seed musl libc was built before GCC is available and references the
-    # signed long-double conversion helper under TCC's libgcc-compatible name.
-    printf '%s\n' \
-      'long long __fixxfdi(long double x) { return (long long)(__int128)x; }' \
-      > fixxfdi.c
-    $CC -c fixxfdi.c -o fixxfdi.o
-    fixxfdi_obj="$PWD/fixxfdi.o"
-    printf '%s\n' \
-      '#!${bash}/bin/bash' \
-      'link=yes' \
-      'for arg in "$@"; do' \
-      '  case "$arg" in' \
-      '    -c|-S|-E|-M|-MM|-print-*|--version|-v|-###|-dump*) link=no ;;' \
-      '  esac' \
-      'done' \
-      'if [ "$link" = yes ]; then' \
-      "  exec ${seedGcc}/bin/gcc -B ${seedLibc}/lib \"\$@\" \"$fixxfdi_obj\"" \
-      'else' \
-      "  exec ${seedGcc}/bin/gcc -B ${seedLibc}/lib \"\$@\"" \
-      'fi' \
-      > seed-gcc
-    chmod +x seed-gcc
-    export CC="$PWD/seed-gcc"
+    ${lib.optionalString wrapSeedFixxfdi ''
+      # The seed musl libc was built before GCC is available and references the
+      # signed long-double conversion helper under TCC's libgcc-compatible name.
+      printf '%s\n' \
+        'long long __fixxfdi(long double x) { return (long long)(__int128)x; }' \
+        > fixxfdi.c
+      $CC -c fixxfdi.c -o fixxfdi.o
+      fixxfdi_obj="$PWD/fixxfdi.o"
+      printf '%s\n' \
+        '#!${bash}/bin/bash' \
+        'link=yes' \
+        'for arg in "$@"; do' \
+        '  case "$arg" in' \
+        '    -c|-S|-E|-M|-MM|-print-*|--version|-v|-###|-dump*) link=no ;;' \
+        '  esac' \
+        'done' \
+        'if [ "$link" = yes ]; then' \
+        "  exec ${seedGcc}/bin/gcc -B ${seedLibc}/lib \"\$@\" \"$fixxfdi_obj\"" \
+        'else' \
+        "  exec ${seedGcc}/bin/gcc -B ${seedLibc}/lib \"\$@\"" \
+        'fi' \
+        > seed-gcc
+      chmod +x seed-gcc
+      export CC="$PWD/seed-gcc"
+    ''}
     export CC_FOR_BUILD="$CC"
+    export CPP="$CC -E"
+    export CPP_FOR_BUILD="$CPP"
 
     # Avoid "Link tests are not allowed after GCC_NO_EXECUTABLES".
     export lt_cv_shlibpath_overrides_runpath=yes
@@ -193,6 +206,9 @@ EOF_BOOTSTRAP_METRICS
     {
       echo "seedGcc: ${seedGcc}"
       echo "seedLibc: ${seedLibc}"
+      echo "seedLibcDev: ${seedLibcDev}"
+      echo "seed-fixxfdi-wrapper: ${if wrapSeedFixxfdi then "yes" else "no"}"
+      echo "glibc-ucontext-patch: ${if patchGlibcUcontext then "yes" else "no"}"
       echo "gcc: gcc-4.6.4"
       echo "bootstrap: ${if bootstrap then "yes" else "no"}"
       echo "buildTarget: ${buildTarget}"
@@ -205,6 +221,7 @@ EOF_BOOTSTRAP_METRICS
           test -n "$stage_end"
           echo "stage$stage-seconds: $((stage_end - stage_start))"
         done
+        echo 'stage2-stage3-comparison: successful'
       ''}
       echo "result: ok"
     } > "$out/share/gcc46-selfhost/summary.txt"
