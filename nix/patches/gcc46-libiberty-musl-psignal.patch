@@ -1,0 +1,8 @@
+--- a/libiberty/strsignal.c
++++ b/libiberty/strsignal.c
+@@ -540,1 +540,1 @@ strtosigno (const char *name)
+-@deftypefn Supplemental void psignal (int @var{signo}, char *@var{message})
++@deftypefn Supplemental void psignal (int @var{signo}, const char *@var{message})
+@@ -553,1 +553,1 @@ followed by a newline.
+-psignal (int signo, char *message)
++psignal (int signo, const char *message)

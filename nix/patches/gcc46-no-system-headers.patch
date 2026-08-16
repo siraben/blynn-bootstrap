@@ -1,0 +1,5 @@
+--- a/gcc/Makefile.in
++++ b/gcc/Makefile.in
+@@ -443,1 +443,1 @@ LINKER_PLUGIN_API_H = $(srcdir)/../include/plugin-api.h
+-NATIVE_SYSTEM_HEADER_DIR = /usr/include
++# NATIVE_SYSTEM_HEADER_DIR = /usr/include
