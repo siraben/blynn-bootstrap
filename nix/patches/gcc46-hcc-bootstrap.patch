@@ -1,0 +1,20 @@
+diff --git a/gcc/config/i386/driver-i386.c b/gcc/config/i386/driver-i386.c
+index 739a2f4..6835e1d 100644
+--- a/gcc/config/i386/driver-i386.c
++++ b/gcc/config/i386/driver-i386.c
+@@ -27 +27 @@
+-#ifdef __GNUC__
++#if defined (__GNUC__) && !defined (__HCC_BOOTSTRAP__)
+@@ -769 +769 @@ const char *host_detect_local_cpu (int argc ATTRIBUTE_UNUSED,
+-#endif /* __GNUC__ */
++#endif /* __GNUC__ && !__HCC_BOOTSTRAP__ */
+diff --git a/gcc/c-family/c-pch.c b/gcc/c-family/c-pch.c
+index d9dad78..7fe4c98 100644
+--- a/gcc/c-family/c-pch.c
++++ b/gcc/c-family/c-pch.c
+@@ -52 +52,5 @@ enum {
++#ifdef __HCC_BOOTSTRAP__
++  MATCH_SIZE = 1
++#else
+   MATCH_SIZE = ARRAY_SIZE (pch_matching)
++#endif
