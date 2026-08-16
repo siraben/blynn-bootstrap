@@ -13,10 +13,10 @@ registerImplicitCalls locals stmts = foldM registerImplicitCallsStmt locals stmt
 
 registerImplicitCallsStmt :: [String] -> Stmt -> CompileM [String]
 registerImplicitCallsStmt locals stmt = case stmt of
-  SDecl _ name initExpr -> do
+  SDecl _ _ name initExpr -> do
     maybeRegisterImplicitCallsExpr locals initExpr
     pure (name:locals)
-  SDecls decls ->
+  SDecls _ decls ->
     registerImplicitCallsDecls locals decls
   SReturn expr -> maybeRegisterImplicitCallsExpr locals expr >> pure locals
   SExpr expr -> registerImplicitCallsExpr locals expr >> pure locals
@@ -59,7 +59,7 @@ registerForInitImplicitCalls :: [String] -> ForInit -> CompileM [String]
 registerForInitImplicitCalls locals initClause = case initClause of
   ForNoInit -> pure locals
   ForExpr expr -> registerImplicitCallsExpr locals expr >> pure locals
-  ForDecls decls -> registerImplicitCallsDecls locals decls
+  ForDecls _ decls -> registerImplicitCallsDecls locals decls
 
 maybeRegisterImplicitCallsExpr :: [String] -> Maybe Expr -> CompileM ()
 maybeRegisterImplicitCallsExpr locals expr = case expr of

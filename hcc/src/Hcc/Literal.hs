@@ -6,7 +6,10 @@ module Literal
   , bitXorInt
   , shiftLeftInt
   , shiftRightInt
-  , intLiteralIsUnsigned
+  , intLiteralSuffix
+  , intLiteralIsDecimal
+  , intLiteralFitsSigned
+  , intLiteralFitsUnsigned
   , parseInt
   , stripIntSuffix
   , floatLiteralBytes
@@ -87,10 +90,46 @@ shiftLeftInt value amount = value * pow2 amount
 shiftRightInt :: Int -> Int -> Int
 shiftRightInt value amount = value `div` pow2 amount
 
-intLiteralIsUnsigned :: String -> Bool
-intLiteralIsUnsigned text = case text of
-  [] -> False
-  c:rest -> c `elem` "uU" || intLiteralIsUnsigned rest
+intLiteralSuffix :: String -> (Bool, Int)
+intLiteralSuffix text = go text False 0 where
+  go chars unsigned longCount = case chars of
+    [] -> (unsigned, longCount)
+    c:rest
+      | c `elem` "uU" -> go rest True longCount
+      | c `elem` "lL" -> go rest unsigned (longCount + 1)
+      | otherwise -> go rest unsigned longCount
+
+intLiteralIsDecimal :: String -> Bool
+intLiteralIsDecimal text = case stripIntSuffix text of
+  '0':_ -> False
+  _ -> True
+
+intLiteralFitsSigned :: Int -> String -> Bool
+intLiteralFitsSigned bits text =
+  let bytes = naturalLiteralFitBytes bits text
+      width = bits `div` 8
+  in allZero (drop width bytes) && byteAt (width - 1) bytes < 128
+
+intLiteralFitsUnsigned :: Int -> String -> Bool
+intLiteralFitsUnsigned bits text =
+  allZero (drop (bits `div` 8) (naturalLiteralFitBytes bits text))
+
+-- Keep enough high bytes to distinguish an out-of-range literal from its
+-- low-word truncation.  One byte per source character is a conservative
+-- bound for binary, octal, decimal, and hexadecimal spellings.
+naturalLiteralFitBytes :: Int -> String -> [Int]
+naturalLiteralFitBytes bits text =
+  let minimumWidth = bits `div` 8 + 1
+      sourceWidth = length (stripIntSuffix text)
+  in naturalLiteralBytesForWidth (max minimumWidth sourceWidth) text
+
+allZero :: [Int] -> Bool
+allZero = all (== 0)
+
+byteAt :: Int -> [Int] -> Int
+byteAt index bytes = case drop index bytes of
+  byte:_ -> byte
+  [] -> 0
 
 parseInt :: String -> Int
 parseInt text =
@@ -156,14 +195,20 @@ readHexFrom n xs = case xs of
   c:rest -> readHexFrom (n * 16 + hexDigit c) rest
 
 naturalLiteralBytes :: String -> [Int]
-naturalLiteralBytes text = case text of
-  '0':'x':xs -> readBaseBytes 16 xs
-  '0':'X':xs -> readBaseBytes 16 xs
-  '0':xs -> readBaseBytes 8 xs
-  _ -> readBaseBytes 10 text
+naturalLiteralBytes = naturalLiteralBytesForWidth 8
+
+naturalLiteralBytesForWidth :: Int -> String -> [Int]
+naturalLiteralBytesForWidth width text = case stripIntSuffix text of
+  '0':'x':xs -> readBaseBytesWidth width 16 xs
+  '0':'X':xs -> readBaseBytesWidth width 16 xs
+  '0':xs -> readBaseBytesWidth width 8 xs
+  xs -> readBaseBytesWidth width 10 xs
 
 readBaseBytes :: Int -> String -> [Int]
-readBaseBytes base = readBaseBytesFrom base zeroByteWord
+readBaseBytes = readBaseBytesWidth 8
+
+readBaseBytesWidth :: Int -> Int -> String -> [Int]
+readBaseBytesWidth width base = readBaseBytesFrom base (replicate width 0)
 
 readBaseBytesFrom :: Int -> [Int] -> String -> [Int]
 readBaseBytesFrom base bytes text = case text of
@@ -180,11 +225,9 @@ digitValue c
   | c >= 'A' && c <= 'F' = 10 + fromEnum c - fromEnum 'A'
   | otherwise = 99
 
-zeroByteWord :: [Int]
-zeroByteWord = [0,0,0,0,0,0,0,0]
-
 byteWordMulAdd :: Int -> Int -> [Int] -> [Int]
-byteWordMulAdd base digit bytes = take 8 (byteWordAddSmallCarry digit (byteWordMulSmall base bytes))
+byteWordMulAdd base digit bytes =
+  take (length bytes) (byteWordAddSmallCarry digit (byteWordMulSmall base bytes))
 
 byteWordMulSmall :: Int -> [Int] -> [Int]
 byteWordMulSmall factor = byteWordMulSmallCarry factor 0
@@ -204,10 +247,23 @@ byteWordAddSmallCarry carry bytes = case bytes of
     in (total `mod` 256) : byteWordAddSmallCarry (total `div` 256) rest
 
 intBytes :: Int -> Int -> [Int]
-intBytes size value = take size (intBytesFrom value)
+intBytes size value = intBytesFrom size negative magnitude
+  where
+    negative = value < 0
+    -- Extract from a nonnegative value so generated C backends do not depend
+    -- on their negative division and remainder convention.  For negatives,
+    -- -(value + 1) is the finite-width one's-complement magnitude and avoids
+    -- overflowing when value is minBound.
+    magnitude = if negative then negate (value + 1) else value
 
-intBytesFrom :: Int -> [Int]
-intBytesFrom n = (n `mod` 256) : intBytesFrom (n `div` 256)
+intBytesFrom :: Int -> Bool -> Int -> [Int]
+intBytesFrom size complementBytes value =
+  if size <= 0
+    then []
+    else
+      let magnitudeByte = value `mod` 256
+          byte = if complementBytes then 255 - magnitudeByte else magnitudeByte
+      in byte : intBytesFrom (size - 1) complementBytes (value `div` 256)
 
 charValue :: String -> Int
 charValue text = case text of
