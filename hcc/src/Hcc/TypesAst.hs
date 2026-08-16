@@ -5,6 +5,7 @@ module TypesAst
   , Param(..)
   , Field(..)
   , CType(..)
+  , LocalStorage(..)
   , ForInit(..)
   , Stmt(..)
   , Expr(..)
@@ -31,7 +32,11 @@ data TopDecl
 
 data Param = Param CType String
 
-data Field = Field CType String
+-- The optional expression is the declared width of a C bit-field.  Keeping it
+-- in the AST matters even for translation units that never read the field:
+-- bit-fields participate in aggregate size, alignment, and every following
+-- member offset.
+data Field = Field CType String (Maybe Expr)
 
 data CType
   = CVoid
@@ -61,14 +66,19 @@ data CType
   | CFunc CType [CType]
   | CPtr CType
 
+data LocalStorage
+  = AutomaticStorage
+  | StaticStorage
+  | ExternalStorage
+
 data ForInit
   = ForNoInit
   | ForExpr Expr
-  | ForDecls [(CType, String, Maybe Expr)]
+  | ForDecls LocalStorage [(CType, String, Maybe Expr)]
 
 data Stmt
-  = SDecl CType String (Maybe Expr)
-  | SDecls [(CType, String, Maybe Expr)]
+  = SDecl LocalStorage CType String (Maybe Expr)
+  | SDecls LocalStorage [(CType, String, Maybe Expr)]
   | STypedef [CType]
   | SReturn (Maybe Expr)
   | SExpr Expr
@@ -115,8 +125,8 @@ paramTypes = map (\(Param ty _) -> ty)
 
 renderStmtTag :: Stmt -> String
 renderStmtTag stmt = case stmt of
-  SDecl _ _ _ -> "SDecl"
-  SDecls _ -> "SDecls"
+  SDecl _ _ _ _ -> "SDecl"
+  SDecls _ _ -> "SDecls"
   STypedef _ -> "STypedef"
   SReturn _ -> "SReturn"
   SExpr _ -> "SExpr"

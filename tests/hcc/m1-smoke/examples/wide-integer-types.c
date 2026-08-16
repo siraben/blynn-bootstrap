@@ -1,3 +1,8 @@
+static signed char static_sc = -3;
+static short static_ss = -259;
+static int static_si = -65539;
+static long long static_sll = -65539LL;
+
 int main() {
   unsigned short us = 65535;
   signed short ss = -1;
@@ -19,5 +24,9 @@ int main() {
   if (sll != -2) return 9;
   if (ull != 9) return 10;
   if (yes != 1) return 11;
+  if (static_sc != -3) return 14;
+  if (static_ss != -259) return 15;
+  if (static_si != -65539) return 16;
+  if (static_sll != -65539LL) return 17;
   return 0;
 }

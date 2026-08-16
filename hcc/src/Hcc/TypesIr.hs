@@ -71,6 +71,9 @@ data Instr
   | ISExt Temp Int Operand
   | IZExt Temp Int Operand
   | ITrunc Temp Int Operand
+  | IVaStart Temp Int
+  | IVaEnd Temp
+  | IVaOverflow Temp
   | IBin Temp BinOp Operand Operand
   | ICond Temp [Instr] Operand [Instr] Operand [Instr] Operand
   | ICall (Maybe Temp) String [Operand]

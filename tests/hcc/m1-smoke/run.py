@@ -21,13 +21,32 @@ CASES = [
     ("wide-integer-types", 0),
     ("return-coercion", 0),
     ("function-pointer-call-type", 0),
+    ("function-designator-deref", 0),
+    ("aggregate-argument-copy", 0),
+    ("bitfield-layout", 0),
+    ("enum-bitfield-signedness", 0),
+    ("integer-literal-suffixes", 0),
+    ("multidimensional-array", 0),
+    ("unsigned-compound-shift", 0),
+    ("function-typedef-prototype", 0),
+    ("union-cast", 0),
+    ("inferred-array-size", 0),
+    ("sizeof-string-literal", 0),
+    ("static-local-storage", 0),
     ("case-cmp-ternary", 0),
     ("pointer-to-pointer-callback", 0),
     ("bootstrap-qsort-pointer", 0),
     ("for-decl-scope", 0),
     ("typedef-shadow", 3),
     ("asm-nop", 0),
+    ("variadic-register-stack", 0),
+    ("switch-prelude-label", 0),
     ("static-internal-linkage", 0),
+]
+
+AMD64_CASES = [
+    ("variadic-sysv-forward", 0),
+    ("stack-call-alignment", 0),
 ]
 
 MULTI_TU_CASES = [
@@ -117,6 +136,13 @@ def assert_static_conflict_unit(m1):
         raise SystemExit(f"{m1.name}: static object label was not internalized")
 
 
+def assert_amd64_macro_namespace(m1):
+    text = m1.read_text()
+    for macro in ("CMP", "STORE_INTEGER"):
+        if f"DEFINE {macro} " in text:
+            raise SystemExit(f"{m1.name}: HCC overrides shared M1 macro {macro}")
+
+
 def compile_to_m1(args, target, examples_dir, work_dir, name):
     src = examples_dir / f"{name}.c"
     preprocessed = work_dir / f"{name}.i"
@@ -140,6 +166,8 @@ def compile_to_m1(args, target, examples_dir, work_dir, name):
         assert_static_internal_linkage(m1)
     if name in ("static-conflict-left", "static-conflict-right") or name.endswith("/unit"):
         assert_static_conflict_unit(m1)
+    if target["hcc_target"] == "amd64" and name == "ret13":
+        assert_amd64_macro_namespace(m1)
     return m1
 
 
@@ -204,11 +232,15 @@ def main():
     m2libc = pathlib.Path(args.m2libc)
 
     work_dir.mkdir(parents=True, exist_ok=True)
-    log(f"running {len(CASES)} cases and {len(MULTI_TU_CASES)} multi-tu cases for {args.target}")
-    for name, expected in CASES:
+    cases = CASES + (AMD64_CASES if args.target == "amd64" else [])
+    log(f"running {len(cases)} cases and {len(MULTI_TU_CASES)} multi-tu cases for {args.target}")
+    for name, expected in cases:
         log(f"START {name}")
         m1 = compile_to_m1(args, target, examples_dir, work_dir, name)
-        assemble_and_run(args, target, m2libc, work_dir, name, [m1], expected)
+        m1_files = [m1]
+        if name == "stack-call-alignment":
+            m1_files.insert(0, source_dir / "stack-call-alignment.M1")
+        assemble_and_run(args, target, m2libc, work_dir, name, m1_files, expected)
         log(f"DONE  {name}")
     for name, units, expected in MULTI_TU_CASES:
         log(f"START {name}")

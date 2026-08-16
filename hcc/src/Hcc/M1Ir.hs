@@ -14,19 +14,19 @@ import SymbolTable
 
 data CodegenError = CodegenError String
 
-emitM1IrWithDataPrefixTarget :: (String -> IO ()) -> String -> Int -> Program -> IO (Either CodegenError ())
-emitM1IrWithDataPrefixTarget write prefix target ast =
-  case buildM1IrModuleWithDataPrefixTarget prefix target ast of
+emitM1IrWithDataPrefixTarget :: (String -> IO ()) -> String -> Int -> Bool -> Program -> IO (Either CodegenError ())
+emitM1IrWithDataPrefixTarget write prefix target softFloatRuntime ast =
+  case buildM1IrModuleWithDataPrefixTarget prefix target softFloatRuntime ast of
     Left err -> pure (Left err)
     Right ir -> do
       write "HCCIR 1"
       emitModuleIr write ir
       pure (Right ())
 
-buildM1IrModuleWithDataPrefixTarget :: String -> Int -> Program -> Either CodegenError ModuleIr
-buildM1IrModuleWithDataPrefixTarget prefix target ast = case ast of
+buildM1IrModuleWithDataPrefixTarget :: String -> Int -> Bool -> Program -> Either CodegenError ModuleIr
+buildM1IrModuleWithDataPrefixTarget prefix target softFloatRuntime ast = case ast of
   Program decls ->
-    case mapCompileRun (runCompileM registerBuiltinStructs (initialCompileStateForTarget prefix target)) of
+    case mapCompileRun (runCompileM registerBuiltinStructs (initialCompileStateForTarget prefix target softFloatRuntime)) of
       Left err -> Left err
       Right (_, st0) ->
         case mapCompileRun (runCompileM (registerInternalAliases prefix decls) st0) of
@@ -100,7 +100,9 @@ registerTopDeclsIr st decls = case decls of
 
 registerTopDeclIr :: CompileState -> TopDecl -> Either CodegenError (CompileState, [TopItemIr])
 registerTopDeclIr st decl = case decl of
-  Global _ ty name initExpr ->
+  Global _ declaredTy name initExpr ->
+    let ty = completeObjectType declaredTy initExpr
+    in
     case mapCompileRun (runCompileM (do
       registerTypeAggregates ty
       bindGlobal name ty
@@ -144,7 +146,9 @@ registerFunctionDecl ty name params = do
 registerGlobalsIr :: CompileState -> [(CType, String, Maybe Expr)] -> Either CodegenError (CompileState, [TopItemIr])
 registerGlobalsIr st globals = case globals of
   [] -> Right (st, [])
-  (ty, name, initExpr):rest ->
+  (declaredTy, name, initExpr):rest ->
+    let ty = completeObjectType declaredTy initExpr
+    in
     case mapCompileRun (runCompileM (do
       registerTypeAggregates ty
       bindGlobal name ty
@@ -387,6 +391,9 @@ emitInstrIr write instr = case instr of
   ISExt temp size op -> emitExt write 22 temp size op
   IZExt temp size op -> emitExt write 23 temp size op
   ITrunc temp size op -> emitExt write 24 temp size op
+  IVaStart temp fixed -> write ("25 " ++ tempText temp ++ " " ++ show fixed)
+  IVaEnd temp -> write ("26 " ++ tempText temp)
+  IVaOverflow temp -> write ("27 " ++ tempText temp)
   IBin temp op left right -> write ("18 " ++ tempText temp ++ " " ++ show (binOpCode op) ++ " " ++ operandIrFields left ++ " " ++ operandIrFields right)
   ICall result name args -> write ("19 " ++ maybe "-" tempText result ++ " " ++ name ++ " " ++ listIrFields operandIrFields args)
   ICallIndirect result callee args -> write ("20 " ++ maybe "-" tempText result ++ " " ++ operandIrFields callee ++ " " ++ listIrFields operandIrFields args)
