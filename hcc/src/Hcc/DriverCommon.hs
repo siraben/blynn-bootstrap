@@ -28,12 +28,22 @@ lexPlainSource source = case lexC (stripComments (spliceContinuations source)) o
 
 spliceContinuations :: String -> String
 spliceContinuations [] = []
-spliceContinuations ('\\':c:'\n':rest) =
-  if fromEnum c == 13
-    then spliceContinuations rest
-    else '\\' : c : '\n' : spliceContinuations rest
-spliceContinuations ('\\':'\n':rest) = spliceContinuations rest
+spliceContinuations ('\\':rest) =
+  case continuationTail rest of
+    Just rest' -> spliceContinuations rest'
+    Nothing -> '\\' : spliceContinuations rest
 spliceContinuations (c:rest) = c : spliceContinuations rest
+
+continuationTail :: String -> Maybe String
+continuationTail text = case text of
+  '\n':rest -> Just rest
+  '\x0d':'\n':rest -> Just rest
+  c:rest | isContinuationSpace c -> continuationTail rest
+  _ -> Nothing
+
+isContinuationSpace :: Char -> Bool
+isContinuationSpace c =
+  c == ' ' || c == '\x09' || c == '\x0b' || c == '\x0c'
 
 stripComments :: String -> String
 stripComments = stripCommentNormal

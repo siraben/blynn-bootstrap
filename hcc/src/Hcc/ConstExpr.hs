@@ -69,15 +69,19 @@ divByZero live msg = if live then pFail msg else pure 0
 
 parseUnary :: Bool -> ConstParser Int
 parseUnary live = do
-  mtok <- pPeekMaybe
-  case mtok of
-    Just tok -> case constTokenKind tok of
-      TokPunct "!" -> advance >> (boolToInt . (== 0) <$> parseUnary live)
-      TokPunct "+" -> advance >> parseUnary live
-      TokPunct "-" -> advance >> (negate <$> parseUnary live)
-      TokPunct "~" -> advance >> (bitNotInt <$> parseUnary live)
-      _ -> parsePrimary live
-    Nothing -> pFail "empty constant expression"
+  cast <- constEatCast
+  if cast
+    then parseUnary live
+    else do
+      mtok <- pPeekMaybe
+      case mtok of
+        Just tok -> case constTokenKind tok of
+          TokPunct "!" -> advance >> (boolToInt . (== 0) <$> parseUnary live)
+          TokPunct "+" -> advance >> parseUnary live
+          TokPunct "-" -> advance >> (negate <$> parseUnary live)
+          TokPunct "~" -> advance >> (bitNotInt <$> parseUnary live)
+          _ -> parsePrimary live
+        Nothing -> pFail "empty constant expression"
 
 parsePrimary :: Bool -> ConstParser Int
 parsePrimary live = do
@@ -110,6 +114,29 @@ constEatPunct :: String -> ConstParser Bool
 constEatPunct expected = pRaw $ \env toks -> case toks of
   Token _ (TokPunct punct):rest | punct == expected -> Consumed (Ok True env rest)
   _ -> Unconsumed (Ok False env toks)
+
+constEatCast :: ConstParser Bool
+constEatCast = pRaw $ \env toks -> case toks of
+  Token _ (TokPunct "("):rest -> case skipConstTypeName False rest of
+    Just after -> Consumed (Ok True env after)
+    Nothing -> Unconsumed (Ok False env toks)
+  _ -> Unconsumed (Ok False env toks)
+
+skipConstTypeName :: Bool -> [Token] -> Maybe [Token]
+skipConstTypeName seen toks = case toks of
+  Token _ (TokIdent name):rest | name `elem` constTypeNameWords ->
+    skipConstTypeName True rest
+  Token _ (TokPunct "*"):rest | seen ->
+    skipConstTypeName True rest
+  Token _ (TokPunct ")"):rest | seen ->
+    Just rest
+  _ -> Nothing
+
+constTypeNameWords :: [String]
+constTypeNameWords =
+  [ "void", "_Bool", "int", "char", "signed", "unsigned", "short", "long"
+  , "float", "double", "const", "volatile"
+  ]
 
 constNeedPunct :: String -> String -> ConstParser ()
 constNeedPunct expected err = do
