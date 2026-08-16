@@ -6,6 +6,7 @@ module DriverCommon
   , stripComments
   , stripLineComment
   , dataLabelPrefix
+  , dataLabelPrefixForUnit
   , assemblyArgs
   , renderDefines
   , replaceExt
@@ -88,6 +89,20 @@ dataLabelPrefix path =
     sanitized = case sanitizeLabel (hccTakeFileName path) of
       [] -> "unit"
       text -> text
+
+dataLabelPrefixForUnit :: String -> String
+dataLabelPrefixForUnit unit =
+  "HCC_DATA_UNIT_" ++ encoded
+  where
+    encoded = case concatMap encodeUnitChar unit of
+      [] -> "unit"
+      text -> text
+
+encodeUnitChar :: Char -> String
+encodeUnitChar c =
+  if isAsciiAlphaNum c
+    then [c]
+    else "_" ++ show (fromEnum c) ++ "_"
 
 sanitizeLabel :: String -> String
 sanitizeLabel = concatMap sanitizeLabelChar

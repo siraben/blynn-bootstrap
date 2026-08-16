@@ -4,6 +4,7 @@ set -eu
 HCPP=${HCPP:-hcpp}
 HCC1=${HCC1:-hcc1}
 HCC_M1=${HCC_M1:-hcc-m1}
+HCC_CC=${HCC_CC:-hcc-cc-frontier}
 TEST_DIR=${1:-$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)}
 WORK_DIR=${WORK_DIR:-}
 
@@ -28,6 +29,14 @@ compare() {
 "$HCPP" "$TEST_DIR/inputs/preprocess.c" > "$WORK_DIR/preprocess.i.raw"
 sed 's/[[:space:]]*$//' "$WORK_DIR/preprocess.i.raw" > "$WORK_DIR/preprocess.i"
 compare hcpp "$TEST_DIR/expected/preprocess.i" "$WORK_DIR/preprocess.i"
+
+"$HCC_CC" -E \
+  '-DGREETING="hello world"' \
+  '-DENDPOINT="<https://example.invalid/path?q=1&v=2>"' \
+  "$TEST_DIR/inputs/wrapper-args.c" > "$WORK_DIR/wrapper-args.i.raw"
+sed 's/[[:space:]]*$//' "$WORK_DIR/wrapper-args.i.raw" > "$WORK_DIR/wrapper-args.i"
+compare "hcc-cc-frontier quoted arguments" \
+  "$TEST_DIR/expected/wrapper-args.i" "$WORK_DIR/wrapper-args.i"
 
 "$HCC1" --target amd64 --m1-ir -o "$WORK_DIR/return7.hccir" "$TEST_DIR/inputs/return7.i"
 compare "hcc1 --m1-ir" "$TEST_DIR/expected/return7.hccir" "$WORK_DIR/return7.hccir"

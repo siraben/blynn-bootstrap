@@ -34,6 +34,7 @@ stdenvNoCC.mkDerivation (
       export HCPP=${hcc}/bin/hcpp
       export HCC1=${hcc}/bin/hcc1
       export HCC_M1=${hcc}/bin/hcc-m1
+      export HCC_CC=${hcc}/bin/hcc-cc-frontier
       WORK_DIR="$PWD/golden-work" \
         ${bash}/bin/sh ${../tests/hcc/golden/run.sh} ${../tests/hcc/golden}
 

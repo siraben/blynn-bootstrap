@@ -22,6 +22,9 @@ expect_file_contains() {
   done < "$file"
   if test "$found" != 1; then
     echo "$file: expected diagnostic containing: $pattern" >&2
+    while IFS= read -r line; do
+      printf '  %s\n' "$line" >&2
+    done < "$file"
     exit 1
   fi
 }
@@ -78,6 +81,20 @@ run_m1_case() {
   log "DONE  hcc-m1 $name"
 }
 
+write_trailing_space_continuation_case() {
+  dst=$1
+  {
+    printf '#define CONTINUED_WITH_TRAILING_SPACE(x) \\   \n'
+    printf '  ((x) + 1)\n'
+    printf 'int continued = CONTINUED_WITH_TRAILING_SPACE(2);\n'
+  } > "$dst"
+}
+
+write_macro_diagnostic_cases() {
+  printf '#define BAD_PARAMETER(1arg) 0\n' > invalid-macro-parameter.c
+  printf '#define BAD_VARIADIC_ORDER(first, ..., last) first\n' > variadic-macro-parameter-order.c
+}
+
 expect_hcc1_fail() {
   name=$1
   pattern=$2
@@ -115,7 +132,10 @@ expect_hcpp_fail() {
   log "DONE  expect hcpp failure $name"
 }
 
+write_trailing_space_continuation_case pp-smoke-trailing-space.c
+write_macro_diagnostic_cases
 run_check_case pp-smoke "$TESTS_DIR/pp-smoke.c"
+run_check_case pp-smoke-trailing-space pp-smoke-trailing-space.c
 run_check_case parse-smoke "$TESTS_DIR/parse-smoke.c"
 
 run_m1_case parse-smoke "$TESTS_DIR/parse-smoke.c"
@@ -125,6 +145,7 @@ run_m1_case return-coercion "$TESTS_DIR/m1-smoke/examples/return-coercion.c"
 run_m1_case function-pointer-call-type "$TESTS_DIR/m1-smoke/examples/function-pointer-call-type.c"
 run_m1_case bootstrap-qsort-pointer "$TESTS_DIR/m1-smoke/examples/bootstrap-qsort-pointer.c"
 run_m1_case for-decl-scope "$TESTS_DIR/m1-smoke/examples/for-decl-scope.c"
+run_m1_case typedef-shadow "$TESTS_DIR/m1-smoke/examples/typedef-shadow.c"
 run_m1_case asm-nop "$TESTS_DIR/m1-smoke/examples/asm-nop.c"
 run_m1_case scalar-immediate-smoke "$TESTS_DIR/scalar-immediate-smoke.c"
 run_m1_case float-literals "$TESTS_DIR/m1-smoke/examples/float-literals.c"
@@ -132,6 +153,7 @@ run_m1_case literal-acceptance "$TESTS_DIR/m1-smoke/examples/literal-acceptance.
 
 expect_hcpp_contains pp-macro-include "pp_included_value" "$TESTS_DIR/pp-smoke.c"
 expect_hcpp_contains pp-paste-left-raw "paste_left_raw = Ab" "$TESTS_DIR/pp-smoke.c"
+expect_hcpp_contains pp-paste-pp-number "paste_pp_number = ATTR_PRINTF_1_0" "$TESTS_DIR/pp-smoke.c"
 expect_hcpp_contains pp-empty-arg "empty_arg = 0" "$TESTS_DIR/pp-smoke.c"
 expect_hcpp_contains pp-if-mod-ternary "pp_if_mod = 1" "$TESTS_DIR/pp-smoke.c"
 expect_hcpp_contains pp-mutual-object-cycle "int HCC_CYCLE_A" "$TESTS_DIR/pp-smoke.c"
@@ -147,5 +169,7 @@ expect_hcc1_fail unknown-global-initializer "unknown constant: missing_global" "
 expect_hcc1_fail unsupported-inline-asm "unsupported inline assembly" "$TESTS_DIR/diagnostics/unsupported-inline-asm.c"
 expect_hcpp_fail multi-char-constant "invalid character constant" "$TESTS_DIR/diagnostics/multi-char-constant.c"
 expect_hcpp_fail invalid-octal-constant "invalid digit in octal constant" "$TESTS_DIR/diagnostics/invalid-octal-constant.c"
+expect_hcpp_fail invalid-macro-parameter "bad macro parameter: 1arg" invalid-macro-parameter.c
+expect_hcpp_fail variadic-macro-parameter-order "bad variadic macro parameter" variadic-macro-parameter-order.c
 
 log "all compiler smoke checks passed"

@@ -98,37 +98,7 @@ enum {
 };
 
 static int target_arch = TARGET_AMD64;
-static char riscv64_label_namespace_buf[128];
-static const char *riscv64_label_namespace = "out";
-
-static int is_label_char(int c)
-{
-  return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
-}
-
-static void set_label_namespace(const char *path)
-{
-  int i = 0;
-  int out = 0;
-  int start = 0;
-  while (path[i]) {
-    if (path[i] == '/') start = i + 1;
-    i = i + 1;
-  }
-  i = start;
-  while (path[i] && out < 120) {
-    if (is_label_char((unsigned char)path[i])) riscv64_label_namespace_buf[out] = path[i];
-    else riscv64_label_namespace_buf[out] = '_';
-    out = out + 1;
-    i = i + 1;
-  }
-  if (out == 0) {
-    riscv64_label_namespace_buf[out] = 'o';
-    out = out + 1;
-  }
-  riscv64_label_namespace_buf[out] = 0;
-  riscv64_label_namespace = riscv64_label_namespace_buf;
-}
+static char *riscv64_label_namespace = "out";
 
 struct Operand {
   int kind;
@@ -187,6 +157,7 @@ struct DataValue {
   int kind;
   int byte;
   char *label;
+  int offset;
 };
 
 struct DataItem {
@@ -843,6 +814,11 @@ static void parse_ir_data_item(FILE *file, char *first_line, DataItem *item)
     } else if (str_eq(tok, "a")) {
       value.kind = 2;
       value.label = xstrdup(need_token(&cursor));
+      tok = next_token(&cursor);
+      if (tok) value.offset = (int)parse_long_text(tok);
+    } else if (str_eq(tok, "l")) {
+      value.kind = 3;
+      value.label = xstrdup(need_token(&cursor));
     } else {
       die("unknown IR data value");
     }
@@ -1379,10 +1355,19 @@ static void emit_data_item(FILE *out, DataItem *item)
     fprintf(out, "  ");
     while (j < item->len && count < 16) {
       DataValue *v = data_value_at(item->values, j);
+      if (v->kind == 3) {
+        if (count) fputc('\n', out);
+        fprintf(out, ":%s\n", v->label);
+        fprintf(out, "  ");
+        count = 0;
+        j = j + 1;
+        continue;
+      }
       if (count) fputc(' ', out);
       if (v->kind == 1) {
         emit_byte(out, v->byte);
       } else {
+        if (v->offset != 0) die("M1 data address addend was not normalized");
         if (target_arch == TARGET_I386) fprintf(out, "&%s", v->label);
         else fprintf(out, "&%s '00' '00' '00' '00'", v->label);
       }
@@ -2417,6 +2402,7 @@ static void emit_function(FILE *out, Function *fn)
   EmitState state;
   int total_slots;
   int i;
+  if (target_arch == TARGET_RISCV64) riscv64_label_namespace = fn->name;
   total_slots = allocate_function(fn, &locs);
   emit_state_init(&state);
   fprintf(out, ":FUNCTION_%s\n", fn->name);
@@ -2471,7 +2457,6 @@ int main(int argc, char **argv)
   }
   in = fopen(argv[argi], "r");
   if (!in) die("cannot open input");
-  set_label_namespace(argv[argi + 1]);
   out = fopen(argv[argi + 1], "w");
   if (!out) die("cannot open output");
   header = xrealloc(0, LINE_CAP);
