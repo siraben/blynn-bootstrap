@@ -60,7 +60,7 @@ writeM1Ir opts trace ast = do
       emitM1IrWithDataPrefixTarget
         writeLines
         (dataLabelPrefix (asmInput opts))
-        (asmTargetBits opts)
+        (asmTarget opts)
         ast
     trace "m1-ir done"
     pure result
