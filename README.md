@@ -7,7 +7,35 @@ minimal-bootstrap path with `hcc`, a C compiler written in Blynn's
 The goal is an auditable path from the stage0 seed tools to TinyCC and then
 through the usual minimal-bootstrap GCC chain.
 
+## Scope
+
+Goals:
+
+- Replace the MesCC edge in nixpkgs' `minimal-bootstrap` with HCC while keeping
+  the stage0/M2 ancestry visible.
+- Keep HCC split into small, inspectable tools that emit stage0 M1 for the
+  bootstrap path.
+- Expose the resulting package graph through flake targets and a downstream
+  overlay for audit and integration work.
+
+Non-goals:
+
+- HCC is not a general-purpose hosted C compiler.
+- This repo does not replace nixpkgs package expressions beyond the
+  `minimal-bootstrap` root selected by the overlay.
+- A flake target being present does not mean the stage is accepted as complete;
+  wired, built, CI-gated, and accepted are tracked separately below.
+
 ## Status
+
+Terms:
+
+- Wired: the flake or portable scripts expose the path.
+- Built: the path is known to complete from the HCC bootstrap path.
+- CI-gated: `.github/workflows/ci.yml` builds the attr, or explicitly evaluates
+  the documented build attr.
+- Accepted: treated as complete for the current HCC audit scope, rather than
+  only exposed for follow-on work.
 
 - `precisely_up` is built from the Blynn bootstrap chain, including a
   stage0/M2-Planet path.
@@ -19,8 +47,16 @@ through the usual minimal-bootstrap GCC chain.
 - `gcc46.m2.precisely.m2` has built successfully from the HCC-built TinyCC.
 - The rest of nixpkgs' minimal-bootstrap chain is exposed as flake targets:
   `gcc46Cxx`, `gcc10`, `gccLatest`, `glibc`, and `gccGlibc`.
-- HCC emits stage0 M1 for amd64 and i386 smoke targets. The full TinyCC
-  bootstrap path is still wired for amd64.
+- HCC emits stage0 M1 smoke targets for amd64, i386, aarch64, and riscv64.
+  The full TinyCC bootstrap path is still accepted for amd64 only.
+
+| Stage | Wired | Built | CI-gated | Accepted |
+| --- | --- | --- | --- | --- |
+| `hcc.m2.precisely.m2` toolchain | yes | yes, through TinyCC | yes, via stage0 TinyCC and M1 smoke builds | yes |
+| `tinycc.m2.precisely.m2` | yes | yes | yes, built on amd64 | yes |
+| `gcc46.m2.precisely.m2` | yes | yes | drvPath evaluated on amd64 | yes |
+| `gcc46Cxx`, `gcc10`, `gccLatest`, `glibc`, `gccGlibc` under `m2.precisely.m2` | yes | not claimed here | selected README attrs are evaluated on amd64 | no, follow-on work |
+| `m2.precisely.gccm2` debug path | yes | yes for fast iteration targets | selected attrs are evaluated and some debug attrs are built | debug only |
 
 ## Layout
 
