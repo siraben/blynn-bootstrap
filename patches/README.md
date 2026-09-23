@@ -51,3 +51,6 @@ patch files.
 
 Bootstrap driver scripts are intentionally not carried as upstream patches.
 The portable, repo-owned entry points live in `scripts/`.
+
+`upstreams/blynn-compiler.series` and `upstreams/oriansj-blynn-compiler.series`
+define the compiler patch order shared by the Nix and portable builds.

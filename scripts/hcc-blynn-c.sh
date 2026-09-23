@@ -55,6 +55,17 @@ compile_with_common_objects() {
 
   msg "Blynn compiler $name common object IR + source -> ${output##*/}"
   "$blynn_compiler" < "$object_input" > "$output"
+
+  # Blynn can print a type/export diagnostic to stdout and still exit zero.
+  # Check its generated-C preamble before publishing a successful build stage.
+  {
+    IFS= read -r first_line || :
+    IFS= read -r second_line || :
+  } < "$output"
+  case "$first_line:$second_line" in
+    'typedef unsigned u;:enum{TOP='*'};') ;;
+    *) die "Blynn failed to generate $name C: $first_line" ;;
+  esac
 }
 
 compile_with_common_objects hcpp "$out_dir/hcpp-tail.hs" "$out_dir/hcpp-blynn.c"

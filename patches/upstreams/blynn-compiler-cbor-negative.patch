@@ -1,0 +1,5 @@
+--- a/inn/Obj.hs
++++ b/inn/Obj.hs
+@@ -121 +121 @@
+-    1 -> pure $ CBORZ $ 0 - n
++    1 -> pure $ CBORZ $ 0 - 1 - n

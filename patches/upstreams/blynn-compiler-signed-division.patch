@@ -1,0 +1,21 @@
+--- a/inn/RTS1.hs
++++ b/inn/RTS1.hs
+@@ -286,2 +286,2 @@
+-static int div(int a, int b) { int q = a/b; return q - (((u)(a^b)) >> 31)*(q*b!=a); }
+-static int mod(int a, int b) { int r = a%b; return r + (((u)(a^b)) >> 31)*(!!r)*b; }
++static int div(int a, int b) { int q = a/b; if ((a < 0) != (b < 0) && q*b != a) return q - 1; return q; }
++static int mod(int a, int b) { int r = a%b; if ((a < 0) != (b < 0) && r != 0) return r + b; return r; }
+--- a/inn/RTS2.hs
++++ b/inn/RTS2.hs
+@@ -337,2 +337,2 @@
+-static int div(int a, int b) { int q = a/b; return q - (((u)(a^b)) >> 31)*(q*b!=a); }
+-static int mod(int a, int b) { int r = a%b; return r + (((u)(a^b)) >> 31)*(!!r)*b; }
++static int div(int a, int b) { int q = a/b; if ((a < 0) != (b < 0) && q*b != a) return q - 1; return q; }
++static int mod(int a, int b) { int r = a%b; if ((a < 0) != (b < 0) && r != 0) return r + b; return r; }
+--- a/inn/RTSPrecisely.hs
++++ b/inn/RTSPrecisely.hs
+@@ -445,2 +445,2 @@
+-static int div(int a, int b) { int q = a/b; return q - (((u)(a^b)) >> 31)*(q*b!=a); }
+-static int mod(int a, int b) { int r = a%b; return r + (((u)(a^b)) >> 31)*(!!r)*b; }
++static int div(int a, int b) { int q = a/b; if ((a < 0) != (b < 0) && q*b != a) return q - 1; return q; }
++static int mod(int a, int b) { int r = a%b; if ((a < 0) != (b < 0) && r != 0) return r + b; return r; }
