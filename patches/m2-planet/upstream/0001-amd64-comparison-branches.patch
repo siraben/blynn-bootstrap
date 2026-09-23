@@ -1,0 +1,645 @@
+diff --git a/cc_emit.c b/cc_emit.c
+index 1d5373bbfb8d890bbe858c1e6b5ebb9c9b050b41..92d85fcf459ac25343b02beb78270db39fd60eba 100644
+--- a/cc_emit.c
++++ b/cc_emit.c
+@@ -204,8 +204,92 @@ void emit_unconditional_jump(char* prefix, char* name, char* note)
+ 	}
+ }
+ 
++/* A relational value immediately consumed by a branch does not need to be
++ * materialized as 0/1 in REGISTER_ZERO. Match complete emission fragments so
++ * intervening arithmetic, stores, calls, labels and Boolean operations exclude
++ * this rewrite. The consuming statement does not retain the result register. */
++char* comparison_jump(int reg, int jump_when_true)
++{
++	if(AMD64 != Architecture) return NULL;
++	if(REGISTER_ZERO != reg) return NULL;
++	if(NULL == output_list) return NULL;
++	if(match("cmp_rbx,rax\nsetl_al\nmovzx_rax,al\n", output_list->s))
++	{
++		if(jump_when_true) return "'0F8C' %";
++		return "'0F8D' %";
++	}
++	if(match("cmp_rbx,rax\nsetle_al\nmovzx_rax,al\n", output_list->s))
++	{
++		if(jump_when_true) return "'0F8E' %";
++		return "'0F8F' %";
++	}
++	if(match("cmp_rbx,rax\nsetge_al\nmovzx_rax,al\n", output_list->s))
++	{
++		if(jump_when_true) return "'0F8D' %";
++		return "'0F8C' %";
++	}
++	if(match("cmp_rbx,rax\nsetg_al\nmovzx_rax,al\n", output_list->s))
++	{
++		if(jump_when_true) return "'0F8F' %";
++		return "'0F8E' %";
++	}
++	if(match("cmp_rbx,rax\nsetb_al\nmovzx_rax,al\n", output_list->s))
++	{
++		if(jump_when_true) return "'0F82' %";
++		return "'0F83' %";
++	}
++	if(match("cmp_rbx,rax\nsetbe_al\nmovzx_rax,al\n", output_list->s))
++	{
++		if(jump_when_true) return "'0F86' %";
++		return "'0F87' %";
++	}
++	if(match("cmp_rbx,rax\nsetae_al\nmovzx_rax,al\n", output_list->s))
++	{
++		if(jump_when_true) return "'0F83' %";
++		return "'0F82' %";
++	}
++	if(match("cmp_rbx,rax\nseta_al\nmovzx_rax,al\n", output_list->s))
++	{
++		if(jump_when_true) return "'0F87' %";
++		return "'0F86' %";
++	}
++	if(match("cmp_rbx,rax\nsete_al\nmovzx_rax,al\n", output_list->s))
++	{
++		if(jump_when_true) return "'0F84' %";
++		return "'0F85' %";
++	}
++	if(match("cmp_rbx,rax\nsetne_al\nmovzx_rax,al\n", output_list->s))
++	{
++		if(jump_when_true) return "'0F85' %";
++		return "'0F84' %";
++	}
++	return NULL;
++}
++
++int emit_comparison_jump(int reg, char* prefix, char* name, char* note, int jump_when_true)
++{
++	char* branch = comparison_jump(reg, jump_when_true);
++	if(branch == NULL) return FALSE;
++
++	/* Only the consuming control statement calls this helper: the Boolean
++	 * result is dead. CMP's signed/unsigned condition flags remain live. */
++	output_list->s = "cmp_rbx,rax\n";
++	emit_out(branch);
++	emit_out(prefix);
++	emit_out(name);
++	if(note != NULL)
++	{
++		emit_out(" # ");
++		emit_out(note);
++	}
++	emit_out("\n");
++	return TRUE;
++}
++
+ void emit_jump_if_zero(int reg, char* prefix, char* name, char* note)
+ {
++	if(emit_comparison_jump(reg, prefix, name, note, FALSE)) return;
++
+ 	char* reg_name = register_from_string(reg);
+ 
+ 	if(Architecture & ARCH_FAMILY_KNIGHT)
+@@ -267,6 +351,8 @@ void emit_jump_if_zero(int reg, char* prefix, char* name, char* note)
+ 
+ void emit_jump_if_not_zero(int reg, char* prefix, char* name, char* note)
+ {
++	if(emit_comparison_jump(reg, prefix, name, note, TRUE)) return;
++
+ 	char* reg_name = register_from_string(reg);
+ 
+ 	if(Architecture & ARCH_FAMILY_KNIGHT)
+diff --git a/test/run-pass/comparison_branches.c b/test/run-pass/comparison_branches.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..9162674ef0a3b65ffa43f47cd6076ad507f983f0
+--- /dev/null
++++ b/test/run-pass/comparison_branches.c
+@@ -0,0 +1,29 @@
++int main(void)
++{
++	int a = -1;
++	int b = 1;
++	unsigned u = 0 - 1;
++	unsigned v = 1;
++	int saved;
++
++	/* Signed/unsigned ordering and equality in branch conditions. */
++	if(a >= b) return 1;
++	if(a > b) return 2;
++	if(b <= a) return 3;
++	if(b < a) return 4;
++	if(a == b) return 5;
++	if(a != a) return 6;
++	if(u <= v) return 7;
++	if(u < v) return 8;
++	if(v >= u) return 9;
++	if(v > u) return 10;
++
++	/* A loop takes the opposite branch polarity. */
++	do { a = a + 1; } while(a < b);
++	if(a != b) return 11;
++
++	/* A stored comparison still produces a Boolean value. */
++	saved = u > v;
++	if(saved != 1) return 12;
++	return 0;
++}
+diff --git a/test/test.answers b/test/test.answers
+index c5fea46251f45437cc423f7d266bdf4f5d48c0ff..2af4b07811a46b83bba7d72dc907a7d1e9c49366 100644
+--- a/test/test.answers
++++ b/test/test.answers
+@@ -1,17 +1,17 @@
+ 73e51d06bdac4c84382790e513c182547eb66aaf63160be74fcc49b5edb52420  test/results/address_of_array_element.c-aarch64-binary
+-9dbcca942c57065ce51e12c2defa8324c7f414761baac05e359131c28733fc2d  test/results/address_of_array_element.c-amd64-binary
++3dd0b2db3df26165bafe17a526f04f7f613ecdf9361336613abd2b903f97d699  test/results/address_of_array_element.c-amd64-binary
+ 3163a46c282f88e024ab3babcd04966b2f3ea1bae1bd28f8dcec7ee7bce859e5  test/results/address_of_array_element.c-armv7l-binary
+ a7e103cb5ffbcfd4bc05a1313a515fd48dd67c156cd1c1c491bcaecc8531bf3a  test/results/address_of_array_element.c-riscv32-binary
+ b27667bb33daac587ed2f605f3cd5f72f2cd09ae89ee4ab16c9b2ccf2c24f2f3  test/results/address_of_array_element.c-riscv64-binary
+ 6327c2d52b311f839f21a62aa390e83dba4c47c104eb3091072e52adc70bce87  test/results/address_of_array_element.c-x86-binary
+ 4700f85f9d605a1e5afd66c30d7c18577919a352a5a8a6aee525959ddbd3fa7d  test/results/anonymous_members.c-aarch64-binary
+-9697c8c55601fc5208f2517d61682505915b22fa49083dd243480e4f41b176aa  test/results/anonymous_members.c-amd64-binary
++3a2862d09c1db9469a780296f77c6fd0da7cdf09f4680e66330986d07751dc3d  test/results/anonymous_members.c-amd64-binary
+ fe26da681f6d8720a3aa1fcfb0da4f3c8cd0f1c6dc2ae85b8dd820a38cb0d2cd  test/results/anonymous_members.c-armv7l-binary
+ 07e39a55a2cfc501e03b44a1fae8441f121e081877feca72c0bea03521ffbcbc  test/results/anonymous_members.c-riscv32-binary
+ e95e2bc043c4a08a9ba598c8bc9d1af4300ad69c1a41f437bae128e258704eb9  test/results/anonymous_members.c-riscv64-binary
+ 3c459d3b5b17383e5c904878b988a336744e740dd7447e9e97c1d379a43af9db  test/results/anonymous_members.c-x86-binary
+ ebab582366724a1015996c3cae8ea4f7699ea09d30c257c12a640bebf92127d6  test/results/anonymous_types.c-aarch64-binary
+-e3a04afba4ae8699745fa8235088c7179c46084f0fb8238fc860c8b738b13487  test/results/anonymous_types.c-amd64-binary
++3299ebe1d3207bfc2992765cccb258fe40d74d30ac5b9477e1d5b1fc2706d4b4  test/results/anonymous_types.c-amd64-binary
+ de130989acc6d3d5e8e76fbf8305a925605d35452d3b3fc5fbaf7bfba849e869  test/results/anonymous_types.c-armv7l-binary
+ eef963caa787cc18fde26f42b64de58a7c7160c0f907a1642201820981da5d99  test/results/anonymous_types.c-riscv32-binary
+ f1eda93a790db5086d6703abace4d8f1af685e0c84174676dcc9a74e7123f26c  test/results/anonymous_types.c-riscv64-binary
+@@ -23,19 +23,25 @@ f1eda93a790db5086d6703abace4d8f1af685e0c84174676dcc9a74e7123f26c  test/results/a
+ 490575aeeeca63455875a718284ad225b0807e18ce22534c6f1b0b117d19d29e  test/results/assignment.c-riscv64-binary
+ 779d76a063fd75ab58f2c1a786c3de25bcc8d1342947186db7aa0403ee317787  test/results/assignment.c-x86-binary
+ c21e3ca99d27da0e1231644ad96f90d6774352d4a9af2b48249c864051f62713  test/results/casting.c-aarch64-binary
+-c912ea774194b1790348349f7eef46621411e4ab424282b9ff0e827e18ccd485  test/results/casting.c-amd64-binary
++d741bfb27bbfff5c47d0c372fe72d62da3118204dfc23f6a6236073957b2e24f  test/results/casting.c-amd64-binary
+ 57ec988e0b8e4adb67bb6475dc421f37cf84b30fb85fde6ac0800284b243ac92  test/results/casting.c-armv7l-binary
+ 138b32c97cef892ce27a62b3b433af432539bd220cb15ffee776eb89b6163729  test/results/casting.c-riscv32-binary
+ 4311f7fb817082b585fc8ac0baa43b0367fc90c9e68706fc04b0485e4dd637d4  test/results/casting.c-riscv64-binary
+ 84cceefe783a94ecc1a7e36c5cad361e43bb7df2632643307779823aa1936c64  test/results/casting.c-x86-binary
++e7730ce7c8d0a008292931d4ea8897933e7e6e7a19c29b21a9b682559933249f  test/results/comparison_branches.c-aarch64-binary
++1236faf6ef7542aa8fa435852223abe1b9ec3bf53a35f0ad02fa2d00c9fccdcb  test/results/comparison_branches.c-amd64-binary
++ebd8f2c179169c7430d8d5bb5b0febf80578a095157ace7ff7749e26dbf1f87a  test/results/comparison_branches.c-armv7l-binary
++ecd666bdfeceb0d9488306a028a302d583bff935577bc1f0f95cdc43e5ffcb4a  test/results/comparison_branches.c-riscv32-binary
++27b3ad93db4976a9502691f06a8988b180c127402a117f39b6ac8a7438b4dd57  test/results/comparison_branches.c-riscv64-binary
++71a358f2dc71e08fd4f3cbe3cfc793f153e9444f636d7917339a067fca493e89  test/results/comparison_branches.c-x86-binary
+ 84fc27552a0184bf77a45c74af573db3cfbdebe176a7e003b2ea8d6624d50190  test/results/constant_expressions.c-aarch64-binary
+-f004e0e45ff41a896d30738a72f3d1141276af31da39004eacd4ce1f56d38117  test/results/constant_expressions.c-amd64-binary
++e10e29adc571d944fad24a35c5b5049434877133a6e4404e1ca7291feb336cff  test/results/constant_expressions.c-amd64-binary
+ 4930d54799d091a014059934ec30a2d9df52c3f455a7cf4a6bf60e25a4028000  test/results/constant_expressions.c-armv7l-binary
+ 18f3f82c94732c21e60e871918f7f7ded221c0f4ce1997346633994d711acf57  test/results/constant_expressions.c-riscv32-binary
+ 23aef574ea7afb7ed36ef7a38c71ac48a14729a07fd120800e8a38449226e220  test/results/constant_expressions.c-riscv64-binary
+ 20bb5c2535da3d58578fd4142cda216c02196a2cf4ed71ec19e7e80dc04e3834  test/results/constant_expressions.c-x86-binary
+ 0433cb048ea9f641cf55bf00cdb6262536e746f9971b5ea0178e97247cfbdf24  test/results/dereference.c-aarch64-binary
+-30a2afe99ed5bd5075aa6d44eecaddaa74e48ada753a555ff3e72bd38fd8709b  test/results/dereference.c-amd64-binary
++6ef5baab789a786b4daeb61d976f19a10ac505fd7f1fb5f3208f1494a19dc16d  test/results/dereference.c-amd64-binary
+ 72f3763a932572683b0f465b885af15aa628c7dfb981a04d9d6958387582a589  test/results/dereference.c-armv7l-binary
+ 1a69f16bdfafc63c7700d03c3e4be086b56003a1eb16943f2f1631c5807dba63  test/results/dereference.c-riscv32-binary
+ cc77c5c6714a1f36a706bb9cfb0ea385ea9843f95b8ed2050fcc5a360e0a699e  test/results/dereference.c-riscv64-binary
+@@ -53,7 +59,7 @@ ca5bec4c10bdf7b4d6c205c986d573dd7c95cac50f2349074862327081d02102  test/results/e
+ 750584f9bc8c41c5035a0502328be98788a1ff3458dfa768da4ac6ba67cbbc6e  test/results/empty-statement.c-riscv64-binary
+ f88a4aa5cef7e7a61e20ed5de2d6f9867f90107dba56498cac729978bb88bab2  test/results/empty-statement.c-x86-binary
+ ff5aa68237dc627d95cb50f0c0cee21f330e785168b657da2f62b3df9f1abc14  test/results/enum.c-aarch64-binary
+-8b4ad0ffe349f466c8068b309dbfe0eb563680feec73178d270b432bd862a7bd  test/results/enum.c-amd64-binary
++b66eb89235bdf1c444522a7ff9c0e9bd1659eff5716118153cc86b302c023cf4  test/results/enum.c-amd64-binary
+ 0bb954ea01f309b66e75490b948ee6feda83770ae4c122cf03867f8f895a4943  test/results/enum.c-armv7l-binary
+ edebfd686d7df37490880e157eacdadc8441dbabdb6d2b24770c03dbcbcf9bb2  test/results/enum.c-riscv32-binary
+ c0a044a76e37291af29e39070f7c89a65c730bb4343c3649cb86baac11f18244  test/results/enum.c-riscv64-binary
+@@ -71,13 +77,13 @@ f0490b3216a6f65538fbcab7af5ba1db36bbd302326bab8b2b88444f4f3bb42f  test/results/f
+ 569435f1bd4944d994a98dfa7bccc60b265f88de1b8244b0bf04f24ccad5b007  test/results/fixed_int.c-riscv64-binary
+ 610cd6b33ac7ff52e17724bdf2646cf364799739e07c59bfc881fb4987d15809  test/results/fixed_int.c-x86-binary
+ 81a11f64a48beb0e35fad5c7002470b4dd63a35a3e9d2a9f7bb21321b401840e  test/results/for_loop_declaration.c-aarch64-binary
+-eba21f2266ee910d65b9b26c862008ef806f76d840f5446bf6d46db63953a824  test/results/for_loop_declaration.c-amd64-binary
++b634ecd4c88be78d252daa836a36f4a836145ea1261c09d912fd4399073d4801  test/results/for_loop_declaration.c-amd64-binary
+ 1657b06d52aff7ef60426386d0d152c22e6cf3876ad6b45993c13c108b727be8  test/results/for_loop_declaration.c-armv7l-binary
+ 1208e586097ba5c3fd061d4f6bfb1d1bca1e6cc958e1825dc12871a0a299ac68  test/results/for_loop_declaration.c-riscv32-binary
+ eabd99c209739b8168c96660fa47de503e7cd58157b51ffc74acd284db2dfc61  test/results/for_loop_declaration.c-riscv64-binary
+ b22a9c3b81b1734d320a7c2231f9e66566e7c798f529ddee9f77dc9fd5d49c88  test/results/for_loop_declaration.c-x86-binary
+ 11a12fd2bf18ed8882f231328a4703152cbd88c7412fab0d5d2e596e1def6146  test/results/forward_declare.c-aarch64-binary
+-5deb53f109f703b390f449a3b036a8df8354cb7d6c0025fd827fcca9ca86f3ab  test/results/forward_declare.c-amd64-binary
++5f4612d2dfa94280094d1671d426dc0aef7c4c3f0546368d131cb90c18c45085  test/results/forward_declare.c-amd64-binary
+ b06f3c90dc1365b2f9686e79734d677beae09c3ac5e09697cf62ceedd3dc2437  test/results/forward_declare.c-armv7l-binary
+ b4b5f7b6d3611f2a9e21af1b580026aaed45267bab5946fb8353c63145df5e2e  test/results/forward_declare.c-riscv32-binary
+ 8bba7a441ce8e3620fc3ad8657d741696c7eeac704d031c9f62c0028be66e512  test/results/forward_declare.c-riscv64-binary
+@@ -89,25 +95,25 @@ cf28517b5bde0c80797185e769ae434fede72e3918303e4af4e0baebf5047488  test/results/f
+ 99e1288e01b85b4a009dcd27b83fcc3315775685ed3e5915aa2c2786744c06a7  test/results/function_like_macros.c-riscv64-binary
+ 25cf30059e21bf5b211046e52db8505e8bdb5922855651af80741f87be7b7462  test/results/function_like_macros.c-x86-binary
+ 077be08737bce3538edd8b016acbff56f8d9dbf5695fedd44a5a914dbb91cb21  test/results/function_pointer_args.c-aarch64-binary
+-ef614875c52c983c65a5f1a8e85ad03fb75a6c07cd2bf18d12e39eed64553267  test/results/function_pointer_args.c-amd64-binary
++8b0fbe661130c739bbfb2086914e8d0d121c2503df1df8f93bb9693fe73377ba  test/results/function_pointer_args.c-amd64-binary
+ 5bb5064ba4cf321814ab6cc1195490689fbe0bd72665058296998f98dde702e0  test/results/function_pointer_args.c-armv7l-binary
+ a7f7929f5883773f5e3d3fddb6267bb8b00f0a186bcd8be816beaf642ced79cb  test/results/function_pointer_args.c-riscv32-binary
+ aeca94c484b0b5d557f8cb873fa1f5c62b0b1b92d08d155fe8d4139fcae8d9b5  test/results/function_pointer_args.c-riscv64-binary
+ 1d6a475f895ceb6fc5cc3b29f54867edbda84bda0c222b6d6915eec29ccb4bf8  test/results/function_pointer_args.c-x86-binary
+ fe9e6392a5637e1693adfccb608d61f2f1363848ec2e9c3f2ae4fc692f4d073e  test/results/function_pointers.c-aarch64-binary
+-5c49985510f7e06b2c787d2f09661cd09e6da280e39ec284826cbd84599d9cec  test/results/function_pointers.c-amd64-binary
++be3fa62c376c21019f50111222dd699e1081355fa5efb31eaf1489faf2a90c8c  test/results/function_pointers.c-amd64-binary
+ 7c8c4f3b26ed63cdefa438dc44c503fb55af83def8e59fe61d21c3bef70e4170  test/results/function_pointers.c-armv7l-binary
+ ee239eef1a87ef72f27048dae5f7e0b54d913eb3cf5b1bafea0999b724f9b3f1  test/results/function_pointers.c-riscv32-binary
+ 61e2a5c0d6bdae2814751d1c9e61ab2da9900c99bdb8be157baddbf5ba15b7cc  test/results/function_pointers.c-riscv64-binary
+ 96f4ea0b8655377c666f18f6e7cc4a5b0b797659dcae8b0bdd2bc97c8c5535a3  test/results/function_pointers.c-x86-binary
+ f82ae7a88f5b29a4d47e91e1ea3548b361230eec649cc769d95e623f8b043b9a  test/results/functions.c-aarch64-binary
+-2a0681c947bffd8b66673613e05a8d318d226cc8e00ae0683fb7300e9bfc43b4  test/results/functions.c-amd64-binary
++16320c9d4f6a92422cb22f4a5fa419c55c52a672f9dd50b907de3379e65e95cc  test/results/functions.c-amd64-binary
+ 6f2c56b64e8219a306fc6543e7e415c6f6b6988d07178ce5cafcd315e22f8aa5  test/results/functions.c-armv7l-binary
+ a983c9af246ff2fef81246e387f97be83bf08da8b5868d8ce0c27396d463b860  test/results/functions.c-riscv32-binary
+ 76a8ec1451c0128ca187e039b7061f2435ef043e9c4d6e2e83f5fc02238ee5e9  test/results/functions.c-riscv64-binary
+ 18dfceceff5b52a864c997b174fc903a8d4970a7e8fab10c0bb52ab72b4bdb6e  test/results/functions.c-x86-binary
+ b1e14929d55667e5fcb7b75594d8f9eb3942909d13385b660658d07108122228  test/results/huge_locals.c-aarch64-binary
+-d05f6763b32f957e2880a4b544206c9a179fee4dbe83ebdf14c70a8198174152  test/results/huge_locals.c-amd64-binary
++556f4ce136e27f843ce3571fc00d7b800d44e5d36416b68cd758ec7116e4110f  test/results/huge_locals.c-amd64-binary
+ 730d8c5814fd8d3a81fd91ec8b6c199b691d18ba9e9ef16eba29eb42a2573562  test/results/huge_locals.c-armv7l-binary
+ 91afeff833ffb5596ddf3756721b9e0addc59b3da167ddc3c4ed13aeacfbb891  test/results/huge_locals.c-riscv32-binary
+ 42f2d1ee37035441850cb360049a6a11a37c5401f351004349d518200af3ad9a  test/results/huge_locals.c-riscv64-binary
+@@ -119,7 +125,7 @@ ca5bec4c10bdf7b4d6c205c986d573dd7c95cac50f2349074862327081d02102  test/results/i
+ 750584f9bc8c41c5035a0502328be98788a1ff3458dfa768da4ac6ba67cbbc6e  test/results/ifdef_blocks.c-riscv64-binary
+ f88a4aa5cef7e7a61e20ed5de2d6f9867f90107dba56498cac729978bb88bab2  test/results/ifdef_blocks.c-x86-binary
+ f21ba4c6ac4240234c8e019af8dcc3c67484fef21ecda8352b17626c8acf886a  test/results/implicit_main_return.c-aarch64-binary
+-a27df26d04f0a502180c5c499384b1215b8a9c17d9b6673eee6d982b36505e38  test/results/implicit_main_return.c-amd64-binary
++42f997737a30bdd042ec5526319dfd64a5caa9e5afc630cd0cb98ba052a11254  test/results/implicit_main_return.c-amd64-binary
+ 563abbc39832ed0370652387aa8c22a55e21bed91227c6c0dfb0c6d7ccad4ed3  test/results/implicit_main_return.c-armv7l-binary
+ 21eaca0c2cb056d89cea132823037be642b338834d80e3d9efa0b42c0c9e3f27  test/results/implicit_main_return.c-riscv32-binary
+ 03ca322fef77c640c3c22429996a79133c70645a277664827f7ac9450a58a8bc  test/results/implicit_main_return.c-riscv64-binary
+@@ -155,13 +161,13 @@ d64a71113425dfe79adc703bed8065c53674d5337887033a53170edd17991e89  test/results/i
+ e481f3b6117cd6251be554de22f8f83a59ba3c0b9b1da6d9cee9386ee071d2d5  test/results/indirect_include.c-riscv64-binary
+ 292499cd58c815281c3b180c6b39f8c70c715d8e7ded2f7c32a0472e019d6f98  test/results/indirect_include.c-x86-binary
+ eed879ba267e2d67237ec0c295e00967ac0f9d14e4c7b89d41d86e0b80722226  test/results/local_array_no_index.c-aarch64-binary
+-1ce9b09bbaa45c9ffa6009dceac8d29c2a8e07c4165c12079176943897d9693a  test/results/local_array_no_index.c-amd64-binary
++22d643fd9f4af040f4a4ed3ea92e29913259a9ed55088d8a8163a9cb7733bdf8  test/results/local_array_no_index.c-amd64-binary
+ 9daf4c9ad06eed8d6b753d1189fb66b7dcc3e9d823cba2c004d1f5b97c31655a  test/results/local_array_no_index.c-armv7l-binary
+ 629f7ffa50fa3561dd6bc6fe05303422a706b3c34cf2c3ae5f05e6f4cfeb748c  test/results/local_array_no_index.c-riscv32-binary
+ 7519643de600997ef6bfe3f4eb8901d75a8350daecec3012abce87717d96bc9a  test/results/local_array_no_index.c-riscv64-binary
+ 043f96b61929285f287e4f6b8002ed02074bcc51460487bfb33d33f495efd54e  test/results/local_array_no_index.c-x86-binary
+ d31f10608b3f3e3cbd4e9a763a2b8f34ad725f2a922ed6b7274e0697dcdbdc38  test/results/macros.c-aarch64-binary
+-91a008623d12d3042f39e844c6e9a64ffa34a5f4b420cbd2e0131d78568b2114  test/results/macros.c-amd64-binary
++88978740680d00bcf7017d590e92657b47256dce84d6972f8c1a4f30381c28bf  test/results/macros.c-amd64-binary
+ 4a67f12160f5e832724ffdf974adf1eecf52d6e0cb90bc375543171b99bf2af5  test/results/macros.c-armv7l-binary
+ 6edadb957857b2928b105b5924783e3dc8c2e6c880c2d73cbc37ae0bfb93ea60  test/results/macros.c-riscv32-binary
+ f5cf90db882dbdcdffe896bff8275f4f21199f5c300b54a0726bf321caae343f  test/results/macros.c-riscv64-binary
+@@ -173,7 +179,7 @@ f5cf90db882dbdcdffe896bff8275f4f21199f5c300b54a0726bf321caae343f  test/results/m
+ 63b1511beb801aa5dc4c87778828c4e2547e137dca96467e53ce441bdd650851  test/results/macros_expanding_macros.c-riscv64-binary
+ 5d2024c15116be09717edb698fd354c9f98a19be51884ae7c767f15bf8f6446b  test/results/macros_expanding_macros.c-x86-binary
+ fefaec8b52e060439cfff17124bcdd0dd7a0b8d21dd2e1d144e0d2e0cb4d5277  test/results/member_access.c-aarch64-binary
+-1794a41bb6d3e28003514068ac07139987eed34d7dbd0ad915fec385d09a6320  test/results/member_access.c-amd64-binary
++de87a0c702500dfc979c0d37874bc51f1dd7c10b187ab3f772131083bed31ee4  test/results/member_access.c-amd64-binary
+ d227213a95dc5cce9276d58cc70e794d449e24e6c7b322c319073bb94ad5eaad  test/results/member_access.c-armv7l-binary
+ 2fb44b08bde930f17a2a311856c7a02d6bee0ed2c8b91daf86f9cb476a8dd807  test/results/member_access.c-riscv32-binary
+ 33b3ee676d2b1fc17f4c94988b4e2ae6a9b603dc981bc02d29a7cf255d5dc3fa  test/results/member_access.c-riscv64-binary
+@@ -185,19 +191,19 @@ a13ce635086000986cb3f95d59ea6bcdc41f74af60d96500730e4f57518e7e90  test/results/m
+ 804b93a85350ae1312cec04db630910415dc9a88c09132696ab5acd1c5ec2484  test/results/multi_token_types.c-riscv64-binary
+ a2d376b0fb1e719b7535c7e1d45c6e48c3df21f49d5a8416d78fdc46fcf65d27  test/results/multi_token_types.c-x86-binary
+ f6dbcf28b2ca3a484cf01f490109e68a3eeb9d9382bc903d9aa908a33ea548f6  test/results/negative_global_inits.c-aarch64-binary
+-615dedb294017141b7f4d391084096465919517d096062070e4a7c70900820c4  test/results/negative_global_inits.c-amd64-binary
++66a95c9dfbe3ba06befc9d6890a91205fcc963febc24d14558e74516b8d21a3f  test/results/negative_global_inits.c-amd64-binary
+ e0b264e1f8faf3ce2d417e62d9ef0d0eaf6590988e473743eeffe2e091e92e14  test/results/negative_global_inits.c-armv7l-binary
+ d9141b46eb9eecee18b52f37be59c4d1b3ae569c14db72769f305bd6d26ec504  test/results/negative_global_inits.c-riscv32-binary
+ 01e8cf16082b5b6910ae1d021ffab823ed9e549502c917ffa9cf032ba9ea54fd  test/results/negative_global_inits.c-riscv64-binary
+ 529691fc4a97b136a64b0460bb30c18aa9b1b026bb7caba4d5e5b31281625e7e  test/results/negative_global_inits.c-x86-binary
+ 5835a241c42b9acc4c62e013ad95c7eac603b483d9eb0e53e5d02b398f661e9b  test/results/pointer_arithmetic.c-aarch64-binary
+-02fe443b32f768b862f9dfddb1e15760f9f858f6a3ce041487d79ebb3d873d2f  test/results/pointer_arithmetic.c-amd64-binary
++b45150f88875f0881e2e1e480db2fde7c8acc95a8be8512a5a8d376c6ff3fbb3  test/results/pointer_arithmetic.c-amd64-binary
+ 0fea3df07396034aebdc0ad904d66b5678e49f99a84b1c88487c43bdb4684252  test/results/pointer_arithmetic.c-armv7l-binary
+ 2a8f0abdec906cb0f21b6eed65c5cae6b7ffa81350aaf9d309a0928ba72d951a  test/results/pointer_arithmetic.c-riscv32-binary
+ 6762396ddbeddbf3a5b67b4730e928689dd82afa1b902e8ad17b2ed1bd847f70  test/results/pointer_arithmetic.c-riscv64-binary
+ 72f4e30a10309649f96cca83ebffff0418ffca1739bfd76498caa6719c87e405  test/results/pointer_arithmetic.c-x86-binary
+ 466b54be650e43f53c8c99a7eba310bd625dc2360d12de8195006d215e64505c  test/results/prefix_postfix.c-aarch64-binary
+-a93b51bdef7c4fa8217b57884f20a1b0240584b4599b5901576d4d21f7a65253  test/results/prefix_postfix.c-amd64-binary
++5a46d4db5ca564ba8977a7c4f006bb57da9cd5e6f2157c67cea367ca33f2b601  test/results/prefix_postfix.c-amd64-binary
+ 611c73ff85cdbd3ec90ab3ef07a8fa48bf6ac632765334af484f4643ad1517de  test/results/prefix_postfix.c-armv7l-binary
+ c11822381a5c032e67d8cf3040722d53a4a9d4dde2e2b4ce0a6618b076cbfc4e  test/results/prefix_postfix.c-riscv32-binary
+ 8c741b7a54605c0e457b57e17735cc08f2dbfea7e8e3cfb7b6220443b19b67ef  test/results/prefix_postfix.c-riscv64-binary
+@@ -209,13 +215,13 @@ ca5bec4c10bdf7b4d6c205c986d573dd7c95cac50f2349074862327081d02102  test/results/p
+ 750584f9bc8c41c5035a0502328be98788a1ff3458dfa768da4ac6ba67cbbc6e  test/results/preprocessor_spaces.c-riscv64-binary
+ f88a4aa5cef7e7a61e20ed5de2d6f9867f90107dba56498cac729978bb88bab2  test/results/preprocessor_spaces.c-x86-binary
+ e54d9e424bb58a61ec1c7b0732a6fffb33d9601446c05bef706532778c660707  test/results/static_variables.c-aarch64-binary
+-742644d6f9c7eba8f657c1e87ad49984de98babae11df85c6d23c138b1448c8c  test/results/static_variables.c-amd64-binary
++be6d72767c833104a78f32bdf847e63e1cc50d999875d5844a13804c54d308c1  test/results/static_variables.c-amd64-binary
+ 19d9626ceefbd38460899d1468d6794dad6cdab920acd4da0f9847fd9dab65eb  test/results/static_variables.c-armv7l-binary
+ 4ab60d9e7fcb547e985432bfffc74c318efad31b20510460ceb7e6cc370cb67b  test/results/static_variables.c-riscv32-binary
+ 07568b45c0b521f98af56f08a5f2ea10efba8877a2a2f9f59ff84641aefd63fa  test/results/static_variables.c-riscv64-binary
+ b273cdf8ae0de3e4160d4fbf817467fab850a123d35b7846cf2b787c12be5a43  test/results/static_variables.c-x86-binary
+ 52ee252017da5a2ec944572ffa8283f106c8c9a306169e69de7bf01c56d9ce45  test/results/strings.c-aarch64-binary
+-a2bd25f77300741c9a6fbbe722788d1d0e5017a40f79d3f98449e820ea40dd02  test/results/strings.c-amd64-binary
++776479aa217ba9502373f937739368685ae76661534440287e69879df29400b5  test/results/strings.c-amd64-binary
+ 5408695edf53f314a65e7d432ba2d251a995deb04afc3fbfc3322f6a4a285421  test/results/strings.c-armv7l-binary
+ 0deb47a127102ebc209b45740b5845ee317520fb757819a3992fa63480c58ab1  test/results/strings.c-riscv32-binary
+ d43d0dbdeb4ce40a93d6daa0236327d41c3a6e70783cb1ab65129ca7180e28a0  test/results/strings.c-riscv64-binary
+@@ -235,7 +241,7 @@ b4dfdb3f7cef6571968fadd3e586a19226a546b3d470cafb8b7c556e1d2d3bfd  test/results/t
+ 734dd8ba723a9ed1655824e6158406c0164dd180335ee7f725ea07994b3d5cc7  test/results/test0000-riscv64-binary
+ 9153632b8aa41633ee71566b4b8afb171eca89b139c824e6f7bad6087ed67060  test/results/test0000-x86-binary
+ 6494c8b4640d54e5f4be82393b2c1222248f5307330e2475e861de8d81afa29d  test/results/test0001-aarch64-binary
+-27a3620bc83aaa19cf608993ee6ecd4378664761930b1c7024114aa127aea66b  test/results/test0001-amd64-binary
++d4ced56f4d7be4f1e5cf1757b3550518cb687848213dc2073d8fa6e3bde6a419  test/results/test0001-amd64-binary
+ ba59b80a1f468cb7f036df328f4b493e1c0a435a465d3a39efaf8289d6140f91  test/results/test0001-armv7l-binary
+ a891a6c7eb3ee827ad050996d524e94fe0b586757963d22ddfcaac061ae5dac8  test/results/test0001-knight-native-binary
+ 5ee196a46131ae4646396e20a233b9cb8ba02022824b3aed3e53b8d057d235cc  test/results/test0001-knight-posix-binary
+@@ -243,7 +249,7 @@ a891a6c7eb3ee827ad050996d524e94fe0b586757963d22ddfcaac061ae5dac8  test/results/t
+ 8a2c724ec0bec0f81fb35e56ac438c48a29f748a3901a623ae180fd05594492b  test/results/test0001-riscv64-binary
+ e7cd9b94c6c23ebc86205a7033ac1748c27f2e27e80ad16b050cfc58d0a8e559  test/results/test0001-x86-binary
+ f009fb5cd17e46c4f6ba46216fdb92785fd2077b2e51d966d5f3e61a7dfe9501  test/results/test0002-aarch64-binary
+-259903777bea1922269dc8e291ee953cfec1b05abac897b39824c5c64f7f3565  test/results/test0002-amd64-binary
++94f8d51c1c7d5d6e62292b873161540effa064abe15429c7672a81ad37de82a6  test/results/test0002-amd64-binary
+ 88a782ed16b619b6c1968094127d3a018029b956588a550a2249ac08417c384f  test/results/test0002-armv7l-binary
+ 8de6f76b116f28f7222030cd34e146de17f137c021cd95a35ce8435af2034d9f  test/results/test0002-knight-native-binary
+ f661c3467883a832f7c640ecfedf67f77546cf4dfcccd42e0d8e7d424b154e0d  test/results/test0002-knight-posix-binary
+@@ -251,7 +257,7 @@ b022e4ba9693a2edf01b0950e4ddb83a07ae0a893739f4705611d8145cbe9281  test/results/t
+ 5f9b58d7f07f2a2583a8a5c79c330ffbd9e68d1c682701a7f4763da1614e783c  test/results/test0002-riscv64-binary
+ a10227a92f8b4905aafb13df911f554035502acdf3e0198bab8fdf21d3cf5a98  test/results/test0002-x86-binary
+ 3be46e0245c117ea29dd8726cc954fa3cecf704fe0d28368d7623edb291279f9  test/results/test0003-aarch64-binary
+-c131afb6909adfb775e12543e7ff8c390faf5de3088af4db8d16d6f14e771347  test/results/test0003-amd64-binary
++a8c323363f0f84553105ec9da32cccc272ea3eb5ef159c2b6ab97ec208dce89b  test/results/test0003-amd64-binary
+ bb4732a44bf1070416e3676cf482b41e99e0f124d3cdec51a5fff1ca1fe27089  test/results/test0003-armv7l-binary
+ 665a6fd4be0fa53fab2929301788162a4b5015c0123cef669c2b30a4032d28d8  test/results/test0003-knight-native-binary
+ ec8402d226b16d482dc102e90ca12e773a573c5d920af3cd83a0f89880c37885  test/results/test0003-knight-posix-binary
+@@ -259,7 +265,7 @@ ec8402d226b16d482dc102e90ca12e773a573c5d920af3cd83a0f89880c37885  test/results/t
+ 204052234acf379025e0efd4e7b75e2ec3a6c4b9daf2148df57434c6efb6a13f  test/results/test0003-riscv64-binary
+ a1ba6267482a974b26b7ae09f5fa049e9c9b596c0584044c1570784ee4939d6a  test/results/test0003-x86-binary
+ edcc0ea8ffd9f61e0c5c3677b48530039fb30ee9d3604d960143e1c28f14d19b  test/results/test0004-aarch64-binary
+-9a4f10f335f8bb388b2444959c6af7649998e30487edaaff7c45ac9f198215b5  test/results/test0004-amd64-binary
++ea38ee538bc4bf34426572df1aad22c15d5f40145fc1f5e9b3a67d761679d9ce  test/results/test0004-amd64-binary
+ f10ac7194ece6290dd6e0f9590664eca001cf43b4809df7b51af8d338583a4eb  test/results/test0004-armv7l-binary
+ ea4e1530bdcbe8cbd1f7631875e93388958c1e2107293a5b9905f3e2c4b6dbe2  test/results/test0004-knight-native-binary
+ 9be87ae7c50e68ea2450eebca3ff8fb6a99c3ad450f72c9fa9a85c6ce737f4ec  test/results/test0004-knight-posix-binary
+@@ -267,7 +273,7 @@ ea4e1530bdcbe8cbd1f7631875e93388958c1e2107293a5b9905f3e2c4b6dbe2  test/results/t
+ ce60249091758561ce2a1923725e8d90da96b37b8ae8b2bb023b8115e7910397  test/results/test0004-riscv64-binary
+ 0f04104034824e7c7e97bcc7a41dcaa4f0c31686394dec7b8e4c2e8ca9e42ced  test/results/test0004-x86-binary
+ 92eaf689ac56766c85a449333ffd921a2857d7b69b96a6d6e14750c8146c3f04  test/results/test0005-aarch64-binary
+-9b0774d5ba8ac88811c25ad8212e28a0b52f15932dc36b472536464e890082a0  test/results/test0005-amd64-binary
++c292524abd36a1d454f6444e2cc2df785ab06f577b15604df568bf0f23a3eb4d  test/results/test0005-amd64-binary
+ 0d1e67091bf449da2c83b5b0c5a3bb5bffe705df35f08daab16bebbeeeff0b00  test/results/test0005-armv7l-binary
+ 997a65ba09cfc69d943db36732587adba6d0cadeef4b963afa7db7a0a920a02b  test/results/test0005-knight-native-binary
+ 65094ec25ce1adefe9e6302364397f8842c6bfcee2a7e3f1bcd420ed63670166  test/results/test0005-knight-posix-binary
+@@ -275,7 +281,7 @@ b56236cbc22a07876ee1a6934c5dc52e085f13d9a814d5c37ef1580a1f43a5be  test/results/t
+ 47f7ec0a160412589a47bfb5d5baed84412a0ae8fbf3f978f5663239bb2eaa5e  test/results/test0005-riscv64-binary
+ ba7f6581703a9f15b78853277a17eef9d71a5684d460ef57cc1686d51f2e4ee4  test/results/test0005-x86-binary
+ 2ca0f54266c28100dadd10be3628722a1318966c78c583514cb44eb78e25fed3  test/results/test0006-aarch64-binary
+-b5240c970dabc415da7293a7e5d1f4567116312a9ebe380ec116c30efac7bdf1  test/results/test0006-amd64-binary
++98992ec55e180abc5a3feac8be22ebda93507096909dfd4d892c5732e875b5c0  test/results/test0006-amd64-binary
+ 6f5b06bebaf922351c8bb8b2838c6946cf87bd269c9b5f72a02a99e17ab002c7  test/results/test0006-armv7l-binary
+ e3b493ca0d6baa13cc9fb676cb931e9cf23a0b4fe2adb2cb9610c6b3fb7e604e  test/results/test0006-knight-native-binary
+ 8e198e471a7b3039bc1ba6ddcbc321eda9d143e7bbaabc13b4d9d7e876ccacd3  test/results/test0006-knight-posix-binary
+@@ -283,7 +289,7 @@ e3b493ca0d6baa13cc9fb676cb931e9cf23a0b4fe2adb2cb9610c6b3fb7e604e  test/results/t
+ 90d0fef9477e426436720376b7f1d07a5b2fdb2f2888c9b4e82c3488b58adc9b  test/results/test0006-riscv64-binary
+ 1585f9b6dc8339a8260ad867ac18db3683e561368faf9d823684395aec7ff95c  test/results/test0006-x86-binary
+ 3f9b8c7f991586aaec1d1be2d3073400f95732dc3f3205b765f175ecf3d2b55f  test/results/test0007-aarch64-binary
+-4af1217930cea42e55c5f43c47c5f283192086da19bfdccf2e6a58b2d7330aa6  test/results/test0007-amd64-binary
++d1d7de781e603493169d5f161ef95b9893c4e0fd6468df9205a7c1c13b7aa853  test/results/test0007-amd64-binary
+ 313cc79d50ce71b951f1645581306833f484f44523e536a917be6a85440850e9  test/results/test0007-armv7l-binary
+ d11e6067748f0855b8792d32f918f24577b9224b66ffd650261bd307dd6e1b36  test/results/test0007-knight-native-binary
+ 2ea69f0a4673c1b0f52365833d55223be554f4713836287002c993790742f4ed  test/results/test0007-knight-posix-binary
+@@ -291,7 +297,7 @@ d11e6067748f0855b8792d32f918f24577b9224b66ffd650261bd307dd6e1b36  test/results/t
+ eccba6e380425d85b863930e35296c30a14f5a9ca49131b04fd79071c0eca498  test/results/test0007-riscv64-binary
+ 8aba8b0ed89f5dfb03d2cebd0629a5abd41f22c36475eb122b98d2217a5adb1b  test/results/test0007-x86-binary
+ 2856bc645168dae3480d12fed740782a9581abbade2368c1a947f6d122459f17  test/results/test0008-aarch64-binary
+-6adadbab20c8c2562590b52820ce7636208cea91446271313ba6055393d359ff  test/results/test0008-amd64-binary
++d5dc9901f8b437a6192efb11516de5d33e18b0e02191a8da665a7cb3dfa082f0  test/results/test0008-amd64-binary
+ 3b32e5d61f8953f3b44dfed7b4eb2bb0571b7537e5bffa605cafd82112af257f  test/results/test0008-armv7l-binary
+ 09db1a4f758c65e0a9f6e1d4cc19da3f0b72c762fb55c05e1ffdc3089ae30af5  test/results/test0008-knight-native-binary
+ 491b3d88f633e3cc4ba5ec3ecee478de4e89bd44c490fb2fc1dbb9739572361b  test/results/test0008-knight-posix-binary
+@@ -299,7 +305,7 @@ eccba6e380425d85b863930e35296c30a14f5a9ca49131b04fd79071c0eca498  test/results/t
+ c5e51910501921e0bcff739fa8fac2d4486563a7aca8aa64ef2469846c615dab  test/results/test0008-riscv64-binary
+ 865b549d598fb54cedf6f0872eb8d90f1f94c9f989fadb041f15e64c7d17fe5b  test/results/test0008-x86-binary
+ 1baf0f358896a71b2e87cd1696a7398fc241c837d56c11f71223d95755f9cfde  test/results/test0009-aarch64-binary
+-d04c70f4f7276a0f991381163f4acc25dbf37e49730e1c4f04431bc10ec9ea4c  test/results/test0009-amd64-binary
++a28762ba62bafe87ab35d08e9e669eb62041aebfc2d7489de7bff80faaf828ad  test/results/test0009-amd64-binary
+ 2b74a5ec93e87d00268604200630837d2277b0f536e2b03cdd934aecc0ed113b  test/results/test0009-armv7l-binary
+ e2b944f6443f3bd9ac281b03d9e5664033901395155770e255dc7ac778ea420c  test/results/test0009-knight-native-binary
+ dee3d4a300f2dfd2f54d63506b799c87621644c2b86a23770261db20471d1671  test/results/test0009-knight-posix-binary
+@@ -307,7 +313,7 @@ dee3d4a300f2dfd2f54d63506b799c87621644c2b86a23770261db20471d1671  test/results/t
+ dedfd069e86e9e1d283376b68e8b44412c577fe804a5e15dc6d200c76c382e1e  test/results/test0009-riscv64-binary
+ 571e30d3e4d582b88ad468fb2d16fbd1dd3c9b1106909d652287e2ddaed38213  test/results/test0009-x86-binary
+ 75d6b6b60e5a82677568ebd6d67f4bcfb523ff458d4edb67bc96cddc5fcacb7e  test/results/test0010-aarch64-binary
+-e33fccfd7cdf93426a68f397fe191c23d4bd4c15bbb592e0b3e24cf153e26d4e  test/results/test0010-amd64-binary
++4338d4604e23fe9acde54a4118cd5ef012a180134cf79fb6af25d5d050e8d4ad  test/results/test0010-amd64-binary
+ 2cd0fa8bdbe534a770ee731e28c8de0581f93aec44ea8ea5140f79c823acd127  test/results/test0010-armv7l-binary
+ a926ef92e5481e205fda0babcb9d5a84f6109f60558d4efdac6b16291830614b  test/results/test0010-knight-native-binary
+ 54c1d3b7134785e12ea753860a049ca058b4de5a2675dc5fc4ddea2bf15904e4  test/results/test0010-knight-posix-binary
+@@ -315,7 +321,7 @@ c94e65362e8a25baa9c2db93d4b2cb3adb8f73043d49533583adf863ab71782b  test/results/t
+ f733618056d6de8c525c4e0e1ff300199cafdaf3c4628cdf9fd3dfba567725ac  test/results/test0010-riscv64-binary
+ d8f2fd49058fb2e7f8814677ea1ff45cb57a82db85a58ec69aaa6950eeae4f89  test/results/test0010-x86-binary
+ 15f8b5a4cd33032aa22e3c089a59d35a99b08c940823a0666904f895218168f3  test/results/test0011-aarch64-binary
+-6891848bd219ac93d105f109c867a418197a0a4f2f99d0e14ca654d63cc5f2a4  test/results/test0011-amd64-binary
++857792c0162e9b457289b1b434c9f1fd247c3941e91b030ac7f54f94273c0537  test/results/test0011-amd64-binary
+ 1fc57f3ae3c4e3f99c25e69c4ef60ca8a4786b7ca676d39e02712fba14498fad  test/results/test0011-armv7l-binary
+ 6e1dec07a47aa8c104fd4a04e931531a7dbbeb71e8f52a4e737c04d8de1e68df  test/results/test0011-knight-native-binary
+ 4c20eed01e563a890cacb952f1684e093b557c4a1f1a0046df0c22f0dd40cac1  test/results/test0011-knight-posix-binary
+@@ -323,7 +329,7 @@ dfb8d5bc2a20aed3ed5faf4a45c82fd7fa9b938e534bf9b89f31d06b84c9e9b7  test/results/t
+ 08f083f11b4fff5b20bd2a2b064d9cf3b327085cec96a859b72ca797ca0e20cf  test/results/test0011-riscv64-binary
+ d291b1231f5a9e659176494e0301b73b33054072715be272c48f8c7fc285950f  test/results/test0011-x86-binary
+ 6e99b5e1047ccc7d197d13745c61549732725a7750663bb13657f135ceff84b9  test/results/test0012-aarch64-binary
+-217589339074604f8615b79cefa2033f202988d2fd4277ac2f6da0569667f051  test/results/test0012-amd64-binary
++62efc20b6b4453a29bbf47b3db42c07ba8ff9a2c393a0659b16e5d8c2942eccb  test/results/test0012-amd64-binary
+ a3aac1ff381a97675737d1dc5d1b9e83fc73d82b59038f0b5341ce0639e8a03f  test/results/test0012-armv7l-binary
+ e2026f524e9e84f5fa8efab6d978a20f093641ff710b44db0302e67fcd6f5ffa  test/results/test0012-knight-native-binary
+ 8d40c650b7abf5fa6f8e14a117a31b03d0c9e86af28421c944eb5ec5520bc747  test/results/test0012-knight-posix-binary
+@@ -331,7 +337,7 @@ e2026f524e9e84f5fa8efab6d978a20f093641ff710b44db0302e67fcd6f5ffa  test/results/t
+ 9bc3bc1beb717429cbcd286f0fa05be8726b5f6b7ff8f1981b694fd2b643d0f0  test/results/test0012-riscv64-binary
+ 3ec1be00bc84ebb8819e0d33ff8e36f09c410346f99157ac22da64f8befcf97e  test/results/test0012-x86-binary
+ 43aa74fdc621672cfa668f21b936c172734ae9cf1a837b12548841de33afb464  test/results/test0013-aarch64-binary
+-637d1bc3a988fe1f35fbc6e7cdb8b147a554cc7eb3f9779936c3dcdd5edb6959  test/results/test0013-amd64-binary
++c7d1239d9de520842ffde38c9a607ec9215bc3d977f15fbb21b084843df02bac  test/results/test0013-amd64-binary
+ a2e3e2c5deca1edd4be60feb863d8bfb7c378f462c277639089e4781fbe25d29  test/results/test0013-armv7l-binary
+ 5d41437c6ae35f5b0de54f063e1b73e4d0965afeaecead05e92bc2fc12a48fb0  test/results/test0013-knight-native-binary
+ daf21bea9c8fbe4c291180a737eb35c23ee376cff4442ff59d4ea01abbf28f17  test/results/test0013-knight-posix-binary
+@@ -339,28 +345,28 @@ daf21bea9c8fbe4c291180a737eb35c23ee376cff4442ff59d4ea01abbf28f17  test/results/t
+ 2d3cbb5f705ae6d234a6aab22b85038d21ae07eaa65a609556435a24832c4dfc  test/results/test0013-riscv64-binary
+ f0bb8816358cbcd4ab0e3253c98a3210014123b6ac89fae1899eda94b489c1db  test/results/test0013-x86-binary
+ f8b5c0ee95ae8e3ab635698b3540b5bd6f4383064d9484de437414a1b75848b7  test/results/test0014-aarch64-binary
+-dbf61b281d70ae4f7b5d5ba4bbcbbec895cb37e772ebf33165e1d43487004eb6  test/results/test0014-amd64-binary
++83265673dc6f261b299d5ab5dde54cda5b1a3e49cfa54a3d4287e07cd530ead5  test/results/test0014-amd64-binary
+ b3d891c39ddc32405e9a9f1a25374aa260716364f83f2832958afd809e3ae070  test/results/test0014-armv7l-binary
+ 8bd161ec44197091578ca9eb2c6c469d8d2dcb1f367ba542a22966b5dbb0bce0  test/results/test0014-knight-posix-binary
+ a6cd983062cb911068bf7f292d40f40128fa830bce7a0555c7e97f15f0f4c6a1  test/results/test0014-riscv32-binary
+ 129628ea6b51e97c8ce9ba63f9b7113c8f6e7aec4acb4bb433bffbf4b026ea37  test/results/test0014-riscv64-binary
+ 1607490f306673076f3851edc27cb518f51f878caad0873c7e127cee840b0fd3  test/results/test0014-x86-binary
+ 288ecf6d5000c76233bb735bdd56d6d12c61a34231260ff0b560cb07894ea4c6  test/results/test0015-aarch64-binary
+-74aab98de02b04f4abcccbc923f8dd576900f7e8acadce0a9d530ce65a2aa840  test/results/test0015-amd64-binary
++e348728dfc5b0b8ba3ec5cf7904ef4d3fe670fcf543860911ee7b7ce8bad0c31  test/results/test0015-amd64-binary
+ 8bbac80cafaca89437da07c3320405dfad40068922cb005acaabcc40a3d0f17c  test/results/test0015-armv7l-binary
+ d4c7959c7980751f9e7f0540c1b3c56e45f04d597bb20ffd9affee44c3eacf03  test/results/test0015-knight-posix-binary
+ a112ef2818415ac1959b12d1ba7376335bb2a37034d66345c849daf89423703c  test/results/test0015-riscv32-binary
+ f0991b2142f4e22da50c0b9e262de7227eeb6d2f19813a3573ce33619d7e82b7  test/results/test0015-riscv64-binary
+ e75661ef0c588e7c6f5a2fcaaeed5b3677cb9e4fd45e46315dbc766d09c32fba  test/results/test0015-x86-binary
+ 6487fe1ddf25ef88d7ee04e2e5f678496ab384ed1f1bfa09259e4a3d43ff1338  test/results/test0016-aarch64-binary
+-bbda5e762d91c78707916595f38f37953b4133ae89a76bd3f6cac952bca93701  test/results/test0016-amd64-binary
++ce84e05ec877a376dcf823024c5667fc6812743193d8c7c28d95a8667224f515  test/results/test0016-amd64-binary
+ 8876d4eaaafa3c13b1dd487a2ec390720dd843cb99125f88d56ca11dcbde1241  test/results/test0016-armv7l-binary
+ 0e6d05ce131a49243ea8a26cdf263356afc3315fe6f5d412a917a1286d8b93aa  test/results/test0016-knight-posix-binary
+ 8260b90cb48a33d81ec6045d704031c9c030d29e21b728358d0737ba7012582b  test/results/test0016-riscv32-binary
+ eed3215d2155a525a0221921b5a3e6fc768b06090494f1be1255d80fb862c799  test/results/test0016-riscv64-binary
+ db372b17f22f00ff2dde83d6dfc523bea183cd3f586951d6ce2b8e051678e07b  test/results/test0016-x86-binary
+ b3d5d6a82bbb40dd020e43a8e74c2ed1fa3a34c7be318cbfd6d8d784f08a6d1d  test/results/test0017-aarch64-binary
+-f2f393a78f5db7ab8dd83d1c3100e9d33ec7aac1f2afdd5b91e2cfb30b929ad2  test/results/test0017-amd64-binary
++9423088e93081d070457749e8b7dd81246e75c946f2eef38d4d351af7e1c76f2  test/results/test0017-amd64-binary
+ 03e990c6ae7ec239e88c96f730e15ba93004b89d798a046105032a00e1cfc6a8  test/results/test0017-armv7l-binary
+ 9bd932d9c7c96ed3f3b719d8bab293ed8ed9a2dbbf84771192010d1410b7be0c  test/results/test0017-knight-native-binary
+ ceeb07b737c82aceab70a80ae78bcce81c6d19d1663cc4ad7cdbcfc3f0566fa8  test/results/test0017-knight-posix-binary
+@@ -368,7 +374,7 @@ c9ee4c3cb4b1f590052386b4b0e8378b9b81e7fda01609a9a702b2adcf000562  test/results/t
+ 5bc374b83a27127449fe6258bfbbcd85f14231279c05cd145846969bdecbf6ca  test/results/test0017-riscv64-binary
+ a71f713e2c24585e3ade9d818030e94f149ca0dc9962b453d3bb411a7d697f6a  test/results/test0017-x86-binary
+ 232d5b380fcc75a599844a3b3b85441edc351a46085995b79740105aa8a820d3  test/results/test0018-aarch64-binary
+-6face37a659c1b9f0a7d8ea37e1901fba4fc39c0121e957431a2e597dab96357  test/results/test0018-amd64-binary
++695cb56a5f673ebe17062464041f7f3ca8c59a661d18d9996d251c53eeb6145c  test/results/test0018-amd64-binary
+ 1f78503af5a8f720a03a7582c0fefa21b246ac9697376e1d0f893bac83539a46  test/results/test0018-armv7l-binary
+ e7e20c4a229e4828655f9897d2c87d98ded24b6019900bf2b5215b58e73a7b0f  test/results/test0018-knight-native-binary
+ 153fc6e8f104cb07dbdd55bfc18b530c3812aac33d0bacf1d257fbd80aae9b84  test/results/test0018-knight-posix-binary
+@@ -376,14 +382,14 @@ af4c5199ef92b4757702e81c5922621751fefbf05b7dab41974a3a59ff6e1b5c  test/results/t
+ 5889ef01fc5585ced1d07d9f6c71a8dbf68f1bbb02bfdbb7cd398f4166468e3a  test/results/test0018-riscv64-binary
+ d3ad06be046f357e3fb4dd4dbdbe753973af94d7080e6617a8958cbb09d581f6  test/results/test0018-x86-binary
+ 826b0edf6e80531d254bf4bed4958ae002591833a04e7af47a7c29296ded7292  test/results/test0019-aarch64-binary
+-96b12ed7be235aea677e21b4122f9a5686e85f5a483afeda1669f7b4c62a682d  test/results/test0019-amd64-binary
++451a852b77084a988627f6714ac8374d9dd205fa9e3d0e54a673fcb699978293  test/results/test0019-amd64-binary
+ 79c1a6b5eaa9559f7fd5011463d7c9c1ab35d2532153a341758652a796b9e450  test/results/test0019-armv7l-binary
+ 211e08ca0483bae35732c395f90d94d8d9a0ca7a2fb011eedfdc3d6c3e8dcd43  test/results/test0019-knight-posix-binary
+ 57fe5fbc61ac5fdb1b5ce0f489040626d2db456b83e79e91629ffbed3630f894  test/results/test0019-riscv32-binary
+ d93449465e02c631357521fe67cbdb34913e76984ceaaa0946fd197da06240ca  test/results/test0019-riscv64-binary
+ f01660c32d677d9397c3726ea64b42d8a427d92da43d61a343a0effb2803834e  test/results/test0019-x86-binary
+ e6f2986864e81d0fec49b9ac914a676b15488c72dd60c6f3d650183e2c72006b  test/results/test0020-aarch64-binary
+-25b028da087323dd23c3c05fb4ad141dba8846498f0e90f08e0db65a4cf4fb27  test/results/test0020-amd64-binary
++c04ebdfee665afb3272463df93aa8a2446a016254c3e57326aa8ce993bc21b9c  test/results/test0020-amd64-binary
+ 03874dfc0cdfd202a303daf8b5ec5c74ace757aec0cbabcd1155fbaeeb644c49  test/results/test0020-armv7l-binary
+ 77b7ca187a28f7eefa3c7db8b282fe6d1ba97d7e6d0a2859a38524e764453197  test/results/test0020-knight-native-binary
+ 49406dbccc1e343b974b08c9c1d754ed2df0f61f6e469fa8750019509ed0676d  test/results/test0020-knight-posix-binary
+@@ -391,21 +397,21 @@ e6f2986864e81d0fec49b9ac914a676b15488c72dd60c6f3d650183e2c72006b  test/results/t
+ c85f0ea51318156d9daeef1cbcd0e0d5d4940de22422b71eaa873a356859b9bf  test/results/test0020-riscv64-binary
+ 447ec88049c0df9f4025857ee8f0d9718a3355fa1d5e16c97bfb77a22bf31bec  test/results/test0020-x86-binary
+ a8b996d8ceb533bdc4bd7da22305cb1bee4b16120a0590c00a781dd4ba33c8cc  test/results/test0021-aarch64-binary
+-32a2f8811a306fbf9498a45eeefb1decca822040869631ebf9231305cf8aaa25  test/results/test0021-amd64-binary
++6e6d70861eff449cc16bd166c28c0fc0721b04816bbd1af8a96f676ddf136146  test/results/test0021-amd64-binary
+ 0eafcd752c8fdfd5752504e858ad48131e4bafb87162ffd0ec5cfa1ae4f19d6d  test/results/test0021-armv7l-binary
+ 421c23baa3df1e9b12a6af3b543df1bfb6c15fa38b690b0cd9536adf5df90a89  test/results/test0021-knight-posix-binary
+ 4c5844cd0890878b6cd066914e88f4ef1f82bf8543a33943dddd26aedc4256f8  test/results/test0021-riscv32-binary
+ f1208bad6d3870821814611a415dfb71632793583e0601c310c41a4d8b28e2ca  test/results/test0021-riscv64-binary
+ c4118951b128a927f280ae076e21a5c3a8bd78a39cc9d8e14b479115fa9363bd  test/results/test0021-x86-binary
+ 8755f9ca32924499f0ba4536c3f08816d15f205ddc5047870f15da479a208b72  test/results/test0022-aarch64-binary
+-cd991584ee0c2a7b7eb0f950ebe1c27831069e37e4520797884e69f296d445db  test/results/test0022-amd64-binary
++8faff48d5f445c8e8201af4fc63fbbfdcacc0b2eb832d9bc2980e1305ff65154  test/results/test0022-amd64-binary
+ 2812a29fefeecaf57e29a17467f49fdce6ae4470a76affc05567bf6de6f0a560  test/results/test0022-armv7l-binary
+ 2287901f91220cc68aaff585a8e664f0b459227567e0fa0b4ac7f2d31eb4af9d  test/results/test0022-knight-posix-binary
+ 2276b3d878f9487a9dd6788cd2cd5439d2ed8404df50677982eb39dd8a5c5386  test/results/test0022-riscv32-binary
+ 87664ab1b870220ed00768514fcd91bfd626e4dad006548ec0d51d0cb95ac7c4  test/results/test0022-riscv64-binary
+ 0c9ff8aee1094693bfc8e5bcf9d577ca1b943314bea7bae35007251f0e035532  test/results/test0022-x86-binary
+ 6ed7a1e77a95d3d78b845dff5ec01b7a8735abd685eeb81f8bbb6d2c0229dec0  test/results/test0023-aarch64-binary
+-b5b6a13cf7bd9a5a0042c8575e5654beb0aeed2e227aab676822e04b2ab956d5  test/results/test0023-amd64-binary
++a80d53c1d9f6211bc90c5e0392925333a74ff23f201b4118de41f607c671ca01  test/results/test0023-amd64-binary
+ 7cfe305617a61309300e0dcd52e4d0f07b3aa4a1b08745059b8222bf8cf6d2c4  test/results/test0023-armv7l-binary
+ 0d749e0e43a27dc781c9f84c0068ccf145e2ea02ae745191c75de268647db8a6  test/results/test0023-knight-posix-binary
+ 123d2ec01043c7ca03741a3fbeab66dcd8b49076fc1f23b25f099ce250b59414  test/results/test0023-riscv32-binary
+@@ -420,93 +426,93 @@ b4dfdb3f7cef6571968fadd3e586a19226a546b3d470cafb8b7c556e1d2d3bfd  test/results/t
+ 734dd8ba723a9ed1655824e6158406c0164dd180335ee7f725ea07994b3d5cc7  test/results/test0024-riscv64-binary
+ 9153632b8aa41633ee71566b4b8afb171eca89b139c824e6f7bad6087ed67060  test/results/test0024-x86-binary
+ 33e19193c502d4167e275db30688a4ce0692b54714ef40e12e884229ae0733c4  test/results/test0025-aarch64-binary
+-38bd6e3bd27b7261f564cc914133546d019035166edbc63a23efbf3afa128046  test/results/test0025-amd64-binary
++91e34c5ab3ab16c00c25d3065c2877930885a1075492db6f5f4b0519562249f2  test/results/test0025-amd64-binary
+ 1f5ceb9470212c7e65f017afc7ca94a1b12d0f4315f81ff31e1aabd072b34a87  test/results/test0025-armv7l-binary
+ bb47e02a7675f91963dd2f2e8b5ac09fbff2f3dc660e0c00edf13e45970919f5  test/results/test0025-riscv32-binary
+ bbfbae055686cec1a3ccc3c23fb7ba05942271abba44293df7d266a32b95bde8  test/results/test0025-riscv64-binary
+ 68c1608f61bf435e2824b033d2476e4da45f04b3168c763ab6eb6b779a194b23  test/results/test0025-x86-binary
+ dc6cc9a1e629b967d4812b2fd9bed8859b26fa80be352a45865eeceb608885ec  test/results/test0026-aarch64-binary
+-5276734295e742df540df957915ebeb04f517a69c01a4ee6b1a4af55f82ad35c  test/results/test0026-amd64-binary
++8673c6abde0f379cc9cb7b6652f10c18aadae544b7490143885930581b0c18f5  test/results/test0026-amd64-binary
+ 25f25c933ed624ae08ea4c19f4766d5083fd19306c00be37fa56248690236785  test/results/test0026-armv7l-binary
+ 6569a655b00f22042bea09e11b5de0048a45657f0d41fdcefc14c082f7cb0aa8  test/results/test0026-riscv32-binary
+ 11562d768f584b4c2fc05e637e3bc9fa0dd6c654f781f7ecd489cbfa1615ab31  test/results/test0026-riscv64-binary
+ c68a306ccc072577f5e7739547368fad85011379f0a11759b23d335d281be3f3  test/results/test0026-x86-binary
+ af59b03d1bc350d53dc97df9867e21d8d3a91032afb706096dc623139740bda1  test/results/test0027-aarch64-binary
+-026002cde190c46954387fe3b6d146d45ccfa6aa8343ca58d65fbd77637f30e8  test/results/test0027-amd64-binary
++0cfee4e059661d96ef9c0ab99113ea9477283c4706946fb80b07917824f14ffa  test/results/test0027-amd64-binary
+ 4b0b681028385a8e8716c20d77b651e4f61c3137ccbe2789501ffb83d2ff2749  test/results/test0027-armv7l-binary
+ 2b7fe890dd74d2f6b1c053bfb542d36550dc75ff5b5250872e68f2b884f20ed7  test/results/test0027-riscv32-binary
+ 6a9bf733e1eb15cefeda13b432c2755053e01bdc90d06c53874baeb5e0b430b2  test/results/test0027-riscv64-binary
+ b471c2a0f615582bbcb5bf4c8cd56fc8cee3c3a831db7283b07931ef7ebf7a36  test/results/test0027-x86-binary
+ 4f9433127cb08781232afd751c534b932328fcd7b814c32afbca194506de6e54  test/results/test0031-aarch64-binary
+-cdc8e299669ce56ab6a97a1bf39c7158d582001c2790a8b1d7b152a5ce033888  test/results/test0031-amd64-binary
++db9c1387064db3034003e2b25f8f258605f1ce7288c83abdd4bcea44ae193586  test/results/test0031-amd64-binary
+ 4d259d7ae4db87a46296688697f7ca09dff97355e9d135179d53239c972c7cc9  test/results/test0031-armv7l-binary
+ f1194091d829a6fa87181ce43aea015c9cf4515177b438503b0a853941826867  test/results/test0031-knight-posix-binary
+ d2c25b5044ba98f7d69839be9e03eface0795f96149a36bb0ea3256b0f65eb9b  test/results/test0031-riscv32-binary
+ 91504acaf0de5929326680a514406fce563768571d4ff1635a157d898531901f  test/results/test0031-riscv64-binary
+ a213ab178ee2493088500ecadc9af576e7dd9d7e47bc26371bc37b31753d2d90  test/results/test0031-x86-binary
+ 92220a820d828a110db67dcf66f6380999c841e5067fe94992ac3d019a171b38  test/results/test0100-aarch64-binary
+-b226dee4a641673cf2f837b4c5c538b78ce8bff210601b9e73239c1416afb592  test/results/test0100-amd64-binary
++fb61427150dfaab839ad0dd4bbd84410622f70797e0c356d60202311aa46881d  test/results/test0100-amd64-binary
+ 2fddb26d8475e1d5467615b032c5a655c5b5cc7919e3718d9b36281fed132685  test/results/test0100-armv7l-binary
+ 129ec9d2546d543235356353f9b9987d9f0b7f81aa8643c686fe49a54953fc4a  test/results/test0100-knight-posix-binary
+ dca5b5f97a1de215b20516e5b2e66581b4dc18c05eb8e040fea71ed4058017ff  test/results/test0100-riscv32-binary
+ 7d0575aafb5b08932f1b4dab54765d286834cb3c26c09e2144ebcb9619d5e3bd  test/results/test0100-riscv64-binary
+ 2c86a3653b26c2c018be86866d46819ce9913e99d70aaf847eb98deb5196cd3a  test/results/test0100-x86-binary
+ acdf482e6a10404603cba7fa5e0ffa167aef53ec4901f47378c762ba508eb67e  test/results/test0101-aarch64-binary
+-a4f72701d02c756f87f6f1e7516bf3ef9df097d226c51623087f9da5a09b6291  test/results/test0101-amd64-binary
++6b375f697b8685d71f2f35bfa05b80ba269ada8f77a27663d50016229057f4bc  test/results/test0101-amd64-binary
+ 018bd1c759ad093bf51073d2a1aca09b54a5142c9f16714ec671ecee27b80d18  test/results/test0101-armv7l-binary
+ e91149447c6419e13b92c41bcfbfac22a242329d1abc6b55e15ee23ec8a55c47  test/results/test0101-knight-posix-binary
+ 2b0eed88036168f07ff236b3329b954d9e4f7bbca30fff4bbb313b3bc6db20d7  test/results/test0101-riscv32-binary
+ 1cec3d9947b94fc0c282979b514ee886b20f0d6d53d10be7e3c952ce34d9314a  test/results/test0101-riscv64-binary
+ a90ab01a21c3b46a2477b84a497517d183ce98b3b7d387bf71b13c574fd0058e  test/results/test0101-x86-binary
+ 1fd0a2ea391fd174979df8c2f7790fd50154a3019253cb660912528fb5b1c159  test/results/test0102-aarch64-binary
+-dfa7af167c1113a10ea5b424f57961f894a694f4ecb6b0db1f9c70e07afe1cfc  test/results/test0102-amd64-binary
++7cf6ed3298db6119f48ff57575e182572c01d51e568181582116335bcb7545fc  test/results/test0102-amd64-binary
+ 6e621ecff15439131cd02a4671de1b005cc8952f36e5f2d9d729928f4fadafe5  test/results/test0102-armv7l-binary
+ f3bf52d94aaea63784db3016a80724e475b0f863348805035b2fefe80c4bbd85  test/results/test0102-knight-posix-binary
+ a3d3ebfdd644bf2ed1ef644fc59106c000b0512e2c1651b42bc15f37ec1e05c9  test/results/test0102-riscv32-binary
+ f60b3383c9974e4873496c132ec559c42cd6e56be39aef14585a351a351b8c18  test/results/test0102-riscv64-binary
+ 61a624c554dc755cf531d9b3a0d473aaf71a5e93653a2119e0af3ec033389a5a  test/results/test0102-x86-binary
+ 780153b742dfeaff30cf2d133078fc0c80353f0fb380cd28c32304080c1122be  test/results/test0103-aarch64-binary
+-1cc34bfeffd7f2472c48d7e2affe4c70368d538f5bc037decef580a5eb97f7a8  test/results/test0103-amd64-binary
++930e0f0e72a8f6724ec4e2e07912e96053a5a44e544097348d26668877afc5d6  test/results/test0103-amd64-binary
+ be583bc252d2e8a759d01cf998d7551e3070e31e1ef86acf78c956fd42d1f6df  test/results/test0103-armv7l-binary
+ 16df032b9d049b73c83c7ade7dcabebf6468f5d3ed71b2893fa2ddeb40c52d90  test/results/test0103-knight-posix-binary
+ 6b3b2cd9658acccf9cfe4a5e7290aa49408dc92aa8237aee3fbb41a87a596412  test/results/test0103-riscv32-binary
+ 8632ce98ea67ad751ab8977c75c9d25cc5a4461748fc60879d5e10ce11b1d50d  test/results/test0103-riscv64-binary
+ 8909d76f08ae2fb37602579da81d53aef8ccd7262821a9a27e57bc49fb6c57a4  test/results/test0103-x86-binary
+ 96eb2deb9608952cd3a74a58a00efbe014c756b0e3d8417c932ba4f4f2d46d74  test/results/test0104-aarch64-binary
+-dcc9b892082b78aaece0827c48b5a53e1a041773a1ab2283fa1816de60455353  test/results/test0104-amd64-binary
++762e1932c5f91df2b317a0c1807790220c3509284c0b7bdbeca472fcb3afdcec  test/results/test0104-amd64-binary
+ 24ee2fe80811a6ce339542799f965518d65b21af54ca50af3947ccbbe2cc1dfe  test/results/test0104-armv7l-binary
+ f56fcfd1bec0232a8b7c86fe2fccbc47ff6733d0d663d98dbfd5cd8548dd82d6  test/results/test0104-riscv32-binary
+ 5cfa260b10ce26ca9251b8cdff1242a690109165ca3c5c9e9cd5b76859429d6e  test/results/test0104-riscv64-binary
+ 12e803c54e353c1ca187d15ffac63743e3abacb1a102aa858bf771fde0557642  test/results/test0104-x86-binary
+ 4bb39efd1013d5704138573acdd221b7aca6dba95eed8e93e927c441f3ec45e0  test/results/test0105-aarch64-binary
+-6ff3474edd072dd809961cdc6fd30720e18ca404c56f96bc64337b40ca52d3d7  test/results/test0105-amd64-binary
++181634e7d27fddc3b120070fbc7dd195eafbd9fae7da4ea08db81ade7b3a4068  test/results/test0105-amd64-binary
+ 2068373781c76fda09ff1d34dc454a6d41c687c2bbe64a03fe8080cffcb450f0  test/results/test0105-armv7l-binary
+ e9bba1add1a3f231a6e6ee62e0aee276e03da730fb7ee85fda45c95cc5601271  test/results/test0105-riscv32-binary
+ 52140ee1896f843a85205ca4d13b87d0ffd39d87415f0065e9305821a63706ac  test/results/test0105-riscv64-binary
+ d0cc07b9359ee41d754d320f9ed6f296b7de1587d5dbb70226d36c01bd36bcf1  test/results/test0105-x86-binary
+ 9267140c916f02843b6ec65c1e2ca34e31d1b67f64052e69e7ae39d35b2ec82b  test/results/test0106-aarch64-binary
+-d33f0870d5eb83ff6d2d14bf1445d12d531a75840aa5b3893508c5b6aea47c08  test/results/test0106-amd64-binary
++49103f1a00bcaee193d08301bba16786f4b832bc7891e59b245d14d74efb9ccc  test/results/test0106-amd64-binary
+ 281c7446db14d528bf5afe0438db19ff99b51c72182363ea2062ede34a433858  test/results/test0106-armv7l-binary
+ 3c1d829d2bf8a72c43f3a62363292e85e0e37b75503ef7e679601623549ec3ea  test/results/test0106-knight-native-binary
+ 7be9fbfab45b90223188eddd0178f225f9dba278cf2dbd4f5f92aad1aba5715c  test/results/test0106-knight-posix-binary
+ 8a2041f5b46bd428a9af022bead1246d2dc1cec85c3f7ce400f181595d089d35  test/results/test0106-riscv32-binary
+ 217d49207afb1dc1bf37db1d7d9147309daf2e02af2d29146439447f7bc6c288  test/results/test0106-riscv64-binary
+ 7206948c5043fe07318ca4458a708206689bc2e7e897c6da9316e46d0cf0ace2  test/results/test0106-x86-binary
+-9f98aac0bc7612d3667d7b00d93c583cf0050fe44bf05891b584c3d2fb23769b  test/results/test1000-aarch64-binary
+-d145fb1525e94ae20aba0b872c1ac64078be0cae4f18074603f68096cd5ed717  test/results/test1000-amd64-binary
+-649ed7c49a36babdea0fc3bbaa43d59db038483831c9ad8746a190d50477b248  test/results/test1000-armv7l-binary
+-70d67769acc0b67a4471180f6ecc1c7f321ab1d87276eb145586400efbeb6d64  test/results/test1000-knight-posix-binary
+-05e6673348c686f63f48885bd1c94b78d0d8a727783dd132234c5d43f015a3c5  test/results/test1000-riscv32-binary
+-302f6399731259b3714b15e44a9b521c5ae637f5cc89c8e88bf69b0a8870811b  test/results/test1000-riscv64-binary
+-cc08a0632a24660e63949eb09751253785247bd25e7def50a239515da82431be  test/results/test1000-x86-binary
++01594a10d0a17da13a315a3a5928a01f37848d4b1610fdcbaa52859e434b4cb1  test/results/test1000-aarch64-binary
++3d4a2a294cfa95df3adf679a3beb036c17524d66bf6aaf55f9af05cc87a4fe84  test/results/test1000-amd64-binary
++35a17d343a7ad764d922c8900e04feff79bf44449a3b01a4c3dfded0745c3659  test/results/test1000-armv7l-binary
++fe2dbeb220e67deff2703aef32f077ac7db961f890a9d00ebcea480e162b7414  test/results/test1000-knight-posix-binary
++955ac21edb345ef8f4529345bf473e8fb706b640a0cb76f80f04d9af8185123e  test/results/test1000-riscv32-binary
++b3e2909fe7a6714437b06691accaa982f821187177e83d4f06c854da4bb8652c  test/results/test1000-riscv64-binary
++715d26885bc8d8d14e8a238c08d40a8be6b87d6a591011072918c9b9e32d18b7  test/results/test1000-x86-binary
+ fde49d0041fbb60eeb261170d19b572241ca54c96fed5fbdde3070649ebf32df  test/results/variables.c-aarch64-binary
+-07aa56ec0340b4c2bb94b6fffd31308839a33b126b34a4975bb5f2e30a672f40  test/results/variables.c-amd64-binary
++c114bdf6df8937a5d971bc6835fc648811ff198a6d002497c2f97df4e730c744  test/results/variables.c-amd64-binary
+ 25fa73be212baebcd8587611060443cde5c4277228df4d3247e9a37e16e84a5d  test/results/variables.c-armv7l-binary
+ e3e56573adbeef24a0aa553981864e35494e98dba0165feb186715e2916e87b6  test/results/variables.c-riscv32-binary
+ 7e319a83a8efdd0c8907b1367cbd319146c959ff18ffefe0c9cbea7efbc25958  test/results/variables.c-riscv64-binary
+ 2b8131a1dcfb611c6f8afb4c8d60232220354d341c1e08776d4ba319abf7681b  test/results/variables.c-x86-binary
+ 52d12834c0b7422a4ad0cf8e8f011e8a58bd9d026a93f7edbbb5de9f2b9786a7  test/results/variadic_functions.c-aarch64-binary
+-147aa1cb69cd309c97f399ed1c73cd0e8a85cfdb18aa8c796090b1ec5d951f0b  test/results/variadic_functions.c-amd64-binary
++f5139a3198b7d42ff6b5d7ac8e215da2988a4cb70a158e447f5591e821becb80  test/results/variadic_functions.c-amd64-binary
+ 6d12c13c5e94348ec48e3be10073e10579fae2cf169578852b3325ffb557005b  test/results/variadic_functions.c-armv7l-binary
+ ed5a8f32f847391cb4f8b69393011bf208b8385b0512242d69845752cacde4ab  test/results/variadic_functions.c-riscv32-binary
+ d1c87464b61669217152cbcbd3600105cff1074511869b792b3cd9373dfa1826  test/results/variadic_functions.c-riscv64-binary
+diff --git a/test/test1000/proof.answer b/test/test1000/proof.answer
+index d8c637e9ba834f910da76826d084d67fcf2b817e..ab1db3bce8ba6e660955865a348b10d2c905db5f 100644
+--- a/test/test1000/proof.answer
++++ b/test/test1000/proof.answer
+@@ -1 +1 @@
+-dbf0d2492738cbe1074bb54a957c175504b89a679f48ff0e13a2346fe4d68d67  test/test1000/proof
++e708b91ad8264e1186ce900df0e1f88b8cfef05b902a248ed9f49a8677cf9bf9  test/test1000/proof

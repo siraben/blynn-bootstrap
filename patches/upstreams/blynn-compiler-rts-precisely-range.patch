@@ -1,0 +1,15 @@
+diff --git a/inn/RTSPrecisely.hs b/inn/RTSPrecisely.hs
+--- a/inn/RTSPrecisely.hs
++++ b/inn/RTSPrecisely.hs
+@@ -277,8 +277,9 @@
+ #endif
+ #ifdef HCC_RTS_USE_EXTERNAL_ALLOC
+-#define IS_ADDR_N (n >= 128 && n < TOP)
+-#define IS_ADDR_X (x >= 128 && x < TOP)
++enum { ADDR_RANGE = TOP - 128 };
++#define IS_ADDR_N ((n - 128) < ADDR_RANGE)
++#define IS_ADDR_X ((x - 128) < ADDR_RANGE)
+ #else
+ static inline u isAddr(u n) { return n>=128; }
+ #define IS_ADDR_N isAddr(n)
+ #define IS_ADDR_X isAddr(x)

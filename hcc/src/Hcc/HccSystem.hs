@@ -15,6 +15,7 @@ module HccSystem
   , hccTakeDirectory
   , hccTakeFileName
   , hccWithHandleLineWriter
+  , hccWithTransactionalLineWriter
   ) where
 
 import Base
@@ -165,6 +166,23 @@ hccWithHandleLineWriter handle action = hccWithObuf outputChunkSize $ \out -> do
   hccObufWrite handle out
   hccHandleFlush handle
   pure result
+
+-- Keep bytes outside the evaluator heap until all lowering succeeds. The
+-- surrounding hccWithObuf frees the buffer after either success or failure.
+hccWithTransactionalLineWriter :: Int -> ((String -> IO ()) -> IO (Either e a)) -> IO (Either e a)
+hccWithTransactionalLineWriter handle action = hccWithObuf outputChunkSize $ \out -> do
+  result <- action (hccWriteTransactionLine out)
+  case result of
+    Left _ -> pure result
+    Right _ -> do
+      hccObufWrite handle out
+      hccHandleFlush handle
+      pure result
+
+hccWriteTransactionLine :: Word -> String -> IO ()
+hccWriteTransactionLine out line = do
+  hccWriteBufferedText out line
+  hccObufPut out '\n'
 
 hccWriteBufferedLine :: Int -> Word -> String -> IO ()
 hccWriteBufferedLine handle out line = do

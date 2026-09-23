@@ -6,3 +6,4 @@ blynn-compiler-rts-precisely-speed.patch
 blynn-compiler-rts-precisely-reserve.patch
 blynn-compiler-signed-division.patch
 blynn-compiler-cbor-negative.patch
+blynn-compiler-rts-precisely-range.patch

@@ -56,8 +56,8 @@ writeM1Ir opts trace ast = do
   trace ("open " ++ asmOutput opts)
   opened <- hccWithOpenWriteFile (asmOutput opts) $ \handle -> do
     trace "m1-ir start"
-    result <- hccWithHandleLineWriter handle $ \writeLines ->
-      emitM1IrWithDataPrefixTarget
+    result <- hccWithTransactionalLineWriter handle $ \writeLines ->
+      emitM1IrStreamingWithDataPrefixTarget
         writeLines
         (dataLabelPrefix (asmInput opts))
         (asmTargetBits opts)

@@ -385,7 +385,7 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
             nativeBuildInputs = [ blynnRootStages.vm ];
             description = "Blynn raw compiler stage lonely";
             buildScript = ''
-              ${blynnRootStages.vm}/bin/vm -l ${blynnShare raw "raw"} -lf ${blynnFile "effectively.hs"} --redo -lf ${blynnFile "lonely.hs"} -o lonely_raw.txt
+              ${blynnRootStages.vm}/bin/vm -l ${blynnShare raw-z "raw_z"} -lf ${blynnFile "effectively.hs"} --redo -lf ${blynnFile "lonely.hs"} -o lonely_raw.txt
             '';
             installScript = ''
               install -Dm644 lonely_raw.txt "$out/share/blynn/lonely_raw.txt"
@@ -479,8 +479,10 @@ __mesabi_uldiv (unsigned long a, unsigned long b, unsigned long *remainder)' \
           };
           party1 = upstreamStage {
             name = "party1";
-            prev = multiparty;
-            prevBin = "multiparty";
+            # party already supports the language used to implement records.
+            prev = party;
+            prevBin = "party";
+            prevIsParty = true;
             inputFiles = upstreamInput [ "Base0" "System" "Ast1" "Map" "Parser1" "Kiselyov" "Unify1" "RTS" "Typer1" ] "party";
           };
           party2 = upstreamStage {
