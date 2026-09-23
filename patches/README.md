@@ -54,3 +54,12 @@ The portable, repo-owned entry points live in `scripts/`.
 
 `upstreams/blynn-compiler.series` and `upstreams/oriansj-blynn-compiler.series`
 define the compiler patch order shared by the Nix and portable builds.
+
+`m2-planet/upstream/` contains two **unapplied** patches for later upstream
+submission, based on M2-Planet commit `34fbd5c2a9b6eb634a4f6ad95158dcd1efcf19e0`.
+Apply them in `series` order: AMD64 comparison-branch folding, then immediate
+operands and bounded constant folding. They include their upstream regression
+fixtures and golden hashes; applying them reproduces fork commits `edaf33f7`
+and `c9af4a70`, respectively. Both passed upstream tests and seed-built
+stage2/stage3 fixed points. The bootstrap uses the original
+`pkgs.minimal-bootstrap` M2 compiler; neither archive patch is applied here.
