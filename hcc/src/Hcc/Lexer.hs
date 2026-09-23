@@ -77,7 +77,7 @@ lexIdent st = (Token (Span start end) (TokIdent text), st') where
   end = lsPos st'
 
 takeIdent :: LexState -> (String, LexState)
-takeIdent = takeWhileState isIdentChar
+takeIdent = takeWhileColumns isIdentChar
 
 lexNumber :: LexState -> Either LexError (Token, LexState)
 lexNumber st = case takeNumber st of
@@ -96,13 +96,13 @@ takeNumber st = case lsInput st of
 takeHexNumber :: String -> String -> LexState -> Either LexError (String, NumberClass, LexState)
 takeHexNumber prefix rest st =
   let st0 = advanceMany prefix st { lsInput = rest }
-      (digits, st1) = takeWhileState isHexDigit st0
+      (digits, st1) = takeWhileColumns isHexDigit st0
       (fraction, st2) = takeHexFraction st1
       (exponentText, st3) = takeExponent "pP" st2
       (suffix, st4) =
         if null fraction && null exponentText
-          then takeWhileState isIntSuffix st3
-          else takeWhileState isFloatSuffix st3
+          then takeWhileColumns isIntSuffix st3
+          else takeWhileColumns isFloatSuffix st3
       cls = if null fraction && null exponentText then NumberInt else NumberFloat
   in if null digits && null fraction
      then Left (LexError (lsPos st) ("hexadecimal constant requires at least one digit: " ++ prefix ++ suffix))
@@ -113,16 +113,16 @@ takeHexFraction st = case lsInput st of
   '.':'.':_ -> ("", st)
   '.':rest ->
     let st0 = advance '.' st { lsInput = rest }
-        (digits, st1) = takeWhileState isHexDigit st0
+        (digits, st1) = takeWhileColumns isHexDigit st0
     in ('.':digits, st1)
   _ -> ("", st)
 
 takeDecimalNumber :: LexState -> Either LexError (String, NumberClass, LexState)
 takeDecimalNumber st =
-  let (digits, st1) = takeWhileState isDigitChar st
+  let (digits, st1) = takeWhileColumns isDigitChar st
       (fraction, st2) = takeFraction st1
       (exponentText, st3) = takeExponent "eE" st2
-      (suffix, st4) = takeWhileState isNumberSuffix st3
+      (suffix, st4) = takeWhileColumns isNumberSuffix st3
       isFloat = not (null fraction) || not (null exponentText) || hasFloatSuffix suffix
       cls = if isFloat then NumberFloat else NumberInt
   in if not isFloat && hasInvalidOctalDigit digits
@@ -156,7 +156,7 @@ takeFraction st = case lsInput st of
   '.':'.':_ -> ("", st)
   '.':rest ->
     let st0 = advance '.' st { lsInput = rest }
-        (digits, st1) = takeWhileState isDigitChar st0
+        (digits, st1) = takeWhileColumns isDigitChar st0
     in ('.':digits, st1)
   _ -> ("", st)
 
@@ -165,7 +165,7 @@ takeExponent markers st = case lsInput st of
   c:rest | c `elem` markers ->
     let st0 = advance c st { lsInput = rest }
         (signText, st1) = takeExponentSign st0
-        (digits, st2) = takeWhileState isDigitChar st1
+        (digits, st2) = takeWhileColumns isDigitChar st1
     in if null digits then ("", st) else (c:signText ++ digits, st2)
   _ -> ("", st)
 
@@ -266,11 +266,17 @@ lexPunct st = case lsInput st of
       let st' = advancePunct text st { lsInput = rest }
       in Just (Token (Span (lsPos st) (lsPos st')) (TokPunct text), st')
 
-takeWhileState :: (Char -> Bool) -> LexState -> (String, LexState)
-takeWhileState predicate st = go st [] where
-  go cur acc = case lsInput cur of
-    c:cs | predicate c -> go (advance c cur { lsInput = cs }) (c:acc)
-    _ -> (reverse acc, cur)
+takeWhileColumns :: (Char -> Bool) -> LexState -> (String, LexState)
+-- Every caller consumes an identifier or number fragment: these predicates
+-- accept neither whitespace nor newlines. Advance the position once, instead
+-- of allocating a LexState and a source-position update for every character.
+takeWhileColumns predicate st = go (lsInput st) [] where
+  go input acc = case input of
+    c:cs | predicate c -> go cs (c:acc)
+    _ -> let text = reverse acc
+         in (text, case acc of
+           [] -> st
+           _ -> advancePunct text st { lsInput = input })
 
 advanceMany :: String -> LexState -> LexState
 advanceMany s st = foldl (flip advance) st s

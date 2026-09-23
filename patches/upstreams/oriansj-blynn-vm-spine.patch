@@ -1,0 +1,41 @@
+--- a/vm.c
++++ b/vm.c
+@@ -430,0 +431,2 @@
++	unsigned* p;
++	unsigned* lim;
+@@ -436 +438,2 @@
+-		if(mem + (hp * CELL_SIZE) > sp - (8 * CELL_SIZE))
++		lim = mem + ((hp + 8) * CELL_SIZE);
++		if(lim > sp)
+@@ -438,0 +442 @@
++			lim = mem + ((hp + 8) * CELL_SIZE);
+@@ -442,2 +446 @@
+-
+-		if(isAddr(x))
++		while(x >= 128)
+@@ -446,0 +450,6 @@
++			if(lim > sp)
++			{
++				gc();
++				lim = mem + ((hp + 8) * CELL_SIZE);
++			}
++			x = sp[0];
+@@ -448 +457 @@
+-		else if(FORWARD == x)
++		if(FORWARD == x)
+@@ -478 +487,14 @@
+-			lazy(3, arg(1), app(arg(2), arg(3)));
++			p = mem + (sp[1] * CELL_SIZE);
++			f = p[1];
++			p = mem + (sp[2] * CELL_SIZE);
++			n = p[1];
++			p = mem + (sp[3] * CELL_SIZE);
++			t = p[1];
++			m = hp;
++			mem[m] = n;
++			mem[m + 1] = t;
++			hp = hp + 2;
++			p[0] = f;
++			p[1] = m;
++			sp = sp + (2 * CELL_SIZE);
++			sp[0] = f;

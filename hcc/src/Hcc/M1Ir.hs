@@ -1,6 +1,6 @@
 module M1Ir
   ( CodegenError(..)
-  , emitM1IrWithDataPrefixTarget
+  , emitM1IrStreamingWithDataPrefixTarget
   ) where
 
 import Base
@@ -13,41 +13,34 @@ import LowerImplicit
 
 data CodegenError = CodegenError String
 
-emitM1IrWithDataPrefixTarget :: (String -> IO ()) -> String -> Int -> Program -> IO (Either CodegenError ())
-emitM1IrWithDataPrefixTarget write prefix target ast =
-  case buildM1IrModuleWithDataPrefixTarget prefix target ast of
-    Left err -> pure (Left err)
-    Right ir -> do
-      write "HCCIR 1"
-      emitModuleIr write ir
-      pure (Right ())
-
-buildM1IrModuleWithDataPrefixTarget :: String -> Int -> Program -> Either CodegenError ModuleIr
-buildM1IrModuleWithDataPrefixTarget prefix target ast = case ast of
+-- The caller buffers writes transactionally: a later lowering error must not
+-- publish the header or any previously emitted functions.
+emitM1IrStreamingWithDataPrefixTarget :: (String -> IO ()) -> String -> Int -> Program -> IO (Either CodegenError ())
+emitM1IrStreamingWithDataPrefixTarget write prefix target ast = case ast of
   Program decls ->
     case mapCompileRun (runCompileM registerBuiltinStructs (initialCompileStateForTarget prefix target)) of
-      Left err -> Left err
+      Left err -> pure (Left err)
       Right (_, st0) ->
         case registerTopDeclsIr st0 decls of
-          Left err -> Left err
-          Right (st, registeredItems) ->
-            case lowerTopDeclsIr st decls of
-              Left err -> Left err
-              Right (_, functionItems) -> Right (ModuleIr (registeredItems ++ functionItems))
+          Left err -> pure (Left err)
+          Right (st, registeredItems) -> do
+            write "HCCIR 1"
+            emitTopItemsIr write registeredItems
+            lowerAndEmitTopDeclsIr write st decls
 
-lowerTopDeclsIr :: CompileState -> [TopDecl] -> Either CodegenError (CompileState, [TopItemIr])
-lowerTopDeclsIr st decls = case decls of
-  [] -> Right (st, [])
+lowerAndEmitTopDeclsIr :: (String -> IO ()) -> CompileState -> [TopDecl] -> IO (Either CodegenError ())
+lowerAndEmitTopDeclsIr write st decls = case decls of
+  [] -> pure (Right ())
   Function _ name params body:rest ->
     case mapCompileRun (runCompileM (registerImplicitCalls (map (\(Param _ paramName) -> paramName) params) body >> lowerFunction name params body) st) of
-      Left err -> Left err
+      Left err -> pure (Left err)
       Right (fn, st') ->
         case pendingDataItemsIr st' of
-          (pending, st'') ->
-            case lowerTopDeclsIr st'' rest of
-              Left err -> Left err
-              Right (stFinal, restItems) -> Right (stFinal, TopFunction fn : pending ++ restItems)
-  _:rest -> lowerTopDeclsIr st rest
+          (pending, st'') -> do
+            emitFunctionIr write fn
+            emitTopItemsIr write pending
+            lowerAndEmitTopDeclsIr write st'' rest
+  _:rest -> lowerAndEmitTopDeclsIr write st rest
 
 registerTopDeclsIr :: CompileState -> [TopDecl] -> Either CodegenError (CompileState, [TopItemIr])
 registerTopDeclsIr st decls = case decls of
@@ -115,10 +108,6 @@ pendingDataItemsIr :: CompileState -> ([TopItemIr], CompileState)
 pendingDataItemsIr st = case csDataItems st of
   [] -> ([], st)
   items -> (map TopData (reverse items), st { csDataItems = [] })
-
-emitModuleIr :: (String -> IO ()) -> ModuleIr -> IO ()
-emitModuleIr write ir = case ir of
-  ModuleIr items -> emitTopItemsIr write items
 
 emitTopItemsIr :: (String -> IO ()) -> [TopItemIr] -> IO ()
 emitTopItemsIr write = mapM_ (emitTopItemIr write)
