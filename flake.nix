@@ -25,6 +25,10 @@
             || lib.hasSuffix ".modules" (baseNameOf path);
         };
         upstreamPatches = ./patches/upstreams;
+        upstreamPatchSeries = name:
+          map (file: upstreamPatches + "/${file}")
+            (lib.filter (line: line != "")
+              (lib.splitString "\n" (builtins.readFile (upstreamPatches + "/${name}.series"))));
         upstreamSources = {
           oriansjBlynnCompiler = pkgs.fetchgit {
             url = "https://github.com/OriansJ/blynn-compiler.git";
@@ -87,20 +91,12 @@
         blynnSrc = patchedUpstreamSource {
           name = "oriansj-blynn-compiler-hcc";
           src = upstreamSources.oriansjBlynnCompiler;
-          patches = [
-            (upstreamPatches + "/oriansj-blynn-methodically-dispatch.patch")
-          ];
+          patches = upstreamPatchSeries "oriansj-blynn-compiler";
         };
         blynnUpstreamSrc = patchedUpstreamSource {
           name = "blynn-compiler-hcc";
           src = upstreamSources.blynnCompiler;
-          patches = [
-            (upstreamPatches + "/blynn-compiler-local.patch")
-            (upstreamPatches + "/blynn-compiler-crossly-perf.patch")
-            (upstreamPatches + "/blynn-compiler-rts1-vm-speed.patch")
-            (upstreamPatches + "/blynn-compiler-rts2-vm-speed.patch")
-            (upstreamPatches + "/blynn-compiler-rts-precisely-speed.patch")
-          ];
+          patches = upstreamPatchSeries "blynn-compiler";
         };
         m2libcSrc = "${blynnSrc}/M2libc";
         mesLibcSrc = pkgs.runCommand "gnu-mes-libc-hcc" {

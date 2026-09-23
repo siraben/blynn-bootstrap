@@ -92,10 +92,18 @@ prepare_upstream() {
   fi
 }
 
-prepare_upstream oriansj-blynn-compiler "$oriansj_src"
-prepare_upstream \
-  blynn-compiler "$blynn_src" \
-  "$repo_dir/patches/upstreams/blynn-compiler-local.patch"
+prepare_compiler_upstream() {
+  name=$1
+  src=$2
+  prepare_upstream "$name" "$src"
+  while IFS= read -r patch_name; do
+    [ -n "$patch_name" ] || continue
+    (cd "$out_dir/$name" && patch -p1 < "$repo_dir/patches/upstreams/$patch_name")
+  done < "$repo_dir/patches/upstreams/$name.series"
+}
+
+prepare_compiler_upstream oriansj-blynn-compiler "$oriansj_src"
+prepare_compiler_upstream blynn-compiler "$blynn_src"
 prepare_upstream \
   janneke-tinycc "$tinycc_src" \
   "$repo_dir/patches/upstreams/tinycc-mescc-source.patch"

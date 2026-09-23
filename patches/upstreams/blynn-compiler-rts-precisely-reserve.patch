@@ -1,0 +1,33 @@
+--- a/inn/RTSPrecisely.hs
++++ b/inn/RTSPrecisely.hs
+@@ -524,14 +524,18 @@
+   . rtsInit opts
+   . rtsReduce opts
+ 
++-- Spine descent must preserve the allocation reserve established at entry.
++-- Cache its boundary, and refresh it whenever GC moves the graph.
+ giantSwitch opts = ([r|
+   if (hp - major_base >= HCC_RTS_ADAPTIVE_MAJOR_WORDS) {
+     RTS_NOTE_HP;
+     if (gc()) return 3;
+   }
+-  if ((u*)((char*)mem + hp * sizeof(u)) > (u*)((char*)sp - 8 * sizeof(u))) {
++  u *lim = (u*)((char*)mem + (hp + 8) * sizeof(u));
++  if (lim > sp) {
+     RTS_NOTE_HP;
+     if (gc()) return 3;
++    lim = (u*)((char*)mem + (hp + 8) * sizeof(u));
+   }
+   u x = *sp;
+   while (IS_ADDR_X) {
+@@ -539,8 +543,9 @@
+     sp = (u*)((char*)sp - sizeof(u));
+     x = *p;
+     *sp = x;
+-    if ((u*)((char*)mem + hp * sizeof(u)) > sp) {
++    if (lim > sp) {
+       if (gc()) return 3;
++      lim = (u*)((char*)mem + (hp + 8) * sizeof(u));
+       x = *sp;
+     }
+   }

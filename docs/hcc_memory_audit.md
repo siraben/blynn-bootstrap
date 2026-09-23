@@ -86,31 +86,39 @@ With production `TOP = 134,217,728` and the default trigger:
 gc=25 peak_hp=109,113,202 peak_live=25,227,122 peak_stack=8,072
 ```
 
-The working set (`peak_live ≈ 25.2 M words = 192 MiB`) is dwarfed by
-`peak_hp ≈ 109 M words = 873 MiB`. **Most of the 860 MiB RSS we see
-under GCC compilation is just-about-to-be-collected garbage, not live
-data.** The slack is governed by `HCC_RTS_ADAPTIVE_MAJOR_WORDS`,
+The working set is much smaller than the allocation frontier. For this
+GCC build, generated `u` is a 32-bit `unsigned`: `peak_live = 25,227,122`
+words represents about **96 MiB**, and `peak_hp = 109,113,202` words
+about **416 MiB**. An earlier version of this document incorrectly used
+8 bytes per word for these host-GCC counters. RSS includes both semispaces
+and other allocations, so it cannot be identified with one heap frontier.
+The allocation slack is governed by `HCC_RTS_ADAPTIVE_MAJOR_WORDS`,
 previously hard-coded at 83,886,080 words.
 
 Sweep of `HCC_RTS_ADAPTIVE_MAJOR_WORDS` against the GCC-compiled
 binary, same `TOP=134M`, all byte-identical IR:
 
-| adaptive_major | elapsed | max RSS | GC count | peak_hp (MB) |
-| ---: | ---: | ---: | ---: | ---: |
-| 83,886,080 (default) | 16.5 s | 861 MiB | 25 | 873 |
-| 33,554,432 | 22.8 s | **464 MiB (−46 %)** | 64 | 472 |
-| 16,777,216 | 33.2 s | **333 MiB (−61 %)** | 129 | 337 |
-| 8,388,608 | 49.0 s | **267 MiB (−69 %)** | 259 | 271 |
+| adaptive_major | elapsed | max RSS | GC count |
+| ---: | ---: | ---: | ---: |
+| 83,886,080 (default) | 16.5 s | 861 MiB | 25 |
+| 33,554,432 | 22.8 s | **464 MiB (−46 %)** | 64 |
+| 16,777,216 | 33.2 s | **333 MiB (−61 %)** | 129 |
+| 8,388,608 | 49.0 s | **267 MiB (−69 %)** | 259 |
 
-This is the GCC-compiled binary; the curve looks different on the
-M2-Mesoplanet-compiled binary because of how M2 manages heap pages
-(see m2Lowmem below).
+These are historical GCC measurements. The previously included byte
+conversion of `peak_hp` mixed graph word sizes and is omitted. A comparison
+with M2 must account for its 64-bit graph words; this table alone does not
+establish a difference in heap-page management.
 
 ### M2-Mesoplanet codegen cost (the time gap)
 
-The `m2.precisely.gcc` binary (22 s) and `m2.precisely.m2` binary
-(124 s on old master, 120 s on current master) compile the SAME
-`hcc1-blynn.c` differently — the gap is purely codegen.
+The historical `m2.precisely.gcc` binary (22 s) and
+`m2.precisely.m2` binary (124 s on old master, 120 s on that audit's
+master) compile the same `hcc1-blynn.c`, but have different integer and
+graph-word ABIs: host GCC uses 32-bit `unsigned`, while M2 uses a 64-bit
+word. The gap therefore combines code generation, word width, heap layout,
+and potentially integer semantics. It is not a controlled measurement of
+code generation alone.
 
 M2-Mesoplanet is a single-pass C compiler with no register allocator
 and no CSE. Common expressions like
@@ -130,14 +138,13 @@ HCC is unchanged: GCC was already doing this in CSE.
 
 ### Why `m2Lowmem` needs both `TOP` and the GC trigger
 
-The M2-compiled binary's max RSS is dominated by which heap pages it
-*touches*, not by `peak_hp`. M2 codegen ends up dirtying close to the
-whole arena regardless of allocation pressure (we suspect dead-store
-non-elimination plus aggressive page touch from the GC's altmem swap
-pattern), so `RSS ≈ 2 × TOP × sizeof(u)` for the M2 binary. The
-gccLowmem variant only changes the GC trigger — which works on the
-GCC binary but is ineffective on the M2 binary because the whole
-arena is already dirty.
+The earlier audit observed that reducing only the GC trigger did not
+reduce M2 RSS as much as reducing both `TOP` and the trigger. Its proposed
+explanation involving dead stores and whole-arena page touching was not
+isolated experimentally. M2's 64-bit graph words already double the bytes
+per arena relative to host GCC at the same `TOP`; live data, allocation
+history, and both semispaces also affect RSS. Retain the measured trade-off,
+without treating the proposed page-touch explanation as established.
 
 `m2Lowmem` therefore changes *two* things:
 
@@ -195,7 +202,9 @@ module) was implemented and validated under
 to skip pass-2 re-parse (e.g. recording a per-function token-slice in
 pass 1).
 
-Other experiments rejected by measurement:
+Other experiments rejected by the historical measurements below. The
+reported GHC metrics and the host-GCC Blynn instrumentation recipe above
+are not substitutes for a fresh test with the faithful M2 word ABI:
 
 - **Strict `LexState` field updates** — +3 % alloc, +5 % peak RSS.
   Lazy chains were being elided.
