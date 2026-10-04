@@ -1219,6 +1219,8 @@
             pkgs.bash
             pkgs.coreutils
             pkgs.gnugrep
+            pkgs.jq
+            pkgs.ripgrep
             pkgs.procps
             pkgs.time
           ];

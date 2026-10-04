@@ -21,7 +21,7 @@ times="$out_dir/$label.tsv"
 metadata="$out_dir/$label.meta"
 
 nix-store -qR "$top_drv" \
-  | "$rg_bin" '/nix/store/[a-z0-9]+-(oriansj-blynn-compiler-hcc|blynn-compiler-hcc|gnu-mes-libc-hcc|blynn-(pack-blobs|blob-|raw-|vm-|marginally-|methodically-|upstream-)|hcc-blynn-(sources|objs-m2-precisely|c-m2-precisely)|hcc-m2-precisely-m2-|tinycc-boot-hcc-m2-precisely-m2-).*\.drv$' \
+  | "$rg_bin" '/nix/store/[a-z0-9]+-(oriansj-blynn-compiler-hcc|blynn-compiler-hcc|gnu-mes-hcc|gnu-mes-libc-hcc|blynn-(pack-blobs|blob-|raw-|vm-|marginally-|methodically-|upstream-)|hcc-blynn-(sources|objs-m2-precisely|c-m2-precisely)|hcc-m2-precisely-m2-|tinycc-boot-hcc-m2-precisely-m2-).*\.drv$' \
   > "$drv_list"
 
 {
@@ -39,9 +39,26 @@ nix-store -qR "$top_drv" \
   echo "worktree_status_end"
 } > "$metadata"
 
-# Keep substitution and dependency realization outside the timed region. The
-# timed --check below rebuilds each selected derivation body serially and
-# compares it with its already-realized output.
+# A cached output need not retain its build inputs. Realize those explicitly
+# before disabling substitution, or --check can time unrelated dependency
+# builds (and fail on source fetches) instead of just the selected stage.
+inputs="$out_dir/$label.inputs"
+: > "$inputs"
+while IFS= read -r drv; do
+  nix derivation show "$drv" | jq -r '
+    (.derivations // .)[] |
+    if has("inputDrvs") then
+      .inputDrvs | to_entries[] | .key + "^" + (.value | join(","))
+    else
+      .inputs.drvs | to_entries[] |
+      "/nix/store/" + .key + "^" + (.value.outputs | join(","))
+    end
+  ' >> "$inputs"
+done < "$drv_list"
+LC_ALL=C sort -u "$inputs" -o "$inputs"
+while IFS= read -r input; do
+  nix build --no-link --option max-jobs 1 --option cores 1 "$input"
+done < "$inputs"
 while IFS= read -r drv; do
   nix-store --realise --option max-jobs 1 --option cores 1 "$drv" >/dev/null
 done < "$drv_list"
