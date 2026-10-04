@@ -578,9 +578,7 @@
             description = "HCC compiled from Blynn output by the normal GCC C toolchain";
           };
 
-          # Same as gcc, but lowers HCC_RTS_ADAPTIVE_MAJOR_WORDS so the Blynn
-          # RTS collects more often. Trades ~2x runtime for ~60% peak-RSS cut
-          # on hcc1 against tcc-expanded.c; see docs/hcc_memory_audit.md.
+          # Lower the GC trigger for the GCC debug build; see docs/performance.md.
           gccLowmem = {
             mkDerivation = rawStdenvCC.mkDerivation;
             runtimeFile = "cbits/hcc_runtime.c";
@@ -625,13 +623,7 @@
             metaPlatforms = [ "x86_64-linux" ];
           };
 
-          # Same as m2, but with HCC_RTS_ADAPTIVE_MAJOR_WORDS lowered so the
-          # Blynn RTS collects more often AND with a smaller TOP so each of
-          # the two heap arenas is 4× smaller (8 GiB virtual → 1 GiB virtual).
-          # The smaller TOP is what makes the m2-compiled binary's RSS
-          # actually drop — the GC trigger alone doesn't help on m2 because
-          # M2-Mesoplanet's compiled code dirties roughly the whole arena.
-          # See docs/hcc_memory_audit.md for the trade-off curve.
+          # Halve the M2 heap and lower the GC trigger; see docs/performance.md.
           m2Lowmem = {
             mkDerivation = rawStdenvNoCC.mkDerivation;
             nativeBuildInputs = [

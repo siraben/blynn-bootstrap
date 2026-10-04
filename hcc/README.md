@@ -1,21 +1,21 @@
-# hcc
+# HCC
 
-`hcc` is the GHC-backed development version of the bootstrap C compiler.
-
-Current status:
-
-- The frontend supports lexing, object-like macro expansion, conditional
-  preprocessing, and a small recursive-descent C parser.
-- `--check` exercises the frontend directly.
-- `--m1-ir` emits HCC's textual M1 IR, which `hcc-m1` lowers to M1 assembly.
-
-The stable call-site goal is:
+HCC is a bootstrap C compiler. Its Haskell frontend is compiled by Blynn;
+GHC builds are available for development. The M1 backend and runtime
+support are written in C and compiled by M2 on the bootstrap path.
 
 ```sh
-hcpp [C compiler flags...] input.c > input.i
+hcpp [preprocessor flags...] input.c > input.i
 hcc1 --m1-ir -o input.hccir input.i
 hcc-m1 input.hccir out.M1
 ```
 
-The compiler binary intentionally omits development dump modes and `cc`
-passthrough so the Blynn/M2 self-hosting path has less generated code to build.
+`hcpp` expands includes and macros. `hcc1` parses and lowers preprocessed C;
+`--check` stops after frontend checks. `hcc-m1` emits target assembly for
+stage0's `M1` and `hex2`, not a host assembler. Target support covers amd64,
+i386, AArch64, and RISC-V64, with different bootstrap coverage; see the
+[top-level README](../README.md) and [tests](../tests/README.md).
+
+HCC implements the C subset needed for this bootstrap, not a complete C
+implementation. It has no host `cc` passthrough. The sources in `support/`
+include a limited TinyCC stage1 runtime; they are not a general libc.
