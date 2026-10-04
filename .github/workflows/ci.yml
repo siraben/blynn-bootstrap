@@ -118,7 +118,7 @@ jobs:
           - suite: faithful debug path
             arch: amd64
             runner: ubuntu-latest
-            timeout: 360
+            timeout: 720
             attr: tests.tinyccM1.native-vs-faithful
           - suite: faithful debug path
             arch: amd64
@@ -129,7 +129,7 @@ jobs:
             arch: aarch64
             runner: ubuntu-24.04-arm
             timeout: 360
-            attr: tests.tinyccM1.native-vs-faithful
+            attr: tests.tinyccM1.native-vs-blynn-gcc
           - suite: faithful debug path
             arch: aarch64
             runner: ubuntu-24.04-arm

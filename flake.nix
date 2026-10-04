@@ -810,19 +810,21 @@
           m2.precisely.m2 = tinyccM1FromHcc "tinycc-m1-hcc-m2-precisely-m2" hccBy.m2.precisely.m2;
         };
 
-        tinyccM1CompareNativeFaithful = pkgs.runCommand "tinycc-m1-compare-native-faithful" { } ''
-          mkdir -p $out
+        tinyccM1Compare = name: candidate: pkgs.runCommand name { } ''
+          mkdir -p "$out"
           native=${tinyccM1By.host.ghc.native}/share/tinycc-hcc-m1
-          faithful=${tinyccM1By.m2.precisely.gcc}/share/tinycc-hcc-m1
-          cmp "$native/tcc.M1" "$faithful/tcc.M1"
-          cmp "$native/tcc-bootstrap-support.M1" "$faithful/tcc-bootstrap-support.M1"
-          cmp "$native/tcc-final-overrides.M1" "$faithful/tcc-final-overrides.M1"
+          candidate=${candidate}/share/tinycc-hcc-m1
+          for file in tcc-expanded.c tcc.hccir tcc.M1 \
+            tcc-bootstrap-support.i tcc-bootstrap-support.hccir tcc-bootstrap-support.M1 \
+            tcc-final-overrides.i tcc-final-overrides.hccir tcc-final-overrides.M1
+          do
+            cmp "$native/$file" "$candidate/$file"
+          done
           {
-            echo "native:   ${tinyccM1By.host.ghc.native}"
-            echo "faithful: ${tinyccM1By.m2.precisely.gcc}"
-            sha256sum "$native/tcc.M1" "$faithful/tcc.M1"
-            wc -c "$native/tcc.M1" "$faithful/tcc.M1"
-          } > $out/summary.txt
+            echo "native:    ${tinyccM1By.host.ghc.native}"
+            echo "candidate: ${candidate}"
+            sha256sum "$native/tcc.M1" "$candidate/tcc.M1"
+          } > "$out/summary.txt"
         '';
 
         minimalBootstrapFromTinycc = tinycc:
@@ -1141,7 +1143,10 @@
             hcc.tinycc-tests2-stat = hcc-tinycc-tests2-stat;
             host.ghc.native.tinycc-riscv64 = tinyccBy.riscv64.host.ghc.native;
             precisely.dialect = precisely-dialect-tests;
-            tinyccM1.native-vs-faithful = tinyccM1CompareNativeFaithful;
+            tinyccM1.native-vs-faithful = tinyccM1Compare
+              "tinycc-m1-compare-native-faithful" tinyccM1By.m2.precisely.m2;
+            tinyccM1.native-vs-blynn-gcc = tinyccM1Compare
+              "tinycc-m1-compare-native-blynn-gcc" tinyccM1By.m2.precisely.gcc;
           };
         };
       in {
