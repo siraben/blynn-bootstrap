@@ -115,6 +115,11 @@ jobs:
             runner: ubuntu-24.04-arm
             timeout: 120
             attr: tinycc.host.ghc.native
+          - suite: portable TinyCC self-host
+            arch: amd64
+            runner: ubuntu-latest
+            timeout: 720
+            attr: tests.portable.tinycc-selfhost
           - suite: faithful debug path
             arch: amd64
             runner: ubuntu-latest
