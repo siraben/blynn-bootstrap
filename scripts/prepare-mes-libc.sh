@@ -9,7 +9,7 @@ esac
 script_dir=${script_path%/*}
 [ "$script_dir" = "$script_path" ] && script_dir=.
 script_dir=$(CDPATH= cd "$script_dir" && pwd)
-. "$script_dir/lib/bootstrap.sh"
+. "${BOOTSTRAP_LIB:-$script_dir/lib/bootstrap.sh}"
 repo_dir=$(repo_root_from_script_dir "$script_dir")
 
 require_cmd cp
