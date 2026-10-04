@@ -43,19 +43,30 @@ have_toolchain() {
 
 link_existing_tool() {
   name=$1
-  src=$(command -v "$name")
+  src=$(abspath "$(command -v "$name")")
+  [ "$src" != "$bin_dir/$name" ] || die "cannot reuse $name from the output directory"
   rm -f "$bin_dir/$name"
   ln -s "$src" "$bin_dir/$name"
 }
 
-if [ "${BOOTSTRAP_TOOLS_REBUILD:-0}" != 1 ] && have_toolchain; then
-  msg "using existing stage0 tools from PATH"
+case ${BOOTSTRAP_TOOLS_FROM_PATH:-0} in
+  0 | 1) ;;
+  *) die "BOOTSTRAP_TOOLS_FROM_PATH must be 0 or 1" ;;
+esac
+
+if [ "${BOOTSTRAP_TOOLS_FROM_PATH:-0}" = 1 ]; then
+  [ "${BOOTSTRAP_TOOLS_REBUILD:-0}" != 1 ] || die "cannot combine BOOTSTRAP_TOOLS_FROM_PATH and BOOTSTRAP_TOOLS_REBUILD"
+  have_toolchain || die "BOOTSTRAP_TOOLS_FROM_PATH requires all six stage0 tools on PATH"
+  [ -f "${M2LIBC_PATH:-}/bootstrappable.h" ] || die "BOOTSTRAP_TOOLS_FROM_PATH requires M2LIBC_PATH"
+  msg "using external tools from PATH (not a seed bootstrap)"
   for tool in M2-Mesoplanet M2-Planet blood-elf M1 hex2 kaem; do
     link_existing_tool "$tool"
   done
   msg "bootstrap tools linked in $bin_dir"
   exit 0
 fi
+
+require_cmd sha256sum
 
 configure_stage0_arch() {
   case ${M2_ARCH:-amd64} in
@@ -134,11 +145,13 @@ msg "run stage0-posix $arch_dir seed from hex0"
 (
   cd "$stage0_work"
   "./bootstrap-seeds/POSIX/$arch_dir/kaem-optional-seed"
-  if [ "${BOOTSTRAP_TOOLS_FULL:-0}" != 1 ] && command -v sha256sum >/dev/null 2>&1; then
-    for tool in M2-Mesoplanet M2-Planet blood-elf M1 hex2 kaem; do
-      sed -n "\\|  $arch_dir/bin/$tool\$|p" "$answer_file"
-    done | sha256sum -c -
-  fi
+  for tool in M2-Mesoplanet M2-Planet blood-elf M1 hex2 kaem; do
+    answer=$(sed -n "\\|  $arch_dir/bin/$tool\$|p" "$answer_file")
+    [ -n "$answer" ] || die "missing stage0 answer for $arch_dir/bin/$tool"
+    printf '%s\n' "$answer" > tool.answer
+    sha256sum -c tool.answer
+  done
+  rm tool.answer
 )
 
 stage0_bin=$stage0_work/$arch_dir/bin

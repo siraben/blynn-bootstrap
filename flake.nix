@@ -1149,7 +1149,17 @@
           default = packageTree.default;
         };
 
-        checks.hcc-golden = hcc-golden-tests;
+        checks = {
+          hcc-golden = hcc-golden-tests;
+          bootstrap-tools = pkgs.runCommand "bootstrap-tools-tests" { } ''
+            mkdir -p scripts/lib data
+            cp ${./scripts/bootstrap-tools.sh} scripts/bootstrap-tools.sh
+            cp ${./scripts/lib/bootstrap.sh} scripts/lib/bootstrap.sh
+            cp ${./data/bootstrap-sources.env} data/bootstrap-sources.env
+            sh ${./tests/bootstrap-tools.sh} "$PWD"
+            touch "$out"
+          '';
+        };
 
         legacyPackages = packageTree;
 
