@@ -1,0 +1,7 @@
+#!@bash@
+for arg in "$@"; do
+  if [ "$arg" = -ar ]; then
+    exec "@tcc@" "$@"
+  fi
+done
+exec "@tcc@" @static_flags@ "$@"

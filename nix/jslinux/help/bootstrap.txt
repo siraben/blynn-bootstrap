@@ -1,0 +1,31 @@
+bootstrap - reproduce the blynn-bootstrap TinyCC checkpoint inside this Alpine JSLinux VM
+
+Usage:
+  bootstrap
+  bootstrap --from-seed
+  BOOTSTRAP_ALLOW_LOW_MEM=1 bootstrap
+  bootstrap --help
+
+Default checkpoint mode:
+  1. Verifies the Nix-built riscv64 HCC checkpoint in /bootstrap/checkpoints.
+  2. Uses that HCC to compile TinyCC in this VM.
+  3. Runs TinyCC self-compilation to a stage3/stage4 fixpoint.
+  4. Prints the resulting SHA256 hash and refreshes blynn-tcc.
+
+Full proof mode:
+  bootstrap --from-seed
+
+  1. Rebuilds stage0-posix tools from the hex0 seed.
+  2. Runs the portable Blynn compiler bootstrap.
+  3. Builds HCC from the Blynn-generated sources.
+  4. Builds and self-hosts TinyCC with the bootstrapped HCC toolchain.
+
+Output:
+  The live log is printed to the terminal and saved to /tmp/bootstrap-demo.log.
+
+Checkpoint shell:
+  The shell already starts with a Nix-built Blynn/HCC TinyCC checkpoint in
+  /work/blynn/tinycc-boot-hcc. Use bootstrap when you want to reproduce that
+  checkpoint and see the full log.
+
+blynn-tcc points at the checkpoint compiler in this VM.

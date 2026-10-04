@@ -1,0 +1,2 @@
+#define HCC_MACRO(NAME, CODE, STRING) NAME=CODE,
+enum { HCC_MACRO(HCC_VALUE, 0x20, "value") HCC_LAST };

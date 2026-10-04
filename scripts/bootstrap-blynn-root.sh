@@ -55,6 +55,7 @@ run_vm_raw() {
   raw=$2
   parser=$3
   level=$4
+  timed_step "raw image $out: parse $parser, level $(basename "$level")" \
   "$bin_dir/vm" --raw "$raw" -pb "$parser" -lf "$level" -o "$gen_dir/$out"
 }
 
@@ -63,6 +64,7 @@ run_vm_compile() {
   raw=$2
   source=$3
   foreign=${4:-}
+  timed_step "raw compiler $out: compile $(basename "$source")" \
   "$bin_dir/vm" -f "$source" $foreign --raw "$raw" --rts_c run -o "$gen_dir/$out"
 }
 
@@ -70,11 +72,27 @@ compile_stage_c() {
   name=$1
   prev_bin=$2
   source=$3
-  "$bin_dir/$prev_bin" "$source" "$gen_dir/$name.c"
+  timed_step "generate $name.c from $(basename "$source")" \
+    "$bin_dir/$prev_bin" "$source" "$gen_dir/$name.c"
   (
     cd "$work_dir"
-    compile_m2 "$gen_dir/$name.c" "$bin_dir/$name"
+    timed_step "compile $name native binary" \
+      compile_m2 "$gen_dir/$name.c" "$bin_dir/$name"
   )
+}
+
+timed_step() {
+  label=$1
+  shift
+  start=$(date +%s 2>/dev/null || echo 0)
+  msg "START $label"
+  "$@"
+  end=$(date +%s 2>/dev/null || echo 0)
+  if [ "$start" -gt 0 ] && [ "$end" -ge "$start" ]; then
+    msg "DONE  $label ($((end - start))s)"
+  else
+    msg "DONE  $label"
+  fi
 }
 
 msg "compile pack_blobs"
@@ -83,7 +101,8 @@ link_source gcc_req.h
 link_source pack_blobs.c
 (
   cd "$work_dir"
-  compile_m2 pack_blobs.c "$bin_dir/pack_blobs"
+  timed_step "compile pack_blobs native binary" \
+    compile_m2 pack_blobs.c "$bin_dir/pack_blobs"
 )
 
 msg "pack bootstrap blobs"
@@ -96,7 +115,8 @@ msg "compile vm"
 link_source vm.c
 (
   cd "$work_dir"
-  compile_m2 vm.c "$bin_dir/vm"
+  timed_step "compile vm native binary" \
+    compile_m2 vm.c "$bin_dir/vm"
 )
 
 msg "build raw images"
@@ -116,8 +136,10 @@ run_vm_raw raw_x "$gen_dir/raw_w" typically.hs "$src_dir/classy.hs"
 run_vm_raw raw_y "$gen_dir/raw_x" classy.hs "$src_dir/barely.hs"
 run_vm_raw raw_z "$gen_dir/raw_y" barely.hs "$src_dir/barely.hs"
 
-"$bin_dir/vm" -l "$gen_dir/raw_z" -lf "$src_dir/barely.hs" -o "$share_dir/raw"
-"$bin_dir/vm" -l "$share_dir/raw" -lf "$src_dir/effectively.hs" --redo -lf "$src_dir/lonely.hs" -o "$gen_dir/lonely_raw.txt"
+timed_step "final root raw: load barely.hs" \
+  "$bin_dir/vm" -l "$gen_dir/raw_z" -lf "$src_dir/barely.hs" -o "$share_dir/raw"
+timed_step "lonely raw: load effectively.hs and lonely.hs" \
+  "$bin_dir/vm" -l "$share_dir/raw" -lf "$src_dir/effectively.hs" --redo -lf "$src_dir/lonely.hs" -o "$gen_dir/lonely_raw.txt"
 
 run_vm_compile patty_raw.txt "$gen_dir/lonely_raw.txt" "$src_dir/patty.hs"
 run_vm_compile guardedly_raw.txt "$gen_dir/patty_raw.txt" "$src_dir/guardedly.hs"
@@ -127,10 +149,12 @@ run_vm_compile uniquely_raw.txt "$gen_dir/mutually_raw.txt" "$src_dir/uniquely.h
 run_vm_compile virtually_raw.txt "$gen_dir/uniquely_raw.txt" "$src_dir/virtually.hs" "--foreign 2"
 
 msg "compile native compiler stages"
-"$bin_dir/vm" -f "$src_dir/marginally.hs" --foreign 2 --raw "$gen_dir/virtually_raw.txt" --rts_c run -o "$gen_dir/marginally.c"
+timed_step "generate marginally.c from marginally.hs" \
+  "$bin_dir/vm" -f "$src_dir/marginally.hs" --foreign 2 --raw "$gen_dir/virtually_raw.txt" --rts_c run -o "$gen_dir/marginally.c"
 (
   cd "$work_dir"
-  compile_m2 "$gen_dir/marginally.c" "$bin_dir/marginally"
+  timed_step "compile marginally native binary" \
+    compile_m2 "$gen_dir/marginally.c" "$bin_dir/marginally"
 )
 compile_stage_c methodically marginally "$src_dir/methodically.hs"
 compile_stage_c crossly methodically "$src_dir/crossly.hs"

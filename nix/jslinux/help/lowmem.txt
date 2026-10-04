@@ -1,0 +1,17 @@
+bootstrap needs a larger VM for the selected replay mode.
+
+This guest is below the tested memory floor.
+The checkpoint shell still has blynn-tcc available, but replaying the build
+there can exhaust memory and leave the ext2 root filesystem read-only.
+
+Use the TinyCC checkpoint shell for immediate compiler access:
+  blynn-tcc -dumpversion
+
+Use the HCC checkpoint shell to replay the default checkpoint:
+  bootstrap
+
+Use the Full Rebuild shell for the full proof run:
+  bootstrap --from-seed
+
+To bypass this guard anyway:
+  BOOTSTRAP_ALLOW_LOW_MEM=1 bootstrap
