@@ -11,10 +11,15 @@ amd64. A timing difference between those builds is not just codegen cost.
 scripts/bench-faithful-chain.sh "$PWD" baseline /tmp/blynn-bench
 ```
 
-This realizes dependencies outside the timed region, then rebuilds the
+The harness requires Nix, jq, ripgrep, and GNU `time` (available in
+`nix develop .#bench`). It realizes build inputs even when stage outputs
+are already cached, outside the timed region, then rebuilds the
 selected Blynn/HCC/TinyCC derivations serially with substitution disabled
 and Nix's output comparison enabled. It records the revision, commands,
-logs, and timings. It does not time the initial stage0 build or downloads.
+logs, and timings, including the separate Mes source-patching stage. It does
+not time the initial stage0 build or downloads. With a Nix daemon, GNU
+`time`'s CPU and RSS fields describe the client, not the builder; use direct
+compiler or builder runs for those metrics.
 
 ## HCC memory and runtime
 
@@ -27,8 +32,9 @@ scripts/hcc-memory-bench.sh "$hcc/bin/hcc1" \
 ```
 
 The harness requires GNU `time` (`GNUTIME` can select it). It reports wall
-time, peak RSS, and an IR hash. GHC allocation and residency columns are
-available only for binaries with GHC RTS statistics.
+time, peak RSS, and an IR hash. Set `GHC_RTS_STATS=1` to include allocation
+and residency statistics for a GHC-built binary with RTS statistics enabled.
+Do not pass GHC RTS flags to M2/Blynn binaries.
 
 `hcc.m2.precisely.m2Lowmem` reduces both `TOP` and
 `HCC_RTS_ADAPTIVE_MAJOR_WORDS`; `hcc.m2.precisely.gccLowmem` lowers the GC
