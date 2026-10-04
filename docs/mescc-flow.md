@@ -34,6 +34,7 @@ mes mescc.scm -- -S -o tcc.s ... tcc.c
 mes mescc.scm -- -L ... -l c+tcc -o tcc tcc.s
 ```
 
-The HCC replacement should preserve that contract: accept C compiler flags,
-emit stage0-assembler-compatible output for `-S`, and use the existing stage0
-assemblers/linkers for objects and executables.
+HCC splits this work into `hcpp`, `hcc1`, and `hcc-m1`. The TinyCC build
+scripts invoke them in order, then use stage0's `M1` and `hex2` to assemble
+and link the first compiler. HCC does not provide a MesCC-compatible `-S`
+driver.
