@@ -1157,11 +1157,14 @@
         checks = {
           hcc-golden = hcc-golden-tests;
           bootstrap-tools = pkgs.runCommand "bootstrap-tools-tests" { } ''
-            mkdir -p scripts/lib data
+            mkdir -p scripts/lib data patches
             cp ${./scripts/bootstrap-tools.sh} scripts/bootstrap-tools.sh
+            cp ${./scripts/prepare-upstreams.sh} scripts/prepare-upstreams.sh
             cp ${./scripts/lib/bootstrap.sh} scripts/lib/bootstrap.sh
             cp ${./data/bootstrap-sources.env} data/bootstrap-sources.env
+            ln -s ${./patches/upstreams} patches/upstreams
             sh ${./tests/bootstrap-tools.sh} "$PWD"
+            sh ${./tests/prepare-upstreams.sh} "$PWD"
             touch "$out"
           '';
         };
