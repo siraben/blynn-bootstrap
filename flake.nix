@@ -43,7 +43,7 @@
             hash = "sha256-xDYN3Ern83a5h8liJYpFBJ9BVzD5YyOJjiHGM5Za+X8=";
           };
           gnuMes = pkgs.fetchgit {
-            url = "https://git.savannah.gnu.org/git/mes.git";
+            url = sourcePins.GNU_MES_URL;
             rev = sourcePins.GNU_MES_REV;
             hash = "sha256-iw1/MP0dwXOs9gyB7WhnvpCz59zveeoYy85wt0j+fWA=";
           };
