@@ -22,17 +22,13 @@ require_cmd sed
 
 out_dir=${OUT_DIR:-build/upstreams}
 source_cache=${SOURCE_CACHE_DIR:-build/source-cache}
-oriansj_src=${ORIANSJ_BLYNN_DIR:-${1:-upstream/oriansj-blynn-compiler}}
-blynn_src=${BLYNN_DIR:-${2:-upstream/blynn-compiler}}
-tinycc_src=${TINYCC_DIR:-${3:-upstream/janneke-tinycc}}
-gnu_mes_src=${GNU_MES_DIR:-${4:-upstream/gnu-mes}}
+oriansj_src=${ORIANSJ_BLYNN_DIR:-${1:-}}
+blynn_src=${BLYNN_DIR:-${2:-}}
+tinycc_src=${TINYCC_DIR:-${3:-}}
+gnu_mes_src=${GNU_MES_DIR:-${4:-}}
 
 out_dir=$(abspath "$out_dir")
 source_cache=$(abspath "$source_cache")
-oriansj_src=$(abspath "$oriansj_src")
-blynn_src=$(abspath "$blynn_src")
-tinycc_src=$(abspath "$tinycc_src")
-gnu_mes_src=$(abspath "$gnu_mes_src")
 
 mkdir -p "$out_dir" "$source_cache"
 
@@ -50,8 +46,10 @@ source_tree() {
   submodules=${7:-0}
   cache=$source_cache/$name
 
-  if non_empty_dir "$default_src"; then
-    printf '%s\n' "$default_src"
+  if [ -n "$default_src" ]; then
+    non_empty_dir "$default_src" || die "missing local source override for $name: $default_src"
+    msg "using local source override for $name: $default_src"
+    abspath "$default_src"
     return
   fi
 
