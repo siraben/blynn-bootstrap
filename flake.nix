@@ -1000,6 +1000,7 @@
           src = hccSrc;
         };
 
+        # Keep the pre-PR output namespace stable while CCC is introduced.
         gnuHelloFromBootstrap = pname: bootstrap:
           pkgs.callPackage ./nix/gnu-hello-minboot.nix {
             stdenvNoCC = rawStdenvNoCC;
@@ -1051,6 +1052,12 @@
           };
         };
 
+        trustRoots = {
+          host.ghc.native = bootstrapBy.host.ghc.native;
+          m2.precisely.m2 = bootstrapBy.m2.precisely.m2;
+          m2.precisely.gccm2 = bootstrapBy.m2.precisely.gccm2;
+        };
+
         hccM1SmokeFor = pname: hcc: target: pkgs.callPackage ./nix/hcc-m1-smoke.nix {
           stdenvNoCC = rawStdenvNoCC;
           inherit pname hcc target;
@@ -1092,6 +1099,33 @@
           target = nativeM1Target;
         };
 
+        cccChain = pkgs.callPackage ./nix/ccc-chain.nix {
+          stdenv = pkgs.stdenv;
+          cccSrc = ./ccc;
+        };
+
+        cccAsHcc = pkgs.callPackage ./nix/ccc-as-hcc.nix {
+          stdenvNoCC = pkgs.stdenvNoCC;
+          inherit minimalBootstrap;
+          cccSrc = ./ccc;
+          hccSrc = ./hcc;
+        };
+
+        cccGoldenTests = pkgs.callPackage ./nix/ccc-golden-tests.nix {
+          inherit cccAsHcc;
+          cccSrc = ./ccc;
+          testsSrc = ./tests;
+        };
+
+        tinyccBootCcc = tinyccFromHcc "tinycc-boot-ccc-m2" cccAsHcc;
+        tinyccM1Ccc = tinyccM1FromHcc "tinycc-m1-ccc-m2" cccAsHcc;
+
+        tinyccPreprocInputs = pkgs.callPackage ./nix/tinycc-preproc-inputs.nix {
+          stdenvNoCC = pkgs.stdenvNoCC;
+          inherit (pkgs) fetchgit;
+          mesLibc = mesLibcSrc;
+        };
+
         precisely-dialect-tests = pkgs.callPackage ./nix/precisely-dialect-tests.nix {
           stdenv = pkgs.stdenv;
           precisely = preciselyGhcDebug;
@@ -1111,6 +1145,15 @@
           precisely = preciselyBy;
 
           m2.mesoplanet.gcc = m2MesoplanetGcc;
+
+          ccc = {
+            chain = cccChain;
+            asHcc = cccAsHcc;
+            tinycc = tinyccBootCcc;
+            tinyccM1 = tinyccM1Ccc;
+            tinyccPreprocInputs = tinyccPreprocInputs;
+            goldenTests = cccGoldenTests;
+          };
 
           hcc = hccBy // {
             profile.host.ghc.native = hccProfileHostGhcNative;
@@ -1136,8 +1179,10 @@
           gccGlibc = gccGlibcBy;
 
           bootstrap = bootstrapBy;
+          inherit trustRoots;
 
           tests = {
+            ccc.golden = cccGoldenTests;
             smoke.m1 = hcc-m1-smoke;
             smoke.m1-i386 = hcc-m1-smoke-i386;
             smoke.m1-aarch64 = hcc-m1-smoke-aarch64;
@@ -1225,5 +1270,44 @@
             pkgs.time
           ];
         };
-      });
+      }) // {
+        overlays = rec {
+          packages = final: _prev: {
+            blynn-bootstrap = self.legacyPackages.${final.stdenv.buildPlatform.system};
+          };
+
+          trustRoot = final: _prev:
+            let
+              blynnBootstrap = self.legacyPackages.${final.stdenv.buildPlatform.system};
+            in {
+              blynn-bootstrap = blynnBootstrap;
+              minimal-bootstrap = blynnBootstrap.trustRoots.m2.precisely.m2.minimal;
+            };
+
+          default = trustRoot;
+        };
+
+        nixpkgsArgs = {
+          trustRoot = system: {
+            inherit system;
+            overlays = [ self.overlays.default ];
+            config.replaceStdenv = { pkgs }:
+              let
+                trustRoot = self.legacyPackages.${system}.trustRoots.m2.precisely.m2;
+                bintools = pkgs.wrapBintoolsWith {
+                  bintools = trustRoot.minimal.binutils;
+                  libc = trustRoot.glibc;
+                };
+                cc = pkgs.wrapCCWith {
+                  cc = trustRoot.gcc.glibc;
+                  inherit bintools;
+                  libc = trustRoot.glibc;
+                };
+              in
+                pkgs.stdenvAdapters.overrideCC pkgs.stdenv cc;
+          };
+
+          default = system: self.nixpkgsArgs.trustRoot system;
+        };
+      };
 }
