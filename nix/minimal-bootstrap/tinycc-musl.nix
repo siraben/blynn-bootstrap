@@ -12,7 +12,7 @@
 let
   pname = if staticByDefault then "tinycc-musl" else "tinycc-musl-dynamic";
   version = "unstable-2025-12-03";
-  rev = "cb41cbfe717e4c00d7bb70035cda5ee5f0ff9341";
+  rev = (import ../source-pins.nix).JANNEKE_TINYCC_REV;
 
   src = fetchgit {
     url = "https://repo.or.cz/tinycc.git";
