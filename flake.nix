@@ -810,6 +810,23 @@
           m2.precisely.m2 = tinyccM1FromHcc "tinycc-m1-hcc-m2-precisely-m2" hccBy.m2.precisely.m2;
         };
 
+        tinyccPortableSelfhost = assert system == "x86_64-linux"; pkgs.runCommand "tinycc-portable-selfhost" {
+          nativeBuildInputs = [ minimalBootstrap.stage0-posix.mescc-tools pkgs.patch ];
+        } ''
+          cp -R ${tinyccBy.m2.precisely.m2.src} source
+          chmod -R u+w source
+          patch -d source -p1 < ${./patches/upstreams/tinycc-mescc-source.patch}
+          BOOTSTRAP_LIB=${./scripts/lib/bootstrap.sh} \
+          TINYCC_DIR="$PWD/source" \
+          HCC_BIN_DIR=${hccBy.m2.precisely.m2} \
+          MES_LIBC_DIR=${mesLibcSrc} \
+          M2LIBC_PATH=${m2libcSrc} \
+          HCC_SUPPORT_DIR=${./hcc/support} \
+          TINYCC_SELFHOST=1 HCC_TARGET=amd64 OUT_DIR="$PWD/result" \
+            sh ${./scripts/tinycc-boot-hcc.sh}
+          touch "$out"
+        '';
+
         tinyccM1Compare = name: candidate: pkgs.runCommand name { } ''
           mkdir -p "$out"
           native=${tinyccM1By.host.ghc.native}/share/tinycc-hcc-m1
@@ -1139,6 +1156,7 @@
             host.ghc.native.smoke.m1-aarch64 = hcc-m1-smoke-native-aarch64;
             host.ghc.native.smoke.m1-riscv64 = hcc-m1-smoke-native-riscv64;
             host.ghc.native.mescc = hcc-mescc-tests-native;
+            portable.tinycc-selfhost = tinyccPortableSelfhost;
             hcc.golden = hcc-golden-tests;
             hcc.tinycc-tests2-stat = hcc-tinycc-tests2-stat;
             host.ghc.native.tinycc-riscv64 = tinyccBy.riscv64.host.ghc.native;

@@ -9,7 +9,7 @@ esac
 script_dir=${script_path%/*}
 [ "$script_dir" = "$script_path" ] && script_dir=.
 script_dir=$(CDPATH= cd "$script_dir" && pwd)
-. "$script_dir/lib/bootstrap.sh"
+. "${BOOTSTRAP_LIB:-$script_dir/lib/bootstrap.sh}"
 repo_dir=$(repo_root_from_script_dir "$script_dir")
 
 require_cmd chmod
@@ -26,6 +26,11 @@ m2libc=${M2LIBC_PATH:-${4:-build/upstreams/oriansj-blynn-compiler/M2libc}}
 out_dir=${OUT_DIR:-${5:-build/tinycc-boot-hcc}}
 support_dir=${HCC_SUPPORT_DIR:-$repo_dir/hcc/support}
 selfhost=${TINYCC_SELFHOST:-0}
+case $selfhost in
+  0 | 1) ;;
+  *) die "TINYCC_SELFHOST must be 0 or 1" ;;
+esac
+[ "$selfhost" != 1 ] || require_cmd cmp
 target=${HCC_TARGET:-${TINYCC_HCC_TARGET:-${M2_ARCH:-}}}
 
 src_dir=$(abspath "$src_dir")
@@ -125,34 +130,10 @@ build_libs() {
   make_ar "$tool" "$dest/libtcc1.a" "$dest/libtcc1.o"
 }
 
-tcc_defs() {
-  sysinclude=$1
-  cat <<EOF
--D__linux__=1
--DBOOTSTRAP=1
--DHAVE_LONG_LONG=1
--DHAVE_SETJMP=1
--DHAVE_BITFIELD=1
--DHAVE_FLOAT=1
--D$tcc_target_define=1
--Dinline=
--DCONFIG_TCCDIR=\\"\\"
--DCONFIG_SYSROOT=\\"\\"
--DCONFIG_TCC_CRTPREFIX=\\"{B}\\"
--DCONFIG_TCC_ELFINTERP=\\"/mes/loader\\"
--DCONFIG_TCC_LIBPATHS=\\"{B}\\"
--DCONFIG_TCC_SYSINCLUDEPATHS=\\"$sysinclude\\"
--DTCC_LIBGCC=\\"libc.a\\"
--DTCC_LIBTCC1=\\"libtcc1.a\\"
--DCONFIG_TCC_LIBTCC1_MES=0
--DCONFIG_TCCBOOT=1
--DCONFIG_TCC_STATIC=1
--DCONFIG_USE_LIBGCC=1
--DTCC_MES_LIBC=1
--DTCC_VERSION=\\"0.9.28-unstable-2024-07-07\\"
--DONE_SOURCE=1
--DCONFIG_TCC_SEMLOCK=0
-EOF
+build_tcc() {
+  "$1" -nostdlib bootstrap-libs/crt1.o bootstrap-libs/crti.o \
+    -I . -I include -I "$mes_libc/include" tcc.c \
+    bootstrap-libs/libc.o bootstrap-libs/libtcc1.o bootstrap-libs/crtn.o -o "$2"
 }
 
 (
@@ -181,7 +162,7 @@ EOF
 #define CONFIG_TCC_STATIC 1
 #define CONFIG_USE_LIBGCC 1
 #define TCC_MES_LIBC 1
-#define TCC_VERSION "0.9.28-unstable-2024-07-07"
+#define TCC_VERSION "0.9.28-unstable-2025-12-03"
 #define ONE_SOURCE 1
 #define CONFIG_TCC_SEMLOCK 0
 EOF
@@ -213,23 +194,36 @@ EOF
     --output tcc
   chmod 555 tcc
 
+  test "$(./tcc -dumpversion)" = '0.9.28-unstable-2025-12-03'
   cp tcc "$bin_dir/tcc-hcc-stage1"
   if [ "$selfhost" != 1 ]; then
     cp tcc "$bin_dir/tcc"
   else
-  build_libs ./tcc bootstrap-libs
+    build_libs ./tcc bootstrap-libs
 
-  ./tcc -B bootstrap-libs -I . -I include -I "$mes_libc/include" $(tcc_defs "$include_dir") tcc.c -o tcc-stage2
-  ./tcc-stage2 -B bootstrap-libs -I . -I include -I "$mes_libc/include" $(tcc_defs "$include_dir") tcc.c -o tcc-stage3
-  build_libs ./tcc-stage3 final-libs
+    # Stage1 needs explicit objects; its archive-loading path is incomplete.
+    build_tcc ./tcc tcc-stage2
+    build_tcc ./tcc-stage2 tcc-stage3
+    msg "fixpoint check tcc-stage2 == tcc-stage3"
+    cmp tcc-stage2 tcc-stage3
+    test "$(./tcc-stage3 -dumpversion)" = '0.9.28-unstable-2025-12-03'
+    build_libs ./tcc-stage3 final-libs
+    ./tcc-stage3 -c -I include -I "$mes_libc/include" -o final-libs/alloca.o lib/alloca.S
+    make_ar ./tcc-stage3 final-libs/libtcc1.a final-libs/libtcc1.o final-libs/alloca.o
 
-  cp tcc-stage2 "$bin_dir/tcc-stage2"
-  cp tcc-stage3 "$bin_dir/tcc"
-  cp final-libs/crt1.o final-libs/crti.o final-libs/crtn.o "$lib_dir/"
-  cp final-libs/libc.a final-libs/libgetopt.a final-libs/libtcc1.a "$lib_dir/"
-  cp -R "$mes_libc/include/." "$include_dir/"
-  chmod -R u+w "$include_dir"
-  cp -R include/. "$include_dir/"
+    printf '%s\n' 'int f(void){return 31;} int main(void){return f();}' > smoke.c
+    ./tcc-stage3 -B final-libs -I include -I "$mes_libc/include" smoke.c -o smoke
+    status=0
+    ./smoke || status=$?
+    [ "$status" -eq 31 ] || die "rebuilt TinyCC produced a failing executable: $status"
+
+    cp tcc-stage2 "$bin_dir/tcc-stage2"
+    cp tcc-stage3 "$bin_dir/tcc"
+    cp final-libs/crt1.o final-libs/crti.o final-libs/crtn.o "$lib_dir/"
+    cp final-libs/libc.a final-libs/libgetopt.a final-libs/libtcc1.a "$lib_dir/"
+    cp -R "$mes_libc/include/." "$include_dir/"
+    chmod -R u+w "$include_dir"
+    cp -R include/. "$include_dir/"
   fi
 )
 

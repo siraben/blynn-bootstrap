@@ -519,9 +519,10 @@ stdenvNoCC.mkDerivation {
   doCheck = !m1ArtifactsOnly;
   checkPhase = ''
     runHook preCheck
-    run_target ./tcc -version
-    run_target ./tcc-stage2 -version
-    run_target ./tcc-stage3 -version
+    for compiler in ./tcc ./tcc-stage2 ./tcc-stage3; do
+      test "$(run_target "$compiler" -dumpversion)" = "0.9.28-${version}"
+      run_target "$compiler" -version
+    done
     check_include_flags="-I include -I ${mesLibc}/include"
     if [ "$target_is_aarch64" = 1 ]; then
       bootstrap_link_prefix="-nostdlib bootstrap-libs/crt1.o bootstrap-libs/crti.o"
@@ -649,7 +650,7 @@ stdenvNoCC.mkDerivation {
   '';
 
   meta = with lib; {
-    description = "Bootstrappable tinycc built through the GHC-backed hcc driver";
+    description = "TinyCC built through HCC and checked for a self-compilation fixpoint";
     homepage = "https://gitlab.com/janneke/tinycc";
     license = licenses.lgpl21Only;
     platforms = [ "x86_64-linux" "aarch64-linux" ];
