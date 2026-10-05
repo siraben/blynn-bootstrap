@@ -112,6 +112,10 @@ expect_hcc1_fail() {
     exit 1
   fi
   expect_file_contains "$pattern" "$name.err"
+  if test -s "$name.hccir"; then
+    echo "$name: failed compilation published partial IR" >&2
+    exit 1
+  fi
   log "DONE  expect hcc1 failure $name"
 }
 
@@ -168,6 +172,10 @@ expect_hcpp_absent pp-short-circuit-dead "dead_and" "$TESTS_DIR/pp-short-circuit
 expect_hcc1_fail unknown-identifier "unknown identifier: missing_global" "$TESTS_DIR/diagnostics/unknown-identifier.c"
 expect_hcc1_fail unknown-global-initializer "unknown constant: missing_global" "$TESTS_DIR/diagnostics/unknown-global-initializer.c"
 expect_hcc1_fail unsupported-inline-asm "unsupported inline assembly" "$TESTS_DIR/diagnostics/unsupported-inline-asm.c"
+expect_hcc1_fail late-lowering "unknown identifier: missing_global" "$TESTS_DIR/diagnostics/late-lowering.c"
+expect_hcc1_fail late-address-addend "outside data object" "$TESTS_DIR/diagnostics/late-address-addend.c"
+expect_hcc1_fail negative-address-addend "outside data object" "$TESTS_DIR/diagnostics/negative-address-addend.c"
+expect_hcc1_fail indivisible-address-addend "inside an indivisible data value" "$TESTS_DIR/diagnostics/indivisible-address-addend.c"
 expect_hcc1_fail integer-literal-overflow "integer literal is too large" "$TESTS_DIR/diagnostics/integer-literal-overflow.c"
 expect_hcpp_fail multi-char-constant "invalid character constant" "$TESTS_DIR/diagnostics/multi-char-constant.c"
 expect_hcpp_fail invalid-octal-constant "invalid digit in octal constant" "$TESTS_DIR/diagnostics/invalid-octal-constant.c"

@@ -1445,7 +1445,10 @@ static void emit_data_item(FILE *out, DataItem *item)
 {
   int j = 0;
   int emitted = 0;
-  fprintf(out, ":%s\n", item->label);
+  /* A zero-size reserved label marks data explicitly for M1-to-ELF. Data
+     may follow functions after streaming IR lowering, including ordinary
+     externally visible globals whose names do not identify their section. */
+  fprintf(out, ":HCC_DATA_SECTION_%s\n:%s\n", item->label, item->label);
   while (j < item->len) {
     int count = 0;
     fprintf(out, "  ");

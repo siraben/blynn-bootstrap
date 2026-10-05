@@ -30,6 +30,19 @@ stdenv.mkDerivation (
       cc -no-pie variadic-libc.s -o variadic-libc
       ./variadic-libc
 
+      # Compile both translation units through HCC; GNU as/ld must resolve the
+      # encoded external interior labels to base+addend ELF relocations.
+      for unit in def use; do
+        hcpp ${../tests/hcc/elf-smoke}/external-addend-$unit.c > external-$unit.i
+        hcc1 --target amd64 --data-prefix external-$unit --m1-ir \
+          -o external-$unit.hccir external-$unit.i
+        hcc-m1 --target amd64 external-$unit.hccir external-$unit.M1
+        ./m1-to-gas external-$unit.M1 external-$unit.s
+        cc -c external-$unit.s -o external-$unit.o
+      done
+      cc -no-pie external-def.o external-use.o -o external-addend
+      ./external-addend
+
       runHook postBuild
     '';
 
@@ -37,6 +50,7 @@ stdenv.mkDerivation (
       runHook preInstall
       install -Dm555 m1-to-gas "$out/bin/m1-to-gas"
       install -Dm555 variadic-libc "$out/bin/variadic-libc"
+      install -Dm555 external-addend "$out/bin/external-addend"
       install -Dm644 variadic-libc.M1 "$out/share/hcc-elf-smoke/variadic-libc.M1"
       install -Dm644 variadic-libc.s "$out/share/hcc-elf-smoke/variadic-libc.s"
       runHook postInstall

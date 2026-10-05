@@ -205,7 +205,10 @@ addDataItem item =
 
 bindVar :: String -> Temp -> CType -> CompileM ()
 bindVar name temp ty =
-  modifyC $ \st -> st { csVars = scopeMapInsert name (temp, ty) (csVars st) }
+  modifyC $ \st -> st
+    { csVars = scopeMapInsert name (temp, ty) (csVars st)
+    , csSymbolAliases = scopeMapHide name (csSymbolAliases st)
+    }
 
 bindStruct :: String -> Bool -> [Field] -> CompileM ()
 bindStruct name isUnion fields =
@@ -226,6 +229,9 @@ bindStaticLocal name label ty = do
   rejectReservedSymbol "static local" name
   modifyC $ \st -> st
     { csSymbolAliases = scopeMapInsert name label (csSymbolAliases st)
+    -- Both maps implement one lexical object namespace. Mask an enclosing
+    -- automatic/parameter binding until this scope is left.
+    , csVars = scopeMapHide name (csVars st)
     , csGlobals = symbolMapInsert label ty (csGlobals st)
     }
 

@@ -3063,6 +3063,10 @@ data GlobalAddress = GlobalAddress String Int
 
 resolveGlobalAddressExpr :: Expr -> CompileM (Maybe GlobalAddress)
 resolveGlobalAddressExpr expr = case expr of
+  EString text -> do
+    label <- freshDataLabel
+    addDataItem (DataItem label (map DByte (stringBytes text)))
+    pure (Just (GlobalAddress label 0))
   EVar name -> do
     label <- globalAddressLabel name
     pure (Just (GlobalAddress label 0))

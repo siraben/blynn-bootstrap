@@ -15,6 +15,7 @@ CASES = [
     ("sizeof-member-array-bound", 0),
     ("address-written-scalar", 0),
     ("global-address-addend", 0),
+    ("streamed-data-addends", 0),
     ("escaped-string-magic", 0),
     ("archive-header-layout", 0),
     ("scoped-typedef-enum", 0),
@@ -33,6 +34,7 @@ CASES = [
     ("inferred-array-size", 0),
     ("sizeof-string-literal", 0),
     ("static-local-storage", 0),
+    ("static-local-shadow", 0),
     ("case-cmp-ternary", 0),
     ("pointer-to-pointer-callback", 0),
     ("bootstrap-qsort-pointer", 0),
@@ -143,6 +145,21 @@ def assert_amd64_macro_namespace(m1):
             raise SystemExit(f"{m1.name}: HCC overrides shared M1 macro {macro}")
 
 
+def assert_streamed_data_addends(hccir):
+    lines = hccir.read_text().splitlines()
+    assert lines[0] == "HCCIR 1"
+    functions = [i for i, line in enumerate(lines) if line.startswith("F ")]
+    data = [i for i, line in enumerate(lines) if line.startswith("D ")]
+    assert functions and data and max(functions) < min(data), "data must follow streamed functions"
+    labels = [line.split()[1] for line in lines if line.startswith(("D ", "l "))]
+    assert len(labels) == len(set(labels)), "duplicate data/interior labels"
+    addresses = [line.split() for line in lines if line.startswith("a ")]
+    assert addresses, "fixture must exercise data addresses"
+    for _, label, offset in addresses:
+        assert offset == "0", "M1 data addresses must have normalized addends"
+        assert label in labels, f"missing forward/interior data label: {label}"
+
+
 def compile_to_m1(args, target, examples_dir, work_dir, name):
     src = examples_dir / f"{name}.c"
     preprocessed = work_dir / f"{name}.i"
@@ -160,6 +177,8 @@ def compile_to_m1(args, target, examples_dir, work_dir, name):
         "--data-prefix", str(hccir),
         "--m1-ir", "-o", str(hccir), str(preprocessed),
     ])
+    if name == "streamed-data-addends":
+        assert_streamed_data_addends(hccir)
     log(f"{name}: hcc-m1 -> {m1.name}")
     run([args.hcc_m1, "--target", target["hcc_target"], str(hccir), str(m1)])
     if name == "static-internal-linkage":

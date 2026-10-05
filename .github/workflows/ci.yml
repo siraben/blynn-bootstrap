@@ -158,12 +158,12 @@ jobs:
           - suite: faithful direct gcc e2e
             arch: amd64
             runner: ubuntu-latest
-            timeout: 720
+            timeout: 360
             attr: tests.e2e.hcc-gcc46-direct
           - suite: faithful e2e
             arch: amd64
             runner: ubuntu-latest
-            timeout: 720
+            timeout: 360
             attr: tests.e2e.faithful
           - suite: tcc backend
             arch: amd64

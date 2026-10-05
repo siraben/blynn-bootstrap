@@ -65,10 +65,25 @@ The compiler path is not the entire build environment:
   Some scanning and variadic functions are stubs. The self-built TinyCC
   and its installed libraries are the usable result on x86_64.
 
-Nix compares complete TinyCC stage2/stage3 executables (stage3/stage4 on
-AArch64), then compiles and runs test programs. A fixpoint checks stability
+Nix compares complete TinyCC stage3/stage4 executables, then compiles and
+runs test programs. A fixpoint checks stability
 under self-compilation; it does not prove C conformance or absence of a
 trusting-trust attack. See [tests](tests/README.md).
+
+## Direct GCC bootstrap (host-assisted)
+
+`nix build .#tests.e2e.hcc-gcc46-direct` builds the GCC 4.6 stage1 C objects
+with M2-built HCC, links GCC, and uses it to bootstrap stages 2 and 3 with
+GCC's comparison check. `tests.gcc46M1.native-vs-faithful` compares the
+smaller source frontier against GHC-built HCC; the full comparison is
+`tests.gcc46M1.full-native-vs-faithful`. Explicit `tests.host.ghc.native.*`
+targets provide debug alternatives, not faithful compiler provenance.
+
+The direct route does not use TinyCC as a compiler bridge. It does use
+host GNU assembler/linker, support archives, glibc, GCC ABI/CRT objects,
+and host-built aggregate/soft-float adapters. Its bootstrap subset represents
+`long double` as binary64. It is not a self-contained seed-only trust root;
+TinyCC remains an independent runtime/fixpoint regression.
 
 ## Portable build
 
@@ -76,7 +91,7 @@ Run from the repository root on Linux:
 
 ```sh
 scripts/bootstrap-blynn.sh
-# x86_64: also rebuild TinyCC, compare stage2/stage3, and test the result
+# x86_64: also rebuild TinyCC, compare stage3/stage4, and test the result
 TINYCC_SELFHOST=1 scripts/bootstrap-blynn.sh
 ```
 

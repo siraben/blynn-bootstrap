@@ -215,6 +215,9 @@ normalizeAddressAddends target ir = case ir of
   ModuleIr items ->
     let refs = addressAddendRefsTopItems items
         word = if target == 32 then 4 else 8
+    -- Local objects receive interior labels and bounds/boundary validation.
+    -- External references retain encoded addends: m1-to-gas translates those
+    -- labels to base+offset relocations when linking separate ELF objects.
     in case normalizeAddressAddendTopItems word refs items of
       Left err -> Left err
       Right normalized -> Right (ModuleIr normalized)

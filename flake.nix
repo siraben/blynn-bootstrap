@@ -1092,7 +1092,7 @@
             target = nativeM1Target;
           };
         hcc-gcc46-m1-frontier-faithful =
-          hccGcc46SourceSmokeFor "hcc-gcc46-m1-frontier-hcc-m2-precisely-gcc" hccBy.m2.precisely.gcc {
+          hccGcc46SourceSmokeFor "hcc-gcc46-m1-frontier-hcc-m2-precisely-m2" hccBy.m2.precisely.m2 {
             keepArtifacts = true;
             target = nativeM1Target;
           };
@@ -1233,6 +1233,10 @@
         hcc-elf-smoke = pkgs.callPackage ./nix/hcc-elf-smoke.nix {
           hcc = hccBy.host.ghc.native;
         };
+        hcc-elf-smoke-faithful = pkgs.callPackage ./nix/hcc-elf-smoke.nix {
+          hcc = hccBy.m2.precisely.m2;
+          pname = "hcc-elf-smoke-m2-precisely-m2";
+        };
 
         hcc-tinycc-tests2-stat = pkgs.callPackage ./nix/hcc-tinycc-tests2-stat.nix {
           inherit (pkgs) stdenvNoCC fetchgit python3;
@@ -1301,6 +1305,7 @@
             host.ghc.native.mescc = hcc-mescc-tests-native;
             portable.tinycc-selfhost = tinyccPortableSelfhost;
             host.ghc.native.smoke.elf = hcc-elf-smoke;
+            smoke.elf = hcc-elf-smoke-faithful;
             hcc.golden = hcc-golden-tests;
             host.ghc.native.gcc46-source-smoke = hcc-gcc46-source-smoke-native;
             host.ghc.native.gcc46-m1-frontier = hcc-gcc46-m1-frontier-native;
@@ -1316,7 +1321,8 @@
             precisely.dialect = precisely-dialect-tests;
             tinyccM1.native-vs-blynn-gcc = tinyccM1Compare
               "tinycc-m1-compare-native-blynn-gcc" tinyccM1By.m2.precisely.gcc;
-            tinyccM1.native-vs-faithful = tinyccM1CompareNativeFaithful;
+            tinyccM1.native-vs-faithful = tinyccM1Compare
+              "tinycc-m1-compare-native-faithful" tinyccM1By.m2.precisely.m2;
             gcc46M1.native-vs-faithful = hccGcc46M1CompareNativeFaithful;
             gcc46M1.full-native-vs-faithful = hccGcc46M1FullCompareNativeFaithful;
             host.ghc.native.gcc46-selfhost = gcc46-selfhost-native;
@@ -1345,6 +1351,7 @@
           '';
         } // lib.optionalAttrs (system == "x86_64-linux") {
           hcc-elf = hcc-elf-smoke;
+          hcc-elf-faithful = hcc-elf-smoke-faithful;
         };
 
         legacyPackages = packageTree;

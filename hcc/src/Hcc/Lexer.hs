@@ -138,7 +138,7 @@ lexDotNumber :: LexState -> (Token, LexState)
 lexDotNumber st =
   let (fraction, st1) = takeFraction st
       (exponentText, st2) = takeExponent "eE" st1
-      (suffix, st3) = takeWhileState isFloatSuffix st2
+      (suffix, st3) = takeWhileColumns isFloatSuffix st2
       text = fraction ++ exponentText ++ suffix
   in (Token (Span (lsPos st) (lsPos st3)) (TokFloat text), st3)
 
