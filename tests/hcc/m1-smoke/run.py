@@ -46,6 +46,10 @@ CASES = [
     ("static-internal-linkage", 0),
 ]
 
+WIDE64_CASES = [
+    ("wide-static-memory", 0),
+]
+
 AMD64_CASES = [
     ("variadic-sysv-forward", 0),
     ("stack-call-alignment", 0),
@@ -160,7 +164,7 @@ def assert_streamed_data_addends(hccir):
         assert label in labels, f"missing forward/interior data label: {label}"
 
 
-def compile_to_m1(args, target, examples_dir, work_dir, name):
+def compile_to_m1(args, target, examples_dir, work_dir, name, expected_error=None):
     src = examples_dir / f"{name}.c"
     preprocessed = work_dir / f"{name}.i"
     hccir = work_dir / f"{name}.hccir"
@@ -180,7 +184,15 @@ def compile_to_m1(args, target, examples_dir, work_dir, name):
     if name == "streamed-data-addends":
         assert_streamed_data_addends(hccir)
     log(f"{name}: hcc-m1 -> {m1.name}")
-    run([args.hcc_m1, "--target", target["hcc_target"], str(hccir), str(m1)])
+    command = [args.hcc_m1, "--target", target["hcc_target"], str(hccir), str(m1)]
+    if expected_error is not None:
+        result = subprocess.run(command, capture_output=True, text=True)
+        if result.returncode != 1 or expected_error not in result.stderr:
+            raise SystemExit(f"{name}: expected backend rejection {expected_error!r}, "
+                             f"got {result.returncode}: {result.stderr}")
+        log(f"{name}: backend rejection matched: {expected_error}")
+        return None
+    run(command)
     if name == "static-internal-linkage":
         assert_static_internal_linkage(m1)
     if name in ("static-conflict-left", "static-conflict-right") or name.endswith("/unit"):
@@ -251,7 +263,8 @@ def main():
     m2libc = pathlib.Path(args.m2libc)
 
     work_dir.mkdir(parents=True, exist_ok=True)
-    cases = CASES + (AMD64_CASES if args.target == "amd64" else [])
+    cases = (CASES + (WIDE64_CASES if args.target != "i386" else [])
+             + (AMD64_CASES if args.target == "amd64" else []))
     log(f"running {len(cases)} cases and {len(MULTI_TU_CASES)} multi-tu cases for {args.target}")
     for name, expected in cases:
         log(f"START {name}")
@@ -266,6 +279,9 @@ def main():
         m1_files = [compile_to_m1(args, target, examples_dir, work_dir, unit) for unit in units]
         assemble_and_run(args, target, m2libc, work_dir, name, m1_files, expected)
         log(f"DONE  {name}")
+    if args.target == "i386":
+        compile_to_m1(args, target, examples_dir, work_dir, "wide-static-memory",
+                      expected_error="i386 M1 backend cannot lower 64-bit load")
     log("all cases passed")
 
 
