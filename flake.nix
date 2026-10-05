@@ -42,6 +42,12 @@
             rev = sourcePins.BLYNN_COMPILER_REV;
             hash = "sha256-xDYN3Ern83a5h8liJYpFBJ9BVzD5YyOJjiHGM5Za+X8=";
           };
+          m2PlanetGrammar = pkgs.fetchgit {
+            url = sourcePins.M2_PLANET_GRAMMAR_URL;
+            rev = sourcePins.M2_PLANET_GRAMMAR_REV;
+            fetchSubmodules = true;
+            hash = "sha256-Jfxjv70HX8ISLGoy+Y2+PD56Zo1u5qSAtS1an1Ecom4=";
+          };
           gnuMes = pkgs.fetchgit {
             url = sourcePins.GNU_MES_URL;
             rev = sourcePins.GNU_MES_REV;
@@ -471,6 +477,49 @@
           inherit minimalBootstrap;
         };
 
+        # Never a stageRun/default backend: use only with the isolated
+        # GHC/RTSPrecisely grammar debug generator below.
+        m2PlanetGrammarGccDebug = pkgs.callPackage ./nix/m2-planet-grammar-gcc-debug.nix {
+          src = upstreamSources.m2PlanetGrammar;
+          mesccTools = minimalBootstrap.stage0-posix.mescc-tools;
+        };
+
+        blynnGrammarDebugSrc = patchedUpstreamSource {
+          name = "blynn-compiler-grammar-debug";
+          src = blynnUpstreamSrc;
+          patches = [ ./patches/upstreams/blynn-compiler-grammar-debug-mode.patch ];
+        };
+        preciselyGrammarDebug = preciselyGhcDebug.overrideAttrs (old: {
+          pname = "blynn-precisely-ghc-grammar-debug";
+          src = blynnGrammarDebugSrc;
+          meta = old.meta // {
+            description = "Host-GHC Precisely with an opt-in M2 grammar debug RTS mode";
+          };
+          postInstall = ''
+            # Object generation keeps its existing CLI. Only C generation
+            # opts into the source-level grammar debug RTS mode.
+            printf '%s\n' '#!${pkgs.runtimeShell}' \
+              "exec \"$out/bin/precisely_up\" m2-grammar-debug \"\$@\"" \
+              > "$out/bin/precisely-grammar-debug"
+            chmod 555 "$out/bin/precisely-grammar-debug"
+          '';
+        });
+        hccGrammarObjects = hccBlynnObjsFromPrecisely
+          "hcc-blynn-objs-ghc-grammar-debug" preciselyGrammarDebug;
+        hccGrammarC = hccBlynnCFromCompiler
+          "hcc-blynn-c-ghc-grammar-debug" preciselyGrammarDebug
+          "${preciselyGrammarDebug}/bin/precisely-grammar-debug" hccGrammarObjects;
+        hccGrammarDebug = pkgs.callPackage ./nix/hcc-grammar-gcc-debug.nix {
+          generatedC = hccGrammarC;
+          compiler = m2PlanetGrammarGccDebug;
+          inherit hccSrc;
+        };
+
+        m2GrammarTests = pkgs.callPackage ./nix/m2-grammar-tests.nix {
+          compiler = m2PlanetGrammarGccDebug;
+          src = upstreamSources.m2PlanetGrammar;
+        };
+
         hccHostGhcNative = pkgs.callPackage ./nix/hcc-ghc.nix {
           stdenv = pkgs.stdenv;
           pname = "hcc-host-ghc-native";
@@ -535,6 +584,7 @@
           m2.stage0 = blynnPhaseBin;
           gcc.host = preciselyGccHost;
           ghc.debug = preciselyGhcDebug;
+          ghc.grammar-debug = preciselyGrammarDebug;
         };
 
         hccM2BlynnCompiler = "${blynnUpstreamStages.crossly1}/bin/crossly1";
@@ -656,6 +706,8 @@
           host.ghc.native = hccHostGhcNative;
           host.microhs.native = hccHostMicrohsNative;
 
+          ghc.precisely.grammar-gcc-debug = hccGrammarDebug;
+
           ghc.precisely.gcc = hccFromPrecisely {
             pname = "hcc-ghc-precisely-gcc";
             generatedC = hccBlynnCBy.ghc.precisely;
@@ -751,6 +803,8 @@
         tinyccM1FromHcc = pname: hcc: tinyccM1FromHccForTarget pname hcc nativeM1Target;
 
         tinyccBy = {
+          ghc.precisely.grammar-gcc-debug = tinyccFromHcc
+            "tinycc-boot-hcc-ghc-precisely-grammar-gcc-debug" hccGrammarDebug;
           host.ghc.native = tinyccFromHcc "tinycc-boot-hcc-host-ghc-native" hccBy.host.ghc.native;
           riscv64.host.ghc.native =
             tinyccFromHccForTarget "tinycc-boot-hcc-host-ghc-native-riscv64" hccBy.host.ghc.native "riscv64";
@@ -765,6 +819,8 @@
         };
 
         tinyccM1By = {
+          ghc.precisely.grammar-gcc-debug = tinyccM1FromHcc
+            "tinycc-m1-hcc-ghc-precisely-grammar-gcc-debug" hccGrammarDebug;
           host.ghc.native = tinyccM1FromHcc "tinycc-m1-hcc-host-ghc-native" hccBy.host.ghc.native;
           riscv64.host.ghc.native =
             tinyccM1FromHccForTarget "tinycc-m1-hcc-host-ghc-native-riscv64" hccBy.host.ghc.native "riscv64";
@@ -1053,6 +1109,24 @@
           hcc = hccBy.m2.precisely.m2;
         };
 
+        hccGrammarSourceTests = pkgs.callPackage ./nix/hcc-grammar-source-tests.nix {
+          hcc = hccGrammarDebug;
+          generatedC = hccGrammarC;
+          generator = preciselyGrammarDebug;
+          originalGenerator = preciselyGhcDebug;
+        };
+        hccGrammarGolden = pkgs.callPackage ./nix/hcc-golden-tests.nix {
+          stdenvNoCC = rawStdenvNoCC;
+          pname = "hcc-grammar-debug-golden";
+          hcc = hccGrammarDebug;
+        };
+        hccGrammarCpu = hccM1SmokeFor "hcc-grammar-debug-cpu" hccGrammarDebug "amd64";
+        hccGrammarTinyccParity = pkgs.callPackage ./nix/hcc-grammar-tinycc-parity.nix {
+          native = tinyccM1By.host.ghc.native;
+          faithful = tinyccM1By.m2.precisely.m2;
+          grammar = tinyccM1By.ghc.precisely.grammar-gcc-debug;
+        };
+
         hcc-tinycc-tests2-stat = pkgs.callPackage ./nix/hcc-tinycc-tests2-stat.nix {
           inherit (pkgs) stdenvNoCC fetchgit python3;
           hcc = hccBy.host.ghc.native;
@@ -1092,6 +1166,7 @@
           precisely = preciselyBy;
 
           m2.mesoplanet.gcc = m2MesoplanetGcc;
+          m2.planet.grammar-gcc-debug = m2PlanetGrammarGccDebug;
 
           hcc = hccBy // {
             profile.host.ghc.native = hccProfileHostGhcNative;
@@ -1119,6 +1194,12 @@
           bootstrap = bootstrapBy;
 
           tests = {
+            grammar-debug = {
+              sources = hccGrammarSourceTests;
+              golden = hccGrammarGolden;
+              cpu = hccGrammarCpu;
+              tinycc-parity = hccGrammarTinyccParity;
+            };
             smoke.m1 = hcc-m1-smoke;
             smoke.m1-i386 = hcc-m1-smoke-i386;
             smoke.m1-aarch64 = hcc-m1-smoke-aarch64;
@@ -1160,6 +1241,13 @@
             sh ${./tests/prepare-upstreams.sh} "$PWD"
             touch "$out"
           '';
+        } // lib.optionalAttrs (system == "x86_64-linux") {
+          m2-grammar-debug = m2GrammarTests;
+          m2-grammar-hcc-sources = hccGrammarSourceTests;
+          m2-grammar-hcc-golden = hccGrammarGolden;
+          m2-grammar-hcc-cpu = hccGrammarCpu;
+          m2-grammar-tinycc-parity = hccGrammarTinyccParity;
+          m2-grammar-tinycc-selfhost = tinyccBy.ghc.precisely.grammar-gcc-debug;
         };
 
         legacyPackages = packageTree;
