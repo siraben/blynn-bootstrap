@@ -35,6 +35,9 @@ jobs:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
       - name: Check flake
         run: nix flake check --print-build-logs
+      - name: Check M2 grammar provenance separation
+        if: matrix.arch == 'amd64'
+        run: bash tests/m2-grammar/provenance.sh
       - name: Evaluate README build targets
         if: matrix.arch == 'amd64'
         run: |

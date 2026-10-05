@@ -1,0 +1,153 @@
+--- a/cc_core.c
++++ b/cc_core.c
+@@ -1017,6 +1017,11 @@
+ 			size = current_target->size;
+ 		}
+ 		emit_out(load_value(size, current_target->is_signed));
++		/* Global/static arrays store a pointer to their backing storage. */
++		if((options == TLO_GLOBAL || options == TLO_STATIC) && type->array_modifier > 0)
++		{
++			current_target = current_target->indirect;
++		}
+ 	}
+ 
+ 	if(is_assignment)
+@@ -1549,6 +1554,8 @@
+ 	additive_expr_stub_a();
+ }
+ 
++char* compound_operation(char* operator, int is_signed);
++
+ void additive_expr_stub_b(void)
+ {
+ 	require(NULL != global_token, "Received EOF in additive_expr_stub_a\n");
+@@ -1610,6 +1617,14 @@
+ 
+ 		emit_pop(REGISTER_ONE, "_common_recursion");
+ 		emit_rsub(REGISTER_ZERO, REGISTER_ONE, current_target->is_signed, NULL);
++		if(type_is_pointer(left_type) && type_is_pointer(right_type))
++		{
++			/* Pointer differences count elements, not bytes, and are signed. */
++			emit_move(REGISTER_ONE, REGISTER_ZERO, "pointer difference");
++			emit_load_immediate(REGISTER_ZERO, left_type->type->size, "element size");
++			emit_out(compound_operation("/=", TRUE));
++			current_target = integer;
++		}
+ 		additive_expr_stub_b();
+ 	}
+ }
+@@ -1740,9 +1755,7 @@
+  * bitwise-expr:
+  *         relational-expr
+  *         bitwise-expr & bitwise-expr
+- *         bitwise-expr && bitwise-expr
+  *         bitwise-expr | bitwise-expr
+- *         bitwise-expr || bitwise-expr
+  *         bitwise-expr ^ bitwise-expr
+  */
+ void bitwise_expr_stub(void)
+@@ -1750,49 +1763,37 @@
+ 	if((KNIGHT_POSIX == Architecture) || (KNIGHT_NATIVE == Architecture))
+ 	{
+ 		general_recursion(relational_expr, "AND R0 R0 R1\n", "&", bitwise_expr_stub);
+-		general_recursion(relational_expr, "AND R0 R0 R1\n", "&&", bitwise_expr_stub);
+ 		general_recursion(relational_expr, "OR R0 R0 R1\n", "|", bitwise_expr_stub);
+-		general_recursion(relational_expr, "OR R0 R0 R1\n", "||", bitwise_expr_stub);
+ 		general_recursion(relational_expr, "XOR R0 R0 R1\n", "^", bitwise_expr_stub);
+ 	}
+ 	else if(X86 == Architecture)
+ 	{
+ 		general_recursion(relational_expr, "and_eax,ebx\n", "&", bitwise_expr_stub);
+-		general_recursion(relational_expr, "and_eax,ebx\n", "&&", bitwise_expr_stub);
+ 		general_recursion(relational_expr, "or_eax,ebx\n", "|", bitwise_expr_stub);
+-		general_recursion(relational_expr, "or_eax,ebx\n", "||", bitwise_expr_stub);
+ 		general_recursion(relational_expr, "xor_eax,ebx\n", "^", bitwise_expr_stub);
+ 	}
+ 	else if(AMD64 == Architecture)
+ 	{
+ 		general_recursion(relational_expr, "and_rax,rbx\n", "&", bitwise_expr_stub);
+-		general_recursion(relational_expr, "and_rax,rbx\n", "&&", bitwise_expr_stub);
+ 		general_recursion(relational_expr, "or_rax,rbx\n", "|", bitwise_expr_stub);
+-		general_recursion(relational_expr, "or_rax,rbx\n", "||", bitwise_expr_stub);
+ 		general_recursion(relational_expr, "xor_rax,rbx\n", "^", bitwise_expr_stub);
+ 	}
+ 	else if(ARMV7L == Architecture)
+ 	{
+ 		general_recursion(relational_expr, "NO_SHIFT R0 R0 AND R1 ARITH2_ALWAYS\n", "&", bitwise_expr_stub);
+-		general_recursion(relational_expr, "NO_SHIFT R0 R0 AND R1 ARITH2_ALWAYS\n", "&&", bitwise_expr_stub);
+ 		general_recursion(relational_expr, "NO_SHIFT R0 R0 OR R1 AUX_ALWAYS\n", "|", bitwise_expr_stub);
+-		general_recursion(relational_expr, "NO_SHIFT R0 R0 OR R1 AUX_ALWAYS\n", "||", bitwise_expr_stub);
+ 		general_recursion(relational_expr, "'0' R0 R0 XOR R1 ARITH2_ALWAYS\n", "^", bitwise_expr_stub);
+ 	}
+ 	else if(AARCH64 == Architecture)
+ 	{
+ 		general_recursion(relational_expr, "and_x0,x1,x0\n", "&", bitwise_expr_stub);
+-		general_recursion(relational_expr, "and_x0,x1,x0\n", "&&", bitwise_expr_stub);
+ 		general_recursion(relational_expr, "orr_x0,x1,x0\n", "|", bitwise_expr_stub);
+-		general_recursion(relational_expr, "orr_x0,x1,x0\n", "||", bitwise_expr_stub);
+ 		general_recursion(relational_expr, "eor_x0,x0,x1\n", "^", bitwise_expr_stub);
+ 	}
+ 	else if((RISCV32 == Architecture) || (RISCV64 == Architecture))
+ 	{
+ 		general_recursion(relational_expr, "rd_a0 rs1_a1 rs2_a0 and\n", "&", bitwise_expr_stub);
+-		general_recursion(relational_expr, "rd_a0 rs1_a1 rs2_a0 and\n", "&&", bitwise_expr_stub);
+ 		general_recursion(relational_expr, "rd_a0 rs1_a1 rs2_a0 or\n", "|", bitwise_expr_stub);
+-		general_recursion(relational_expr, "rd_a0 rs1_a1 rs2_a0 or\n", "||", bitwise_expr_stub);
+ 		general_recursion(relational_expr, "rd_a0 rs1_a1 rs2_a0 xor\n", "^", bitwise_expr_stub);
+ 	}
+ }
+@@ -1804,11 +1805,53 @@
+ 	bitwise_expr_stub();
+ }
+ 
++void logical_and_expr(void)
++{
++	bitwise_expr();
++	while(match("&&", global_token->s))
++	{
++		char* number_string = int2str(current_count, 10, TRUE);
++		current_count = current_count + 1;
++		char* unique_id = create_unique_id("", function->s, number_string);
++		emit_jump_if_zero(REGISTER_ZERO, "AND_FALSE_", unique_id, "short circuit and");
++		require_extra_token();
++		bitwise_expr();
++		emit_jump_if_zero(REGISTER_ZERO, "AND_FALSE_", unique_id, "logical and rhs");
++		emit_load_immediate(REGISTER_ZERO, 1, "logical true");
++		emit_unconditional_jump("AND_END_", unique_id, "logical and end");
++		emit_label("AND_FALSE_", unique_id);
++		emit_load_immediate(REGISTER_ZERO, 0, "logical false");
++		emit_label("AND_END_", unique_id);
++		current_target = integer;
++	}
++}
++
++void logical_or_expr(void)
++{
++	logical_and_expr();
++	while(match("||", global_token->s))
++	{
++		char* number_string = int2str(current_count, 10, TRUE);
++		current_count = current_count + 1;
++		char* unique_id = create_unique_id("", function->s, number_string);
++		emit_jump_if_not_zero(REGISTER_ZERO, "OR_TRUE_", unique_id, "short circuit or");
++		require_extra_token();
++		logical_and_expr();
++		emit_jump_if_not_zero(REGISTER_ZERO, "OR_TRUE_", unique_id, "logical or rhs");
++		emit_load_immediate(REGISTER_ZERO, 0, "logical false");
++		emit_unconditional_jump("OR_END_", unique_id, "logical or end");
++		emit_label("OR_TRUE_", unique_id);
++		emit_load_immediate(REGISTER_ZERO, 1, "logical true");
++		emit_label("OR_END_", unique_id);
++		current_target = integer;
++	}
++}
++
+ void expression(void);
+ void comma_expr(void);
+ void conditional_expr(void)
+ {
+-	bitwise_expr();
++	logical_or_expr();
+ 	if(match("?", global_token->s))
+ 	{
+ 		char* number_string = int2str(current_count, 10, TRUE);

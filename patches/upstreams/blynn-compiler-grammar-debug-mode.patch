@@ -1,0 +1,26 @@
+Debug-only mode for the GHC-built Precisely generator (RTSPrecisely, not the
+faithful crossly RTS). Its pointer accesses are explicitly byte-addressed and
+valid with standard scaled pointer arithmetic. Select heap/allocator policy at
+source generation time; never rewrite the emitted C. Applied only to the
+isolated grammar debug source derivation.
+
+--- a/inn/precisely.hs
++++ b/inn/precisely.hs
+@@ -116,4 +116,7 @@
+   "ffis":opts -> interact $ either id (($ "\n") . shows . keys) . allFFIs
+   "warts":opts -> interact $ either id (warts $ "warts":opts) . allFFIs
+   "wasm":opts -> interact $ either id id . compile "1<<26" libcWasm ("no-main":opts)
++  ["m2-grammar-debug", "top", top] -> if validTop top then interact (either id id . compile top libcHost ["m2-grammar-debug"]) else badTop
++  "m2-grammar-debug":[] -> interact $ either id id . compile "134217728" libcHost ["m2-grammar-debug"]
++  "m2-grammar-debug":_ -> badTop
+   _ -> interact $ either id id . compile "16777216" libcHost []
+--- a/inn/RTSPrecisely.hs
++++ b/inn/RTSPrecisely.hs
+@@ -844,6 +844,7 @@
+   pure
+     $ ("typedef unsigned u;\n"++)
+     . ("enum{TOP="++) . (topSize++) . ("};\n"++)
++    . (if "m2-grammar-debug" `elem` opts then ("#define HCC_RTS_USE_EXTERNAL_ALLOC 1\n"++) else id)
+     . ("enum{PROGSZ="++) . shows (length mem) . ("};\n"++)
+     . ("enum{ROOTSZ="++) . shows (size ffes) . ("};\n"++)
+     . ("static u root8[]={" ++)

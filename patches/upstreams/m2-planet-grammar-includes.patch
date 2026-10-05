@@ -1,0 +1,31 @@
+Terminate each candidate include path before trying fopen. The pinned reader's
+copy_string excludes the NUL byte: a shorter -I directory following a longer
+one otherwise retains the suffix of the failed candidate. Debug fork only.
+
+--- a/cc_macro.c
++++ b/cc_macro.c
+@@ -682,8 +682,11 @@
+ 	{
++		require(string_length(inc->path) + string_length(include_filename) + 2 <= MAX_STRING,
++		        "Include path exceeds max string length\n");
+ 		offset = copy_string(buffer, inc->path, MAX_STRING);
+ 		buffer[offset] = '/';
+ 		offset = offset + 1;
+-		copy_string(buffer + offset, include_filename, MAX_STRING - offset);
++		offset = offset + copy_string(buffer + offset, include_filename, MAX_STRING - offset);
++		buffer[offset] = 0;
+ 
+ 		f = fopen(buffer, "r");
+ 
+@@ -694,7 +697,10 @@
+ 	{
+ 		/* If all else fails, try to look in M2libc in the CWD */
++		require(string_length(include_filename) + 10 <= MAX_STRING,
++		        "Include path exceeds max string length\n");
+ 		offset = copy_string(buffer, "./M2libc/", MAX_STRING);
+-		copy_string(buffer + offset, include_filename, MAX_STRING - offset);
++		offset = offset + copy_string(buffer + offset, include_filename, MAX_STRING - offset);
++		buffer[offset] = 0;
+ 		f = fopen(buffer, "r");
+ 	}
+ 

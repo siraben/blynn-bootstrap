@@ -7,6 +7,23 @@ by the bootstrap.
   - upstream: `https://github.com/blynn/compiler.git`
     at `a1f1c47c9bb3ff6a45a0735ced84984396560535`
   - source compatibility delta for the party -> precisely chain
+- `upstreams/blynn-compiler-grammar-debug-mode.patch`
+  - applied only to an isolated copy of the patched Blynn source for the
+    host-GHC Precisely / host-GCC M2 grammar HCC variant
+  - adds a source-level C generation mode selecting heap size and external
+    allocation in the byte-addressed `RTSPrecisely` runtime; the default mode
+    is unchanged, and emitted C is never rewritten
+- `upstreams/m2-planet-grammar-{postfix,expressions,includes}.patch`
+  - debug fork only: `https://github.com/siraben/M2-Planet.git`
+    at `ad19a2d9954f5861b9f55b0306e5c4577100ddfa`
+  - postfix ports the compiler fix from upstream commit `184c2b8c` for
+    global/static increment and decrement lvalues
+  - expressions fixes global/static array decay, signed element-count pointer
+    differences, and short-circuit logical operators; includes terminates
+    candidate include paths when falling back to shorter `-I` directories
+  - applied only by `nix/m2-planet-grammar-gcc-debug.nix`, never by the faithful
+    source preparation or stage0 compiler; executable regressions are in
+    `tests/m2-grammar/`
 - `upstreams/tinycc-mescc-source.patch`
   - upstream: `https://repo.or.cz/tinycc.git` at
     `cb41cbfe717e4c00d7bb70035cda5ee5f0ff9341`
