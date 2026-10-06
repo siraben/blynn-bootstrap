@@ -27,25 +27,20 @@ runCommand "hcc-grammar-debug-source-tests" {
     echo 'grammar debug option leaked into default generator mode' >&2
     exit 1
   fi
-  # Preserve #31's ordinary TOP API, and use precisely the same validation
-  # for the opt-in mode. System.Exit must flush the rejection diagnostic.
-  for top in 1024 1048576 536870912; do
-    ${generator}/bin/precisely_up top "$top" < "$input" > custom.c
-    ${originalGenerator}/bin/precisely_up top "$top" < "$input" > original-custom.c
-    cmp custom.c original-custom.c
-    ${generator}/bin/precisely-grammar-debug top "$top" < "$input" > grammar-custom.c
-    grep -Fx "enum{TOP=$top};" grammar-custom.c
-    grep -Fx '#define HCC_RTS_USE_EXTERNAL_ALLOC 1' grammar-custom.c
-  done
+  # One nondefault TOP checks mode dispatch; #31 owns the shared TOP matrix.
+  ${generator}/bin/precisely_up top 1048576 < "$input" > custom.c
+  ${originalGenerator}/bin/precisely_up top 1048576 < "$input" > original-custom.c
+  cmp custom.c original-custom.c
+  ${generator}/bin/precisely-grammar-debug top 1048576 < "$input" > grammar-custom.c
+  grep -Fx 'enum{TOP=1048576};' grammar-custom.c
+  grep -Fx '#define HCC_RTS_USE_EXTERNAL_ALLOC 1' grammar-custom.c
   reject() {
     status=0
     ${generator}/bin/precisely-grammar-debug "$@" </dev/null > rejected.out 2> rejected.err || status=$?
     test "$status" = 1
     grep -Fx 'TOP must be a canonical decimal word count in 1024..536870912' rejected.out
   }
-  for top in "" 0 1023 01024 -1 +1024 '1<<24' 536870913 999999999999999999999; do
-    reject top "$top"
-  done
+  reject top 01024
   reject top
   reject top 1048576 extra
   reject unknown

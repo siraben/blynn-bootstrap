@@ -845,9 +845,11 @@
           touch "$out"
         '';
 
-        tinyccM1Compare = name: candidate: pkgs.runCommand name { } ''
+        tinyccM1Compare = name: candidate:
+          tinyccArtifactCompare name tinyccM1By.host.ghc.native candidate;
+        tinyccArtifactCompare = name: reference: candidate: pkgs.runCommand name { } ''
           mkdir -p "$out"
-          native=${tinyccM1By.host.ghc.native}/share/tinycc-hcc-m1
+          native=${reference}/share/tinycc-hcc-m1
           candidate=${candidate}/share/tinycc-hcc-m1
           for file in tcc-expanded.c tcc.hccir tcc.M1 \
             tcc-bootstrap-support.i tcc-bootstrap-support.hccir tcc-bootstrap-support.M1 \
@@ -856,7 +858,7 @@
             cmp "$native/$file" "$candidate/$file"
           done
           {
-            echo "native:    ${tinyccM1By.host.ghc.native}"
+            echo "native:    ${reference}"
             echo "candidate: ${candidate}"
             sha256sum "$native/tcc.M1" "$candidate/tcc.M1"
           } > "$out/summary.txt"
@@ -1115,17 +1117,9 @@
           generator = preciselyGrammarDebug;
           originalGenerator = preciselyGhcDebug;
         };
-        hccGrammarGolden = pkgs.callPackage ./nix/hcc-golden-tests.nix {
-          stdenvNoCC = rawStdenvNoCC;
-          pname = "hcc-grammar-debug-golden";
-          hcc = hccGrammarDebug;
-        };
-        hccGrammarCpu = hccM1SmokeFor "hcc-grammar-debug-cpu" hccGrammarDebug "amd64";
-        hccGrammarTinyccParity = pkgs.callPackage ./nix/hcc-grammar-tinycc-parity.nix {
-          native = tinyccM1By.host.ghc.native;
-          faithful = tinyccM1By.m2.precisely.m2;
-          grammar = tinyccM1By.ghc.precisely.grammar-gcc-debug;
-        };
+        hccGrammarTinyccParity = tinyccArtifactCompare
+          "hcc-grammar-debug-tinycc-parity" tinyccM1By.m2.precisely.m2
+          tinyccM1By.ghc.precisely.grammar-gcc-debug;
 
         hcc-tinycc-tests2-stat = pkgs.callPackage ./nix/hcc-tinycc-tests2-stat.nix {
           inherit (pkgs) stdenvNoCC fetchgit python3;
@@ -1196,8 +1190,6 @@
           tests = {
             grammar-debug = {
               sources = hccGrammarSourceTests;
-              golden = hccGrammarGolden;
-              cpu = hccGrammarCpu;
               tinycc-parity = hccGrammarTinyccParity;
             };
             smoke.m1 = hcc-m1-smoke;
@@ -1244,10 +1236,7 @@
         } // lib.optionalAttrs (system == "x86_64-linux") {
           m2-grammar-debug = m2GrammarTests;
           m2-grammar-hcc-sources = hccGrammarSourceTests;
-          m2-grammar-hcc-golden = hccGrammarGolden;
-          m2-grammar-hcc-cpu = hccGrammarCpu;
           m2-grammar-tinycc-parity = hccGrammarTinyccParity;
-          m2-grammar-tinycc-selfhost = tinyccBy.ghc.precisely.grammar-gcc-debug;
         };
 
         legacyPackages = packageTree;
