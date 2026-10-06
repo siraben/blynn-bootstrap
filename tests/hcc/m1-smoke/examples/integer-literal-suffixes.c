@@ -23,6 +23,9 @@ int main(void) {
   bits &= ~(1UL << 15);
   if (bits != (1UL << (sizeof(long) * 8 - 1)))
     return 8;
+  bits >>= 1;
+  if (bits != (1UL << (sizeof(long) * 8 - 2)))
+    return 9;
 
   return 0;
 }

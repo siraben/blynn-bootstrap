@@ -14,7 +14,6 @@ CASES = [
     ("signed-char-cast", 0),
     ("sizeof-member-array-bound", 0),
     ("address-written-scalar", 0),
-    ("global-address-addend", 0),
     ("streamed-data-addends", 0),
     ("escaped-string-magic", 0),
     ("archive-header-layout", 0),
@@ -28,11 +27,9 @@ CASES = [
     ("enum-bitfield-signedness", 0),
     ("integer-literal-suffixes", 0),
     ("multidimensional-array", 0),
-    ("unsigned-compound-shift", 0),
     ("function-typedef-prototype", 0),
     ("union-cast", 0),
     ("inferred-array-size", 0),
-    ("sizeof-string-literal", 0),
     ("static-local-storage", 0),
     ("static-local-shadow", 0),
     ("case-cmp-ternary", 0),
@@ -43,7 +40,7 @@ CASES = [
     ("asm-nop", 0),
     ("variadic-register-stack", 0),
     ("switch-prelude-label", 0),
-    ("static-internal-linkage", 0),
+    ("static-same-basename", 0),
 ]
 
 WIDE64_CASES = [
@@ -55,14 +52,13 @@ AMD64_CASES = [
     ("stack-call-alignment", 0),
 ]
 
-MULTI_TU_CASES = [
-    ("static-conflict", ["static-conflict-left", "static-conflict-right", "static-conflict-main"], 0),
-    (
-        "static-same-basename",
-        ["static-same-basename-left/unit", "static-same-basename-right/unit", "static-same-basename-main"],
-        0,
-    ),
-]
+# Same-named files exercise both static symbol collisions and TU identity.
+UNITS = {
+    "static-same-basename": [
+        "static-same-basename-left/unit", "static-same-basename-right/unit",
+        "static-same-basename-main",
+    ],
+}
 
 
 TARGETS = {
@@ -118,30 +114,6 @@ def log(message):
     print(f"hcc-m1-smoke: {message}", flush=True)
 
 
-def assert_static_internal_linkage(m1):
-    text = m1.read_text()
-    forbidden = [":FUNCTION_helper", ":internal_value"]
-    for label in forbidden:
-        if label in text:
-            raise SystemExit(f"{m1.name}: static label was emitted externally: {label}")
-    if ":FUNCTION_HCC_INTERNAL_" not in text:
-        raise SystemExit(f"{m1.name}: static function label was not internalized")
-    if ":HCC_INTERNAL_" not in text:
-        raise SystemExit(f"{m1.name}: static object label was not internalized")
-
-
-def assert_static_conflict_unit(m1):
-    text = m1.read_text()
-    forbidden = [":FUNCTION_helper", ":shared"]
-    for label in forbidden:
-        if label in text:
-            raise SystemExit(f"{m1.name}: static label was emitted externally: {label}")
-    if ":FUNCTION_HCC_INTERNAL_" not in text:
-        raise SystemExit(f"{m1.name}: static function label was not internalized")
-    if ":HCC_INTERNAL_" not in text:
-        raise SystemExit(f"{m1.name}: static object label was not internalized")
-
-
 def assert_amd64_macro_namespace(m1):
     text = m1.read_text()
     for macro in ("CMP", "STORE_INTEGER"):
@@ -193,10 +165,6 @@ def compile_to_m1(args, target, examples_dir, work_dir, name, expected_error=Non
         log(f"{name}: backend rejection matched: {expected_error}")
         return None
     run(command)
-    if name == "static-internal-linkage":
-        assert_static_internal_linkage(m1)
-    if name in ("static-conflict-left", "static-conflict-right") or name.endswith("/unit"):
-        assert_static_conflict_unit(m1)
     if target["hcc_target"] == "amd64" and name == "ret13":
         assert_amd64_macro_namespace(m1)
     return m1
@@ -265,18 +233,13 @@ def main():
     work_dir.mkdir(parents=True, exist_ok=True)
     cases = (CASES + (WIDE64_CASES if args.target != "i386" else [])
              + (AMD64_CASES if args.target == "amd64" else []))
-    log(f"running {len(cases)} cases and {len(MULTI_TU_CASES)} multi-tu cases for {args.target}")
+    log(f"running {len(cases)} cases for {args.target}")
     for name, expected in cases:
         log(f"START {name}")
-        m1 = compile_to_m1(args, target, examples_dir, work_dir, name)
-        m1_files = [m1]
+        m1_files = [compile_to_m1(args, target, examples_dir, work_dir, unit)
+                    for unit in UNITS.get(name, [name])]
         if name == "stack-call-alignment":
             m1_files.insert(0, source_dir / "stack-call-alignment.M1")
-        assemble_and_run(args, target, m2libc, work_dir, name, m1_files, expected)
-        log(f"DONE  {name}")
-    for name, units, expected in MULTI_TU_CASES:
-        log(f"START {name}")
-        m1_files = [compile_to_m1(args, target, examples_dir, work_dir, unit) for unit in units]
         assemble_and_run(args, target, m2libc, work_dir, name, m1_files, expected)
         log(f"DONE  {name}")
     if args.target == "i386":

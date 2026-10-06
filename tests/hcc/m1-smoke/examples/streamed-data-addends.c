@@ -4,6 +4,8 @@ extern int later[3];
 int *forward = &later[2];
 static int earlier[3] = { 7, 11, 13 };
 char *global_string = &"abcd"[2];
+struct Pair { int first; int second; } pair = { 7, 11 };
+int *member = &pair.second;
 int first(void) {
     static int local[3] = { 17, 19, 23 };
     static int *middle = &local[1];
@@ -18,5 +20,6 @@ int second(void) {
 }
 int later[3] = { 27, 29, 31 };
 int main(void) {
-    return !(first() && second() && *forward == 31 && *global_string == 'c');
+    return !(first() && second() && *forward == 31 && *global_string == 'c'
+             && *member == 11);
 }

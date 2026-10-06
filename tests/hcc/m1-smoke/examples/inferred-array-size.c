@@ -9,10 +9,14 @@ static const struct pair global_pairs[] = {
   {5, 6}
 };
 
+static const int literal_size = sizeof("COLLECT_GCC=");
+
 int main(void) {
   int local_values[] = {7, 8, 9, 10};
   return sizeof global_pairs == 3 * sizeof global_pairs[0]
     && global_pairs[2].right == 6
     && sizeof local_values == 4 * sizeof local_values[0]
-    && local_values[3] == 10 ? 0 : 1;
+    && local_values[3] == 10
+    && literal_size == 13 && sizeof("") == 1
+    && __alignof__("array") == __alignof__(char) ? 0 : 1;
 }

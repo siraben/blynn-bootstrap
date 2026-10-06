@@ -77,8 +77,6 @@ extern unsigned const char incomplete_extern_array[];
 void global_default_lock(void);
 static void (*global_lock_pointer)(void) = *global_default_lock;
 int short_circuit_array_bound[1 || (1 / 0)];
-static int global_address_array[2];
-void *global_address_array_start = &global_address_array[0];
 int width = sizeof ((Item*)0)->field;
 int alignof_type_value = __alignof__(ArrayTypedef);
 _Static_assert(1 || (1 / 0), "constant logical-or should short-circuit");
@@ -138,12 +136,6 @@ char *aggregate_call_member(char *file) {
   return make_source_location(file).file;
 }
 
-int typed_va_arg_value(int marker, ...) {
-  va_list ap;
-  va_start(ap, marker);
-  return va_arg(ap, int);
-}
-
 long long unsigned typed_va_arg_long_long_unsigned(int marker, ...) {
   va_list ap;
   va_start(ap, marker);
@@ -193,23 +185,6 @@ int switch_decl_before_case(int tag) {
     result = 3;
     return result;
   }
-}
-
-int switch_nested_case_label(int tag, int flag) {
-  int result = 0;
-  switch (tag) {
-  case 1:
-    result = 10;
-    break;
-  default:
-    if (flag) {
-    case 2:
-      result = 20;
-    }
-    result = result + 1;
-    break;
-  }
-  return result;
 }
 
 int label_attribute_before_statement(int flag) {

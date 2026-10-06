@@ -1,7 +1,7 @@
 static int shared = 1;
 
 static int helper(void) {
-  return shared;
+  return __func__[0] == 'h' ? shared : 0;
 }
 
 int left_value(void) {
