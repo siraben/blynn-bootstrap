@@ -1077,7 +1077,6 @@
           sourceBundle = hccBlynnSources;
           commonObjects = hccBlynnObjsBy.m2.precisely;
           inherit minimalBootstrap hccSrc;
-          m2libc = m2libcSrc;
           bootstrapShell = minimalShell;
         };
         packageTree = {
