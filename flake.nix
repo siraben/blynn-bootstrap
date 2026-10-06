@@ -1071,7 +1071,10 @@
         hcc-m1-smoke-aarch64 = hccM1SmokeFor "hcc-m1-smoke-aarch64" hccBy.m2.precisely.m2 "aarch64";
         hcc-m1-smoke-riscv64 = hccM1SmokeFor "hcc-m1-smoke-riscv64" hccBy.m2.precisely.m2 "riscv64";
         hcc-m1-smoke-native = hccM1SmokeFor "hcc-m1-smoke-host-ghc-native" hccBy.host.ghc.native nativeM1Target;
-        hcc-m1-smoke-native-aarch64 = hccM1SmokeFor "hcc-m1-smoke-host-ghc-native-aarch64" hccBy.host.ghc.native "aarch64";
+        # On ARM the native suite already executes these same AArch64 fixtures.
+        hcc-m1-smoke-native-aarch64 = if system == "aarch64-linux"
+          then hcc-m1-smoke-native
+          else hccM1SmokeFor "hcc-m1-smoke-host-ghc-native-aarch64" hccBy.host.ghc.native "aarch64";
         hcc-m1-smoke-native-i386 = hccM1SmokeFor "hcc-m1-smoke-host-ghc-native-i386" hccBy.host.ghc.native "i386";
         hcc-m1-smoke-native-riscv64 = hccM1SmokeFor "hcc-m1-smoke-host-ghc-native-riscv64" hccBy.host.ghc.native "riscv64";
 

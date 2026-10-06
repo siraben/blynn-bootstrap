@@ -15,6 +15,7 @@ nix build .#tinycc.m2.precisely.m2
   and invalid local source overrides.
 - Both x86_64 and AArch64 Linux include M2-built HCC golden tests;
   `hcc-golden` and `hcc.golden` alias the same derivation, built only once.
+  On AArch64, native GHC smoke and its AArch64 alias also share a derivation.
   Both include M2/GHC AArch64 and RISC-V smoke tests, native GHC smoke/MesCC,
   dialect tests, RISC-V TinyCC via QEMU, and both TinyCC artifact comparisons.
   Golden/artifact comparisons execute host-built compilers, not emitted code.
@@ -23,9 +24,8 @@ nix build .#tinycc.m2.precisely.m2
   `mescc`, and `host.ghc.native.smoke.m1-i386`). AArch64 smoke output runs
   natively or via QEMU; RISC-V smoke output always uses QEMU. Platform metadata
   is selected before evaluating derivations; `check-platform-policy` asserts
-  the inventory, legacy target identity, preservation of the shell/golden
-  checks on both Linux systems, and lazy exclusion of unsupported/non-gating
-  tests.
+  legacy target identity, preservation of the shell/golden and ARM checks
+  on both Linux systems, and lazy exclusion of unsupported/non-gating tests.
 - Darwin exposes only shell regressions and the platform-policy assertions.
   The flake's existing default package/toolchain remains Linux-only, so a full
   `nix flake check --all-systems` is not supported. This does not claim Darwin
