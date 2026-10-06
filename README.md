@@ -74,10 +74,12 @@ trusting-trust attack. See [tests](tests/README.md).
 
 `nix build .#tests.e2e.hcc-gcc46-direct` builds the GCC 4.6 stage1 C objects
 with M2-built HCC, links GCC, and uses it to bootstrap stages 2 and 3 with
-GCC's comparison check. `tests.gcc46M1.native-vs-faithful` compares the
-smaller source frontier against GHC-built HCC; the full comparison is
-`tests.gcc46M1.full-native-vs-faithful`. Explicit `tests.host.ghc.native.*`
-targets provide debug alternatives, not faithful compiler provenance.
+GCC's comparison check. This is the single added GCC CI job.
+Opt-in diagnostics `tests.gcc46M1.native-vs-faithful` and
+`tests.gcc46M1.full-native-vs-faithful` compare the source frontier and all
+336 M1 files against GHC-built HCC. Explicit `tests.host.ghc.native.*`
+targets and the independent TinyCC-to-GCC `tests.e2e.faithful` remain
+available on demand; native targets do not provide faithful provenance.
 
 The direct route does not use TinyCC as a compiler bridge. It does use
 host GNU assembler/linker, support archives, glibc, GCC ABI/CRT objects,
