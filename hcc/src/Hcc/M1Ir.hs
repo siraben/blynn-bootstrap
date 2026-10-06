@@ -6,6 +6,7 @@ module M1Ir
 import Base
 import TypesAst
 import CompileM
+import Target
 import TypesIr
 import Lower
 import LowerBootstrap
@@ -15,7 +16,7 @@ data CodegenError = CodegenError String
 
 -- The caller buffers writes transactionally: a later lowering error must not
 -- publish the header or any previously emitted functions.
-emitM1IrStreamingWithDataPrefixTarget :: (String -> IO ()) -> String -> Int -> Program -> IO (Either CodegenError ())
+emitM1IrStreamingWithDataPrefixTarget :: (String -> IO ()) -> String -> Target -> Program -> IO (Either CodegenError ())
 emitM1IrStreamingWithDataPrefixTarget write prefix target ast = case ast of
   Program decls ->
     case mapCompileRun (runCompileM registerBuiltinStructs (initialCompileStateForTarget prefix target)) of
@@ -25,6 +26,7 @@ emitM1IrStreamingWithDataPrefixTarget write prefix target ast = case ast of
           Left err -> pure (Left err)
           Right (st, registeredItems) -> do
             write "HCCIR 1"
+            write ("T " ++ hccTargetName target)
             emitTopItemsIr write registeredItems
             lowerAndEmitTopDeclsIr write st decls
 
