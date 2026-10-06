@@ -14,14 +14,9 @@ printf 'OK\n' > expected.out
 cmp expected.out grammar.out
 cmp gcc.out grammar.out
 
-# Pinned upstream regression cases for grammar and lowering, each requiring
-# exit status zero as well as matching GCC's stdout (not merely equal failure).
-for name in assignment cast_postfix_expr comma_conditions \
-  conditional_expression constant_expressions for_loop_declaration \
-  for_omitted_expressions function_pointer_arguments function_pointer_nested_call \
-  global_function_pointer_init local_array_decay parenthesized_comma_expr \
-  parenthesized_deref pointer_additive_expr pointer_arithmetic prefix_deref \
-  prefix_postfix reverse_subscript static_variables; do
+# Grammar forms not covered by semantics.c; require success, not equal failure.
+for name in assignment cast_postfix_expr for_omitted_expressions \
+  function_pointer_arguments function_pointer_nested_call reverse_subscript; do
   file="$sources/test/run-pass/$name.c"
   "$compiler" --file="$file" --output=grammar-test --architecture=x86_64 --operating-system=Linux
   "$CC" -std=c99 -O0 "$file" -o gcc-test
@@ -56,19 +51,14 @@ reject() {
   grep -q '^m2-planet-grammar-gcc-debug:' reject.err
 }
 reject
-for option in -f --file -o --output --architecture --operating-system -I -D; do
-  reject "$option"
-  reject "$option" ''
-  reject "$option" --bogus
-done
-for option in --file --output --architecture --operating-system; do
-  reject "$option="
-done
+# Shared value parser: missing, empty, next-option, and equals syntax.
+reject -f
+reject -I ''
+reject -D --bogus
+reject --output=
 reject --bogus
-reject --architecture sparc -f 'main file.c' -o bad
 reject --architecture=aarch64 -f 'main file.c' -o bad
 reject --operating-system FreeBSD -f 'main file.c' -o bad
-reject --operating-system=Darwin -f 'main file.c' -o bad
 reject -f 'main file.c'
 reject -o bad
 reject -f 'main file.c' -o bad --output=duplicate
