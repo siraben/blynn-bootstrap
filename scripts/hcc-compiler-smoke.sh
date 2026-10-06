@@ -22,6 +22,9 @@ expect_file_contains() {
   done < "$file"
   if test "$found" != 1; then
     echo "$file: expected diagnostic containing: $pattern" >&2
+    while IFS= read -r line; do
+      printf '  %s\n' "$line" >&2
+    done < "$file"
     exit 1
   fi
 }
@@ -95,6 +98,10 @@ expect_hcc1_fail() {
     exit 1
   fi
   expect_file_contains "$pattern" "$name.err"
+  if test -s "$name.hccir"; then
+    echo "$name: failed compilation published partial IR" >&2
+    exit 1
+  fi
   log "DONE  expect hcc1 failure $name"
 }
 
@@ -115,7 +122,14 @@ expect_hcpp_fail() {
   log "DONE  expect hcpp failure $name"
 }
 
+{
+  printf '#define CONTINUED_WITH_TRAILING_SPACE(x) \\   \n'
+  printf '  ((x) + 1)\nint continued = CONTINUED_WITH_TRAILING_SPACE(2);\n'
+} > pp-smoke-trailing-space.c
+printf '#define BAD_PARAMETER(1arg) 0\n' > invalid-macro-parameter.c
+printf '#define BAD_VARIADIC_ORDER(first, ..., last) first\n' > variadic-macro-parameter-order.c
 run_check_case pp-smoke "$TESTS_DIR/pp-smoke.c"
+run_check_case pp-smoke-trailing-space pp-smoke-trailing-space.c
 run_check_case parse-smoke "$TESTS_DIR/parse-smoke.c"
 
 run_m1_case parse-smoke "$TESTS_DIR/parse-smoke.c"
@@ -132,15 +146,29 @@ run_m1_case literal-acceptance "$TESTS_DIR/m1-smoke/examples/literal-acceptance.
 
 expect_hcpp_contains pp-macro-include "pp_included_value" "$TESTS_DIR/pp-smoke.c"
 expect_hcpp_contains pp-paste-left-raw "paste_left_raw = Ab" "$TESTS_DIR/pp-smoke.c"
+expect_file_contains "paste_pp_number = ATTR_PRINTF_1_0" pp-smoke.i
 expect_hcpp_contains pp-empty-arg "empty_arg = 0" "$TESTS_DIR/pp-smoke.c"
 expect_hcpp_contains pp-if-mod-ternary "pp_if_mod = 1" "$TESTS_DIR/pp-smoke.c"
+expect_file_contains "int HCC_CYCLE_A" pp-smoke.i
+expect_file_contains "standard_variadic = 1 + 2" pp-smoke.i
+expect_file_contains "named_variadic = 3 + 4" pp-smoke.i
+expect_hcpp_absent pp-nested-invocation-hide "NESTED_JOIN" "$TESTS_DIR/pp-smoke.c"
+expect_file_contains "self_member_rescan = object . SELF_MEMBER" pp-smoke.i
+expect_hcpp_absent pp-no-double-self-member "state -> state -> text_section" "$TESTS_DIR/pp-smoke.c"
 expect_hcpp_contains pp-short-circuit "short_circuit_and" "$TESTS_DIR/pp-short-circuit.c"
 expect_hcpp_absent pp-short-circuit-dead "dead_and" "$TESTS_DIR/pp-short-circuit.c"
 
 expect_hcc1_fail unknown-identifier "unknown identifier: missing_global" "$TESTS_DIR/diagnostics/unknown-identifier.c"
 expect_hcc1_fail unknown-global-initializer "unknown constant: missing_global" "$TESTS_DIR/diagnostics/unknown-global-initializer.c"
 expect_hcc1_fail unsupported-inline-asm "unsupported inline assembly" "$TESTS_DIR/diagnostics/unsupported-inline-asm.c"
+expect_hcc1_fail late-lowering "unknown identifier: missing_global" "$TESTS_DIR/diagnostics/late-lowering.c"
+expect_hcc1_fail late-address-addend "outside data object" "$TESTS_DIR/diagnostics/late-address-addend.c"
+expect_hcc1_fail negative-address-addend "outside data object" "$TESTS_DIR/diagnostics/negative-address-addend.c"
+expect_hcc1_fail indivisible-address-addend "inside an indivisible data value" "$TESTS_DIR/diagnostics/indivisible-address-addend.c"
+expect_hcc1_fail integer-literal-overflow "integer literal is too large" "$TESTS_DIR/diagnostics/integer-literal-overflow.c"
 expect_hcpp_fail multi-char-constant "invalid character constant" "$TESTS_DIR/diagnostics/multi-char-constant.c"
 expect_hcpp_fail invalid-octal-constant "invalid digit in octal constant" "$TESTS_DIR/diagnostics/invalid-octal-constant.c"
+expect_hcpp_fail invalid-macro-parameter "bad macro parameter: 1arg" invalid-macro-parameter.c
+expect_hcpp_fail variadic-macro-parameter-order "bad variadic macro parameter" variadic-macro-parameter-order.c
 
 log "all compiler smoke checks passed"

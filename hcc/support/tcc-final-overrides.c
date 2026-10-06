@@ -6,13 +6,16 @@ typedef struct CString {
     char *data;
 } CString;
 
-void cstr_realloc(CString *cstr, int new_size);
+void *tcc_realloc(void *ptr, unsigned long size);
 
 static void hcc_cstr_need(CString *cstr, int extra)
 {
     int need = cstr->size + extra + 1;
-    if (need > cstr->size_allocated)
-        cstr_realloc(cstr, need * 2);
+    if (need > cstr->size_allocated) {
+        int allocated = need * 2;
+        cstr->data = tcc_realloc(cstr->data, allocated);
+        cstr->size_allocated = allocated;
+    }
 }
 
 static void hcc_cstr_char(CString *cstr, int ch)
@@ -77,7 +80,9 @@ static long hcc_arg(int index, long a, long b, long c, long d)
     return d;
 }
 
-int cstr_printf(CString *cstr, char *fmt, long a, long b, long c, long d)
+/* Replace TinyCC's internal varargs implementation after M1 symbol scoping. */
+int HCC_INTERNAL_HCC_DATA_tcc_expanded_c_cstr_printf(
+    CString *cstr, char *fmt, long a, long b, long c, long d)
 {
     int count = 0;
     int arg = 0;

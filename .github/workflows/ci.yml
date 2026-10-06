@@ -140,6 +140,11 @@ jobs:
             runner: ubuntu-24.04-arm
             timeout: 360
             attr: tinycc.m2.precisely.gcc
+          - suite: faithful direct gcc e2e
+            arch: amd64
+            runner: ubuntu-latest
+            timeout: 360
+            attr: tests.e2e.hcc-gcc46-direct
           - suite: tcc backend
             arch: amd64
             runner: ubuntu-latest

@@ -66,6 +66,8 @@ bash.runCommand "${pname}-${version}"
       --build=${buildPlatform.config} \
       --host=${hostPlatform.config} \
       --disable-dependency-tracking
+    touch -t 202001010000 configure.ac acinclude.m4 m4/*.m4
+    touch -t 203001010000 aclocal.m4 configure Makefile.in doc/Makefile.in lib/Makefile.in
 
     make AR="tcc -ar"
     make install

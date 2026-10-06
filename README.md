@@ -37,6 +37,16 @@ Debug alternatives are separate targets:
 
 These are useful for testing but are not seed-only compiler paths.
 
+## Downstream overlay
+
+Import nixpkgs with `blynn-bootstrap.nixpkgsArgs.default system` to select
+this flake's stage0/M2-rooted compiler and libc through `replaceStdenv`.
+This retains nixpkgs' surrounding build environment; it is not a complete
+seed-only stdenv. `overlays.default` replaces `minimal-bootstrap` and exposes
+`pkgs.blynn-bootstrap`; use `overlays.packages` for only the namespace.
+The exported `trustRoots.m2.precisely.m2` packages retain the trust boundaries
+below. Later GCC/glibc targets are not claimed as verified overlay builds.
+
 ## Trust boundary
 
 The compiler path is not the entire build environment:
@@ -55,10 +65,27 @@ The compiler path is not the entire build environment:
   Some scanning and variadic functions are stubs. The self-built TinyCC
   and its installed libraries are the usable result on x86_64.
 
-Nix compares complete TinyCC stage2/stage3 executables (stage3/stage4 on
-AArch64), then compiles and runs test programs. A fixpoint checks stability
+Nix compares complete TinyCC stage3/stage4 executables, then compiles and
+runs test programs. A fixpoint checks stability
 under self-compilation; it does not prove C conformance or absence of a
 trusting-trust attack. See [tests](tests/README.md).
+
+## Direct GCC bootstrap (host-assisted)
+
+`nix build .#tests.e2e.hcc-gcc46-direct` builds the GCC 4.6 stage1 C objects
+with M2-built HCC, links GCC, and uses it to bootstrap stages 2 and 3 with
+GCC's comparison check. This is the single added GCC CI job.
+Opt-in diagnostics `tests.gcc46M1.native-vs-faithful` and
+`tests.gcc46M1.full-native-vs-faithful` compare the source frontier and all
+336 M1 files against GHC-built HCC. Explicit `tests.host.ghc.native.*`
+targets and the independent TinyCC-to-GCC `tests.e2e.faithful` remain
+available on demand; native targets do not provide faithful provenance.
+
+The direct route does not use TinyCC as a compiler bridge. It does use
+host GNU assembler/linker, support archives, glibc, GCC ABI/CRT objects,
+and host-built aggregate/soft-float adapters. Its bootstrap subset represents
+`long double` as binary64. It is not a self-contained seed-only trust root;
+TinyCC remains an independent runtime/fixpoint regression.
 
 ## Portable build
 
@@ -66,7 +93,7 @@ Run from the repository root on Linux:
 
 ```sh
 scripts/bootstrap-blynn.sh
-# x86_64: also rebuild TinyCC, compare stage2/stage3, and test the result
+# x86_64: also rebuild TinyCC, compare stage3/stage4, and test the result
 TINYCC_SELFHOST=1 scripts/bootstrap-blynn.sh
 ```
 

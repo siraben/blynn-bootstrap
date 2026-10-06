@@ -1,0 +1,9 @@
+## The amd64 SysV ABI requires RSP + 8 to be 16-byte aligned on entry.
+
+:FUNCTION_hcc_stack_is_aligned
+  '48' '89' 'E0'
+  '48' '83' 'E0' '0F'
+  '48' '83' 'F8' '08'
+  '0F' '94' 'C0'
+  '0F' 'B6' 'C0'
+  'C3'

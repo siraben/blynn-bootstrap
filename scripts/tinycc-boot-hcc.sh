@@ -204,8 +204,9 @@ EOF
     # Stage1 needs explicit objects; its archive-loading path is incomplete.
     build_tcc ./tcc tcc-stage2
     build_tcc ./tcc-stage2 tcc-stage3
-    msg "fixpoint check tcc-stage2 == tcc-stage3"
-    cmp tcc-stage2 tcc-stage3
+    build_tcc ./tcc-stage3 tcc-stage4
+    msg "fixpoint check tcc-stage3 == tcc-stage4"
+    cmp tcc-stage3 tcc-stage4
     test "$(./tcc-stage3 -dumpversion)" = '0.9.28-unstable-2025-12-03'
     build_libs ./tcc-stage3 final-libs
     ./tcc-stage3 -c -I include -I "$mes_libc/include" -o final-libs/alloca.o lib/alloca.S

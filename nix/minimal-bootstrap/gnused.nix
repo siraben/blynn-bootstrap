@@ -49,6 +49,7 @@ bash.runCommand "${pname}-${version}"
   ''
     tar xzf ${src}
     cd sed-${version}
+    chmod +x build-aux/install-sh build-aux/missing
 
     export CC="tcc -B ${tinycc.libs}/lib"
     export LD=tcc
@@ -59,6 +60,9 @@ bash.runCommand "${pname}-${version}"
       --disable-nls \
       --disable-dependency-tracking \
       --prefix=$out
+    touch aclocal.m4 configure config_h.in \
+      Makefile.in doc/Makefile.in lib/Makefile.in po/Makefile.in \
+      sed/Makefile.in testsuite/Makefile.in doc/sed.1
 
     # Parallel tcc-musl builds have been unstable here.
     make AR="tcc -ar"

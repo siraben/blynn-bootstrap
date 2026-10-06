@@ -21,8 +21,28 @@ rec {
   // skipFixup;
 
   patchGeneratedTop = file: top: ''
-    substituteInPlace ${file} \
-      --replace-fail 'enum{TOP=16777216};' 'enum{TOP=${toString top}};'
+    patch_generated_top_file=${file}
+    patch_generated_top_tmp="$patch_generated_top_file.tmp"
+    patch_generated_top_seen=no
+    : > "$patch_generated_top_tmp"
+    while IFS= read -r patch_generated_top_line || [ -n "$patch_generated_top_line" ]; do
+      case "$patch_generated_top_line" in
+        *'enum{TOP='*'};'*)
+          patch_generated_top_before=''${patch_generated_top_line%%enum\{TOP=*}
+          patch_generated_top_rest=''${patch_generated_top_line#*enum\{TOP=}
+          patch_generated_top_after=''${patch_generated_top_rest#*\};}
+          patch_generated_top_line="$patch_generated_top_before"'enum{TOP=${toString top}};'"$patch_generated_top_after"
+          patch_generated_top_seen=yes
+          ;;
+      esac
+      printf '%s\n' "$patch_generated_top_line" >> "$patch_generated_top_tmp"
+    done < "$patch_generated_top_file"
+    if [ "$patch_generated_top_seen" != yes ]; then
+      printf 'patchGeneratedTop: TOP marker not found in %s\n' "$patch_generated_top_file" >&2
+      exit 1
+    fi
+    chmod u+w "$patch_generated_top_file" 2>/dev/null || :
+    cp "$patch_generated_top_tmp" "$patch_generated_top_file"
   '';
 
   shellHelpers =
@@ -31,8 +51,20 @@ rec {
       timestamps ? false,
       timed ? false,
       fileStats ? false,
+      metricsFile ? null,
     }:
     ''
+      ${lib.optionalString timed ''
+        monotonic_centiseconds() {
+          read -r uptime _ < /proc/uptime
+          uptime_seconds="''${uptime%%.*}"
+          uptime_fraction="''${uptime#*.}"
+          uptime_tens="''${uptime_fraction%"''${uptime_fraction#?}"}"
+          uptime_ones="''${uptime_fraction#?}"
+          printf '%s\n' "$((uptime_seconds * 100 + uptime_tens * 10 + uptime_ones))"
+        }
+      ''}
+
       log_step() {
         ${
           if timestamps then
@@ -50,13 +82,18 @@ rec {
         label="$1"
         shift
         log_step "START $label"
-        ${lib.optionalString timed ''start="$(date +%s)"''}
+        ${lib.optionalString timed ''
+          start="$(monotonic_centiseconds)"
+        ''}
         "$@"
         ${
           if timed then
             ''
-              end="$(date +%s)"
-              log_step "DONE  $label ($((end - start))s)"
+              end="$(monotonic_centiseconds)"
+              elapsed_centiseconds="$((end - start))"
+              elapsed="$(printf '%d.%02d' "$((elapsed_centiseconds / 100))" "$((elapsed_centiseconds % 100))")"
+              log_step "DONE  $label (''${elapsed}s)"
+              ${lib.optionalString (metricsFile != null) ''printf '%s\t%s\n' "$elapsed" "$label" >> ${lib.escapeShellArg metricsFile}''}
             ''
           else
             ''
@@ -69,13 +106,18 @@ rec {
         label="$1"
         command="$2"
         log_step "START $label"
-        ${lib.optionalString timed ''start="$(date +%s)"''}
+        ${lib.optionalString timed ''
+          start="$(monotonic_centiseconds)"
+        ''}
         eval "$command"
         ${
           if timed then
             ''
-              end="$(date +%s)"
-              log_step "DONE  $label ($((end - start))s)"
+              end="$(monotonic_centiseconds)"
+              elapsed_centiseconds="$((end - start))"
+              elapsed="$(printf '%d.%02d' "$((elapsed_centiseconds / 100))" "$((elapsed_centiseconds % 100))")"
+              log_step "DONE  $label (''${elapsed}s)"
+              ${lib.optionalString (metricsFile != null) ''printf '%s\t%s\n' "$elapsed" "$label" >> ${lib.escapeShellArg metricsFile}''}
             ''
           else
             ''
