@@ -12,34 +12,17 @@ log() {
 }
 
 run_ir_opcode_check() {
-  if ! command -v awk >/dev/null 2>&1; then
-    log "SKIP  HCC IR opcode parity check: awk not available"
-    return
-  fi
-
-  if test -f "${HCC_SOURCE_DIR:-}/src/Hcc/M1Ir.hs"; then
-    hcc_source_dir=${HCC_SOURCE_DIR}
-  elif test -f src/Hcc/M1Ir.hs; then
-    hcc_source_dir=.
-  elif test -f hcc/src/Hcc/M1Ir.hs; then
-    hcc_source_dir=hcc
+  for hcc_source_dir in "${HCC_SOURCE_DIR:-.}" . hcc; do
+    test -f "$hcc_source_dir/src/Hcc/M1Ir.hs" && break
+  done
+  opcode_check_awk=${HCC_OPCODE_CHECK_AWK:-$TESTS_DIR/check-ir-opcodes.awk}
+  if command -v awk >/dev/null 2>&1 &&
+     test -f "$hcc_source_dir/src/Hcc/M1Ir.hs" &&
+     { test -n "${HCC_OPCODE_CHECK_AWK:-}" || test -f "$opcode_check_awk"; }; then
+    awk -f "$opcode_check_awk" "$hcc_source_dir/src/Hcc/M1Ir.hs" "$hcc_source_dir/cbits/hcc_m1.c"
   else
-    log "SKIP  HCC IR opcode parity check: HCC source tree not found"
-    return
+    log "SKIP  HCC IR opcode parity check: source tree, checker or awk unavailable"
   fi
-
-  if test -n "${HCC_OPCODE_CHECK_AWK:-}"; then
-    opcode_check_awk=$HCC_OPCODE_CHECK_AWK
-  elif test -f "$TESTS_DIR/check-ir-opcodes.awk"; then
-    opcode_check_awk=$TESTS_DIR/check-ir-opcodes.awk
-  else
-    log "SKIP  HCC IR opcode parity check: check-ir-opcodes.awk not found"
-    return
-  fi
-
-  log "START HCC IR opcode parity check"
-  awk -f "$opcode_check_awk" "$hcc_source_dir/src/Hcc/M1Ir.hs" "$hcc_source_dir/cbits/hcc_m1.c"
-  log "DONE  HCC IR opcode parity check"
 }
 
 expect_file_contains() {
