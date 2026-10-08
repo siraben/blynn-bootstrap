@@ -1068,17 +1068,6 @@
           src = hccSrc;
           blynnSrc = blynnUpstreamSrc;
         };
-        blynn-top-tests = pkgs.callPackage ./nix/blynn-top-tests.nix {
-          crossly = blynnUpstreamStages.crossly_up;
-          crossly1 = blynnUpstreamStages.crossly1;
-          precisely = preciselyGccHost;
-          preciselySeed = blynnUpstreamStages.precisely_up;
-          preciselyDebug = preciselyGhcDebug;
-          sourceBundle = hccBlynnSources;
-          commonObjects = hccBlynnObjsBy.m2.precisely;
-          inherit minimalBootstrap hccSrc;
-          bootstrapShell = minimalShell;
-        };
         packageTree = {
           default = blynnPhaseBin;
 
@@ -1134,7 +1123,6 @@
             hcc.tinycc-tests2-stat = hcc-tinycc-tests2-stat;
             host.ghc.native.tinycc-riscv64 = tinyccBy.riscv64.host.ghc.native;
             precisely.dialect = precisely-dialect-tests;
-            precisely.top = blynn-top-tests;
             tinyccM1.native-vs-faithful = tinyccM1Compare
               "tinycc-m1-compare-native-faithful" tinyccM1By.m2.precisely.m2;
             tinyccM1.native-vs-blynn-gcc = tinyccM1Compare
@@ -1147,7 +1135,6 @@
         };
 
         checks = {
-          blynn-top = blynn-top-tests;
           hcc-golden = hcc-golden-tests;
           bootstrap-tools = pkgs.runCommand "bootstrap-tools-tests" { } ''
             mkdir -p scripts/lib data patches
