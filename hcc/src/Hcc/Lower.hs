@@ -380,13 +380,14 @@ localAggregateTemplateData ty initExpr = case ty of
 
 localArrayTemplateData :: CType -> Maybe Expr -> CompileM (Maybe String)
 localArrayTemplateData ty initExpr = case initExpr of
-  Just expr ->
-    if staticInitializerExpr expr
-    then case expr of
-      EInitList _ -> localDataItem ty initExpr
-      EString _ -> localDataItem ty initExpr
-      _ -> pure Nothing
-    else pure Nothing
+  Just expr -> do
+    static <- staticInitializerExpr expr
+    if static
+      then case expr of
+        EInitList _ -> localDataItem ty initExpr
+        EString _ -> localDataItem ty initExpr
+        _ -> pure Nothing
+      else pure Nothing
   Nothing -> pure Nothing
 
 localNonArrayTemplateData :: CType -> Maybe Expr -> CompileM (Maybe String)
@@ -394,33 +395,60 @@ localNonArrayTemplateData ty initExpr = case initExpr of
   Just expr -> case expr of
     EInitList _ -> do
       aggregateStorage <- isAggregateTypeM ty
-      if aggregateStorage && staticInitializerExpr expr then localDataItem ty initExpr else pure Nothing
+      static <- staticInitializerExpr expr
+      if aggregateStorage && static then localDataItem ty initExpr else pure Nothing
     _ -> pure Nothing
   Nothing -> pure Nothing
 
-staticInitializerExpr :: Expr -> Bool
+staticInitializerExpr :: Expr -> CompileM Bool
 staticInitializerExpr expr = case expr of
-  EInitList exprs -> allStaticInitializerExprs exprs
-  EString _ -> True
-  EInt _ -> True
-  EChar _ -> True
+  EInitList exprs -> do
+    static <- mapM staticInitializerExpr exprs
+    pure (and static)
+  EString _ -> pure True
+  EInt _ -> pure True
+  EFloat _ -> pure True
+  EChar _ -> pure True
+  ESizeofType _ -> pure True
+  ESizeofExpr _ -> pure True
   ECast _ value -> staticInitializerExpr value
   EUnary "-" value -> staticInitializerExpr value
   EUnary "+" value -> staticInitializerExpr value
   EUnary "~" value -> staticInitializerExpr value
   EUnary "!" value -> staticInitializerExpr value
-  EUnary "&" _ -> True
-  EVar _ -> True
-  EBinary op left right ->
-    op /= "," && staticInitializerExpr left && staticInitializerExpr right
-  ECond cond yes no ->
-    staticInitializerExpr cond && staticInitializerExpr yes && staticInitializerExpr no
+  EUnary "&" (EVar name) -> staticAddressName name
+  EVar name -> do
+    local <- lookupVarMaybe name
+    case local of
+      Just _ -> pure False
+      Nothing -> do
+        constant <- lookupConstant name
+        case constant of
+          Just _ -> pure True
+          Nothing -> case builtinConstant name of
+            Just _ -> pure True
+            Nothing -> do
+              function <- lookupFunction name
+              ty <- lookupGlobalType name
+              pure (function || isArrayType ty)
+  -- More complex expressions (including address arithmetic) are safely
+  -- evaluated at runtime, not interpreted as relocations or host integers.
+  _ -> pure False
+
+isArrayType :: Maybe CType -> Bool
+isArrayType ty = case ty of
+  Just (CArray _ _) -> True
   _ -> False
 
-allStaticInitializerExprs :: [Expr] -> Bool
-allStaticInitializerExprs exprs = case exprs of
-  [] -> True
-  expr:rest -> staticInitializerExpr expr && allStaticInitializerExprs rest
+staticAddressName :: String -> CompileM Bool
+staticAddressName name = do
+  local <- lookupVarMaybe name
+  case local of
+    Just _ -> pure False
+    Nothing -> do
+      function <- lookupFunction name
+      global <- lookupGlobalType name
+      pure (function || maybe False (const True) global)
 
 localDataItem :: CType -> Maybe Expr -> CompileM (Maybe String)
 localDataItem ty initExpr = do
@@ -492,6 +520,11 @@ lowerAggregateElementValueWrite aggregateStorage addr fieldTy expr =
 lowerAggregateElementAggregateWrite :: Operand -> CType -> Expr -> CompileM [Instr]
 lowerAggregateElementAggregateWrite addr fieldTy expr = case expr of
   EInitList exprs -> lowerAggregateInitList addr fieldTy exprs
+  EString _ -> do
+    label <- localDataItem fieldTy (Just expr)
+    case label of
+      Just name -> copyObject addr (OGlobal name) fieldTy
+      Nothing -> pure []
   _ -> do
     (exprInstrs, op) <- lowerExpr expr
     copyInstrs <- copyObject addr op fieldTy

@@ -29,6 +29,7 @@ CASES = [
     ("parser-negative-enum", 0),
     ("lowering-common-operands", 0),
     ("lowering-compound-types", 0),
+    ("lowering-runtime-initializers", 0),
 ]
 
 
