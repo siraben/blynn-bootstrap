@@ -113,15 +113,16 @@ for pp_expected in 'HCCIR 1' 'D pp_contract_quotient' 'b 254' 'b 255' 'b 255' 'b
 done < pp-contract-folded.hccir
 "$HCC_M1" pp-contract-folded.hccir pp-contract-folded.M1
 
+# HCPP's intmax model is target-independent; check it once per compiler route.
+# In #if, 1U is uintmax_t, so -1L < 1U is false.
+printf '%s\n' '#if (~0U <= 4294967295U) || (-1L < 1U)' \
+  '#error wrong preprocessing integer model' '#endif' > constants-pp.c
+"$HCPP" constants-pp.c > constants-pp.i
+
 # Ordinary constants use the selected target, not #if's intmax model.
 for pp_target in amd64 i386 aarch64 riscv64; do
   pp_model=1
   if test "$pp_target" = i386; then pp_model=0; fi
-  # In #if, 1U is uintmax_t, so -1L < 1U is false on every target.
-  # Use an independent expression that is true only in the #if model.
-  printf '%s\n' '#if (~0U <= 4294967295U) || (-1L < 1U)' \
-    '#error wrong preprocessing integer model' '#endif' > constants-pp.c
-  "$HCPP" constants-pp.c > constants-pp.i
   # The ordinary input is intentionally not preprocessed: no target macros
   # are needed to select the expected result.
   printf '%s\n' 'enum { constants_target_enum = -1L < 1U };' \
