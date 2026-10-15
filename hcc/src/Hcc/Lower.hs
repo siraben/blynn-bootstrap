@@ -872,15 +872,22 @@ compoundBinOp op targetTy lhsOp rhsExpr rhsOp = case targetTy of
   CPtr elemTy | op == "+" || op == "-" ->
     pointerCompoundOffset (if op == "+" then IAdd else ISub) lhsOp rhsOp elemTy
   _ -> do
+    leftTy <- promoteIntegerType targetTy
+    rightTy <- promotedExprType rhsExpr
+    commonTy <- if op == "<<" || op == ">>"
+      then pure leftTy
+      else usualArithmeticTypes leftTy rightTy
+    (leftInstrs, leftOp) <- coerceScalar commonTy lhsOp
+    (rightInstrs, rightOp) <- coerceScalar (if op == "<<" || op == ">>" then rightTy else commonTy) rhsOp
     iop <- case op of
-      "/" -> pure (if isUnsignedType targetTy then IUDiv else IDiv)
-      "%" -> pure (if isUnsignedType targetTy then IUMod else IMod)
-      ">>" -> shiftRightOp rhsExpr
+      "/" -> pure (if isUnsignedType commonTy then IUDiv else IDiv)
+      "%" -> pure (if isUnsignedType commonTy then IUMod else IMod)
+      ">>" -> pure (if isUnsignedType commonTy then IShr else ISar)
       _ -> case lowerBinOp op of
         Just o -> pure o
         Nothing -> throwC ("unsupported compound assignment operator: " ++ op)
     out <- freshTemp
-    pure ([IBin out iop lhsOp rhsOp], OTemp out)
+    pure (leftInstrs ++ rightInstrs ++ [IBin out iop leftOp rightOp], OTemp out)
 
 pointerCompoundOffset :: BinOp -> Operand -> Operand -> CType -> CompileM ([Instr], Operand)
 pointerCompoundOffset op base offset elemTy = do
@@ -1497,6 +1504,10 @@ usualArithmeticType :: Expr -> Expr -> CompileM CType
 usualArithmeticType left right = do
   leftTy0 <- promotedExprType left
   rightTy0 <- promotedExprType right
+  usualArithmeticTypes leftTy0 rightTy0
+
+usualArithmeticTypes :: CType -> CType -> CompileM CType
+usualArithmeticTypes leftTy0 rightTy0 =
   if isFloatingType leftTy0 || isFloatingType rightTy0
     then pure (usualFloatingType leftTy0 rightTy0)
     else do
