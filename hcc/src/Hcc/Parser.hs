@@ -6,7 +6,7 @@ module Parser
 
 import Base
 import ConstExpr
-import Literal (stringBytes, constantTrue, constantToIntChecked)
+import Literal
 import Operators
 import ParseLite
 import ScopeMap
@@ -17,9 +17,9 @@ data ParseError = ParseError SrcPos String
 
 -- Typedefs, enumerators, objects and functions share C's ordinary namespace.
 -- Tags and members are deliberately not entered here.
-data ParserBinding = ParserType CType | ParserConstant Int | ParserOrdinary
+data ParserBinding = ParserType CType | ParserConstant Constant | ParserOrdinary
 
-data ParserEnv = ParserEnv (ScopeMap ParserBinding) [(String, Int)] Int
+data ParserEnv = ParserEnv (ScopeMap ParserBinding) [(String, Constant)] Int
 
 type Parser a = P ParserEnv Token ParseError a
 
@@ -81,7 +81,7 @@ bindParserName name binding = when (name /= "") (do
             _ -> remaining
       in pSetEnv (ParserEnv (scopeMapInsert name binding bindings) constants' bits))
 
-lookupParserConstant :: String -> Parser (Maybe Int)
+lookupParserConstant :: String -> Parser (Maybe Constant)
 lookupParserConstant name = do
   env <- pEnv
   pure (case env of
@@ -89,10 +89,10 @@ lookupParserConstant name = do
       Just (ParserConstant value) -> Just value
       _ -> Nothing)
 
-bindParserConstant :: String -> Int -> Parser ()
+bindParserConstant :: String -> Constant -> Parser ()
 bindParserConstant name value = bindParserName name (ParserConstant value)
 
-parserConstants :: Parser [(String, Int)]
+parserConstants :: Parser [(String, Constant)]
 parserConstants = do
   env <- pEnv
   pure (case env of
@@ -167,7 +167,7 @@ parseStaticAssert = do
     Nothing -> Unconsumed (Ok [] env tokens)
   constants <- parserConstants
   bits <- parserTargetBits
-  case parseConstExprTarget bits constants toks of
+  case parseTypedConstExprTarget bits constants toks of
     Right (value, []) ->
       if not (constantTrue value)
         then peek >>= \tok -> failAt tok "_Static_assert failed"
@@ -819,10 +819,10 @@ enumType = do
   advanceToken
   name <- optionalIdent
   hasBody <- eatPunct "{"
-  when hasBody (parseEnumBody 0)
+  when hasBody (parseEnumBody (Just (constantInt 4 0)))
   pure (CEnum name)
 
-parseEnumBody :: Int -> Parser ()
+parseEnumBody :: Maybe Constant -> Parser ()
 parseEnumBody nextValue = do
   done <- eatPunct "}"
   if done
@@ -839,26 +839,40 @@ parseEnumBody nextValue = do
           if after
             then do
               end <- eatPunct "}"
-              if end then pure () else parseEnumBody (value + 1)
+              if end then pure () else parseEnumBody (nextParserConstant value)
             else do
               needPunct "}"
 
-enumValue :: Int -> Parser Int
+-- Values representable in int are int enumerators, even with a U/LL
+-- initializer. Retain wider typed values only for the bootstrap extension
+-- (notably TinyCC's UINT32_MAX and UINT64_MAX DWARF enumerators).
+normalizeParserConstant :: Constant -> Constant
+normalizeParserConstant value = case constantToIntChecked value of
+  Just n -> constantInt 4 n
+  Nothing -> value
+
+nextParserConstant :: Constant -> Maybe Constant
+nextParserConstant value@(Constant _ unsigned _) =
+  let wide = constantConvert 8 unsigned value
+  in case constantBinary "+" wide (constantInt 8 1) of
+    Right next -> case constantBinary ">" next wide of
+      Right greater -> if constantTrue greater then Just (normalizeParserConstant next) else Nothing
+      Left _ -> Nothing
+    Left _ -> Nothing
+
+enumValue :: Maybe Constant -> Parser Constant
 enumValue nextValue = do
   hasValue <- eatPunct "="
   if not hasValue
-    then if nextValue > 2147483647
-      then peek >>= \tok -> failAt tok "enum value exceeds supported int range"
-      else pure nextValue
+    then case nextValue of
+      Just value -> pure value
+      Nothing -> peek >>= \tok -> failAt tok "enum value exceeds supported 64-bit range"
     else do
       toks <- takeEnumValueExpr
       constants <- parserConstants
       bits <- parserTargetBits
-      case parseConstExprTarget bits constants toks of
-        Right (value, trailing) | all ignorableEnumExprTail trailing ->
-          case constantToIntChecked value of
-            Just n -> pure n
-            Nothing -> peek >>= \tok -> failAt tok "enum value exceeds supported int range"
+      case parseTypedConstExprTarget bits constants toks of
+        Right (value, trailing) | all ignorableEnumExprTail trailing -> pure (normalizeParserConstant value)
         Right (_, tok:_) ->
           failAt tok ("unexpected tokens in enum initializer: " ++ tokenText (tokenKind tok))
         Right (_, []) ->
@@ -1102,11 +1116,17 @@ unary = do
 -- Spell a negative constant as -(abs(value)-1)-1: the intermediate fits even
 -- at the minimum Int, and a minimum C int enumerator retains int type rather
 -- than acquiring the wider type of the positive literal 2147483648.
-parserConstantExpr :: Int -> Expr
-parserConstantExpr value =
-  if value < 0
-    then EBinary "-" (EUnary "-" (EInt (show (negate (value + 1))))) (EInt "1")
-    else EInt (show value)
+parserConstantExpr :: Constant -> Expr
+parserConstantExpr value@(Constant size unsigned bytes) =
+  case constantToIntChecked value of
+    Just n -> if n < 0
+      then EBinary "-" (EUnary "-" (EInt (show (negate (n + 1))))) (EInt "1")
+      else EInt (show n)
+    Nothing ->
+      let ty = if size <= 4 then CUnsigned else if unsigned then CUnsignedLongLong else CLongLong
+          digits = "0123456789abcdef"
+          hexByte byte = [digits !! (byte `div` 16), digits !! (byte `mod` 16)]
+      in ECast ty (EInt ("0x" ++ concatMap hexByte (reverse bytes) ++ "ULL"))
 
 parseSizeof :: Parser Expr
 parseSizeof = do

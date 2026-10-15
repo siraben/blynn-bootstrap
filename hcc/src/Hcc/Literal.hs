@@ -28,6 +28,7 @@ module Literal
   , Constant(..)
   , constantLiteral
   , constantLiteralTarget
+  , constantLiteralChecked
   , constantConvert
   , constantPromote
   , constantToIntChecked
@@ -353,6 +354,25 @@ constantLiteralTarget longSize preprocessing text =
           let limit = replicate (size - 1) 255 ++ [if u then 255 else 127] ++ replicate (8 - size) 0
           in if constWordCompare bytes limit <= 0 then Constant size u (take size bytes) else choose rest
   in choose candidates
+
+-- Check before the legacy byte reader's eight-byte truncation. An invalid
+-- literal must not turn into a small (apparently valid) array extent.
+constantLiteralChecked :: Int -> Bool -> String -> Either String Constant
+constantLiteralChecked longSize preprocessing text =
+  let clean = stripIntSuffix text
+      (base, digits) = case clean of
+        '0':'x':rest -> (16, rest)
+        '0':'X':rest -> (16, rest)
+        '0':rest -> (8, rest)
+        _ -> (10, clean)
+      fits bytes remaining = case remaining of
+        [] -> True
+        c:rest -> if digitValue c >= base then True else
+          let next = byteWordAddSmallCarry (digitValue c) (byteWordMulSmall base bytes)
+          in last next == 0 && fits next rest
+  in if fits (replicate 9 0) digits
+     then Right (constantLiteralTarget longSize preprocessing text)
+     else Left "integer literal exceeds supported 64-bit range"
 
 constantConvert :: Int -> Bool -> Constant -> Constant
 constantConvert = constConvert

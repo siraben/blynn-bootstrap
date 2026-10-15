@@ -2,6 +2,7 @@ module ConstExpr
   ( parseConstExpr
   , parsePPConstExpr
   , parseConstExprTarget
+  , parseTypedConstExprTarget
   ) where
 
 import Base
@@ -10,7 +11,7 @@ import Operators (binopArith)
 import ParseLite
 import TypesToken
 
-type ConstParser a = P (Int, [(String, Int)]) Token String a
+type ConstParser a = P (Int, [(String, Constant)]) Token String a
 
 -- Retain the parser's Int-facing API. All intermediate arithmetic, including
 -- comparisons and conditional common types, is target-width byte arithmetic.
@@ -23,7 +24,10 @@ parseConstExpr env toks = do
 
 -- Typed result: truth tests and full-width consumers need not pass through Int.
 parseConstExprTarget :: Int -> [(String, Int)] -> [Token] -> Either String (Constant, [Token])
-parseConstExprTarget bits env = parseRest (expression False True 0) (if bits <= 32 then 4 else 8, env)
+parseConstExprTarget bits env = parseTypedConstExprTarget bits (map (\(name, n) -> (name, constantInt 4 n)) env)
+
+parseTypedConstExprTarget :: Int -> [(String, Constant)] -> [Token] -> Either String (Constant, [Token])
+parseTypedConstExprTarget bits env = parseRest (expression False True 0) (if bits <= 32 then 4 else 8, env)
 
 -- #if has a different integer model: signed and unsigned integer types act as
 -- intmax_t and uintmax_t, including otherwise 32-bit unsuffixed constants.
@@ -100,11 +104,13 @@ parsePrimary pp live = do
         TokIdent name -> do
           (_, env) <- pEnv
           case lookup name env of
-            Just value -> pure (constInt pp value)
+            Just value -> pure value
             Nothing -> if pp then pure (constInt pp 0) else pFail ("unknown constant: " ++ name)
         TokInt value -> do
           (longSize, _) <- pEnv
-          pure (constantLiteralTarget longSize pp value)
+          case constantLiteralChecked longSize pp value of
+            Right result -> pure result
+            Left msg -> pFail msg
         TokChar value -> pure (constInt pp (charValue value))
         _ -> pFail "unsupported token in constant expression"
 

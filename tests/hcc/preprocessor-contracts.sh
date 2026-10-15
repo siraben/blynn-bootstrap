@@ -111,6 +111,27 @@ for pp_target in amd64 i386 aarch64 riscv64; do
     "_Static_assert((-1L < 1U) == $pp_model, \"ordinary model\");" \
     '_Static_assert(4294967296ULL, "wide truth value");' \
     '_Static_assert(~0U == 4294967295U, "ordinary uint32");' \
+    'enum { constants_small = 1ULL, constants_boot32 = 0xffffffffU, constants_boot64 = 0xffffffffffffffffULL };' \
+    '_Static_assert(~constants_small < 0, "representable enumerators have int type");' \
+    '_Static_assert(constants_boot32 == 4294967295U, "bootstrap uint32 enumerator");' \
+    '_Static_assert(constants_boot64 / 3ULL == 6148914691236517205ULL, "bootstrap uint64 enumerator");' \
     > constants-target.c
   "$HCC1" --target "$pp_target" -o "constants-target-$pp_target.hccir" constants-target.c
+  for pp_bound in '-1' '4294967296ULL' '18446744073709551615ULL' '18446744073709551616ULL'; do
+    printf 'char constants_bad_extent[%s];\n' "$pp_bound" > constants-bad-extent.c
+    if "$HCC1" --target "$pp_target" -o constants-bad-extent.hccir constants-bad-extent.c 2> constants-bad-extent.err; then
+      echo "unsupported array extent accepted: $pp_bound ($pp_target)" >&2
+      exit 1
+    fi
+    pp_diagnostic='array extent exceeds supported layout range'
+    if test "$pp_bound" = '-1'; then pp_diagnostic='negative array extent'; fi
+    if test "$pp_bound" = '18446744073709551616ULL'; then pp_diagnostic='integer literal exceeds supported 64-bit range'; fi
+    pp_contract_contains "$pp_diagnostic" constants-bad-extent.err
+  done
+  printf '%s\n' 'long long constants_bad_size[1073741824];' > constants-bad-size.c
+  if "$HCC1" --target "$pp_target" -o constants-bad-size.hccir constants-bad-size.c 2> constants-bad-size.err; then
+    echo "overflowing array size accepted ($pp_target)" >&2
+    exit 1
+  fi
+  pp_contract_contains 'array size exceeds supported layout range' constants-bad-size.err
 done
