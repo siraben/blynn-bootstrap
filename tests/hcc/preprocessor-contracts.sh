@@ -24,6 +24,17 @@ pp_contract_contains 'SELF ( 1 )' pp-contract-macros.i
 pp_contract_contains '2 * 9 * g' pp-contract-macros.i
 pp_contract_contains 'one twothree four' pp-contract-macros.i
 
+if "$HCPP" "$TESTS_DIR/pp-contract-object-location.c" > pp-contract-object-location.i 2> pp-contract-object-location.err; then
+  echo 'invalid macro invocation unexpectedly accepted' >&2
+  exit 1
+fi
+pp_contract_contains ':6:1: wrong number of macro arguments' pp-contract-object-location.err
+if "$HCPP" "$TESTS_DIR/pp-contract-argument-location.c" > pp-contract-argument-location.i 2> pp-contract-argument-location.err; then
+  echo 'invalid substituted argument invocation unexpectedly accepted' >&2
+  exit 1
+fi
+pp_contract_contains ':6:6: wrong number of macro arguments' pp-contract-argument-location.err
+
 "$HCPP" "$TESTS_DIR/pp-contract-include.c" > pp-contract-include.i
 pp_contract_contains 'int pp_contract_include ;' pp-contract-include.i
 pp_contract_contains 'int pp_contract_continued ;' pp-contract-include.i

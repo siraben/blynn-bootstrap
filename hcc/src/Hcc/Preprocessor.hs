@@ -197,12 +197,12 @@ expandNextSource macros toks = case toks of
     | not (name `elem` hidden), Just macro <- symbolMapLookup name macros ->
         case macro of
           ObjectMacro _ body ->
-            rescanReplacement space (Expansion (map (hideToken (name:hidden)) (sourceFromTokens body)) False) rest
+            rescanReplacement space (Expansion (map (hideToken (name:hidden)) (replacementTokens sp body)) False) rest
           FunctionMacro _ params variadic body -> case rest of
             PPToken _ _ (Token _ (TokPunct "(")):afterOpen -> do
               (args, commas, closeHidden, rest') <- collectInvocationArgs sp afterOpen
               bound <- bindMacroArgs macros sp params variadic args commas
-              Expansion replaced trailing <- substituteMacroBody sp bound (leadingSpace space (sourceFromTokens body))
+              Expansion replaced trailing <- substituteMacroBody sp bound (leadingSpace space (replacementTokens sp body))
               -- The closing parenthesis may come from a different expansion.
               -- Only names hidden at both ends constrain the replacement.
               let inherited = name : intersect hidden closeHidden
@@ -373,6 +373,13 @@ sourceFromTokens = go (SrcPos 0 0) where
     [] -> []
     tok@(Token (Span start end') _):rest -> PPToken [] (not (samePos end start)) tok : go end' rest
   samePos (SrcPos l c) (SrcPos l' c') = l == l' && c == c'
+
+-- Definition-buffer positions encode adjacency, but are not source locations
+-- for diagnostics. Derive separation first, then relocate only body tokens;
+-- substituted argument tokens keep their own invocation/argument locations.
+replacementTokens :: Span -> [Token] -> [PPToken]
+replacementTokens sp body = map relocate (sourceFromTokens body) where
+  relocate (PPToken hidden space (Token _ kind)) = PPToken hidden space (Token sp kind)
 
 plainToken :: PPToken -> Token
 plainToken (PPToken _ _ tok) = tok
