@@ -5,6 +5,7 @@ struct Values { int n; int *p; char text[8]; int *a; int (*f)(void); };
 int main(void) {
   int x = 7;
   int a[2] = {x, global};
+  int braced[2] = {{3 + 4}, {x}};
   int local[2] = {23, 29};
   struct Values v = {x, &x, "ok", local, answer};
   struct Values constants = {3, &global, "hi", array, answer};
@@ -15,5 +16,6 @@ int main(void) {
   if (*constants.p != 11 || constants.a[1] != 17 || constants.f() != 19) return 4;
   if (constants.text[0] != 'h' || constants.text[7] != 0) return 5;
   if (*pointers[0] != 7 || *pointers[1] != 23 || *pointers[2] != 17) return 6;
+  if (braced[0] != 7 || braced[1] != 7) return 7;
   return 0;
 }
