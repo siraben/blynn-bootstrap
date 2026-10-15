@@ -25,7 +25,10 @@ module Literal
   , cQuotInt
   , cRemInt
   , Constant(..)
-  , constantLiteral
+  , constantLiteralTarget
+  , constantConvert
+  , constantPromote
+  , constantToIntChecked
   , constantInt
   , constantToInt
   , constantTrue
@@ -320,22 +323,45 @@ stripTrailingQuote text = reverse (stripLeadingQuote (reverse text))
 
 -- Byte-backed target integers. Neither the native host's Int width nor the
 -- seed compiler's Int width is the target arithmetic contract. Width is in
--- bytes; the ordinary frontend uses 32-bit int and 64-bit long/long long,
--- while preprocessing treats all integer types as intmax_t/uintmax_t (64).
+-- bytes; ordinary integers use the selected ILP32/LP64 model, while
+-- preprocessing treats all integer types as intmax_t/uintmax_t (64).
 data Constant = Constant Int Bool [Int]
 
-constantLiteral :: Bool -> String -> Constant
-constantLiteral preprocessing text =
+-- longSize is the target's sizeof(long), not the compiler host's word size.
+constantLiteralTarget :: Int -> Bool -> String -> Constant
+constantLiteralTarget longSize preprocessing text =
   let bytes = naturalLiteralBytes (stripIntSuffix text)
       unsigned = intLiteralIsUnsigned text
-      long = any (`elem` "lL") text
+      longs = length (filter (`elem` "lL") text)
       nonDecimal = case text of { '0':_:_ -> True; _ -> False }
-      fitsInt = constWordCompare bytes [255,255,255,127,0,0,0,0] <= 0
-      fitsUint = constWordCompare bytes [255,255,255,255,0,0,0,0] <= 0
-      size = if preprocessing || long || not (if unsigned || nonDecimal then fitsUint else fitsInt) then 8 else 4
-      high = if size == 4 then not fitsInt else constWordNegative bytes
-      isUnsigned = unsigned || (nonDecimal && high) || (size == 8 && high)
-  in Constant size isUnsigned (take size bytes)
+      sizes = if preprocessing then [8] else if longs >= 2 then [8]
+              else if longs == 1 then [longSize, 8] else [4, longSize, 8]
+      candidates = concatMap (\size -> if unsigned then [(size, True)]
+                               else if nonDecimal then [(size, False), (size, True)]
+                               else [(size, False)]) sizes
+      choose remaining = case remaining of
+        [] -> Constant 8 True bytes
+        (size, u):rest ->
+          let limit = replicate (size - 1) 255 ++ [if u then 255 else 127] ++ replicate (8 - size) 0
+          in if constWordCompare bytes limit <= 0 then Constant size u (take size bytes) else choose rest
+  in choose candidates
+
+constantConvert :: Int -> Bool -> Constant -> Constant
+constantConvert = constConvert
+
+constantPromote :: Constant -> Constant
+constantPromote value@(Constant size _ _) =
+  if size < 4 then constConvert 4 False value else value
+
+-- Enum values and layout counts have an Int-facing representation. Keep this
+-- boundary portable to the seed route; never silently truncate a wide value.
+constantToIntChecked :: Constant -> Maybe Int
+constantToIntChecked value =
+  let Constant _ _ bytes = constConvert 8 False value
+      narrowed = constConvert 4 False value
+      Constant _ _ restored = constConvert 8 False narrowed
+  in if bytes == restored && constNegative value == constNegative narrowed
+     then Just (constantToInt narrowed) else Nothing
 
 constantInt :: Int -> Int -> Constant
 constantInt size value = Constant size False (intBytes size value)

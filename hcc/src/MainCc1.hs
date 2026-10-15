@@ -45,7 +45,7 @@ compileM1Ir args = do
         Left msg -> die (asmInput opts ++ ":" ++ msg)
         Right toks -> do
           trace "parse"
-          case mapParseError (parseProgram toks) of
+          case mapParseError (parseProgramTarget (asmTargetBits opts) toks) of
             Left msg -> dieInputFile opts msg
             Right ast -> writeM1Ir opts trace ast
 
