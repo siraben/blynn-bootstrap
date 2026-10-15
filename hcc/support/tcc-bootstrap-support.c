@@ -428,6 +428,90 @@ void qsort(void* base, size_t count, size_t size, int (*compar)(const void*, con
     }
 }
 
+/* FILEs in this bootstrap ABI are descriptor numbers, not libc FILE objects.
+ * Keep error indicators separately; never allocate while reporting an error.
+ * Closed slots are reused (the seed allocator's free is a no-op), so storage
+ * follows the peak number of open streams, not the number of fopen calls.
+ */
+struct hcc_stream_state {
+    int fd;
+    int error;
+    struct hcc_stream_state* next;
+};
+static struct hcc_stream_state* hcc_streams;
+static int hcc_standard_errors[3];
+
+static int* hcc_stream_error(int fd)
+{
+    struct hcc_stream_state* p = hcc_streams;
+    if (fd >= 0 && fd < 3) return &hcc_standard_errors[fd];
+    while (p) {
+        if (p->fd == fd) return &p->error;
+        p = p->next;
+    }
+    return 0;
+}
+
+static int hcc_stream_open(int fd)
+{
+    struct hcc_stream_state* p;
+    int* error = hcc_stream_error(fd);
+    if (error) {
+        *error = 0;
+        return 1;
+    }
+    p = hcc_streams;
+    while (p && p->fd != -1) p = p->next;
+    if (!p) {
+        p = malloc(sizeof(struct hcc_stream_state));
+        if (!p) return 0;
+        p->next = hcc_streams;
+        hcc_streams = p;
+    }
+    p->fd = fd;
+    p->error = 0;
+    return 1;
+}
+
+int ferror(void* stream)
+{
+    int* error = hcc_stream_error((int)(long)stream);
+    if (!error) return 1;
+    return *error;
+}
+
+void clearerr(void* stream)
+{
+    int* error = hcc_stream_error((int)(long)stream);
+    if (error) *error = 0;
+}
+
+/* Unbuffered output: retry positive short writes, but a failed or zero write
+ * must stop with a sticky error. Both raw negative Linux errno returns and
+ * libc-style -1 are failures; no errno convention is assumed here.
+ */
+static size_t hcc_stream_write(void* data, size_t count, void* stream)
+{
+    int fd = (int)(long)stream;
+    int* error = hcc_stream_error(fd);
+    char* p = data;
+    size_t done = 0;
+    size_t chunk;
+    int n;
+    if (!error) return 0;
+    while (done < count) {
+        chunk = count - done;
+        if (chunk > 0x7fffffff) chunk = 0x7fffffff;
+        n = write(fd, p + done, chunk);
+        if (n <= 0) {
+            *error = 1;
+            break;
+        }
+        done = done + n;
+    }
+    return done;
+}
+
 void* fopen(char* path, char* mode)
 {
     int flags = 0;
@@ -450,26 +534,38 @@ void* fopen(char* path, char* mode)
     fd = open(path, flags, 0600);
     while (fd >= 0 && fd < 3) fd = open(path, flags, 0600);
     if (fd < 0) return 0;
+    if (!hcc_stream_open(fd)) {
+        close(fd);
+        return 0;
+    }
     return (void*)(long)fd;
+}
+
+int fclose(void* stream)
+{
+    int fd = (int)(long)stream;
+    int result;
+    struct hcc_stream_state* p = hcc_streams;
+    if (fd < 3) return 0;
+    result = close(fd);
+    while (p) {
+        if (p->fd == fd) p->fd = -1;
+        p = p->next;
+    }
+    return result;
 }
 
 void* freopen(char* path, char* mode, void* stream)
 {
     void* next = fopen(path, mode);
     if (next && stream && stream != stdin && stream != stdout && stream != stderr)
-        close((int)(long)stream);
+        fclose(stream);
     return next;
-}
-
-int fclose(void* stream)
-{
-    int fd = (int)(long)stream;
-    if (fd < 3) return 0;
-    return close(fd);
 }
 
 int fflush(void* stream)
 {
+    /* No pending bytes: writes happen immediately. Do not clear sticky errors. */
     return 0;
 }
 
@@ -477,23 +573,26 @@ int fgetc(void* stream)
 {
     unsigned char c;
     int fd = (int)(long)stream;
-    if (read(fd, &c, 1) == 1) return c;
+    int* error = hcc_stream_error(fd);
+    int n;
+    if (!error) return -1;
+    n = read(fd, &c, 1);
+    if (n == 1) return c;
+    if (n < 0) *error = 1;
     return -1;
 }
 
 int fputc(int c, void* stream)
 {
     unsigned char ch = c;
-    int fd = (int)(long)stream;
-    if (write(fd, &ch, 1) == 1) return ch;
+    if (hcc_stream_write(&ch, 1, stream) == 1) return ch;
     return -1;
 }
 
 int fputs(char* text, void* stream)
 {
-    int fd = (int)(long)stream;
-    int n = strlen(text);
-    if (write(fd, text, n) < 0) return -1;
+    size_t n = strlen(text);
+    if (hcc_stream_write(text, n, stream) != n) return -1;
     return 0;
 }
 
@@ -501,20 +600,23 @@ size_t fread(void* data, size_t size, size_t count, void* stream)
 {
     int fd = (int)(long)stream;
     int bytes;
-    if (!size || !count) return 0;
+    int* error = hcc_stream_error(fd);
+    if (!size || !count || !error) return 0;
     bytes = read(fd, data, size * count);
+    if (bytes < 0) *error = 1;
     if (bytes <= 0) return 0;
     return bytes / size;
 }
 
 size_t fwrite(void* data, size_t size, size_t count, void* stream)
 {
-    int fd = (int)(long)stream;
-    int bytes;
-    if (!size || !count) return 0;
-    bytes = write(fd, data, size * count);
-    if (bytes <= 0) return 0;
-    return bytes / size;
+    int* error = hcc_stream_error((int)(long)stream);
+    if (!size || !count || !error) return 0;
+    if (count > ((size_t)-1) / size) {
+        *error = 1;
+        return 0;
+    }
+    return hcc_stream_write(data, size * count, stream) / size;
 }
 
 int fseek(void* stream, long offset, int whence)
@@ -572,6 +674,7 @@ int execvp(char* file, char** argv) { return -1; }
 void* fdopen(int fd, char* mode)
 {
     if (fd < 0) return 0;
+    if (!hcc_stream_open(fd)) return 0;
     return (void*)(long)fd;
 }
 char* getenv(char* name) { return 0; }
@@ -774,7 +877,7 @@ int fprintf(void* stream, char* fmt, long a, long b, long c)
 {
     char buffer[1024];
     int n = hcc_vformat(buffer, 1024, fmt, a, b, c);
-    fputs(buffer, stream);
+    if (fputs(buffer, stream) < 0) return -1;
     return n;
 }
 int printf(char* fmt, long a, long b, long c) { return fprintf(stdout, fmt, a, b, c); }
