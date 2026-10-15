@@ -9,23 +9,26 @@ import Literal (stringBytes)
 import Operators
 import ParseLite
 import ScopeMap
-import SymbolTable
 import TypesAst
 import TypesToken
 
 data ParseError = ParseError SrcPos String
 
-data ParserEnv = ParserEnv (ScopeMap CType) [(String, Int)] (SymbolMap Int)
+-- Typedefs, enumerators, objects and functions share C's ordinary namespace.
+-- Tags and members are deliberately not entered here.
+data ParserBinding = ParserType CType | ParserConstant Int | ParserOrdinary
+
+data ParserEnv = ParserEnv (ScopeMap ParserBinding) [(String, Int)]
 
 type Parser a = P ParserEnv Token ParseError a
 
 initialParserEnv :: ParserEnv
-initialParserEnv = ParserEnv (builtinTypeEnv builtinTypeAliases) [] symbolMapEmpty
+initialParserEnv = ParserEnv (builtinTypeEnv builtinTypeAliases) []
 
-builtinTypeEnv :: [(String, CType)] -> ScopeMap CType
+builtinTypeEnv :: [(String, CType)] -> ScopeMap ParserBinding
 builtinTypeEnv aliases = case aliases of
   [] -> scopeMapEmpty
-  (name, ty):rest -> scopeMapInsert name ty (builtinTypeEnv rest)
+  (name, ty):rest -> scopeMapInsert name (ParserType ty) (builtinTypeEnv rest)
 
 builtinTypeAliases :: [(String, CType)]
 builtinTypeAliases =
@@ -54,42 +57,52 @@ lookupParserType :: String -> Parser (Maybe CType)
 lookupParserType name = do
   env <- pEnv
   pure (case env of
-    ParserEnv types _ _ -> scopeMapLookup name types)
+    ParserEnv bindings _ -> case scopeMapLookup name bindings of
+      Just (ParserType ty) -> Just ty
+      _ -> Nothing)
 
 bindParserType :: String -> CType -> Parser ()
-bindParserType name ty = do
+bindParserType name ty = bindParserName name (ParserType ty)
+
+bindParserOrdinary :: String -> Parser ()
+bindParserOrdinary name = bindParserName name ParserOrdinary
+
+bindParserName :: String -> ParserBinding -> Parser ()
+bindParserName name binding = when (name /= "") (do
   env <- pEnv
   case env of
-    ParserEnv types constants constantMap ->
-      pSetEnv (ParserEnv (scopeMapInsert name ty types) constants constantMap)
+    ParserEnv bindings constants ->
+      let remaining = case scopeMapLookup name bindings of
+            Just (ParserConstant _) -> filter (\(key, _) -> key /= name) constants
+            _ -> constants
+          constants' = case binding of
+            ParserConstant value -> (name, value):remaining
+            _ -> remaining
+      in pSetEnv (ParserEnv (scopeMapInsert name binding bindings) constants'))
 
 lookupParserConstant :: String -> Parser (Maybe Int)
 lookupParserConstant name = do
   env <- pEnv
   pure (case env of
-    ParserEnv _ _ constantMap -> symbolMapLookup name constantMap)
+    ParserEnv bindings _ -> case scopeMapLookup name bindings of
+      Just (ParserConstant value) -> Just value
+      _ -> Nothing)
 
 bindParserConstant :: String -> Int -> Parser ()
-bindParserConstant name value = do
-  env <- pEnv
-  case env of
-    ParserEnv types constants constantMap ->
-      pSetEnv (ParserEnv types ((name, value):constants) (symbolMapInsert name value constantMap))
+bindParserConstant name value = bindParserName name (ParserConstant value)
 
 parserConstants :: Parser [(String, Int)]
 parserConstants = do
   env <- pEnv
   pure (case env of
-    ParserEnv _ constants _ -> constants)
+    ParserEnv _ constants -> constants)
 
 enterParserScope :: ParserEnv -> ParserEnv
 enterParserScope env = case env of
-  ParserEnv types constants constantMap -> ParserEnv (scopeMapEnter types) constants constantMap
+  ParserEnv bindings constants -> ParserEnv (scopeMapEnter bindings) constants
 
 leaveParserScope :: ParserEnv -> ParserEnv -> ParserEnv
-leaveParserScope outer inner = case outer of
-  ParserEnv _ outerConstants outerConstantMap -> case inner of
-    ParserEnv innerTypes _ _ -> ParserEnv (scopeMapLeave innerTypes) outerConstants outerConstantMap
+leaveParserScope outer _inner = outer
 
 withParserScope :: Parser a -> Parser a
 withParserScope = pLocalEnv enterParserScope leaveParserScope
@@ -198,13 +211,20 @@ topDeclNoStruct = do
       (ty, name) <- declarator ty0
       ifM (eatPunct "(")
         (do
-          params <- parameters
-          skipAttributes
-          isPrototype <- eatPunct ";"
-          if isPrototype
-            then pure (Prototype ty name params)
-            else Function ty name params <$> compound)
+          decl <- withParserScope (do
+            params <- parametersInScope
+            skipAttributes
+            -- Do not overwrite a parameter-scope enumerator with the function
+            -- name. Recursive references already parse as EVar; the function's
+            -- file-scope binding is installed after leaving parameter scope.
+            isPrototype <- eatPunct ";"
+            if isPrototype
+              then pure (Prototype ty name params)
+              else Function ty name params <$> compound)
+          bindParserOrdinary name
+          pure decl)
         (do
+          bindParserOrdinary name
           initExpr <- optionalP (eatPunct "=" >> initializerExpr)
           rest <- declarationItemsTail ty0
           pure (globalDecl isExtern ((ty, name, initExpr):rest)))
@@ -234,7 +254,6 @@ typedefDecl = do
   ty0 <- ctype
   first <- typedefItem ty0
   rest <- typedefItemsTail ty0
-  mapM_ bindTypedef (first:rest)
   pure (TypeDecl (map typedefType (first:rest)))
   where
     typedefType item = case item of
@@ -245,6 +264,7 @@ typedefItem ty0 = do
   (ty, name) <- declarator ty0
   ty' <- optionalFunctionSuffix ty
   skipAttributes
+  bindTypedef (name, ty')
   pure (name, ty')
 
 typedefItemsTail :: CType -> Parser [(String, CType)]
@@ -320,7 +340,12 @@ fieldDeclarator ty0 = do
       pure (Field ty' name)
 
 parameters :: Parser [Param]
-parameters = do
+parameters = withParserScope parametersInScope
+
+-- A definition keeps this scope through its body; other function declarators
+-- discard prototype-scope names at the end of the parameter list.
+parametersInScope :: Parser [Param]
+parametersInScope = do
   done <- eatPunct ")"
   if done
     then pure []
@@ -360,6 +385,7 @@ parameter :: Parser Param
 parameter = do
   ty0 <- ctype
   (ty, name) <- parameterDeclarator ty0
+  bindParserOrdinary name
   pure (Param ty name)
 
 parameterDeclarator :: CType -> Parser (CType, String)
@@ -440,40 +466,40 @@ parseReturn = do
       pure (SReturn (Just e))
 
 parseIf :: Parser Stmt
-parseIf = do
+parseIf = withParserScope (do
   needPunct "("
   cond <- expr
   needPunct ")"
   yes <- stmtAsBlock
   hasElse <- eatIdent "else"
   no <- if hasElse then stmtAsBlock else pure []
-  pure (SIf cond yes no)
+  pure (SIf cond yes no))
 
 parseWhile :: Parser Stmt
-parseWhile = do
+parseWhile = withParserScope (do
   needPunct "("
   cond <- expr
   needPunct ")"
-  SWhile cond <$> stmtAsBlock
+  SWhile cond <$> stmtAsBlock)
 
 parseDoWhile :: Parser Stmt
-parseDoWhile = do
+parseDoWhile = withParserScope (do
   body <- stmtAsBlock
   needIdentValue "while"
   needPunct "("
   cond <- expr
   needPunct ")"
   needPunct ";"
-  pure (SDoWhile body cond)
+  pure (SDoWhile body cond))
 
 parseFor :: Parser Stmt
-parseFor = do
+parseFor = withParserScope (do
   needPunct "("
   initClause <- forInit
   cond <- optionalExprUntil ";"
   stepExpr <- optionalExprUntil ")"
   body <- stmtAsBlock
-  pure (SFor initClause cond stepExpr body)
+  pure (SFor initClause cond stepExpr body))
 
 forInit :: Parser ForInit
 forInit = do
@@ -495,11 +521,11 @@ forInit = do
           pure (ForExpr initExpr)
 
 parseSwitch :: Parser Stmt
-parseSwitch = do
+parseSwitch = withParserScope (do
   needPunct "("
   value <- expr
   needPunct ")"
-  SSwitch value <$> stmtAsBlock
+  SSwitch value <$> stmtAsBlock)
 
 parseCase :: Parser Stmt
 parseCase = do
@@ -518,7 +544,7 @@ optionalExprUntil punct = do
       pure (Just e)
 
 stmtAsBlock :: Parser [Stmt]
-stmtAsBlock = do
+stmtAsBlock = withParserScope (do
   tok <- peek
   case tokenKind tok of
     TokPunct "{" -> (:[]) . SBlock <$> compound
@@ -528,7 +554,7 @@ stmtAsBlock = do
         SLabel _ -> do
           body <- stmt
           pure [first, body]
-        _ -> pure [first]
+        _ -> pure [first])
 
 parseDeclStmt :: Parser Stmt
 parseDeclStmt = do
@@ -548,10 +574,11 @@ parseDeclStmt = do
 localPrototype :: CType -> Parser ()
 localPrototype ty0 = do
   _ty <- pointerStars ty0
-  _name <- needIdent
+  name <- needIdent
   needPunct "("
-  skipBalanced "(" ")"
+  _params <- parameters
   skipAttributes
+  bindParserOrdinary name
   needPunct ";"
 
 declStmt :: [(CType, String, Maybe Expr)] -> Stmt
@@ -563,6 +590,7 @@ declarationItem :: CType -> Parser (CType, String, Maybe Expr)
 declarationItem ty0 = do
   (ty, name) <- declarator ty0
   skipAttributes
+  bindParserOrdinary name
   initExpr <- optionalP (eatPunct "=" >> initializerExpr)
   pure (ty, name, initExpr)
 
@@ -1117,24 +1145,14 @@ tokenStartsTypeInEnv env tok = case tokenKind tok of
 identifierStartsDeclaration :: Parser Bool
 identifierStartsDeclaration = pRaw $ \env toks -> Unconsumed (Ok (go env toks) env toks) where
   go env toks = case toks of
-    Token _ (TokIdent name):rest
+    Token _ (TokIdent name):_
       | startsTypeName name -> True
-      | parserEnvHasType name env -> typedefDeclaratorFollows rest
+      | parserEnvHasType name env -> True
       | otherwise -> False
     _ -> False
 
   startsTypeName name =
     name `elem` (builtinTypeNames ++ storageAndTypeQualifiers ++ ["typedef"])
-
-  typedefDeclaratorFollows toks = case dropLeadingQualifiers toks of
-    Token _ (TokPunct "*"):_ -> True
-    Token _ (TokIdent _):_ -> True
-    _ -> False
-
-  dropLeadingQualifiers toks = case toks of
-    Token _ (TokIdent name):rest | name `elem` storageAndTypeQualifiers ->
-      dropLeadingQualifiers rest
-    _ -> toks
 
 isKnownTypeNameP :: String -> Parser Bool
 isKnownTypeNameP name = do
@@ -1145,9 +1163,9 @@ isKnownTypeNameP name = do
 
 parserEnvHasType :: String -> ParserEnv -> Bool
 parserEnvHasType name env = case env of
-  ParserEnv types _ _ -> case scopeMapLookup name types of
-    Just _ -> True
-    Nothing -> False
+  ParserEnv bindings _ -> case scopeMapLookup name bindings of
+    Just (ParserType _) -> True
+    _ -> False
 
 skipBalanced :: String -> String -> Parser ()
 skipBalanced open close = go (1 :: Int) where
