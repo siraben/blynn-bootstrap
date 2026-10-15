@@ -1152,7 +1152,7 @@
               cp collision.hccir original-source
               if strace -e trace=getcwd -e inject=getcwd:error=ENOENT:when=1 \
                 "$compiler" --m1-ir "$PWD/collision.hccir" 2> fault.log; then
-                echo 'compiler ignored getcwd failure' >&2
+                echo "compiler ignored getcwd failure: $compiler" >&2
                 exit 1
               fi
               grep -q 'hcc: cannot determine working directory' fault.log
