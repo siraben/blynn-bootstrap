@@ -152,4 +152,18 @@ for pp_target in amd64 i386 aarch64 riscv64; do
     exit 1
   fi
   pp_contract_contains 'array size exceeds supported layout range' constants-bad-size.err
+  # Zero serialization is not general integer/FP conversion or FP folding.
+  for pp_source in 'double constants_fp = 1;' 'float constants_fp = -1;' \
+    'double constants_fp = (double)0;' 'int constants_fp = (int)3.0;'; do
+    printf '%s\n' "$pp_source" > constants-unsupported-fp.c
+    if "$HCC1" --target "$pp_target" -o constants-unsupported-fp.hccir constants-unsupported-fp.c 2> constants-unsupported-fp.err; then
+      echo "unsupported floating conversion accepted: $pp_source ($pp_target)" >&2
+      exit 1
+    fi
+    pp_diagnostic='unsupported non-integer constant conversion'
+    if test "$pp_source" = 'int constants_fp = (int)3.0;'; then
+      pp_diagnostic='unsupported constant expression: EFloat'
+    fi
+    pp_contract_contains "$pp_diagnostic" constants-unsupported-fp.err
+  done
 done
