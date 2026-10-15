@@ -1239,7 +1239,7 @@ scaledIndex index size =
 
 exprType :: Expr -> CompileM (Maybe CType)
 exprType expr = case expr of
-  EInt _ -> pure (Just CInt)
+  EInt text -> Just <$> integerLiteralType text
   EFloat text -> pure (Just (floatLiteralType text))
   EChar _ -> pure (Just CInt)
   EString _ -> pure (Just (CPtr CChar))
@@ -1652,10 +1652,18 @@ correspondingUnsigned ty = case ty of
   CLongLong -> CUnsignedLongLong
   _ -> ty
 
+integerLiteralType :: String -> CompileM CType
+integerLiteralType text = do
+  word <- targetWordSize
+  case constantLiteralRankedChecked word False text of
+    Left msg -> throwC msg
+    Right (rank, Constant _ unsigned _) -> pure (case rank of
+      1 -> if unsigned then CUnsigned else CInt
+      2 -> if unsigned then CUnsignedLong else CLong
+      _ -> if unsigned then CUnsignedLongLong else CLongLong)
+
 promotedExprType :: Expr -> CompileM CType
 promotedExprType expr = case expr of
-  EInt text ->
-    if intLiteralIsUnsigned text then pure CUnsigned else pure CInt
   EFloat text ->
     pure (floatLiteralType text)
   _ -> do
