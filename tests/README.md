@@ -11,7 +11,8 @@ nix build .#tinycc.m2.precisely.m2
   shell regression tests for explicit toolchain/source selection and
   mandatory seed-answer checks. The shell tests use fixtures, not real
   seed builds; they also check missing answers, corrupted output, a missing
-  hasher, and invalid local source overrides.
+  hasher, and invalid local source overrides. On Linux, `hcc-output-errors`
+  also checks real native/M2 compiler writes against `/dev/full`.
 - `tests.smoke.m1` compiles and executes C fixtures with M2-built HCC.
   Architecture-suffixed targets cover i386, AArch64, and RISC-V; cross-target
   execution uses QEMU. `tests.mescc` runs the selected MesCC scaffold cases.
@@ -22,7 +23,8 @@ nix build .#tinycc.m2.precisely.m2
   M2-built HCC, checks stage2/stage3 equality, and runs its compiled output.
 - `tinycc.m2.precisely.m2` checks complete TinyCC stage2/stage3 binary
   equality, actual version output, and programs compiled by the rebuilt
-  compiler. This covers self-compilation, not full C conformance.
+  compiler. The amd64 final-library check also exercises large floating
+  literals and unsigned conversions. These checks do not prove full C conformance.
 
 For faster development, use `tests.host.ghc.native.smoke.m1`,
 `tests.host.ghc.native.mescc`, and `tests.precisely.dialect`.
