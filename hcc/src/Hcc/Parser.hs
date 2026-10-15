@@ -219,8 +219,10 @@ topDeclNoStruct = do
             -- file-scope binding is installed after leaving parameter scope.
             isPrototype <- eatPunct ";"
             if isPrototype
-              then pure (Prototype ty name params)
-              else Function ty name params <$> compound)
+              then pure (Prototype ty name (adjustParameters params))
+              else do
+                mapM_ checkDefinitionParameter params
+                Function ty name (adjustParameters params) <$> compound)
           bindParserOrdinary name
           pure decl)
         (do
@@ -340,7 +342,7 @@ fieldDeclarator ty0 = do
       pure (Field ty' name)
 
 parameters :: Parser [Param]
-parameters = withParserScope parametersInScope
+parameters = adjustParameters <$> withParserScope parametersInScope
 
 -- A definition keeps this scope through its body; other function declarators
 -- discard prototype-scope names at the end of the parameter list.
@@ -405,8 +407,91 @@ parameterDeclarator ty0 = do
       fnTail <- eatPunct "("
       fnParams <- if fnTail then parameters else pure []
       let tyWithFunction = if fnTail then CPtr (CFunc ty (paramTypes fnParams)) else ty
-      ty' <- arraySuffixes tyWithFunction
+      ty' <- parameterArraySuffix tyWithFunction
       pure (ty', name)
+
+-- Only the outermost array derivation of a parameter may have qualifiers or
+-- static. Parse the whole bound before binding its name, just like an ordinary
+-- declarator. Qualifiers are erased as elsewhere in this parser.
+parameterArraySuffix :: CType -> Parser CType
+parameterArraySuffix ty = do
+  open <- eatPunct "["
+  if not open
+    then pure ty
+    else do
+      staticFirst <- eatIdent "static"
+      skipParameterArrayQualifiers
+      isStatic <- if staticFirst then pure True else eatIdent "static"
+      tok <- peek
+      case tokenKind tok of
+        TokIdent name | name `elem` ["static", "const", "volatile", "restrict"] ->
+          failAt tok "expected array parameter bound"
+        _ -> pure ()
+      bound <- if isStatic then Just <$> assignExpr else optionalP assignExpr
+      needPunct "]"
+      inner <- parameterArrayInner ty
+      pure (CArray inner bound)
+
+skipParameterArrayQualifiers :: Parser ()
+skipParameterArrayQualifiers = do
+  mtok <- peekMaybe
+  case fmap tokenKind mtok of
+    Just (TokIdent name) | name `elem` ["const", "volatile", "restrict"] ->
+      advanceToken >> skipParameterArrayQualifiers
+    _ -> pure ()
+
+parameterArrayInner :: CType -> Parser CType
+parameterArrayInner ty = do
+  open <- eatPunct "["
+  if not open
+    then pure ty
+    else do
+      tok <- peek
+      case tokenKind tok of
+        TokIdent name | name `elem` ["static", "const", "volatile", "restrict"] ->
+          failAt tok "array parameter modifiers require the outermost dimension"
+        _ -> pure ()
+      bound <- optionalP assignExpr
+      needPunct "]"
+      inner <- parameterArrayInner ty
+      pure (CArray inner bound)
+
+-- Keep bounds until we know whether this is a prototype or definition. Only
+-- the outermost array is adjusted; inner dimensions remain the pointed-to type.
+adjustParameters :: [Param] -> [Param]
+adjustParameters = map (\(Param ty name) -> Param (adjustParameterType ty) name)
+
+adjustParameterType :: CType -> CType
+adjustParameterType ty = case ty of
+  CArray inner _ -> CPtr inner
+  CFunc _ _ -> CPtr ty
+  _ -> ty
+
+-- Dropping a prototype bound is harmless. A definition would have to execute
+-- side effects in a bound on entry; this parser/AST cannot represent that yet.
+checkDefinitionParameter :: Param -> Parser ()
+checkDefinitionParameter (Param ty _name) = checkBounds ty where
+  checkBounds arrayTy = case arrayTy of
+    CArray inner bound -> do
+      case bound of
+        Just value | not (simpleParameterBound value) ->
+          peek >>= \tok -> failAt tok "side-effecting or complex array parameter bounds are not supported in definitions"
+        _ -> pure ()
+      checkBounds inner
+    _ -> pure ()
+
+simpleParameterBound :: Expr -> Bool
+simpleParameterBound value = case value of
+  EInt _ -> True
+  EChar _ -> True
+  EVar _ -> True
+  ESizeofType _ -> True
+  ESizeofExpr _ -> True
+  ECast _ e -> simpleParameterBound e
+  EUnary op e -> op `elem` ["+", "-", "!", "~"] && simpleParameterBound e
+  EBinary _ a b -> simpleParameterBound a && simpleParameterBound b
+  ECond a b c -> simpleParameterBound a && simpleParameterBound b && simpleParameterBound c
+  _ -> False
 
 compound :: Parser [Stmt]
 compound = needPunct "{" >> withParserScope (manyUntil (eatPunct "}") stmt)
@@ -878,6 +963,11 @@ arraySuffixes ty = do
   open <- eatPunct "["
   if open
     then do
+      tok <- peek
+      case tokenKind tok of
+        TokIdent name | name `elem` ["static", "const", "volatile", "restrict"] ->
+          failAt tok "array modifiers require a parameter declarator"
+        _ -> pure ()
       boundExpr <- optionalP expr
       needPunct "]"
       arraySuffixes (CArray ty boundExpr)

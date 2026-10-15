@@ -15,6 +15,19 @@ int parser_scope_parameters(int T, int x) {
 
 int parser_scope_function(void) { return 11; }
 
+int parser_scope_pointer(int *a) { return a[0]; }
+
+/* Array parameters adjust to pointers, with or without static/qualifiers. */
+int parser_scope_arrays(int T[static const 1], int x[volatile restrict static 1]) {
+    if (sizeof(T) != sizeof(int *) || sizeof(x) != sizeof(int *)) return -1;
+    return T[0] + x[0];
+}
+
+int parser_scope_plain_array(int a[1]) {
+    if (sizeof(a) != sizeof(int *)) return -1;
+    return a[0];
+}
+
 int parser_scope_nested(int (*callback)(int T, int x), T value) {
     return sizeof(value) != sizeof(char);
 }
@@ -31,6 +44,18 @@ int main(void) {
     if (parser_scope_nested(0, 7)) return 17;
     if (parser_scope_same(0) != 4) return 18;
     if (sizeof(T) != sizeof(char) || x != 3) return 2;
+    {
+        /* Block prototypes still parse their parameters, rather than skipping
+           them, and do not leak the names T and x into the surrounding scope. */
+        int parser_scope_pointer(int T[static 1]);
+        int parser_scope_arrays(int T[const static 1], int x[static volatile restrict 1]);
+        int parser_scope_plain_array(int T[const]);
+        int a[1] = {4}, b[1] = {5};
+        if (parser_scope_pointer(a) != 4) return 22;
+        if (parser_scope_arrays(a, b) != 9) return 23;
+        if (parser_scope_plain_array(b) != 5) return 24;
+        if (sizeof(T) != sizeof(char) || x != 3) return 25;
+    }
     {
         /* Binding begins after the declarator, before its initializer. */
         int T = sizeof(T), next = sizeof(T);
