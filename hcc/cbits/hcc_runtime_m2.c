@@ -382,9 +382,10 @@ void hcc_close(int handle)
 
 int hcc_getcwd(void)
 {
-  /* Pinned M2libc getcwd uses the kernel syscall; no host canonicalizer. */
+  /* The pinned getcwd wrapper misses negative syscall errors. Check the
+     signed raw result so failure cannot expose stale result-buffer bytes. */
   ensure_chars(&result, &result_cap, 4096);
-  if (!getcwd(result, result_cap)) return 0;
+  if (_getcwd(result, result_cap) <= 0) return 0;
   result_len = strlen(result);
   return 1;
 }
