@@ -10,6 +10,11 @@ hcc1 --m1-ir -o input.hccir input.i
 hcc-m1 input.hccir out.M1
 ```
 
+Without `-o`, `hcc1` writes in the current directory, replacing only the input
+filename's final extension with `.hccir` (for example, `src.v1/foo.bar.i` becomes
+`foo.bar.hccir`). Extensionless names and leading-dot-only names retain their
+whole stem. Explicit `-o` paths retain the requested directory.
+
 `hcpp` expands includes and macros. `hcc1` parses and lowers preprocessed C;
 `--check` stops after frontend checks. `hcc-m1` emits target assembly for
 stage0's `M1` and `hex2`, not a host assembler. Target support covers amd64,
