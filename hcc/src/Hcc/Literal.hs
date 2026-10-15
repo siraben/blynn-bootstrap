@@ -20,8 +20,8 @@ module Literal
   , hexDigit
   , boolToInt
   , Constant(..)
-  , constantLiteralTarget
   , constantLiteralChecked
+  , constantLiteralRankedChecked
   , constantConvert
   , constantPromote
   , constantToIntChecked
@@ -284,29 +284,35 @@ stripTrailingQuote text = reverse (stripLeadingQuote (reverse text))
 -- preprocessing treats all integer types as intmax_t/uintmax_t (64).
 data Constant = Constant Int Bool [Int]
 
--- longSize is the target's sizeof(long), not the compiler host's word size.
-constantLiteralTarget :: Int -> Bool -> String -> Constant
-constantLiteralTarget longSize preprocessing text =
+-- Rank (int=1, long=2, long long=3) matters even when two types have the
+-- same width. Share candidate selection between byte folding and runtime
+-- type inference rather than recovering a type from width or suffix alone.
+constantLiteralRanked :: Int -> Bool -> String -> (Int, Constant)
+constantLiteralRanked longSize preprocessing text =
   let bytes = naturalLiteralBytes (stripIntSuffix text)
       unsigned = intLiteralIsUnsigned text
       longs = length (filter (`elem` "lL") text)
       nonDecimal = case text of { '0':_:_ -> True; _ -> False }
-      sizes = if preprocessing then [8] else if longs >= 2 then [8]
-              else if longs == 1 then [longSize, 8] else [4, longSize, 8]
-      candidates = concatMap (\size -> if unsigned then [(size, True)]
-                               else if nonDecimal then [(size, False), (size, True)]
-                               else [(size, False)]) sizes
+      sizes = if preprocessing then [(3, 8)] else if longs >= 2 then [(3, 8)]
+              else if longs == 1 then [(2, longSize), (3, 8)] else [(1, 4), (2, longSize), (3, 8)]
+      candidates = concatMap (\(rank, size) -> if unsigned then [(rank, size, True)]
+                               else if nonDecimal then [(rank, size, False), (rank, size, True)]
+                               else [(rank, size, False)]) sizes
       choose remaining = case remaining of
-        [] -> Constant 8 True bytes
-        (size, u):rest ->
+        [] -> (3, Constant 8 True bytes)
+        (rank, size, u):rest ->
           let limit = replicate (size - 1) 255 ++ [if u then 255 else 127] ++ replicate (8 - size) 0
-          in if constWordCompare bytes limit <= 0 then Constant size u (take size bytes) else choose rest
+          in if constWordCompare bytes limit <= 0 then (rank, Constant size u (take size bytes)) else choose rest
   in choose candidates
 
 -- Check before the legacy byte reader's eight-byte truncation. An invalid
 -- literal must not turn into a small (apparently valid) array extent.
 constantLiteralChecked :: Int -> Bool -> String -> Either String Constant
 constantLiteralChecked longSize preprocessing text =
+  fmap snd (constantLiteralRankedChecked longSize preprocessing text)
+
+constantLiteralRankedChecked :: Int -> Bool -> String -> Either String (Int, Constant)
+constantLiteralRankedChecked longSize preprocessing text =
   let clean = stripIntSuffix text
       (base, digits) = case clean of
         '0':'x':rest -> (16, rest)
@@ -319,7 +325,7 @@ constantLiteralChecked longSize preprocessing text =
           let next = byteWordAddSmallCarry (digitValue c) (byteWordMulSmall base bytes)
           in last next == 0 && fits next rest
   in if fits (replicate 9 0) digits
-     then Right (constantLiteralTarget longSize preprocessing text)
+     then Right (constantLiteralRanked longSize preprocessing text)
      else Left "integer literal exceeds supported 64-bit range"
 
 constantConvert :: Int -> Bool -> Constant -> Constant
