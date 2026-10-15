@@ -217,6 +217,27 @@ EOF
     ./smoke || status=$?
     [ "$status" -eq 31 ] || die "rebuilt TinyCC produced a failing executable: $status"
 
+    # Use the self-rebuilt compiler and actual final libc/libtcc1, not stage1's
+    # deliberately restricted floating support or a host-built replacement.
+    # Keep this compact gate self-contained: Nix may invoke this script as a
+    # single store file rather than from a checkout. The Nix final-library
+    # gate additionally checks direct strtod word boundaries and huge exponents.
+    cat > runtime-magnitude.c <<'EOF'
+union bits { double d; unsigned long u; };
+double large = 18446744073709551616.0;
+int main(void) {
+  volatile unsigned long long high = 9223372036854775808ULL;
+  union bits value;
+  value.d = large;
+  if (value.u != 0x43f0000000000000UL) return 1;
+  value.d = (double)high;
+  return value.u != 0x43e0000000000000UL;
+}
+EOF
+    ./tcc-stage3 -B final-libs -I include -I "$mes_libc/include" \
+      runtime-magnitude.c -o runtime-magnitude
+    ./runtime-magnitude || die "final-library magnitude regression"
+
     cp tcc-stage2 "$bin_dir/tcc-stage2"
     cp tcc-stage3 "$bin_dir/tcc"
     cp final-libs/crt1.o final-libs/crti.o final-libs/crtn.o "$lib_dir/"

@@ -5,7 +5,9 @@
  * returns truncated values, the self-rebuilt TinyCC can preserve those bad
  * constants and later miscompile musl.  The implementation here is deliberately
  * small and covers the integer-valued decimal and hexadecimal literals needed
- * on that path, including mantissas wider than 32 bits.
+ * on that path, including mantissas wider than 32 bits.  This bootstrap subset
+ * assumes 64-bit unsigned long and IEEE-754 binary64 double (LP64 targets).
+ * It is not a correctly-rounded, general ISO strtod (notably subnormals).
  */
 
 union hcc_strtod_double_bits
@@ -36,7 +38,8 @@ hcc_strtod_double_from_scaled_uint64 (unsigned long mantissa, int exp2)
     return hcc_strtod_double_from_bits (0);
   while (mantissa >= overflow)
     {
-      mantissa = (mantissa + 1) >> 1;
+      /* Round without wrapping when mantissa is ULONG_MAX. */
+      mantissa = (mantissa >> 1) + (mantissa & 1);
       exp2 = exp2 + 1;
     }
   while (mantissa < hidden)
@@ -81,6 +84,8 @@ abtod (char const **p, int base)
 {
   char const *s = *p;
   unsigned long integer = 0;
+  unsigned long addend;
+  int exp2 = 0;
   double out;
   int sign = 1;
   int digit;
@@ -97,11 +102,26 @@ abtod (char const **p, int base)
 
   while ((digit = hcc_strtod_digit_value (*s)) < base)
     {
-      integer = integer * (unsigned long) base + (unsigned long) digit;
+      /* Keep a scaled integer significand.  Reduce BEFORE multiplying, not
+         after unsigned overflow has already destroyed the magnitude.  The
+         low discarded bits are outside binary64 precision; exact rounding
+         of arbitrary decimal strings is outside this bootstrap subset. */
+      while (integer > (0xffffffffffffffffUL - (unsigned long) digit)
+                       / (unsigned long) base)
+        {
+          integer = integer >> 1;
+          /* Saturation still consumes all digits and yields infinity. */
+          if (exp2 < 4096)
+            exp2++;
+        }
+      addend = 0;
+      if (exp2 < 64)
+        addend = ((unsigned long) digit) >> exp2;
+      integer = integer * (unsigned long) base + addend;
       s++;
     }
 
-  out = hcc_strtod_double_from_scaled_uint64 (integer, 0);
+  out = hcc_strtod_double_from_scaled_uint64 (integer, exp2);
   if (*s == '.')
     {
       double scale = (double) base;
@@ -127,7 +147,13 @@ abtod (char const **p, int base)
         s++;
       while (*s >= '0' && *s <= '9')
         {
-          exp = exp * 10 + (*s - '0');
+          /* Bound both arithmetic and work for huge exponent strings. */
+          if (exp < 4096)
+            {
+              exp = exp * 10 + (*s - '0');
+              if (exp > 4096)
+                exp = 4096;
+            }
           s++;
         }
       while (exp > 0)
