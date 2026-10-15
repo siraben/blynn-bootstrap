@@ -919,8 +919,10 @@ lowerIncDec prefix op target = do
   step <- incDecStep target
   if prefix
     then do
-      writeInstrs <- writeLValue lvalue (OTemp out)
-      pure (lvInstrs ++ readInstrs ++ [IBin out op current (OImm step)] ++ writeInstrs, OTemp out)
+      ty <- lValueType lvalue
+      (coerceInstrs, coerceOp) <- coerceScalar ty (OTemp out)
+      writeInstrs <- writeLValue lvalue coerceOp
+      pure (lvInstrs ++ readInstrs ++ [IBin out op current (OImm step)] ++ coerceInstrs ++ writeInstrs, coerceOp)
     else do
       old <- freshTemp
       writeInstrs <- writeLValue lvalue (OTemp out)
