@@ -1,6 +1,11 @@
 module Preprocessor
   ( PreprocessError(..)
   , preprocess
+  , Macro
+  , defineMacro
+  , expandTokens
+  , evalEligibleIf
+  , elifEligible
   ) where
 
 import Base
@@ -56,7 +61,10 @@ preprocess toks = go symbolMapEmpty [] (sourceFromTokens toks) id where
         Just name -> go (symbolMapDelete name macros) frames xs acc
         Nothing -> Left (PreprocessError (spanStart sp) "#undef without macro name")
       else go macros frames xs acc
-    Directive "include" _ -> go macros frames xs acc
+    Directive "include" _ ->
+      if ifStackActive frames
+      then Left (PreprocessError (spanStart sp) "unresolved active #include")
+      else go macros frames xs acc
     Directive "ifdef" rest ->
       case directiveName rest of
         Just name -> go macros (startIf frames (symbolMapMember name macros)) xs acc
