@@ -497,6 +497,8 @@ lowerAggregateElementAggregateWrite addr fieldTy expr = case expr of
     pure (exprInstrs ++ copyInstrs)
 
 lowerAggregateElementScalarWrite :: Operand -> CType -> Expr -> CompileM [Instr]
+lowerAggregateElementScalarWrite addr fieldTy (EInitList [expr]) =
+  lowerAggregateElementScalarWrite addr fieldTy expr
 lowerAggregateElementScalarWrite addr fieldTy expr = do
   (exprInstrs, op) <- lowerExpr expr
   (coerceInstrs, coerceOp) <- coerceScalar fieldTy op
