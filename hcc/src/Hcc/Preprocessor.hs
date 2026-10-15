@@ -71,9 +71,9 @@ preprocess toks = go symbolMapEmpty [] (sourceFromTokens toks) id where
         Just name -> go macros (startIf frames (not (symbolMapMember name macros))) xs acc
         Nothing -> Left (PreprocessError (spanStart sp) "#ifndef without macro name")
     Directive "if" rest ->
-      evalIf macros rest >>= \cond -> go macros (startIf frames cond) xs acc
+      evalEligibleIf (ifStackActive frames) macros rest >>= \cond -> go macros (startIf frames cond) xs acc
     Directive "elif" rest ->
-      evalIf macros rest >>= \cond -> replaceElif sp frames cond >>= \frames' -> go macros frames' xs acc
+      evalEligibleIf (elifEligible frames) macros rest >>= \cond -> replaceElif sp frames cond >>= \frames' -> go macros frames' xs acc
     Directive "else" _ ->
       replaceElse sp frames >>= \frames' -> go macros frames' xs acc
     Directive "endif" _ ->
@@ -85,6 +85,17 @@ preprocess toks = go symbolMapEmpty [] (sourceFromTokens toks) id where
       if ifStackActive frames
       then Left (PreprocessError (spanStart sp) ("unsupported directive: #" ++ name))
       else go macros frames xs acc
+
+-- Ineligible groups still affect nesting, but their expressions are not parsed
+-- or macro-expanded (and may contain otherwise invalid expressions).
+elifEligible :: [IfFrame] -> Bool
+elifEligible frames = case frames of
+  [] -> False
+  frame:_ -> ifParent frame && not (ifTaken frame)
+
+evalEligibleIf :: Bool -> Macros -> String -> Either PreprocessError Bool
+evalEligibleIf eligible macros text =
+  if eligible then evalIf macros text else Right False
 
 dropInactiveToken :: [Chunk] -> [Chunk]
 dropInactiveToken toks = case toks of
