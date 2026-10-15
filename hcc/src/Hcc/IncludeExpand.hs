@@ -110,11 +110,8 @@ includeRequest macros text =
       toks <- case lexC text of
         Left (LexError pos msg) -> Left (PreprocessError pos msg)
         Right result -> Right result
-      expanded <- expandTokens macros toks
-      Right (stripIncludeDelims (concatMap includeTokenText expanded))
-
-includeTokenText :: Token -> String
-includeTokenText (Token _ kind) = tokenText kind
+      expanded <- expandOperandText macros toks
+      Right (stripIncludeDelims expanded)
 
 stripIncludeDelims :: String -> Maybe String
 stripIncludeDelims raw = case raw of
