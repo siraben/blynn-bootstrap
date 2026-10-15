@@ -25,7 +25,7 @@ data Macro
 
 data MacroArg = MacroArg
   { argRaw :: [PPToken]
-  , argExpanded :: Either PreprocessError [PPToken]
+  , argExpanded :: Either PreprocessError Expansion
   }
 
 type Macros = SymbolMap Macro
@@ -34,6 +34,14 @@ type MacroArgs = SymbolMap MacroArg
 -- Eligibility belongs to individual tokens, including tokens retained from an
 -- argument prescan. It must survive substitution and the subsequent rescan.
 data PPToken = PPToken [String] Bool Token
+
+-- Separation can outlive the last token (for example the empty x in `a x`).
+-- Keep it until a surviving rescan suffix can receive it.
+data Expansion = Expansion [PPToken] Bool
+
+-- Empty paste operands remain placemarkers until every ## has been handled.
+-- Removing them early can both lose separation and paste an unrelated token.
+data MacroPiece = TokenPiece PPToken | EmptyPiece Bool
 
 preprocess :: [Token] -> Either PreprocessError [Token]
 preprocess toks = go symbolMapEmpty [] (sourceFromTokens toks) id where
@@ -46,7 +54,7 @@ preprocess toks = go symbolMapEmpty [] (sourceFromTokens toks) id where
     _ ->
       if ifStackActive frames
       then do
-        (expanded, rest') <- expandNextSource macros rest
+        (expanded, rest', _) <- expandNextSource macros rest
         go macros frames rest' (acc . (expanded ++))
       else go macros frames (drop 1 rest) acc
 
@@ -182,36 +190,38 @@ lexReplacement sp text = case lexC ("__hcc_macro_dummy " ++ dropSpaces text) of
   Right (_:toks) -> Right toks
   Right [] -> Right []
 
-expandNextSource :: Macros -> [PPToken] -> Either PreprocessError ([PPToken], [PPToken])
+expandNextSource :: Macros -> [PPToken] -> Either PreprocessError ([PPToken], [PPToken], Bool)
 expandNextSource macros toks = case toks of
-  [] -> Right ([], [])
+  [] -> Right ([], [], False)
   original@(PPToken hidden space (Token sp (TokIdent name))):rest
     | not (name `elem` hidden), Just macro <- symbolMapLookup name macros ->
         case macro of
           ObjectMacro _ body ->
-            Right ([], rescanReplacement space (map (hideToken (name:hidden)) (sourceFromTokens body)) rest)
+            rescanReplacement space (Expansion (map (hideToken (name:hidden)) (sourceFromTokens body)) False) rest
           FunctionMacro _ params variadic body -> case rest of
             PPToken _ _ (Token _ (TokPunct "(")):afterOpen -> do
               (args, commas, closeHidden, rest') <- collectInvocationArgs sp afterOpen
               bound <- bindMacroArgs macros sp params variadic args commas
-              replaced <- substituteMacroBody sp bound (sourceFromTokens body)
+              Expansion replaced trailing <- substituteMacroBody sp bound (leadingSpace space (sourceFromTokens body))
               -- The closing parenthesis may come from a different expansion.
               -- Only names hidden at both ends constrain the replacement.
               let inherited = name : intersect hidden closeHidden
-              Right ([], rescanReplacement space (map (hideToken inherited) replaced) rest')
-            _ -> Right ([original], rest)
-  tok:rest -> Right ([tok], rest)
+              rescanReplacement space (Expansion (map (hideToken inherited) replaced) trailing) rest'
+            _ -> Right ([original], rest, False)
+  tok:rest -> Right ([tok], rest, False)
 
-expandSource :: Macros -> [PPToken] -> Either PreprocessError [PPToken]
-expandSource macros toks = go toks id where
-  go rest acc = case rest of
-    [] -> Right (acc [])
+expandSource :: Macros -> [PPToken] -> Either PreprocessError Expansion
+expandSource macros toks = go toks False id where
+  go rest trailing acc = case rest of
+    [] -> Right (Expansion (acc []) trailing)
     _ -> do
-      (expanded, rest') <- expandNextSource macros rest
-      go rest' (acc . (expanded ++))
+      (expanded, rest', trailing') <- expandNextSource macros rest
+      go rest' (trailing || trailing') (acc . (expanded ++))
 
 expandTokens :: Macros -> [Token] -> Either PreprocessError [Token]
-expandTokens macros toks = map plainToken <$> expandSource macros (sourceFromTokens toks)
+expandTokens macros toks = do
+  Expansion expanded _ <- expandSource macros (sourceFromTokens toks)
+  Right (map plainToken expanded)
 
 collectInvocationArgs :: Span -> [PPToken] -> Either PreprocessError ([[PPToken]], [PPToken], [String], [PPToken])
 collectInvocationArgs sp = go 1 [] [] [] where
@@ -248,7 +258,7 @@ bindMacroArgs macros sp params variadic args commas = do
       _ -> Left (PreprocessError (spanStart sp) "wrong number of macro arguments")
 
     -- Keep prescanning lazy: # and ## use only raw tokens.
-    makeArg raw = Right (MacroArg raw (expandSource macros raw))
+    makeArg raw = Right (MacroArg raw (expandSource macros (leadingSpace False raw)))
 
 joinVariadicArgs :: [[PPToken]] -> [PPToken] -> [PPToken]
 joinVariadicArgs args commas = case args of
@@ -257,45 +267,62 @@ joinVariadicArgs args commas = case args of
     comma:more -> comma : joinVariadicArgs rest more
     [] -> []
 
-substituteMacroBody :: Span -> MacroArgs -> [PPToken] -> Either PreprocessError [PPToken]
+substituteMacroBody :: Span -> MacroArgs -> [PPToken] -> Either PreprocessError Expansion
 substituteMacroBody _ args body = go body [] where
   go rest acc = case rest of
-    [] -> Right (reverse acc)
+    [] -> Right (removePlacemarkers (reverse acc))
     PPToken _ space (Token _ (TokPunct "#")):PPToken _ _ (Token argSp (TokIdent name)):xs
       | Just arg <- symbolMapLookup name args ->
-          go xs (PPToken [] space (Token argSp (TokString (stringifyTokens (argRaw arg)))) : acc)
+          go xs (TokenPiece (PPToken [] space (Token argSp (TokString (stringifyTokens (argRaw arg))))) : acc)
     PPToken _ _ (Token pasteSp (TokPunct "##")):xs ->
       case acc of
         [] -> pasteWithPrevious pasteSp [] xs acc
         previous:before -> pasteWithPrevious pasteSp [previous] xs before
     PPToken _ space (Token _ (TokIdent name)):PPToken _ _ (Token pasteSp (TokPunct "##")):xs
-      | Just arg <- symbolMapLookup name args -> pasteWithPrevious pasteSp (leadingSpace space (argRaw arg)) xs acc
+      | Just arg <- symbolMapLookup name args -> pasteWithPrevious pasteSp (substitutionPieces space (Expansion (argRaw arg) False)) xs acc
     PPToken _ space (Token _ (TokIdent name)):xs
       | Just arg <- symbolMapLookup name args -> do
           expanded <- argExpanded arg
-          if null expanded
-            then go (addLeadingSpace space xs) acc
-            else go xs (reverse (leadingSpace space expanded) ++ acc)
-    tok:xs -> go xs (tok:acc)
+          go xs (reverse (substitutionPieces space expanded) ++ acc)
+    tok:xs -> go xs (TokenPiece tok:acc)
 
   pasteWithPrevious pasteSp previous xs before = do
     (next, rest') <- nextPasteOperand xs
     case (previous, next) of
-      ([PPToken _ _ (Token _ (TokPunct ","))], []) -> go rest' before
-      ([comma@(PPToken _ _ (Token _ (TokPunct ",")))], _) -> go rest' (reverse next ++ comma:before)
+      ([TokenPiece (PPToken _ space (Token _ (TokPunct ",")))], [EmptyPiece _]) -> go rest' (EmptyPiece space:before)
+      ([comma@(TokenPiece (PPToken _ _ (Token _ (TokPunct ","))))], _) -> go rest' (reverse next ++ comma:before)
       (_, []) -> go rest' (reverse previous ++ before)
       ([], _) -> go rest' (reverse next ++ before)
       (_, n:ns) -> case reverse previous of
         prev:prefix -> do
-          pasted <- pasteTokens pasteSp prev n
+          pasted <- pastePieces pasteSp prev n
           go rest' (reverse ns ++ pasted:prefix ++ before)
         [] -> go rest' (reverse next ++ before)
 
   nextPasteOperand xs = case xs of
     PPToken _ space (Token _ (TokIdent name)):rest
-      | Just arg <- symbolMapLookup name args -> Right (leadingSpace space (argRaw arg), rest)
-    tok:rest -> Right ([tok], rest)
+      | Just arg <- symbolMapLookup name args -> Right (substitutionPieces space (Expansion (argRaw arg) False), rest)
+    tok:rest -> Right ([TokenPiece tok], rest)
     [] -> Right ([], [])
+
+substitutionPieces :: Bool -> Expansion -> [MacroPiece]
+substitutionPieces space (Expansion toks trailing) = case toks of
+  [] -> [EmptyPiece (space || trailing)]
+  _ -> map TokenPiece (leadingSpace space toks) ++ if trailing then [EmptyPiece True] else []
+
+pastePieces :: Span -> MacroPiece -> MacroPiece -> Either PreprocessError MacroPiece
+pastePieces sp left right = case (left, right) of
+  (EmptyPiece space, EmptyPiece _) -> Right (EmptyPiece space)
+  (EmptyPiece space, TokenPiece (PPToken hidden _ tok)) -> Right (TokenPiece (PPToken hidden space tok))
+  (TokenPiece _, EmptyPiece _) -> Right left
+  (TokenPiece a, TokenPiece b) -> TokenPiece <$> pasteTokens sp a b
+
+removePlacemarkers :: [MacroPiece] -> Expansion
+removePlacemarkers pieces = go False pieces id where
+  go pending rest acc = case rest of
+    [] -> Expansion (acc []) pending
+    EmptyPiece space:xs -> go (pending || space) xs acc
+    TokenPiece tok:xs -> go False xs (acc . (addLeadingSpace pending [tok] ++))
 
 pasteTokens :: Span -> PPToken -> PPToken -> Either PreprocessError PPToken
 pasteTokens sp (PPToken lh space left) (PPToken rh _ right) =
@@ -358,12 +385,14 @@ leadingSpace space toks = case toks of
   [] -> []
   PPToken hidden _ tok:rest -> PPToken hidden space tok : rest
 
--- Removing an empty replacement must not remove the whitespace before its
--- invocation. That separation becomes the leading whitespace of the suffix.
-rescanReplacement :: Bool -> [PPToken] -> [PPToken] -> [PPToken]
-rescanReplacement space replacement rest =
-  if null replacement then addLeadingSpace space rest
-  else leadingSpace space replacement ++ rest
+-- Transfer separation after the replacement to its suffix, or retain it if
+-- this is the end of an argument prescan. An empty invocation's own leading
+-- space also survives, without inserting space around nonempty replacements.
+rescanReplacement :: Bool -> Expansion -> [PPToken] -> Either PreprocessError ([PPToken], [PPToken], Bool)
+rescanReplacement space (Expansion replacement trailing) rest =
+  let pending = trailing || (null replacement && space)
+      source = leadingSpace space replacement ++ addLeadingSpace pending rest
+  in Right ([], source, pending && null rest)
 
 addLeadingSpace :: Bool -> [PPToken] -> [PPToken]
 addLeadingSpace space toks = case toks of
