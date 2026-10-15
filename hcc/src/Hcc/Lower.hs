@@ -749,8 +749,28 @@ lowerDirectCallExpr name args = do
 
 lowerCallArgs :: [Expr] -> CompileM ([Instr], [Operand])
 lowerCallArgs args = do
-  lowered <- mapM lowerExpr args
+  lowered <- mapM lowerCallArg args
   pure (concatMap fst lowered, map snd lowered)
+
+-- The internal convention passes aggregate addresses, not platform ABI
+-- aggregate registers/stack slots. Snapshot each struct/union argument as
+-- it is evaluated: the callee may mutate this copy, never the source object.
+-- Arrays still decay to pointers and must not be copied.
+lowerCallArg :: Expr -> CompileM ([Instr], Operand)
+lowerCallArg expr = do
+  (instrs, op) <- lowerExpr expr
+  mty <- exprType expr
+  case mty of
+    Nothing -> pure (instrs, op)
+    Just ty -> do
+      aggregate <- aggregateFields ty
+      case aggregate of
+        Nothing -> pure (instrs, op)
+        Just _ -> do
+          size <- typeSize ty
+          temp <- freshTemp
+          copies <- copyObject (OTemp temp) op ty
+          pure (instrs ++ [IAlloca temp size] ++ copies, OTemp temp)
 
 lowerIndirectCallInstrs :: Maybe Temp -> Expr -> [Expr] -> CompileM [Instr]
 lowerIndirectCallInstrs result callee args = do
