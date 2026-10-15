@@ -99,7 +99,8 @@ shiftLeftInt :: Int -> Int -> Int
 shiftLeftInt value amount = value * pow2 amount
 
 shiftRightInt :: Int -> Int -> Int
-shiftRightInt value amount = value `div` pow2 amount
+shiftRightInt value amount =
+  if amount <= 0 then value else shiftRightInt (value `div` 2) (amount - 1)
 
 intLiteralIsUnsigned :: String -> Bool
 intLiteralIsUnsigned text = case text of
