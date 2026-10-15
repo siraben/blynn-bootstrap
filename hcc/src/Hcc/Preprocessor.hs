@@ -322,8 +322,8 @@ evalIf macros text = do
     Right result -> Right result
   replaced <- replaceDefinedOperators macros toks
   expanded <- expandTokens macros replaced
-  case parseConstExpr [] expanded of
-    Right (value, []) -> Right (value /= 0)
+  case parsePPConstExpr expanded of
+    Right (value, []) -> Right value
     Right (_, tok:_) -> Left (PreprocessError (tokenStart tok) ("trailing tokens in #if expression near " ++ show (tokenText (tokenKind tok))))
     Left msg -> Left (PreprocessError (SrcPos 1 1) msg)
 

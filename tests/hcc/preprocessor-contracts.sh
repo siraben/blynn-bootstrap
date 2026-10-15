@@ -44,3 +44,9 @@ pp_contract_contains 'pp_variadic = "a ,b, c"' pp-contract-stringify.i
 pp_contract_contains 'pp_escape = "\"a\\\\b\""' pp-contract-stringify.i
 pp_contract_contains 'pp_splice = "a+b"' pp-contract-stringify.i
 "$HCC1" --check pp-contract-stringify.i
+
+"$HCPP" "$TESTS_DIR/pp-contract-arithmetic.c" > pp-contract-arithmetic.i
+pp_contract_contains 'int pp_contract_arithmetic ;' pp-contract-arithmetic.i
+"$HCC1" --check pp-contract-arithmetic.i
+"$HCC1" --m1-ir -o pp-contract-arithmetic.hccir pp-contract-arithmetic.i
+"$HCC_M1" pp-contract-arithmetic.hccir pp-contract-arithmetic.M1
