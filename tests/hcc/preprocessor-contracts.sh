@@ -48,6 +48,21 @@ pp_contract_contains 'pp_escape = "\"a\\\\b\""' pp-contract-stringify.i
 pp_contract_contains 'pp_splice = "a+b"' pp-contract-stringify.i
 "$HCC1" --check pp-contract-stringify.i
 
+"$HCPP" "$TESTS_DIR/pp-contract-trailing.c" > pp-contract-trailing.i
+pp_contract_contains 'pp_trailing = "a b"' pp-contract-trailing.i
+pp_contract_contains 'pp_trailing_macro = "a b"' pp-contract-trailing.i
+pp_contract_contains 'pp_trailing_nested = "a b"' pp-contract-trailing.i
+pp_contract_contains 'pp_trailing_adjacent = "a+b"' pp-contract-trailing.i
+pp_contract_contains 'pp_trailing_both = "a b"' pp-contract-trailing.i
+pp_contract_contains 'pp_trailing_left = "a bb"' pp-contract-trailing.i
+pp_contract_contains 'pp_trailing_chain = "a bb"' pp-contract-trailing.i
+pp_contract_contains 'pp_trailing_call = "b"' pp-contract-trailing.i
+pp_contract_contains 'pp_empty_adjacent = "z()b"' pp-contract-trailing.i
+pp_contract_contains 'pp_empty_prescan = "a+ b"' pp-contract-trailing.i
+pp_contract_contains 'pp_empty_leading = "a+b"' pp-contract-trailing.i
+"$HCC1" --m1-ir -o pp-contract-trailing.hccir pp-contract-trailing.i
+"$HCC_M1" pp-contract-trailing.hccir pp-contract-trailing.M1
+
 "$HCPP" "$TESTS_DIR/pp-contract-arithmetic.c" > pp-contract-arithmetic.i
 pp_contract_contains 'int pp_contract_arithmetic ;' pp-contract-arithmetic.i
 "$HCC1" --check pp-contract-arithmetic.i
