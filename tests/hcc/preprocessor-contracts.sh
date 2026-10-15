@@ -23,3 +23,13 @@ pp_contract_contains 'int A ;' pp-contract-macros.i
 pp_contract_contains 'SELF ( 1 )' pp-contract-macros.i
 pp_contract_contains '2 * 9 * g' pp-contract-macros.i
 pp_contract_contains 'one twothree four' pp-contract-macros.i
+
+"$HCPP" "$TESTS_DIR/pp-contract-include.c" > pp-contract-include.i
+pp_contract_contains 'int pp_contract_include ;' pp-contract-include.i
+pp_contract_contains 'int pp_contract_continued ;' pp-contract-include.i
+"$HCC1" --check pp-contract-include.i
+if "$HCPP" "$TESTS_DIR/pp-contract-bad-include.c" > pp-contract-bad-include.i 2> pp-contract-bad-include.err; then
+  echo 'invalid active include unexpectedly accepted' >&2
+  exit 1
+fi
+pp_contract_contains 'invalid active #include operand' pp-contract-bad-include.err
