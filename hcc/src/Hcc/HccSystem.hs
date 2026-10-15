@@ -8,6 +8,7 @@ module HccSystem
   , hccPutErrLine
   , hccReadFile
   , hccWithOpenWriteFile
+  , hccPathsLexicallyEqual
   , hccCanonicalizePath
   , hccDoesFileExist
   , hccFilterExisting
@@ -42,6 +43,7 @@ foreign import ccall "hcc_obuf_put8" hccObufPut8 :: Word -> Char -> Char -> Char
 foreign import ccall "hcc_obuf_write" hccObufWrite :: Int -> Word -> IO ()
 foreign import ccall "hcc_close" hccClose :: Int -> IO ()
 foreign import ccall "hcc_canonicalize" hccCanonicalizeRaw :: IO ()
+foreign import ccall "hcc_getcwd" hccGetCwdRaw :: IO Int
 foreign import ccall "hcc_does_file_exist" hccDoesFileExistRaw :: IO Int
 foreign import ccall "hcc_result_len" hccResultLen :: IO Int
 foreign import ccall "hcc_result_at" hccResultAt :: Int -> IO Char
@@ -86,6 +88,30 @@ hccWithOpenWriteFile path action = do
       result <- action handle
       hccClose handle
       pure (Just result)
+
+-- Detect ordinary path spelling collisions, not filesystem identity. In
+-- particular, do not collapse '..': crossing a symlink can change its meaning.
+-- The faithful libc has getcwd but no portable stat/realpath identity API.
+hccPathsLexicallyEqual :: String -> String -> IO Bool
+hccPathsLexicallyEqual left right = do
+  ok <- hccGetCwdRaw
+  case ok == 0 of
+    True -> hccPutErrLine "hcc: cannot determine working directory" >> hccExitFailure
+    False -> do
+      cwd <- readRuntimeResult
+      pure (pathParts (absolutePath cwd left) == pathParts (absolutePath cwd right))
+
+absolutePath :: String -> String -> String
+absolutePath cwd path = case path of
+  '/':_ -> path
+  _ -> hccPathJoin cwd path
+
+pathParts :: String -> [String]
+pathParts path = case dropWhile (== '/') path of
+  [] -> []
+  rest -> case break (== '/') rest of
+    (".", more) -> pathParts more
+    (name, more) -> name : pathParts more
 
 hccCanonicalizePath :: String -> IO String
 hccCanonicalizePath path = withBuffer path $ hccCanonicalizeRaw >> readRuntimeResult
