@@ -2050,17 +2050,24 @@ isAggregateTypeM ty = case ty of
   _ -> pure (isAggregateType ty)
 
 scalarData :: CType -> Int -> CompileM [DataValue]
-scalarData ty value = do
-  converted <- castConstant ty (constantInt 4 value)
-  case converted of
-    Constant _ _ bytes -> pure (map DByte bytes)
+scalarData ty value = constantData ty (constantInt 4 value)
 
 scalarConstantData :: CType -> Expr -> CompileM [DataValue]
 scalarConstantData ty expr = do
   value <- constExprTyped True expr
-  converted <- castConstant ty value
-  case converted of
-    Constant _ _ bytes -> pure (map DByte bytes)
+  constantData ty value
+
+-- Integer zero has a supported floating storage representation on our
+-- targets. Handle it only at serialization: floating intermediates are not
+-- integer Constants, and general floating conversions remain unsupported.
+constantData :: CType -> Constant -> CompileM [DataValue]
+constantData ty value =
+  if isFloatingType ty && not (constantTrue value)
+    then zeroDataForType ty
+    else do
+      converted <- castConstant ty value
+      case converted of
+        Constant _ _ bytes -> pure (map DByte bytes)
 
 castConstant :: CType -> Constant -> CompileM Constant
 castConstant ty value = case ty of
