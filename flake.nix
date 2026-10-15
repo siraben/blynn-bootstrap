@@ -1136,6 +1136,15 @@
             sh ${./tests/prepare-upstreams.sh} "$PWD"
             touch "$out"
           '';
+        } // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+          hcc-output-errors = pkgs.runCommand "hcc-output-errors" { } ''
+            for compiler in ${hccBy.host.ghc.native} ${hccBy.m2.precisely.m2}; do
+              export HCPP="$compiler/bin/hcpp" HCC1="$compiler/bin/hcc1"
+              export HCC_M1="$compiler/bin/hcc-m1" HCC_DRIVER_DEV_FULL=1
+              sh ${./tests/hcc/driver-contracts.sh}
+            done
+            touch "$out"
+          '';
         };
 
         legacyPackages = packageTree;
