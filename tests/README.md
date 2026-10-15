@@ -24,7 +24,12 @@ nix build .#tinycc.m2.precisely.m2
 - `tinycc.m2.precisely.m2` checks complete TinyCC stage2/stage3 binary
   equality, actual version output, and programs compiled by the rebuilt
   compiler. The amd64 final-library check also exercises large floating
-  literals and unsigned conversions. These checks do not prove full C conformance.
+  literals and unsigned conversions. The AArch64/RISC-V reduced-support checks
+  exercise sticky per-stream errors, short writes and descriptor reuse with
+  explicitly injected syscalls (`hcc/tcc-support-contract.c`), then real Linux
+  I/O (`hcc/tcc-support-io.c`). They also build the actual `hcc-m1` against the
+  final library, compare its raw output, and require `/dev/full` failure.
+  These checks do not prove full C conformance.
 
 For faster development, use `tests.host.ghc.native.smoke.m1`,
 `tests.host.ghc.native.mescc`, and `tests.precisely.dialect`.
