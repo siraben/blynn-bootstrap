@@ -23,7 +23,8 @@ int parser_scope_arrays(int T[static const 1], int x[volatile restrict static 1]
     return T[0] + x[0];
 }
 
-int parser_scope_plain_array(int a[1]) {
+/* A cast floating literal is an effect-free integer constant bound. */
+int parser_scope_plain_array(int a[(int)1.0]) {
     if (sizeof(a) != sizeof(int *)) return -1;
     return a[0];
 }

@@ -483,6 +483,7 @@ checkDefinitionParameter (Param ty _name) = checkBounds ty where
 simpleParameterBound :: Expr -> Bool
 simpleParameterBound value = case value of
   EInt _ -> True
+  EFloat _ -> True
   EChar _ -> True
   EVar _ -> True
   ESizeofType _ -> True
