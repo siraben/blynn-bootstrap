@@ -1,6 +1,7 @@
 module ConstExpr
   ( parseConstExpr
   , parsePPConstExpr
+  , parseConstExprTarget
   ) where
 
 import Base
@@ -9,20 +10,26 @@ import Operators (binopArith)
 import ParseLite
 import TypesToken
 
-type ConstParser a = P [(String, Int)] Token String a
+type ConstParser a = P (Int, [(String, Int)]) Token String a
 
 -- Retain the parser's Int-facing API. All intermediate arithmetic, including
 -- comparisons and conditional common types, is target-width byte arithmetic.
 parseConstExpr :: [(String, Int)] -> [Token] -> Either String (Int, [Token])
 parseConstExpr env toks = do
-  (value, rest) <- parseRest (expression False True 0) env toks
-  Right (constantToInt value, rest)
+  (value, rest) <- parseConstExprTarget 64 env toks
+  case constantToIntChecked value of
+    Just n -> Right (n, rest)
+    Nothing -> Left "constant result exceeds supported Int range"
+
+-- Typed result: truth tests and full-width consumers need not pass through Int.
+parseConstExprTarget :: Int -> [(String, Int)] -> [Token] -> Either String (Constant, [Token])
+parseConstExprTarget bits env = parseRest (expression False True 0) (if bits <= 32 then 4 else 8, env)
 
 -- #if has a different integer model: signed and unsigned integer types act as
 -- intmax_t and uintmax_t, including otherwise 32-bit unsuffixed constants.
 parsePPConstExpr :: [Token] -> Either String (Bool, [Token])
 parsePPConstExpr toks = do
-  (value, rest) <- parseRest (expression True True 0) [] toks
+  (value, rest) <- parseRest (expression True True 0) (8, []) toks
   Right (constantTrue value, rest)
 
 expression :: Bool -> Bool -> Int -> ConstParser Constant
@@ -90,8 +97,14 @@ parsePrimary pp live = do
     else do
       tok <- pTake "empty constant expression"
       case constTokenKind tok of
-        TokIdent name -> constInt pp . maybe 0 id . lookup name <$> pEnv
-        TokInt value -> pure (constantLiteral pp value)
+        TokIdent name -> do
+          (_, env) <- pEnv
+          case lookup name env of
+            Just value -> pure (constInt pp value)
+            Nothing -> if pp then pure (constInt pp 0) else pFail ("unknown constant: " ++ name)
+        TokInt value -> do
+          (longSize, _) <- pEnv
+          pure (constantLiteralTarget longSize pp value)
         TokChar value -> pure (constInt pp (charValue value))
         _ -> pFail "unsupported token in constant expression"
 

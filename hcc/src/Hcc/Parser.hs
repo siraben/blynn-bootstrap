@@ -1,11 +1,12 @@
 module Parser
   ( ParseError(..)
   , parseProgram
+  , parseProgramTarget
   ) where
 
 import Base
 import ConstExpr
-import Literal (stringBytes)
+import Literal (stringBytes, constantTrue, constantToIntChecked)
 import Operators
 import ParseLite
 import ScopeMap
@@ -18,12 +19,12 @@ data ParseError = ParseError SrcPos String
 -- Tags and members are deliberately not entered here.
 data ParserBinding = ParserType CType | ParserConstant Int | ParserOrdinary
 
-data ParserEnv = ParserEnv (ScopeMap ParserBinding) [(String, Int)]
+data ParserEnv = ParserEnv (ScopeMap ParserBinding) [(String, Int)] Int
 
 type Parser a = P ParserEnv Token ParseError a
 
-initialParserEnv :: ParserEnv
-initialParserEnv = ParserEnv (builtinTypeEnv builtinTypeAliases) []
+initialParserEnv :: Int -> ParserEnv
+initialParserEnv bits = ParserEnv (builtinTypeEnv builtinTypeAliases) [] bits
 
 builtinTypeEnv :: [(String, CType)] -> ScopeMap ParserBinding
 builtinTypeEnv aliases = case aliases of
@@ -57,7 +58,7 @@ lookupParserType :: String -> Parser (Maybe CType)
 lookupParserType name = do
   env <- pEnv
   pure (case env of
-    ParserEnv bindings _ -> case scopeMapLookup name bindings of
+    ParserEnv bindings _ _ -> case scopeMapLookup name bindings of
       Just (ParserType ty) -> Just ty
       _ -> Nothing)
 
@@ -71,20 +72,20 @@ bindParserName :: String -> ParserBinding -> Parser ()
 bindParserName name binding = when (name /= "") (do
   env <- pEnv
   case env of
-    ParserEnv bindings constants ->
+    ParserEnv bindings constants bits ->
       let remaining = case scopeMapLookup name bindings of
             Just (ParserConstant _) -> filter (\(key, _) -> key /= name) constants
             _ -> constants
           constants' = case binding of
             ParserConstant value -> (name, value):remaining
             _ -> remaining
-      in pSetEnv (ParserEnv (scopeMapInsert name binding bindings) constants'))
+      in pSetEnv (ParserEnv (scopeMapInsert name binding bindings) constants' bits))
 
 lookupParserConstant :: String -> Parser (Maybe Int)
 lookupParserConstant name = do
   env <- pEnv
   pure (case env of
-    ParserEnv bindings _ -> case scopeMapLookup name bindings of
+    ParserEnv bindings _ _ -> case scopeMapLookup name bindings of
       Just (ParserConstant value) -> Just value
       _ -> Nothing)
 
@@ -95,11 +96,17 @@ parserConstants :: Parser [(String, Int)]
 parserConstants = do
   env <- pEnv
   pure (case env of
-    ParserEnv _ constants -> constants)
+    ParserEnv _ constants _ -> constants)
+
+parserTargetBits :: Parser Int
+parserTargetBits = do
+  env <- pEnv
+  pure (case env of
+    ParserEnv _ _ bits -> bits)
 
 enterParserScope :: ParserEnv -> ParserEnv
 enterParserScope env = case env of
-  ParserEnv bindings constants -> ParserEnv (scopeMapEnter bindings) constants
+  ParserEnv bindings constants bits -> ParserEnv (scopeMapEnter bindings) constants bits
 
 leaveParserScope :: ParserEnv -> ParserEnv -> ParserEnv
 leaveParserScope outer _inner = outer
@@ -120,7 +127,10 @@ tryP :: Parser a -> Parser a
 tryP = pTry
 
 parseProgram :: [Token] -> Either ParseError Program
-parseProgram toks = case parseRestWithEnv program initialParserEnv toks of
+parseProgram = parseProgramTarget 64
+
+parseProgramTarget :: Int -> [Token] -> Either ParseError Program
+parseProgramTarget bits toks = case parseRestWithEnv program (initialParserEnv bits) toks of
   Left err -> Left err
   Right (Program decls, _env, []) -> Right (Program decls)
   Right (_, _, tok:_) -> Left (parseErrorAt tok "trailing tokens")
@@ -156,9 +166,10 @@ parseStaticAssert = do
     Just (taken, rest) -> Consumed (Ok taken env rest)
     Nothing -> Unconsumed (Ok [] env tokens)
   constants <- parserConstants
-  case parseConstExpr constants toks of
+  bits <- parserTargetBits
+  case parseConstExprTarget bits constants toks of
     Right (value, []) ->
-      if value == 0
+      if not (constantTrue value)
         then peek >>= \tok -> failAt tok "_Static_assert failed"
         else do
           skipOptionalStaticAssertMessage
@@ -836,12 +847,18 @@ enumValue :: Int -> Parser Int
 enumValue nextValue = do
   hasValue <- eatPunct "="
   if not hasValue
-    then pure nextValue
+    then if nextValue > 2147483647
+      then peek >>= \tok -> failAt tok "enum value exceeds supported int range"
+      else pure nextValue
     else do
       toks <- takeEnumValueExpr
       constants <- parserConstants
-      case parseConstExpr constants toks of
-        Right (value, trailing) | all ignorableEnumExprTail trailing -> pure value
+      bits <- parserTargetBits
+      case parseConstExprTarget bits constants toks of
+        Right (value, trailing) | all ignorableEnumExprTail trailing ->
+          case constantToIntChecked value of
+            Just n -> pure n
+            Nothing -> peek >>= \tok -> failAt tok "enum value exceeds supported int range"
         Right (_, tok:_) ->
           failAt tok ("unexpected tokens in enum initializer: " ++ tokenText (tokenKind tok))
         Right (_, []) ->
@@ -1264,7 +1281,7 @@ isKnownTypeNameP name = do
 
 parserEnvHasType :: String -> ParserEnv -> Bool
 parserEnvHasType name env = case env of
-  ParserEnv bindings _ -> case scopeMapLookup name bindings of
+  ParserEnv bindings _ _ -> case scopeMapLookup name bindings of
     Just (ParserType _) -> True
     _ -> False
 
