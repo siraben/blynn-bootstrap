@@ -516,12 +516,18 @@ lowerExpr expr = case expr of
     addDataItem (DataItem dataLabel (map DByte (stringBytes text)))
     pure ([], OGlobal dataLabel)
   EVar name -> lowerVarExpr name
-  EUnary "+" x -> lowerExpr x
+  EUnary "+" x -> do
+    (a, op) <- lowerExpr x
+    ty <- promotedExprType x
+    (coerceInstrs, coerceOp) <- coerceScalar ty op
+    pure (a ++ coerceInstrs, coerceOp)
   EUnary "-" x -> do
     (a, op) <- lowerExpr x
     zero <- freshTemp
     out <- freshTemp
-    pure (a ++ [IConst zero 0, IBin out ISub (OTemp zero) op], OTemp out)
+    ty <- promotedExprType x
+    (coerceInstrs, coerceOp) <- coerceScalar ty (OTemp out)
+    pure (a ++ [IConst zero 0, IBin out ISub (OTemp zero) op] ++ coerceInstrs, coerceOp)
   EUnary "!" x -> do
     (a, op) <- lowerExpr x
     zero <- freshTemp
@@ -532,7 +538,9 @@ lowerExpr expr = case expr of
     zero <- freshTemp
     neg <- freshTemp
     out <- freshTemp
-    pure (a ++ [IConst zero 0, IBin neg ISub (OTemp zero) op, IBin out ISub (OTemp neg) (OImm 1)], OTemp out)
+    ty <- promotedExprType x
+    (coerceInstrs, coerceOp) <- coerceScalar ty (OTemp out)
+    pure (a ++ [IConst zero 0, IBin neg ISub (OTemp zero) op, IBin out ISub (OTemp neg) (OImm 1)] ++ coerceInstrs, coerceOp)
   EUnary "*" (EUnary "&" value) ->
     lowerExpr value
   EUnary "&" target ->
@@ -1224,14 +1232,14 @@ exprType expr = case expr of
               Nothing -> lookupGlobalType name
   ECast ty _ -> pure (Just ty)
   EUnary "+" value -> do
-    mty <- exprType value
-    promoteMaybeIntegerType mty
+    ty <- promotedExprType value
+    pure (Just ty)
   EUnary "-" value -> do
-    mty <- exprType value
-    promoteMaybeIntegerType mty
+    ty <- promotedExprType value
+    pure (Just ty)
   EUnary "~" value -> do
-    mty <- exprType value
-    promoteMaybeIntegerType mty
+    ty <- promotedExprType value
+    pure (Just ty)
   EUnary "!" _ -> pure (Just CInt)
   EUnary "*" value -> do
     mty <- exprType value
