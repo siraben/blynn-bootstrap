@@ -1718,8 +1718,20 @@ typeAlign :: CType -> CompileM Int
 typeAlign ty = case ty of
   CArray inner _ -> typeAlign inner
   _ -> do
-    size <- typeSize ty
-    pure (if size >= 8 then 8 else if size >= 4 then 4 else if size >= 2 then 2 else 1)
+    aggregate <- aggregateFields ty
+    case aggregate of
+      Just (_, fields) -> aggregateAlign fields
+      Nothing -> do
+        size <- typeSize ty
+        pure (if size >= 8 then 8 else if size >= 4 then 4 else if size >= 2 then 2 else 1)
+
+aggregateAlign :: [Field] -> CompileM Int
+aggregateAlign fields = case fields of
+  [] -> pure 1
+  Field ty _:rest -> do
+    align <- typeAlign ty
+    restAlign <- aggregateAlign rest
+    pure (max align restAlign)
 
 structSize :: String -> CompileM Int
 structSize name = do
