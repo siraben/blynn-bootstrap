@@ -382,10 +382,13 @@ void hcc_close(int handle)
 
 int hcc_getcwd(void)
 {
-  /* The pinned getcwd wrapper misses negative syscall errors. Check the
-     signed raw result so failure cannot expose stale result-buffer bytes. */
+  unsigned count;
+  /* The pinned wrapper misses negative errors. A valid raw result is a byte
+     count in [1, capacity]; unsigned conversion puts every errno outside it.
+     Do not rely on M2's signedness inference for a direct call comparison. */
   ensure_chars(&result, &result_cap, 4096);
-  if (_getcwd(result, result_cap) <= 0) return 0;
+  count = _getcwd(result, result_cap);
+  if (count == 0 || count > result_cap) return 0;
   result_len = strlen(result);
   return 1;
 }
