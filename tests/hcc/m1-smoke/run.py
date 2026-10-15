@@ -34,6 +34,7 @@ CASES = [
     ("lowering-conditional-type", 0),
     ("lowering-nested-alignment", 0),
     ("lowering-prefix-value", 0),
+    ("lowering-aggregate-arguments", 0),
 ]
 
 
