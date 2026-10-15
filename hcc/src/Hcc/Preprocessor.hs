@@ -4,6 +4,7 @@ module Preprocessor
   , Macro
   , defineMacro
   , expandTokens
+  , expandOperandText
   , evalEligibleIf
   , elifEligible
   ) where
@@ -223,6 +224,13 @@ expandTokens macros toks = do
   Expansion expanded _ <- expandSource macros (sourceFromTokens toks)
   Right (map plainToken expanded)
 
+-- Computed header operands need the same separation/adjacency information as
+-- stringification, before the plain-token API discards it.
+expandOperandText :: Macros -> [Token] -> Either PreprocessError String
+expandOperandText macros toks = do
+  Expansion expanded _ <- expandSource macros (sourceFromTokens toks)
+  Right (sourceSpelling expanded)
+
 collectInvocationArgs :: Span -> [PPToken] -> Either PreprocessError ([[PPToken]], [PPToken], [String], [PPToken])
 collectInvocationArgs sp = go 1 [] [] [] where
   go :: Int -> [PPToken] -> [[PPToken]] -> [PPToken] -> [PPToken] -> Either PreprocessError ([[PPToken]], [PPToken], [String], [PPToken])
@@ -335,7 +343,10 @@ pasteTokens sp (PPToken lh space left) (PPToken rh _ right) =
     Left (LexError _ msg) -> Left (PreprocessError (spanStart sp) msg)
 
 stringifyTokens :: [PPToken] -> String
-stringifyTokens toks = "\"" ++ escapeString (text (leadingSpace False toks)) ++ "\"" where
+stringifyTokens toks = "\"" ++ escapeString (sourceSpelling toks) ++ "\""
+
+sourceSpelling :: [PPToken] -> String
+sourceSpelling toks = text (leadingSpace False toks) where
   text rest = case rest of
     [] -> []
     PPToken _ space tok:xs -> (if space then " " else "") ++ tokenText (tokenKind tok) ++ text xs

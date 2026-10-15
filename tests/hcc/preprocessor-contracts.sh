@@ -45,6 +45,21 @@ if "$HCPP" "$TESTS_DIR/pp-contract-bad-include.c" > pp-contract-bad-include.i 2>
 fi
 pp_contract_contains 'invalid active #include operand' pp-contract-bad-include.err
 
+# Both files exist: losing a separator must not silently select another header.
+printf '%s\n' '#undef PP_SELECTED' '#define PP_SELECTED 13' > 'pp-contract-space name.h'
+printf '%s\n' '#undef PP_SELECTED' '#define PP_SELECTED 29' > pp-contract-spacename.h
+printf '%s\n' '#define PP_HEADER <pp-contract-space name.h>' '#include PP_HEADER' \
+  'int pp_include_spaced = PP_SELECTED;' '#undef PP_HEADER' \
+  '#define PP_HEADER <pp-contract-spacename.h>' '#include PP_HEADER' \
+  'int pp_include_adjacent = PP_SELECTED;' '#undef PP_HEADER' \
+  '#define PP_HEADER "pp-contract-space name.h"' '#include PP_HEADER' \
+  'int pp_include_quoted = PP_SELECTED;' > pp-contract-include-spaces.c
+"$HCPP" pp-contract-include-spaces.c > pp-contract-include-spaces.i
+pp_contract_contains 'pp_include_spaced = 13' pp-contract-include-spaces.i
+pp_contract_contains 'pp_include_adjacent = 29' pp-contract-include-spaces.i
+pp_contract_contains 'pp_include_quoted = 13' pp-contract-include-spaces.i
+"$HCC1" --check pp-contract-include-spaces.i
+
 "$HCPP" "$TESTS_DIR/pp-contract-stringify.c" > pp-contract-stringify.i
 pp_contract_contains 'pp_adjacent = "a+b"' pp-contract-stringify.i
 pp_contract_contains 'pp_space = "a + b"' pp-contract-stringify.i
