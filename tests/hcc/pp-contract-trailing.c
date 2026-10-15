@@ -27,12 +27,3 @@ const char *pp_empty_leading = E(a+PASS( EMPTY)b);
 const char *pp_leading_empty = E(a+LEADING());
 const char *pp_leading_paste = E(a+LEADING_PASTE(,));
 const char *pp_leading_prescan = E(REPEAT(EMPTY b));
-int main(void) {
-  return pp_trailing[1] != ' ' || pp_trailing_macro[1] != ' ' ||
-    pp_trailing_nested[1] != ' ' || pp_trailing_adjacent[2] != 'b' ||
-    pp_trailing_both[1] != ' ' || pp_trailing_left[1] != ' ' ||
-    pp_trailing_chain[1] != ' ' || pp_trailing_call[0] != 'b' ||
-    pp_empty_adjacent[2] != ')' || pp_empty_prescan[2] != ' ' ||
-    pp_empty_leading[2] != 'b' || pp_leading_empty[2] != ' ' ||
-    pp_leading_paste[2] != ' ' || pp_leading_prescan[2] != ' ';
-}

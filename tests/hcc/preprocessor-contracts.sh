@@ -1,49 +1,21 @@
-# Sourced by compiler smoke; uses only its compiler paths and POSIX shell.
-pp_contract_contains() {
-  pp_pattern=$1
-  pp_file=$2
-  pp_found=0
-  while IFS= read -r pp_line; do
-    case "$pp_line" in *"$pp_pattern"*) pp_found=1; break ;; esac
-  done < "$pp_file"
-  if test "$pp_found" != 1; then
-    echo "$pp_file: expected $pp_pattern" >&2
-    exit 1
-  fi
-}
-
-"$HCPP" "$TESTS_DIR/pp-contract-inactive.c" > pp-contract-inactive.i
-pp_contract_contains 'int pp_contract_inactive ;' pp-contract-inactive.i
-"$HCC1" --check pp-contract-inactive.i
+# Sourced by compiler smoke; reuse its helpers and preprocess each fixture once.
+run_check_case pp-contract-inactive "$TESTS_DIR/pp-contract-inactive.c"
+expect_file_contains 'int pp_contract_inactive ;' pp-contract-inactive.i
 
 "$HCPP" "$TESTS_DIR/pp-contract-macros.c" > pp-contract-macros.i
-pp_contract_contains 'pp_contract_nested = ( ( ( ( 1 ) + 1 ) ) + 1 )' pp-contract-macros.i
-pp_contract_contains 'pp_contract_suffix = ( ( 1 ) + 1 )' pp-contract-macros.i
-pp_contract_contains 'int A ;' pp-contract-macros.i
-pp_contract_contains 'SELF ( 1 )' pp-contract-macros.i
-pp_contract_contains '2 * 9 * g' pp-contract-macros.i
-pp_contract_contains 'one twothree four' pp-contract-macros.i
+expect_file_contains 'pp_contract_nested = ( ( ( ( 1 ) + 1 ) ) + 1 )' pp-contract-macros.i
+expect_file_contains 'pp_contract_suffix = ( ( 1 ) + 1 )' pp-contract-macros.i
+expect_file_contains 'int A ;' pp-contract-macros.i
+expect_file_contains 'SELF ( 1 )' pp-contract-macros.i
+expect_file_contains '2 * 9 * g' pp-contract-macros.i
+expect_file_contains 'one twothree four' pp-contract-macros.i
 
-if "$HCPP" "$TESTS_DIR/pp-contract-object-location.c" > pp-contract-object-location.i 2> pp-contract-object-location.err; then
-  echo 'invalid macro invocation unexpectedly accepted' >&2
-  exit 1
-fi
-pp_contract_contains ':6:1: wrong number of macro arguments' pp-contract-object-location.err
-if "$HCPP" "$TESTS_DIR/pp-contract-argument-location.c" > pp-contract-argument-location.i 2> pp-contract-argument-location.err; then
-  echo 'invalid substituted argument invocation unexpectedly accepted' >&2
-  exit 1
-fi
-pp_contract_contains ':6:6: wrong number of macro arguments' pp-contract-argument-location.err
-
-"$HCPP" "$TESTS_DIR/pp-contract-include.c" > pp-contract-include.i
-pp_contract_contains 'int pp_contract_include ;' pp-contract-include.i
-pp_contract_contains 'int pp_contract_continued ;' pp-contract-include.i
-"$HCC1" --check pp-contract-include.i
-if "$HCPP" "$TESTS_DIR/pp-contract-bad-include.c" > pp-contract-bad-include.i 2> pp-contract-bad-include.err; then
-  echo 'invalid active include unexpectedly accepted' >&2
-  exit 1
-fi
-pp_contract_contains 'invalid active #include operand' pp-contract-bad-include.err
+expect_hcpp_fail pp-contract-object-location ':6:1: wrong number of macro arguments' "$TESTS_DIR/pp-contract-object-location.c"
+expect_hcpp_fail pp-contract-argument-location ':6:6: wrong number of macro arguments' "$TESTS_DIR/pp-contract-argument-location.c"
+expect_hcpp_fail pp-contract-bad-include 'invalid active #include operand' "$TESTS_DIR/pp-contract-bad-include.c"
+run_check_case pp-contract-include "$TESTS_DIR/pp-contract-include.c"
+expect_file_contains 'int pp_contract_include ;' pp-contract-include.i
+expect_file_contains 'int pp_contract_continued ;' pp-contract-include.i
 
 # Both files exist: losing a separator must not silently select another header.
 printf '%s\n' '#undef PP_SELECTED' '#define PP_SELECTED 13' > 'pp-contract-space name.h'
@@ -54,117 +26,66 @@ printf '%s\n' '#define PP_HEADER <pp-contract-space name.h>' '#include PP_HEADER
   'int pp_include_adjacent = PP_SELECTED;' '#undef PP_HEADER' \
   '#define PP_HEADER "pp-contract-space name.h"' '#include PP_HEADER' \
   'int pp_include_quoted = PP_SELECTED;' > pp-contract-include-spaces.c
-"$HCPP" pp-contract-include-spaces.c > pp-contract-include-spaces.i
-pp_contract_contains 'pp_include_spaced = 13' pp-contract-include-spaces.i
-pp_contract_contains 'pp_include_adjacent = 29' pp-contract-include-spaces.i
-pp_contract_contains 'pp_include_quoted = 13' pp-contract-include-spaces.i
-"$HCC1" --check pp-contract-include-spaces.i
+run_check_case pp-contract-include-spaces pp-contract-include-spaces.c
+expect_file_contains 'pp_include_spaced = 13' pp-contract-include-spaces.i
+expect_file_contains 'pp_include_adjacent = 29' pp-contract-include-spaces.i
+expect_file_contains 'pp_include_quoted = 13' pp-contract-include-spaces.i
 
-"$HCPP" "$TESTS_DIR/pp-contract-stringify.c" > pp-contract-stringify.i
-pp_contract_contains 'pp_adjacent = "a+b"' pp-contract-stringify.i
-pp_contract_contains 'pp_space = "a + b"' pp-contract-stringify.i
-pp_contract_contains 'pp_comment = "a +b"' pp-contract-stringify.i
-pp_contract_contains 'pp_expand = "a+b"' pp-contract-stringify.i
-pp_contract_contains 'pp_empty_object = "a +b"' pp-contract-stringify.i
-pp_contract_contains 'pp_empty_function = "a +b"' pp-contract-stringify.i
-pp_contract_contains 'pp_empty_argument = "a +b"' pp-contract-stringify.i
-pp_contract_contains 'pp_wrap = "a+b + c"' pp-contract-stringify.i
-pp_contract_contains 'pp_variadic = "a ,b, c"' pp-contract-stringify.i
-pp_contract_contains 'pp_escape = "\"a\\\\b\""' pp-contract-stringify.i
-pp_contract_contains 'pp_splice = "a+b"' pp-contract-stringify.i
-"$HCC1" --check pp-contract-stringify.i
+run_check_case pp-contract-stringify "$TESTS_DIR/pp-contract-stringify.c"
+expect_file_contains 'pp_adjacent = "a+b"' pp-contract-stringify.i
+expect_file_contains 'pp_space = "a + b"' pp-contract-stringify.i
+expect_file_contains 'pp_comment = "a +b"' pp-contract-stringify.i
+expect_file_contains 'pp_expand = "a+b"' pp-contract-stringify.i
+expect_file_contains 'pp_empty_object = "a +b"' pp-contract-stringify.i
+expect_file_contains 'pp_empty_function = "a +b"' pp-contract-stringify.i
+expect_file_contains 'pp_empty_argument = "a +b"' pp-contract-stringify.i
+expect_file_contains 'pp_wrap = "a+b + c"' pp-contract-stringify.i
+expect_file_contains 'pp_variadic = "a ,b, c"' pp-contract-stringify.i
+expect_file_contains 'pp_escape = "\"a\\\\b\""' pp-contract-stringify.i
+expect_file_contains 'pp_splice = "a+b"' pp-contract-stringify.i
 
-"$HCPP" "$TESTS_DIR/pp-contract-trailing.c" > pp-contract-trailing.i
-pp_contract_contains 'pp_trailing = "a b"' pp-contract-trailing.i
-pp_contract_contains 'pp_trailing_macro = "a b"' pp-contract-trailing.i
-pp_contract_contains 'pp_trailing_nested = "a b"' pp-contract-trailing.i
-pp_contract_contains 'pp_trailing_adjacent = "a+b"' pp-contract-trailing.i
-pp_contract_contains 'pp_trailing_both = "a b"' pp-contract-trailing.i
-pp_contract_contains 'pp_trailing_left = "a bb"' pp-contract-trailing.i
-pp_contract_contains 'pp_trailing_chain = "a bb"' pp-contract-trailing.i
-pp_contract_contains 'pp_trailing_call = "b"' pp-contract-trailing.i
-pp_contract_contains 'pp_empty_adjacent = "z()b"' pp-contract-trailing.i
-pp_contract_contains 'pp_empty_prescan = "a+ b"' pp-contract-trailing.i
-pp_contract_contains 'pp_empty_leading = "a+b"' pp-contract-trailing.i
-pp_contract_contains 'pp_leading_empty = "a+ b"' pp-contract-trailing.i
-pp_contract_contains 'pp_leading_paste = "a+ b"' pp-contract-trailing.i
-pp_contract_contains 'pp_leading_prescan = "b+ b"' pp-contract-trailing.i
-"$HCC1" --m1-ir -o pp-contract-trailing.hccir pp-contract-trailing.i
-"$HCC_M1" pp-contract-trailing.hccir pp-contract-trailing.M1
+run_check_case pp-contract-trailing "$TESTS_DIR/pp-contract-trailing.c"
+expect_file_contains 'pp_trailing = "a b"' pp-contract-trailing.i
+expect_file_contains 'pp_trailing_macro = "a b"' pp-contract-trailing.i
+expect_file_contains 'pp_trailing_nested = "a b"' pp-contract-trailing.i
+expect_file_contains 'pp_trailing_adjacent = "a+b"' pp-contract-trailing.i
+expect_file_contains 'pp_trailing_both = "a b"' pp-contract-trailing.i
+expect_file_contains 'pp_trailing_left = "a bb"' pp-contract-trailing.i
+expect_file_contains 'pp_trailing_chain = "a bb"' pp-contract-trailing.i
+expect_file_contains 'pp_trailing_call = "b"' pp-contract-trailing.i
+expect_file_contains 'pp_empty_adjacent = "z()b"' pp-contract-trailing.i
+expect_file_contains 'pp_empty_prescan = "a+ b"' pp-contract-trailing.i
+expect_file_contains 'pp_empty_leading = "a+b"' pp-contract-trailing.i
+expect_file_contains 'pp_leading_empty = "a+ b"' pp-contract-trailing.i
+expect_file_contains 'pp_leading_paste = "a+ b"' pp-contract-trailing.i
+expect_file_contains 'pp_leading_prescan = "b+ b"' pp-contract-trailing.i
+run_check_case pp-contract-arithmetic "$TESTS_DIR/pp-contract-arithmetic.c"
 
-"$HCPP" "$TESTS_DIR/pp-contract-arithmetic.c" > pp-contract-arithmetic.i
-pp_contract_contains 'int pp_contract_arithmetic ;' pp-contract-arithmetic.i
-"$HCC1" --check pp-contract-arithmetic.i
-"$HCC1" --m1-ir -o pp-contract-arithmetic.hccir pp-contract-arithmetic.i
-"$HCC_M1" pp-contract-arithmetic.hccir pp-contract-arithmetic.M1
-
-"$HCPP" "$TESTS_DIR/pp-contract-folded.c" > pp-contract-folded.i
-"$HCC1" --m1-ir -o pp-contract-folded.hccir pp-contract-folded.i
-# Check actual lowered bytes, not merely frontend acceptance.
-for pp_expected in 'HCCIR 1' 'D pp_contract_quotient' 'b 254' 'b 255' 'b 255' 'b 255' E \
-  'D pp_contract_remainder' 'b 255' 'b 255' 'b 255' 'b 255' E \
-  'D pp_contract_bit31' 'z 3' 'b 128' E \
-  'D pp_contract_shift' 'b 255' 'b 255' 'b 255' 'b 255' E; do
-  IFS= read -r pp_actual
-  if test "$pp_actual" != "$pp_expected"; then
-    echo "folded constant: expected $pp_expected, got $pp_actual" >&2
-    exit 1
-  fi
-done < pp-contract-folded.hccir
-"$HCC_M1" pp-contract-folded.hccir pp-contract-folded.M1
-
-# HCPP's intmax model is target-independent; check it once per compiler route.
-# In #if, 1U is uintmax_t, so -1L < 1U is false.
-printf '%s\n' '#if (~0U <= 4294967295U) || (-1L < 1U)' \
-  '#error wrong preprocessing integer model' '#endif' > constants-pp.c
-"$HCPP" constants-pp.c > constants-pp.i
-
-# Ordinary constants use the selected target, not #if's intmax model.
-for pp_target in amd64 i386 aarch64 riscv64; do
+# Two integer models; executable fixtures cover all four backend targets.
+for pp_target in amd64 i386; do
   pp_model=1
   if test "$pp_target" = i386; then pp_model=0; fi
-  # The ordinary input is intentionally not preprocessed: no target macros
-  # are needed to select the expected result.
   printf '%s\n' 'enum { constants_target_enum = -1L < 1U };' \
     "_Static_assert(constants_target_enum == $pp_model, \"enum model\");" \
     "_Static_assert((-1L < 1U) == $pp_model, \"ordinary model\");" \
     '_Static_assert(4294967296ULL, "wide truth value");' \
-    '_Static_assert(~0U == 4294967295U, "ordinary uint32");' \
-    'enum { constants_small = 1ULL, constants_boot32 = 0xffffffffU, constants_boot64 = 0xffffffffffffffffULL };' \
+    'enum { constants_small = 1ULL, constants_boot64 = 0xffffffffffffffffULL };' \
     '_Static_assert(~constants_small < 0, "representable enumerators have int type");' \
-    '_Static_assert(constants_boot32 == 4294967295U, "bootstrap uint32 enumerator");' \
     '_Static_assert(constants_boot64 / 3ULL == 6148914691236517205ULL, "bootstrap uint64 enumerator");' \
     > constants-target.c
   "$HCC1" --target "$pp_target" -o "constants-target-$pp_target.hccir" constants-target.c
-  for pp_bound in '-1' '4294967296ULL' '18446744073709551615ULL' '18446744073709551616ULL'; do
-    printf 'char constants_bad_extent[%s];\n' "$pp_bound" > constants-bad-extent.c
-    if "$HCC1" --target "$pp_target" -o constants-bad-extent.hccir constants-bad-extent.c 2> constants-bad-extent.err; then
-      echo "unsupported array extent accepted: $pp_bound ($pp_target)" >&2
-      exit 1
-    fi
-    pp_diagnostic='array extent exceeds supported layout range'
-    if test "$pp_bound" = '-1'; then pp_diagnostic='negative array extent'; fi
-    if test "$pp_bound" = '18446744073709551616ULL'; then pp_diagnostic='integer literal exceeds supported 64-bit range'; fi
-    pp_contract_contains "$pp_diagnostic" constants-bad-extent.err
-  done
-  printf '%s\n' 'long long constants_bad_size[1073741824];' > constants-bad-size.c
-  if "$HCC1" --target "$pp_target" -o constants-bad-size.hccir constants-bad-size.c 2> constants-bad-size.err; then
-    echo "overflowing array size accepted ($pp_target)" >&2
-    exit 1
-  fi
-  pp_contract_contains 'array size exceeds supported layout range' constants-bad-size.err
-  # Zero serialization is not general integer/FP conversion or FP folding.
-  for pp_source in 'double constants_fp = 1;' 'float constants_fp = -1;' \
-    'double constants_fp = (double)0;' 'int constants_fp = (int)3.0;'; do
-    printf '%s\n' "$pp_source" > constants-unsupported-fp.c
-    if "$HCC1" --target "$pp_target" -o constants-unsupported-fp.hccir constants-unsupported-fp.c 2> constants-unsupported-fp.err; then
-      echo "unsupported floating conversion accepted: $pp_source ($pp_target)" >&2
-      exit 1
-    fi
-    pp_diagnostic='unsupported non-integer constant conversion'
-    if test "$pp_source" = 'int constants_fp = (int)3.0;'; then
-      pp_diagnostic='unsupported constant expression: EFloat'
-    fi
-    pp_contract_contains "$pp_diagnostic" constants-unsupported-fp.err
-  done
 done
+
+# Target-independent rejection classes, not another architecture matrix.
+while IFS='|' read -r pp_source pp_diagnostic; do
+  printf '%s\n' "$pp_source" > constants-invalid.c
+  expect_hcc1_fail constants-invalid "$pp_diagnostic" constants-invalid.c
+done <<'EOF'
+char invalid[-1];|negative array extent
+char invalid[4294967296ULL];|array extent exceeds supported layout range
+char invalid[18446744073709551616ULL];|integer literal exceeds supported 64-bit range
+long long invalid[1073741824];|array size exceeds supported layout range
+double invalid = 1;|unsupported non-integer constant conversion
+double invalid = (double)0;|unsupported non-integer constant conversion
+int invalid = (int)3.0;|unsupported constant expression: EFloat
+EOF

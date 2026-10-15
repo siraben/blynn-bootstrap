@@ -647,7 +647,7 @@ stdenvNoCC.mkDerivation {
     test "$stage3_status" -eq 31
 
     # The reduced fd-based libc is also the installed hcc-m1 backend's libc.
-    # Keep syscall fault injection separate from the real-descriptor probes.
+    # Keep short-write injection separate from the real-descriptor probes.
     if [ "$target_is_aarch64" = 1 ] || [ "$target_is_riscv64" = 1 ]; then
       support_arch="${targetCfg.hcc}"
       run_step "support error contract compile" run_target ./tcc-stage3 -nostdlib \
@@ -655,7 +655,7 @@ stdenvNoCC.mkDerivation {
         ${../tests/hcc/tcc-support-contract.c} \
         final-libs/$support_arch-runtime.o final-libs/$support_arch-syscalls.o \
         final-libs/lib-arm64.o -o support-contract
-      run_step "support error contract execution (injected syscalls)" run_target ./support-contract
+      run_step "support error contract execution (injected writes)" run_target ./support-contract
       run_step "support real I/O compile" run_target ./tcc-stage3 -B final-libs \
         $check_include_flags ${../tests/hcc/tcc-support-io.c} -o support-io
       run_step "support real I/O execution" run_target ./support-io
