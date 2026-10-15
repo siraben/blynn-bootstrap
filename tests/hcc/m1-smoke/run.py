@@ -25,6 +25,8 @@ CASES = [
     ("bootstrap-qsort-pointer", 0),
     ("for-decl-scope", 0),
     ("asm-nop", 0),
+    ("parser-ordinary-scope", 0),
+    ("parser-negative-enum", 0),
 ]
 
 
