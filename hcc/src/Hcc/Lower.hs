@@ -738,7 +738,7 @@ lowerComparisonOperands :: Expr -> Expr -> CompileM ([Instr], Operand, Operand)
 lowerComparisonOperands a b = do
   (ai, ao) <- lowerExpr a
   (bi, bo) <- lowerExpr b
-  commonTy <- usualArithmeticType a b
+  commonTy <- comparisonOperandType a b
   (acoerceInstrs, acoerceOp) <- coerceBinOperand commonTy a ao
   (bcoerceInstrs, bcoerceOp) <- coerceBinOperand commonTy b bo
   pure (ai ++ bi ++ acoerceInstrs ++ bcoerceInstrs, acoerceOp, bcoerceOp)
@@ -877,7 +877,7 @@ lowerPlainBin :: BinOp -> Expr -> Expr -> CompileM ([Instr], Operand)
 lowerPlainBin op a b = do
   (ai, ao) <- lowerExpr a
   (bi, bo) <- lowerExpr b
-  commonTy <- usualArithmeticType a b
+  commonTy <- if isComparisonBinOp op then comparisonOperandType a b else usualArithmeticType a b
   (acoerceInstrs, acoerceOp) <- coerceBinOperand commonTy a ao
   (bcoerceInstrs, bcoerceOp) <- coerceBinOperand commonTy b bo
   out <- freshTemp
@@ -2205,9 +2205,22 @@ shiftRightOp expr = do
   ty <- promotedExprType expr
   pure (if isUnsignedType ty then IShr else ISar)
 
+-- Pointer comparisons (including integer null constants on either side)
+-- use pointer-width operands, not the integer usual arithmetic conversions.
+-- Keep this separate from numeric operations and pointer offset lowering.
+comparisonOperandType :: Expr -> Expr -> CompileM CType
+comparisonOperandType a b = do
+  aty <- exprType a
+  bty <- exprType b
+  case pointerElementType aty of
+    Just inner -> pure (CPtr inner)
+    Nothing -> case pointerElementType bty of
+      Just inner -> pure (CPtr inner)
+      Nothing -> usualArithmeticType a b
+
 comparisonOp :: String -> Expr -> Expr -> CompileM BinOp
 comparisonOp op a b = do
-  commonTy <- usualArithmeticType a b
+  commonTy <- comparisonOperandType a b
   let unsigned = isUnsignedType commonTy
   pure (case (unsigned, op) of
     (False, "<") -> ILt
