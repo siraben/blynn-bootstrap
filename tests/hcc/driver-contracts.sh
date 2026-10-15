@@ -46,6 +46,43 @@ runtime_driver_contracts() (
   test -s runtime-driver.dotted/explicit.hccir
   echo 'runtime-driver: default filename checks passed'
 
+  # C input is valid regardless of extension. A default .hccir output must
+  # never truncate the same cwd input through plain, ./ or absolute spellings.
+  printf '%s\n' 'int main(void) { return 13; }' > runtime-collision.hccir
+  runtime_source_hash=$(sha256sum runtime-collision.hccir)
+  runtime_expect_source_preserved() {
+    if "$HCC1" --m1-ir "$@" > runtime-collision.stdout 2> runtime-collision.stderr; then
+      echo 'runtime-driver: input/output collision unexpectedly succeeded' >&2
+      exit 1
+    fi
+    test "$(sha256sum runtime-collision.hccir)" = "$runtime_source_hash"
+    runtime_found_collision=0
+    while IFS= read -r runtime_line; do
+      case $runtime_line in
+        *'input and output paths coincide'*) runtime_found_collision=1 ;;
+      esac
+    done < runtime-collision.stderr
+    test "$runtime_found_collision" = 1
+  }
+  for runtime_input in runtime-collision.hccir ./runtime-collision.hccir "$(pwd)/runtime-collision.hccir"; do
+    runtime_expect_source_preserved "$runtime_input"
+  done
+  # Apply the same pre-open guard to explicit -o; distinct outputs still work.
+  for runtime_output in runtime-collision.hccir ./runtime-collision.hccir "$(pwd)/runtime-collision.hccir"; do
+    runtime_expect_source_preserved -o "$runtime_output" runtime-collision.hccir
+  done
+  printf '%s\n' 'old output' > runtime-collision-explicit.hccir
+  "$HCC1" --m1-ir -o runtime-collision-explicit.hccir runtime-collision.hccir
+  runtime_expect_return runtime-collision-explicit.hccir 13
+  test "$(sha256sum runtime-collision.hccir)" = "$runtime_source_hash"
+  # Same basename in a different directory is not a lexical collision.
+  printf '%s\n' 'int main(void) { return 29; }' > runtime-driver.dotted/src.dir/runtime-subdir.hccir
+  runtime_subdir_hash=$(sha256sum runtime-driver.dotted/src.dir/runtime-subdir.hccir)
+  "$HCC1" --m1-ir runtime-driver.dotted/src.dir/runtime-subdir.hccir
+  runtime_expect_return runtime-subdir.hccir 29
+  test "$(sha256sum runtime-driver.dotted/src.dir/runtime-subdir.hccir)" = "$runtime_subdir_hash"
+  echo 'runtime-driver: input preservation checks passed'
+
   runtime_expect_output_failure() {
     if "$@" > /dev/full 2> runtime-driver-error.log; then
       echo "runtime-driver: unexpected output success: $*" >&2

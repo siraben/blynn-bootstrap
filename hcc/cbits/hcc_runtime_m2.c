@@ -380,6 +380,15 @@ void hcc_close(int handle)
   handles[handle - 1] = 0;
 }
 
+int hcc_getcwd(void)
+{
+  /* Pinned M2libc getcwd uses the kernel syscall; no host canonicalizer. */
+  ensure_chars(&result, &result_cap, 4096);
+  if (!getcwd(result, result_cap)) return 0;
+  result_len = strlen(result);
+  return 1;
+}
+
 void hcc_canonicalize(void)
 {
   set_result(current_buffer());

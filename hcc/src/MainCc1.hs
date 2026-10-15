@@ -54,6 +54,8 @@ dieInputFile opts msg = die (asmInput opts ++ ":" ++ msg)
 
 writeM1Ir :: AsmOptions -> (String -> IO ()) -> Program -> IO ()
 writeM1Ir opts trace ast = do
+  samePath <- hccPathsLexicallyEqual (asmInput opts) (asmOutput opts)
+  when samePath (die "hcc1: input and output paths coincide")
   trace ("open " ++ asmOutput opts)
   opened <- hccWithOpenWriteFile (asmOutput opts) $ \handle -> do
     trace "m1-ir start"

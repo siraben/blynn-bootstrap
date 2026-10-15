@@ -4,6 +4,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <unistd.h>
 
 #ifndef PATH_MAX
 #define PATH_MAX 4096
@@ -268,6 +269,13 @@ void hcc_close(int handle) {
   if (!file) return;
   if (fclose(file) != 0) output_failure();
   handles[handle - 1] = NULL;
+}
+
+int hcc_getcwd(void) {
+  ensure_chars(&result, &result_cap, PATH_MAX);
+  if (!getcwd(result, result_cap)) return 0;
+  result_len = strlen(result);
+  return 1;
 }
 
 void hcc_canonicalize(void) {
