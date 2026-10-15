@@ -189,7 +189,7 @@ expandNextSource macros toks = case toks of
     | not (name `elem` hidden), Just macro <- symbolMapLookup name macros ->
         case macro of
           ObjectMacro _ body ->
-            Right ([], leadingSpace space (map (hideToken (name:hidden)) (sourceFromTokens body)) ++ rest)
+            Right ([], rescanReplacement space (map (hideToken (name:hidden)) (sourceFromTokens body)) rest)
           FunctionMacro _ params variadic body -> case rest of
             PPToken _ _ (Token _ (TokPunct "(")):afterOpen -> do
               (args, commas, closeHidden, rest') <- collectInvocationArgs sp afterOpen
@@ -198,7 +198,7 @@ expandNextSource macros toks = case toks of
               -- The closing parenthesis may come from a different expansion.
               -- Only names hidden at both ends constrain the replacement.
               let inherited = name : intersect hidden closeHidden
-              Right ([], leadingSpace space (map (hideToken inherited) replaced) ++ rest')
+              Right ([], rescanReplacement space (map (hideToken inherited) replaced) rest')
             _ -> Right ([original], rest)
   tok:rest -> Right ([tok], rest)
 
@@ -273,7 +273,9 @@ substituteMacroBody _ args body = go body [] where
     PPToken _ space (Token _ (TokIdent name)):xs
       | Just arg <- symbolMapLookup name args -> do
           expanded <- argExpanded arg
-          go xs (reverse (leadingSpace space expanded) ++ acc)
+          if null expanded
+            then go (addLeadingSpace space xs) acc
+            else go xs (reverse (leadingSpace space expanded) ++ acc)
     tok:xs -> go xs (tok:acc)
 
   pasteWithPrevious pasteSp previous xs before = do
@@ -355,6 +357,18 @@ leadingSpace :: Bool -> [PPToken] -> [PPToken]
 leadingSpace space toks = case toks of
   [] -> []
   PPToken hidden _ tok:rest -> PPToken hidden space tok : rest
+
+-- Removing an empty replacement must not remove the whitespace before its
+-- invocation. That separation becomes the leading whitespace of the suffix.
+rescanReplacement :: Bool -> [PPToken] -> [PPToken] -> [PPToken]
+rescanReplacement space replacement rest =
+  if null replacement then addLeadingSpace space rest
+  else leadingSpace space replacement ++ rest
+
+addLeadingSpace :: Bool -> [PPToken] -> [PPToken]
+addLeadingSpace space toks = case toks of
+  [] -> []
+  PPToken hidden old tok:rest -> PPToken hidden (space || old) tok : rest
 
 macroName :: Macro -> String
 macroName macro = case macro of
