@@ -15,6 +15,37 @@ runtime_driver_contracts() (
   test -s runtime-driver-valid.hccir
   test -s runtime-driver-valid.M1
 
+  # Default names belong to cwd, even for absolute inputs or dotted source
+  # directories. Distinct stems must never overwrite the same extension name.
+  mkdir -p runtime-driver.dotted/src.dir
+  printf '%s\n' 'int main(void) { return 13; }' > runtime-driver.dotted/src.dir/runtime-first.i
+  printf '%s\n' 'int main(void) { return 29; }' > runtime-driver.dotted/src.dir/runtime-second.i
+  for runtime_name in runtime-multi.part.i runtime-noext .runtime-hidden runtime-tail.; do
+    printf '%s\n' 'int main(void) { return 13; }' > "runtime-driver.dotted/src.dir/$runtime_name"
+  done
+  rm -f runtime-first.hccir runtime-second.hccir runtime-multi.part.hccir runtime-noext.hccir .runtime-hidden.hccir runtime-tail.hccir
+  "$HCC1" --m1-ir "$(pwd)/runtime-driver.dotted/src.dir/runtime-first.i"
+  "$HCC1" --m1-ir runtime-driver.dotted/src.dir/runtime-second.i
+  for runtime_name in runtime-multi.part.i runtime-noext .runtime-hidden runtime-tail.; do
+    "$HCC1" --m1-ir "runtime-driver.dotted/src.dir/$runtime_name"
+  done
+  for runtime_stem in runtime-first runtime-second runtime-multi.part runtime-noext .runtime-hidden runtime-tail; do
+    test -s "$runtime_stem.hccir"
+    test ! -e "runtime-driver.dotted/src.dir/$runtime_stem.hccir"
+  done
+  runtime_expect_return() {
+    runtime_found_return=0
+    while IFS= read -r runtime_line; do
+      if test "$runtime_line" = "R I$2"; then runtime_found_return=1; fi
+    done < "$1"
+    test "$runtime_found_return" = 1
+  }
+  runtime_expect_return runtime-first.hccir 13
+  runtime_expect_return runtime-second.hccir 29
+  "$HCC1" --m1-ir -o runtime-driver.dotted/explicit.hccir runtime-driver.dotted/src.dir/runtime-first.i
+  test -s runtime-driver.dotted/explicit.hccir
+  echo 'runtime-driver: default filename checks passed'
+
   runtime_expect_output_failure() {
     if "$@" > /dev/full 2> runtime-driver-error.log; then
       echo "runtime-driver: unexpected output success: $*" >&2
