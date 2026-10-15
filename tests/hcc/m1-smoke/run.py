@@ -27,6 +27,7 @@ CASES = [
     ("asm-nop", 0),
     ("parser-ordinary-scope", 0),
     ("parser-negative-enum", 0),
+    ("lowering-common-operands", 0),
 ]
 
 
