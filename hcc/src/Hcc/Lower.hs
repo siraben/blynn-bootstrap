@@ -824,13 +824,7 @@ lowerPlainBin op a b = do
        , coerceOp)
 
 coerceBinOperand :: CType -> Expr -> Operand -> CompileM ([Instr], Operand)
-coerceBinOperand commonTy expr op = case expr of
-  EVar name -> do
-    constant <- lookupConstant name
-    case (constant, builtinConstant name) of
-      (Nothing, Nothing) -> pure ([], op)
-      _ -> coerceScalar commonTy op
-  _ -> coerceScalar commonTy op
+coerceBinOperand commonTy _ op = coerceScalar commonTy op
 
 isComparisonBinOp :: BinOp -> Bool
 isComparisonBinOp op = case op of
