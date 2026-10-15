@@ -3,8 +3,6 @@ module Literal
   , bitAndInt
   , bitOrInt
   , bitXorInt
-  , shiftLeftInt
-  , shiftRightInt
   , intLiteralIsUnsigned
   , parseInt
   , stripIntSuffix
@@ -21,11 +19,9 @@ module Literal
   , decimalDigit
   , hexDigit
   , boolToInt
-  , evalConstBinOp
-  , cQuotInt
-  , cRemInt
   , Constant(..)
   , constantLiteralTarget
+  , constantLiteralChecked
   , constantConvert
   , constantPromote
   , constantToIntChecked
@@ -41,38 +37,6 @@ import Base
 
 boolToInt :: Bool -> Int
 boolToInt = bool 0 1
-
-evalConstBinOp :: String -> Int -> Int -> Maybe Int
-evalConstBinOp op a b = case op of
-  "+" -> Just (a + b)
-  "-" -> Just (a - b)
-  "*" -> Just (a * b)
-  "/" -> if b == 0 then Nothing else Just (cQuotInt a b)
-  "%" -> if b == 0 then Nothing else Just (cRemInt a b)
-  "<<" -> Just (shiftLeftInt a (max 0 b))
-  ">>" -> Just (shiftRightInt a (max 0 b))
-  "&" -> Just (bitAndInt a b)
-  "^" -> Just (bitXorInt a b)
-  "|" -> Just (bitOrInt a b)
-  "==" -> Just (boolToInt (a == b))
-  "!=" -> Just (boolToInt (a /= b))
-  "<" -> Just (boolToInt (a < b))
-  "<=" -> Just (boolToInt (a <= b))
-  ">" -> Just (boolToInt (a > b))
-  ">=" -> Just (boolToInt (a >= b))
-  "&&" -> Just (boolToInt (a /= 0 && b /= 0))
-  "||" -> Just (boolToInt (a /= 0 || b /= 0))
-  _ -> Nothing
-
--- C division truncates toward zero, unlike Haskell div/mod. Avoid abs on
--- the most negative representable value.
-cQuotInt :: Int -> Int -> Int
-cQuotInt a b =
-  let q = a `div` b
-  in if (a < 0) /= (b < 0) && a `mod` b /= 0 then q + 1 else q
-
-cRemInt :: Int -> Int -> Int
-cRemInt a b = a - cQuotInt a b * b
 
 pow2 :: Int -> Int
 pow2 n = if n <= 0 then 1 else 2 * pow2 (n - 1)
@@ -93,13 +57,6 @@ bitFoldInt op lhs rhs =
   if (lhs == 0 || lhs == -1) && (rhs == 0 || rhs == -1)
   then if op (lhs == -1) (rhs == -1) then -1 else 0
   else 2 * bitFoldInt op (lhs `div` 2) (rhs `div` 2) + boolToInt (op (lhs `mod` 2 /= 0) (rhs `mod` 2 /= 0))
-
-shiftLeftInt :: Int -> Int -> Int
-shiftLeftInt value amount = value * pow2 amount
-
-shiftRightInt :: Int -> Int -> Int
-shiftRightInt value amount =
-  if amount <= 0 then value else shiftRightInt (value `div` 2) (amount - 1)
 
 intLiteralIsUnsigned :: String -> Bool
 intLiteralIsUnsigned text = case text of
@@ -345,6 +302,25 @@ constantLiteralTarget longSize preprocessing text =
           let limit = replicate (size - 1) 255 ++ [if u then 255 else 127] ++ replicate (8 - size) 0
           in if constWordCompare bytes limit <= 0 then Constant size u (take size bytes) else choose rest
   in choose candidates
+
+-- Check before the legacy byte reader's eight-byte truncation. An invalid
+-- literal must not turn into a small (apparently valid) array extent.
+constantLiteralChecked :: Int -> Bool -> String -> Either String Constant
+constantLiteralChecked longSize preprocessing text =
+  let clean = stripIntSuffix text
+      (base, digits) = case clean of
+        '0':'x':rest -> (16, rest)
+        '0':'X':rest -> (16, rest)
+        '0':rest -> (8, rest)
+        _ -> (10, clean)
+      fits bytes remaining = case remaining of
+        [] -> True
+        c:rest -> if digitValue c >= base then True else
+          let next = byteWordAddSmallCarry (digitValue c) (byteWordMulSmall base bytes)
+          in last next == 0 && fits next rest
+  in if fits (replicate 9 0) digits
+     then Right (constantLiteralTarget longSize preprocessing text)
+     else Left "integer literal exceeds supported 64-bit range"
 
 constantConvert :: Int -> Bool -> Constant -> Constant
 constantConvert = constConvert

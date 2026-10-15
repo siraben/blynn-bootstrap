@@ -1697,7 +1697,7 @@ typeSize ty = case ty of
   CArray inner count -> do
     size <- typeSize inner
     bound <- arrayBoundSize count
-    pure (size * bound)
+    checkedArraySize size bound
   CStruct name -> structSize name
   CUnion name -> structSize name
   CStructNamed name fields -> do
@@ -1853,15 +1853,30 @@ globalDataExpr :: CType -> Expr -> CompileM [DataValue]
 globalDataExpr ty expr = case expr of
   EInitList exprs -> globalInitListData ty exprs
   EString text -> globalStringData ty text
-  EInt text -> scalarData ty (parseInt text)
+  EInt _ -> scalarConstantData ty expr
   EFloat text -> scalarFloatData ty text
-  EChar text -> scalarData ty (charValue text)
-  ECast _ value -> globalDataValue ty (Just value)
+  EChar _ -> scalarConstantData ty expr
+  ECast _ value -> do
+    address <- staticAddressInitializer value
+    if address then globalDataValue ty (Just value) else scalarConstantData ty expr
   EUnary "&" value -> globalAddressExprData ty value
   EVar name -> globalVarData ty name
-  _ -> do
-    value <- constExprValue expr
-    scalarData ty value
+  _ -> scalarConstantData ty expr
+
+-- Relocations still use the existing address path, not integer byte folding.
+staticAddressInitializer :: Expr -> CompileM Bool
+staticAddressInitializer expr = case expr of
+  ECast _ value -> staticAddressInitializer value
+  EString _ -> pure True
+  EUnary "&" (EVar _) -> pure True
+  EVar name -> do
+    value <- lookupConstant name
+    pure (case value of
+      Just _ -> False
+      Nothing -> case builtinConstant name of
+        Just _ -> False
+        Nothing -> True)
+  _ -> pure False
 
 globalInitListData :: CType -> [Expr] -> CompileM [DataValue]
 globalInitListData ty exprs =
@@ -1884,9 +1899,10 @@ globalArrayInitData inner count exprs = do
   case count of
     Nothing -> pure items
     Just bound -> do
-      n <- constExprValue bound
+      n <- arrayBoundSize (Just bound)
       elemSize <- typeSize inner
-      padDataTarget (n * elemSize) items
+      size <- checkedArraySize elemSize n
+      padDataTarget size items
 
 globalAggregateInitData :: CType -> [Expr] -> CompileM [DataValue]
 globalAggregateInitData ty exprs = do
@@ -1907,21 +1923,17 @@ globalStringData ty text = case ty of
       dataLabel <- freshDataLabel
       addDataItem (DataItem dataLabel (map DByte (stringBytes text)))
       pure [DAddress dataLabel]
-    else do
-      value <- constExprValue (EString text)
-      scalarData ty value
+    else scalarConstantData ty (EString text)
 
 stringDataSize :: Maybe Expr -> String -> CompileM Int
 stringDataSize count text = case count of
   Nothing -> pure (length (stringBytes text))
-  Just bound -> constExprValue bound
+  Just bound -> arrayBoundSize (Just bound)
 
 globalAddressExprData :: CType -> Expr -> CompileM [DataValue]
 globalAddressExprData ty value = case value of
   EVar name -> globalAddressData name
-  _ -> do
-    n <- constExprValue (EUnary "&" value)
-    scalarData ty n
+  _ -> scalarConstantData ty (EUnary "&" value)
 
 globalVarData :: CType -> String -> CompileM [DataValue]
 globalVarData ty name = do
@@ -1997,8 +2009,27 @@ isAggregateTypeM ty = case ty of
 
 scalarData :: CType -> Int -> CompileM [DataValue]
 scalarData ty value = do
-  size <- typeSize ty
-  pure (map DByte (intBytes size value))
+  converted <- castConstant ty (constantInt 4 value)
+  case converted of
+    Constant _ _ bytes -> pure (map DByte bytes)
+
+scalarConstantData :: CType -> Expr -> CompileM [DataValue]
+scalarConstantData ty expr = do
+  value <- constExprTyped True expr
+  converted <- castConstant ty value
+  case converted of
+    Constant _ _ bytes -> pure (map DByte bytes)
+
+castConstant :: CType -> Constant -> CompileM Constant
+castConstant ty value = case ty of
+  CBool -> pure (constantInt 1 (boolToInt (constantTrue value)))
+  _ -> do
+    integer <- isIntegerTypeM ty
+    if integer || isPointerType ty
+      then do
+        size <- typeSize ty
+        pure (constantConvert size (isUnsignedType ty || isPointerType ty) value)
+      else throwC "unsupported non-integer constant conversion"
 
 scalarFloatData :: CType -> String -> CompileM [DataValue]
 scalarFloatData ty text = do
@@ -2043,65 +2074,89 @@ globalAddressData name = do
   function <- lookupFunction name
   pure [DAddress (if function then "FUNCTION_" ++ name else name)]
 
-constExprValue :: Expr -> CompileM Int
-constExprValue expr = case expr of
-  EInt text -> pure (parseInt text)
-  EFloat _ -> pure 0
-  EChar text -> pure (charValue text)
-  ESizeofType ty -> typeSize ty
+-- Preserve target widths and signedness until the final storage conversion.
+constExprTyped :: Bool -> Expr -> CompileM Constant
+constExprTyped live expr = case expr of
+  EInt text -> do
+    word <- targetWordSize
+    case constantLiteralChecked word False text of
+      Right value -> pure value
+      Left msg -> throwC msg
+  EChar text -> pure (constantInt 4 (charValue text))
+  ESizeofType ty -> typeSize ty >>= sizeConstant
   ESizeofExpr value -> do
     mty <- exprType value
     ty <- requireMaybeType "sizeof expression has unknown type" mty
-    typeSize ty
-  ECast _ (EUnary "&" (EPtrMember (ECast (CPtr ty) (EInt "0")) field)) -> do
-    info <- memberInfo (Just (CPtr ty)) field
-    pure (snd info)
+    integer <- isIntegerTypeM ty
+    if integer
+      then do
+        folded <- constExprTyped False value
+        case folded of
+          Constant size _ _ -> sizeConstant size
+      else typeSize ty >>= sizeConstant
   EUnary "&" (EPtrMember (ECast (CPtr ty) (EInt "0")) field) -> do
     info <- memberInfo (Just (CPtr ty)) field
-    pure (snd info)
+    sizeConstant (snd info)
   EVar name -> do
     constant <- lookupConstant name
     case constant of
-      Just value -> pure value
+      Just value -> pure (constantInt 4 value)
       Nothing -> case builtinConstant name of
-        Just value -> pure value
-        Nothing -> throwC ("unknown constant: " ++ name)
-  ECast _ value -> constExprValue value
-  EUnary "-" value -> do
-    n <- constExprValue value
-    pure (negate n)
-  EUnary "+" value -> constExprValue value
-  EUnary "~" value -> do
-    n <- constExprValue value
-    pure (negate n - 1)
-  EUnary "!" value -> do
-    n <- constExprValue value
-    pure (if n == 0 then 1 else 0)
-  EBinary "&&" left right -> do
-    a <- constExprValue left
-    if a == 0 then pure 0 else do
-      b <- constExprValue right
-      pure (boolToInt (b /= 0))
-  EBinary "||" left right -> do
-    a <- constExprValue left
-    if a /= 0 then pure 1 else do
-      b <- constExprValue right
-      pure (boolToInt (b /= 0))
+        Just value -> pure (constantInt 4 value)
+        Nothing -> if live then throwC ("unknown constant: " ++ name)
+                   else unevaluatedConstant expr
+  ECast ty value -> constExprTyped live value >>= castConstant ty
+  EUnary op value | op `elem` ["-", "+", "~", "!"] -> do
+    n <- constExprTyped live value
+    pure (if op == "!" then constantInt 4 (boolToInt (not (constantTrue n)))
+          else constantUnary op (constantPromote n))
   EBinary op left right -> do
-    a <- constExprValue left
-    b <- constExprValue right
-    case evalConstBinOp op a b of
-      Just value -> pure value
-      Nothing -> throwC ("invalid constant expression: " ++ op)
+    a <- constExprTyped live left
+    let rightLive = live && (if op == "&&" then constantTrue a
+                            else if op == "||" then not (constantTrue a) else True)
+    b <- constExprTyped rightLive right
+    let a' = constantPromote a
+        b' = constantPromote b
+    case constantBinary op a' b' of
+      Right value -> pure value
+      Left msg -> if live then throwC msg
+        else pure (if op == "<<" || op == ">>" then a' else fst (constantCommon a' b'))
   ECond cond yes no -> do
-    c <- constExprValue cond
-    constExprValue (if c /= 0 then yes else no)
-  _ -> throwC ("unsupported constant expression: " ++ renderExprTag expr)
+    c <- constExprTyped live cond
+    a <- constExprTyped (live && constantTrue c) yes
+    b <- constExprTyped (live && not (constantTrue c)) no
+    let (a', b') = constantCommon (constantPromote a) (constantPromote b)
+    pure (if constantTrue c then a' else b')
+  _ -> if live then throwC ("unsupported constant expression: " ++ renderExprTag expr)
+       else unevaluatedConstant expr
+
+-- Unevaluated operands contribute their type, not a runtime value. In
+-- particular sizeof and dead conditional arms must not execute calls/loads.
+unevaluatedConstant :: Expr -> CompileM Constant
+unevaluatedConstant expr = do
+  mty <- exprType expr
+  ty <- requireMaybeType "unevaluated constant expression has unknown type" mty
+  castConstant ty (constantInt 4 0)
+
+sizeConstant :: Int -> CompileM Constant
+sizeConstant n = do
+  word <- targetWordSize
+  pure (constantConvert word True (constantInt word n))
 
 arrayBoundSize :: Maybe Expr -> CompileM Int
 arrayBoundSize bound = case bound of
   Nothing -> pure 1
-  Just expr -> constExprValue expr
+  Just expr -> do
+    value <- constExprTyped True expr
+    case constantToIntChecked value of
+      Nothing -> throwC "array extent exceeds supported layout range"
+      Just n -> if n < 0 then throwC "negative array extent" else pure n
+
+checkedArraySize :: Int -> Int -> CompileM Int
+checkedArraySize size count =
+  if count > 0 && size > 2147483647 `div` count
+    then throwC "array size exceeds supported layout range"
+    else pure (size * count)
 
 shiftRightOp :: Expr -> CompileM BinOp
 shiftRightOp expr = do
