@@ -1,6 +1,34 @@
+#if defined(__M2__)
+/* M2libc's stdio.h includes its implementation.  Load the real syscalls
+   first, then route stdio writes through a checked adapter: its fwrite and
+   automatic fflush otherwise discard errors.  Keep the pinned formatter and
+   buffering unchanged; this is an M2-only output hook, not a host substitute. */
+#include <unistd.h>
+int m1_checked_write(int fd, char *data, unsigned count);
+#define write m1_checked_write
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#if defined(__M2__)
+#undef write
+int m1_checked_write(int fd, char *data, unsigned count)
+{
+  unsigned remaining = count;
+  int written;
+  while (remaining > 0) {
+    written = write(fd, data, remaining);
+    if (written <= 0) {
+      /* Raw diagnostic and exit avoid recursively flushing the failed FILE. */
+      write(2, "hcc-m1: output write error\n", 27);
+      _exit(1);
+    }
+    data = data + written;
+    remaining = remaining - written;
+  }
+  return count;
+}
+#endif
 
 enum {
   OP_TEMP = 1,
@@ -2479,6 +2507,13 @@ int main(int argc, char **argv)
   if (!str_eq(header, "HCCIR 1")) die("bad IR input header");
   translate_ir_module(in, out);
   fclose(in);
-  fclose(out);
+#if defined(__M2__)
+  /* M2 fflush returns a byte count; m1_checked_write fails on any error. */
+  fflush(out);
+#else
+  if (ferror(out)) die("output write error");
+  if (fflush(out) != 0) die("output flush error");
+#endif
+  if (fclose(out) != 0) die("output close error");
   return 0;
 }

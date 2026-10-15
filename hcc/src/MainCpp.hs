@@ -15,6 +15,7 @@ main = do
     [] -> die "hcpp: no input files"
     ["--help"] -> usage >> hccExitSuccess
     _ -> preprocessFile args
+  hccExitSuccess
 
 usage :: IO ()
 usage = hccPutStrLn "usage: hcpp [CC-ARGS...] INPUT.c"
