@@ -569,8 +569,11 @@ lowerExpr expr = case expr of
     (ci, co) <- lowerExpr cond
     (yi, yo) <- lowerExpr yes
     (ni, noOp) <- lowerExpr no
+    resultTy <- conditionalType yes no
+    (yc, yesOp) <- coerceMaybeScalar resultTy yo
+    (nc, noResult) <- coerceMaybeScalar resultTy noOp
     out <- freshTemp
-    pure ([ICond out ci co yi yo ni noOp], OTemp out)
+    pure ([ICond out ci co (yi ++ yc) yesOp (ni ++ nc) noResult], OTemp out)
   EBinary "," a b -> do
     ai <- lowerSideEffect a
     (bi, bo) <- lowerExpr b
@@ -1301,14 +1304,7 @@ exprType expr = case expr of
           _ -> case (leftTy, rightTy) of
             (Just _, Just _) -> Just arithmeticTy
             _ -> Nothing)
-  ECond _ yes no -> do
-    yesTy <- exprType yes
-    noTy <- exprType no
-    pure (case (yesTy, noTy) of
-      (Just ty, Nothing) -> Just ty
-      (Nothing, Just ty) -> Just ty
-      (Just ty, Just _) -> Just ty
-      _ -> Nothing)
+  ECond _ yes no -> conditionalType yes no
   EAssign lhs _ -> exprType lhs
   ECompoundAssign _ lhs _ -> exprType lhs
   EPostfix _ value -> exprType value
@@ -1333,6 +1329,26 @@ exprType expr = case expr of
     calleeTy <- exprType callee
     pure (functionResultType =<< calleeTy)
   _ -> pure Nothing
+
+conditionalType :: Expr -> Expr -> CompileM (Maybe CType)
+conditionalType yes no = do
+  yesTy <- exprType yes
+  noTy <- exprType no
+  case (yesTy, noTy) of
+    (Just a, Just b) -> do
+      ai <- isIntegerTypeM a
+      bi <- isIntegerTypeM b
+      if (ai || isFloatingType a) && (bi || isFloatingType b)
+        then do
+          ty <- usualArithmeticType yes no
+          pure (Just ty)
+        else case pointerElementType yesTy of
+          Just inner -> pure (Just (CPtr inner))
+          Nothing -> case pointerElementType noTy of
+            Just inner -> pure (Just (CPtr inner))
+            Nothing -> pure yesTy
+    (Just _, Nothing) -> pure yesTy
+    _ -> pure noTy
 
 promoteMaybeIntegerType :: Maybe CType -> CompileM (Maybe CType)
 promoteMaybeIntegerType mty = case mty of

@@ -31,6 +31,7 @@ CASES = [
     ("lowering-compound-types", 0),
     ("lowering-runtime-initializers", 0),
     ("lowering-unary-width", 0),
+    ("lowering-conditional-type", 0),
 ]
 
 
