@@ -53,3 +53,18 @@ pp_contract_contains 'int pp_contract_arithmetic ;' pp-contract-arithmetic.i
 "$HCC1" --check pp-contract-arithmetic.i
 "$HCC1" --m1-ir -o pp-contract-arithmetic.hccir pp-contract-arithmetic.i
 "$HCC_M1" pp-contract-arithmetic.hccir pp-contract-arithmetic.M1
+
+"$HCPP" "$TESTS_DIR/pp-contract-folded.c" > pp-contract-folded.i
+"$HCC1" --m1-ir -o pp-contract-folded.hccir pp-contract-folded.i
+# Check actual lowered bytes, not merely frontend acceptance.
+for pp_expected in 'HCCIR 1' 'D pp_contract_quotient' 'b 254' 'b 255' 'b 255' 'b 255' E \
+  'D pp_contract_remainder' 'b 255' 'b 255' 'b 255' 'b 255' E \
+  'D pp_contract_bit31' 'z 3' 'b 128' E \
+  'D pp_contract_shift' 'b 255' 'b 255' 'b 255' 'b 255' E; do
+  IFS= read -r pp_actual
+  if test "$pp_actual" != "$pp_expected"; then
+    echo "folded constant: expected $pp_expected, got $pp_actual" >&2
+    exit 1
+  fi
+done < pp-contract-folded.hccir
+"$HCC_M1" pp-contract-folded.hccir pp-contract-folded.M1
