@@ -15,6 +15,13 @@ filename's final extension with `.hccir` (for example, `src.v1/foo.bar.i` become
 `foo.bar.hccir`). Extensionless names and leading-dot-only names retain their
 whole stem. Explicit `-o` paths retain the requested directory.
 
+`hcc1` rejects lexically identical input/output paths before opening output,
+including ordinary `./` and absolute spellings of a cwd input. This portable
+check uses `getcwd` and removes `.`/redundant slashes, not filesystem identity:
+`..`, differently named symlinks, hard links and concurrent path changes are not
+covered. Keep input and output files distinct; the faithful libc has no portable
+file-identity API here. Distinct explicit `-o` outputs may still be overwritten.
+
 `hcpp` expands includes and macros. `hcc1` parses and lowers preprocessed C;
 `--check` stops after frontend checks. `hcc-m1` emits target assembly for
 stage0's `M1` and `hex2`, not a host assembler. Target support covers amd64,
