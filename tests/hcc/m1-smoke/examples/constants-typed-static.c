@@ -41,6 +41,27 @@ int constants_size_effect = sizeof((constants_effect++, (char)0));
 int constants_size_call = sizeof(constants_never());
 int constants_size_divzero = sizeof(1 / 0);
 
+/* Integer zero converts to floating zero storage, without FP execution. */
+double constants_double_zero = 0;
+double constants_double_array[1] = {0};
+float constants_float_zero = 0;
+float constants_float_array[1] = {0};
+enum { constants_zero = 0 };
+struct constants_zero_fields {
+  int before;
+  float f;
+  double d;
+  long double ld;
+  int after;
+} constants_zero_struct = {37, constants_zero, 1U - 1U, 0, 53};
+
+static int constants_zero_bytes(void *value, unsigned size) {
+  unsigned char *p = (unsigned char *)value;
+  unsigned i;
+  for (i = 0; i < size; ++i) if (p[i]) return 0;
+  return 1;
+}
+
 int main(void) {
   unsigned char *p;
   int i;
@@ -88,5 +109,13 @@ int main(void) {
   if (constants_size_effect != 1 || constants_effect != 0 ||
       constants_size_call != sizeof(int) || constants_size_divzero != sizeof(int)) return 25;
   if (sizeof((constants_effect++, (char)0)) != 1 || constants_effect != 0) return 26;
+  if (!constants_zero_bytes(&constants_double_zero, sizeof(double)) ||
+      !constants_zero_bytes(constants_double_array, sizeof(constants_double_array))) return 27;
+  if (!constants_zero_bytes(&constants_float_zero, sizeof(float)) ||
+      !constants_zero_bytes(constants_float_array, sizeof(constants_float_array))) return 28;
+  if (constants_zero_struct.before != 37 || constants_zero_struct.after != 53) return 29;
+  if (!constants_zero_bytes(&constants_zero_struct.f, sizeof(float)) ||
+      !constants_zero_bytes(&constants_zero_struct.d, sizeof(double)) ||
+      !constants_zero_bytes(&constants_zero_struct.ld, sizeof(long double))) return 30;
   return 0;
 }
