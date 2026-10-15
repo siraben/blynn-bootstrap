@@ -71,6 +71,9 @@ pp_contract_contains 'pp_trailing_call = "b"' pp-contract-trailing.i
 pp_contract_contains 'pp_empty_adjacent = "z()b"' pp-contract-trailing.i
 pp_contract_contains 'pp_empty_prescan = "a+ b"' pp-contract-trailing.i
 pp_contract_contains 'pp_empty_leading = "a+b"' pp-contract-trailing.i
+pp_contract_contains 'pp_leading_empty = "a+ b"' pp-contract-trailing.i
+pp_contract_contains 'pp_leading_paste = "a+ b"' pp-contract-trailing.i
+pp_contract_contains 'pp_leading_prescan = "b+ b"' pp-contract-trailing.i
 "$HCC1" --m1-ir -o pp-contract-trailing.hccir pp-contract-trailing.i
 "$HCC_M1" pp-contract-trailing.hccir pp-contract-trailing.M1
 

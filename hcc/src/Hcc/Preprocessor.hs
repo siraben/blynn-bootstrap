@@ -197,7 +197,7 @@ expandNextSource macros toks = case toks of
     | not (name `elem` hidden), Just macro <- symbolMapLookup name macros ->
         case macro of
           ObjectMacro _ body ->
-            rescanReplacement space (Expansion (map (hideToken (name:hidden)) (replacementTokens sp body)) False) rest
+            rescanReplacement space (Expansion (map (hideToken (name:hidden)) (leadingSpace space (replacementTokens sp body))) False) rest
           FunctionMacro _ params variadic body -> case rest of
             PPToken _ _ (Token _ (TokPunct "(")):afterOpen -> do
               (args, commas, closeHidden, rest') <- collectInvocationArgs sp afterOpen
@@ -279,7 +279,7 @@ substituteMacroBody _ args body = go body [] where
         [] -> pasteWithPrevious pasteSp [] xs acc
         previous:before -> pasteWithPrevious pasteSp [previous] xs before
     PPToken _ space (Token _ (TokIdent name)):PPToken _ _ (Token pasteSp (TokPunct "##")):xs
-      | Just arg <- symbolMapLookup name args -> pasteWithPrevious pasteSp (substitutionPieces space (Expansion (argRaw arg) False)) xs acc
+      | Just arg <- symbolMapLookup name args -> pasteWithPrevious pasteSp (substitutionPieces space (Expansion (leadingSpace False (argRaw arg)) False)) xs acc
     PPToken _ space (Token _ (TokIdent name)):xs
       | Just arg <- symbolMapLookup name args -> do
           expanded <- argExpanded arg
@@ -301,14 +301,17 @@ substituteMacroBody _ args body = go body [] where
 
   nextPasteOperand xs = case xs of
     PPToken _ space (Token _ (TokIdent name)):rest
-      | Just arg <- symbolMapLookup name args -> Right (substitutionPieces space (Expansion (argRaw arg) False), rest)
+      | Just arg <- symbolMapLookup name args -> Right (substitutionPieces space (Expansion (leadingSpace False (argRaw arg)) False), rest)
     tok:rest -> Right ([TokenPiece tok], rest)
     [] -> Right ([], [])
 
 substitutionPieces :: Bool -> Expansion -> [MacroPiece]
 substitutionPieces space (Expansion toks trailing) = case toks of
   [] -> [EmptyPiece (space || trailing)]
-  _ -> map TokenPiece (leadingSpace space toks) ++ if trailing then [EmptyPiece True] else []
+  -- Prescanning may remove a leading empty macro, exposing real internal
+  -- separation on the first surviving token. Merge rather than overwrite it.
+  -- Raw paste operands, like prescan inputs, have their outer space trimmed.
+  _ -> map TokenPiece (addLeadingSpace space toks) ++ if trailing then [EmptyPiece True] else []
 
 pastePieces :: Span -> MacroPiece -> MacroPiece -> Either PreprocessError MacroPiece
 pastePieces sp left right = case (left, right) of
@@ -398,7 +401,9 @@ leadingSpace space toks = case toks of
 rescanReplacement :: Bool -> Expansion -> [PPToken] -> Either PreprocessError ([PPToken], [PPToken], Bool)
 rescanReplacement space (Expansion replacement trailing) rest =
   let pending = trailing || (null replacement && space)
-      source = leadingSpace space replacement ++ addLeadingSpace pending rest
+      -- The body's original leading space was set before substitution. The
+      -- first survivor can now carry additional separation from empty pieces.
+      source = addLeadingSpace space replacement ++ addLeadingSpace pending rest
   in Right ([], source, pending && null rest)
 
 addLeadingSpace :: Bool -> [PPToken] -> [PPToken]
