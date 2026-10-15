@@ -15,3 +15,11 @@ pp_contract_contains() {
 "$HCPP" "$TESTS_DIR/pp-contract-inactive.c" > pp-contract-inactive.i
 pp_contract_contains 'int pp_contract_inactive ;' pp-contract-inactive.i
 "$HCC1" --check pp-contract-inactive.i
+
+"$HCPP" "$TESTS_DIR/pp-contract-macros.c" > pp-contract-macros.i
+pp_contract_contains 'pp_contract_nested = ( ( ( ( 1 ) + 1 ) ) + 1 )' pp-contract-macros.i
+pp_contract_contains 'pp_contract_suffix = ( ( 1 ) + 1 )' pp-contract-macros.i
+pp_contract_contains 'int A ;' pp-contract-macros.i
+pp_contract_contains 'SELF ( 1 )' pp-contract-macros.i
+pp_contract_contains '2 * 9 * g' pp-contract-macros.i
+pp_contract_contains 'one twothree four' pp-contract-macros.i
