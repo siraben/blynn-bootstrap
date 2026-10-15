@@ -9,6 +9,9 @@ long constants_promote = ~(unsigned char)255;
 long constants_cast = (signed char)255;
 unsigned long long constants_extend = (unsigned int)-1;
 unsigned long constants_shift = (unsigned int)-1 >> 31;
+int constants_quotient = -5 / 2;
+int constants_remainder = -5 % 2;
+int constants_signed_shift = -1 >> 31;
 int constants_compare = 18446744073709551615ULL > 1ULL;
 int constants_dead = 1 ? 7 : 1 / 0;
 _Bool constants_bool = (_Bool)256;
@@ -83,6 +86,7 @@ int main(void) {
   for (i = 0; i < 8; i++) if (p[i] != (i == 0 ? 1 : 0)) return 7;
   if (constants_promote != -256 || constants_cast != -1) return 8;
   if (constants_shift != 1 || constants_compare != 1) return 9;
+  if (constants_quotient != -2 || constants_remainder != -1 || constants_signed_shift != -1) return 31;
   if (constants_dead != 7 || constants_bool != 1) return 10;
   if (sizeof(constants_bounds) != 12) return 11;
   if (constants_enum != (sizeof(long) == 8)) return 12;

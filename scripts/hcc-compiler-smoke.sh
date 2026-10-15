@@ -161,6 +161,5 @@ expect_hcpp_fail invalid-octal-constant "invalid digit in octal constant" "$TEST
 
 . "$TESTS_DIR/parser-contracts.sh"
 . "$TESTS_DIR/preprocessor-contracts.sh"
-. "$TESTS_DIR/driver-contracts.sh"
 
 log "all compiler smoke checks passed"

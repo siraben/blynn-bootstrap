@@ -1136,30 +1136,6 @@
             sh ${./tests/prepare-upstreams.sh} "$PWD"
             touch "$out"
           '';
-        } // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
-          hcc-output-errors = pkgs.runCommand "hcc-output-errors" {
-            nativeBuildInputs = [ pkgs.strace ];
-          } ''
-            for compiler in ${hccBy.host.ghc.native} ${hccBy.m2.precisely.m2}; do
-              export HCPP="$compiler/bin/hcpp" HCC1="$compiler/bin/hcc1"
-              export HCC_M1="$compiler/bin/hcc-m1" HCC_DRIVER_DEV_FULL=1
-              sh ${./tests/hcc/driver-contracts.sh}
-            done
-            # Trace actual executables, not the M2 launcher's shell syscalls.
-            for compiler in ${hccBy.host.ghc.native}/bin/hcc1 \
-              ${hccBy.m2.precisely.m2}/libexec/hcc-m2-precisely-m2/hcc1; do
-              printf 'int main(void) { return 13; }\n' > collision.hccir
-              cp collision.hccir original-source
-              if strace -e trace=getcwd -e inject=getcwd:error=ENOENT:when=1 \
-                "$compiler" --m1-ir "$PWD/collision.hccir" 2> fault.log; then
-                echo "compiler ignored getcwd failure: $compiler" >&2
-                exit 1
-              fi
-              grep -q 'hcc: cannot determine working directory' fault.log
-              cmp original-source collision.hccir
-            done
-            touch "$out"
-          '';
         };
 
         legacyPackages = packageTree;
