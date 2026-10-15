@@ -16,6 +16,7 @@ main = do
     ["--help"] -> usage >> hccExitSuccess
     "--check":files -> checkFiles files
     _ -> compileM1Ir args
+  hccExitSuccess
 
 usage :: IO ()
 usage = hccPutStrLn "usage: hcc1 [--m1-ir] [-o FILE] INPUT.i\n       hcc1 --check FILE..."
