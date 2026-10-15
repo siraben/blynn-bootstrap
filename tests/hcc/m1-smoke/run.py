@@ -33,6 +33,7 @@ CASES = [
     ("lowering-unary-width", 0),
     ("lowering-conditional-type", 0),
     ("lowering-nested-alignment", 0),
+    ("lowering-prefix-value", 0),
 ]
 
 
