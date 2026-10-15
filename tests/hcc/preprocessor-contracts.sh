@@ -33,3 +33,14 @@ if "$HCPP" "$TESTS_DIR/pp-contract-bad-include.c" > pp-contract-bad-include.i 2>
   exit 1
 fi
 pp_contract_contains 'invalid active #include operand' pp-contract-bad-include.err
+
+"$HCPP" "$TESTS_DIR/pp-contract-stringify.c" > pp-contract-stringify.i
+pp_contract_contains 'pp_adjacent = "a+b"' pp-contract-stringify.i
+pp_contract_contains 'pp_space = "a + b"' pp-contract-stringify.i
+pp_contract_contains 'pp_comment = "a +b"' pp-contract-stringify.i
+pp_contract_contains 'pp_expand = "a+b"' pp-contract-stringify.i
+pp_contract_contains 'pp_wrap = "a+b + c"' pp-contract-stringify.i
+pp_contract_contains 'pp_variadic = "a ,b, c"' pp-contract-stringify.i
+pp_contract_contains 'pp_escape = "\"a\\\\b\""' pp-contract-stringify.i
+pp_contract_contains 'pp_splice = "a+b"' pp-contract-stringify.i
+"$HCC1" --check pp-contract-stringify.i
