@@ -974,7 +974,7 @@ unary = do
       advanceToken
       constant <- lookupParserConstant s
       pure (case constant of
-        Just value -> EInt (show value)
+        Just value -> parserConstantExpr value
         Nothing -> EVar s)
     TokPunct "(" -> do
       advanceToken
@@ -989,6 +989,16 @@ unary = do
           needPunct ")"
           pure e
     _ -> failAt tok "expected expression"
+
+-- EInt contains an unsigned token spelling, not a signed decimal value.
+-- Spell a negative constant as -(abs(value)-1)-1: the intermediate fits even
+-- at the minimum Int, and a minimum C int enumerator retains int type rather
+-- than acquiring the wider type of the positive literal 2147483648.
+parserConstantExpr :: Int -> Expr
+parserConstantExpr value =
+  if value < 0
+    then EBinary "-" (EUnary "-" (EInt (show (negate (value + 1))))) (EInt "1")
+    else EInt (show value)
 
 parseSizeof :: Parser Expr
 parseSizeof = do
