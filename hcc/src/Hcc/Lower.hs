@@ -382,11 +382,11 @@ localArrayTemplateData :: CType -> Maybe Expr -> CompileM (Maybe String)
 localArrayTemplateData ty initExpr = case initExpr of
   Just expr ->
     if staticInitializerExpr expr
-    then case expr of
-      EInitList _ -> localDataItem ty initExpr
-      EString _ -> localDataItem ty initExpr
-      _ -> pure Nothing
-    else pure Nothing
+      then case expr of
+        EInitList _ -> localDataItem ty initExpr
+        EString _ -> localDataItem ty initExpr
+        _ -> pure Nothing
+      else pure Nothing
   Nothing -> pure Nothing
 
 localNonArrayTemplateData :: CType -> Maybe Expr -> CompileM (Maybe String)
@@ -398,29 +398,23 @@ localNonArrayTemplateData ty initExpr = case initExpr of
     _ -> pure Nothing
   Nothing -> pure Nothing
 
+-- A conservative template optimization: names and addresses use the runtime
+-- initializer path, without needing binding or relocation classification here.
 staticInitializerExpr :: Expr -> Bool
 staticInitializerExpr expr = case expr of
-  EInitList exprs -> allStaticInitializerExprs exprs
+  EInitList exprs -> and (map staticInitializerExpr exprs)
   EString _ -> True
   EInt _ -> True
+  EFloat _ -> True
   EChar _ -> True
+  ESizeofType _ -> True
+  ESizeofExpr _ -> True
   ECast _ value -> staticInitializerExpr value
   EUnary "-" value -> staticInitializerExpr value
   EUnary "+" value -> staticInitializerExpr value
   EUnary "~" value -> staticInitializerExpr value
   EUnary "!" value -> staticInitializerExpr value
-  EUnary "&" _ -> True
-  EVar _ -> True
-  EBinary op left right ->
-    op /= "," && staticInitializerExpr left && staticInitializerExpr right
-  ECond cond yes no ->
-    staticInitializerExpr cond && staticInitializerExpr yes && staticInitializerExpr no
   _ -> False
-
-allStaticInitializerExprs :: [Expr] -> Bool
-allStaticInitializerExprs exprs = case exprs of
-  [] -> True
-  expr:rest -> staticInitializerExpr expr && allStaticInitializerExprs rest
 
 localDataItem :: CType -> Maybe Expr -> CompileM (Maybe String)
 localDataItem ty initExpr = do
@@ -492,6 +486,11 @@ lowerAggregateElementValueWrite aggregateStorage addr fieldTy expr =
 lowerAggregateElementAggregateWrite :: Operand -> CType -> Expr -> CompileM [Instr]
 lowerAggregateElementAggregateWrite addr fieldTy expr = case expr of
   EInitList exprs -> lowerAggregateInitList addr fieldTy exprs
+  EString _ -> do
+    label <- localDataItem fieldTy (Just expr)
+    case label of
+      Just name -> copyObject addr (OGlobal name) fieldTy
+      Nothing -> pure []
   _ -> do
     (exprInstrs, op) <- lowerExpr expr
     copyInstrs <- copyObject addr op fieldTy
