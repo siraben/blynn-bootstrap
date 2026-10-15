@@ -646,6 +646,16 @@ stdenvNoCC.mkDerivation {
     set -e
     test "$stage3_status" -eq 31
 
+    # Execute against the real final Mes libc/libtcc1 archives: fixpoint
+    # equality alone cannot detect consistently corrupted constants. The ARM64
+    # and RISC-V routes instead use separate reduced support and empty libtcc1;
+    # this gate does not assert full floating support for those routes.
+    if [ "$target_is_aarch64" != 1 ] && [ "$target_is_riscv64" != 1 ]; then
+      run_step "final-library magnitude compile" run_target ./tcc-stage3 -B final-libs \
+        $check_include_flags ${../tests/hcc/runtime-magnitude.c} -o runtime-magnitude
+      run_step "final-library magnitude execution" run_target ./runtime-magnitude
+    fi
+
     runHook postCheck
   '';
 
