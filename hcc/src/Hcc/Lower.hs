@@ -1277,8 +1277,8 @@ exprType expr = case expr of
   EFloat text -> pure (Just (floatLiteralType text))
   EChar _ -> pure (Just CInt)
   EString _ -> pure (Just (CPtr CChar))
-  ESizeofType _ -> pure (Just CInt)
-  ESizeofExpr _ -> pure (Just CInt)
+  ESizeofType _ -> pure (Just (CNamed "size_t"))
+  ESizeofExpr _ -> pure (Just (CNamed "size_t"))
   EVar name -> do
     if isFunctionNameMacro name
       then pure (Just (CPtr CChar))
@@ -2129,13 +2129,8 @@ constExprTyped live expr = case expr of
   ESizeofExpr value -> do
     mty <- exprType value
     ty <- requireMaybeType "sizeof expression has unknown type" mty
-    integer <- isIntegerTypeM ty
-    if integer
-      then do
-        folded <- constExprTyped False value
-        case folded of
-          Constant size _ _ -> sizeConstant size
-      else typeSize ty >>= sizeConstant
+    -- sizeof never folds its operand's value (including casts and comma).
+    typeSize ty >>= sizeConstant
   EUnary "&" (EPtrMember (ECast (CPtr ty) (EInt "0")) field) -> do
     info <- memberInfo (Just (CPtr ty)) field
     sizeConstant (snd info)
@@ -2172,8 +2167,8 @@ constExprTyped live expr = case expr of
   _ -> if live then throwC ("unsupported constant expression: " ++ renderExprTag expr)
        else unevaluatedConstant expr
 
--- Unevaluated operands contribute their type, not a runtime value. In
--- particular sizeof and dead conditional arms must not execute calls/loads.
+-- Dead constant-expression arms contribute their type, not a runtime value.
+-- sizeof queries exprType directly and never enters the value folder.
 unevaluatedConstant :: Expr -> CompileM Constant
 unevaluatedConstant expr = do
   mty <- exprType expr

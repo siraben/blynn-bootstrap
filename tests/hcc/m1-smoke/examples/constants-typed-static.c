@@ -29,6 +29,18 @@ enum { constants_boot32 = 0xffffffffU, constants_boot64 = 0xffffffffffffffffULL 
 unsigned long long constants_enum64 = constants_boot64 / 3ULL;
 unsigned long long constants_enum32 = constants_boot32;
 
+/* sizeof queries type only, including for static initializers. */
+int constants_size_comma = sizeof((0, (char)0));
+int constants_size_float_cast = sizeof((int)3.0);
+int constants_size_nested_expr = sizeof(sizeof((char)0));
+int constants_size_nested_type = sizeof(sizeof(char));
+int constants_size_conditional = sizeof(1 ? sizeof(char) : 0U);
+int constants_size_unsigned = sizeof(char) < -1;
+int constants_effect;
+int constants_size_effect = sizeof((constants_effect++, (char)0));
+int constants_size_call = sizeof(constants_never());
+int constants_size_divzero = sizeof(1 / 0);
+
 int main(void) {
   unsigned char *p;
   int i;
@@ -66,5 +78,15 @@ int main(void) {
   for (i = 0; i < 8; i++) if (p[i] != 85) return 19;
   p = (unsigned char *)&constants_enum32;
   for (i = 0; i < 8; i++) if (p[i] != (i < 4 ? 255 : 0)) return 20;
+  if (constants_size_comma != 1 || constants_size_float_cast != sizeof(int)) return 21;
+  if (constants_size_nested_expr != sizeof(void *) ||
+      constants_size_nested_type != sizeof(void *) ||
+      constants_size_conditional != sizeof(void *)) return 22;
+  if (!constants_size_unsigned || !(sizeof(char) < -1)) return 23;
+  if (sizeof(sizeof(char)) != sizeof(void *) ||
+      sizeof(1 ? sizeof(char) : 0U) != sizeof(void *)) return 24;
+  if (constants_size_effect != 1 || constants_effect != 0 ||
+      constants_size_call != sizeof(int) || constants_size_divzero != sizeof(int)) return 25;
+  if (sizeof((constants_effect++, (char)0)) != 1 || constants_effect != 0) return 26;
   return 0;
 }
