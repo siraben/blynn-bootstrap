@@ -28,6 +28,7 @@ CASES = [
     ("parser-ordinary-scope", 0),
     ("parser-negative-enum", 0),
     ("lowering-common-operands", 0),
+    ("lowering-compound-types", 0),
 ]
 
 
