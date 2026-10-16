@@ -26,16 +26,9 @@ CASES = [
     ("for-decl-scope", 0),
     ("asm-nop", 0),
     ("parser-ordinary-scope", 0),
-    ("parser-negative-enum", 0),
-    ("lowering-common-operands", 0),
-    ("lowering-compound-types", 0),
-    ("lowering-runtime-initializers", 0),
-    ("lowering-unary-width", 0),
-    ("lowering-conditional-type", 0),
-    ("lowering-nested-alignment", 0),
-    ("lowering-prefix-value", 0),
-    ("lowering-aggregate-arguments", 0),
-    ("constants-typed-static", 0),
+    ("integer-correctness", 0),
+    ("aggregate-correctness", 0),
+    ("preprocessor-correctness", 0),
 ]
 
 
