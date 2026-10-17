@@ -380,9 +380,8 @@ localAggregateTemplateData ty initExpr = case ty of
 
 localArrayTemplateData :: CType -> Maybe Expr -> CompileM (Maybe String)
 localArrayTemplateData ty initExpr = case initExpr of
-  Just expr -> do
-    static <- staticInitializerExpr expr
-    if static
+  Just expr ->
+    if staticInitializerExpr expr
       then case expr of
         EInitList _ -> localDataItem ty initExpr
         EString _ -> localDataItem ty initExpr
@@ -395,60 +394,27 @@ localNonArrayTemplateData ty initExpr = case initExpr of
   Just expr -> case expr of
     EInitList _ -> do
       aggregateStorage <- isAggregateTypeM ty
-      static <- staticInitializerExpr expr
-      if aggregateStorage && static then localDataItem ty initExpr else pure Nothing
+      if aggregateStorage && staticInitializerExpr expr then localDataItem ty initExpr else pure Nothing
     _ -> pure Nothing
   Nothing -> pure Nothing
 
-staticInitializerExpr :: Expr -> CompileM Bool
+-- A conservative template optimization: names and addresses use the runtime
+-- initializer path, without needing binding or relocation classification here.
+staticInitializerExpr :: Expr -> Bool
 staticInitializerExpr expr = case expr of
-  EInitList exprs -> do
-    static <- mapM staticInitializerExpr exprs
-    pure (and static)
-  EString _ -> pure True
-  EInt _ -> pure True
-  EFloat _ -> pure True
-  EChar _ -> pure True
-  ESizeofType _ -> pure True
-  ESizeofExpr _ -> pure True
+  EInitList exprs -> and (map staticInitializerExpr exprs)
+  EString _ -> True
+  EInt _ -> True
+  EFloat _ -> True
+  EChar _ -> True
+  ESizeofType _ -> True
+  ESizeofExpr _ -> True
   ECast _ value -> staticInitializerExpr value
   EUnary "-" value -> staticInitializerExpr value
   EUnary "+" value -> staticInitializerExpr value
   EUnary "~" value -> staticInitializerExpr value
   EUnary "!" value -> staticInitializerExpr value
-  EUnary "&" (EVar name) -> staticAddressName name
-  EVar name -> do
-    local <- lookupVarMaybe name
-    case local of
-      Just _ -> pure False
-      Nothing -> do
-        constant <- lookupConstant name
-        case constant of
-          Just _ -> pure True
-          Nothing -> case builtinConstant name of
-            Just _ -> pure True
-            Nothing -> do
-              function <- lookupFunction name
-              ty <- lookupGlobalType name
-              pure (function || isArrayType ty)
-  -- More complex expressions (including address arithmetic) are safely
-  -- evaluated at runtime, not interpreted as relocations or host integers.
-  _ -> pure False
-
-isArrayType :: Maybe CType -> Bool
-isArrayType ty = case ty of
-  Just (CArray _ _) -> True
   _ -> False
-
-staticAddressName :: String -> CompileM Bool
-staticAddressName name = do
-  local <- lookupVarMaybe name
-  case local of
-    Just _ -> pure False
-    Nothing -> do
-      function <- lookupFunction name
-      global <- lookupGlobalType name
-      pure (function || maybe False (const True) global)
 
 localDataItem :: CType -> Maybe Expr -> CompileM (Maybe String)
 localDataItem ty initExpr = do

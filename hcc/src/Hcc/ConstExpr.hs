@@ -1,7 +1,5 @@
 module ConstExpr
-  ( parseConstExpr
-  , parsePPConstExpr
-  , parseConstExprTarget
+  ( parsePPConstExpr
   , parseTypedConstExprTarget
   ) where
 
@@ -12,19 +10,6 @@ import ParseLite
 import TypesToken
 
 type ConstParser a = P (Int, [(String, Constant)]) Token String a
-
--- Retain the parser's Int-facing API. All intermediate arithmetic, including
--- comparisons and conditional common types, is target-width byte arithmetic.
-parseConstExpr :: [(String, Int)] -> [Token] -> Either String (Int, [Token])
-parseConstExpr env toks = do
-  (value, rest) <- parseConstExprTarget 64 env toks
-  case constantToIntChecked value of
-    Just n -> Right (n, rest)
-    Nothing -> Left "constant result exceeds supported Int range"
-
--- Typed result: truth tests and full-width consumers need not pass through Int.
-parseConstExprTarget :: Int -> [(String, Int)] -> [Token] -> Either String (Constant, [Token])
-parseConstExprTarget bits env = parseTypedConstExprTarget bits (map (\(name, n) -> (name, constantInt 4 n)) env)
 
 parseTypedConstExprTarget :: Int -> [(String, Constant)] -> [Token] -> Either String (Constant, [Token])
 parseTypedConstExprTarget bits env = parseRest (expression False True 0) (if bits <= 32 then 4 else 8, env)

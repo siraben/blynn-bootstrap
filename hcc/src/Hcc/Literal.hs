@@ -1,11 +1,8 @@
 module Literal
   ( pow2
-  , bitNotInt
   , bitAndInt
   , bitOrInt
   , bitXorInt
-  , shiftLeftInt
-  , shiftRightInt
   , intLiteralIsUnsigned
   , parseInt
   , stripIntSuffix
@@ -22,12 +19,7 @@ module Literal
   , decimalDigit
   , hexDigit
   , boolToInt
-  , evalConstBinOp
-  , cQuotInt
-  , cRemInt
   , Constant(..)
-  , constantLiteral
-  , constantLiteralTarget
   , constantLiteralChecked
   , constantLiteralRankedChecked
   , constantConvert
@@ -46,43 +38,8 @@ import Base
 boolToInt :: Bool -> Int
 boolToInt = bool 0 1
 
-evalConstBinOp :: String -> Int -> Int -> Maybe Int
-evalConstBinOp op a b = case op of
-  "+" -> Just (a + b)
-  "-" -> Just (a - b)
-  "*" -> Just (a * b)
-  "/" -> if b == 0 then Nothing else Just (cQuotInt a b)
-  "%" -> if b == 0 then Nothing else Just (cRemInt a b)
-  "<<" -> Just (shiftLeftInt a (max 0 b))
-  ">>" -> Just (shiftRightInt a (max 0 b))
-  "&" -> Just (bitAndInt a b)
-  "^" -> Just (bitXorInt a b)
-  "|" -> Just (bitOrInt a b)
-  "==" -> Just (boolToInt (a == b))
-  "!=" -> Just (boolToInt (a /= b))
-  "<" -> Just (boolToInt (a < b))
-  "<=" -> Just (boolToInt (a <= b))
-  ">" -> Just (boolToInt (a > b))
-  ">=" -> Just (boolToInt (a >= b))
-  "&&" -> Just (boolToInt (a /= 0 && b /= 0))
-  "||" -> Just (boolToInt (a /= 0 || b /= 0))
-  _ -> Nothing
-
--- C division truncates toward zero, unlike Haskell div/mod. Avoid abs on
--- the most negative representable value.
-cQuotInt :: Int -> Int -> Int
-cQuotInt a b =
-  let q = a `div` b
-  in if (a < 0) /= (b < 0) && a `mod` b /= 0 then q + 1 else q
-
-cRemInt :: Int -> Int -> Int
-cRemInt a b = a - cQuotInt a b * b
-
 pow2 :: Int -> Int
 pow2 n = if n <= 0 then 1 else 2 * pow2 (n - 1)
-
-bitNotInt :: Int -> Int
-bitNotInt value = negate value - 1
 
 bitAndInt :: Int -> Int -> Int
 bitAndInt lhs rhs = bitFoldInt (&&) lhs rhs
@@ -100,13 +57,6 @@ bitFoldInt op lhs rhs =
   if (lhs == 0 || lhs == -1) && (rhs == 0 || rhs == -1)
   then if op (lhs == -1) (rhs == -1) then -1 else 0
   else 2 * bitFoldInt op (lhs `div` 2) (rhs `div` 2) + boolToInt (op (lhs `mod` 2 /= 0) (rhs `mod` 2 /= 0))
-
-shiftLeftInt :: Int -> Int -> Int
-shiftLeftInt value amount = value * pow2 amount
-
-shiftRightInt :: Int -> Int -> Int
-shiftRightInt value amount =
-  if amount <= 0 then value else shiftRightInt (value `div` 2) (amount - 1)
 
 intLiteralIsUnsigned :: String -> Bool
 intLiteralIsUnsigned text = case text of
@@ -333,14 +283,6 @@ stripTrailingQuote text = reverse (stripLeadingQuote (reverse text))
 -- bytes; ordinary integers use the selected ILP32/LP64 model, while
 -- preprocessing treats all integer types as intmax_t/uintmax_t (64).
 data Constant = Constant Int Bool [Int]
-
-constantLiteral :: Bool -> String -> Constant
-constantLiteral = constantLiteralTarget 8
-
--- longSize is the target's sizeof(long), not the compiler host's word size.
-constantLiteralTarget :: Int -> Bool -> String -> Constant
-constantLiteralTarget longSize preprocessing text =
-  snd (constantLiteralRanked longSize preprocessing text)
 
 -- Rank (int=1, long=2, long long=3) matters even when two types have the
 -- same width. Share candidate selection between byte folding and runtime
