@@ -1,31 +1,35 @@
 module Parser
   ( ParseError(..)
   , parseProgram
+  , parseProgramTarget
   ) where
 
 import Base
 import ConstExpr
-import Literal (stringBytes)
+import Literal
 import Operators
 import ParseLite
 import ScopeMap
-import SymbolTable
 import TypesAst
 import TypesToken
 
 data ParseError = ParseError SrcPos String
 
-data ParserEnv = ParserEnv (ScopeMap CType) [(String, Int)] (SymbolMap Int)
+-- Typedefs, enumerators, objects and functions share C's ordinary namespace.
+-- Tags and members are deliberately not entered here.
+data ParserBinding = ParserType CType | ParserConstant Constant | ParserOrdinary
+
+data ParserEnv = ParserEnv (ScopeMap ParserBinding) [(String, Constant)] Int
 
 type Parser a = P ParserEnv Token ParseError a
 
-initialParserEnv :: ParserEnv
-initialParserEnv = ParserEnv (builtinTypeEnv builtinTypeAliases) [] symbolMapEmpty
+initialParserEnv :: Int -> ParserEnv
+initialParserEnv bits = ParserEnv (builtinTypeEnv builtinTypeAliases) [] bits
 
-builtinTypeEnv :: [(String, CType)] -> ScopeMap CType
+builtinTypeEnv :: [(String, CType)] -> ScopeMap ParserBinding
 builtinTypeEnv aliases = case aliases of
   [] -> scopeMapEmpty
-  (name, ty):rest -> scopeMapInsert name ty (builtinTypeEnv rest)
+  (name, ty):rest -> scopeMapInsert name (ParserType ty) (builtinTypeEnv rest)
 
 builtinTypeAliases :: [(String, CType)]
 builtinTypeAliases =
@@ -54,42 +58,58 @@ lookupParserType :: String -> Parser (Maybe CType)
 lookupParserType name = do
   env <- pEnv
   pure (case env of
-    ParserEnv types _ _ -> scopeMapLookup name types)
+    ParserEnv bindings _ _ -> case scopeMapLookup name bindings of
+      Just (ParserType ty) -> Just ty
+      _ -> Nothing)
 
 bindParserType :: String -> CType -> Parser ()
-bindParserType name ty = do
+bindParserType name ty = bindParserName name (ParserType ty)
+
+bindParserOrdinary :: String -> Parser ()
+bindParserOrdinary name = bindParserName name ParserOrdinary
+
+bindParserName :: String -> ParserBinding -> Parser ()
+bindParserName name binding = when (name /= "") (do
   env <- pEnv
   case env of
-    ParserEnv types constants constantMap ->
-      pSetEnv (ParserEnv (scopeMapInsert name ty types) constants constantMap)
+    ParserEnv bindings constants bits ->
+      let remaining = case scopeMapLookup name bindings of
+            Just (ParserConstant _) -> filter (\(key, _) -> key /= name) constants
+            _ -> constants
+          constants' = case binding of
+            ParserConstant value -> (name, value):remaining
+            _ -> remaining
+      in pSetEnv (ParserEnv (scopeMapInsert name binding bindings) constants' bits))
 
-lookupParserConstant :: String -> Parser (Maybe Int)
+lookupParserConstant :: String -> Parser (Maybe Constant)
 lookupParserConstant name = do
   env <- pEnv
   pure (case env of
-    ParserEnv _ _ constantMap -> symbolMapLookup name constantMap)
+    ParserEnv bindings _ _ -> case scopeMapLookup name bindings of
+      Just (ParserConstant value) -> Just value
+      _ -> Nothing)
 
-bindParserConstant :: String -> Int -> Parser ()
-bindParserConstant name value = do
-  env <- pEnv
-  case env of
-    ParserEnv types constants constantMap ->
-      pSetEnv (ParserEnv types ((name, value):constants) (symbolMapInsert name value constantMap))
+bindParserConstant :: String -> Constant -> Parser ()
+bindParserConstant name value = bindParserName name (ParserConstant value)
 
-parserConstants :: Parser [(String, Int)]
+parserConstants :: Parser [(String, Constant)]
 parserConstants = do
   env <- pEnv
   pure (case env of
     ParserEnv _ constants _ -> constants)
 
+parserTargetBits :: Parser Int
+parserTargetBits = do
+  env <- pEnv
+  pure (case env of
+    ParserEnv _ _ bits -> bits)
+
 enterParserScope :: ParserEnv -> ParserEnv
 enterParserScope env = case env of
-  ParserEnv types constants constantMap -> ParserEnv (scopeMapEnter types) constants constantMap
+  ParserEnv bindings constants bits -> ParserEnv (scopeMapEnter bindings) constants bits
 
 leaveParserScope :: ParserEnv -> ParserEnv -> ParserEnv
-leaveParserScope outer inner = case outer of
-  ParserEnv _ outerConstants outerConstantMap -> case inner of
-    ParserEnv innerTypes _ _ -> ParserEnv (scopeMapLeave innerTypes) outerConstants outerConstantMap
+leaveParserScope outer _inner = outer
 
 withParserScope :: Parser a -> Parser a
 withParserScope = pLocalEnv enterParserScope leaveParserScope
@@ -107,7 +127,10 @@ tryP :: Parser a -> Parser a
 tryP = pTry
 
 parseProgram :: [Token] -> Either ParseError Program
-parseProgram toks = case parseRestWithEnv program initialParserEnv toks of
+parseProgram = parseProgramTarget 64
+
+parseProgramTarget :: Int -> [Token] -> Either ParseError Program
+parseProgramTarget bits toks = case parseRestWithEnv program (initialParserEnv bits) toks of
   Left err -> Left err
   Right (Program decls, _env, []) -> Right (Program decls)
   Right (_, _, tok:_) -> Left (parseErrorAt tok "trailing tokens")
@@ -143,9 +166,10 @@ parseStaticAssert = do
     Just (taken, rest) -> Consumed (Ok taken env rest)
     Nothing -> Unconsumed (Ok [] env tokens)
   constants <- parserConstants
-  case parseConstExpr constants toks of
+  bits <- parserTargetBits
+  case parseTypedConstExprTarget bits constants toks of
     Right (value, []) ->
-      if value == 0
+      if not (constantTrue value)
         then peek >>= \tok -> failAt tok "_Static_assert failed"
         else do
           skipOptionalStaticAssertMessage
@@ -198,13 +222,22 @@ topDeclNoStruct = do
       (ty, name) <- declarator ty0
       ifM (eatPunct "(")
         (do
-          params <- parameters
-          skipAttributes
-          isPrototype <- eatPunct ";"
-          if isPrototype
-            then pure (Prototype ty name params)
-            else Function ty name params <$> compound)
+          decl <- withParserScope (do
+            params <- parametersInScope
+            skipAttributes
+            -- Do not overwrite a parameter-scope enumerator with the function
+            -- name. Recursive references already parse as EVar; the function's
+            -- file-scope binding is installed after leaving parameter scope.
+            isPrototype <- eatPunct ";"
+            if isPrototype
+              then pure (Prototype ty name (adjustParameters params))
+              else do
+                mapM_ checkDefinitionParameter params
+                Function ty name (adjustParameters params) <$> compound)
+          bindParserOrdinary name
+          pure decl)
         (do
+          bindParserOrdinary name
           initExpr <- optionalP (eatPunct "=" >> initializerExpr)
           rest <- declarationItemsTail ty0
           pure (globalDecl isExtern ((ty, name, initExpr):rest)))
@@ -234,7 +267,6 @@ typedefDecl = do
   ty0 <- ctype
   first <- typedefItem ty0
   rest <- typedefItemsTail ty0
-  mapM_ bindTypedef (first:rest)
   pure (TypeDecl (map typedefType (first:rest)))
   where
     typedefType item = case item of
@@ -245,6 +277,7 @@ typedefItem ty0 = do
   (ty, name) <- declarator ty0
   ty' <- optionalFunctionSuffix ty
   skipAttributes
+  bindTypedef (name, ty')
   pure (name, ty')
 
 typedefItemsTail :: CType -> Parser [(String, CType)]
@@ -320,7 +353,12 @@ fieldDeclarator ty0 = do
       pure (Field ty' name)
 
 parameters :: Parser [Param]
-parameters = do
+parameters = adjustParameters <$> withParserScope parametersInScope
+
+-- A definition keeps this scope through its body; other function declarators
+-- discard prototype-scope names at the end of the parameter list.
+parametersInScope :: Parser [Param]
+parametersInScope = do
   done <- eatPunct ")"
   if done
     then pure []
@@ -360,6 +398,7 @@ parameter :: Parser Param
 parameter = do
   ty0 <- ctype
   (ty, name) <- parameterDeclarator ty0
+  bindParserOrdinary name
   pure (Param ty name)
 
 parameterDeclarator :: CType -> Parser (CType, String)
@@ -379,8 +418,92 @@ parameterDeclarator ty0 = do
       fnTail <- eatPunct "("
       fnParams <- if fnTail then parameters else pure []
       let tyWithFunction = if fnTail then CPtr (CFunc ty (paramTypes fnParams)) else ty
-      ty' <- arraySuffixes tyWithFunction
+      ty' <- parameterArraySuffix tyWithFunction
       pure (ty', name)
+
+-- Only the outermost array derivation of a parameter may have qualifiers or
+-- static. Parse the whole bound before binding its name, just like an ordinary
+-- declarator. Qualifiers are erased as elsewhere in this parser.
+parameterArraySuffix :: CType -> Parser CType
+parameterArraySuffix ty = do
+  open <- eatPunct "["
+  if not open
+    then pure ty
+    else do
+      staticFirst <- eatIdent "static"
+      skipParameterArrayQualifiers
+      isStatic <- if staticFirst then pure True else eatIdent "static"
+      tok <- peek
+      case tokenKind tok of
+        TokIdent name | name `elem` ["static", "const", "volatile", "restrict"] ->
+          failAt tok "expected array parameter bound"
+        _ -> pure ()
+      bound <- if isStatic then Just <$> assignExpr else optionalP assignExpr
+      needPunct "]"
+      inner <- parameterArrayInner ty
+      pure (CArray inner bound)
+
+skipParameterArrayQualifiers :: Parser ()
+skipParameterArrayQualifiers = do
+  mtok <- peekMaybe
+  case fmap tokenKind mtok of
+    Just (TokIdent name) | name `elem` ["const", "volatile", "restrict"] ->
+      advanceToken >> skipParameterArrayQualifiers
+    _ -> pure ()
+
+parameterArrayInner :: CType -> Parser CType
+parameterArrayInner ty = do
+  open <- eatPunct "["
+  if not open
+    then pure ty
+    else do
+      tok <- peek
+      case tokenKind tok of
+        TokIdent name | name `elem` ["static", "const", "volatile", "restrict"] ->
+          failAt tok "array parameter modifiers require the outermost dimension"
+        _ -> pure ()
+      bound <- optionalP assignExpr
+      needPunct "]"
+      inner <- parameterArrayInner ty
+      pure (CArray inner bound)
+
+-- Keep bounds until we know whether this is a prototype or definition. Only
+-- the outermost array is adjusted; inner dimensions remain the pointed-to type.
+adjustParameters :: [Param] -> [Param]
+adjustParameters = map (\(Param ty name) -> Param (adjustParameterType ty) name)
+
+adjustParameterType :: CType -> CType
+adjustParameterType ty = case ty of
+  CArray inner _ -> CPtr inner
+  CFunc _ _ -> CPtr ty
+  _ -> ty
+
+-- Dropping a prototype bound is harmless. A definition would have to execute
+-- side effects in a bound on entry; this parser/AST cannot represent that yet.
+checkDefinitionParameter :: Param -> Parser ()
+checkDefinitionParameter (Param ty _name) = checkBounds ty where
+  checkBounds arrayTy = case arrayTy of
+    CArray inner bound -> do
+      case bound of
+        Just value | not (simpleParameterBound value) ->
+          peek >>= \tok -> failAt tok "side-effecting or complex array parameter bounds are not supported in definitions"
+        _ -> pure ()
+      checkBounds inner
+    _ -> pure ()
+
+simpleParameterBound :: Expr -> Bool
+simpleParameterBound value = case value of
+  EInt _ -> True
+  EFloat _ -> True
+  EChar _ -> True
+  EVar _ -> True
+  ESizeofType _ -> True
+  ESizeofExpr _ -> True
+  ECast _ e -> simpleParameterBound e
+  EUnary op e -> op `elem` ["+", "-", "!", "~"] && simpleParameterBound e
+  EBinary _ a b -> simpleParameterBound a && simpleParameterBound b
+  ECond a b c -> simpleParameterBound a && simpleParameterBound b && simpleParameterBound c
+  _ -> False
 
 compound :: Parser [Stmt]
 compound = needPunct "{" >> withParserScope (manyUntil (eatPunct "}") stmt)
@@ -440,40 +563,40 @@ parseReturn = do
       pure (SReturn (Just e))
 
 parseIf :: Parser Stmt
-parseIf = do
+parseIf = withParserScope (do
   needPunct "("
   cond <- expr
   needPunct ")"
   yes <- stmtAsBlock
   hasElse <- eatIdent "else"
   no <- if hasElse then stmtAsBlock else pure []
-  pure (SIf cond yes no)
+  pure (SIf cond yes no))
 
 parseWhile :: Parser Stmt
-parseWhile = do
+parseWhile = withParserScope (do
   needPunct "("
   cond <- expr
   needPunct ")"
-  SWhile cond <$> stmtAsBlock
+  SWhile cond <$> stmtAsBlock)
 
 parseDoWhile :: Parser Stmt
-parseDoWhile = do
+parseDoWhile = withParserScope (do
   body <- stmtAsBlock
   needIdentValue "while"
   needPunct "("
   cond <- expr
   needPunct ")"
   needPunct ";"
-  pure (SDoWhile body cond)
+  pure (SDoWhile body cond))
 
 parseFor :: Parser Stmt
-parseFor = do
+parseFor = withParserScope (do
   needPunct "("
   initClause <- forInit
   cond <- optionalExprUntil ";"
   stepExpr <- optionalExprUntil ")"
   body <- stmtAsBlock
-  pure (SFor initClause cond stepExpr body)
+  pure (SFor initClause cond stepExpr body))
 
 forInit :: Parser ForInit
 forInit = do
@@ -495,11 +618,11 @@ forInit = do
           pure (ForExpr initExpr)
 
 parseSwitch :: Parser Stmt
-parseSwitch = do
+parseSwitch = withParserScope (do
   needPunct "("
   value <- expr
   needPunct ")"
-  SSwitch value <$> stmtAsBlock
+  SSwitch value <$> stmtAsBlock)
 
 parseCase :: Parser Stmt
 parseCase = do
@@ -518,7 +641,7 @@ optionalExprUntil punct = do
       pure (Just e)
 
 stmtAsBlock :: Parser [Stmt]
-stmtAsBlock = do
+stmtAsBlock = withParserScope (do
   tok <- peek
   case tokenKind tok of
     TokPunct "{" -> (:[]) . SBlock <$> compound
@@ -528,7 +651,7 @@ stmtAsBlock = do
         SLabel _ -> do
           body <- stmt
           pure [first, body]
-        _ -> pure [first]
+        _ -> pure [first])
 
 parseDeclStmt :: Parser Stmt
 parseDeclStmt = do
@@ -548,10 +671,11 @@ parseDeclStmt = do
 localPrototype :: CType -> Parser ()
 localPrototype ty0 = do
   _ty <- pointerStars ty0
-  _name <- needIdent
+  name <- needIdent
   needPunct "("
-  skipBalanced "(" ")"
+  _params <- parameters
   skipAttributes
+  bindParserOrdinary name
   needPunct ";"
 
 declStmt :: [(CType, String, Maybe Expr)] -> Stmt
@@ -563,6 +687,7 @@ declarationItem :: CType -> Parser (CType, String, Maybe Expr)
 declarationItem ty0 = do
   (ty, name) <- declarator ty0
   skipAttributes
+  bindParserOrdinary name
   initExpr <- optionalP (eatPunct "=" >> initializerExpr)
   pure (ty, name, initExpr)
 
@@ -694,10 +819,10 @@ enumType = do
   advanceToken
   name <- optionalIdent
   hasBody <- eatPunct "{"
-  when hasBody (parseEnumBody 0)
+  when hasBody (parseEnumBody (Just (constantInt 4 0)))
   pure (CEnum name)
 
-parseEnumBody :: Int -> Parser ()
+parseEnumBody :: Maybe Constant -> Parser ()
 parseEnumBody nextValue = do
   done <- eatPunct "}"
   if done
@@ -714,20 +839,40 @@ parseEnumBody nextValue = do
           if after
             then do
               end <- eatPunct "}"
-              if end then pure () else parseEnumBody (value + 1)
+              if end then pure () else parseEnumBody (nextParserConstant value)
             else do
               needPunct "}"
 
-enumValue :: Int -> Parser Int
+-- Values representable in int are int enumerators, even with a U/LL
+-- initializer. Retain wider typed values only for the bootstrap extension
+-- (notably TinyCC's UINT32_MAX and UINT64_MAX DWARF enumerators).
+normalizeParserConstant :: Constant -> Constant
+normalizeParserConstant value = case constantToIntChecked value of
+  Just n -> constantInt 4 n
+  Nothing -> value
+
+nextParserConstant :: Constant -> Maybe Constant
+nextParserConstant value@(Constant _ unsigned _) =
+  let wide = constantConvert 8 unsigned value
+  in case constantBinary "+" wide (constantInt 8 1) of
+    Right next -> case constantBinary ">" next wide of
+      Right greater -> if constantTrue greater then Just (normalizeParserConstant next) else Nothing
+      Left _ -> Nothing
+    Left _ -> Nothing
+
+enumValue :: Maybe Constant -> Parser Constant
 enumValue nextValue = do
   hasValue <- eatPunct "="
   if not hasValue
-    then pure nextValue
+    then case nextValue of
+      Just value -> pure value
+      Nothing -> peek >>= \tok -> failAt tok "enum value exceeds supported 64-bit range"
     else do
       toks <- takeEnumValueExpr
       constants <- parserConstants
-      case parseConstExpr constants toks of
-        Right (value, trailing) | all ignorableEnumExprTail trailing -> pure value
+      bits <- parserTargetBits
+      case parseTypedConstExprTarget bits constants toks of
+        Right (value, trailing) | all ignorableEnumExprTail trailing -> pure (normalizeParserConstant value)
         Right (_, tok:_) ->
           failAt tok ("unexpected tokens in enum initializer: " ++ tokenText (tokenKind tok))
         Right (_, []) ->
@@ -850,6 +995,11 @@ arraySuffixes ty = do
   open <- eatPunct "["
   if open
     then do
+      tok <- peek
+      case tokenKind tok of
+        TokIdent name | name `elem` ["static", "const", "volatile", "restrict"] ->
+          failAt tok "array modifiers require a parameter declarator"
+        _ -> pure ()
       boundExpr <- optionalP expr
       needPunct "]"
       arraySuffixes (CArray ty boundExpr)
@@ -946,7 +1096,7 @@ unary = do
       advanceToken
       constant <- lookupParserConstant s
       pure (case constant of
-        Just value -> EInt (show value)
+        Just value -> parserConstantExpr value
         Nothing -> EVar s)
     TokPunct "(" -> do
       advanceToken
@@ -961,6 +1111,22 @@ unary = do
           needPunct ")"
           pure e
     _ -> failAt tok "expected expression"
+
+-- EInt contains an unsigned token spelling, not a signed decimal value.
+-- Spell a negative constant as -(abs(value)-1)-1: the intermediate fits even
+-- at the minimum Int, and a minimum C int enumerator retains int type rather
+-- than acquiring the wider type of the positive literal 2147483648.
+parserConstantExpr :: Constant -> Expr
+parserConstantExpr value@(Constant size unsigned bytes) =
+  case constantToIntChecked value of
+    Just n -> if n < 0
+      then EBinary "-" (EUnary "-" (EInt (show (negate (n + 1))))) (EInt "1")
+      else EInt (show n)
+    Nothing ->
+      let ty = if size <= 4 then CUnsigned else if unsigned then CUnsignedLongLong else CLongLong
+          digits = "0123456789abcdef"
+          hexByte byte = [digits !! (byte `div` 16), digits !! (byte `mod` 16)]
+      in ECast ty (EInt ("0x" ++ concatMap hexByte (reverse bytes) ++ "ULL"))
 
 parseSizeof :: Parser Expr
 parseSizeof = do
@@ -1117,24 +1283,14 @@ tokenStartsTypeInEnv env tok = case tokenKind tok of
 identifierStartsDeclaration :: Parser Bool
 identifierStartsDeclaration = pRaw $ \env toks -> Unconsumed (Ok (go env toks) env toks) where
   go env toks = case toks of
-    Token _ (TokIdent name):rest
+    Token _ (TokIdent name):_
       | startsTypeName name -> True
-      | parserEnvHasType name env -> typedefDeclaratorFollows rest
+      | parserEnvHasType name env -> True
       | otherwise -> False
     _ -> False
 
   startsTypeName name =
     name `elem` (builtinTypeNames ++ storageAndTypeQualifiers ++ ["typedef"])
-
-  typedefDeclaratorFollows toks = case dropLeadingQualifiers toks of
-    Token _ (TokPunct "*"):_ -> True
-    Token _ (TokIdent _):_ -> True
-    _ -> False
-
-  dropLeadingQualifiers toks = case toks of
-    Token _ (TokIdent name):rest | name `elem` storageAndTypeQualifiers ->
-      dropLeadingQualifiers rest
-    _ -> toks
 
 isKnownTypeNameP :: String -> Parser Bool
 isKnownTypeNameP name = do
@@ -1145,9 +1301,9 @@ isKnownTypeNameP name = do
 
 parserEnvHasType :: String -> ParserEnv -> Bool
 parserEnvHasType name env = case env of
-  ParserEnv types _ _ -> case scopeMapLookup name types of
-    Just _ -> True
-    Nothing -> False
+  ParserEnv bindings _ _ -> case scopeMapLookup name bindings of
+    Just (ParserType _) -> True
+    _ -> False
 
 skipBalanced :: String -> String -> Parser ()
 skipBalanced open close = go (1 :: Int) where

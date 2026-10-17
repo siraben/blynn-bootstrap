@@ -173,7 +173,14 @@ renderDefines defs = go defs ""
         . go rest'
 
 replaceExt :: String -> String -> String
-replaceExt path ext = reverse (takeWhile (/= '.') (reverse path)) ++ ext
+-- Like a compiler's -c default, write in the working directory, not beside
+-- the input. Only the filename's final extension is replaced; a leading dot
+-- alone is part of the stem. Explicit -o paths are left untouched.
+replaceExt path ext =
+  let name = hccTakeFileName path
+  in case break (== '.') (reverse name) of
+    (_, '.':rest@(_:_)) -> reverse rest ++ ext
+    _ -> name ++ ext
 
 showPos :: SrcPos -> String
 showPos (SrcPos line col) = show line ++ ":" ++ show col

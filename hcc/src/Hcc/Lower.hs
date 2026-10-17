@@ -382,11 +382,11 @@ localArrayTemplateData :: CType -> Maybe Expr -> CompileM (Maybe String)
 localArrayTemplateData ty initExpr = case initExpr of
   Just expr ->
     if staticInitializerExpr expr
-    then case expr of
-      EInitList _ -> localDataItem ty initExpr
-      EString _ -> localDataItem ty initExpr
-      _ -> pure Nothing
-    else pure Nothing
+      then case expr of
+        EInitList _ -> localDataItem ty initExpr
+        EString _ -> localDataItem ty initExpr
+        _ -> pure Nothing
+      else pure Nothing
   Nothing -> pure Nothing
 
 localNonArrayTemplateData :: CType -> Maybe Expr -> CompileM (Maybe String)
@@ -398,29 +398,23 @@ localNonArrayTemplateData ty initExpr = case initExpr of
     _ -> pure Nothing
   Nothing -> pure Nothing
 
+-- A conservative template optimization: names and addresses use the runtime
+-- initializer path, without needing binding or relocation classification here.
 staticInitializerExpr :: Expr -> Bool
 staticInitializerExpr expr = case expr of
-  EInitList exprs -> allStaticInitializerExprs exprs
+  EInitList exprs -> and (map staticInitializerExpr exprs)
   EString _ -> True
   EInt _ -> True
+  EFloat _ -> True
   EChar _ -> True
+  ESizeofType _ -> True
+  ESizeofExpr _ -> True
   ECast _ value -> staticInitializerExpr value
   EUnary "-" value -> staticInitializerExpr value
   EUnary "+" value -> staticInitializerExpr value
   EUnary "~" value -> staticInitializerExpr value
   EUnary "!" value -> staticInitializerExpr value
-  EUnary "&" _ -> True
-  EVar _ -> True
-  EBinary op left right ->
-    op /= "," && staticInitializerExpr left && staticInitializerExpr right
-  ECond cond yes no ->
-    staticInitializerExpr cond && staticInitializerExpr yes && staticInitializerExpr no
   _ -> False
-
-allStaticInitializerExprs :: [Expr] -> Bool
-allStaticInitializerExprs exprs = case exprs of
-  [] -> True
-  expr:rest -> staticInitializerExpr expr && allStaticInitializerExprs rest
 
 localDataItem :: CType -> Maybe Expr -> CompileM (Maybe String)
 localDataItem ty initExpr = do
@@ -492,12 +486,19 @@ lowerAggregateElementValueWrite aggregateStorage addr fieldTy expr =
 lowerAggregateElementAggregateWrite :: Operand -> CType -> Expr -> CompileM [Instr]
 lowerAggregateElementAggregateWrite addr fieldTy expr = case expr of
   EInitList exprs -> lowerAggregateInitList addr fieldTy exprs
+  EString _ -> do
+    label <- localDataItem fieldTy (Just expr)
+    case label of
+      Just name -> copyObject addr (OGlobal name) fieldTy
+      Nothing -> pure []
   _ -> do
     (exprInstrs, op) <- lowerExpr expr
     copyInstrs <- copyObject addr op fieldTy
     pure (exprInstrs ++ copyInstrs)
 
 lowerAggregateElementScalarWrite :: Operand -> CType -> Expr -> CompileM [Instr]
+lowerAggregateElementScalarWrite addr fieldTy (EInitList [expr]) =
+  lowerAggregateElementScalarWrite addr fieldTy expr
 lowerAggregateElementScalarWrite addr fieldTy expr = do
   (exprInstrs, op) <- lowerExpr expr
   (coerceInstrs, coerceOp) <- coerceScalar fieldTy op
@@ -517,12 +518,18 @@ lowerExpr expr = case expr of
     addDataItem (DataItem dataLabel (map DByte (stringBytes text)))
     pure ([], OGlobal dataLabel)
   EVar name -> lowerVarExpr name
-  EUnary "+" x -> lowerExpr x
+  EUnary "+" x -> do
+    (a, op) <- lowerExpr x
+    ty <- promotedExprType x
+    (coerceInstrs, coerceOp) <- coerceScalar ty op
+    pure (a ++ coerceInstrs, coerceOp)
   EUnary "-" x -> do
     (a, op) <- lowerExpr x
     zero <- freshTemp
     out <- freshTemp
-    pure (a ++ [IConst zero 0, IBin out ISub (OTemp zero) op], OTemp out)
+    ty <- promotedExprType x
+    (coerceInstrs, coerceOp) <- coerceScalar ty (OTemp out)
+    pure (a ++ [IConst zero 0, IBin out ISub (OTemp zero) op] ++ coerceInstrs, coerceOp)
   EUnary "!" x -> do
     (a, op) <- lowerExpr x
     zero <- freshTemp
@@ -533,7 +540,9 @@ lowerExpr expr = case expr of
     zero <- freshTemp
     neg <- freshTemp
     out <- freshTemp
-    pure (a ++ [IConst zero 0, IBin neg ISub (OTemp zero) op, IBin out ISub (OTemp neg) (OImm 1)], OTemp out)
+    ty <- promotedExprType x
+    (coerceInstrs, coerceOp) <- coerceScalar ty (OTemp out)
+    pure (a ++ [IConst zero 0, IBin neg ISub (OTemp zero) op, IBin out ISub (OTemp neg) (OImm 1)] ++ coerceInstrs, coerceOp)
   EUnary "*" (EUnary "&" value) ->
     lowerExpr value
   EUnary "&" target ->
@@ -562,8 +571,11 @@ lowerExpr expr = case expr of
     (ci, co) <- lowerExpr cond
     (yi, yo) <- lowerExpr yes
     (ni, noOp) <- lowerExpr no
+    resultTy <- conditionalType yes no
+    (yc, yesOp) <- coerceMaybeScalar resultTy yo
+    (nc, noResult) <- coerceMaybeScalar resultTy noOp
     out <- freshTemp
-    pure ([ICond out ci co yi yo ni noOp], OTemp out)
+    pure ([ICond out ci co (yi ++ yc) yesOp (ni ++ nc) noResult], OTemp out)
   EBinary "," a b -> do
     ai <- lowerSideEffect a
     (bi, bo) <- lowerExpr b
@@ -692,7 +704,7 @@ lowerComparisonOperands :: Expr -> Expr -> CompileM ([Instr], Operand, Operand)
 lowerComparisonOperands a b = do
   (ai, ao) <- lowerExpr a
   (bi, bo) <- lowerExpr b
-  commonTy <- usualArithmeticType a b
+  commonTy <- comparisonOperandType a b
   (acoerceInstrs, acoerceOp) <- coerceBinOperand commonTy a ao
   (bcoerceInstrs, bcoerceOp) <- coerceBinOperand commonTy b bo
   pure (ai ++ bi ++ acoerceInstrs ++ bcoerceInstrs, acoerceOp, bcoerceOp)
@@ -705,8 +717,28 @@ lowerDirectCallExpr name args = do
 
 lowerCallArgs :: [Expr] -> CompileM ([Instr], [Operand])
 lowerCallArgs args = do
-  lowered <- mapM lowerExpr args
+  lowered <- mapM lowerCallArg args
   pure (concatMap fst lowered, map snd lowered)
+
+-- The internal convention passes aggregate addresses, not platform ABI
+-- aggregate registers/stack slots. Snapshot each struct/union argument as
+-- it is evaluated: the callee may mutate this copy, never the source object.
+-- Arrays still decay to pointers and must not be copied.
+lowerCallArg :: Expr -> CompileM ([Instr], Operand)
+lowerCallArg expr = do
+  (instrs, op) <- lowerExpr expr
+  mty <- exprType expr
+  case mty of
+    Nothing -> pure (instrs, op)
+    Just ty -> do
+      aggregate <- aggregateFields ty
+      case aggregate of
+        Nothing -> pure (instrs, op)
+        Just _ -> do
+          size <- typeSize ty
+          temp <- freshTemp
+          copies <- copyObject (OTemp temp) op ty
+          pure (instrs ++ [IAlloca temp size] ++ copies, OTemp temp)
 
 lowerIndirectCallInstrs :: Maybe Temp -> Expr -> [Expr] -> CompileM [Instr]
 lowerIndirectCallInstrs result callee args = do
@@ -811,7 +843,7 @@ lowerPlainBin :: BinOp -> Expr -> Expr -> CompileM ([Instr], Operand)
 lowerPlainBin op a b = do
   (ai, ao) <- lowerExpr a
   (bi, bo) <- lowerExpr b
-  commonTy <- usualArithmeticType a b
+  commonTy <- if isComparisonBinOp op then comparisonOperandType a b else usualArithmeticType a b
   (acoerceInstrs, acoerceOp) <- coerceBinOperand commonTy a ao
   (bcoerceInstrs, bcoerceOp) <- coerceBinOperand commonTy b bo
   out <- freshTemp
@@ -824,13 +856,7 @@ lowerPlainBin op a b = do
        , coerceOp)
 
 coerceBinOperand :: CType -> Expr -> Operand -> CompileM ([Instr], Operand)
-coerceBinOperand commonTy expr op = case expr of
-  EVar name -> do
-    constant <- lookupConstant name
-    case (constant, builtinConstant name) of
-      (Nothing, Nothing) -> pure ([], op)
-      _ -> coerceScalar commonTy op
-  _ -> coerceScalar commonTy op
+coerceBinOperand commonTy _ op = coerceScalar commonTy op
 
 isComparisonBinOp :: BinOp -> Bool
 isComparisonBinOp op = case op of
@@ -878,15 +904,22 @@ compoundBinOp op targetTy lhsOp rhsExpr rhsOp = case targetTy of
   CPtr elemTy | op == "+" || op == "-" ->
     pointerCompoundOffset (if op == "+" then IAdd else ISub) lhsOp rhsOp elemTy
   _ -> do
+    leftTy <- promoteIntegerType targetTy
+    rightTy <- promotedExprType rhsExpr
+    commonTy <- if op == "<<" || op == ">>"
+      then pure leftTy
+      else usualArithmeticTypes leftTy rightTy
+    (leftInstrs, leftOp) <- coerceScalar commonTy lhsOp
+    (rightInstrs, rightOp) <- coerceScalar (if op == "<<" || op == ">>" then rightTy else commonTy) rhsOp
     iop <- case op of
-      "/" -> pure (if isUnsignedType targetTy then IUDiv else IDiv)
-      "%" -> pure (if isUnsignedType targetTy then IUMod else IMod)
-      ">>" -> shiftRightOp rhsExpr
+      "/" -> pure (if isUnsignedType commonTy then IUDiv else IDiv)
+      "%" -> pure (if isUnsignedType commonTy then IUMod else IMod)
+      ">>" -> pure (if isUnsignedType commonTy then IShr else ISar)
       _ -> case lowerBinOp op of
         Just o -> pure o
         Nothing -> throwC ("unsupported compound assignment operator: " ++ op)
     out <- freshTemp
-    pure ([IBin out iop lhsOp rhsOp], OTemp out)
+    pure (leftInstrs ++ rightInstrs ++ [IBin out iop leftOp rightOp], OTemp out)
 
 pointerCompoundOffset :: BinOp -> Operand -> Operand -> CType -> CompileM ([Instr], Operand)
 pointerCompoundOffset op base offset elemTy = do
@@ -908,8 +941,10 @@ lowerIncDec prefix op target = do
   step <- incDecStep target
   if prefix
     then do
-      writeInstrs <- writeLValue lvalue (OTemp out)
-      pure (lvInstrs ++ readInstrs ++ [IBin out op current (OImm step)] ++ writeInstrs, OTemp out)
+      ty <- lValueType lvalue
+      (coerceInstrs, coerceOp) <- coerceScalar ty (OTemp out)
+      writeInstrs <- writeLValue lvalue coerceOp
+      pure (lvInstrs ++ readInstrs ++ [IBin out op current (OImm step)] ++ coerceInstrs ++ writeInstrs, coerceOp)
     else do
       old <- freshTemp
       writeInstrs <- writeLValue lvalue (OTemp out)
@@ -1204,12 +1239,12 @@ scaledIndex index size =
 
 exprType :: Expr -> CompileM (Maybe CType)
 exprType expr = case expr of
-  EInt _ -> pure (Just CInt)
+  EInt text -> Just <$> integerLiteralType text
   EFloat text -> pure (Just (floatLiteralType text))
   EChar _ -> pure (Just CInt)
   EString _ -> pure (Just (CPtr CChar))
-  ESizeofType _ -> pure (Just CInt)
-  ESizeofExpr _ -> pure (Just CInt)
+  ESizeofType _ -> pure (Just (CNamed "size_t"))
+  ESizeofExpr _ -> pure (Just (CNamed "size_t"))
   EVar name -> do
     if isFunctionNameMacro name
       then pure (Just (CPtr CChar))
@@ -1224,14 +1259,14 @@ exprType expr = case expr of
               Nothing -> lookupGlobalType name
   ECast ty _ -> pure (Just ty)
   EUnary "+" value -> do
-    mty <- exprType value
-    promoteMaybeIntegerType mty
+    ty <- promotedExprType value
+    pure (Just ty)
   EUnary "-" value -> do
-    mty <- exprType value
-    promoteMaybeIntegerType mty
+    ty <- promotedExprType value
+    pure (Just ty)
   EUnary "~" value -> do
-    mty <- exprType value
-    promoteMaybeIntegerType mty
+    ty <- promotedExprType value
+    pure (Just ty)
   EUnary "!" _ -> pure (Just CInt)
   EUnary "*" value -> do
     mty <- exprType value
@@ -1293,14 +1328,7 @@ exprType expr = case expr of
           _ -> case (leftTy, rightTy) of
             (Just _, Just _) -> Just arithmeticTy
             _ -> Nothing)
-  ECond _ yes no -> do
-    yesTy <- exprType yes
-    noTy <- exprType no
-    pure (case (yesTy, noTy) of
-      (Just ty, Nothing) -> Just ty
-      (Nothing, Just ty) -> Just ty
-      (Just ty, Just _) -> Just ty
-      _ -> Nothing)
+  ECond _ yes no -> conditionalType yes no
   EAssign lhs _ -> exprType lhs
   ECompoundAssign _ lhs _ -> exprType lhs
   EPostfix _ value -> exprType value
@@ -1325,6 +1353,26 @@ exprType expr = case expr of
     calleeTy <- exprType callee
     pure (functionResultType =<< calleeTy)
   _ -> pure Nothing
+
+conditionalType :: Expr -> Expr -> CompileM (Maybe CType)
+conditionalType yes no = do
+  yesTy <- exprType yes
+  noTy <- exprType no
+  case (yesTy, noTy) of
+    (Just a, Just b) -> do
+      ai <- isIntegerTypeM a
+      bi <- isIntegerTypeM b
+      if (ai || isFloatingType a) && (bi || isFloatingType b)
+        then do
+          ty <- usualArithmeticType yes no
+          pure (Just ty)
+        else case pointerElementType yesTy of
+          Just inner -> pure (Just (CPtr inner))
+          Nothing -> case pointerElementType noTy of
+            Just inner -> pure (Just (CPtr inner))
+            Nothing -> pure yesTy
+    (Just _, Nothing) -> pure yesTy
+    _ -> pure noTy
 
 promoteMaybeIntegerType :: Maybe CType -> CompileM (Maybe CType)
 promoteMaybeIntegerType mty = case mty of
@@ -1503,6 +1551,10 @@ usualArithmeticType :: Expr -> Expr -> CompileM CType
 usualArithmeticType left right = do
   leftTy0 <- promotedExprType left
   rightTy0 <- promotedExprType right
+  usualArithmeticTypes leftTy0 rightTy0
+
+usualArithmeticTypes :: CType -> CType -> CompileM CType
+usualArithmeticTypes leftTy0 rightTy0 =
   if isFloatingType leftTy0 || isFloatingType rightTy0
     then pure (usualFloatingType leftTy0 rightTy0)
     else do
@@ -1600,10 +1652,18 @@ correspondingUnsigned ty = case ty of
   CLongLong -> CUnsignedLongLong
   _ -> ty
 
+integerLiteralType :: String -> CompileM CType
+integerLiteralType text = do
+  word <- targetWordSize
+  case constantLiteralRankedChecked word False text of
+    Left msg -> throwC msg
+    Right (rank, Constant _ unsigned _) -> pure (case rank of
+      1 -> if unsigned then CUnsigned else CInt
+      2 -> if unsigned then CUnsignedLong else CLong
+      _ -> if unsigned then CUnsignedLongLong else CLongLong)
+
 promotedExprType :: Expr -> CompileM CType
 promotedExprType expr = case expr of
-  EInt text ->
-    if intLiteralIsUnsigned text then pure CUnsigned else pure CInt
   EFloat text ->
     pure (floatLiteralType text)
   _ -> do
@@ -1645,7 +1705,7 @@ typeSize ty = case ty of
   CArray inner count -> do
     size <- typeSize inner
     bound <- arrayBoundSize count
-    pure (size * bound)
+    checkedArraySize size bound
   CStruct name -> structSize name
   CUnion name -> structSize name
   CStructNamed name fields -> do
@@ -1690,8 +1750,20 @@ typeAlign :: CType -> CompileM Int
 typeAlign ty = case ty of
   CArray inner _ -> typeAlign inner
   _ -> do
-    size <- typeSize ty
-    pure (if size >= 8 then 8 else if size >= 4 then 4 else if size >= 2 then 2 else 1)
+    aggregate <- aggregateFields ty
+    case aggregate of
+      Just (_, fields) -> aggregateAlign fields
+      Nothing -> do
+        size <- typeSize ty
+        pure (if size >= 8 then 8 else if size >= 4 then 4 else if size >= 2 then 2 else 1)
+
+aggregateAlign :: [Field] -> CompileM Int
+aggregateAlign fields = case fields of
+  [] -> pure 1
+  Field ty _:rest -> do
+    align <- typeAlign ty
+    restAlign <- aggregateAlign rest
+    pure (max align restAlign)
 
 structSize :: String -> CompileM Int
 structSize name = do
@@ -1789,15 +1861,30 @@ globalDataExpr :: CType -> Expr -> CompileM [DataValue]
 globalDataExpr ty expr = case expr of
   EInitList exprs -> globalInitListData ty exprs
   EString text -> globalStringData ty text
-  EInt text -> scalarData ty (parseInt text)
+  EInt _ -> scalarConstantData ty expr
   EFloat text -> scalarFloatData ty text
-  EChar text -> scalarData ty (charValue text)
-  ECast _ value -> globalDataValue ty (Just value)
+  EChar _ -> scalarConstantData ty expr
+  ECast _ value -> do
+    address <- staticAddressInitializer value
+    if address then globalDataValue ty (Just value) else scalarConstantData ty expr
   EUnary "&" value -> globalAddressExprData ty value
   EVar name -> globalVarData ty name
-  _ -> do
-    value <- constExprValue expr
-    scalarData ty value
+  _ -> scalarConstantData ty expr
+
+-- Relocations still use the existing address path, not integer byte folding.
+staticAddressInitializer :: Expr -> CompileM Bool
+staticAddressInitializer expr = case expr of
+  ECast _ value -> staticAddressInitializer value
+  EString _ -> pure True
+  EUnary "&" (EVar _) -> pure True
+  EVar name -> do
+    value <- lookupConstant name
+    pure (case value of
+      Just _ -> False
+      Nothing -> case builtinConstant name of
+        Just _ -> False
+        Nothing -> True)
+  _ -> pure False
 
 globalInitListData :: CType -> [Expr] -> CompileM [DataValue]
 globalInitListData ty exprs =
@@ -1820,9 +1907,10 @@ globalArrayInitData inner count exprs = do
   case count of
     Nothing -> pure items
     Just bound -> do
-      n <- constExprValue bound
+      n <- arrayBoundSize (Just bound)
       elemSize <- typeSize inner
-      padDataTarget (n * elemSize) items
+      size <- checkedArraySize elemSize n
+      padDataTarget size items
 
 globalAggregateInitData :: CType -> [Expr] -> CompileM [DataValue]
 globalAggregateInitData ty exprs = do
@@ -1843,21 +1931,17 @@ globalStringData ty text = case ty of
       dataLabel <- freshDataLabel
       addDataItem (DataItem dataLabel (map DByte (stringBytes text)))
       pure [DAddress dataLabel]
-    else do
-      value <- constExprValue (EString text)
-      scalarData ty value
+    else scalarConstantData ty (EString text)
 
 stringDataSize :: Maybe Expr -> String -> CompileM Int
 stringDataSize count text = case count of
   Nothing -> pure (length (stringBytes text))
-  Just bound -> constExprValue bound
+  Just bound -> arrayBoundSize (Just bound)
 
 globalAddressExprData :: CType -> Expr -> CompileM [DataValue]
 globalAddressExprData ty value = case value of
   EVar name -> globalAddressData name
-  _ -> do
-    n <- constExprValue (EUnary "&" value)
-    scalarData ty n
+  _ -> scalarConstantData ty (EUnary "&" value)
 
 globalVarData :: CType -> String -> CompileM [DataValue]
 globalVarData ty name = do
@@ -1932,9 +2016,35 @@ isAggregateTypeM ty = case ty of
   _ -> pure (isAggregateType ty)
 
 scalarData :: CType -> Int -> CompileM [DataValue]
-scalarData ty value = do
-  size <- typeSize ty
-  pure (map DByte (intBytes size value))
+scalarData ty value = constantData ty (constantInt 4 value)
+
+scalarConstantData :: CType -> Expr -> CompileM [DataValue]
+scalarConstantData ty expr = do
+  value <- constExprTyped True expr
+  constantData ty value
+
+-- Integer zero has a supported floating storage representation on our
+-- targets. Handle it only at serialization: floating intermediates are not
+-- integer Constants, and general floating conversions remain unsupported.
+constantData :: CType -> Constant -> CompileM [DataValue]
+constantData ty value =
+  if isFloatingType ty && not (constantTrue value)
+    then zeroDataForType ty
+    else do
+      converted <- castConstant ty value
+      case converted of
+        Constant _ _ bytes -> pure (map DByte bytes)
+
+castConstant :: CType -> Constant -> CompileM Constant
+castConstant ty value = case ty of
+  CBool -> pure (constantInt 1 (boolToInt (constantTrue value)))
+  _ -> do
+    integer <- isIntegerTypeM ty
+    if integer || isPointerType ty
+      then do
+        size <- typeSize ty
+        pure (constantConvert size (isUnsignedType ty || isPointerType ty) value)
+      else throwC "unsupported non-integer constant conversion"
 
 scalarFloatData :: CType -> String -> CompileM [DataValue]
 scalarFloatData ty text = do
@@ -1979,74 +2089,106 @@ globalAddressData name = do
   function <- lookupFunction name
   pure [DAddress (if function then "FUNCTION_" ++ name else name)]
 
-constExprValue :: Expr -> CompileM Int
-constExprValue expr = case expr of
-  EInt text -> pure (parseInt text)
-  EFloat _ -> pure 0
-  EChar text -> pure (charValue text)
-  ESizeofType ty -> typeSize ty
+-- Preserve target widths and signedness until the final storage conversion.
+constExprTyped :: Bool -> Expr -> CompileM Constant
+constExprTyped live expr = case expr of
+  EInt text -> do
+    word <- targetWordSize
+    case constantLiteralChecked word False text of
+      Right value -> pure value
+      Left msg -> throwC msg
+  EChar text -> pure (constantInt 4 (charValue text))
+  ESizeofType ty -> typeSize ty >>= sizeConstant
   ESizeofExpr value -> do
     mty <- exprType value
     ty <- requireMaybeType "sizeof expression has unknown type" mty
-    typeSize ty
-  ECast _ (EUnary "&" (EPtrMember (ECast (CPtr ty) (EInt "0")) field)) -> do
-    info <- memberInfo (Just (CPtr ty)) field
-    pure (snd info)
+    -- sizeof never folds its operand's value (including casts and comma).
+    typeSize ty >>= sizeConstant
   EUnary "&" (EPtrMember (ECast (CPtr ty) (EInt "0")) field) -> do
     info <- memberInfo (Just (CPtr ty)) field
-    pure (snd info)
+    sizeConstant (snd info)
   EVar name -> do
     constant <- lookupConstant name
     case constant of
-      Just value -> pure value
+      Just value -> pure (constantInt 4 value)
       Nothing -> case builtinConstant name of
-        Just value -> pure value
-        Nothing -> throwC ("unknown constant: " ++ name)
-  ECast _ value -> constExprValue value
-  EUnary "-" value -> do
-    n <- constExprValue value
-    pure (negate n)
-  EUnary "+" value -> constExprValue value
-  EUnary "~" value -> do
-    n <- constExprValue value
-    pure (negate n - 1)
-  EUnary "!" value -> do
-    n <- constExprValue value
-    pure (if n == 0 then 1 else 0)
-  EBinary "&&" left right -> do
-    a <- constExprValue left
-    if a == 0 then pure 0 else do
-      b <- constExprValue right
-      pure (boolToInt (b /= 0))
-  EBinary "||" left right -> do
-    a <- constExprValue left
-    if a /= 0 then pure 1 else do
-      b <- constExprValue right
-      pure (boolToInt (b /= 0))
+        Just value -> pure (constantInt 4 value)
+        Nothing -> if live then throwC ("unknown constant: " ++ name)
+                   else unevaluatedConstant expr
+  ECast ty value -> constExprTyped live value >>= castConstant ty
+  EUnary op value | op `elem` ["-", "+", "~", "!"] -> do
+    n <- constExprTyped live value
+    pure (if op == "!" then constantInt 4 (boolToInt (not (constantTrue n)))
+          else constantUnary op (constantPromote n))
   EBinary op left right -> do
-    a <- constExprValue left
-    b <- constExprValue right
-    case evalConstBinOp op a b of
-      Just value -> pure value
-      Nothing -> throwC ("invalid constant expression: " ++ op)
+    a <- constExprTyped live left
+    let rightLive = live && (if op == "&&" then constantTrue a
+                            else if op == "||" then not (constantTrue a) else True)
+    b <- constExprTyped rightLive right
+    let a' = constantPromote a
+        b' = constantPromote b
+    case constantBinary op a' b' of
+      Right value -> pure value
+      Left msg -> if live then throwC msg
+        else pure (if op == "<<" || op == ">>" then a' else fst (constantCommon a' b'))
   ECond cond yes no -> do
-    c <- constExprValue cond
-    constExprValue (if c /= 0 then yes else no)
-  _ -> throwC ("unsupported constant expression: " ++ renderExprTag expr)
+    c <- constExprTyped live cond
+    a <- constExprTyped (live && constantTrue c) yes
+    b <- constExprTyped (live && not (constantTrue c)) no
+    let (a', b') = constantCommon (constantPromote a) (constantPromote b)
+    pure (if constantTrue c then a' else b')
+  _ -> if live then throwC ("unsupported constant expression: " ++ renderExprTag expr)
+       else unevaluatedConstant expr
+
+-- Dead constant-expression arms contribute their type, not a runtime value.
+-- sizeof queries exprType directly and never enters the value folder.
+unevaluatedConstant :: Expr -> CompileM Constant
+unevaluatedConstant expr = do
+  mty <- exprType expr
+  ty <- requireMaybeType "unevaluated constant expression has unknown type" mty
+  castConstant ty (constantInt 4 0)
+
+sizeConstant :: Int -> CompileM Constant
+sizeConstant n = do
+  word <- targetWordSize
+  pure (constantConvert word True (constantInt word n))
 
 arrayBoundSize :: Maybe Expr -> CompileM Int
 arrayBoundSize bound = case bound of
   Nothing -> pure 1
-  Just expr -> constExprValue expr
+  Just expr -> do
+    value <- constExprTyped True expr
+    case constantToIntChecked value of
+      Nothing -> throwC "array extent exceeds supported layout range"
+      Just n -> if n < 0 then throwC "negative array extent" else pure n
+
+checkedArraySize :: Int -> Int -> CompileM Int
+checkedArraySize size count =
+  if count > 0 && size > 2147483647 `div` count
+    then throwC "array size exceeds supported layout range"
+    else pure (size * count)
 
 shiftRightOp :: Expr -> CompileM BinOp
 shiftRightOp expr = do
   ty <- promotedExprType expr
   pure (if isUnsignedType ty then IShr else ISar)
 
+-- Pointer comparisons (including integer null constants on either side)
+-- use pointer-width operands, not the integer usual arithmetic conversions.
+-- Keep this separate from numeric operations and pointer offset lowering.
+comparisonOperandType :: Expr -> Expr -> CompileM CType
+comparisonOperandType a b = do
+  aty <- exprType a
+  bty <- exprType b
+  case pointerElementType aty of
+    Just inner -> pure (CPtr inner)
+    Nothing -> case pointerElementType bty of
+      Just inner -> pure (CPtr inner)
+      Nothing -> usualArithmeticType a b
+
 comparisonOp :: String -> Expr -> Expr -> CompileM BinOp
 comparisonOp op a b = do
-  commonTy <- usualArithmeticType a b
+  commonTy <- comparisonOperandType a b
   let unsigned = isUnsignedType commonTy
   pure (case (unsigned, op) of
     (False, "<") -> ILt

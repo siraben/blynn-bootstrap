@@ -120,9 +120,39 @@ static char *current_buffer(void)
   return buffer;
 }
 
+static void output_failure(void)
+{
+  fputs("hcc runtime: output error\n", stderr);
+  exit(1);
+}
+
+/* Pinned M2libc fwrite/fputs discard automatic flush failures, and fflush
+   returns a byte count, not ISO stdio's zero-on-success.  Use its exposed fd
+   for output and check every syscall, including partial writes.  No host libc
+   is involved.  A negative result (including EINTR) fails closed. */
+static void checked_write(FILE *file, char *data, unsigned len)
+{
+  int written;
+  while (len > 0) {
+    written = write(file->fd, data, len);
+    if (written <= 0) output_failure();
+    data = data + written;
+    len = len - written;
+  }
+}
+
+static void checked_flush(FILE *file)
+{
+  checked_write(file, file->buffer, file->bufpos);
+  file->file_pos = file->file_pos + file->bufpos;
+  file->bufpos = 0;
+}
+
 void hcc_stdout_buffer(void)
 {
-  fputs(current_buffer(), stdout);
+  char *text = current_buffer();
+  checked_flush(stdout);
+  checked_write(stdout, text, buffer_len);
 }
 
 static void set_result(char *text)
@@ -171,6 +201,9 @@ void hcc_stderr_char(int c)
 
 void hcc_exit_success(void)
 {
+  checked_flush(stdout);
+  /* M2libc fclose deliberately does not close descriptors 0, 1 or 2. */
+  if (close(stdout->fd) != 0) output_failure();
   exit(0);
 }
 
@@ -210,7 +243,8 @@ int hcc_open_write(void)
 void hcc_handle_flush(int handle)
 {
   FILE *file = get_handle(handle);
-  if (file) fflush(file);
+  if (!file) output_failure();
+  checked_flush(file);
 }
 
 static int obuf_index(unsigned long handle)
@@ -327,11 +361,12 @@ void hcc_obuf_write(int handle, unsigned long obuf_handle)
 {
   FILE *file = get_handle(handle);
   int ix = obuf_index(obuf_handle);
-  if (!file) return;
-  if (ix < 0) return;
+  if (!file) output_failure();
+  if (ix < 0) output_failure();
   if (!obuf_len[ix]) return;
   char *data = obuf_data[ix];
-  fwrite(data, 1, obuf_len[ix], file);
+  checked_flush(file);
+  checked_write(file, data, obuf_len[ix]);
 }
 
 void hcc_close(int handle)
@@ -340,8 +375,22 @@ void hcc_close(int handle)
   if (handle > HCC_MAX_HANDLES) return;
   FILE *file = handles[handle - 1];
   if (!file) return;
-  fclose(file);
+  checked_flush(file);
+  if (fclose(file) != 0) output_failure();
   handles[handle - 1] = 0;
+}
+
+int hcc_getcwd(void)
+{
+  unsigned count;
+  /* The pinned wrapper misses negative errors. A valid raw result is a byte
+     count in [1, capacity]; unsigned conversion puts every errno outside it.
+     Do not rely on M2's signedness inference for a direct call comparison. */
+  ensure_chars(&result, &result_cap, 4096);
+  count = _getcwd(result, result_cap);
+  if (count == 0 || count > result_cap) return 0;
+  result_len = strlen(result);
+  return 1;
 }
 
 void hcc_canonicalize(void)

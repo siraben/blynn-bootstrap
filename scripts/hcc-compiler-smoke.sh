@@ -159,4 +159,12 @@ expect_hcc1_fail unsupported-inline-asm "unsupported inline assembly" "$TESTS_DI
 expect_hcpp_fail multi-char-constant "invalid character constant" "$TESTS_DIR/diagnostics/multi-char-constant.c"
 expect_hcpp_fail invalid-octal-constant "invalid digit in octal constant" "$TESTS_DIR/diagnostics/invalid-octal-constant.c"
 
+for regression in parser-ordinary-scope integer-correctness aggregate-correctness preprocessor-correctness; do
+  run_m1_case "$regression" "$TESTS_DIR/m1-smoke/examples/$regression.c"
+done
+printf '#include "missing-hcc-header.h"\n' > missing-include.c
+expect_hcpp_fail missing-include 'cannot find include file' missing-include.c
+printf 'char huge[4294967296ULL];\n' > huge-array.c
+expect_hcc1_fail huge-array 'array extent exceeds supported layout range' huge-array.c
+
 log "all compiler smoke checks passed"

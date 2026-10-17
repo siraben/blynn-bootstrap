@@ -16,6 +16,7 @@ main = do
     ["--help"] -> usage >> hccExitSuccess
     "--check":files -> checkFiles files
     _ -> compileM1Ir args
+  hccExitSuccess
 
 usage :: IO ()
 usage = hccPutStrLn "usage: hcc1 [--m1-ir] [-o FILE] INPUT.i\n       hcc1 --check FILE..."
@@ -44,7 +45,7 @@ compileM1Ir args = do
         Left msg -> die (asmInput opts ++ ":" ++ msg)
         Right toks -> do
           trace "parse"
-          case mapParseError (parseProgram toks) of
+          case mapParseError (parseProgramTarget (asmTargetBits opts) toks) of
             Left msg -> dieInputFile opts msg
             Right ast -> writeM1Ir opts trace ast
 
@@ -53,6 +54,8 @@ dieInputFile opts msg = die (asmInput opts ++ ":" ++ msg)
 
 writeM1Ir :: AsmOptions -> (String -> IO ()) -> Program -> IO ()
 writeM1Ir opts trace ast = do
+  samePath <- hccPathsLexicallyEqual (asmInput opts) (asmOutput opts)
+  when samePath (die "hcc1: input and output paths coincide")
   trace ("open " ++ asmOutput opts)
   opened <- hccWithOpenWriteFile (asmOutput opts) $ \handle -> do
     trace "m1-ir start"

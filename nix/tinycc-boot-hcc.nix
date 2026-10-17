@@ -646,6 +646,43 @@ stdenvNoCC.mkDerivation {
     set -e
     test "$stage3_status" -eq 31
 
+    # The reduced fd-based libc is also the installed hcc-m1 backend's libc.
+    # Keep short-write injection separate from the real-descriptor probes.
+    if [ "$target_is_aarch64" = 1 ] || [ "$target_is_riscv64" = 1 ]; then
+      support_arch="${targetCfg.hcc}"
+      run_step "support error contract compile" run_target ./tcc-stage3 -nostdlib \
+        final-libs/crt1.o $check_include_flags -I ${support} \
+        ${../tests/hcc/tcc-support-contract.c} \
+        final-libs/$support_arch-runtime.o final-libs/$support_arch-syscalls.o \
+        final-libs/lib-arm64.o -o support-contract
+      run_step "support error contract execution (injected writes)" run_target ./support-contract
+      run_step "support real I/O compile" run_target ./tcc-stage3 -B final-libs \
+        $check_include_flags ${../tests/hcc/tcc-support-io.c} -o support-io
+      run_step "support real I/O execution" run_target ./support-io
+      run_step "support hcc-m1 compile" run_target ./tcc-stage3 -B final-libs \
+        $check_include_flags -I ${../hcc/cbits} ${../hcc/cbits/hcc_m1.c} -o support-hcc-m1
+      hcc1 --target "$support_arch" --m1-ir -o support-driver.hccir smoke.c
+      hcc-m1 --target "$support_arch" support-driver.hccir support-driver.M1
+      cp support-driver.M1 support-driver.expected
+      run_target ./support-hcc-m1 --target "$support_arch" support-driver.hccir support-driver.M1
+      cmp support-driver.expected support-driver.M1
+      if run_target ./support-hcc-m1 --target "$support_arch" support-driver.hccir /dev/full 2> support-driver.err; then
+        echo "support hcc-m1 unexpectedly succeeded writing /dev/full" >&2
+        exit 1
+      fi
+      grep 'output write error' support-driver.err
+    fi
+
+    # Execute against the real final Mes libc/libtcc1 archives: fixpoint
+    # equality alone cannot detect consistently corrupted constants. The ARM64
+    # and RISC-V routes instead use separate reduced support and empty libtcc1;
+    # this gate does not assert full floating support for those routes.
+    if [ "$target_is_aarch64" != 1 ] && [ "$target_is_riscv64" != 1 ]; then
+      run_step "final-library magnitude compile" run_target ./tcc-stage3 -B final-libs \
+        $check_include_flags ${../tests/hcc/runtime-magnitude.c} -o runtime-magnitude
+      run_step "final-library magnitude execution" run_target ./runtime-magnitude
+    fi
+
     runHook postCheck
   '';
 

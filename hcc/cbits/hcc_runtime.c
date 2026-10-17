@@ -4,6 +4,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <unistd.h>
 
 #ifndef PATH_MAX
 #define PATH_MAX 4096
@@ -88,8 +89,16 @@ static const char *current_buffer(void) {
   return buffer;
 }
 
+static void output_failure(void) {
+  fputs("hcc runtime: output error\n", stderr);
+  exit(1);
+}
+
 void hcc_stdout_buffer(void) {
-  fputs(current_buffer(), stdout);
+  const char *text = current_buffer();
+  if (fwrite(text, 1, buffer_len, stdout) != buffer_len) output_failure();
+  /* main may return without going through hcc_exit_success. */
+  if (fflush(stdout) != 0) output_failure();
 }
 
 static void set_result(const char *text) {
@@ -130,6 +139,8 @@ void hcc_stderr_char(int c) {
 }
 
 void hcc_exit_success(void) {
+  if (fflush(stdout) != 0) output_failure();
+  if (fclose(stdout) != 0) output_failure();
   exit(0);
 }
 
@@ -160,7 +171,7 @@ int hcc_open_write(void) {
 
 void hcc_handle_flush(int handle) {
   FILE *file = get_handle(handle);
-  if (file) fflush(file);
+  if (!file || fflush(file) != 0) output_failure();
 }
 
 static unsigned long alloc_obuf(struct hcc_obuf *out) {
@@ -247,16 +258,24 @@ void hcc_obuf_put8(
 void hcc_obuf_write(int handle, unsigned long obuf_handle) {
   FILE *file = get_handle(handle);
   struct hcc_obuf *out = get_obuf(obuf_handle);
-  if (!file || !out || out->len == 0) return;
-  fwrite(out->data, 1, out->len, file);
+  if (!file || !out) output_failure();
+  if (out->len == 0) return;
+  if (fwrite(out->data, 1, out->len, file) != out->len) output_failure();
 }
 
 void hcc_close(int handle) {
   if (handle <= 0 || handle > HCC_MAX_HANDLES) return;
   FILE *file = handles[handle - 1];
   if (!file) return;
-  fclose(file);
+  if (fclose(file) != 0) output_failure();
   handles[handle - 1] = NULL;
+}
+
+int hcc_getcwd(void) {
+  ensure_chars(&result, &result_cap, PATH_MAX);
+  if (!getcwd(result, result_cap)) return 0;
+  result_len = strlen(result);
+  return 1;
 }
 
 void hcc_canonicalize(void) {
