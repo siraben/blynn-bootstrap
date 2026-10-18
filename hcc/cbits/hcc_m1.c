@@ -98,6 +98,10 @@ enum {
 };
 
 static int target_arch = TARGET_AMD64;
+static int target_explicit = 0;
+/* Validate metadata before opening output without starting our brk arena:
+ * M2libc fopen allocates too, so all fopen calls must precede xrealloc. */
+static char ir_header[LINE_CAP];
 static char riscv64_label_namespace_buf[128];
 static const char *riscv64_label_namespace = "out";
 
@@ -930,6 +934,28 @@ static void free_function(Function *fn) { (void)fn; }
 static void free_data_item(DataItem *item) { (void)item; }
 #endif
 
+/* Keep the CLI aliases in sync with Hcc/Target.hs. Metadata is a required
+ * first record, not an override: lowering has already chosen type widths. */
+static int parse_target_name(const char *name)
+{
+  if (str_eq(name, "amd64") || str_eq(name, "x86_64")) return TARGET_AMD64;
+  if (str_eq(name, "i386") || str_eq(name, "x86")) return TARGET_I386;
+  if (str_eq(name, "aarch64") || str_eq(name, "arm64")) return TARGET_AARCH64;
+  if (str_eq(name, "riscv64")) return TARGET_RISCV64;
+  die("unknown target");
+  return 0;
+}
+
+static void read_ir_target(FILE *file, char *line)
+{
+  int arch;
+  if (!read_line(file, line, LINE_CAP)) die("missing HCCIR target record");
+  if (!str_prefix_n(line, "T ", 2)) die("missing HCCIR target record");
+  arch = parse_target_name(line + 2);
+  if (target_explicit && target_arch != arch) die("HCCIR target does not match --target");
+  target_arch = arch;
+}
+
 static void translate_ir_module(FILE *file, FILE *out)
 {
   DataItem item;
@@ -946,7 +972,8 @@ static void translate_ir_module(FILE *file, FILE *out)
       parse_ir_function(file, line, &fn);
       emit_function(out, &fn);
       free_function(&fn);
-    } else if (line[0] != 0) die("unexpected IR top-level line");
+    } else if (str_prefix_n(line, "T ", 2)) die("duplicate or misplaced HCCIR target record");
+    else if (line[0] != 0) die("unexpected IR top-level line");
   }
 #if !defined(__M2__)
   free(line);
@@ -2456,11 +2483,8 @@ int main(int argc, char **argv)
   char *header;
   int argi;
   if (argc == 5 && strcmp(argv[1], "--target") == 0) {
-    if (strcmp(argv[2], "amd64") == 0 || strcmp(argv[2], "x86_64") == 0) target_arch = TARGET_AMD64;
-    else if (strcmp(argv[2], "i386") == 0 || strcmp(argv[2], "x86") == 0) target_arch = TARGET_I386;
-    else if (strcmp(argv[2], "aarch64") == 0 || strcmp(argv[2], "arm64") == 0) target_arch = TARGET_AARCH64;
-    else if (strcmp(argv[2], "riscv64") == 0) target_arch = TARGET_RISCV64;
-    else die("unknown target");
+    target_arch = parse_target_name(argv[2]);
+    target_explicit = 1;
     argi = 3;
   } else {
     argi = 1;
@@ -2471,12 +2495,13 @@ int main(int argc, char **argv)
   }
   in = fopen(argv[argi], "r");
   if (!in) die("cannot open input");
+  header = ir_header;
+  if (!read_line(in, header, LINE_CAP)) die("empty input");
+  if (!str_eq(header, "HCCIR 1")) die("bad IR input header");
+  read_ir_target(in, header);
   set_label_namespace(argv[argi + 1]);
   out = fopen(argv[argi + 1], "w");
   if (!out) die("cannot open output");
-  header = xrealloc(0, LINE_CAP);
-  if (!read_line(in, header, LINE_CAP)) die("empty input");
-  if (!str_eq(header, "HCCIR 1")) die("bad IR input header");
   translate_ir_module(in, out);
   fclose(in);
   fclose(out);
