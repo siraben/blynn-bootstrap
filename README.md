@@ -160,6 +160,21 @@ configures generation; backend-specific sizes are also passed to this stage.
 The M2 low-memory backend retains `67108864` words for both programs and its
 separate `33554432`-word adaptive-major GC threshold.
 
+## C formatting
+
+Maintained C under `hcc/cbits` and `hcc/support` follows `.clang-format`.
+CI checks it with the `clang-tools` version pinned by `flake.lock`:
+
+```sh
+nix shell --inputs-from . nixpkgs#clang-tools --command sh scripts/check-c-format.sh
+nix shell --inputs-from . nixpkgs#clang-tools --command sh scripts/check-c-format.sh --fix
+```
+
+Stage new C/header files before checking. Vendored sources, generated output,
+patches, and syntax-sensitive test fixtures are outside this formatting gate.
+Include order and assembly string contents are preserved. Keep formatting-only
+changes separate from behavioral changes.
+
 ## Layout
 
 - `hcc/`: compiler, runtime, and target support sources.

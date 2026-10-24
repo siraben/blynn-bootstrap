@@ -22,13 +22,15 @@ static char *line;
 static char *name;
 static char *path;
 
-static int str_len(const char *s) {
+static int str_len(const char *s)
+{
   int len = 0;
   while (s[len]) len++;
   return len;
 }
 
-static int str_eq(const char *a, const char *b) {
+static int str_eq(const char *a, const char *b)
+{
   int i = 0;
   while (a[i] && b[i]) {
     if (a[i] != b[i]) return 0;
@@ -37,19 +39,22 @@ static int str_eq(const char *a, const char *b) {
   return a[i] == b[i];
 }
 
-static void copy_bytes(char *dest, const char *src, int len) {
+static void copy_bytes(char *dest, const char *src, int len)
+{
   int i;
   for (i = 0; i < len; i++) {
     dest[i] = src[i];
   }
 }
 
-static void die_line(const char *message, int line_no) {
+static void die_line(const char *message, int line_no)
+{
   fprintf(stderr, "materialize-object-script: line %d: %s\n", line_no, message);
   exit(1);
 }
 
-static void die_unexpected(const char *message, const char *text, int line_no) {
+static void die_unexpected(const char *message, const char *text, int line_no)
+{
   fprintf(stderr, "materialize-object-script: line %d: %s: ", line_no, message);
   fputs(text, stderr);
   if (text[0] == CH_NUL || text[str_len(text) - 1] != CH_LF) {
@@ -58,7 +63,8 @@ static void die_unexpected(const char *message, const char *text, int line_no) {
   exit(1);
 }
 
-static void trim_line_end(char *s) {
+static void trim_line_end(char *s)
+{
   int len = str_len(s);
   if (len && s[len - 1] == CH_LF) {
     s[--len] = CH_NUL;
@@ -68,11 +74,13 @@ static void trim_line_end(char *s) {
   }
 }
 
-static int is_eof_line(const char *s) {
+static int is_eof_line(const char *s)
+{
   return str_eq(s, "EOF\n") || str_eq(s, "EOF\r\n") || str_eq(s, "EOF");
 }
 
-static int parse_header(char *s) {
+static int parse_header(char *s)
+{
   int i;
   int j;
   char c;
@@ -114,7 +122,8 @@ static int parse_header(char *s) {
   return -1;
 }
 
-static void make_path(const char *dir, const char *file) {
+static void make_path(const char *dir, const char *file)
+{
   int dir_len = str_len(dir);
   int file_len = str_len(file);
   if (dir_len + file_len + 2 >= PATH_CAP) {
@@ -128,7 +137,8 @@ static void make_path(const char *dir, const char *file) {
   path[dir_len + file_len] = CH_NUL;
 }
 
-static int read_line(FILE *in, int *line_no) {
+static int read_line(FILE *in, int *line_no)
+{
   int c;
   int len;
 
@@ -146,7 +156,8 @@ static int read_line(FILE *in, int *line_no) {
   return 1;
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char **argv)
+{
   FILE *in;
   FILE *out;
   int line_no;

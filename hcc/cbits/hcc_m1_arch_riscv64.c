@@ -1,20 +1,34 @@
 static const char *riscv64_rd(int reg)
 {
   switch (reg) {
-    case 0: return "rd_x0";
-    case 1: return "rd_ra";
-    case 2: return "rd_sp";
-    case 5: return "rd_t0";
-    case 6: return "rd_t1";
-    case 7: return "rd_t2";
-    case 10: return "rd_a0";
-    case 11: return "rd_a1";
-    case 12: return "rd_a2";
-    case 13: return "rd_a3";
-    case 14: return "rd_a4";
-    case 15: return "rd_a5";
-    case 16: return "rd_a6";
-    case 17: return "rd_a7";
+  case 0:
+    return "rd_x0";
+  case 1:
+    return "rd_ra";
+  case 2:
+    return "rd_sp";
+  case 5:
+    return "rd_t0";
+  case 6:
+    return "rd_t1";
+  case 7:
+    return "rd_t2";
+  case 10:
+    return "rd_a0";
+  case 11:
+    return "rd_a1";
+  case 12:
+    return "rd_a2";
+  case 13:
+    return "rd_a3";
+  case 14:
+    return "rd_a4";
+  case 15:
+    return "rd_a5";
+  case 16:
+    return "rd_a6";
+  case 17:
+    return "rd_a7";
   }
   die("bad riscv64 destination register");
   return "rd_x0";
@@ -23,20 +37,34 @@ static const char *riscv64_rd(int reg)
 static const char *riscv64_rs1(int reg)
 {
   switch (reg) {
-    case 0: return "rs1_x0";
-    case 1: return "rs1_ra";
-    case 2: return "rs1_sp";
-    case 5: return "rs1_t0";
-    case 6: return "rs1_t1";
-    case 7: return "rs1_t2";
-    case 10: return "rs1_a0";
-    case 11: return "rs1_a1";
-    case 12: return "rs1_a2";
-    case 13: return "rs1_a3";
-    case 14: return "rs1_a4";
-    case 15: return "rs1_a5";
-    case 16: return "rs1_a6";
-    case 17: return "rs1_a7";
+  case 0:
+    return "rs1_x0";
+  case 1:
+    return "rs1_ra";
+  case 2:
+    return "rs1_sp";
+  case 5:
+    return "rs1_t0";
+  case 6:
+    return "rs1_t1";
+  case 7:
+    return "rs1_t2";
+  case 10:
+    return "rs1_a0";
+  case 11:
+    return "rs1_a1";
+  case 12:
+    return "rs1_a2";
+  case 13:
+    return "rs1_a3";
+  case 14:
+    return "rs1_a4";
+  case 15:
+    return "rs1_a5";
+  case 16:
+    return "rs1_a6";
+  case 17:
+    return "rs1_a7";
   }
   die("bad riscv64 first source register");
   return "rs1_x0";
@@ -45,20 +73,34 @@ static const char *riscv64_rs1(int reg)
 static const char *riscv64_rs2(int reg)
 {
   switch (reg) {
-    case 0: return "rs2_x0";
-    case 1: return "rs2_ra";
-    case 2: return "rs2_sp";
-    case 5: return "rs2_t0";
-    case 6: return "rs2_t1";
-    case 7: return "rs2_t2";
-    case 10: return "rs2_a0";
-    case 11: return "rs2_a1";
-    case 12: return "rs2_a2";
-    case 13: return "rs2_a3";
-    case 14: return "rs2_a4";
-    case 15: return "rs2_a5";
-    case 16: return "rs2_a6";
-    case 17: return "rs2_a7";
+  case 0:
+    return "rs2_x0";
+  case 1:
+    return "rs2_ra";
+  case 2:
+    return "rs2_sp";
+  case 5:
+    return "rs2_t0";
+  case 6:
+    return "rs2_t1";
+  case 7:
+    return "rs2_t2";
+  case 10:
+    return "rs2_a0";
+  case 11:
+    return "rs2_a1";
+  case 12:
+    return "rs2_a2";
+  case 13:
+    return "rs2_a3";
+  case 14:
+    return "rs2_a4";
+  case 15:
+    return "rs2_a5";
+  case 16:
+    return "rs2_a6";
+  case 17:
+    return "rs2_a7";
   }
   die("bad riscv64 second source register");
   return "rs2_x0";
@@ -153,7 +195,8 @@ static void riscv64_emit_load_label(FILE *out, int reg, const char *label)
   fprintf(out, "  %s %s !%s addi\n", riscv64_rd(reg), riscv64_rs1(reg), label);
 }
 
-static void riscv64_emit_load_label_parts(FILE *out, int reg, const char *prefix, const char *fn_name, int id)
+static void riscv64_emit_load_label_parts(FILE *out, int reg, const char *prefix,
+                                          const char *fn_name, int id)
 {
   fprintf(out, "  %s ~", riscv64_rd(reg));
   emit_named_ref(out, prefix, fn_name, id);
@@ -169,22 +212,34 @@ static void riscv64_emit_load_function_label(FILE *out, int reg, const char *nam
   fprintf(out, "  %s %s !FUNCTION_%s addi\n", riscv64_rd(reg), riscv64_rs1(reg), name);
 }
 
-static void riscv64_emit_load_store_from(FILE *out, int is_load, int size, int is_signed, int base, int offset, int src)
+static void riscv64_emit_load_store_from(FILE *out, int is_load, int size, int is_signed, int base,
+                                         int offset, int src)
 {
   const char *op = "ld";
   if (is_load) {
-    if (size == 8) op = "ld";
-    else if (size == 4 && is_signed) op = "lw";
-    else if (size == 4) op = "lwu";
-    else if (size == 2 && is_signed) op = "lh";
-    else if (size == 2) op = "lhu";
-    else if (is_signed) op = "lb";
-    else op = "lbu";
+    if (size == 8)
+      op = "ld";
+    else if (size == 4 && is_signed)
+      op = "lw";
+    else if (size == 4)
+      op = "lwu";
+    else if (size == 2 && is_signed)
+      op = "lh";
+    else if (size == 2)
+      op = "lhu";
+    else if (is_signed)
+      op = "lb";
+    else
+      op = "lbu";
   } else {
-    if (size == 8) op = "sd";
-    else if (size == 4) op = "sw";
-    else if (size == 2) op = "sh";
-    else op = "sb";
+    if (size == 8)
+      op = "sd";
+    else if (size == 4)
+      op = "sw";
+    else if (size == 2)
+      op = "sh";
+    else
+      op = "sb";
   }
   if (is_load && offset >= -2048 && offset <= 2047) {
     fprintf(out, "  rd_a0 %s !%d %s\n", riscv64_rs1(base), offset, op);
@@ -196,11 +251,14 @@ static void riscv64_emit_load_store_from(FILE *out, int is_load, int size, int i
   }
   riscv64_emit_load_literal(out, 5, (unsigned long)offset);
   fprintf(out, "  rd_t0 %s rs2_t0 add\n", riscv64_rs1(base));
-  if (is_load) fprintf(out, "  rd_a0 rs1_t0 %s\n", op);
-  else fprintf(out, "  rs1_t0 %s %s\n", riscv64_rs2(src), op);
+  if (is_load)
+    fprintf(out, "  rd_a0 rs1_t0 %s\n", op);
+  else
+    fprintf(out, "  rs1_t0 %s %s\n", riscv64_rs2(src), op);
 }
 
-static void riscv64_emit_load_store(FILE *out, int is_load, int size, int is_signed, int base, int offset)
+static void riscv64_emit_load_store(FILE *out, int is_load, int size, int is_signed, int base,
+                                    int offset)
 {
   riscv64_emit_load_store_from(out, is_load, size, is_signed, base, offset, 10);
 }
@@ -313,34 +371,82 @@ static void riscv64_emit_store_stack(FILE *out, int offset)
 static void riscv64_emit_binop(FILE *out, int op)
 {
   switch (op) {
-    case BK_ADD: fprintf(out, "  rd_a0 rs1_a1 rs2_a0 add\n"); break;
-    case BK_SUB: fprintf(out, "  rd_a0 rs1_a1 rs2_a0 sub\n"); break;
-    case BK_MUL: fprintf(out, "  rd_a0 rs1_a1 rs2_a0 mul\n"); break;
-    case BK_DIV: fprintf(out, "  rd_a0 rs1_a1 rs2_a0 div\n"); break;
-    case BK_MOD: fprintf(out, "  rd_a0 rs1_a1 rs2_a0 rem\n"); break;
-    case BK_UDIV: fprintf(out, "  rd_a0 rs1_a1 rs2_a0 divu\n"); break;
-    case BK_UMOD: fprintf(out, "  rd_a0 rs1_a1 rs2_a0 remu\n"); break;
-    case BK_SHL: fprintf(out, "  rd_a0 rs1_a1 rs2_a0 sll\n"); break;
-    case BK_SHR: fprintf(out, "  rd_a0 rs1_a1 rs2_a0 srl\n"); break;
-    case BK_SAR: fprintf(out, "  rd_a0 rs1_a1 rs2_a0 sra\n"); break;
-    case BK_EQ: fprintf(out, "  rd_a0 rs1_a1 rs2_a0 xor\n  rd_a0 rs1_a0 !1 sltiu\n"); break;
-    case BK_NE: fprintf(out, "  rd_a0 rs1_a1 rs2_a0 xor\n  rd_a0 rs1_x0 rs2_a0 sltu\n"); break;
-    case BK_LT: fprintf(out, "  rd_a0 rs1_a1 rs2_a0 slt\n"); break;
-    case BK_LE: fprintf(out, "  rd_a0 rs1_a0 rs2_a1 slt\n  rd_a0 rs1_a0 !1 xori\n"); break;
-    case BK_GT: fprintf(out, "  rd_a0 rs1_a0 rs2_a1 slt\n"); break;
-    case BK_GE: fprintf(out, "  rd_a0 rs1_a1 rs2_a0 slt\n  rd_a0 rs1_a0 !1 xori\n"); break;
-    case BK_ULT: fprintf(out, "  rd_a0 rs1_a1 rs2_a0 sltu\n"); break;
-    case BK_ULE: fprintf(out, "  rd_a0 rs1_a0 rs2_a1 sltu\n  rd_a0 rs1_a0 !1 xori\n"); break;
-    case BK_UGT: fprintf(out, "  rd_a0 rs1_a0 rs2_a1 sltu\n"); break;
-    case BK_UGE: fprintf(out, "  rd_a0 rs1_a1 rs2_a0 sltu\n  rd_a0 rs1_a0 !1 xori\n"); break;
-    case BK_AND: fprintf(out, "  rd_a0 rs1_a1 rs2_a0 and\n"); break;
-    case BK_OR: fprintf(out, "  rd_a0 rs1_a1 rs2_a0 or\n"); break;
-    case BK_XOR: fprintf(out, "  rd_a0 rs1_a1 rs2_a0 xor\n"); break;
-    default: die("bad riscv64 binary operation");
+  case BK_ADD:
+    fprintf(out, "  rd_a0 rs1_a1 rs2_a0 add\n");
+    break;
+  case BK_SUB:
+    fprintf(out, "  rd_a0 rs1_a1 rs2_a0 sub\n");
+    break;
+  case BK_MUL:
+    fprintf(out, "  rd_a0 rs1_a1 rs2_a0 mul\n");
+    break;
+  case BK_DIV:
+    fprintf(out, "  rd_a0 rs1_a1 rs2_a0 div\n");
+    break;
+  case BK_MOD:
+    fprintf(out, "  rd_a0 rs1_a1 rs2_a0 rem\n");
+    break;
+  case BK_UDIV:
+    fprintf(out, "  rd_a0 rs1_a1 rs2_a0 divu\n");
+    break;
+  case BK_UMOD:
+    fprintf(out, "  rd_a0 rs1_a1 rs2_a0 remu\n");
+    break;
+  case BK_SHL:
+    fprintf(out, "  rd_a0 rs1_a1 rs2_a0 sll\n");
+    break;
+  case BK_SHR:
+    fprintf(out, "  rd_a0 rs1_a1 rs2_a0 srl\n");
+    break;
+  case BK_SAR:
+    fprintf(out, "  rd_a0 rs1_a1 rs2_a0 sra\n");
+    break;
+  case BK_EQ:
+    fprintf(out, "  rd_a0 rs1_a1 rs2_a0 xor\n  rd_a0 rs1_a0 !1 sltiu\n");
+    break;
+  case BK_NE:
+    fprintf(out, "  rd_a0 rs1_a1 rs2_a0 xor\n  rd_a0 rs1_x0 rs2_a0 sltu\n");
+    break;
+  case BK_LT:
+    fprintf(out, "  rd_a0 rs1_a1 rs2_a0 slt\n");
+    break;
+  case BK_LE:
+    fprintf(out, "  rd_a0 rs1_a0 rs2_a1 slt\n  rd_a0 rs1_a0 !1 xori\n");
+    break;
+  case BK_GT:
+    fprintf(out, "  rd_a0 rs1_a0 rs2_a1 slt\n");
+    break;
+  case BK_GE:
+    fprintf(out, "  rd_a0 rs1_a1 rs2_a0 slt\n  rd_a0 rs1_a0 !1 xori\n");
+    break;
+  case BK_ULT:
+    fprintf(out, "  rd_a0 rs1_a1 rs2_a0 sltu\n");
+    break;
+  case BK_ULE:
+    fprintf(out, "  rd_a0 rs1_a0 rs2_a1 sltu\n  rd_a0 rs1_a0 !1 xori\n");
+    break;
+  case BK_UGT:
+    fprintf(out, "  rd_a0 rs1_a0 rs2_a1 sltu\n");
+    break;
+  case BK_UGE:
+    fprintf(out, "  rd_a0 rs1_a1 rs2_a0 sltu\n  rd_a0 rs1_a0 !1 xori\n");
+    break;
+  case BK_AND:
+    fprintf(out, "  rd_a0 rs1_a1 rs2_a0 and\n");
+    break;
+  case BK_OR:
+    fprintf(out, "  rd_a0 rs1_a1 rs2_a0 or\n");
+    break;
+  case BK_XOR:
+    fprintf(out, "  rd_a0 rs1_a1 rs2_a0 xor\n");
+    break;
+  default:
+    die("bad riscv64 binary operation");
   }
 }
 
-static void riscv64_emit_jump_label_parts(FILE *out, const char *prefix, const char *fn_name, int id)
+static void riscv64_emit_jump_label_parts(FILE *out, const char *prefix, const char *fn_name,
+                                          int id)
 {
   riscv64_emit_load_label_parts(out, 7, prefix, fn_name, id);
   fprintf(out, "  rd_x0 rs1_t2 !0 jalr\n");
@@ -380,16 +486,26 @@ static void riscv64_emit_truth_skip_label(FILE *out, int id)
 static int riscv64_false_branch_kind(int op)
 {
   switch (op) {
-    case BK_EQ: return 2;
-    case BK_NE: return 1;
-    case BK_LT: return 4;
-    case BK_LE: return 3;
-    case BK_GT: return 4;
-    case BK_GE: return 3;
-    case BK_ULT: return 6;
-    case BK_ULE: return 5;
-    case BK_UGT: return 6;
-    case BK_UGE: return 5;
+  case BK_EQ:
+    return 2;
+  case BK_NE:
+    return 1;
+  case BK_LT:
+    return 4;
+  case BK_LE:
+    return 3;
+  case BK_GT:
+    return 4;
+  case BK_GE:
+    return 3;
+  case BK_ULT:
+    return 6;
+  case BK_ULE:
+    return 5;
+  case BK_UGT:
+    return 6;
+  case BK_UGE:
+    return 5;
   }
   die("bad riscv64 branch comparison");
   return 1;
@@ -398,11 +514,11 @@ static int riscv64_false_branch_kind(int op)
 static int riscv64_false_branch_swaps_args_for_binop(int op)
 {
   switch (op) {
-    case BK_LE:
-    case BK_GT:
-    case BK_ULE:
-    case BK_UGT:
-      return 1;
+  case BK_LE:
+  case BK_GT:
+  case BK_ULE:
+  case BK_UGT:
+    return 1;
   }
   return 0;
 }
@@ -410,12 +526,18 @@ static int riscv64_false_branch_swaps_args_for_binop(int op)
 static const char *riscv64_branch_op(int kind)
 {
   switch (kind) {
-    case 1: return "beq";
-    case 2: return "bne";
-    case 3: return "blt";
-    case 4: return "bge";
-    case 5: return "bltu";
-    case 6: return "bgeu";
+  case 1:
+    return "beq";
+  case 2:
+    return "bne";
+  case 3:
+    return "blt";
+  case 4:
+    return "bge";
+  case 5:
+    return "bltu";
+  case 6:
+    return "bgeu";
   }
   die("bad riscv64 branch opcode");
   return "beq";
@@ -445,7 +567,8 @@ static void riscv64_emit_compare_jump(FILE *out, const char *fn_name, int op, in
   fputc('\n', out);
 }
 
-static void riscv64_emit_truth_jump_label_parts(FILE *out, const char *prefix, const char *fn_name, int target, int jump_if_true)
+static void riscv64_emit_truth_jump_label_parts(FILE *out, const char *prefix, const char *fn_name,
+                                                int target, int jump_if_true)
 {
   int id = riscv64_next_truth_skip_id();
   riscv64_emit_truth_skip(out, jump_if_true, id);

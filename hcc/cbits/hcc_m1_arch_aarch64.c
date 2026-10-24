@@ -20,11 +20,8 @@ static void aarch64_emit_add_sub_imm(FILE *out, int is_sub, int dst, int src, in
 {
   int opcode = 145;
   if (is_sub) opcode = 209;
-  aarch64_emit_insn_bytes(out,
-    ((src & 7) << 5) | dst,
-    (src >> 3) | ((imm & 63) << 2),
-    (imm >> 6) & 63,
-    opcode);
+  aarch64_emit_insn_bytes(out, ((src & 7) << 5) | dst, (src >> 3) | ((imm & 63) << 2),
+                          (imm >> 6) & 63, opcode);
 }
 
 static void aarch64_emit_add_imm_reg(FILE *out, int dst, int src, int imm)
@@ -74,7 +71,8 @@ static void aarch64_emit_load_label(FILE *out, int reg, const char *label)
   fprintf(out, "  &%s '00' '00' '00' '00'\n", label);
 }
 
-static void aarch64_emit_load_label_parts(FILE *out, int reg, const char *prefix, const char *fn_name, int id)
+static void aarch64_emit_load_label_parts(FILE *out, int reg, const char *prefix,
+                                          const char *fn_name, int id)
 {
   aarch64_emit_load_literal_prefix(out, reg);
   fprintf(out, "  &");
@@ -82,36 +80,56 @@ static void aarch64_emit_load_label_parts(FILE *out, int reg, const char *prefix
   fprintf(out, " '00' '00' '00' '00'\n");
 }
 
-static void aarch64_emit_load_store(FILE *out, int is_load, int size, int is_signed, int base, int offset)
+static void aarch64_emit_load_store(FILE *out, int is_load, int size, int is_signed, int base,
+                                    int offset)
 {
   int op2;
   int op3;
   int scale = 0;
-  if (size == 8) scale = 3;
-  else if (size == 4) scale = 2;
-  else if (size == 2) scale = 1;
+  if (size == 8)
+    scale = 3;
+  else if (size == 4)
+    scale = 2;
+  else if (size == 2)
+    scale = 1;
   if (offset >= 0 && (offset & ((1 << scale) - 1)) == 0 && (offset >> scale) < 4096) {
     int imm = offset >> scale;
     if (is_load) {
-      if (size == 8) { op2 = 64; op3 = 249; }
-      else if (size == 4 && is_signed) { op2 = 128; op3 = 185; }
-      else if (size == 4) { op2 = 64; op3 = 185; }
-      else if (size == 2 && is_signed) { op2 = 128; op3 = 121; }
-      else if (size == 2) { op2 = 64; op3 = 121; }
-      else if (is_signed) { op2 = 128; op3 = 57; }
-      else { op2 = 64; op3 = 57; }
+      if (size == 8) {
+        op2 = 64;
+        op3 = 249;
+      } else if (size == 4 && is_signed) {
+        op2 = 128;
+        op3 = 185;
+      } else if (size == 4) {
+        op2 = 64;
+        op3 = 185;
+      } else if (size == 2 && is_signed) {
+        op2 = 128;
+        op3 = 121;
+      } else if (size == 2) {
+        op2 = 64;
+        op3 = 121;
+      } else if (is_signed) {
+        op2 = 128;
+        op3 = 57;
+      } else {
+        op2 = 64;
+        op3 = 57;
+      }
     } else {
       op2 = 0;
-      if (size == 8) op3 = 249;
-      else if (size == 4) op3 = 185;
-      else if (size == 2) op3 = 121;
-      else op3 = 57;
+      if (size == 8)
+        op3 = 249;
+      else if (size == 4)
+        op3 = 185;
+      else if (size == 2)
+        op3 = 121;
+      else
+        op3 = 57;
     }
-    aarch64_emit_insn_bytes(out,
-      (base & 7) << 5,
-      (base >> 3) | ((imm & 63) << 2),
-      op2 | ((imm >> 6) & 63),
-      op3);
+    aarch64_emit_insn_bytes(out, (base & 7) << 5, (base >> 3) | ((imm & 63) << 2),
+                            op2 | ((imm >> 6) & 63), op3);
     return;
   }
   aarch64_emit_add_imm_reg(out, 16, base, offset);
@@ -195,51 +213,108 @@ static void aarch64_emit_store_stack(FILE *out, int offset)
 static void aarch64_emit_binop(FILE *out, int op)
 {
   switch (op) {
-    case BK_ADD: fprintf(out, "  ADD_X0_X1_X0\n"); break;
-    case BK_SUB: fprintf(out, "  SUB_X0_X1_X0\n"); break;
-    case BK_MUL: fprintf(out, "  MUL_X0_X1_X0\n"); break;
-    case BK_DIV: fprintf(out, "  SDIV_X0_X1_X0\n"); break;
-    case BK_MOD: fprintf(out, "  SDIV_X2_X1_X0\n  MSUB_X0_X0_X2_X1\n"); break;
-    case BK_SHL: fprintf(out, "  LSHIFT_X0_X1_X0\n"); break;
-    case BK_SHR: fprintf(out, "  LOGICAL_RSHIFT_X0_X1_X0\n"); break;
-    case BK_SAR: fprintf(out, "  ARITH_RSHIFT_X0_X1_X0\n"); break;
-    case BK_EQ: fprintf(out, "  CMP_X1_X0\n  SET_X0_TO_1\n  SKIP_INST_EQ\n  SET_X0_TO_0\n"); break;
-    case BK_NE: fprintf(out, "  CMP_X1_X0\n  SET_X0_TO_1\n  SKIP_INST_NE\n  SET_X0_TO_0\n"); break;
-    case BK_LT: fprintf(out, "  CMP_X1_X0\n  SET_X0_TO_1\n  SKIP_INST_LT\n  SET_X0_TO_0\n"); break;
-    case BK_LE: fprintf(out, "  CMP_X1_X0\n  SET_X0_TO_1\n  SKIP_INST_LE\n  SET_X0_TO_0\n"); break;
-    case BK_GT: fprintf(out, "  CMP_X1_X0\n  SET_X0_TO_1\n  SKIP_INST_GT\n  SET_X0_TO_0\n"); break;
-    case BK_GE: fprintf(out, "  CMP_X1_X0\n  SET_X0_TO_1\n  SKIP_INST_GE\n  SET_X0_TO_0\n"); break;
-    case BK_ULT: fprintf(out, "  CMP_X1_X0\n  SET_X0_TO_1\n  SKIP_INST_LO\n  SET_X0_TO_0\n"); break;
-    case BK_ULE: fprintf(out, "  CMP_X1_X0\n  SET_X0_TO_1\n  SKIP_INST_LS\n  SET_X0_TO_0\n"); break;
-    case BK_UGT: fprintf(out, "  CMP_X1_X0\n  SET_X0_TO_1\n  SKIP_INST_HI\n  SET_X0_TO_0\n"); break;
-    case BK_UGE: fprintf(out, "  CMP_X1_X0\n  SET_X0_TO_1\n  SKIP_INST_HS\n  SET_X0_TO_0\n"); break;
-    case BK_AND: fprintf(out, "  AND_X0_X1_X0\n"); break;
-    case BK_OR: fprintf(out, "  OR_X0_X1_X0\n"); break;
-    case BK_XOR: fprintf(out, "  XOR_X0_X1_X0\n"); break;
-    case BK_UDIV: fprintf(out, "  UDIV_X0_X1_X0\n"); break;
-    case BK_UMOD: fprintf(out, "  UDIV_X2_X1_X0\n  MSUB_X0_X0_X2_X1\n"); break;
+  case BK_ADD:
+    fprintf(out, "  ADD_X0_X1_X0\n");
+    break;
+  case BK_SUB:
+    fprintf(out, "  SUB_X0_X1_X0\n");
+    break;
+  case BK_MUL:
+    fprintf(out, "  MUL_X0_X1_X0\n");
+    break;
+  case BK_DIV:
+    fprintf(out, "  SDIV_X0_X1_X0\n");
+    break;
+  case BK_MOD:
+    fprintf(out, "  SDIV_X2_X1_X0\n  MSUB_X0_X0_X2_X1\n");
+    break;
+  case BK_SHL:
+    fprintf(out, "  LSHIFT_X0_X1_X0\n");
+    break;
+  case BK_SHR:
+    fprintf(out, "  LOGICAL_RSHIFT_X0_X1_X0\n");
+    break;
+  case BK_SAR:
+    fprintf(out, "  ARITH_RSHIFT_X0_X1_X0\n");
+    break;
+  case BK_EQ:
+    fprintf(out, "  CMP_X1_X0\n  SET_X0_TO_1\n  SKIP_INST_EQ\n  SET_X0_TO_0\n");
+    break;
+  case BK_NE:
+    fprintf(out, "  CMP_X1_X0\n  SET_X0_TO_1\n  SKIP_INST_NE\n  SET_X0_TO_0\n");
+    break;
+  case BK_LT:
+    fprintf(out, "  CMP_X1_X0\n  SET_X0_TO_1\n  SKIP_INST_LT\n  SET_X0_TO_0\n");
+    break;
+  case BK_LE:
+    fprintf(out, "  CMP_X1_X0\n  SET_X0_TO_1\n  SKIP_INST_LE\n  SET_X0_TO_0\n");
+    break;
+  case BK_GT:
+    fprintf(out, "  CMP_X1_X0\n  SET_X0_TO_1\n  SKIP_INST_GT\n  SET_X0_TO_0\n");
+    break;
+  case BK_GE:
+    fprintf(out, "  CMP_X1_X0\n  SET_X0_TO_1\n  SKIP_INST_GE\n  SET_X0_TO_0\n");
+    break;
+  case BK_ULT:
+    fprintf(out, "  CMP_X1_X0\n  SET_X0_TO_1\n  SKIP_INST_LO\n  SET_X0_TO_0\n");
+    break;
+  case BK_ULE:
+    fprintf(out, "  CMP_X1_X0\n  SET_X0_TO_1\n  SKIP_INST_LS\n  SET_X0_TO_0\n");
+    break;
+  case BK_UGT:
+    fprintf(out, "  CMP_X1_X0\n  SET_X0_TO_1\n  SKIP_INST_HI\n  SET_X0_TO_0\n");
+    break;
+  case BK_UGE:
+    fprintf(out, "  CMP_X1_X0\n  SET_X0_TO_1\n  SKIP_INST_HS\n  SET_X0_TO_0\n");
+    break;
+  case BK_AND:
+    fprintf(out, "  AND_X0_X1_X0\n");
+    break;
+  case BK_OR:
+    fprintf(out, "  OR_X0_X1_X0\n");
+    break;
+  case BK_XOR:
+    fprintf(out, "  XOR_X0_X1_X0\n");
+    break;
+  case BK_UDIV:
+    fprintf(out, "  UDIV_X0_X1_X0\n");
+    break;
+  case BK_UMOD:
+    fprintf(out, "  UDIV_X2_X1_X0\n  MSUB_X0_X0_X2_X1\n");
+    break;
   }
 }
 
 static const char *aarch64_skip_name_for_binop(int op)
 {
   switch (op) {
-    case BK_EQ: return "SKIP_INST_EQ";
-    case BK_NE: return "SKIP_INST_NE";
-    case BK_LT: return "SKIP_INST_LT";
-    case BK_LE: return "SKIP_INST_LE";
-    case BK_GT: return "SKIP_INST_GT";
-    case BK_GE: return "SKIP_INST_GE";
-    case BK_ULT: return "SKIP_INST_LO";
-    case BK_ULE: return "SKIP_INST_LS";
-    case BK_UGT: return "SKIP_INST_HI";
-    case BK_UGE: return "SKIP_INST_HS";
+  case BK_EQ:
+    return "SKIP_INST_EQ";
+  case BK_NE:
+    return "SKIP_INST_NE";
+  case BK_LT:
+    return "SKIP_INST_LT";
+  case BK_LE:
+    return "SKIP_INST_LE";
+  case BK_GT:
+    return "SKIP_INST_GT";
+  case BK_GE:
+    return "SKIP_INST_GE";
+  case BK_ULT:
+    return "SKIP_INST_LO";
+  case BK_ULE:
+    return "SKIP_INST_LS";
+  case BK_UGT:
+    return "SKIP_INST_HI";
+  case BK_UGE:
+    return "SKIP_INST_HS";
   }
   die("bad AArch64 branch comparison");
   return "SKIP_INST_NE";
 }
 
-static void aarch64_emit_jump_label_parts(FILE *out, const char *prefix, const char *fn_name, int id)
+static void aarch64_emit_jump_label_parts(FILE *out, const char *prefix, const char *fn_name,
+                                          int id)
 {
   aarch64_emit_load_label_parts(out, 16, prefix, fn_name, id);
   fprintf(out, "  BR_X16\n");
@@ -251,10 +326,13 @@ static void aarch64_emit_compare_jump(FILE *out, const char *fn_name, int op, in
   fprintf(out, "  %s\n  BR_X16\n", aarch64_skip_name_for_binop(invert_binop(op)));
 }
 
-static void aarch64_emit_truth_jump_label_parts(FILE *out, const char *prefix, const char *fn_name, int id, int jump_if_true)
+static void aarch64_emit_truth_jump_label_parts(FILE *out, const char *prefix, const char *fn_name,
+                                                int id, int jump_if_true)
 {
   aarch64_emit_load_label_parts(out, 16, prefix, fn_name, id);
-  if (jump_if_true) fprintf(out, "  HCC_CBZ_X0_PAST_BR\n");
-  else fprintf(out, "  HCC_CBNZ_X0_PAST_BR\n");
+  if (jump_if_true)
+    fprintf(out, "  HCC_CBZ_X0_PAST_BR\n");
+  else
+    fprintf(out, "  HCC_CBNZ_X0_PAST_BR\n");
   fprintf(out, "  BR_X16\n");
 }
