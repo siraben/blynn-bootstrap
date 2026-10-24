@@ -787,7 +787,10 @@
         jslinuxHccRiscv64Checkpoint = pkgs.callPackage ./nix/jslinux-hcc-checkpoint.nix {
           stdenvNoCC = rawStdenvNoCC;
           inherit minimalBootstrap;
-          generatedC = hccBlynnCBy.m2.precisely;
+          generatedC = hccBlynnCBy.m2.precisely.override {
+            hcppTop = 67108864;
+            hcc1Top = 67108864;
+          };
           hccSrc = hccSrc;
           repoSrc = repoPortableSrc;
           m2libcSrc = m2libcSrc;
