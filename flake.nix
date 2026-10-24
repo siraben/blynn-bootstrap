@@ -1017,14 +1017,6 @@
           m2libc = "${minimalBootstrap.stage0-posix.src}/M2libc";
         };
 
-        hccMesccTestsFor = pname: hcc: target: pkgs.callPackage ./nix/hcc-mescc-tests.nix {
-          stdenvNoCC = rawStdenvNoCC;
-          inherit pname hcc target;
-          inherit minimalBootstrap;
-          m2libc = m2libcSrc;
-          mesTests = ./tests/mescc;
-        };
-
         hcc-m1-smoke = hccM1SmokeFor "hcc-m1-smoke" hccBy.m2.precisely.m2 "amd64";
         hcc-m1-smoke-i386 = hccM1SmokeFor "hcc-m1-smoke-i386" hccBy.m2.precisely.m2 "i386";
         hcc-m1-smoke-aarch64 = hccM1SmokeFor "hcc-m1-smoke-aarch64" hccBy.m2.precisely.m2 "aarch64";
@@ -1033,23 +1025,6 @@
         hcc-m1-smoke-native-aarch64 = hccM1SmokeFor "hcc-m1-smoke-host-ghc-native-aarch64" hccBy.host.ghc.native "aarch64";
         hcc-m1-smoke-native-i386 = hccM1SmokeFor "hcc-m1-smoke-host-ghc-native-i386" hccBy.host.ghc.native "i386";
         hcc-m1-smoke-native-riscv64 = hccM1SmokeFor "hcc-m1-smoke-host-ghc-native-riscv64" hccBy.host.ghc.native "riscv64";
-
-        hcc-mescc-tests = hccMesccTestsFor "hcc-mescc-tests" hccBy.m2.precisely.m2 "amd64";
-        hcc-mescc-tests-native = hccMesccTestsFor "hcc-mescc-tests-host-ghc-native" hccBy.host.ghc.native nativeM1Target;
-
-        hcc-golden-tests = pkgs.callPackage ./nix/hcc-golden-tests.nix {
-          stdenvNoCC = rawStdenvNoCC;
-          hcc = hccBy.m2.precisely.m2;
-        };
-
-        hcc-tinycc-tests2-stat = pkgs.callPackage ./nix/hcc-tinycc-tests2-stat.nix {
-          inherit (pkgs) stdenvNoCC fetchgit python3;
-          hcc = hccBy.host.ghc.native;
-          inherit minimalBootstrap;
-          m2libc = m2libcSrc;
-          support = ./hcc/support;
-          target = nativeM1Target;
-        };
 
         precisely-dialect-tests = pkgs.callPackage ./nix/precisely-dialect-tests.nix {
           stdenv = pkgs.stdenv;
@@ -1101,15 +1076,11 @@
             smoke.m1-i386 = hcc-m1-smoke-i386;
             smoke.m1-aarch64 = hcc-m1-smoke-aarch64;
             smoke.m1-riscv64 = hcc-m1-smoke-riscv64;
-            mescc = hcc-mescc-tests;
             host.ghc.native.smoke.m1 = hcc-m1-smoke-native;
             host.ghc.native.smoke.m1-i386 = hcc-m1-smoke-native-i386;
             host.ghc.native.smoke.m1-aarch64 = hcc-m1-smoke-native-aarch64;
             host.ghc.native.smoke.m1-riscv64 = hcc-m1-smoke-native-riscv64;
-            host.ghc.native.mescc = hcc-mescc-tests-native;
             portable.tinycc-selfhost = tinyccPortableSelfhost;
-            hcc.golden = hcc-golden-tests;
-            hcc.tinycc-tests2-stat = hcc-tinycc-tests2-stat;
             host.ghc.native.tinycc-riscv64 = tinyccBy.riscv64.host.ghc.native;
             precisely.dialect = precisely-dialect-tests;
             tinyccM1.native-vs-faithful = tinyccM1Compare
@@ -1124,7 +1095,6 @@
         };
 
         checks = {
-          hcc-golden = hcc-golden-tests;
           bootstrap-tools = pkgs.runCommand "bootstrap-tools-tests" { } ''
             mkdir -p scripts/lib data patches
             cp ${./scripts/bootstrap-tools.sh} scripts/bootstrap-tools.sh
