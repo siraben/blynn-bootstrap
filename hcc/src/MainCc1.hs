@@ -5,6 +5,7 @@ import DriverCommon
 import HccSystem
 import M1Ir
 import Parser
+import Target
 import TypesAst
 
 main :: IO ()
@@ -19,7 +20,7 @@ main = do
   hccExitSuccess
 
 usage :: IO ()
-usage = hccPutStrLn "usage: hcc1 [--m1-ir] [-o FILE] INPUT.i\n       hcc1 --check FILE..."
+usage = hccPutStrLn "usage: hcc1 [--target amd64|i386|aarch64|riscv64] [--m1-ir] [-o FILE] INPUT.i\n       hcc1 --check FILE..."
 
 checkFiles :: [String] -> IO ()
 checkFiles [] = die "hcc1: no input files"
@@ -45,7 +46,7 @@ compileM1Ir args = do
         Left msg -> die (asmInput opts ++ ":" ++ msg)
         Right toks -> do
           trace "parse"
-          case mapParseError (parseProgramTarget (asmTargetBits opts) toks) of
+          case mapParseError (parseProgramTarget (hccTargetWordBits (asmTarget opts)) toks) of
             Left msg -> dieInputFile opts msg
             Right ast -> writeM1Ir opts trace ast
 
@@ -63,7 +64,7 @@ writeM1Ir opts trace ast = do
       emitM1IrStreamingWithDataPrefixTarget
         writeLines
         (dataLabelPrefix (asmInput opts))
-        (asmTargetBits opts)
+        (asmTarget opts)
         ast
     trace "m1-ir done"
     pure result
