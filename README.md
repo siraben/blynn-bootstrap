@@ -33,9 +33,23 @@ Debug alternatives are separate targets:
 - `tinycc.m2.precisely.gccm2`: GCC-built M2 compiles HCC's generated C.
 - `tinycc.m2.precisely.gcc`: GCC compiles HCC's generated C directly.
 - `tinycc.host.ghc.native`: GHC compiles HCC's Haskell sources directly.
+- `hcc.ghc.precisely.grammar-gcc-debug`: GHC-built Precisely generates C,
+  then the host-GCC-built improved-grammar M2 fork compiles HCC.
+- `tinycc.ghc.precisely.grammar-gcc-debug`: TinyCC through that debug HCC.
 - `nix develop`: host-built compilers for development and profiling.
 
 These are useful for testing but are not seed-only compiler paths.
+
+`nix build .#m2.planet.grammar-gcc-debug` separately builds the pinned
+`siraben/M2-Planet` grammar fork with host GCC. Its executable-producing
+adapter is `result/bin/m2-planet-grammar-gcc-debug -f input.c -o program`.
+It supports only amd64 Linux, uses pinned M2libc and stage0 assemblers, and
+rejects unsupported or incomplete options. The opt-in HCC variant uses an
+isolated GHC/Precisely generator mode with byte-addressed RTS pointer access,
+an explicit heap size, and external allocation. The generated C is compiled
+unchanged; faithful crossly C is not reused. The faithful ladder retains its
+original M2-specific source patches, and no fork-built Blynn stages are selected.
+See [grammar debug tests](tests/m2-grammar/README.md) for coverage and limits.
 
 ## Trust boundary
 

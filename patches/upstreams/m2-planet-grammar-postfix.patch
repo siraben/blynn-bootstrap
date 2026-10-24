@@ -1,0 +1,22 @@
+From: Ben Siraphob <bensiraphob@gmail.com>
+Subject: Fix inc/dec on global and static lvalues
+
+Compiler hunk from siraben/M2-Planet commit
+184c2b8c19ee35772c241546bd9beefa557b79a5, adapted to the pinned grammar
+branch. Regressions live in tests/m2-grammar/semantics.c in this repository.
+Applied ONLY to the host-built grammar debug compiler.
+
+--- a/cc_core.c
++++ b/cc_core.c
+@@ -990,8 +990,9 @@
+ 		return;
+ 	}
+ 
+-	int is_prefix_operator = (match("++", global_token->prev->prev->s) || match("--", global_token->prev->prev->s)) && (options != TLO_STATIC && options != TLO_GLOBAL);
+-	int is_postfix_operator = (match("++", global_token->s) || match("--", global_token->s)) && (options != TLO_STATIC && options != TLO_GLOBAL);
++	int is_global_or_static_subscript = match("[", global_token->s) && (options == TLO_STATIC || options == TLO_GLOBAL);
++	int is_prefix_operator = (match("++", global_token->prev->prev->s) || match("--", global_token->prev->prev->s)) && !is_global_or_static_subscript;
++	int is_postfix_operator = match("++", global_token->s) || match("--", global_token->s);
+ 	int is_local_array = match("[", global_token->s) && (options & TLO_LOCAL_ARRAY);
+ 	int is_function = options & TLO_FUNCTION;
+ 
