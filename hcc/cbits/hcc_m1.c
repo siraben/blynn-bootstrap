@@ -12,8 +12,7 @@ int m1_checked_write(int fd, char *data, unsigned count);
 #include <string.h>
 #if defined(__M2__)
 #undef write
-int m1_checked_write(int fd, char *data, unsigned count)
-{
+int m1_checked_write(int fd, char *data, unsigned count) {
   unsigned remaining = count;
   int written;
   while (remaining > 0) {
@@ -30,19 +29,9 @@ int m1_checked_write(int fd, char *data, unsigned count)
 }
 #endif
 
-enum {
-  OP_TEMP = 1,
-  OP_IMM = 2,
-  OP_BYTES = 3,
-  OP_GLOBAL = 4,
-  OP_FUNC = 5
-};
+enum { OP_TEMP = 1, OP_IMM = 2, OP_BYTES = 3, OP_GLOBAL = 4, OP_FUNC = 5 };
 
-enum {
-  LOC_NONE = 0,
-  LOC_STACK = 1,
-  LOC_OBJECT = 2
-};
+enum { LOC_NONE = 0, LOC_STACK = 1, LOC_OBJECT = 2 };
 
 enum {
   IK_PARAM = 1,
@@ -96,16 +85,9 @@ enum {
   BK_UMOD = 23
 };
 
-enum {
-  TK_RET = 1,
-  TK_JUMP = 2,
-  TK_BRANCH = 3,
-  TK_BRANCH_CMP = 4
-};
+enum { TK_RET = 1, TK_JUMP = 2, TK_BRANCH = 3, TK_BRANCH_CMP = 4 };
 
-enum {
-  LINE_CAP = 8192
-};
+enum { LINE_CAP = 8192 };
 
 typedef struct Operand Operand;
 typedef struct Instr Instr;
@@ -118,12 +100,7 @@ typedef struct Loc Loc;
 typedef struct LocArray LocArray;
 typedef struct EmitState EmitState;
 
-enum {
-  TARGET_AMD64 = 1,
-  TARGET_I386 = 2,
-  TARGET_AARCH64 = 3,
-  TARGET_RISCV64 = 4
-};
+enum { TARGET_AMD64 = 1, TARGET_I386 = 2, TARGET_AARCH64 = 3, TARGET_RISCV64 = 4 };
 
 static int target_arch = TARGET_AMD64;
 static char riscv64_label_namespace_buf[128];
@@ -138,8 +115,7 @@ static const char *riscv64_label_namespace = "out";
 static void emit_byte(FILE *out, int byte);
 static int invert_binop(int op);
 
-static void emit_named_ref(FILE *out, const char *prefix, const char *fn_name, int id)
-{
+static void emit_named_ref(FILE *out, const char *prefix, const char *fn_name, int id) {
   fputs(prefix, out);
   fputc('_', out);
   fputs(fn_name, out);
@@ -147,15 +123,13 @@ static void emit_named_ref(FILE *out, const char *prefix, const char *fn_name, i
   fprintf(out, "%d", id);
 }
 
-static int target_register_arg_count(void)
-{
+static int target_register_arg_count(void) {
   if (target_arch == TARGET_I386) return 0;
   if (target_arch == TARGET_AARCH64 || target_arch == TARGET_RISCV64) return 8;
   return 6;
 }
 
-static void emit_data64_le(FILE *out, unsigned long value)
-{
+static void emit_data64_le(FILE *out, unsigned long value) {
   int i = 0;
   fprintf(out, "  ");
   while (i < 8) {
@@ -172,18 +146,22 @@ static void emit_data64_le(FILE *out, unsigned long value)
 
 #include "hcc_m1_emit.c"
 
-int main(int argc, char **argv)
-{
+int main(int argc, char **argv) {
   FILE *in;
   FILE *out;
   char *header;
   int argi;
   if (argc == 5 && strcmp(argv[1], "--target") == 0) {
-    if (strcmp(argv[2], "amd64") == 0 || strcmp(argv[2], "x86_64") == 0) target_arch = TARGET_AMD64;
-    else if (strcmp(argv[2], "i386") == 0 || strcmp(argv[2], "x86") == 0) target_arch = TARGET_I386;
-    else if (strcmp(argv[2], "aarch64") == 0 || strcmp(argv[2], "arm64") == 0) target_arch = TARGET_AARCH64;
-    else if (strcmp(argv[2], "riscv64") == 0) target_arch = TARGET_RISCV64;
-    else die("unknown target");
+    if (strcmp(argv[2], "amd64") == 0 || strcmp(argv[2], "x86_64") == 0)
+      target_arch = TARGET_AMD64;
+    else if (strcmp(argv[2], "i386") == 0 || strcmp(argv[2], "x86") == 0)
+      target_arch = TARGET_I386;
+    else if (strcmp(argv[2], "aarch64") == 0 || strcmp(argv[2], "arm64") == 0)
+      target_arch = TARGET_AARCH64;
+    else if (strcmp(argv[2], "riscv64") == 0)
+      target_arch = TARGET_RISCV64;
+    else
+      die("unknown target");
     argi = 3;
   } else {
     argi = 1;
