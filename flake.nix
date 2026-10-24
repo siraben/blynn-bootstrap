@@ -1026,15 +1026,15 @@
         hcc-m1-smoke-native-i386 = hccM1SmokeFor "hcc-m1-smoke-host-ghc-native-i386" hccBy.host.ghc.native "i386";
         hcc-m1-smoke-native-riscv64 = hccM1SmokeFor "hcc-m1-smoke-host-ghc-native-riscv64" hccBy.host.ghc.native "riscv64";
 
-        hcc-mescc-tests-native = pkgs.callPackage ./nix/hcc-mescc-tests.nix {
+        hccMesccTestsFor = pname: hcc: target: pkgs.callPackage ./nix/hcc-mescc-tests.nix {
           stdenvNoCC = rawStdenvNoCC;
-          pname = "hcc-mescc-tests-host-ghc-native";
-          hcc = hccBy.host.ghc.native;
-          target = nativeM1Target;
+          inherit pname hcc target;
           inherit minimalBootstrap;
           m2libc = m2libcSrc;
           mesTests = ./tests/mescc;
         };
+        hcc-mescc-tests = hccMesccTestsFor "hcc-mescc-tests" hccBy.m2.precisely.m2 "amd64";
+        hcc-mescc-tests-native = hccMesccTestsFor "hcc-mescc-tests-host-ghc-native" hccBy.host.ghc.native nativeM1Target;
 
         precisely-dialect-tests = pkgs.callPackage ./nix/precisely-dialect-tests.nix {
           stdenv = pkgs.stdenv;
@@ -1090,6 +1090,7 @@
             host.ghc.native.smoke.m1-i386 = hcc-m1-smoke-native-i386;
             host.ghc.native.smoke.m1-aarch64 = hcc-m1-smoke-native-aarch64;
             host.ghc.native.smoke.m1-riscv64 = hcc-m1-smoke-native-riscv64;
+            mescc = hcc-mescc-tests;
             host.ghc.native.mescc = hcc-mescc-tests-native;
             portable.tinycc-selfhost = tinyccPortableSelfhost;
             host.ghc.native.tinycc-riscv64 = tinyccBy.riscv64.host.ghc.native;
