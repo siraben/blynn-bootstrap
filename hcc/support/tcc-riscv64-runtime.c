@@ -5,16 +5,14 @@ void *memset(void *ptr, int value, size_t count);
 long brk(void *addr);
 void _exit(int code);
 
-void __assert_fail(char *expr, char *file, unsigned line, char *function)
-{
+void __assert_fail(char *expr, char *file, unsigned line, char *function) {
   _exit(1);
 }
 
 static char *hcc_riscv64_brk;
 static char *hcc_riscv64_malloc;
 
-void *malloc(unsigned size)
-{
+void *malloc(unsigned size) {
   char *out;
   if (!hcc_riscv64_brk) {
     hcc_riscv64_brk = (char *)brk(0);
@@ -29,8 +27,7 @@ void *malloc(unsigned size)
   return out;
 }
 
-void *calloc(unsigned count, unsigned size)
-{
+void *calloc(unsigned count, unsigned size) {
   void *out = malloc(count * size);
   if (out) memset(out, 0, count * size);
   return out;
@@ -38,7 +35,6 @@ void *calloc(unsigned count, unsigned size)
 
 void free(void *ptr) {}
 
-void exit(int code)
-{
+void exit(int code) {
   _exit(code);
 }

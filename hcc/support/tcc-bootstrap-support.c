@@ -34,25 +34,20 @@ void *stdin = (void *)0;
 void *stdout = (void *)1;
 void *stderr = (void *)2;
 
-int asm_parse_regvar(int t)
-{
+int asm_parse_regvar(int t) {
   return -1;
 }
 
-int sigaction(int signum, void *act, void *oldact)
-{
+int sigaction(int signum, void *act, void *oldact) {
   return 0;
 }
-int sigaddset(void *set, int signum)
-{
+int sigaddset(void *set, int signum) {
   return 0;
 }
-int sigemptyset(void *set)
-{
+int sigemptyset(void *set) {
   return 0;
 }
-int sigprocmask(int how, void *set, void *oldset)
-{
+int sigprocmask(int how, void *set, void *oldset) {
   return 0;
 }
 
@@ -75,16 +70,14 @@ struct tm {
 
 struct tm hcc_support_tm;
 
-static int digit_value(int c)
-{
+static int digit_value(int c) {
   if (c >= '0' && c <= '9') return c - '0';
   if (c >= 'a' && c <= 'z') return c - 'a' + 10;
   if (c >= 'A' && c <= 'Z') return c - 'A' + 10;
   return -1;
 }
 
-static unsigned long parse_unsigned(char *nptr, char **endptr, int base)
-{
+static unsigned long parse_unsigned(char *nptr, char **endptr, int base) {
   char *p = nptr;
   unsigned long value = 0;
   int digit;
@@ -111,8 +104,7 @@ static unsigned long parse_unsigned(char *nptr, char **endptr, int base)
   return value;
 }
 
-long strtol(char *nptr, char **endptr, int base)
-{
+long strtol(char *nptr, char **endptr, int base) {
   char *p = nptr;
   int negative = 0;
   while (*p == ' ' || *p == '\t' || *p == '\n') p = p + 1;
@@ -126,23 +118,19 @@ long strtol(char *nptr, char **endptr, int base)
   return (long)parse_unsigned(p, endptr, base);
 }
 
-unsigned long strtoul(char *nptr, char **endptr, int base)
-{
+unsigned long strtoul(char *nptr, char **endptr, int base) {
   return parse_unsigned(nptr, endptr, base);
 }
 
-unsigned long long strtoull(char *nptr, char **endptr, int base)
-{
+unsigned long long strtoull(char *nptr, char **endptr, int base) {
   return parse_unsigned(nptr, endptr, base);
 }
 
-long long strtoll(char *nptr, char **endptr, int base)
-{
+long long strtoll(char *nptr, char **endptr, int base) {
   return strtol(nptr, endptr, base);
 }
 
-int atoi(char *nptr)
-{
+int atoi(char *nptr) {
   return strtol(nptr, 0, 10);
 }
 
@@ -152,16 +140,14 @@ union hcc_double_bits {
 };
 
 /* Reinterpret an IEEE-754 bit pattern as a double without calling libc. */
-static double hcc_double_from_bits(unsigned long bits)
-{
+static double hcc_double_from_bits(unsigned long bits) {
   union hcc_double_bits out;
   out.u = bits;
   return out.d;
 }
 
 /* Build a double from an integer mantissa and base-2 exponent without libm. */
-static double hcc_double_from_scaled_uint64(unsigned long mantissa, int exp2)
-{
+static double hcc_double_from_scaled_uint64(unsigned long mantissa, int exp2) {
   unsigned long hidden = 0x10000000000000UL;
   unsigned long overflow = 0x20000000000000UL;
   unsigned long fraction;
@@ -186,39 +172,33 @@ static double hcc_double_from_scaled_uint64(unsigned long mantissa, int exp2)
 }
 
 /* Parse the decimal integer constants TinyCC requests through libc strtod. */
-double strtod(char *nptr, char **endptr)
-{
+double strtod(char *nptr, char **endptr) {
   long value = strtol(nptr, endptr, 10);
   if (value < 0) return -hcc_double_from_scaled_uint64((unsigned long)(0 - value), 0);
   return hcc_double_from_scaled_uint64((unsigned long)value, 0);
 }
 
 /* strtof shares the limited strtod implementation and narrows the result. */
-float strtof(char *nptr, char **endptr)
-{
+float strtof(char *nptr, char **endptr) {
   return (float)strtod(nptr, endptr);
 }
 
 /* Bootstrap limitation: this is not a general target-ABI strtold. */
-long double strtold(char *nptr, char **endptr)
-{
+long double strtold(char *nptr, char **endptr) {
   return (long double)strtod(nptr, endptr);
 }
 
 /* Scale integer-valued doubles by powers of two for TinyCC float parsing. */
-double ldexp(double value, int exp)
-{
+double ldexp(double value, int exp) {
   return hcc_double_from_scaled_uint64((unsigned long)value, exp);
 }
 
 /* Bootstrap limitation: ldexpl reuses the double scaling helper. */
-long double ldexpl(long double value, int exp)
-{
+long double ldexpl(long double value, int exp) {
   return (long double)hcc_double_from_scaled_uint64((unsigned long)value, exp);
 }
 
-int memcmp(void *s1, void *s2, size_t size)
-{
+int memcmp(void *s1, void *s2, size_t size) {
   unsigned char *a = s1;
   unsigned char *b = s2;
   if (size == 0) return 0;
@@ -230,8 +210,7 @@ int memcmp(void *s1, void *s2, size_t size)
   return *a - *b;
 }
 
-void *memcpy(void *dest, void *src, size_t n)
-{
+void *memcpy(void *dest, void *src, size_t n) {
   char *d = dest;
   char *s = src;
   void *out = dest;
@@ -244,8 +223,7 @@ void *memcpy(void *dest, void *src, size_t n)
   return out;
 }
 
-void *memmove(void *dest, void *src, size_t n)
-{
+void *memmove(void *dest, void *src, size_t n) {
   char *d = dest;
   char *s = src;
   if (d < s) return memcpy(dest, src, n);
@@ -260,8 +238,7 @@ void *memmove(void *dest, void *src, size_t n)
   return dest;
 }
 
-void *memset(void *s, int c, size_t n)
-{
+void *memset(void *s, int c, size_t n) {
   unsigned char *p = s;
   void *out = s;
   while (n) {
@@ -272,15 +249,13 @@ void *memset(void *s, int c, size_t n)
   return out;
 }
 
-int strlen(char *text)
-{
+int strlen(char *text) {
   int n = 0;
   while (text[n]) n = n + 1;
   return n;
 }
 
-int strcmp(char *left, char *right)
-{
+int strcmp(char *left, char *right) {
   while (*left && *right && *left == *right) {
     left = left + 1;
     right = right + 1;
@@ -288,8 +263,7 @@ int strcmp(char *left, char *right)
   return *left - *right;
 }
 
-int strncmp(char *left, char *right, size_t n)
-{
+int strncmp(char *left, char *right, size_t n) {
   if (n == 0) return 0;
   while (*left && *right && *left == *right && n > 1) {
     left = left + 1;
@@ -299,8 +273,7 @@ int strncmp(char *left, char *right, size_t n)
   return *left - *right;
 }
 
-char *strcpy(char *dest, char *src)
-{
+char *strcpy(char *dest, char *src) {
   char *out = dest;
   while (*src) {
     *dest = *src;
@@ -311,8 +284,7 @@ char *strcpy(char *dest, char *src)
   return out;
 }
 
-char *strncpy(char *dest, char *src, size_t n)
-{
+char *strncpy(char *dest, char *src, size_t n) {
   char *out = dest;
   while (*src && n) {
     *dest = *src;
@@ -328,8 +300,7 @@ char *strncpy(char *dest, char *src, size_t n)
   return out;
 }
 
-char *strchr(char *text, int c)
-{
+char *strchr(char *text, int c) {
   while (*text || c == 0) {
     if (*text == c) return text;
     text = text + 1;
@@ -337,8 +308,7 @@ char *strchr(char *text, int c)
   return 0;
 }
 
-char *strrchr(char *text, int c)
-{
+char *strrchr(char *text, int c) {
   char *last = 0;
   while (*text) {
     if (*text == c) last = text;
@@ -348,8 +318,7 @@ char *strrchr(char *text, int c)
   return last;
 }
 
-char *strcat(char *dest, char *src)
-{
+char *strcat(char *dest, char *src) {
   char *out = dest;
   dest = strchr(dest, 0);
   while (*src) {
@@ -361,8 +330,7 @@ char *strcat(char *dest, char *src)
   return out;
 }
 
-char *strpbrk(char *text, char *stop)
-{
+char *strpbrk(char *text, char *stop) {
   while (*text) {
     if (strchr(stop, *text)) return text;
     text = text + 1;
@@ -370,31 +338,26 @@ char *strpbrk(char *text, char *stop)
   return 0;
 }
 
-char *strerror(int value)
-{
+char *strerror(int value) {
   return "mes-libc error";
 }
 
-void abort()
-{
+void abort() {
   _exit(1);
 }
 
-int assert(int value)
-{
+int assert(int value) {
   if (!value) abort();
   return 0;
 }
 
-void *realloc(void *ptr, unsigned size)
-{
+void *realloc(void *ptr, unsigned size) {
   void *next = malloc(size);
   if (ptr && next) memcpy(next, ptr, size);
   return next;
 }
 
-char *strstr(char *haystack, char *needle)
-{
+char *strstr(char *haystack, char *needle) {
   char *h;
   char *n;
   char *start;
@@ -413,8 +376,7 @@ char *strstr(char *haystack, char *needle)
   return 0;
 }
 
-static void swap_bytes(char *left, char *right, size_t size)
-{
+static void swap_bytes(char *left, char *right, size_t size) {
   char tmp;
   while (size) {
     tmp = *left;
@@ -426,8 +388,7 @@ static void swap_bytes(char *left, char *right, size_t size)
   }
 }
 
-void qsort(void *base, size_t count, size_t size, int (*compar)(const void *, const void *))
-{
+void qsort(void *base, size_t count, size_t size, int (*compar)(const void *, const void *)) {
   char *bytes = base;
   size_t i;
   size_t j;
@@ -453,8 +414,7 @@ struct hcc_stream_state {
 static struct hcc_stream_state *hcc_streams;
 static int hcc_standard_errors[3];
 
-static int *hcc_stream_error(int fd)
-{
+static int *hcc_stream_error(int fd) {
   struct hcc_stream_state *p = hcc_streams;
   if (fd >= 0 && fd < 3) return &hcc_standard_errors[fd];
   while (p) {
@@ -464,8 +424,7 @@ static int *hcc_stream_error(int fd)
   return 0;
 }
 
-static int hcc_stream_open(int fd)
-{
+static int hcc_stream_open(int fd) {
   struct hcc_stream_state *p;
   int *error = hcc_stream_error(fd);
   if (error) {
@@ -485,15 +444,13 @@ static int hcc_stream_open(int fd)
   return 1;
 }
 
-int ferror(void *stream)
-{
+int ferror(void *stream) {
   int *error = hcc_stream_error((int)(long)stream);
   if (!error) return 1;
   return *error;
 }
 
-void clearerr(void *stream)
-{
+void clearerr(void *stream) {
   int *error = hcc_stream_error((int)(long)stream);
   if (error) *error = 0;
 }
@@ -502,8 +459,7 @@ void clearerr(void *stream)
  * must stop with a sticky error. Both raw negative Linux errno returns and
  * libc-style -1 are failures; no errno convention is assumed here.
  */
-static size_t hcc_stream_write(void *data, size_t count, void *stream)
-{
+static size_t hcc_stream_write(void *data, size_t count, void *stream) {
   int fd = (int)(long)stream;
   int *error = hcc_stream_error(fd);
   char *p = data;
@@ -524,8 +480,7 @@ static size_t hcc_stream_write(void *data, size_t count, void *stream)
   return done;
 }
 
-void *fopen(char *path, char *mode)
-{
+void *fopen(char *path, char *mode) {
   int flags = 0;
   int fd;
   int update = 0;
@@ -557,8 +512,7 @@ void *fopen(char *path, char *mode)
   return (void *)(long)fd;
 }
 
-int fclose(void *stream)
-{
+int fclose(void *stream) {
   int fd = (int)(long)stream;
   int result;
   struct hcc_stream_state *p = hcc_streams;
@@ -571,21 +525,18 @@ int fclose(void *stream)
   return result;
 }
 
-void *freopen(char *path, char *mode, void *stream)
-{
+void *freopen(char *path, char *mode, void *stream) {
   void *next = fopen(path, mode);
   if (next && stream && stream != stdin && stream != stdout && stream != stderr) fclose(stream);
   return next;
 }
 
-int fflush(void *stream)
-{
+int fflush(void *stream) {
   /* No pending bytes: writes happen immediately. Do not clear sticky errors. */
   return 0;
 }
 
-int fgetc(void *stream)
-{
+int fgetc(void *stream) {
   unsigned char c;
   int fd = (int)(long)stream;
   int *error = hcc_stream_error(fd);
@@ -597,22 +548,19 @@ int fgetc(void *stream)
   return -1;
 }
 
-int fputc(int c, void *stream)
-{
+int fputc(int c, void *stream) {
   unsigned char ch = c;
   if (hcc_stream_write(&ch, 1, stream) == 1) return ch;
   return -1;
 }
 
-int fputs(char *text, void *stream)
-{
+int fputs(char *text, void *stream) {
   size_t n = strlen(text);
   if (hcc_stream_write(text, n, stream) != n) return -1;
   return 0;
 }
 
-size_t fread(void *data, size_t size, size_t count, void *stream)
-{
+size_t fread(void *data, size_t size, size_t count, void *stream) {
   int fd = (int)(long)stream;
   int bytes;
   int *error = hcc_stream_error(fd);
@@ -623,8 +571,7 @@ size_t fread(void *data, size_t size, size_t count, void *stream)
   return bytes / size;
 }
 
-size_t fwrite(void *data, size_t size, size_t count, void *stream)
-{
+size_t fwrite(void *data, size_t size, size_t count, void *stream) {
   int *error = hcc_stream_error((int)(long)stream);
   if (!size || !count || !error) return 0;
   if (count > ((size_t)-1) / size) {
@@ -634,21 +581,18 @@ size_t fwrite(void *data, size_t size, size_t count, void *stream)
   return hcc_stream_write(data, size * count, stream) / size;
 }
 
-int fseek(void *stream, long offset, int whence)
-{
+int fseek(void *stream, long offset, int whence) {
   int fd = (int)(long)stream;
   if (lseek(fd, offset, whence) < 0) return -1;
   return 0;
 }
 
-long ftell(void *stream)
-{
+long ftell(void *stream) {
   int fd = (int)(long)stream;
   return lseek(fd, 0, 1);
 }
 
-int gettimeofday(struct timeval *tv, void *tz)
-{
+int gettimeofday(struct timeval *tv, void *tz) {
   if (tv) {
     tv->tv_sec = 0;
     tv->tv_usec = 0;
@@ -656,51 +600,42 @@ int gettimeofday(struct timeval *tv, void *tz)
   return 0;
 }
 
-int sem_init(void *sem, int shared, unsigned value)
-{
+int sem_init(void *sem, int shared, unsigned value) {
   if (sem) *(int *)sem = value;
   return 0;
 }
 
-int sem_wait(void *sem)
-{
+int sem_wait(void *sem) {
   return 0;
 }
 
-int sem_post(void *sem)
-{
+int sem_post(void *sem) {
   return 0;
 }
 
-time_t time(time_t *out)
-{
+time_t time(time_t *out) {
   if (out) *out = 0;
   return 0;
 }
 
-struct tm *localtime(time_t *value)
-{
+struct tm *localtime(time_t *value) {
   hcc_support_tm.tm_mday = 1;
   hcc_support_tm.tm_year = 70;
   return &hcc_support_tm;
 }
 
-int execvp(char *file, char **argv)
-{
+int execvp(char *file, char **argv) {
   return -1;
 }
-void *fdopen(int fd, char *mode)
-{
+void *fdopen(int fd, char *mode) {
   if (fd < 0) return 0;
   if (!hcc_stream_open(fd)) return 0;
   return (void *)(long)fd;
 }
-char *getenv(char *name)
-{
+char *getenv(char *name) {
   return 0;
 }
-char *realpath(char *path, char *out)
-{
+char *realpath(char *path, char *out) {
   int n;
   if (!path) return 0;
   if (!out) {
@@ -711,25 +646,20 @@ char *realpath(char *path, char *out)
   strcpy(out, path);
   return out;
 }
-int remove(char *path)
-{
+int remove(char *path) {
   return -1;
 }
-int unlink(char *path)
-{
+int unlink(char *path) {
   return -1;
 }
-int setjmp(void *env)
-{
+int setjmp(void *env) {
   return 0;
 }
-void longjmp(void *env, int value)
-{
+void longjmp(void *env, int value) {
   _exit(value);
 }
 
-static char *hcc_append_char(char *out, char *end, int *total, int c)
-{
+static char *hcc_append_char(char *out, char *end, int *total, int c) {
   if (out < end) {
     *out = c;
     out = out + 1;
@@ -738,8 +668,7 @@ static char *hcc_append_char(char *out, char *end, int *total, int c)
   return out;
 }
 
-static char *hcc_append_string(char *out, char *end, int *total, char *text)
-{
+static char *hcc_append_string(char *out, char *end, int *total, char *text) {
   if (!text) text = "(null)";
   while (*text) {
     out = hcc_append_char(out, end, total, *text);
@@ -748,8 +677,7 @@ static char *hcc_append_string(char *out, char *end, int *total, char *text)
   return out;
 }
 
-static char *hcc_append_string_limit(char *out, char *end, int *total, char *text, int limit)
-{
+static char *hcc_append_string_limit(char *out, char *end, int *total, char *text, int limit) {
   int n = 0;
   if (!text) text = "(null)";
   while (*text && (limit < 0 || n < limit)) {
@@ -760,24 +688,21 @@ static char *hcc_append_string_limit(char *out, char *end, int *total, char *tex
   return out;
 }
 
-static int hcc_string_len(char *text)
-{
+static int hcc_string_len(char *text) {
   int n = 0;
   if (!text) text = "(null)";
   while (text[n]) n = n + 1;
   return n;
 }
 
-static int hcc_string_n_len(char *text, int limit)
-{
+static int hcc_string_n_len(char *text, int limit) {
   int n = 0;
   if (!text) text = "(null)";
   while (text[n] && (limit < 0 || n < limit)) n = n + 1;
   return n;
 }
 
-static int hcc_unsigned_len(unsigned long value, int base)
-{
+static int hcc_unsigned_len(unsigned long value, int base) {
   int n = 1;
   while (value >= (unsigned long)base) {
     value = value / base;
@@ -786,14 +711,12 @@ static int hcc_unsigned_len(unsigned long value, int base)
   return n;
 }
 
-static int hcc_signed_len(long value)
-{
+static int hcc_signed_len(long value) {
   if (value < 0) return 1 + hcc_unsigned_len(-value, 10);
   return hcc_unsigned_len(value, 10);
 }
 
-static char *hcc_append_padding(char *out, char *end, int *total, int width, int used)
-{
+static char *hcc_append_padding(char *out, char *end, int *total, int width, int used) {
   while (width > used) {
     out = hcc_append_char(out, end, total, ' ');
     width = width - 1;
@@ -801,8 +724,7 @@ static char *hcc_append_padding(char *out, char *end, int *total, int width, int
   return out;
 }
 
-static char *hcc_append_unsigned(char *out, char *end, int *total, unsigned long value, int base)
-{
+static char *hcc_append_unsigned(char *out, char *end, int *total, unsigned long value, int base) {
   char digits[32];
   int n = 0;
   int digit;
@@ -823,8 +745,7 @@ static char *hcc_append_unsigned(char *out, char *end, int *total, unsigned long
   return out;
 }
 
-static char *hcc_append_signed(char *out, char *end, int *total, long value)
-{
+static char *hcc_append_signed(char *out, char *end, int *total, long value) {
   if (value < 0) {
     out = hcc_append_char(out, end, total, '-');
     value = -value;
@@ -832,15 +753,13 @@ static char *hcc_append_signed(char *out, char *end, int *total, long value)
   return hcc_append_unsigned(out, end, total, value, 10);
 }
 
-static long hcc_format_arg(int index, long a, long b, long c)
-{
+static long hcc_format_arg(int index, long a, long b, long c) {
   if (index == 0) return a;
   if (index == 1) return b;
   return c;
 }
 
-static int hcc_vformat(char *out, unsigned size, char *fmt, long a, long b, long c)
-{
+static int hcc_vformat(char *out, unsigned size, char *fmt, long a, long b, long c) {
   char *p = out;
   char *end = out;
   int total = 0;
@@ -907,32 +826,26 @@ static int hcc_vformat(char *out, unsigned size, char *fmt, long a, long b, long
   return total;
 }
 
-int fprintf(void *stream, char *fmt, long a, long b, long c)
-{
+int fprintf(void *stream, char *fmt, long a, long b, long c) {
   char buffer[1024];
   int n = hcc_vformat(buffer, 1024, fmt, a, b, c);
   if (fputs(buffer, stream) < 0) return -1;
   return n;
 }
-int printf(char *fmt, long a, long b, long c)
-{
+int printf(char *fmt, long a, long b, long c) {
   return fprintf(stdout, fmt, a, b, c);
 }
-int sprintf(char *out, char *fmt, long a, long b, long c)
-{
+int sprintf(char *out, char *fmt, long a, long b, long c) {
   return hcc_vformat(out, 0xffffffff, fmt, a, b, c);
 }
-int snprintf(char *out, unsigned size, char *fmt, long a, long b, long c)
-{
+int snprintf(char *out, unsigned size, char *fmt, long a, long b, long c) {
   return hcc_vformat(out, size, fmt, a, b, c);
 }
-int sscanf(char *input, char *fmt)
-{
+int sscanf(char *input, char *fmt) {
   return 0;
 }
 #ifdef __TINYC__
-int vsnprintf(char *out, unsigned size, char *fmt, va_list ap)
-{
+int vsnprintf(char *out, unsigned size, char *fmt, va_list ap) {
   char *p = out;
   char *end = out;
   int total = 0;
@@ -1031,8 +944,7 @@ int vsnprintf(char *out, unsigned size, char *fmt, va_list ap)
   return total;
 }
 #else
-int vsnprintf(char *out, unsigned size, char *fmt, void *ap)
-{
+int vsnprintf(char *out, unsigned size, char *fmt, void *ap) {
   int total = 0;
   char *p = out;
   char *end = out;
@@ -1053,81 +965,63 @@ int vsnprintf(char *out, unsigned size, char *fmt, void *ap)
 }
 #endif
 #ifdef __TINYC__
-int vfprintf(void *stream, char *fmt, va_list ap)
-{
+int vfprintf(void *stream, char *fmt, va_list ap) {
   return fputs(fmt, stream);
 }
-int vprintf(char *fmt, va_list ap)
-{
+int vprintf(char *fmt, va_list ap) {
   return vfprintf(stdout, fmt, ap);
 }
-int vsprintf(char *out, char *fmt, va_list ap)
-{
+int vsprintf(char *out, char *fmt, va_list ap) {
   return vsnprintf(out, 0xffffffff, fmt, ap);
 }
-int vsscanf(char *input, char *fmt, va_list ap)
-{
+int vsscanf(char *input, char *fmt, va_list ap) {
   return 0;
 }
-int vfscanf(void *stream, char *fmt, va_list ap)
-{
+int vfscanf(void *stream, char *fmt, va_list ap) {
   return 0;
 }
 #else
-int vfprintf(void *stream, char *fmt, void *ap)
-{
+int vfprintf(void *stream, char *fmt, void *ap) {
   return fputs(fmt, stream);
 }
-int vprintf(char *fmt, void *ap)
-{
+int vprintf(char *fmt, void *ap) {
   return vfprintf(stdout, fmt, ap);
 }
-int vsprintf(char *out, char *fmt, void *ap)
-{
+int vsprintf(char *out, char *fmt, void *ap) {
   return vsnprintf(out, 0xffffffff, fmt, ap);
 }
-int vsscanf(char *input, char *fmt, void *ap)
-{
+int vsscanf(char *input, char *fmt, void *ap) {
   return 0;
 }
-int vfscanf(void *stream, char *fmt, void *ap)
-{
+int vfscanf(void *stream, char *fmt, void *ap) {
   return 0;
 }
 void va_start(void *ap, void *last) {}
 void va_end(void *ap) {}
 void va_copy(void *dest, void *src) {}
-long va_arg(void *ap, long type_hint)
-{
+long va_arg(void *ap, long type_hint) {
   return 0;
 }
 #endif
 
-int ELF64_ST_BIND(int value)
-{
+int ELF64_ST_BIND(int value) {
   return (value >> 4) & 15;
 }
-int ELF64_ST_TYPE(int value)
-{
+int ELF64_ST_TYPE(int value) {
   return value & 15;
 }
-int ELF64_ST_INFO(int bind, int type)
-{
+int ELF64_ST_INFO(int bind, int type) {
   return (bind << 4) + (type & 15);
 }
-int ELF64_ST_VISIBILITY(int value)
-{
+int ELF64_ST_VISIBILITY(int value) {
   return value & 3;
 }
-unsigned long ELF64_R_SYM(unsigned long value)
-{
+unsigned long ELF64_R_SYM(unsigned long value) {
   return value >> 32;
 }
-unsigned long ELF64_R_TYPE(unsigned long value)
-{
+unsigned long ELF64_R_TYPE(unsigned long value) {
   return value & 0xffffffff;
 }
-unsigned long ELF64_R_INFO(unsigned long sym, unsigned long type)
-{
+unsigned long ELF64_R_INFO(unsigned long sym, unsigned long type) {
   return (sym << 32) + type;
 }

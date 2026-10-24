@@ -3,7 +3,7 @@ Language: Cpp
 IndentWidth: 2
 TabWidth: 2
 UseTab: Never
-BreakBeforeBraces: Linux
+BreakBeforeBraces: Attach
 ColumnLimit: 100
 PointerAlignment: Right
 SortIncludes: Never

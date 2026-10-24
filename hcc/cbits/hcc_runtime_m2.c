@@ -19,8 +19,7 @@ static unsigned obuf_len[HCC_MAX_OBUFS];
 static unsigned obuf_cap[HCC_MAX_OBUFS];
 static int obuf_used[HCC_MAX_OBUFS];
 
-void *hcc_rts_alloc(unsigned long size)
-{
+void *hcc_rts_alloc(unsigned long size) {
   void *out = malloc(size);
   if (!out) {
     fputs("hcc runtime: out of memory\n", stderr);
@@ -29,8 +28,7 @@ void *hcc_rts_alloc(unsigned long size)
   return out;
 }
 
-static void *hcc_alloc(unsigned size)
-{
+static void *hcc_alloc(unsigned size) {
   void *out = malloc(size);
   if (!out) {
     fputs("hcc runtime: out of memory\n", stderr);
@@ -39,8 +37,7 @@ static void *hcc_alloc(unsigned size)
   return out;
 }
 
-static void *hcc_realloc(void *ptr, unsigned old_size, unsigned new_size)
-{
+static void *hcc_realloc(void *ptr, unsigned old_size, unsigned new_size) {
   char *out = hcc_alloc(new_size);
   char *in = ptr;
   unsigned i = 0;
@@ -53,8 +50,7 @@ static void *hcc_realloc(void *ptr, unsigned old_size, unsigned new_size)
   return out;
 }
 
-static void ensure_chars(char **ptr, unsigned *cap, unsigned needed)
-{
+static void ensure_chars(char **ptr, unsigned *cap, unsigned needed) {
   unsigned next = *cap;
   if (*cap >= needed) return;
   if (!next) next = 64;
@@ -63,23 +59,20 @@ static void ensure_chars(char **ptr, unsigned *cap, unsigned needed)
   *cap = next;
 }
 
-void hcc_buffer_clear(void)
-{
+void hcc_buffer_clear(void) {
   buffer_len = 0;
   ensure_chars(&buffer, &buffer_cap, 1);
   buffer[0] = 0;
 }
 
-void hcc_buffer_put(int c)
-{
+void hcc_buffer_put(int c) {
   ensure_chars(&buffer, &buffer_cap, buffer_len + 2);
   buffer[buffer_len] = c;
   buffer_len = buffer_len + 1;
   buffer[buffer_len] = 0;
 }
 
-void hcc_buffer_put4(int c1, int c2, int c3, int c4)
-{
+void hcc_buffer_put4(int c1, int c2, int c3, int c4) {
   ensure_chars(&buffer, &buffer_cap, buffer_len + 5);
   buffer[buffer_len] = c1;
   buffer_len = buffer_len + 1;
@@ -92,8 +85,7 @@ void hcc_buffer_put4(int c1, int c2, int c3, int c4)
   buffer[buffer_len] = 0;
 }
 
-void hcc_buffer_put8(int c1, int c2, int c3, int c4, int c5, int c6, int c7, int c8)
-{
+void hcc_buffer_put8(int c1, int c2, int c3, int c4, int c5, int c6, int c7, int c8) {
   ensure_chars(&buffer, &buffer_cap, buffer_len + 9);
   buffer[buffer_len] = c1;
   buffer_len = buffer_len + 1;
@@ -114,14 +106,12 @@ void hcc_buffer_put8(int c1, int c2, int c3, int c4, int c5, int c6, int c7, int
   buffer[buffer_len] = 0;
 }
 
-static char *current_buffer(void)
-{
+static char *current_buffer(void) {
   if (!buffer) hcc_buffer_clear();
   return buffer;
 }
 
-static void output_failure(void)
-{
+static void output_failure(void) {
   fputs("hcc runtime: output error\n", stderr);
   exit(1);
 }
@@ -130,8 +120,7 @@ static void output_failure(void)
    returns a byte count, not ISO stdio's zero-on-success.  Use its exposed fd
    for output and check every syscall, including partial writes.  No host libc
    is involved.  A negative result (including EINTR) fails closed. */
-static void checked_write(FILE *file, char *data, unsigned len)
-{
+static void checked_write(FILE *file, char *data, unsigned len) {
   int written;
   while (len > 0) {
     written = write(file->fd, data, len);
@@ -141,30 +130,26 @@ static void checked_write(FILE *file, char *data, unsigned len)
   }
 }
 
-static void checked_flush(FILE *file)
-{
+static void checked_flush(FILE *file) {
   checked_write(file, file->buffer, file->bufpos);
   file->file_pos = file->file_pos + file->bufpos;
   file->bufpos = 0;
 }
 
-void hcc_stdout_buffer(void)
-{
+void hcc_stdout_buffer(void) {
   char *text = current_buffer();
   checked_flush(stdout);
   checked_write(stdout, text, buffer_len);
 }
 
-static void set_result(char *text)
-{
+static void set_result(char *text) {
   unsigned len = strlen(text);
   ensure_chars(&result, &result_cap, len + 1);
   memcpy(result, text, len + 1);
   result_len = len;
 }
 
-int hcc_read_file(void)
-{
+int hcc_read_file(void) {
   FILE *file = fopen(current_buffer(), "r");
   if (!file) return 0;
   result_len = 0;
@@ -181,39 +166,33 @@ int hcc_read_file(void)
   return 1;
 }
 
-int hcc_result_len(void)
-{
+int hcc_result_len(void) {
   return result_len;
 }
 
-int hcc_result_at(int index)
-{
+int hcc_result_at(int index) {
   if (index < 0) return 0;
   if (index >= result_len) return 0;
   return result[index];
 }
 
-void hcc_stderr_char(int c)
-{
+void hcc_stderr_char(int c) {
   fputc(c, stderr);
   fflush(stderr);
 }
 
-void hcc_exit_success(void)
-{
+void hcc_exit_success(void) {
   checked_flush(stdout);
   /* M2libc fclose deliberately does not close descriptors 0, 1 or 2. */
   if (close(stdout->fd) != 0) output_failure();
   exit(0);
 }
 
-void hcc_exit_failure(void)
-{
+void hcc_exit_failure(void) {
   exit(1);
 }
 
-static int alloc_handle(FILE *file)
-{
+static int alloc_handle(FILE *file) {
   int i = 0;
   if (!file) return 0;
   while (i < HCC_MAX_HANDLES) {
@@ -227,36 +206,31 @@ static int alloc_handle(FILE *file)
   return 0;
 }
 
-static FILE *get_handle(int handle)
-{
+static FILE *get_handle(int handle) {
   if (handle <= 0) return 0;
   if (handle > HCC_MAX_HANDLES) return 0;
   unsigned file = handles[handle - 1];
   return file;
 }
 
-int hcc_open_write(void)
-{
+int hcc_open_write(void) {
   return alloc_handle(fopen(current_buffer(), "w"));
 }
 
-void hcc_handle_flush(int handle)
-{
+void hcc_handle_flush(int handle) {
   FILE *file = get_handle(handle);
   if (!file) output_failure();
   checked_flush(file);
 }
 
-static int obuf_index(unsigned long handle)
-{
+static int obuf_index(unsigned long handle) {
   if (!handle) return -1;
   if (handle > HCC_MAX_OBUFS) return -1;
   if (!obuf_used[handle - 1]) return -1;
   return handle - 1;
 }
 
-static unsigned long alloc_obuf(void)
-{
+static unsigned long alloc_obuf(void) {
   int i = 0;
   while (i < HCC_MAX_OBUFS) {
     if (!obuf_used[i]) {
@@ -271,8 +245,7 @@ static unsigned long alloc_obuf(void)
   return 0;
 }
 
-unsigned long hcc_obuf_new(int initial_cap)
-{
+unsigned long hcc_obuf_new(int initial_cap) {
   unsigned cap = initial_cap;
   if (!cap) cap = 64;
   unsigned long handle = alloc_obuf();
@@ -283,8 +256,7 @@ unsigned long hcc_obuf_new(int initial_cap)
   return handle;
 }
 
-void hcc_obuf_free(unsigned long handle)
-{
+void hcc_obuf_free(unsigned long handle) {
   int ix = obuf_index(handle);
   if (ix < 0) return;
   char *data = obuf_data[ix];
@@ -295,22 +267,19 @@ void hcc_obuf_free(unsigned long handle)
   obuf_used[ix] = 0;
 }
 
-void hcc_obuf_clear(unsigned long handle)
-{
+void hcc_obuf_clear(unsigned long handle) {
   int ix = obuf_index(handle);
   if (ix < 0) return;
   obuf_len[ix] = 0;
 }
 
-int hcc_obuf_len(unsigned long handle)
-{
+int hcc_obuf_len(unsigned long handle) {
   int ix = obuf_index(handle);
   if (ix < 0) return 0;
   return obuf_len[ix];
 }
 
-void hcc_obuf_put(unsigned long handle, int c)
-{
+void hcc_obuf_put(unsigned long handle, int c) {
   int ix = obuf_index(handle);
   if (ix < 0) return;
   char *data = obuf_data[ix];
@@ -320,8 +289,7 @@ void hcc_obuf_put(unsigned long handle, int c)
   obuf_len[ix] = obuf_len[ix] + 1;
 }
 
-void hcc_obuf_put4(unsigned long handle, int c1, int c2, int c3, int c4)
-{
+void hcc_obuf_put4(unsigned long handle, int c1, int c2, int c3, int c4) {
   int ix = obuf_index(handle);
   if (ix < 0) return;
   char *data = obuf_data[ix];
@@ -336,8 +304,7 @@ void hcc_obuf_put4(unsigned long handle, int c1, int c2, int c3, int c4)
 }
 
 void hcc_obuf_put8(unsigned long handle, int c1, int c2, int c3, int c4, int c5, int c6, int c7,
-                   int c8)
-{
+                   int c8) {
   int ix = obuf_index(handle);
   if (ix < 0) return;
   char *data = obuf_data[ix];
@@ -355,8 +322,7 @@ void hcc_obuf_put8(unsigned long handle, int c1, int c2, int c3, int c4, int c5,
   obuf_len[ix] = pos + 8;
 }
 
-void hcc_obuf_write(int handle, unsigned long obuf_handle)
-{
+void hcc_obuf_write(int handle, unsigned long obuf_handle) {
   FILE *file = get_handle(handle);
   int ix = obuf_index(obuf_handle);
   if (!file) output_failure();
@@ -367,8 +333,7 @@ void hcc_obuf_write(int handle, unsigned long obuf_handle)
   checked_write(file, data, obuf_len[ix]);
 }
 
-void hcc_close(int handle)
-{
+void hcc_close(int handle) {
   if (handle <= 0) return;
   if (handle > HCC_MAX_HANDLES) return;
   FILE *file = handles[handle - 1];
@@ -378,8 +343,7 @@ void hcc_close(int handle)
   handles[handle - 1] = 0;
 }
 
-int hcc_getcwd(void)
-{
+int hcc_getcwd(void) {
   unsigned count;
   /* The pinned wrapper misses negative errors. A valid raw result is a byte
      count in [1, capacity]; unsigned conversion puts every errno outside it.
@@ -391,13 +355,11 @@ int hcc_getcwd(void)
   return 1;
 }
 
-void hcc_canonicalize(void)
-{
+void hcc_canonicalize(void) {
   set_result(current_buffer());
 }
 
-int hcc_does_file_exist(void)
-{
+int hcc_does_file_exist(void) {
   FILE *file = fopen(current_buffer(), "r");
   if (!file) return 0;
   fclose(file);

@@ -15,13 +15,11 @@ char *getcwd(char *buf, size_t size);
 int open(char *path, int flags, int mode);
 int access(char *path, int mode);
 void _exit(int code);
-int mprotect(void *addr, size_t len, int prot)
-{
+int mprotect(void *addr, size_t len, int prot) {
   return 0;
 }
 
-int stat(char const *path, struct stat *buf)
-{
+int stat(char const *path, struct stat *buf) {
   int rc = access((char *)path, 0);
   if (rc < 0) return rc;
   memset(buf, 0, sizeof(struct stat));
@@ -29,31 +27,26 @@ int stat(char const *path, struct stat *buf)
   return 0;
 }
 
-int lstat(char const *path, struct stat *buf)
-{
+int lstat(char const *path, struct stat *buf) {
   return stat(path, buf);
 }
 
-int getchar(void)
-{
+int getchar(void) {
   return fgetc((FILE *)0);
 }
 
-int putchar(int c)
-{
+int putchar(int c) {
   return fputc(c, (FILE *)1);
 }
 
-void __assert_fail(char *expr, char *file, unsigned line, char *function)
-{
+void __assert_fail(char *expr, char *file, unsigned line, char *function) {
   _exit(1);
 }
 
 static char *hcc_aarch64_brk;
 static char *hcc_aarch64_malloc;
 
-void *malloc(unsigned size)
-{
+void *malloc(unsigned size) {
   char *out;
   if (!hcc_aarch64_brk) {
     hcc_aarch64_brk = (char *)brk(0);
@@ -68,8 +61,7 @@ void *malloc(unsigned size)
   return out;
 }
 
-void *calloc(unsigned count, unsigned size)
-{
+void *calloc(unsigned count, unsigned size) {
   void *out = malloc(count * size);
   if (out) memset(out, 0, count * size);
   return out;
@@ -77,7 +69,6 @@ void *calloc(unsigned count, unsigned size)
 
 void free(void *ptr) {}
 
-void exit(int code)
-{
+void exit(int code) {
   _exit(code);
 }
