@@ -78,6 +78,11 @@ jobs:
             arch: amd64
             runner: ubuntu-latest
             timeout: 120
+            attr: tests.host.ghc.native.mescc
+          - suite: fast native
+            arch: amd64
+            runner: ubuntu-latest
+            timeout: 120
             attr: tinycc.host.ghc.native
           - suite: riscv qemu
             arch: riscv64
@@ -94,6 +99,11 @@ jobs:
             runner: ubuntu-24.04-arm
             timeout: 120
             attr: tests.host.ghc.native.smoke.m1
+          - suite: fast native
+            arch: aarch64
+            runner: ubuntu-24.04-arm
+            timeout: 120
+            attr: tests.host.ghc.native.mescc
           - suite: fast native
             arch: aarch64
             runner: ubuntu-24.04-arm

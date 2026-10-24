@@ -7,6 +7,8 @@ Keep gates focused on the bootstrap rather than exhaustive compiler contracts:
 - `tests.smoke.m1*` and `tests.host.ghc.native.smoke.m1*` run ten executable
   cases covering returns, control flow, aggregates, scope, integer widths,
   bootstrap qsort pointers, and four focused compiler regressions from master.
+- `tests.host.ghc.native.mescc` keeps the fast-native MesCC scaffold checks
+  on amd64 and AArch64.
 - `tests.precisely.dialect` checks the Blynn Haskell syntax HCC relies on.
 - `nix flake check` retains the bootstrap tool/source-selection shell checks.
 - `tests.portable.tinycc-selfhost` checks the portable TinyCC bootstrap fixpoint.
@@ -15,5 +17,4 @@ Keep gates focused on the bootstrap rather than exhaustive compiler contracts:
 - `tinycc.*` builds exercise real TinyCC self-hosting and its fixpoint; CI keeps
   the faithful debug and stage0 bootstrap paths as end-to-end gates.
 
-Golden snapshots, MesCC scaffold tests, and TinyCC statistics are deliberately
-not maintained here.
+Golden snapshots and TinyCC statistics are deliberately not maintained here.
