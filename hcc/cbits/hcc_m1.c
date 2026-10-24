@@ -30,19 +30,9 @@ int m1_checked_write(int fd, char *data, unsigned count)
 }
 #endif
 
-enum {
-  OP_TEMP = 1,
-  OP_IMM = 2,
-  OP_BYTES = 3,
-  OP_GLOBAL = 4,
-  OP_FUNC = 5
-};
+enum { OP_TEMP = 1, OP_IMM = 2, OP_BYTES = 3, OP_GLOBAL = 4, OP_FUNC = 5 };
 
-enum {
-  LOC_NONE = 0,
-  LOC_STACK = 1,
-  LOC_OBJECT = 2
-};
+enum { LOC_NONE = 0, LOC_STACK = 1, LOC_OBJECT = 2 };
 
 enum {
   IK_PARAM = 1,
@@ -96,16 +86,9 @@ enum {
   BK_UMOD = 23
 };
 
-enum {
-  TK_RET = 1,
-  TK_JUMP = 2,
-  TK_BRANCH = 3,
-  TK_BRANCH_CMP = 4
-};
+enum { TK_RET = 1, TK_JUMP = 2, TK_BRANCH = 3, TK_BRANCH_CMP = 4 };
 
-enum {
-  LINE_CAP = 8192
-};
+enum { LINE_CAP = 8192 };
 
 typedef struct Operand Operand;
 typedef struct Instr Instr;
@@ -118,12 +101,7 @@ typedef struct Loc Loc;
 typedef struct LocArray LocArray;
 typedef struct EmitState EmitState;
 
-enum {
-  TARGET_AMD64 = 1,
-  TARGET_I386 = 2,
-  TARGET_AARCH64 = 3,
-  TARGET_RISCV64 = 4
-};
+enum { TARGET_AMD64 = 1, TARGET_I386 = 2, TARGET_AARCH64 = 3, TARGET_RISCV64 = 4 };
 
 static int target_arch = TARGET_AMD64;
 static char riscv64_label_namespace_buf[128];
@@ -145,8 +123,10 @@ static void set_label_namespace(const char *path)
   }
   i = start;
   while (path[i] && out < 120) {
-    if (is_label_char((unsigned char)path[i])) riscv64_label_namespace_buf[out] = path[i];
-    else riscv64_label_namespace_buf[out] = '_';
+    if (is_label_char((unsigned char)path[i]))
+      riscv64_label_namespace_buf[out] = path[i];
+    else
+      riscv64_label_namespace_buf[out] = '_';
     out = out + 1;
     i = i + 1;
   }
@@ -254,8 +234,10 @@ static void die_token(const char *msg, const char *tok)
   fputs("hcc-m1: ", stderr);
   fputs(msg, stderr);
   fputs(": ", stderr);
-  if (tok) fputs(tok, stderr);
-  else fputs("<none>", stderr);
+  if (tok)
+    fputs(tok, stderr);
+  else
+    fputs("<none>", stderr);
   fputc('\n', stderr);
   exit(1);
 }
@@ -562,8 +544,10 @@ static int str_prefix_n(const char *a, const char *b, int count)
 static void append_instr(InstrList *list, Instr *instr)
 {
   if (list->len >= list->cap) {
-    if (list->cap) list->cap = list->cap * 2;
-    else list->cap = 16;
+    if (list->cap)
+      list->cap = list->cap * 2;
+    else
+      list->cap = 16;
     list->items = xrealloc(list->items, sizeof(Instr) * list->cap);
   }
   copy_bytes(instr_at(list->items, list->len), instr, sizeof(Instr));
@@ -573,8 +557,10 @@ static void append_instr(InstrList *list, Instr *instr)
 static void append_block(Function *fn, Block *block)
 {
   if (fn->len >= fn->cap) {
-    if (fn->cap) fn->cap = fn->cap * 2;
-    else fn->cap = 16;
+    if (fn->cap)
+      fn->cap = fn->cap * 2;
+    else
+      fn->cap = 16;
     fn->blocks = xrealloc(fn->blocks, sizeof(Block) * fn->cap);
   }
   copy_bytes(block_at(fn->blocks, fn->len), block, sizeof(Block));
@@ -584,8 +570,10 @@ static void append_block(Function *fn, Block *block)
 static void append_data_value(DataItem *item, DataValue *value)
 {
   if (item->len >= item->cap) {
-    if (item->cap) item->cap = item->cap * 2;
-    else item->cap = 32;
+    if (item->cap)
+      item->cap = item->cap * 2;
+    else
+      item->cap = 32;
     item->values = xrealloc(item->values, sizeof(DataValue) * item->cap);
   }
   copy_bytes(data_value_at(item->values, item->len), value, sizeof(DataValue));
@@ -672,88 +660,88 @@ static void parse_ir_instr_line(FILE *file, char *line, Instr *instr)
   tok = need_token(&cursor);
   instr->kind = (int)parse_long_text(tok);
   switch (instr->kind) {
-    case IK_PARAM:
-    case IK_ALLOCA:
-    case IK_CONST:
-      instr->temp = parse_int_token(&cursor);
-      instr->value = parse_long_token(&cursor);
-      break;
-    case IK_COPY:
-    case IK_LOAD64:
-    case IK_LOAD32:
-    case IK_LOADS32:
-    case IK_LOAD16:
-    case IK_LOADS16:
-    case IK_LOAD8:
-    case IK_LOADS8:
-      instr->temp = parse_int_token(&cursor);
-      parse_ir_operand(&cursor, instr_a_ptr(instr));
-      break;
-    case IK_SEXT:
-    case IK_ZEXT:
-    case IK_TRUNC:
-      instr->temp = parse_int_token(&cursor);
-      instr->value = parse_long_token(&cursor);
-      parse_ir_operand(&cursor, instr_a_ptr(instr));
-      break;
-    case IK_ADDROF:
-      instr->temp = parse_int_token(&cursor);
-      instr->temp2 = parse_int_token(&cursor);
-      break;
-    case IK_STORE64:
-    case IK_STORE32:
-    case IK_STORE16:
-    case IK_STORE8:
-      parse_ir_operand(&cursor, instr_a_ptr(instr));
-      parse_ir_operand(&cursor, instr_b_ptr(instr));
-      break;
-    case IK_BIN:
-      instr->temp = parse_int_token(&cursor);
-      instr->binop = parse_int_token(&cursor);
-      parse_ir_operand(&cursor, instr_a_ptr(instr));
-      parse_ir_operand(&cursor, instr_b_ptr(instr));
-      break;
-    case IK_CALL:
-      instr->result = parse_ir_result(&cursor);
-      instr->name = xstrdup(need_token(&cursor));
-      instr->argc = parse_int_token(&cursor);
-      if (instr->argc > 0) instr->args = xrealloc(0, sizeof(Operand) * instr->argc);
-      i = 0;
-      while (i < instr->argc) {
-        parse_ir_operand(&cursor, operand_at(instr->args, i));
-        i = i + 1;
-      }
-      break;
-    case IK_CALLI:
-      instr->result = parse_ir_result(&cursor);
-      parse_ir_operand(&cursor, instr_callee_ptr(instr));
-      instr->argc = parse_int_token(&cursor);
-      if (instr->argc > 0) instr->args = xrealloc(0, sizeof(Operand) * instr->argc);
-      i = 0;
-      while (i < instr->argc) {
-        parse_ir_operand(&cursor, operand_at(instr->args, i));
-        i = i + 1;
-      }
-      break;
-    case IK_COND:
-      section = xrealloc(0, LINE_CAP);
-      instr->temp = parse_int_token(&cursor);
-      expect_line(file, "[");
-      parse_ir_instrs_until_end(file, instr_cond_instrs_ptr(instr));
-      if (!read_line(file, section, LINE_CAP)) die("missing IR CONDOP");
-      parse_ir_prefixed_operand(section, "O", instr_cond_op_ptr(instr));
-      expect_line(file, "[");
-      parse_ir_instrs_until_end(file, instr_true_instrs_ptr(instr));
-      if (!read_line(file, section, LINE_CAP)) die("missing IR TRUEOP");
-      parse_ir_prefixed_operand(section, "O", instr_true_op_ptr(instr));
-      expect_line(file, "[");
-      parse_ir_instrs_until_end(file, instr_false_instrs_ptr(instr));
-      if (!read_line(file, section, LINE_CAP)) die("missing IR FALSEOP");
-      parse_ir_prefixed_operand(section, "O", instr_false_op_ptr(instr));
-      expect_line(file, "Q");
-      break;
-    default:
-      die("unknown IR instruction");
+  case IK_PARAM:
+  case IK_ALLOCA:
+  case IK_CONST:
+    instr->temp = parse_int_token(&cursor);
+    instr->value = parse_long_token(&cursor);
+    break;
+  case IK_COPY:
+  case IK_LOAD64:
+  case IK_LOAD32:
+  case IK_LOADS32:
+  case IK_LOAD16:
+  case IK_LOADS16:
+  case IK_LOAD8:
+  case IK_LOADS8:
+    instr->temp = parse_int_token(&cursor);
+    parse_ir_operand(&cursor, instr_a_ptr(instr));
+    break;
+  case IK_SEXT:
+  case IK_ZEXT:
+  case IK_TRUNC:
+    instr->temp = parse_int_token(&cursor);
+    instr->value = parse_long_token(&cursor);
+    parse_ir_operand(&cursor, instr_a_ptr(instr));
+    break;
+  case IK_ADDROF:
+    instr->temp = parse_int_token(&cursor);
+    instr->temp2 = parse_int_token(&cursor);
+    break;
+  case IK_STORE64:
+  case IK_STORE32:
+  case IK_STORE16:
+  case IK_STORE8:
+    parse_ir_operand(&cursor, instr_a_ptr(instr));
+    parse_ir_operand(&cursor, instr_b_ptr(instr));
+    break;
+  case IK_BIN:
+    instr->temp = parse_int_token(&cursor);
+    instr->binop = parse_int_token(&cursor);
+    parse_ir_operand(&cursor, instr_a_ptr(instr));
+    parse_ir_operand(&cursor, instr_b_ptr(instr));
+    break;
+  case IK_CALL:
+    instr->result = parse_ir_result(&cursor);
+    instr->name = xstrdup(need_token(&cursor));
+    instr->argc = parse_int_token(&cursor);
+    if (instr->argc > 0) instr->args = xrealloc(0, sizeof(Operand) * instr->argc);
+    i = 0;
+    while (i < instr->argc) {
+      parse_ir_operand(&cursor, operand_at(instr->args, i));
+      i = i + 1;
+    }
+    break;
+  case IK_CALLI:
+    instr->result = parse_ir_result(&cursor);
+    parse_ir_operand(&cursor, instr_callee_ptr(instr));
+    instr->argc = parse_int_token(&cursor);
+    if (instr->argc > 0) instr->args = xrealloc(0, sizeof(Operand) * instr->argc);
+    i = 0;
+    while (i < instr->argc) {
+      parse_ir_operand(&cursor, operand_at(instr->args, i));
+      i = i + 1;
+    }
+    break;
+  case IK_COND:
+    section = xrealloc(0, LINE_CAP);
+    instr->temp = parse_int_token(&cursor);
+    expect_line(file, "[");
+    parse_ir_instrs_until_end(file, instr_cond_instrs_ptr(instr));
+    if (!read_line(file, section, LINE_CAP)) die("missing IR CONDOP");
+    parse_ir_prefixed_operand(section, "O", instr_cond_op_ptr(instr));
+    expect_line(file, "[");
+    parse_ir_instrs_until_end(file, instr_true_instrs_ptr(instr));
+    if (!read_line(file, section, LINE_CAP)) die("missing IR TRUEOP");
+    parse_ir_prefixed_operand(section, "O", instr_true_op_ptr(instr));
+    expect_line(file, "[");
+    parse_ir_instrs_until_end(file, instr_false_instrs_ptr(instr));
+    if (!read_line(file, section, LINE_CAP)) die("missing IR FALSEOP");
+    parse_ir_prefixed_operand(section, "O", instr_false_op_ptr(instr));
+    expect_line(file, "Q");
+    break;
+  default:
+    die("unknown IR instruction");
   }
 }
 
@@ -816,7 +804,8 @@ static void parse_ir_block(FILE *file, char *first_line, Block *block)
   block->id = parse_int_token(&cursor);
   line = xrealloc(0, LINE_CAP);
   while (read_line(file, line, LINE_CAP)) {
-    if (str_prefix_n(line, "R", 1) || str_prefix_n(line, "J ", 2) || str_prefix_n(line, "B ", 2) || str_prefix_n(line, "C ", 2)) {
+    if (str_prefix_n(line, "R", 1) || str_prefix_n(line, "J ", 2) || str_prefix_n(line, "B ", 2) ||
+        str_prefix_n(line, "C ", 2)) {
       parse_ir_term(block, line);
       return;
     }
@@ -954,8 +943,14 @@ static void free_data_item(DataItem *item)
   if (item->values) free(item->values);
 }
 #else
-static void free_function(Function *fn) { (void)fn; }
-static void free_data_item(DataItem *item) { (void)item; }
+static void free_function(Function *fn)
+{
+  (void)fn;
+}
+static void free_data_item(DataItem *item)
+{
+  (void)item;
+}
 #endif
 
 static void translate_ir_module(FILE *file, FILE *out)
@@ -974,7 +969,8 @@ static void translate_ir_module(FILE *file, FILE *out)
       parse_ir_function(file, line, &fn);
       emit_function(out, &fn);
       free_function(&fn);
-    } else if (line[0] != 0) die("unexpected IR top-level line");
+    } else if (line[0] != 0)
+      die("unexpected IR top-level line");
   }
 #if !defined(__M2__)
   free(line);
@@ -1019,8 +1015,10 @@ static void alloc_object(LocArray *locs, int *next_slot, int temp, int size)
   loc = loc_at(locs->items, temp);
   if (loc->kind != LOC_NONE) return;
   if (size < 1) size = 1;
-  if (target_arch == TARGET_I386) slots = (size + 3) / 4;
-  else slots = (size + 7) / 8;
+  if (target_arch == TARGET_I386)
+    slots = (size + 3) / 4;
+  else
+    slots = (size + 7) / 8;
   loc->kind = LOC_OBJECT;
   loc->slot = *next_slot;
   loc->slots = slots;
@@ -1033,34 +1031,36 @@ static void allocate_instrs(InstrList *list, LocArray *locs, int *next_slot)
   while (i < list->len) {
     Instr *in = instr_at(list->items, i);
     switch (in->kind) {
-      case IK_ALLOCA: alloc_object(locs, next_slot, in->temp, in->value); break;
-      case IK_PARAM:
-      case IK_CONST:
-      case IK_COPY:
-      case IK_ADDROF:
-      case IK_LOAD64:
-      case IK_LOAD32:
-      case IK_LOADS32:
-      case IK_LOAD16:
-      case IK_LOADS16:
-      case IK_LOAD8:
-      case IK_LOADS8:
-      case IK_SEXT:
-      case IK_ZEXT:
-      case IK_TRUNC:
-      case IK_BIN:
-        alloc_def(locs, next_slot, in->temp);
-        break;
-      case IK_CALL:
-      case IK_CALLI:
-        if (in->result >= 0) alloc_def(locs, next_slot, in->result);
-        break;
-      case IK_COND:
-        allocate_instrs(instr_cond_instrs_ptr(in), locs, next_slot);
-        allocate_instrs(instr_true_instrs_ptr(in), locs, next_slot);
-        allocate_instrs(instr_false_instrs_ptr(in), locs, next_slot);
-        alloc_def(locs, next_slot, in->temp);
-        break;
+    case IK_ALLOCA:
+      alloc_object(locs, next_slot, in->temp, in->value);
+      break;
+    case IK_PARAM:
+    case IK_CONST:
+    case IK_COPY:
+    case IK_ADDROF:
+    case IK_LOAD64:
+    case IK_LOAD32:
+    case IK_LOADS32:
+    case IK_LOAD16:
+    case IK_LOADS16:
+    case IK_LOAD8:
+    case IK_LOADS8:
+    case IK_SEXT:
+    case IK_ZEXT:
+    case IK_TRUNC:
+    case IK_BIN:
+      alloc_def(locs, next_slot, in->temp);
+      break;
+    case IK_CALL:
+    case IK_CALLI:
+      if (in->result >= 0) alloc_def(locs, next_slot, in->result);
+      break;
+    case IK_COND:
+      allocate_instrs(instr_cond_instrs_ptr(in), locs, next_slot);
+      allocate_instrs(instr_true_instrs_ptr(in), locs, next_slot);
+      allocate_instrs(instr_false_instrs_ptr(in), locs, next_slot);
+      alloc_def(locs, next_slot, in->temp);
+      break;
     }
     i = i + 1;
   }
@@ -1083,56 +1083,54 @@ static void count_instr_uses(InstrList *list, LocArray *locs)
     Instr *in = instr_at(list->items, i);
     int j;
     switch (in->kind) {
-      case IK_COPY:
-      case IK_LOAD64:
-      case IK_LOAD32:
-      case IK_LOADS32:
-      case IK_LOAD16:
-      case IK_LOADS16:
-      case IK_LOAD8:
-      case IK_LOADS8:
-      case IK_SEXT:
-      case IK_ZEXT:
-      case IK_TRUNC:
-        count_operand_use(locs, instr_a_ptr(in));
-        break;
-      case IK_ADDROF:
-        {
-          Loc *loc = lookup_loc(locs, in->temp2);
-          loc->uses = loc->uses + 1;
-        }
-        break;
-      case IK_STORE64:
-      case IK_STORE32:
-      case IK_STORE16:
-      case IK_STORE8:
-      case IK_BIN:
-        count_operand_use(locs, instr_a_ptr(in));
-        count_operand_use(locs, instr_b_ptr(in));
-        break;
-      case IK_CALL:
-        j = 0;
-        while (j < in->argc) {
-          count_operand_use(locs, operand_at(in->args, j));
-          j = j + 1;
-        }
-        break;
-      case IK_CALLI:
-        count_operand_use(locs, instr_callee_ptr(in));
-        j = 0;
-        while (j < in->argc) {
-          count_operand_use(locs, operand_at(in->args, j));
-          j = j + 1;
-        }
-        break;
-      case IK_COND:
-        count_instr_uses(instr_cond_instrs_ptr(in), locs);
-        count_operand_use(locs, instr_cond_op_ptr(in));
-        count_instr_uses(instr_true_instrs_ptr(in), locs);
-        count_operand_use(locs, instr_true_op_ptr(in));
-        count_instr_uses(instr_false_instrs_ptr(in), locs);
-        count_operand_use(locs, instr_false_op_ptr(in));
-        break;
+    case IK_COPY:
+    case IK_LOAD64:
+    case IK_LOAD32:
+    case IK_LOADS32:
+    case IK_LOAD16:
+    case IK_LOADS16:
+    case IK_LOAD8:
+    case IK_LOADS8:
+    case IK_SEXT:
+    case IK_ZEXT:
+    case IK_TRUNC:
+      count_operand_use(locs, instr_a_ptr(in));
+      break;
+    case IK_ADDROF: {
+      Loc *loc = lookup_loc(locs, in->temp2);
+      loc->uses = loc->uses + 1;
+    } break;
+    case IK_STORE64:
+    case IK_STORE32:
+    case IK_STORE16:
+    case IK_STORE8:
+    case IK_BIN:
+      count_operand_use(locs, instr_a_ptr(in));
+      count_operand_use(locs, instr_b_ptr(in));
+      break;
+    case IK_CALL:
+      j = 0;
+      while (j < in->argc) {
+        count_operand_use(locs, operand_at(in->args, j));
+        j = j + 1;
+      }
+      break;
+    case IK_CALLI:
+      count_operand_use(locs, instr_callee_ptr(in));
+      j = 0;
+      while (j < in->argc) {
+        count_operand_use(locs, operand_at(in->args, j));
+        j = j + 1;
+      }
+      break;
+    case IK_COND:
+      count_instr_uses(instr_cond_instrs_ptr(in), locs);
+      count_operand_use(locs, instr_cond_op_ptr(in));
+      count_instr_uses(instr_true_instrs_ptr(in), locs);
+      count_operand_use(locs, instr_true_op_ptr(in));
+      count_instr_uses(instr_false_instrs_ptr(in), locs);
+      count_operand_use(locs, instr_false_op_ptr(in));
+      break;
     }
     i = i + 1;
   }
@@ -1411,14 +1409,19 @@ static void emit_data_item(FILE *out, DataItem *item)
       if (v->kind == 1) {
         emit_byte(out, v->byte);
       } else {
-        if (target_arch == TARGET_I386) fprintf(out, "&%s", v->label);
-        else fprintf(out, "&%s '00' '00' '00' '00'", v->label);
+        if (target_arch == TARGET_I386)
+          fprintf(out, "&%s", v->label);
+        else
+          fprintf(out, "&%s '00' '00' '00' '00'", v->label);
       }
       count = count + 1;
       j = j + 1;
-      if (v->kind == 1) emitted = emitted + 1;
-      else if (target_arch == TARGET_I386) emitted = emitted + 4;
-      else emitted = emitted + 8;
+      if (v->kind == 1)
+        emitted = emitted + 1;
+      else if (target_arch == TARGET_I386)
+        emitted = emitted + 4;
+      else
+        emitted = emitted + 8;
     }
     fputc('\n', out);
   }
@@ -1476,8 +1479,10 @@ static void emit_load_immediate_bytes(FILE *out, EmitState *state, Operand *op)
   unsigned long value = 0;
   emit_forget_rax(state);
   while (i < 8) {
-    if (i < op->count) bytes[i] = op->bytes[i];
-    else bytes[i] = 0;
+    if (i < op->count)
+      bytes[i] = op->bytes[i];
+    else
+      bytes[i] = 0;
     i = i + 1;
   }
   if (target_arch == TARGET_I386) {
@@ -1509,8 +1514,8 @@ static void emit_load_immediate_bytes(FILE *out, EmitState *state, Operand *op)
     riscv64_emit_load_immediate(out, 10, (long)value);
     return;
   }
-  if (bytes[0] == 0 && bytes[1] == 0 && bytes[2] == 0 && bytes[3] == 128 &&
-      bytes[4] == 0 && bytes[5] == 0 && bytes[6] == 0 && bytes[7] == 0) {
+  if (bytes[0] == 0 && bytes[1] == 0 && bytes[2] == 0 && bytes[3] == 128 && bytes[4] == 0 &&
+      bytes[5] == 0 && bytes[6] == 0 && bytes[7] == 0) {
     fprintf(out, "  HCC_LI64_80000000\n");
   } else if (bytes[0] == 255 && bytes[1] == 255 && bytes[2] == 255 && bytes[3] == 255 &&
              bytes[4] == 0 && bytes[5] == 0 && bytes[6] == 0 && bytes[7] == 0) {
@@ -1531,40 +1536,56 @@ static void emit_load_location(FILE *out, EmitState *state, Loc *loc, int rsp_bi
 {
   emit_forget_rax(state);
   if (loc->kind == LOC_STACK) {
-    if (target_arch == TARGET_I386) fprintf(out, "  mov_eax,[esp+DWORD] %%%d\n", 4 * loc->slot + rsp_bias);
-    else if (target_arch == TARGET_AARCH64) aarch64_emit_load_stack(out, 8 * loc->slot + rsp_bias);
-    else if (target_arch == TARGET_RISCV64) riscv64_emit_load_stack(out, 8 * loc->slot + rsp_bias);
-    else fprintf(out, "  LOAD_RSP_IMMEDIATE_into_rax %%%d\n", 8 * loc->slot + rsp_bias);
+    if (target_arch == TARGET_I386)
+      fprintf(out, "  mov_eax,[esp+DWORD] %%%d\n", 4 * loc->slot + rsp_bias);
+    else if (target_arch == TARGET_AARCH64)
+      aarch64_emit_load_stack(out, 8 * loc->slot + rsp_bias);
+    else if (target_arch == TARGET_RISCV64)
+      riscv64_emit_load_stack(out, 8 * loc->slot + rsp_bias);
+    else
+      fprintf(out, "  LOAD_RSP_IMMEDIATE_into_rax %%%d\n", 8 * loc->slot + rsp_bias);
   } else if (loc->kind == LOC_OBJECT) {
-    if (target_arch == TARGET_I386) fprintf(out, "  HCC_LOAD_EFFECTIVE_ADDRESS_eax %%%d\n", 4 * loc->slot + rsp_bias);
-    else if (target_arch == TARGET_AARCH64) aarch64_emit_address_stack(out, 8 * loc->slot + rsp_bias);
-    else if (target_arch == TARGET_RISCV64) riscv64_emit_address_stack(out, 8 * loc->slot + rsp_bias);
-    else fprintf(out, "  HCC_LOAD_EFFECTIVE_ADDRESS_rax %%%d\n", 8 * loc->slot + rsp_bias);
+    if (target_arch == TARGET_I386)
+      fprintf(out, "  HCC_LOAD_EFFECTIVE_ADDRESS_eax %%%d\n", 4 * loc->slot + rsp_bias);
+    else if (target_arch == TARGET_AARCH64)
+      aarch64_emit_address_stack(out, 8 * loc->slot + rsp_bias);
+    else if (target_arch == TARGET_RISCV64)
+      riscv64_emit_address_stack(out, 8 * loc->slot + rsp_bias);
+    else
+      fprintf(out, "  HCC_LOAD_EFFECTIVE_ADDRESS_rax %%%d\n", 8 * loc->slot + rsp_bias);
   }
 }
 
-static void emit_load_operand(FILE *out, EmitState *state, LocArray *locs, int rsp_bias, Operand *op)
+static void emit_load_operand(FILE *out, EmitState *state, LocArray *locs, int rsp_bias,
+                              Operand *op)
 {
   Loc *loc;
-  if (op->kind == OP_IMM) emit_load_immediate(out, state, op->value);
-  else if (op->kind == OP_BYTES) emit_load_immediate_bytes(out, state, op);
+  if (op->kind == OP_IMM)
+    emit_load_immediate(out, state, op->value);
+  else if (op->kind == OP_BYTES)
+    emit_load_immediate_bytes(out, state, op);
   else if (op->kind == OP_GLOBAL) {
     emit_forget_rax(state);
-    if (target_arch == TARGET_I386) fprintf(out, "  mov_eax, &%s\n", op->name);
-    else if (target_arch == TARGET_AARCH64) aarch64_emit_load_label(out, 0, op->name);
-    else if (target_arch == TARGET_RISCV64) riscv64_emit_load_label(out, 10, op->name);
-    else fprintf(out, "  LOAD_IMMEDIATE_rax &%s\n", op->name);
+    if (target_arch == TARGET_I386)
+      fprintf(out, "  mov_eax, &%s\n", op->name);
+    else if (target_arch == TARGET_AARCH64)
+      aarch64_emit_load_label(out, 0, op->name);
+    else if (target_arch == TARGET_RISCV64)
+      riscv64_emit_load_label(out, 10, op->name);
+    else
+      fprintf(out, "  LOAD_IMMEDIATE_rax &%s\n", op->name);
   } else if (op->kind == OP_FUNC) {
     emit_forget_rax(state);
-    if (target_arch == TARGET_I386) fprintf(out, "  mov_eax, &FUNCTION_%s\n", op->name);
+    if (target_arch == TARGET_I386)
+      fprintf(out, "  mov_eax, &FUNCTION_%s\n", op->name);
     else if (target_arch == TARGET_AARCH64) {
       aarch64_emit_load_literal_prefix(out, 0);
       fprintf(out, "  &FUNCTION_%s '00' '00' '00' '00'\n", op->name);
-    }
-    else if (target_arch == TARGET_RISCV64) riscv64_emit_load_function_label(out, 10, op->name);
-    else fprintf(out, "  LOAD_IMMEDIATE_rax &FUNCTION_%s\n", op->name);
-  }
-  else if (op->kind == OP_TEMP) {
+    } else if (target_arch == TARGET_RISCV64)
+      riscv64_emit_load_function_label(out, 10, op->name);
+    else
+      fprintf(out, "  LOAD_IMMEDIATE_rax &FUNCTION_%s\n", op->name);
+  } else if (op->kind == OP_TEMP) {
     loc = lookup_loc(locs, op->value);
     if (rsp_bias == 0 && loc->kind == LOC_STACK && state->rax_temp == op->value) return;
     emit_load_location(out, state, loc, rsp_bias);
@@ -1580,10 +1601,14 @@ static void emit_store_temp(FILE *out, EmitState *state, LocArray *locs, int tem
       emit_remember_rax_temp(state, temp);
       return;
     }
-    if (target_arch == TARGET_I386) fprintf(out, "  HCC_STORE_ESP_IMMEDIATE_from_eax %%%d\n", 4 * loc->slot);
-    else if (target_arch == TARGET_AARCH64) aarch64_emit_store_stack(out, 8 * loc->slot);
-    else if (target_arch == TARGET_RISCV64) riscv64_emit_store_stack(out, 8 * loc->slot);
-    else fprintf(out, "  HCC_STORE_RSP_IMMEDIATE_from_rax %%%d\n", 8 * loc->slot);
+    if (target_arch == TARGET_I386)
+      fprintf(out, "  HCC_STORE_ESP_IMMEDIATE_from_eax %%%d\n", 4 * loc->slot);
+    else if (target_arch == TARGET_AARCH64)
+      aarch64_emit_store_stack(out, 8 * loc->slot);
+    else if (target_arch == TARGET_RISCV64)
+      riscv64_emit_store_stack(out, 8 * loc->slot);
+    else
+      fprintf(out, "  HCC_STORE_RSP_IMMEDIATE_from_rax %%%d\n", 8 * loc->slot);
     emit_remember_rax_temp(state, temp);
   } else if (loc->kind == LOC_OBJECT) {
     die("cannot assign stack object");
@@ -1595,10 +1620,14 @@ static void emit_address_of(FILE *out, EmitState *state, LocArray *locs, int tem
   Loc *loc = lookup_loc(locs, temp);
   emit_forget_rax(state);
   if (loc->kind == LOC_STACK || loc->kind == LOC_OBJECT) {
-    if (target_arch == TARGET_I386) fprintf(out, "  HCC_LOAD_EFFECTIVE_ADDRESS_eax %%%d\n", 4 * loc->slot);
-    else if (target_arch == TARGET_AARCH64) aarch64_emit_address_stack(out, 8 * loc->slot);
-    else if (target_arch == TARGET_RISCV64) riscv64_emit_address_stack(out, 8 * loc->slot);
-    else fprintf(out, "  HCC_LOAD_EFFECTIVE_ADDRESS_rax %%%d\n", 8 * loc->slot);
+    if (target_arch == TARGET_I386)
+      fprintf(out, "  HCC_LOAD_EFFECTIVE_ADDRESS_eax %%%d\n", 4 * loc->slot);
+    else if (target_arch == TARGET_AARCH64)
+      aarch64_emit_address_stack(out, 8 * loc->slot);
+    else if (target_arch == TARGET_RISCV64)
+      riscv64_emit_address_stack(out, 8 * loc->slot);
+    else
+      fprintf(out, "  HCC_LOAD_EFFECTIVE_ADDRESS_rax %%%d\n", 8 * loc->slot);
   } else {
     die("cannot take address");
   }
@@ -1608,29 +1637,75 @@ static void emit_binop(FILE *out, int op)
 {
   if (target_arch == TARGET_I386) {
     switch (op) {
-      case BK_ADD: fprintf(out, "  add_eax,ebx\n"); break;
-      case BK_SUB: fprintf(out, "  sub_ebx,eax\n  mov_eax,ebx\n"); break;
-      case BK_MUL: fprintf(out, "  imul_ebx\n"); break;
-      case BK_DIV: fprintf(out, "  xchg_ebx,eax\n  cdq\n  idiv_ebx\n"); break;
-      case BK_MOD: fprintf(out, "  xchg_ebx,eax\n  cdq\n  idiv_ebx\n  mov_eax,edx\n"); break;
-      case BK_UDIV: fprintf(out, "  xchg_ebx,eax\n  xor_edx,edx\n  div_ebx\n"); break;
-      case BK_UMOD: fprintf(out, "  xchg_ebx,eax\n  xor_edx,edx\n  div_ebx\n  mov_eax,edx\n"); break;
-      case BK_SHL: fprintf(out, "  mov_ecx,eax\n  mov_eax,ebx\n  shl_eax,cl\n"); break;
-      case BK_SHR: fprintf(out, "  mov_ecx,eax\n  mov_eax,ebx\n  shr_eax,cl\n"); break;
-      case BK_SAR: fprintf(out, "  mov_ecx,eax\n  mov_eax,ebx\n  sar_eax,cl\n"); break;
-      case BK_EQ: fprintf(out, "  cmp_ebx,eax\n  sete_al\n  movzx_eax,al\n"); break;
-      case BK_NE: fprintf(out, "  cmp_ebx,eax\n  setne_al\n  movzx_eax,al\n"); break;
-      case BK_LT: fprintf(out, "  cmp_ebx,eax\n  setl_al\n  movzx_eax,al\n"); break;
-      case BK_LE: fprintf(out, "  cmp_ebx,eax\n  setle_al\n  movzx_eax,al\n"); break;
-      case BK_GT: fprintf(out, "  cmp_ebx,eax\n  setg_al\n  movzx_eax,al\n"); break;
-      case BK_GE: fprintf(out, "  cmp_ebx,eax\n  setge_al\n  movzx_eax,al\n"); break;
-      case BK_ULT: fprintf(out, "  cmp_ebx,eax\n  setb_al\n  movzx_eax,al\n"); break;
-      case BK_ULE: fprintf(out, "  cmp_ebx,eax\n  setbe_al\n  movzx_eax,al\n"); break;
-      case BK_UGT: fprintf(out, "  cmp_ebx,eax\n  seta_al\n  movzx_eax,al\n"); break;
-      case BK_UGE: fprintf(out, "  cmp_ebx,eax\n  setae_al\n  movzx_eax,al\n"); break;
-      case BK_AND: fprintf(out, "  and_eax,ebx\n"); break;
-      case BK_OR: fprintf(out, "  or_eax,ebx\n"); break;
-      case BK_XOR: fprintf(out, "  xor_eax,ebx\n"); break;
+    case BK_ADD:
+      fprintf(out, "  add_eax,ebx\n");
+      break;
+    case BK_SUB:
+      fprintf(out, "  sub_ebx,eax\n  mov_eax,ebx\n");
+      break;
+    case BK_MUL:
+      fprintf(out, "  imul_ebx\n");
+      break;
+    case BK_DIV:
+      fprintf(out, "  xchg_ebx,eax\n  cdq\n  idiv_ebx\n");
+      break;
+    case BK_MOD:
+      fprintf(out, "  xchg_ebx,eax\n  cdq\n  idiv_ebx\n  mov_eax,edx\n");
+      break;
+    case BK_UDIV:
+      fprintf(out, "  xchg_ebx,eax\n  xor_edx,edx\n  div_ebx\n");
+      break;
+    case BK_UMOD:
+      fprintf(out, "  xchg_ebx,eax\n  xor_edx,edx\n  div_ebx\n  mov_eax,edx\n");
+      break;
+    case BK_SHL:
+      fprintf(out, "  mov_ecx,eax\n  mov_eax,ebx\n  shl_eax,cl\n");
+      break;
+    case BK_SHR:
+      fprintf(out, "  mov_ecx,eax\n  mov_eax,ebx\n  shr_eax,cl\n");
+      break;
+    case BK_SAR:
+      fprintf(out, "  mov_ecx,eax\n  mov_eax,ebx\n  sar_eax,cl\n");
+      break;
+    case BK_EQ:
+      fprintf(out, "  cmp_ebx,eax\n  sete_al\n  movzx_eax,al\n");
+      break;
+    case BK_NE:
+      fprintf(out, "  cmp_ebx,eax\n  setne_al\n  movzx_eax,al\n");
+      break;
+    case BK_LT:
+      fprintf(out, "  cmp_ebx,eax\n  setl_al\n  movzx_eax,al\n");
+      break;
+    case BK_LE:
+      fprintf(out, "  cmp_ebx,eax\n  setle_al\n  movzx_eax,al\n");
+      break;
+    case BK_GT:
+      fprintf(out, "  cmp_ebx,eax\n  setg_al\n  movzx_eax,al\n");
+      break;
+    case BK_GE:
+      fprintf(out, "  cmp_ebx,eax\n  setge_al\n  movzx_eax,al\n");
+      break;
+    case BK_ULT:
+      fprintf(out, "  cmp_ebx,eax\n  setb_al\n  movzx_eax,al\n");
+      break;
+    case BK_ULE:
+      fprintf(out, "  cmp_ebx,eax\n  setbe_al\n  movzx_eax,al\n");
+      break;
+    case BK_UGT:
+      fprintf(out, "  cmp_ebx,eax\n  seta_al\n  movzx_eax,al\n");
+      break;
+    case BK_UGE:
+      fprintf(out, "  cmp_ebx,eax\n  setae_al\n  movzx_eax,al\n");
+      break;
+    case BK_AND:
+      fprintf(out, "  and_eax,ebx\n");
+      break;
+    case BK_OR:
+      fprintf(out, "  or_eax,ebx\n");
+      break;
+    case BK_XOR:
+      fprintf(out, "  xor_eax,ebx\n");
+      break;
     }
     return;
   }
@@ -1643,29 +1718,77 @@ static void emit_binop(FILE *out, int op)
     return;
   }
   switch (op) {
-    case BK_ADD: fprintf(out, "  ADD_rbx_to_rax\n"); break;
-    case BK_SUB: fprintf(out, "  SUBTRACT_rax_from_rbx_into_rbx\n  MOVE_rbx_to_rax\n"); break;
-    case BK_MUL: fprintf(out, "  MULTIPLY_rax_by_rbx_into_rax\n"); break;
-    case BK_DIV: fprintf(out, "  XCHG_rax_rbx\n  CQTO\n  DIVIDES_rax_by_rbx_into_rax\n"); break;
-    case BK_MOD: fprintf(out, "  XCHG_rax_rbx\n  CQTO\n  MODULUSS_rax_from_rbx_into_rbx\n  MOVE_rdx_to_rax\n"); break;
-    case BK_UDIV: fprintf(out, "  XCHG_rax_rbx\n  HCC_XOR_rdx_rdx\n  HCC_UDIV_rax_by_rbx_into_rax\n"); break;
-    case BK_UMOD: fprintf(out, "  XCHG_rax_rbx\n  HCC_XOR_rdx_rdx\n  HCC_UDIV_rax_by_rbx_into_rax\n  MOVE_rdx_to_rax\n"); break;
-    case BK_SHL: fprintf(out, "  COPY_rax_to_rcx\n  MOVE_rbx_to_rax\n  HCC_SHL_rax_cl\n"); break;
-    case BK_SHR: fprintf(out, "  COPY_rax_to_rcx\n  MOVE_rbx_to_rax\n  HCC_SHR_rax_cl\n"); break;
-    case BK_SAR: fprintf(out, "  COPY_rax_to_rcx\n  MOVE_rbx_to_rax\n  HCC_SAR_rax_cl\n"); break;
-    case BK_EQ: fprintf(out, "  CMP\n  SETE\n  MOVEZX\n"); break;
-    case BK_NE: fprintf(out, "  CMP\n  SETNE\n  MOVEZX\n"); break;
-    case BK_LT: fprintf(out, "  CMP\n  SETL\n  MOVEZX\n"); break;
-    case BK_LE: fprintf(out, "  CMP\n  SETLE\n  MOVEZX\n"); break;
-    case BK_GT: fprintf(out, "  CMP\n  SETG\n  MOVEZX\n"); break;
-    case BK_GE: fprintf(out, "  CMP\n  SETGE\n  MOVEZX\n"); break;
-    case BK_ULT: fprintf(out, "  CMP\n  SETB\n  MOVEZX\n"); break;
-    case BK_ULE: fprintf(out, "  CMP\n  SETBE\n  MOVEZX\n"); break;
-    case BK_UGT: fprintf(out, "  CMP\n  SETA\n  MOVEZX\n"); break;
-    case BK_UGE: fprintf(out, "  CMP\n  SETAE\n  MOVEZX\n"); break;
-    case BK_AND: fprintf(out, "  AND_rax_rbx\n"); break;
-    case BK_OR: fprintf(out, "  OR_rax_rbx\n"); break;
-    case BK_XOR: fprintf(out, "  HCC_XOR_rbx_rax_into_rax\n"); break;
+  case BK_ADD:
+    fprintf(out, "  ADD_rbx_to_rax\n");
+    break;
+  case BK_SUB:
+    fprintf(out, "  SUBTRACT_rax_from_rbx_into_rbx\n  MOVE_rbx_to_rax\n");
+    break;
+  case BK_MUL:
+    fprintf(out, "  MULTIPLY_rax_by_rbx_into_rax\n");
+    break;
+  case BK_DIV:
+    fprintf(out, "  XCHG_rax_rbx\n  CQTO\n  DIVIDES_rax_by_rbx_into_rax\n");
+    break;
+  case BK_MOD:
+    fprintf(out, "  XCHG_rax_rbx\n  CQTO\n  MODULUSS_rax_from_rbx_into_rbx\n  MOVE_rdx_to_rax\n");
+    break;
+  case BK_UDIV:
+    fprintf(out, "  XCHG_rax_rbx\n  HCC_XOR_rdx_rdx\n  HCC_UDIV_rax_by_rbx_into_rax\n");
+    break;
+  case BK_UMOD:
+    fprintf(
+        out,
+        "  XCHG_rax_rbx\n  HCC_XOR_rdx_rdx\n  HCC_UDIV_rax_by_rbx_into_rax\n  MOVE_rdx_to_rax\n");
+    break;
+  case BK_SHL:
+    fprintf(out, "  COPY_rax_to_rcx\n  MOVE_rbx_to_rax\n  HCC_SHL_rax_cl\n");
+    break;
+  case BK_SHR:
+    fprintf(out, "  COPY_rax_to_rcx\n  MOVE_rbx_to_rax\n  HCC_SHR_rax_cl\n");
+    break;
+  case BK_SAR:
+    fprintf(out, "  COPY_rax_to_rcx\n  MOVE_rbx_to_rax\n  HCC_SAR_rax_cl\n");
+    break;
+  case BK_EQ:
+    fprintf(out, "  CMP\n  SETE\n  MOVEZX\n");
+    break;
+  case BK_NE:
+    fprintf(out, "  CMP\n  SETNE\n  MOVEZX\n");
+    break;
+  case BK_LT:
+    fprintf(out, "  CMP\n  SETL\n  MOVEZX\n");
+    break;
+  case BK_LE:
+    fprintf(out, "  CMP\n  SETLE\n  MOVEZX\n");
+    break;
+  case BK_GT:
+    fprintf(out, "  CMP\n  SETG\n  MOVEZX\n");
+    break;
+  case BK_GE:
+    fprintf(out, "  CMP\n  SETGE\n  MOVEZX\n");
+    break;
+  case BK_ULT:
+    fprintf(out, "  CMP\n  SETB\n  MOVEZX\n");
+    break;
+  case BK_ULE:
+    fprintf(out, "  CMP\n  SETBE\n  MOVEZX\n");
+    break;
+  case BK_UGT:
+    fprintf(out, "  CMP\n  SETA\n  MOVEZX\n");
+    break;
+  case BK_UGE:
+    fprintf(out, "  CMP\n  SETAE\n  MOVEZX\n");
+    break;
+  case BK_AND:
+    fprintf(out, "  AND_rax_rbx\n");
+    break;
+  case BK_OR:
+    fprintf(out, "  OR_rax_rbx\n");
+    break;
+  case BK_XOR:
+    fprintf(out, "  HCC_XOR_rbx_rax_into_rax\n");
+    break;
   }
 }
 
@@ -1694,17 +1817,24 @@ static long sign_bit_for_size(int size)
 
 static void emit_copy_acc_to_scratch(FILE *out)
 {
-  if (target_arch == TARGET_I386) fprintf(out, "  mov_ebx,eax\n");
-  else if (target_arch == TARGET_AARCH64) fprintf(out, "  SET_X1_FROM_X0\n");
-  else if (target_arch == TARGET_RISCV64) fprintf(out, "  rd_a1 rs1_a0 mv\n");
-  else fprintf(out, "  HCC_M_RAX_RBX\n");
+  if (target_arch == TARGET_I386)
+    fprintf(out, "  mov_ebx,eax\n");
+  else if (target_arch == TARGET_AARCH64)
+    fprintf(out, "  SET_X1_FROM_X0\n");
+  else if (target_arch == TARGET_RISCV64)
+    fprintf(out, "  rd_a1 rs1_a0 mv\n");
+  else
+    fprintf(out, "  HCC_M_RAX_RBX\n");
 }
 
 static void emit_amd64_zext_loaded_rax(FILE *out, int size)
 {
-  if (size <= 1) fprintf(out, "  MOVEZX\n");
-  else if (size <= 2) fprintf(out, "  HCC_ZEXT16_RAX\n");
-  else if (size <= 4) fprintf(out, "  HCC_ZEXT32_RAX\n");
+  if (size <= 1)
+    fprintf(out, "  MOVEZX\n");
+  else if (size <= 2)
+    fprintf(out, "  HCC_ZEXT16_RAX\n");
+  else if (size <= 4)
+    fprintf(out, "  HCC_ZEXT32_RAX\n");
 }
 
 static void emit_i386_zext_loaded_eax(FILE *out, EmitState *state, int size)
@@ -1717,9 +1847,12 @@ static void emit_i386_zext_loaded_eax(FILE *out, EmitState *state, int size)
 
 static void emit_amd64_sext_loaded_rax(FILE *out, int size)
 {
-  if (size <= 1) fprintf(out, "  HCC_SEXT8_RAX\n");
-  else if (size <= 2) fprintf(out, "  HCC_SEXT16_RAX\n");
-  else if (size <= 4) fprintf(out, "  HCC_SEXT32_RAX\n");
+  if (size <= 1)
+    fprintf(out, "  HCC_SEXT8_RAX\n");
+  else if (size <= 2)
+    fprintf(out, "  HCC_SEXT16_RAX\n");
+  else if (size <= 4)
+    fprintf(out, "  HCC_SEXT32_RAX\n");
 }
 
 static void emit_i386_sext_loaded_eax(FILE *out, EmitState *state, int size)
@@ -1740,7 +1873,8 @@ static void emit_i386_sext_loaded_eax(FILE *out, EmitState *state, int size)
 
 static void emit_zext_loaded_acc(FILE *out, EmitState *state, int size)
 {
-  if (target_arch == TARGET_I386) emit_i386_zext_loaded_eax(out, state, size);
+  if (target_arch == TARGET_I386)
+    emit_i386_zext_loaded_eax(out, state, size);
   else if (target_arch == TARGET_AARCH64 || target_arch == TARGET_RISCV64) {
     if (target_arch == TARGET_AARCH64 && size == 4) {
       fprintf(out, "  UXTW_X0_W0\n");
@@ -1749,14 +1883,15 @@ static void emit_zext_loaded_acc(FILE *out, EmitState *state, int size)
       emit_load_immediate(out, state, mask_for_size(size));
       emit_binop(out, BK_AND);
     }
-  }
-  else emit_amd64_zext_loaded_rax(out, size);
+  } else
+    emit_amd64_zext_loaded_rax(out, size);
   emit_forget_rax(state);
 }
 
 static void emit_sext_loaded_acc(FILE *out, EmitState *state, int size)
 {
-  if (target_arch == TARGET_I386) emit_i386_sext_loaded_eax(out, state, size);
+  if (target_arch == TARGET_I386)
+    emit_i386_sext_loaded_eax(out, state, size);
   else if (target_arch == TARGET_AARCH64 || target_arch == TARGET_RISCV64) {
     long sign_bit;
     if (target_arch == TARGET_AARCH64 && size == 4) {
@@ -1773,24 +1908,34 @@ static void emit_sext_loaded_acc(FILE *out, EmitState *state, int size)
       emit_load_immediate(out, state, sign_bit);
       emit_binop(out, BK_SUB);
     }
-  }
-  else emit_amd64_sext_loaded_rax(out, size);
+  } else
+    emit_amd64_sext_loaded_rax(out, size);
   emit_forget_rax(state);
 }
 
 static int invert_binop(int op)
 {
   switch (op) {
-    case BK_EQ: return BK_NE;
-    case BK_NE: return BK_EQ;
-    case BK_LT: return BK_GE;
-    case BK_LE: return BK_GT;
-    case BK_GT: return BK_LE;
-    case BK_GE: return BK_LT;
-    case BK_ULT: return BK_UGE;
-    case BK_ULE: return BK_UGT;
-    case BK_UGT: return BK_ULE;
-    case BK_UGE: return BK_ULT;
+  case BK_EQ:
+    return BK_NE;
+  case BK_NE:
+    return BK_EQ;
+  case BK_LT:
+    return BK_GE;
+  case BK_LE:
+    return BK_GT;
+  case BK_GT:
+    return BK_LE;
+  case BK_GE:
+    return BK_LT;
+  case BK_ULT:
+    return BK_UGE;
+  case BK_ULE:
+    return BK_UGT;
+  case BK_UGT:
+    return BK_ULE;
+  case BK_UGE:
+    return BK_ULT;
   }
   die("cannot invert branch comparison");
   return BK_NE;
@@ -1808,26 +1953,38 @@ static void emit_compare(FILE *out, EmitState *state, LocArray *locs, Operand *a
     emit_copy_acc_to_scratch(out);
     emit_load_operand(out, state, locs, 0, b);
   }
-  if (target_arch == TARGET_I386) fprintf(out, "  cmp_ebx,eax\n");
-  else if (target_arch == TARGET_AARCH64) fprintf(out, "  CMP_X1_X0\n");
+  if (target_arch == TARGET_I386)
+    fprintf(out, "  cmp_ebx,eax\n");
+  else if (target_arch == TARGET_AARCH64)
+    fprintf(out, "  CMP_X1_X0\n");
   else if (target_arch == TARGET_RISCV64) {
-  }
-  else fprintf(out, "  CMP\n");
+  } else
+    fprintf(out, "  CMP\n");
 }
 
 static const char *jump_name_for_binop(int op)
 {
   switch (op) {
-    case BK_EQ: return "HCC_JUMP_EQ";
-    case BK_NE: return "HCC_JUMP_NE";
-    case BK_LT: return "HCC_JUMP_LT";
-    case BK_LE: return "HCC_JUMP_LE";
-    case BK_GT: return "HCC_JUMP_GT";
-    case BK_GE: return "HCC_JUMP_GE";
-    case BK_ULT: return "HCC_JUMP_ULT";
-    case BK_ULE: return "HCC_JUMP_ULE";
-    case BK_UGT: return "HCC_JUMP_UGT";
-    case BK_UGE: return "HCC_JUMP_UGE";
+  case BK_EQ:
+    return "HCC_JUMP_EQ";
+  case BK_NE:
+    return "HCC_JUMP_NE";
+  case BK_LT:
+    return "HCC_JUMP_LT";
+  case BK_LE:
+    return "HCC_JUMP_LE";
+  case BK_GT:
+    return "HCC_JUMP_GT";
+  case BK_GE:
+    return "HCC_JUMP_GE";
+  case BK_ULT:
+    return "HCC_JUMP_ULT";
+  case BK_ULE:
+    return "HCC_JUMP_ULE";
+  case BK_UGT:
+    return "HCC_JUMP_UGT";
+  case BK_UGE:
+    return "HCC_JUMP_UGE";
   }
   die("bad branch comparison");
   return "HCC_JUMP_NE";
@@ -1843,45 +2000,55 @@ static void emit_named_label(FILE *out, const char *prefix, const char *fn_name,
 static void emit_jump_named(FILE *out, const char *prefix, const char *fn_name, int id)
 {
   int kind = 0;
-  if (target_arch == TARGET_AMD64) kind = 1;
-  else if (target_arch == TARGET_I386) kind = 2;
+  if (target_arch == TARGET_AMD64)
+    kind = 1;
+  else if (target_arch == TARGET_I386)
+    kind = 2;
   if (kind) {
-    if (kind == 1) fprintf(out, "  JUMP %%");
-    else fprintf(out, "  jmp %%");
-  }
-  else if (target_arch == TARGET_AARCH64) {
+    if (kind == 1)
+      fprintf(out, "  JUMP %%");
+    else
+      fprintf(out, "  jmp %%");
+  } else if (target_arch == TARGET_AARCH64) {
     aarch64_emit_jump_label_parts(out, prefix, fn_name, id);
     return;
-  }
-  else if (target_arch == TARGET_RISCV64) {
+  } else if (target_arch == TARGET_RISCV64) {
     riscv64_emit_jump_label_parts(out, prefix, fn_name, id);
     return;
-  }
-  else die("bad target jump");
+  } else
+    die("bad target jump");
   emit_named_ref(out, prefix, fn_name, id);
   fputc('\n', out);
 }
 
-static void emit_truth_jump_named(FILE *out, const char *prefix, const char *fn_name, int id, int jump_if_true)
+static void emit_truth_jump_named(FILE *out, const char *prefix, const char *fn_name, int id,
+                                  int jump_if_true)
 {
   int kind = 0;
-  if (target_arch == TARGET_AMD64) kind = 1;
-  else if (target_arch == TARGET_I386) kind = 2;
+  if (target_arch == TARGET_AMD64)
+    kind = 1;
+  else if (target_arch == TARGET_I386)
+    kind = 2;
   if (kind == 1) {
     fprintf(out, "  TEST\n");
-    if (jump_if_true) fprintf(out, "  JUMP_NE %%");
-    else fprintf(out, "  JUMP_EQ %%");
+    if (jump_if_true)
+      fprintf(out, "  JUMP_NE %%");
+    else
+      fprintf(out, "  JUMP_EQ %%");
   } else if (kind == 2) {
     fprintf(out, "  test_eax,eax\n");
-    if (jump_if_true) fprintf(out, "  jne %%");
-    else fprintf(out, "  je %%");
+    if (jump_if_true)
+      fprintf(out, "  jne %%");
+    else
+      fprintf(out, "  je %%");
   } else if (target_arch == TARGET_AARCH64) {
     aarch64_emit_truth_jump_label_parts(out, prefix, fn_name, id, jump_if_true);
     return;
   } else if (target_arch == TARGET_RISCV64) {
     riscv64_emit_truth_jump_label_parts(out, prefix, fn_name, id, jump_if_true);
     return;
-  } else die("bad target truth jump");
+  } else
+    die("bad target truth jump");
   emit_named_ref(out, prefix, fn_name, id);
   fputc('\n', out);
 }
@@ -1923,7 +2090,8 @@ static void emit_truth_branch(FILE *out, const char *fn_name, int yes, int no, i
   }
 }
 
-static void emit_compare_branch(FILE *out, const char *fn_name, int op, int yes, int no, int next_id)
+static void emit_compare_branch(FILE *out, const char *fn_name, int op, int yes, int no,
+                                int next_id)
 {
   if (next_id == yes) {
     emit_compare_jump(out, fn_name, invert_binop(op), no);
@@ -1949,10 +2117,14 @@ static void emit_call_cleanup(FILE *out, int argc)
 {
   int bytes = call_stack_bytes(argc);
   if (bytes > 0) {
-    if (target_arch == TARGET_I386) fprintf(out, "  HCC_ADD_IMMEDIATE_to_esp %%%d\n", bytes);
-    else if (target_arch == TARGET_AARCH64) aarch64_emit_add_imm_reg(out, 18, 18, bytes);
-    else if (target_arch == TARGET_RISCV64) riscv64_emit_add_imm_reg(out, 2, 2, bytes);
-    else fprintf(out, "  HCC_ADD_IMMEDIATE_to_rsp %%%d\n", bytes);
+    if (target_arch == TARGET_I386)
+      fprintf(out, "  HCC_ADD_IMMEDIATE_to_esp %%%d\n", bytes);
+    else if (target_arch == TARGET_AARCH64)
+      aarch64_emit_add_imm_reg(out, 18, 18, bytes);
+    else if (target_arch == TARGET_RISCV64)
+      riscv64_emit_add_imm_reg(out, 2, 2, bytes);
+    else
+      fprintf(out, "  HCC_ADD_IMMEDIATE_to_rsp %%%d\n", bytes);
   }
 }
 
@@ -1960,14 +2132,22 @@ static void emit_argument_move(FILE *out, int index)
 {
   if (target_arch == TARGET_AARCH64) {
     if (index == 0) return;
-    if (index == 1) fprintf(out, "  SET_X1_FROM_X0\n");
-    else if (index == 2) fprintf(out, "  SET_X2_FROM_X0\n");
-    else if (index == 3) fprintf(out, "  SET_X3_FROM_X0\n");
-    else if (index == 4) fprintf(out, "  SET_X4_FROM_X0\n");
-    else if (index == 5) fprintf(out, "  SET_X5_FROM_X0\n");
-    else if (index == 6) fprintf(out, "  SET_X6_FROM_X0\n");
-    else if (index == 7) aarch64_emit_mov_reg(out, 7, 0);
-    else die("bad argument register");
+    if (index == 1)
+      fprintf(out, "  SET_X1_FROM_X0\n");
+    else if (index == 2)
+      fprintf(out, "  SET_X2_FROM_X0\n");
+    else if (index == 3)
+      fprintf(out, "  SET_X3_FROM_X0\n");
+    else if (index == 4)
+      fprintf(out, "  SET_X4_FROM_X0\n");
+    else if (index == 5)
+      fprintf(out, "  SET_X5_FROM_X0\n");
+    else if (index == 6)
+      fprintf(out, "  SET_X6_FROM_X0\n");
+    else if (index == 7)
+      aarch64_emit_mov_reg(out, 7, 0);
+    else
+      die("bad argument register");
     return;
   }
   if (target_arch == TARGET_RISCV64) {
@@ -1975,13 +2155,20 @@ static void emit_argument_move(FILE *out, int index)
     riscv64_emit_mov_reg(out, riscv64_arg_reg(index), 10);
     return;
   }
-  if (index == 0) fprintf(out, "  COPY_rax_to_rdi\n");
-  else if (index == 1) fprintf(out, "  HCC_COPY_rax_to_rsi\n");
-  else if (index == 2) fprintf(out, "  HCC_COPY_rax_to_rdx\n");
-  else if (index == 3) fprintf(out, "  HCC_COPY_rax_to_rcx\n");
-  else if (index == 4) fprintf(out, "  HCC_COPY_rax_to_r8\n");
-  else if (index == 5) fprintf(out, "  HCC_COPY_rax_to_r9\n");
-  else die("bad argument register");
+  if (index == 0)
+    fprintf(out, "  COPY_rax_to_rdi\n");
+  else if (index == 1)
+    fprintf(out, "  HCC_COPY_rax_to_rsi\n");
+  else if (index == 2)
+    fprintf(out, "  HCC_COPY_rax_to_rdx\n");
+  else if (index == 3)
+    fprintf(out, "  HCC_COPY_rax_to_rcx\n");
+  else if (index == 4)
+    fprintf(out, "  HCC_COPY_rax_to_r8\n");
+  else if (index == 5)
+    fprintf(out, "  HCC_COPY_rax_to_r9\n");
+  else
+    die("bad argument register");
 }
 
 static void emit_arguments(FILE *out, EmitState *state, LocArray *locs, Operand *args, int argc)
@@ -2046,29 +2233,39 @@ static void emit_arguments(FILE *out, EmitState *state, LocArray *locs, Operand 
   }
 }
 
-static void emit_memory_load(FILE *out, EmitState *state, LocArray *locs, Instr *in, int width, int is_signed, const char *i386_op, const char *other_op)
+static void emit_memory_load(FILE *out, EmitState *state, LocArray *locs, Instr *in, int width,
+                             int is_signed, const char *i386_op, const char *other_op)
 {
   if (width == 8 && target_arch == TARGET_I386) die("i386 M1 backend cannot lower 64-bit load");
   emit_load_operand(out, state, locs, 0, instr_a_ptr(in));
-  if (target_arch == TARGET_I386) fprintf(out, "%s", i386_op);
-  else if (target_arch == TARGET_AARCH64) aarch64_emit_load_store(out, 1, width, is_signed, 0, 0);
-  else if (target_arch == TARGET_RISCV64) riscv64_emit_load_store(out, 1, width, is_signed, 10, 0);
-  else fprintf(out, "%s", other_op);
+  if (target_arch == TARGET_I386)
+    fprintf(out, "%s", i386_op);
+  else if (target_arch == TARGET_AARCH64)
+    aarch64_emit_load_store(out, 1, width, is_signed, 0, 0);
+  else if (target_arch == TARGET_RISCV64)
+    riscv64_emit_load_store(out, 1, width, is_signed, 10, 0);
+  else
+    fprintf(out, "%s", other_op);
   emit_store_temp(out, state, locs, in->temp);
 }
 
-static void emit_memory_store(FILE *out, EmitState *state, LocArray *locs, Instr *in, int width, const char *other_op)
+static void emit_memory_store(FILE *out, EmitState *state, LocArray *locs, Instr *in, int width,
+                              const char *other_op)
 {
   if (width == 8 && target_arch == TARGET_I386) die("i386 M1 backend cannot lower 64-bit store");
   emit_load_operand(out, state, locs, 0, instr_a_ptr(in));
   emit_copy_acc_to_scratch(out);
   emit_load_operand(out, state, locs, 0, instr_b_ptr(in));
-  if (target_arch == TARGET_AARCH64) aarch64_emit_load_store(out, 0, width, 0, 1, 0);
-  else if (target_arch == TARGET_RISCV64) riscv64_emit_load_store_from(out, 0, width, 0, 11, 0, 10);
-  else fprintf(out, "%s", other_op);
+  if (target_arch == TARGET_AARCH64)
+    aarch64_emit_load_store(out, 0, width, 0, 1, 0);
+  else if (target_arch == TARGET_RISCV64)
+    riscv64_emit_load_store_from(out, 0, width, 0, 11, 0, 10);
+  else
+    fprintf(out, "%s", other_op);
 }
 
-static void emit_instrs(FILE *out, const char *fn_name, EmitState *state, LocArray *locs, int total_slots, InstrList *list, int final_temp);
+static void emit_instrs(FILE *out, const char *fn_name, EmitState *state, LocArray *locs,
+                        int total_slots, InstrList *list, int final_temp);
 static int binop_is_commutative(int op);
 
 static int operand_temp(Operand *op)
@@ -2077,7 +2274,8 @@ static int operand_temp(Operand *op)
   return -1;
 }
 
-static void emit_instr(FILE *out, const char *fn_name, EmitState *state, LocArray *locs, int total_slots, Instr *in)
+static void emit_instr(FILE *out, const char *fn_name, EmitState *state, LocArray *locs,
+                       int total_slots, Instr *in)
 {
   int param_offset;
   int width;
@@ -2108,256 +2306,276 @@ static void emit_instr(FILE *out, const char *fn_name, EmitState *state, LocArra
   }
 
   switch (in->kind) {
-    case IK_PARAM:
-      if (target_arch == TARGET_I386) {
-        param_offset = total_slots * 4 + 4 + in->value * 4;
-        fprintf(out, "  mov_eax,[esp+DWORD] %%%d\n", param_offset);
-      } else if (target_arch == TARGET_AARCH64) {
-        if (in->value < 8) {
-          if (in->value == 0) {
-          } else {
-            aarch64_emit_mov_reg(out, 0, in->value);
-          }
+  case IK_PARAM:
+    if (target_arch == TARGET_I386) {
+      param_offset = total_slots * 4 + 4 + in->value * 4;
+      fprintf(out, "  mov_eax,[esp+DWORD] %%%d\n", param_offset);
+    } else if (target_arch == TARGET_AARCH64) {
+      if (in->value < 8) {
+        if (in->value == 0) {
         } else {
-          param_offset = total_slots * 8 + 8 + (in->value - 8) * 8;
-          aarch64_emit_load_store(out, 1, 8, 0, 18, param_offset);
+          aarch64_emit_mov_reg(out, 0, in->value);
         }
-      } else if (target_arch == TARGET_RISCV64) {
-        if (in->value < 8) {
-          if (in->value != 0) riscv64_emit_mov_reg(out, 10, in->value + 10);
-        } else {
-          param_offset = total_slots * 8 + 8 + (in->value - 8) * 8;
-          riscv64_emit_load_store(out, 1, 8, 0, 2, param_offset);
-        }
-      } else if (in->value == 0) fprintf(out, "  HCC_M_RDI_RAX\n");
-      else if (in->value == 1) fprintf(out, "  HCC_COPY_rsi_to_rax\n");
-      else if (in->value == 2) fprintf(out, "  HCC_COPY_rdx_to_rax\n");
-      else if (in->value == 3) fprintf(out, "  HCC_COPY_rcx_to_rax\n");
-      else if (in->value == 4) fprintf(out, "  HCC_COPY_r8_to_rax\n");
-      else if (in->value == 5) fprintf(out, "  HCC_COPY_r9_to_rax\n");
-      else {
-        param_offset = total_slots * 8 + 8 + (in->value - 6) * 8;
-        fprintf(out, "  LOAD_RSP_IMMEDIATE_into_rax %%%d\n", param_offset);
-      }
-      emit_store_temp(out, state, locs, in->temp);
-      break;
-    case IK_ALLOCA:
-      break;
-    case IK_CONST:
-      emit_load_immediate(out, state, in->value);
-      emit_store_temp(out, state, locs, in->temp);
-      break;
-    case IK_COPY:
-      emit_load_operand(out, state, locs, 0, instr_a_ptr(in));
-      emit_store_temp(out, state, locs, in->temp);
-      break;
-    case IK_ADDROF:
-      emit_address_of(out, state, locs, in->temp2);
-      emit_store_temp(out, state, locs, in->temp);
-      break;
-    case IK_LOAD64:
-      emit_memory_load(out, state, locs, in, 8, 0, 0, "  HCC_LOAD_INTEGER\n");
-      break;
-    case IK_LOAD32:
-      emit_memory_load(out, state, locs, in, 4, 0, "  mov_eax,[eax]\n", "  HCC_LOAD_WORD\n");
-      break;
-    case IK_LOADS32:
-      emit_memory_load(out, state, locs, in, 4, 1, "  mov_eax,[eax]\n", "  HCC_LOAD_SIGNED_WORD\n");
-      break;
-    case IK_LOAD16:
-      emit_memory_load(out, state, locs, in, 2, 0, "  movzx_eax,WORD_PTR_[eax]\n", "  HCC_LOAD_HALF\n");
-      break;
-    case IK_LOADS16:
-      emit_memory_load(out, state, locs, in, 2, 1, "  movsx_eax,WORD_PTR_[eax]\n", "  HCC_LOAD_SIGNED_HALF\n");
-      break;
-    case IK_LOAD8:
-      emit_memory_load(out, state, locs, in, 1, 0, "  movzx_eax,BYTE_PTR_[eax]\n", "  LOAD_BYTE\n  MOVEZX\n");
-      break;
-    case IK_LOADS8:
-      emit_memory_load(out, state, locs, in, 1, 1, "  movsx_eax,BYTE_PTR_[eax]\n", "  HCC_LOAD_SIGNED_CHAR\n");
-      break;
-    case IK_STORE64:
-      emit_memory_store(out, state, locs, in, 8, "  HCC_STORE_INTEGER\n");
-      break;
-    case IK_STORE32:
-      emit_memory_store(out, state, locs, in, 4, "  HCC_STORE_WORD\n");
-      break;
-    case IK_STORE16:
-      emit_memory_store(out, state, locs, in, 2, "  HCC_STORE_HALF\n");
-      break;
-    case IK_STORE8:
-      emit_memory_store(out, state, locs, in, 1, "  HCC_STORE_CHAR\n");
-      break;
-    case IK_BIN:
-      left = instr_a_ptr(in);
-      right = instr_b_ptr(in);
-      if (target_arch == TARGET_AMD64 && in->binop == BK_ADD) {
-        if (left->kind == OP_IMM && right->kind != OP_IMM) {
-          Operand *tmp = left;
-          left = right;
-          right = tmp;
-        }
-        if (right->kind == OP_IMM) {
-          immediate = right->value;
-          if (immediate >= -2147483647 - 1 && immediate <= 2147483647) {
-            emit_load_operand(out, state, locs, 0, left);
-            fprintf(out, "  HCC_ADD_IMMEDIATE_to_rax %%%d\n", (int)immediate);
-            emit_forget_rax(state);
-            emit_store_temp(out, state, locs, in->temp);
-            break;
-          }
-        }
-      }
-      if (binop_is_commutative(in->binop) && right->kind == OP_TEMP &&
-          right->value == state->rax_temp) {
-        left = instr_b_ptr(in);
-        right = instr_a_ptr(in);
-      }
-      if (target_arch == TARGET_AMD64 && right->kind == OP_TEMP &&
-          right->value == state->rax_temp && left != instr_b_ptr(in)) {
-        emit_copy_acc_to_scratch(out);
-        emit_load_operand(out, state, locs, 0, left);
-        fprintf(out, "  XCHG_rax_rbx\n");
-        emit_forget_rax(state);
       } else {
-        emit_load_operand(out, state, locs, 0, left);
-        if (target_arch == TARGET_I386) fprintf(out, "  mov_ebx,eax\n");
-        else if (target_arch == TARGET_AARCH64) fprintf(out, "  SET_X1_FROM_X0\n");
-        else if (target_arch == TARGET_RISCV64) riscv64_emit_mov_reg(out, 11, 10);
-        else fprintf(out, "  HCC_M_RAX_RBX\n");
-        emit_load_operand(out, state, locs, 0, right);
+        param_offset = total_slots * 8 + 8 + (in->value - 8) * 8;
+        aarch64_emit_load_store(out, 1, 8, 0, 18, param_offset);
       }
-      emit_binop(out, in->binop);
-      emit_store_temp(out, state, locs, in->temp);
-      break;
-    case IK_CALL:
+    } else if (target_arch == TARGET_RISCV64) {
+      if (in->value < 8) {
+        if (in->value != 0) riscv64_emit_mov_reg(out, 10, in->value + 10);
+      } else {
+        param_offset = total_slots * 8 + 8 + (in->value - 8) * 8;
+        riscv64_emit_load_store(out, 1, 8, 0, 2, param_offset);
+      }
+    } else if (in->value == 0)
+      fprintf(out, "  HCC_M_RDI_RAX\n");
+    else if (in->value == 1)
+      fprintf(out, "  HCC_COPY_rsi_to_rax\n");
+    else if (in->value == 2)
+      fprintf(out, "  HCC_COPY_rdx_to_rax\n");
+    else if (in->value == 3)
+      fprintf(out, "  HCC_COPY_rcx_to_rax\n");
+    else if (in->value == 4)
+      fprintf(out, "  HCC_COPY_r8_to_rax\n");
+    else if (in->value == 5)
+      fprintf(out, "  HCC_COPY_r9_to_rax\n");
+    else {
+      param_offset = total_slots * 8 + 8 + (in->value - 6) * 8;
+      fprintf(out, "  LOAD_RSP_IMMEDIATE_into_rax %%%d\n", param_offset);
+    }
+    emit_store_temp(out, state, locs, in->temp);
+    break;
+  case IK_ALLOCA:
+    break;
+  case IK_CONST:
+    emit_load_immediate(out, state, in->value);
+    emit_store_temp(out, state, locs, in->temp);
+    break;
+  case IK_COPY:
+    emit_load_operand(out, state, locs, 0, instr_a_ptr(in));
+    emit_store_temp(out, state, locs, in->temp);
+    break;
+  case IK_ADDROF:
+    emit_address_of(out, state, locs, in->temp2);
+    emit_store_temp(out, state, locs, in->temp);
+    break;
+  case IK_LOAD64:
+    emit_memory_load(out, state, locs, in, 8, 0, 0, "  HCC_LOAD_INTEGER\n");
+    break;
+  case IK_LOAD32:
+    emit_memory_load(out, state, locs, in, 4, 0, "  mov_eax,[eax]\n", "  HCC_LOAD_WORD\n");
+    break;
+  case IK_LOADS32:
+    emit_memory_load(out, state, locs, in, 4, 1, "  mov_eax,[eax]\n", "  HCC_LOAD_SIGNED_WORD\n");
+    break;
+  case IK_LOAD16:
+    emit_memory_load(out, state, locs, in, 2, 0, "  movzx_eax,WORD_PTR_[eax]\n",
+                     "  HCC_LOAD_HALF\n");
+    break;
+  case IK_LOADS16:
+    emit_memory_load(out, state, locs, in, 2, 1, "  movsx_eax,WORD_PTR_[eax]\n",
+                     "  HCC_LOAD_SIGNED_HALF\n");
+    break;
+  case IK_LOAD8:
+    emit_memory_load(out, state, locs, in, 1, 0, "  movzx_eax,BYTE_PTR_[eax]\n",
+                     "  LOAD_BYTE\n  MOVEZX\n");
+    break;
+  case IK_LOADS8:
+    emit_memory_load(out, state, locs, in, 1, 1, "  movsx_eax,BYTE_PTR_[eax]\n",
+                     "  HCC_LOAD_SIGNED_CHAR\n");
+    break;
+  case IK_STORE64:
+    emit_memory_store(out, state, locs, in, 8, "  HCC_STORE_INTEGER\n");
+    break;
+  case IK_STORE32:
+    emit_memory_store(out, state, locs, in, 4, "  HCC_STORE_WORD\n");
+    break;
+  case IK_STORE16:
+    emit_memory_store(out, state, locs, in, 2, "  HCC_STORE_HALF\n");
+    break;
+  case IK_STORE8:
+    emit_memory_store(out, state, locs, in, 1, "  HCC_STORE_CHAR\n");
+    break;
+  case IK_BIN:
+    left = instr_a_ptr(in);
+    right = instr_b_ptr(in);
+    if (target_arch == TARGET_AMD64 && in->binop == BK_ADD) {
+      if (left->kind == OP_IMM && right->kind != OP_IMM) {
+        Operand *tmp = left;
+        left = right;
+        right = tmp;
+      }
+      if (right->kind == OP_IMM) {
+        immediate = right->value;
+        if (immediate >= -2147483647 - 1 && immediate <= 2147483647) {
+          emit_load_operand(out, state, locs, 0, left);
+          fprintf(out, "  HCC_ADD_IMMEDIATE_to_rax %%%d\n", (int)immediate);
+          emit_forget_rax(state);
+          emit_store_temp(out, state, locs, in->temp);
+          break;
+        }
+      }
+    }
+    if (binop_is_commutative(in->binop) && right->kind == OP_TEMP &&
+        right->value == state->rax_temp) {
+      left = instr_b_ptr(in);
+      right = instr_a_ptr(in);
+    }
+    if (target_arch == TARGET_AMD64 && right->kind == OP_TEMP && right->value == state->rax_temp &&
+        left != instr_b_ptr(in)) {
+      emit_copy_acc_to_scratch(out);
+      emit_load_operand(out, state, locs, 0, left);
+      fprintf(out, "  XCHG_rax_rbx\n");
+      emit_forget_rax(state);
+    } else {
+      emit_load_operand(out, state, locs, 0, left);
+      if (target_arch == TARGET_I386)
+        fprintf(out, "  mov_ebx,eax\n");
+      else if (target_arch == TARGET_AARCH64)
+        fprintf(out, "  SET_X1_FROM_X0\n");
+      else if (target_arch == TARGET_RISCV64)
+        riscv64_emit_mov_reg(out, 11, 10);
+      else
+        fprintf(out, "  HCC_M_RAX_RBX\n");
+      emit_load_operand(out, state, locs, 0, right);
+    }
+    emit_binop(out, in->binop);
+    emit_store_temp(out, state, locs, in->temp);
+    break;
+  case IK_CALL:
+    emit_arguments(out, state, locs, in->args, in->argc);
+    if (target_arch == TARGET_AARCH64) {
+      aarch64_emit_load_literal_prefix(out, 16);
+      fprintf(out, "  &FUNCTION_%s '00' '00' '00' '00'\n", in->name);
+      fprintf(out, "  BLR_X16\n");
+    } else if (target_arch == TARGET_RISCV64) {
+      riscv64_emit_load_function_label(out, 7, in->name);
+      fprintf(out, "  rd_ra rs1_t2 !0 jalr\n");
+    } else {
+      fprintf(out, "  CALL_IMMEDIATE %%FUNCTION_%s\n", in->name);
+    }
+    emit_forget_rax(state);
+    emit_call_cleanup(out, in->argc);
+    if (in->result >= 0) emit_store_temp(out, state, locs, in->result);
+    break;
+  case IK_CALLI:
+    if (target_arch == TARGET_AARCH64) {
+      emit_load_operand(out, state, locs, 0, instr_callee_ptr(in));
+      fprintf(out, "  SET_X16_FROM_X0\n");
       emit_arguments(out, state, locs, in->args, in->argc);
-      if (target_arch == TARGET_AARCH64) {
-        aarch64_emit_load_literal_prefix(out, 16);
-        fprintf(out, "  &FUNCTION_%s '00' '00' '00' '00'\n", in->name);
-        fprintf(out, "  BLR_X16\n");
-      } else if (target_arch == TARGET_RISCV64) {
-        riscv64_emit_load_function_label(out, 7, in->name);
-        fprintf(out, "  rd_ra rs1_t2 !0 jalr\n");
-      } else {
-        fprintf(out, "  CALL_IMMEDIATE %%FUNCTION_%s\n", in->name);
-      }
-      emit_forget_rax(state);
-      emit_call_cleanup(out, in->argc);
-      if (in->result >= 0) emit_store_temp(out, state, locs, in->result);
-      break;
-    case IK_CALLI:
-      if (target_arch == TARGET_AARCH64) {
-        emit_load_operand(out, state, locs, 0, instr_callee_ptr(in));
-        fprintf(out, "  SET_X16_FROM_X0\n");
-        emit_arguments(out, state, locs, in->args, in->argc);
-        fprintf(out, "  BLR_X16\n");
-      } else if (target_arch == TARGET_RISCV64) {
-        emit_load_operand(out, state, locs, 0, instr_callee_ptr(in));
-        riscv64_emit_mov_reg(out, 7, 10);
-        emit_arguments(out, state, locs, in->args, in->argc);
-        fprintf(out, "  rd_ra rs1_t2 !0 jalr\n");
-      } else {
-        emit_arguments(out, state, locs, in->args, in->argc);
-        emit_load_operand(out, state, locs, call_stack_bytes(in->argc), instr_callee_ptr(in));
-        if (target_arch == TARGET_I386) fprintf(out, "  HCC_CALL_eax\n");
-        else fprintf(out, "  HCC_CALL_rax\n");
-      }
-      emit_forget_rax(state);
-      emit_call_cleanup(out, in->argc);
-      if (in->result >= 0) emit_store_temp(out, state, locs, in->result);
-      break;
-    case IK_COND:
-      emit_instrs(out, fn_name, state, locs, total_slots, instr_cond_instrs_ptr(in), operand_temp(instr_cond_op_ptr(in)));
-      emit_load_operand(out, state, locs, 0, instr_cond_op_ptr(in));
-      emit_truth_jump_named(out, "HCC_COND_ELSE", fn_name, in->temp, 0);
-      emit_forget_rax(state);
-      emit_instrs(out, fn_name, state, locs, total_slots, instr_true_instrs_ptr(in), operand_temp(instr_true_op_ptr(in)));
-      emit_load_operand(out, state, locs, 0, instr_true_op_ptr(in));
-      emit_store_temp(out, state, locs, in->temp);
-      emit_jump_named(out, "HCC_COND_DONE", fn_name, in->temp);
-      emit_named_label(out, "HCC_COND_ELSE", fn_name, in->temp);
-      emit_forget_rax(state);
-      emit_instrs(out, fn_name, state, locs, total_slots, instr_false_instrs_ptr(in), operand_temp(instr_false_op_ptr(in)));
-      emit_load_operand(out, state, locs, 0, instr_false_op_ptr(in));
-      emit_store_temp(out, state, locs, in->temp);
-      emit_named_label(out, "HCC_COND_DONE", fn_name, in->temp);
-      emit_forget_rax(state);
-      break;
+      fprintf(out, "  BLR_X16\n");
+    } else if (target_arch == TARGET_RISCV64) {
+      emit_load_operand(out, state, locs, 0, instr_callee_ptr(in));
+      riscv64_emit_mov_reg(out, 7, 10);
+      emit_arguments(out, state, locs, in->args, in->argc);
+      fprintf(out, "  rd_ra rs1_t2 !0 jalr\n");
+    } else {
+      emit_arguments(out, state, locs, in->args, in->argc);
+      emit_load_operand(out, state, locs, call_stack_bytes(in->argc), instr_callee_ptr(in));
+      if (target_arch == TARGET_I386)
+        fprintf(out, "  HCC_CALL_eax\n");
+      else
+        fprintf(out, "  HCC_CALL_rax\n");
+    }
+    emit_forget_rax(state);
+    emit_call_cleanup(out, in->argc);
+    if (in->result >= 0) emit_store_temp(out, state, locs, in->result);
+    break;
+  case IK_COND:
+    emit_instrs(out, fn_name, state, locs, total_slots, instr_cond_instrs_ptr(in),
+                operand_temp(instr_cond_op_ptr(in)));
+    emit_load_operand(out, state, locs, 0, instr_cond_op_ptr(in));
+    emit_truth_jump_named(out, "HCC_COND_ELSE", fn_name, in->temp, 0);
+    emit_forget_rax(state);
+    emit_instrs(out, fn_name, state, locs, total_slots, instr_true_instrs_ptr(in),
+                operand_temp(instr_true_op_ptr(in)));
+    emit_load_operand(out, state, locs, 0, instr_true_op_ptr(in));
+    emit_store_temp(out, state, locs, in->temp);
+    emit_jump_named(out, "HCC_COND_DONE", fn_name, in->temp);
+    emit_named_label(out, "HCC_COND_ELSE", fn_name, in->temp);
+    emit_forget_rax(state);
+    emit_instrs(out, fn_name, state, locs, total_slots, instr_false_instrs_ptr(in),
+                operand_temp(instr_false_op_ptr(in)));
+    emit_load_operand(out, state, locs, 0, instr_false_op_ptr(in));
+    emit_store_temp(out, state, locs, in->temp);
+    emit_named_label(out, "HCC_COND_DONE", fn_name, in->temp);
+    emit_forget_rax(state);
+    break;
   }
 }
 
 static int instr_def_temp(Instr *in)
 {
   switch (in->kind) {
-    case IK_PARAM:
-    case IK_CONST:
-    case IK_COPY:
-    case IK_ADDROF:
-    case IK_LOAD64:
-    case IK_LOAD32:
-    case IK_LOADS32:
-    case IK_LOAD16:
-    case IK_LOADS16:
-    case IK_LOAD8:
-    case IK_LOADS8:
-    case IK_SEXT:
-    case IK_ZEXT:
-    case IK_TRUNC:
-    case IK_BIN:
-      return in->temp;
-    case IK_CALL:
-    case IK_CALLI:
-      return in->result;
+  case IK_PARAM:
+  case IK_CONST:
+  case IK_COPY:
+  case IK_ADDROF:
+  case IK_LOAD64:
+  case IK_LOAD32:
+  case IK_LOADS32:
+  case IK_LOAD16:
+  case IK_LOADS16:
+  case IK_LOAD8:
+  case IK_LOADS8:
+  case IK_SEXT:
+  case IK_ZEXT:
+  case IK_TRUNC:
+  case IK_BIN:
+    return in->temp;
+  case IK_CALL:
+  case IK_CALLI:
+    return in->result;
   }
   return -1;
 }
 
 static int binop_is_commutative(int op)
 {
-  return op == BK_ADD || op == BK_MUL || op == BK_EQ || op == BK_NE ||
-         op == BK_AND || op == BK_OR || op == BK_XOR;
+  return op == BK_ADD || op == BK_MUL || op == BK_EQ || op == BK_NE || op == BK_AND ||
+         op == BK_OR || op == BK_XOR;
 }
 
 static int instr_consumes_rax_temp(Instr *in, int temp)
 {
   Operand *op;
   switch (in->kind) {
-    case IK_COPY:
-    case IK_LOAD64:
-    case IK_LOAD32:
-    case IK_LOADS32:
-    case IK_LOAD16:
-    case IK_LOADS16:
-    case IK_LOAD8:
-    case IK_LOADS8:
-    case IK_SEXT:
-    case IK_ZEXT:
-    case IK_TRUNC:
-    case IK_STORE64:
-    case IK_STORE32:
-    case IK_STORE16:
-    case IK_STORE8:
-    case IK_BIN:
-      op = instr_a_ptr(in);
+  case IK_COPY:
+  case IK_LOAD64:
+  case IK_LOAD32:
+  case IK_LOADS32:
+  case IK_LOAD16:
+  case IK_LOADS16:
+  case IK_LOAD8:
+  case IK_LOADS8:
+  case IK_SEXT:
+  case IK_ZEXT:
+  case IK_TRUNC:
+  case IK_STORE64:
+  case IK_STORE32:
+  case IK_STORE16:
+  case IK_STORE8:
+  case IK_BIN:
+    op = instr_a_ptr(in);
+    if (op->kind == OP_TEMP && op->value == temp) return 1;
+    if (in->kind == IK_BIN && binop_is_commutative(in->binop)) {
+      op = instr_b_ptr(in);
       if (op->kind == OP_TEMP && op->value == temp) return 1;
-      if (in->kind == IK_BIN && binop_is_commutative(in->binop)) {
-        op = instr_b_ptr(in);
-        if (op->kind == OP_TEMP && op->value == temp) return 1;
-      }
-      break;
-    case IK_CALL:
-    case IK_CALLI:
-      if (target_arch == TARGET_AMD64 && in->argc > 0 && in->argc <= 6) {
-        op = operand_at(in->args, 0);
-        if (op->kind == OP_TEMP && op->value == temp) return 1;
-      }
-      break;
+    }
+    break;
+  case IK_CALL:
+  case IK_CALLI:
+    if (target_arch == TARGET_AMD64 && in->argc > 0 && in->argc <= 6) {
+      op = operand_at(in->args, 0);
+      if (op->kind == OP_TEMP && op->value == temp) return 1;
+    }
+    break;
   }
   return 0;
 }
 
-static void emit_instrs(FILE *out, const char *fn_name, EmitState *state, LocArray *locs, int total_slots, InstrList *list, int final_temp)
+static void emit_instrs(FILE *out, const char *fn_name, EmitState *state, LocArray *locs,
+                        int total_slots, InstrList *list, int final_temp)
 {
   int i = 0;
   while (i < list->len) {
@@ -2388,14 +2606,19 @@ static void emit_block_ref(FILE *out, const char *fn_name, int id)
 static void emit_cleanup_stack(FILE *out, int total_slots)
 {
   if (total_slots > 0) {
-    if (target_arch == TARGET_I386) fprintf(out, "  HCC_ADD_IMMEDIATE_to_esp %%%d\n", total_slots * 4);
-    else if (target_arch == TARGET_AARCH64) aarch64_emit_add_imm_reg(out, 18, 18, total_slots * 8);
-    else if (target_arch == TARGET_RISCV64) riscv64_emit_add_imm_reg(out, 2, 2, total_slots * 8);
-    else fprintf(out, "  HCC_ADD_IMMEDIATE_to_rsp %%%d\n", total_slots * 8);
+    if (target_arch == TARGET_I386)
+      fprintf(out, "  HCC_ADD_IMMEDIATE_to_esp %%%d\n", total_slots * 4);
+    else if (target_arch == TARGET_AARCH64)
+      aarch64_emit_add_imm_reg(out, 18, 18, total_slots * 8);
+    else if (target_arch == TARGET_RISCV64)
+      riscv64_emit_add_imm_reg(out, 2, 2, total_slots * 8);
+    else
+      fprintf(out, "  HCC_ADD_IMMEDIATE_to_rsp %%%d\n", total_slots * 8);
   }
 }
 
-static void emit_terminator(FILE *out, Function *fn, int block_index, EmitState *state, LocArray *locs, int total_slots, Block *block)
+static void emit_terminator(FILE *out, Function *fn, int block_index, EmitState *state,
+                            LocArray *locs, int total_slots, Block *block)
 {
   int next_id = -1;
   if (block_index + 1 < fn->len) {
@@ -2403,13 +2626,19 @@ static void emit_terminator(FILE *out, Function *fn, int block_index, EmitState 
     next_id = next_block->id;
   }
   if (block->term_kind == TK_RET) {
-    if (block->term_op.kind == 0) emit_load_immediate(out, state, 0);
-    else emit_load_operand(out, state, locs, 0, block_term_op_ptr(block));
+    if (block->term_op.kind == 0)
+      emit_load_immediate(out, state, 0);
+    else
+      emit_load_operand(out, state, locs, 0, block_term_op_ptr(block));
     emit_cleanup_stack(out, total_slots);
-    if (target_arch == TARGET_I386) fprintf(out, "  ret\n");
-    else if (target_arch == TARGET_AARCH64) fprintf(out, "  POP_LR\n  RETURN\n");
-    else if (target_arch == TARGET_RISCV64) fprintf(out, "  rd_ra rs1_sp ld\n  rd_sp rs1_sp !8 addi\n  ret\n");
-    else fprintf(out, "  RETURN\n");
+    if (target_arch == TARGET_I386)
+      fprintf(out, "  ret\n");
+    else if (target_arch == TARGET_AARCH64)
+      fprintf(out, "  POP_LR\n  RETURN\n");
+    else if (target_arch == TARGET_RISCV64)
+      fprintf(out, "  rd_ra rs1_sp ld\n  rd_sp rs1_sp !8 addi\n  ret\n");
+    else
+      fprintf(out, "  RETURN\n");
   } else if (block->term_kind == TK_JUMP) {
     if (next_id != block->yes) {
       emit_jump(out, fn->name, block->yes);
@@ -2426,7 +2655,8 @@ static void emit_terminator(FILE *out, Function *fn, int block_index, EmitState 
 
 static int block_first_term_temp(Block *block)
 {
-  if ((block->term_kind == TK_RET || block->term_kind == TK_BRANCH) && block->term_op.kind == OP_TEMP) {
+  if ((block->term_kind == TK_RET || block->term_kind == TK_BRANCH) &&
+      block->term_op.kind == OP_TEMP) {
     return block->term_op.value;
   }
   if (block->term_kind == TK_BRANCH_CMP) {
@@ -2434,7 +2664,9 @@ static int block_first_term_temp(Block *block)
     int final_def = -1;
     if (list->len > 0) final_def = instr_def_temp(instr_at(list->items, list->len - 1));
     if (block->term_op.kind == OP_TEMP && block->term_op.value == final_def) return final_def;
-    if (target_arch == TARGET_AMD64 && block->term_b.kind == OP_TEMP && block->term_b.value == final_def) return final_def;
+    if (target_arch == TARGET_AMD64 && block->term_b.kind == OP_TEMP &&
+        block->term_b.value == final_def)
+      return final_def;
   }
   return -1;
 }
@@ -2448,13 +2680,19 @@ static void emit_function(FILE *out, Function *fn)
   total_slots = allocate_function(fn, &locs);
   emit_state_init(&state);
   fprintf(out, ":FUNCTION_%s\n", fn->name);
-  if (target_arch == TARGET_AARCH64) fprintf(out, "  PUSH_LR\n");
-  else if (target_arch == TARGET_RISCV64) fprintf(out, "  rd_sp rs1_sp !-8 addi\n  rs1_sp rs2_ra sd\n");
+  if (target_arch == TARGET_AARCH64)
+    fprintf(out, "  PUSH_LR\n");
+  else if (target_arch == TARGET_RISCV64)
+    fprintf(out, "  rd_sp rs1_sp !-8 addi\n  rs1_sp rs2_ra sd\n");
   if (total_slots > 0) {
-    if (target_arch == TARGET_I386) fprintf(out, "  sub_esp, %%%d\n", total_slots * 4);
-    else if (target_arch == TARGET_AARCH64) aarch64_emit_sub_imm_reg(out, 18, total_slots * 8);
-    else if (target_arch == TARGET_RISCV64) riscv64_emit_add_imm_reg(out, 2, 2, -total_slots * 8);
-    else fprintf(out, "  HCC_SUB_IMMEDIATE_from_rsp %%%d\n", total_slots * 8);
+    if (target_arch == TARGET_I386)
+      fprintf(out, "  sub_esp, %%%d\n", total_slots * 4);
+    else if (target_arch == TARGET_AARCH64)
+      aarch64_emit_sub_imm_reg(out, 18, total_slots * 8);
+    else if (target_arch == TARGET_RISCV64)
+      riscv64_emit_add_imm_reg(out, 2, 2, -total_slots * 8);
+    else
+      fprintf(out, "  HCC_SUB_IMMEDIATE_from_rsp %%%d\n", total_slots * 8);
   }
   i = 0;
   while (i < fn->len) {
@@ -2484,11 +2722,16 @@ int main(int argc, char **argv)
   char *header;
   int argi;
   if (argc == 5 && strcmp(argv[1], "--target") == 0) {
-    if (strcmp(argv[2], "amd64") == 0 || strcmp(argv[2], "x86_64") == 0) target_arch = TARGET_AMD64;
-    else if (strcmp(argv[2], "i386") == 0 || strcmp(argv[2], "x86") == 0) target_arch = TARGET_I386;
-    else if (strcmp(argv[2], "aarch64") == 0 || strcmp(argv[2], "arm64") == 0) target_arch = TARGET_AARCH64;
-    else if (strcmp(argv[2], "riscv64") == 0) target_arch = TARGET_RISCV64;
-    else die("unknown target");
+    if (strcmp(argv[2], "amd64") == 0 || strcmp(argv[2], "x86_64") == 0)
+      target_arch = TARGET_AMD64;
+    else if (strcmp(argv[2], "i386") == 0 || strcmp(argv[2], "x86") == 0)
+      target_arch = TARGET_I386;
+    else if (strcmp(argv[2], "aarch64") == 0 || strcmp(argv[2], "arm64") == 0)
+      target_arch = TARGET_AARCH64;
+    else if (strcmp(argv[2], "riscv64") == 0)
+      target_arch = TARGET_RISCV64;
+    else
+      die("unknown target");
     argi = 3;
   } else {
     argi = 1;

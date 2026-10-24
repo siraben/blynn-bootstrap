@@ -335,10 +335,8 @@ void hcc_obuf_put4(unsigned long handle, int c1, int c2, int c3, int c4)
   obuf_len[ix] = pos + 4;
 }
 
-void hcc_obuf_put8(
-  unsigned long handle,
-  int c1, int c2, int c3, int c4,
-  int c5, int c6, int c7, int c8)
+void hcc_obuf_put8(unsigned long handle, int c1, int c2, int c3, int c4, int c5, int c6, int c7,
+                   int c8)
 {
   int ix = obuf_index(handle);
   if (ix < 0) return;
