@@ -902,8 +902,7 @@ static void free_data_item(DataItem *item) {
 
 /* Keep the CLI aliases in sync with Hcc/Target.hs. Metadata is a required
  * first record, not an override: lowering has already chosen type widths. */
-static int parse_target_name(const char *name)
-{
+static int parse_target_name(const char *name) {
   if (str_eq(name, "amd64") || str_eq(name, "x86_64")) return TARGET_AMD64;
   if (str_eq(name, "i386") || str_eq(name, "x86")) return TARGET_I386;
   if (str_eq(name, "aarch64") || str_eq(name, "arm64")) return TARGET_AARCH64;
@@ -912,8 +911,7 @@ static int parse_target_name(const char *name)
   return 0;
 }
 
-static void read_ir_target(FILE *file, char *line)
-{
+static void read_ir_target(FILE *file, char *line) {
   int arch;
   if (!read_line(file, line, LINE_CAP)) die("missing HCCIR target record");
   if (!str_prefix_n(line, "T ", 2)) die("missing HCCIR target record");
@@ -937,8 +935,10 @@ static void translate_ir_module(FILE *file, FILE *out) {
       parse_ir_function(file, line, &fn);
       emit_function(out, &fn);
       free_function(&fn);
-    } else if (str_prefix_n(line, "T ", 2)) die("duplicate or misplaced HCCIR target record");
-    else if (line[0] != 0) die("unexpected IR top-level line");
+    } else if (str_prefix_n(line, "T ", 2))
+      die("duplicate or misplaced HCCIR target record");
+    else if (line[0] != 0)
+      die("unexpected IR top-level line");
   }
 #if !defined(__M2__)
   free(line);
