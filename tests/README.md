@@ -1,52 +1,19 @@
 # Tests
 
-```sh
-nix flake check
-nix build .#tests.smoke.m1 .#tests.mescc
-nix build .#tests.tinyccM1.native-vs-faithful
-nix build .#tinycc.m2.precisely.m2
-```
+Keep gates focused on the bootstrap rather than exhaustive compiler contracts:
 
-- `nix flake check` runs HCC golden-output tests with M2-built HCC and
-  shell regression tests for explicit toolchain/source selection and
-  mandatory seed-answer checks. The shell tests use fixtures, not real
-  seed builds; they also check missing answers, corrupted output, a missing
-  hasher, and invalid local source overrides.
-- `tests.smoke.m1` compiles and executes C fixtures with M2-built HCC.
-  Architecture-suffixed targets cover i386, AArch64, and RISC-V; cross-target
-  execution uses QEMU. `tests.mescc` runs the selected MesCC scaffold cases.
-- `tests.tinyccM1.native-vs-faithful` compares preprocessed C, IR, and M1 for
-  TinyCC and its support code between GHC-built and stage0/M2-built HCC.
-  It does not substitute the GCC backend for the M2 backend.
-- `tests.portable.tinycc-selfhost` runs the portable TinyCC script with
-  M2-built HCC, checks stage2/stage3 equality, and runs its compiled output.
-- `tinycc.m2.precisely.m2` checks complete TinyCC stage2/stage3 binary
-  equality, actual version output, and programs compiled by the rebuilt
-  compiler. The amd64 final-library check also exercises large floating
-  literals and unsigned conversions. The AArch64/RISC-V reduced-support checks
-  exercise short writes with an injected writer (`hcc/tcc-support-contract.c`)
-  and per-stream errors/descriptor reuse with real Linux I/O (`hcc/tcc-support-io.c`). They also build the actual `hcc-m1` against the
-  final library, compare its raw output, and require `/dev/full` failure.
-  These checks do not prove full C conformance.
+- `scripts/hcc-compiler-smoke.sh` preprocesses and parses two small inputs and
+  checks that the M1 emitter runs when building HCC.
+- `tests.smoke.m1*` and `tests.host.ghc.native.smoke.m1*` run ten executable
+  cases covering returns, control flow, aggregates, scope, integer widths,
+  bootstrap qsort pointers, and four focused compiler regressions from master.
+- `tests.precisely.dialect` checks the Blynn Haskell syntax HCC relies on.
+- `nix flake check` retains the bootstrap tool/source-selection shell checks.
+- `tests.portable.tinycc-selfhost` checks the portable TinyCC bootstrap fixpoint.
+- `tests.tinyccM1.native-vs-faithful` compares native and faithful output;
+  `tests.tinyccM1.native-vs-blynn-gcc` covers the Blynn/GCC debug path.
+- `tinycc.*` builds exercise real TinyCC self-hosting and its fixpoint; CI keeps
+  the faithful debug and stage0 bootstrap paths as end-to-end gates.
 
-For faster development, use `tests.host.ghc.native.smoke.m1`,
-`tests.host.ghc.native.mescc`, and `tests.precisely.dialect`.
-`tests.tinyccM1.native-vs-blynn-gcc` compares against the stage0-built Blynn
-compiler with **GCC-built HCC**, rather than the M2 executable.
-`tests.hcc.tinycc-tests2-stat` collects non-gating compatibility statistics;
-a successful statistics build does not mean every TinyCC test passed.
-
-`sh scripts/check-hcc-ir-opcodes.sh` compares the Haskell emitter's numeric
-opcodes with the C backend constants. Compiler smoke tests also run it when
-the source tree and awk are available.
-
-Without Nix, run the tool-selection regression tests with:
-
-```sh
-sh tests/bootstrap-tools.sh
-sh tests/prepare-upstreams.sh
-```
-
-Run `TINYCC_SELFHOST=1 scripts/bootstrap-blynn.sh` on amd64 for the portable
-seed build, TinyCC fixpoint, and rebuilt-compiler execution check. Neither
-output equality nor self-compilation establishes a complete trust proof.
+Golden snapshots, MesCC scaffold tests, and TinyCC statistics are deliberately
+not maintained here.
