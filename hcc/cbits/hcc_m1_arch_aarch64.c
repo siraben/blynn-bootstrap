@@ -1,5 +1,4 @@
-static void aarch64_emit_insn_bytes(FILE *out, int b0, int b1, int b2, int b3)
-{
+static void aarch64_emit_insn_bytes(FILE *out, int b0, int b1, int b2, int b3) {
   fprintf(out, "  ");
   emit_byte(out, b0);
   fputc(' ', out);
@@ -11,21 +10,18 @@ static void aarch64_emit_insn_bytes(FILE *out, int b0, int b1, int b2, int b3)
   fputc('\n', out);
 }
 
-static void aarch64_emit_mov_reg(FILE *out, int dst, int src)
-{
+static void aarch64_emit_mov_reg(FILE *out, int dst, int src) {
   aarch64_emit_insn_bytes(out, 224 + dst, 3, src, 170);
 }
 
-static void aarch64_emit_add_sub_imm(FILE *out, int is_sub, int dst, int src, int imm)
-{
+static void aarch64_emit_add_sub_imm(FILE *out, int is_sub, int dst, int src, int imm) {
   int opcode = 145;
   if (is_sub) opcode = 209;
   aarch64_emit_insn_bytes(out, ((src & 7) << 5) | dst, (src >> 3) | ((imm & 63) << 2),
                           (imm >> 6) & 63, opcode);
 }
 
-static void aarch64_emit_add_imm_reg(FILE *out, int dst, int src, int imm)
-{
+static void aarch64_emit_add_imm_reg(FILE *out, int dst, int src, int imm) {
   int remaining = imm;
   int first = 1;
   if (remaining == 0) {
@@ -43,8 +39,7 @@ static void aarch64_emit_add_imm_reg(FILE *out, int dst, int src, int imm)
   }
 }
 
-static void aarch64_emit_sub_imm_reg(FILE *out, int reg, int imm)
-{
+static void aarch64_emit_sub_imm_reg(FILE *out, int reg, int imm) {
   int remaining = imm;
   while (remaining > 0) {
     int chunk = remaining;
@@ -54,26 +49,22 @@ static void aarch64_emit_sub_imm_reg(FILE *out, int reg, int imm)
   }
 }
 
-static void aarch64_emit_load_literal_prefix(FILE *out, int reg)
-{
+static void aarch64_emit_load_literal_prefix(FILE *out, int reg) {
   aarch64_emit_insn_bytes(out, 64 + reg, 0, 0, 88);
   fprintf(out, "  SKIP_64_DATA\n");
 }
 
-static void aarch64_emit_data64(FILE *out, unsigned long value)
-{
+static void aarch64_emit_data64(FILE *out, unsigned long value) {
   emit_data64_le(out, value);
 }
 
-static void aarch64_emit_load_label(FILE *out, int reg, const char *label)
-{
+static void aarch64_emit_load_label(FILE *out, int reg, const char *label) {
   aarch64_emit_load_literal_prefix(out, reg);
   fprintf(out, "  &%s '00' '00' '00' '00'\n", label);
 }
 
 static void aarch64_emit_load_label_parts(FILE *out, int reg, const char *prefix,
-                                          const char *fn_name, int id)
-{
+                                          const char *fn_name, int id) {
   aarch64_emit_load_literal_prefix(out, reg);
   fprintf(out, "  &");
   emit_named_ref(out, prefix, fn_name, id);
@@ -81,8 +72,7 @@ static void aarch64_emit_load_label_parts(FILE *out, int reg, const char *prefix
 }
 
 static void aarch64_emit_load_store(FILE *out, int is_load, int size, int is_signed, int base,
-                                    int offset)
-{
+                                    int offset) {
   int op2;
   int op3;
   int scale = 0;
@@ -136,8 +126,7 @@ static void aarch64_emit_load_store(FILE *out, int is_load, int size, int is_sig
   aarch64_emit_load_store(out, is_load, size, is_signed, 16, 0);
 }
 
-static void aarch64_emit_header(FILE *out)
-{
+static void aarch64_emit_header(FILE *out) {
   fprintf(out, "## target: stage0-posix aarch64 M1\n");
   fprintf(out, "\n");
   fprintf(out, "DEFINE BR_X16 00021fd6\n");
@@ -189,29 +178,24 @@ static void aarch64_emit_header(FILE *out)
   fprintf(out, "\n");
 }
 
-static void aarch64_emit_load_immediate(FILE *out, unsigned long value)
-{
+static void aarch64_emit_load_immediate(FILE *out, unsigned long value) {
   aarch64_emit_load_literal_prefix(out, 0);
   aarch64_emit_data64(out, value);
 }
 
-static void aarch64_emit_load_stack(FILE *out, int offset)
-{
+static void aarch64_emit_load_stack(FILE *out, int offset) {
   aarch64_emit_load_store(out, 1, 8, 0, 18, offset);
 }
 
-static void aarch64_emit_address_stack(FILE *out, int offset)
-{
+static void aarch64_emit_address_stack(FILE *out, int offset) {
   aarch64_emit_add_imm_reg(out, 0, 18, offset);
 }
 
-static void aarch64_emit_store_stack(FILE *out, int offset)
-{
+static void aarch64_emit_store_stack(FILE *out, int offset) {
   aarch64_emit_load_store(out, 0, 8, 0, 18, offset);
 }
 
-static void aarch64_emit_binop(FILE *out, int op)
-{
+static void aarch64_emit_binop(FILE *out, int op) {
   switch (op) {
   case BK_ADD:
     fprintf(out, "  ADD_X0_X1_X0\n");
@@ -285,8 +269,7 @@ static void aarch64_emit_binop(FILE *out, int op)
   }
 }
 
-static const char *aarch64_skip_name_for_binop(int op)
-{
+static const char *aarch64_skip_name_for_binop(int op) {
   switch (op) {
   case BK_EQ:
     return "SKIP_INST_EQ";
@@ -314,21 +297,18 @@ static const char *aarch64_skip_name_for_binop(int op)
 }
 
 static void aarch64_emit_jump_label_parts(FILE *out, const char *prefix, const char *fn_name,
-                                          int id)
-{
+                                          int id) {
   aarch64_emit_load_label_parts(out, 16, prefix, fn_name, id);
   fprintf(out, "  BR_X16\n");
 }
 
-static void aarch64_emit_compare_jump(FILE *out, const char *fn_name, int op, int target)
-{
+static void aarch64_emit_compare_jump(FILE *out, const char *fn_name, int op, int target) {
   aarch64_emit_load_label_parts(out, 16, "HCC_BLOCK", fn_name, target);
   fprintf(out, "  %s\n  BR_X16\n", aarch64_skip_name_for_binop(invert_binop(op)));
 }
 
 static void aarch64_emit_truth_jump_label_parts(FILE *out, const char *prefix, const char *fn_name,
-                                                int id, int jump_if_true)
-{
+                                                int id, int jump_if_true) {
   aarch64_emit_load_label_parts(out, 16, prefix, fn_name, id);
   if (jump_if_true)
     fprintf(out, "  HCC_CBZ_X0_PAST_BR\n");

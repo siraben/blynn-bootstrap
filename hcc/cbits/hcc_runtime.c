@@ -31,8 +31,7 @@ struct hcc_obuf {
 
 static struct hcc_obuf *obufs[HCC_MAX_OBUFS];
 
-static void *checked_realloc(void *ptr, size_t size)
-{
+static void *checked_realloc(void *ptr, size_t size) {
   void *out = realloc(ptr, size);
   if (!out) {
     fputs("hcc runtime: out of memory\n", stderr);
@@ -41,8 +40,7 @@ static void *checked_realloc(void *ptr, size_t size)
   return out;
 }
 
-static void ensure_chars(char **ptr, size_t *cap, size_t needed)
-{
+static void ensure_chars(char **ptr, size_t *cap, size_t needed) {
   if (*cap >= needed) return;
   size_t next = *cap ? *cap : 64;
   while (next < needed) next *= 2;
@@ -50,22 +48,19 @@ static void ensure_chars(char **ptr, size_t *cap, size_t needed)
   *cap = next;
 }
 
-void hcc_buffer_clear(void)
-{
+void hcc_buffer_clear(void) {
   buffer_len = 0;
   ensure_chars(&buffer, &buffer_cap, 1);
   buffer[0] = 0;
 }
 
-void hcc_buffer_put(int c)
-{
+void hcc_buffer_put(int c) {
   ensure_chars(&buffer, &buffer_cap, buffer_len + 2);
   buffer[buffer_len++] = (char)c;
   buffer[buffer_len] = 0;
 }
 
-void hcc_buffer_put4(int c1, int c2, int c3, int c4)
-{
+void hcc_buffer_put4(int c1, int c2, int c3, int c4) {
   ensure_chars(&buffer, &buffer_cap, buffer_len + 5);
   buffer[buffer_len++] = (char)c1;
   buffer[buffer_len++] = (char)c2;
@@ -74,8 +69,7 @@ void hcc_buffer_put4(int c1, int c2, int c3, int c4)
   buffer[buffer_len] = 0;
 }
 
-void hcc_buffer_put8(int c1, int c2, int c3, int c4, int c5, int c6, int c7, int c8)
-{
+void hcc_buffer_put8(int c1, int c2, int c3, int c4, int c5, int c6, int c7, int c8) {
   ensure_chars(&buffer, &buffer_cap, buffer_len + 9);
   buffer[buffer_len++] = (char)c1;
   buffer[buffer_len++] = (char)c2;
@@ -88,36 +82,31 @@ void hcc_buffer_put8(int c1, int c2, int c3, int c4, int c5, int c6, int c7, int
   buffer[buffer_len] = 0;
 }
 
-static const char *current_buffer(void)
-{
+static const char *current_buffer(void) {
   if (!buffer) hcc_buffer_clear();
   return buffer;
 }
 
-static void output_failure(void)
-{
+static void output_failure(void) {
   fputs("hcc runtime: output error\n", stderr);
   exit(1);
 }
 
-void hcc_stdout_buffer(void)
-{
+void hcc_stdout_buffer(void) {
   const char *text = current_buffer();
   if (fwrite(text, 1, buffer_len, stdout) != buffer_len) output_failure();
   /* main may return without going through hcc_exit_success. */
   if (fflush(stdout) != 0) output_failure();
 }
 
-static void set_result(const char *text)
-{
+static void set_result(const char *text) {
   size_t len = strlen(text);
   ensure_chars(&result, &result_cap, len + 1);
   memcpy(result, text, len + 1);
   result_len = len;
 }
 
-int hcc_read_file(void)
-{
+int hcc_read_file(void) {
   FILE *file = fopen(current_buffer(), "rb");
   if (!file) return 0;
   result_len = 0;
@@ -133,37 +122,31 @@ int hcc_read_file(void)
   return 1;
 }
 
-int hcc_result_len(void)
-{
+int hcc_result_len(void) {
   return (int)result_len;
 }
 
-int hcc_result_at(int index)
-{
+int hcc_result_at(int index) {
   if (index < 0 || (size_t)index >= result_len) return 0;
   return (unsigned char)result[index];
 }
 
-void hcc_stderr_char(int c)
-{
+void hcc_stderr_char(int c) {
   fputc(c, stderr);
   fflush(stderr);
 }
 
-void hcc_exit_success(void)
-{
+void hcc_exit_success(void) {
   if (fflush(stdout) != 0) output_failure();
   if (fclose(stdout) != 0) output_failure();
   exit(0);
 }
 
-void hcc_exit_failure(void)
-{
+void hcc_exit_failure(void) {
   exit(1);
 }
 
-static int alloc_handle(FILE *file)
-{
+static int alloc_handle(FILE *file) {
   if (!file) return 0;
   for (int i = 0; i < HCC_MAX_HANDLES; i++) {
     if (!handles[i]) {
@@ -175,25 +158,21 @@ static int alloc_handle(FILE *file)
   return 0;
 }
 
-static FILE *get_handle(int handle)
-{
+static FILE *get_handle(int handle) {
   if (handle <= 0 || handle > HCC_MAX_HANDLES) return NULL;
   return handles[handle - 1];
 }
 
-int hcc_open_write(void)
-{
+int hcc_open_write(void) {
   return alloc_handle(fopen(current_buffer(), "wb"));
 }
 
-void hcc_handle_flush(int handle)
-{
+void hcc_handle_flush(int handle) {
   FILE *file = get_handle(handle);
   if (!file || fflush(file) != 0) output_failure();
 }
 
-static unsigned long alloc_obuf(struct hcc_obuf *out)
-{
+static unsigned long alloc_obuf(struct hcc_obuf *out) {
   if (!out) return 0;
   for (int i = 0; i < HCC_MAX_OBUFS; i++) {
     if (!obufs[i]) {
@@ -206,8 +185,7 @@ static unsigned long alloc_obuf(struct hcc_obuf *out)
   return 0;
 }
 
-unsigned long hcc_obuf_new(int initial_cap)
-{
+unsigned long hcc_obuf_new(int initial_cap) {
   struct hcc_obuf *out = checked_realloc(NULL, sizeof(struct hcc_obuf));
   size_t cap = initial_cap > 0 ? (size_t)initial_cap : 64;
   out->data = checked_realloc(NULL, cap);
@@ -216,14 +194,12 @@ unsigned long hcc_obuf_new(int initial_cap)
   return alloc_obuf(out);
 }
 
-static struct hcc_obuf *get_obuf(unsigned long handle)
-{
+static struct hcc_obuf *get_obuf(unsigned long handle) {
   if (handle == 0 || handle > HCC_MAX_OBUFS) return NULL;
   return obufs[handle - 1];
 }
 
-void hcc_obuf_free(unsigned long handle)
-{
+void hcc_obuf_free(unsigned long handle) {
   struct hcc_obuf *out = get_obuf(handle);
   if (!out) return;
   free(out->data);
@@ -231,30 +207,26 @@ void hcc_obuf_free(unsigned long handle)
   obufs[handle - 1] = NULL;
 }
 
-void hcc_obuf_clear(unsigned long handle)
-{
+void hcc_obuf_clear(unsigned long handle) {
   struct hcc_obuf *out = get_obuf(handle);
   if (!out) return;
   out->len = 0;
 }
 
-int hcc_obuf_len(unsigned long handle)
-{
+int hcc_obuf_len(unsigned long handle) {
   struct hcc_obuf *out = get_obuf(handle);
   if (!out) return 0;
   return (int)out->len;
 }
 
-void hcc_obuf_put(unsigned long handle, int c)
-{
+void hcc_obuf_put(unsigned long handle, int c) {
   struct hcc_obuf *out = get_obuf(handle);
   if (!out) return;
   ensure_chars(&out->data, &out->cap, out->len + 1);
   out->data[out->len++] = (char)c;
 }
 
-void hcc_obuf_put4(unsigned long handle, int c1, int c2, int c3, int c4)
-{
+void hcc_obuf_put4(unsigned long handle, int c1, int c2, int c3, int c4) {
   struct hcc_obuf *out = get_obuf(handle);
   if (!out) return;
   ensure_chars(&out->data, &out->cap, out->len + 4);
@@ -265,8 +237,7 @@ void hcc_obuf_put4(unsigned long handle, int c1, int c2, int c3, int c4)
 }
 
 void hcc_obuf_put8(unsigned long handle, int c1, int c2, int c3, int c4, int c5, int c6, int c7,
-                   int c8)
-{
+                   int c8) {
   struct hcc_obuf *out = get_obuf(handle);
   if (!out) return;
   ensure_chars(&out->data, &out->cap, out->len + 8);
@@ -280,8 +251,7 @@ void hcc_obuf_put8(unsigned long handle, int c1, int c2, int c3, int c4, int c5,
   out->data[out->len++] = (char)c8;
 }
 
-void hcc_obuf_write(int handle, unsigned long obuf_handle)
-{
+void hcc_obuf_write(int handle, unsigned long obuf_handle) {
   FILE *file = get_handle(handle);
   struct hcc_obuf *out = get_obuf(obuf_handle);
   if (!file || !out) output_failure();
@@ -289,8 +259,7 @@ void hcc_obuf_write(int handle, unsigned long obuf_handle)
   if (fwrite(out->data, 1, out->len, file) != out->len) output_failure();
 }
 
-void hcc_close(int handle)
-{
+void hcc_close(int handle) {
   if (handle <= 0 || handle > HCC_MAX_HANDLES) return;
   FILE *file = handles[handle - 1];
   if (!file) return;
@@ -298,16 +267,14 @@ void hcc_close(int handle)
   handles[handle - 1] = NULL;
 }
 
-int hcc_getcwd(void)
-{
+int hcc_getcwd(void) {
   ensure_chars(&result, &result_cap, PATH_MAX);
   if (!getcwd(result, result_cap)) return 0;
   result_len = strlen(result);
   return 1;
 }
 
-void hcc_canonicalize(void)
-{
+void hcc_canonicalize(void) {
   char resolved[PATH_MAX];
   if (realpath(current_buffer(), resolved)) {
     set_result(resolved);
@@ -316,8 +283,7 @@ void hcc_canonicalize(void)
   }
 }
 
-int hcc_does_file_exist(void)
-{
+int hcc_does_file_exist(void) {
   struct stat st;
   return stat(current_buffer(), &st) == 0 && S_ISREG(st.st_mode);
 }

@@ -8,22 +8,19 @@ typedef struct CString {
 
 void cstr_realloc(CString *cstr, int new_size);
 
-static void hcc_cstr_need(CString *cstr, int extra)
-{
+static void hcc_cstr_need(CString *cstr, int extra) {
   int need = cstr->size + extra + 1;
   if (need > cstr->size_allocated) cstr_realloc(cstr, need * 2);
 }
 
-static void hcc_cstr_char(CString *cstr, int ch)
-{
+static void hcc_cstr_char(CString *cstr, int ch) {
   hcc_cstr_need(cstr, 1);
   cstr->data[cstr->size] = ch;
   cstr->size = cstr->size + 1;
   cstr->data[cstr->size] = 0;
 }
 
-static int hcc_cstr_string(CString *cstr, char *text, int limit)
-{
+static int hcc_cstr_string(CString *cstr, char *text, int limit) {
   int n = 0;
   if (!text) text = "(null)";
   while (*text && (limit < 0 || n < limit)) {
@@ -34,8 +31,7 @@ static int hcc_cstr_string(CString *cstr, char *text, int limit)
   return n;
 }
 
-static int hcc_cstr_unsigned(CString *cstr, unsigned long value, int base)
-{
+static int hcc_cstr_unsigned(CString *cstr, unsigned long value, int base) {
   char digits[32];
   int n = 0;
   int count = 0;
@@ -61,8 +57,7 @@ static int hcc_cstr_unsigned(CString *cstr, unsigned long value, int base)
   return count;
 }
 
-static int hcc_cstr_signed(CString *cstr, long value)
-{
+static int hcc_cstr_signed(CString *cstr, long value) {
   if (value < 0) {
     hcc_cstr_char(cstr, '-');
     return 1 + hcc_cstr_unsigned(cstr, -value, 10);
@@ -70,16 +65,14 @@ static int hcc_cstr_signed(CString *cstr, long value)
   return hcc_cstr_unsigned(cstr, value, 10);
 }
 
-static long hcc_arg(int index, long a, long b, long c, long d)
-{
+static long hcc_arg(int index, long a, long b, long c, long d) {
   if (index == 0) return a;
   if (index == 1) return b;
   if (index == 2) return c;
   return d;
 }
 
-int cstr_printf(CString *cstr, char *fmt, long a, long b, long c, long d)
-{
+int cstr_printf(CString *cstr, char *fmt, long a, long b, long c, long d) {
   int count = 0;
   int arg = 0;
   int precision;

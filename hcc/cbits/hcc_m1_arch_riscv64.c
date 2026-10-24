@@ -1,5 +1,4 @@
-static const char *riscv64_rd(int reg)
-{
+static const char *riscv64_rd(int reg) {
   switch (reg) {
   case 0:
     return "rd_x0";
@@ -34,8 +33,7 @@ static const char *riscv64_rd(int reg)
   return "rd_x0";
 }
 
-static const char *riscv64_rs1(int reg)
-{
+static const char *riscv64_rs1(int reg) {
   switch (reg) {
   case 0:
     return "rs1_x0";
@@ -70,8 +68,7 @@ static const char *riscv64_rs1(int reg)
   return "rs1_x0";
 }
 
-static const char *riscv64_rs2(int reg)
-{
+static const char *riscv64_rs2(int reg) {
   switch (reg) {
   case 0:
     return "rs2_x0";
@@ -106,20 +103,17 @@ static const char *riscv64_rs2(int reg)
   return "rs2_x0";
 }
 
-static int riscv64_arg_reg(int index)
-{
+static int riscv64_arg_reg(int index) {
   if (index < 0 || index > 7) die("bad riscv64 argument register");
   return index + 10;
 }
 
-static void riscv64_emit_mov_reg(FILE *out, int dst, int src)
-{
+static void riscv64_emit_mov_reg(FILE *out, int dst, int src) {
   if (dst == src) return;
   fprintf(out, "  %s %s mv\n", riscv64_rd(dst), riscv64_rs1(src));
 }
 
-static void riscv64_emit_add_imm_reg(FILE *out, int dst, int src, int imm)
-{
+static void riscv64_emit_add_imm_reg(FILE *out, int dst, int src, int imm) {
   int remaining = imm;
   int first = 1;
   int base;
@@ -146,8 +140,7 @@ static void riscv64_emit_add_imm_reg(FILE *out, int dst, int src, int imm)
   fprintf(out, "  %s %s !%d addi\n", riscv64_rd(dst), riscv64_rs1(base), remaining);
 }
 
-static void riscv64_emit_local_ref(FILE *out, const char *kind, int id)
-{
+static void riscv64_emit_local_ref(FILE *out, const char *kind, int id) {
   fputs("HCC_RV_", out);
   fputs(riscv64_label_namespace, out);
   fputc('_', out);
@@ -156,8 +149,7 @@ static void riscv64_emit_local_ref(FILE *out, const char *kind, int id)
   fprintf(out, "%d", id);
 }
 
-static void riscv64_emit_load_literal(FILE *out, int reg, unsigned long value)
-{
+static void riscv64_emit_load_literal(FILE *out, int reg, unsigned long value) {
   static int literal_id = 0;
   int id = literal_id;
   literal_id = literal_id + 1;
@@ -180,8 +172,7 @@ static void riscv64_emit_load_literal(FILE *out, int reg, unsigned long value)
   fputc('\n', out);
 }
 
-static void riscv64_emit_load_immediate(FILE *out, int reg, long value)
-{
+static void riscv64_emit_load_immediate(FILE *out, int reg, long value) {
   if (value >= -2048 && value <= 2047) {
     riscv64_emit_add_imm_reg(out, reg, 0, (int)value);
   } else {
@@ -189,15 +180,13 @@ static void riscv64_emit_load_immediate(FILE *out, int reg, long value)
   }
 }
 
-static void riscv64_emit_load_label(FILE *out, int reg, const char *label)
-{
+static void riscv64_emit_load_label(FILE *out, int reg, const char *label) {
   fprintf(out, "  %s ~%s auipc\n", riscv64_rd(reg), label);
   fprintf(out, "  %s %s !%s addi\n", riscv64_rd(reg), riscv64_rs1(reg), label);
 }
 
 static void riscv64_emit_load_label_parts(FILE *out, int reg, const char *prefix,
-                                          const char *fn_name, int id)
-{
+                                          const char *fn_name, int id) {
   fprintf(out, "  %s ~", riscv64_rd(reg));
   emit_named_ref(out, prefix, fn_name, id);
   fprintf(out, " auipc\n");
@@ -206,15 +195,13 @@ static void riscv64_emit_load_label_parts(FILE *out, int reg, const char *prefix
   fprintf(out, " addi\n");
 }
 
-static void riscv64_emit_load_function_label(FILE *out, int reg, const char *name)
-{
+static void riscv64_emit_load_function_label(FILE *out, int reg, const char *name) {
   fprintf(out, "  %s ~FUNCTION_%s auipc\n", riscv64_rd(reg), name);
   fprintf(out, "  %s %s !FUNCTION_%s addi\n", riscv64_rd(reg), riscv64_rs1(reg), name);
 }
 
 static void riscv64_emit_load_store_from(FILE *out, int is_load, int size, int is_signed, int base,
-                                         int offset, int src)
-{
+                                         int offset, int src) {
   const char *op = "ld";
   if (is_load) {
     if (size == 8)
@@ -258,13 +245,11 @@ static void riscv64_emit_load_store_from(FILE *out, int is_load, int size, int i
 }
 
 static void riscv64_emit_load_store(FILE *out, int is_load, int size, int is_signed, int base,
-                                    int offset)
-{
+                                    int offset) {
   riscv64_emit_load_store_from(out, is_load, size, is_signed, base, offset, 10);
 }
 
-static void riscv64_emit_header(FILE *out)
-{
+static void riscv64_emit_header(FILE *out) {
   fprintf(out, "## target: stage0-posix riscv64 M1\n");
   fprintf(out, "\n");
   fprintf(out, "DEFINE addi 13000000\n");
@@ -353,23 +338,19 @@ static void riscv64_emit_header(FILE *out)
   fprintf(out, "\n");
 }
 
-static void riscv64_emit_load_stack(FILE *out, int offset)
-{
+static void riscv64_emit_load_stack(FILE *out, int offset) {
   riscv64_emit_load_store(out, 1, 8, 0, 2, offset);
 }
 
-static void riscv64_emit_address_stack(FILE *out, int offset)
-{
+static void riscv64_emit_address_stack(FILE *out, int offset) {
   riscv64_emit_add_imm_reg(out, 10, 2, offset);
 }
 
-static void riscv64_emit_store_stack(FILE *out, int offset)
-{
+static void riscv64_emit_store_stack(FILE *out, int offset) {
   riscv64_emit_load_store(out, 0, 8, 0, 2, offset);
 }
 
-static void riscv64_emit_binop(FILE *out, int op)
-{
+static void riscv64_emit_binop(FILE *out, int op) {
   switch (op) {
   case BK_ADD:
     fprintf(out, "  rd_a0 rs1_a1 rs2_a0 add\n");
@@ -446,29 +427,25 @@ static void riscv64_emit_binop(FILE *out, int op)
 }
 
 static void riscv64_emit_jump_label_parts(FILE *out, const char *prefix, const char *fn_name,
-                                          int id)
-{
+                                          int id) {
   riscv64_emit_load_label_parts(out, 7, prefix, fn_name, id);
   fprintf(out, "  rd_x0 rs1_t2 !0 jalr\n");
 }
 
 static int riscv64_truth_skip_id = 0;
 
-static const char *riscv64_truth_skip_op(int jump_if_true)
-{
+static const char *riscv64_truth_skip_op(int jump_if_true) {
   if (jump_if_true) return "beqz";
   return "bnez";
 }
 
-static int riscv64_next_truth_skip_id(void)
-{
+static int riscv64_next_truth_skip_id(void) {
   int id = riscv64_truth_skip_id;
   riscv64_truth_skip_id = riscv64_truth_skip_id + 1;
   return id;
 }
 
-static void riscv64_emit_truth_skip(FILE *out, int jump_if_true, int id)
-{
+static void riscv64_emit_truth_skip(FILE *out, int jump_if_true, int id) {
   fprintf(out, "  rs1_a0 @");
   riscv64_emit_local_ref(out, "TRUTH_SKIP", id);
   fputc(' ', out);
@@ -476,15 +453,13 @@ static void riscv64_emit_truth_skip(FILE *out, int jump_if_true, int id)
   fputc('\n', out);
 }
 
-static void riscv64_emit_truth_skip_label(FILE *out, int id)
-{
+static void riscv64_emit_truth_skip_label(FILE *out, int id) {
   fputc(':', out);
   riscv64_emit_local_ref(out, "TRUTH_SKIP", id);
   fputc('\n', out);
 }
 
-static int riscv64_false_branch_kind(int op)
-{
+static int riscv64_false_branch_kind(int op) {
   switch (op) {
   case BK_EQ:
     return 2;
@@ -511,8 +486,7 @@ static int riscv64_false_branch_kind(int op)
   return 1;
 }
 
-static int riscv64_false_branch_swaps_args_for_binop(int op)
-{
+static int riscv64_false_branch_swaps_args_for_binop(int op) {
   switch (op) {
   case BK_LE:
   case BK_GT:
@@ -523,8 +497,7 @@ static int riscv64_false_branch_swaps_args_for_binop(int op)
   return 0;
 }
 
-static const char *riscv64_branch_op(int kind)
-{
+static const char *riscv64_branch_op(int kind) {
   switch (kind) {
   case 1:
     return "beq";
@@ -543,8 +516,7 @@ static const char *riscv64_branch_op(int kind)
   return "beq";
 }
 
-static void riscv64_emit_compare_jump(FILE *out, const char *fn_name, int op, int target)
-{
+static void riscv64_emit_compare_jump(FILE *out, const char *fn_name, int op, int target) {
   static int skip_id = 0;
   int id = skip_id;
   int branch_kind = 0;
@@ -568,8 +540,7 @@ static void riscv64_emit_compare_jump(FILE *out, const char *fn_name, int op, in
 }
 
 static void riscv64_emit_truth_jump_label_parts(FILE *out, const char *prefix, const char *fn_name,
-                                                int target, int jump_if_true)
-{
+                                                int target, int jump_if_true) {
   int id = riscv64_next_truth_skip_id();
   riscv64_emit_truth_skip(out, jump_if_true, id);
   riscv64_emit_jump_label_parts(out, prefix, fn_name, target);

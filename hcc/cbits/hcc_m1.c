@@ -12,8 +12,7 @@ int m1_checked_write(int fd, char *data, unsigned count);
 #include <string.h>
 #if defined(__M2__)
 #undef write
-int m1_checked_write(int fd, char *data, unsigned count)
-{
+int m1_checked_write(int fd, char *data, unsigned count) {
   unsigned remaining = count;
   int written;
   while (remaining > 0) {
@@ -107,13 +106,11 @@ static int target_arch = TARGET_AMD64;
 static char riscv64_label_namespace_buf[128];
 static const char *riscv64_label_namespace = "out";
 
-static int is_label_char(int c)
-{
+static int is_label_char(int c) {
   return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
 }
 
-static void set_label_namespace(const char *path)
-{
+static void set_label_namespace(const char *path) {
   int i = 0;
   int out = 0;
   int start = 0;
@@ -221,16 +218,14 @@ struct EmitState {
   int omit_store_temp;
 };
 
-static void die(const char *msg)
-{
+static void die(const char *msg) {
   fputs("hcc-m1: ", stderr);
   fputs(msg, stderr);
   fputc('\n', stderr);
   exit(1);
 }
 
-static void die_token(const char *msg, const char *tok)
-{
+static void die_token(const char *msg, const char *tok) {
   fputs("hcc-m1: ", stderr);
   fputs(msg, stderr);
   fputs(": ", stderr);
@@ -246,13 +241,11 @@ static void die_token(const char *msg, const char *tok)
 static long hcc_heap_cur;
 static long hcc_heap_end;
 
-static long hcc_sys_brk(long addr)
-{
+static long hcc_sys_brk(long addr) {
   return (long)brk((void *)addr);
 }
 
-static void *xrealloc(void *ptr, unsigned long size)
-{
+static void *xrealloc(void *ptr, unsigned long size) {
   unsigned long old_size;
   unsigned long copy_size;
   unsigned long total;
@@ -298,24 +291,21 @@ static void *xrealloc(void *ptr, unsigned long size)
   return out;
 }
 #else
-static void *xrealloc(void *ptr, unsigned long size)
-{
+static void *xrealloc(void *ptr, unsigned long size) {
   void *out = realloc(ptr, size);
   if (!out) die("out of memory");
   return out;
 }
 #endif
 
-static char *xstrdup(const char *text)
-{
+static char *xstrdup(const char *text) {
   unsigned long len = strlen(text);
   char *out = xrealloc(0, len + 1);
   memcpy(out, text, len + 1);
   return out;
 }
 
-static void copy_bytes(void *dst, void *src, int count)
-{
+static void copy_bytes(void *dst, void *src, int count) {
   char *d = dst;
   char *s = src;
   int i = 0;
@@ -325,33 +315,27 @@ static void copy_bytes(void *dst, void *src, int count)
   }
 }
 
-static Instr *instr_at(Instr *items, int index)
-{
+static Instr *instr_at(Instr *items, int index) {
   return (Instr *)((char *)items + sizeof(Instr) * index);
 }
 
-static Block *block_at(Block *items, int index)
-{
+static Block *block_at(Block *items, int index) {
   return (Block *)((char *)items + sizeof(Block) * index);
 }
 
-static DataValue *data_value_at(DataValue *items, int index)
-{
+static DataValue *data_value_at(DataValue *items, int index) {
   return (DataValue *)((char *)items + sizeof(DataValue) * index);
 }
 
-static Operand *operand_at(Operand *items, int index)
-{
+static Operand *operand_at(Operand *items, int index) {
   return (Operand *)((char *)items + sizeof(Operand) * index);
 }
 
-static Loc *loc_at(Loc *items, int index)
-{
+static Loc *loc_at(Loc *items, int index) {
   return (Loc *)((char *)items + sizeof(Loc) * index);
 }
 
-static Operand *instr_a_ptr(Instr *in)
-{
+static Operand *instr_a_ptr(Instr *in) {
 #if defined(__M2__)
   return (Operand *)((char *)in + 40);
 #else
@@ -359,8 +343,7 @@ static Operand *instr_a_ptr(Instr *in)
 #endif
 }
 
-static Operand *instr_b_ptr(Instr *in)
-{
+static Operand *instr_b_ptr(Instr *in) {
 #if defined(__M2__)
   return (Operand *)((char *)in + 80);
 #else
@@ -368,8 +351,7 @@ static Operand *instr_b_ptr(Instr *in)
 #endif
 }
 
-static Operand *instr_callee_ptr(Instr *in)
-{
+static Operand *instr_callee_ptr(Instr *in) {
 #if defined(__M2__)
   return (Operand *)((char *)in + 120);
 #else
@@ -377,8 +359,7 @@ static Operand *instr_callee_ptr(Instr *in)
 #endif
 }
 
-static InstrList *instr_cond_instrs_ptr(Instr *in)
-{
+static InstrList *instr_cond_instrs_ptr(Instr *in) {
 #if defined(__M2__)
   return (InstrList *)((char *)in + 192);
 #else
@@ -386,8 +367,7 @@ static InstrList *instr_cond_instrs_ptr(Instr *in)
 #endif
 }
 
-static InstrList *instr_true_instrs_ptr(Instr *in)
-{
+static InstrList *instr_true_instrs_ptr(Instr *in) {
 #if defined(__M2__)
   return (InstrList *)((char *)in + 216);
 #else
@@ -395,8 +375,7 @@ static InstrList *instr_true_instrs_ptr(Instr *in)
 #endif
 }
 
-static InstrList *instr_false_instrs_ptr(Instr *in)
-{
+static InstrList *instr_false_instrs_ptr(Instr *in) {
 #if defined(__M2__)
   return (InstrList *)((char *)in + 240);
 #else
@@ -404,8 +383,7 @@ static InstrList *instr_false_instrs_ptr(Instr *in)
 #endif
 }
 
-static Operand *instr_cond_op_ptr(Instr *in)
-{
+static Operand *instr_cond_op_ptr(Instr *in) {
 #if defined(__M2__)
   return (Operand *)((char *)in + 264);
 #else
@@ -413,8 +391,7 @@ static Operand *instr_cond_op_ptr(Instr *in)
 #endif
 }
 
-static Operand *instr_true_op_ptr(Instr *in)
-{
+static Operand *instr_true_op_ptr(Instr *in) {
 #if defined(__M2__)
   return (Operand *)((char *)in + 304);
 #else
@@ -422,8 +399,7 @@ static Operand *instr_true_op_ptr(Instr *in)
 #endif
 }
 
-static Operand *instr_false_op_ptr(Instr *in)
-{
+static Operand *instr_false_op_ptr(Instr *in) {
 #if defined(__M2__)
   return (Operand *)((char *)in + 344);
 #else
@@ -431,8 +407,7 @@ static Operand *instr_false_op_ptr(Instr *in)
 #endif
 }
 
-static InstrList *block_instrs_ptr(Block *block)
-{
+static InstrList *block_instrs_ptr(Block *block) {
 #if defined(__M2__)
   return (InstrList *)((char *)block + 8);
 #else
@@ -440,8 +415,7 @@ static InstrList *block_instrs_ptr(Block *block)
 #endif
 }
 
-static Operand *block_term_op_ptr(Block *block)
-{
+static Operand *block_term_op_ptr(Block *block) {
 #if defined(__M2__)
   return (Operand *)((char *)block + 40);
 #else
@@ -449,8 +423,7 @@ static Operand *block_term_op_ptr(Block *block)
 #endif
 }
 
-static Operand *block_term_b_ptr(Block *block)
-{
+static Operand *block_term_b_ptr(Block *block) {
 #if defined(__M2__)
   return (Operand *)((char *)block + 80);
 #else
@@ -458,8 +431,7 @@ static Operand *block_term_b_ptr(Block *block)
 #endif
 }
 
-static int read_line(FILE *file, char *buf, int cap)
-{
+static int read_line(FILE *file, char *buf, int cap) {
   int len = 0;
   int c;
   while (1) {
@@ -479,8 +451,7 @@ static int read_line(FILE *file, char *buf, int cap)
   return 1;
 }
 
-static char *next_token(char **cursor)
-{
+static char *next_token(char **cursor) {
   char *p = *cursor;
   char *start;
   while (*p == ' ' || *p == '\t') p = p + 1;
@@ -498,15 +469,13 @@ static char *next_token(char **cursor)
   return start;
 }
 
-static char *need_token(char **cursor)
-{
+static char *need_token(char **cursor) {
   char *tok = next_token(cursor);
   if (!tok) die("truncated input line");
   return tok;
 }
 
-static long parse_long_text(char *text)
-{
+static long parse_long_text(char *text) {
   long sign = 1;
   long value = 0;
   if (*text == '-') {
@@ -521,28 +490,23 @@ static long parse_long_text(char *text)
   return sign * value;
 }
 
-static int parse_int_token(char **cursor)
-{
+static int parse_int_token(char **cursor) {
   return (int)parse_long_text(need_token(cursor));
 }
 
-static long parse_long_token(char **cursor)
-{
+static long parse_long_token(char **cursor) {
   return parse_long_text(need_token(cursor));
 }
 
-static int str_eq(const char *a, const char *b)
-{
+static int str_eq(const char *a, const char *b) {
   return strcmp(a, b) == 0;
 }
 
-static int str_prefix_n(const char *a, const char *b, int count)
-{
+static int str_prefix_n(const char *a, const char *b, int count) {
   return strncmp(a, b, count) == 0;
 }
 
-static void append_instr(InstrList *list, Instr *instr)
-{
+static void append_instr(InstrList *list, Instr *instr) {
   if (list->len >= list->cap) {
     if (list->cap)
       list->cap = list->cap * 2;
@@ -554,8 +518,7 @@ static void append_instr(InstrList *list, Instr *instr)
   list->len = list->len + 1;
 }
 
-static void append_block(Function *fn, Block *block)
-{
+static void append_block(Function *fn, Block *block) {
   if (fn->len >= fn->cap) {
     if (fn->cap)
       fn->cap = fn->cap * 2;
@@ -567,8 +530,7 @@ static void append_block(Function *fn, Block *block)
   fn->len = fn->len + 1;
 }
 
-static void append_data_value(DataItem *item, DataValue *value)
-{
+static void append_data_value(DataItem *item, DataValue *value) {
   if (item->len >= item->cap) {
     if (item->cap)
       item->cap = item->cap * 2;
@@ -580,8 +542,7 @@ static void append_data_value(DataItem *item, DataValue *value)
   item->len = item->len + 1;
 }
 
-static void append_zero_data_values(DataItem *item, int count)
-{
+static void append_zero_data_values(DataItem *item, int count) {
   DataValue value;
   if (count < 0) die("negative zero data run");
   memset(&value, 0, sizeof(value));
@@ -593,16 +554,14 @@ static void append_zero_data_values(DataItem *item, int count)
   }
 }
 
-static void expect_line(FILE *file, const char *expected)
-{
+static void expect_line(FILE *file, const char *expected) {
   char *line;
   line = xrealloc(0, LINE_CAP);
   if (!read_line(file, line, LINE_CAP)) die("unexpected eof");
   if (strcmp(line, expected)) die("unexpected section marker");
 }
 
-static void parse_ir_operand(char **cursor, Operand *op)
-{
+static void parse_ir_operand(char **cursor, Operand *op) {
   char *tok = need_token(cursor);
   int i;
   memset(op, 0, sizeof(Operand));
@@ -632,15 +591,13 @@ static void parse_ir_operand(char **cursor, Operand *op)
   }
 }
 
-static int parse_ir_result(char **cursor)
-{
+static int parse_ir_result(char **cursor) {
   char *tok = need_token(cursor);
   if (str_eq(tok, "-")) return -1;
   return (int)parse_long_text(tok);
 }
 
-static void parse_ir_prefixed_operand(char *line, const char *prefix, Operand *op)
-{
+static void parse_ir_prefixed_operand(char *line, const char *prefix, Operand *op) {
   char *cursor = line;
   char *tok = need_token(&cursor);
   if (strcmp(tok, prefix)) die("unexpected IR operand prefix");
@@ -649,8 +606,7 @@ static void parse_ir_prefixed_operand(char *line, const char *prefix, Operand *o
 
 static void parse_ir_instrs_until_end(FILE *file, InstrList *list);
 
-static void parse_ir_instr_line(FILE *file, char *line, Instr *instr)
-{
+static void parse_ir_instr_line(FILE *file, char *line, Instr *instr) {
   char *cursor = line;
   char *tok;
   char *section;
@@ -745,8 +701,7 @@ static void parse_ir_instr_line(FILE *file, char *line, Instr *instr)
   }
 }
 
-static void parse_ir_instrs_until_end(FILE *file, InstrList *list)
-{
+static void parse_ir_instrs_until_end(FILE *file, InstrList *list) {
   Instr instr;
   char *line;
   memset(list, 0, sizeof(InstrList));
@@ -759,8 +714,7 @@ static void parse_ir_instrs_until_end(FILE *file, InstrList *list)
   die("unexpected eof in IR nested instructions");
 }
 
-static void parse_ir_term(Block *block, char *line)
-{
+static void parse_ir_term(Block *block, char *line) {
   char *cursor = line;
   char *tok = need_token(&cursor);
   if (str_eq(tok, "R")) {
@@ -792,8 +746,7 @@ static void parse_ir_term(Block *block, char *line)
   }
 }
 
-static void parse_ir_block(FILE *file, char *first_line, Block *block)
-{
+static void parse_ir_block(FILE *file, char *first_line, Block *block) {
   char *cursor = first_line;
   char *tok;
   Instr instr;
@@ -815,8 +768,7 @@ static void parse_ir_block(FILE *file, char *first_line, Block *block)
   die("unexpected eof in IR block");
 }
 
-static void parse_ir_function(FILE *file, char *first_line, Function *fn)
-{
+static void parse_ir_function(FILE *file, char *first_line, Function *fn) {
   char *cursor = first_line;
   char *tok;
   Block block;
@@ -834,8 +786,7 @@ static void parse_ir_function(FILE *file, char *first_line, Function *fn)
   die("unexpected eof in IR function");
 }
 
-static void parse_ir_data_item(FILE *file, char *first_line, DataItem *item)
-{
+static void parse_ir_data_item(FILE *file, char *first_line, DataItem *item) {
   char *cursor = first_line;
   char *tok;
   char *line;
@@ -874,16 +825,14 @@ static void emit_data_item(FILE *out, DataItem *item);
 static void emit_function(FILE *out, Function *fn);
 
 #if !defined(__M2__)
-static void free_operand(Operand *op)
-{
+static void free_operand(Operand *op) {
   if (op->bytes) free(op->bytes);
   if (op->name) free(op->name);
 }
 
 static void free_instr_list(InstrList *list);
 
-static void free_instr(Instr *in)
-{
+static void free_instr(Instr *in) {
   int i;
   free_operand(instr_a_ptr(in));
   free_operand(instr_b_ptr(in));
@@ -903,8 +852,7 @@ static void free_instr(Instr *in)
   free_operand(instr_false_op_ptr(in));
 }
 
-static void free_instr_list(InstrList *list)
-{
+static void free_instr_list(InstrList *list) {
   int i = 0;
   while (i < list->len) {
     free_instr(instr_at(list->items, i));
@@ -913,15 +861,13 @@ static void free_instr_list(InstrList *list)
   if (list->items) free(list->items);
 }
 
-static void free_block(Block *block)
-{
+static void free_block(Block *block) {
   free_instr_list(block_instrs_ptr(block));
   free_operand(block_term_op_ptr(block));
   free_operand(block_term_b_ptr(block));
 }
 
-static void free_function(Function *fn)
-{
+static void free_function(Function *fn) {
   int i = 0;
   if (fn->name) free(fn->name);
   while (i < fn->len) {
@@ -931,8 +877,7 @@ static void free_function(Function *fn)
   if (fn->blocks) free(fn->blocks);
 }
 
-static void free_data_item(DataItem *item)
-{
+static void free_data_item(DataItem *item) {
   int i = 0;
   if (item->label) free(item->label);
   while (i < item->len) {
@@ -943,18 +888,15 @@ static void free_data_item(DataItem *item)
   if (item->values) free(item->values);
 }
 #else
-static void free_function(Function *fn)
-{
+static void free_function(Function *fn) {
   (void)fn;
 }
-static void free_data_item(DataItem *item)
-{
+static void free_data_item(DataItem *item) {
   (void)item;
 }
 #endif
 
-static void translate_ir_module(FILE *file, FILE *out)
-{
+static void translate_ir_module(FILE *file, FILE *out) {
   DataItem item;
   Function fn;
   char *line;
@@ -977,8 +919,7 @@ static void translate_ir_module(FILE *file, FILE *out)
 #endif
 }
 
-static void ensure_loc(LocArray *locs, int temp)
-{
+static void ensure_loc(LocArray *locs, int temp) {
   int old;
   if (temp < locs->cap) return;
   old = locs->cap;
@@ -995,8 +936,7 @@ static void ensure_loc(LocArray *locs, int temp)
   }
 }
 
-static void alloc_def(LocArray *locs, int *next_slot, int temp)
-{
+static void alloc_def(LocArray *locs, int *next_slot, int temp) {
   Loc *loc;
   ensure_loc(locs, temp);
   loc = loc_at(locs->items, temp);
@@ -1007,8 +947,7 @@ static void alloc_def(LocArray *locs, int *next_slot, int temp)
   *next_slot = *next_slot + 1;
 }
 
-static void alloc_object(LocArray *locs, int *next_slot, int temp, int size)
-{
+static void alloc_object(LocArray *locs, int *next_slot, int temp, int size) {
   int slots;
   Loc *loc;
   ensure_loc(locs, temp);
@@ -1025,8 +964,7 @@ static void alloc_object(LocArray *locs, int *next_slot, int temp, int size)
   *next_slot = *next_slot + slots;
 }
 
-static void allocate_instrs(InstrList *list, LocArray *locs, int *next_slot)
-{
+static void allocate_instrs(InstrList *list, LocArray *locs, int *next_slot) {
   int i = 0;
   while (i < list->len) {
     Instr *in = instr_at(list->items, i);
@@ -1068,16 +1006,14 @@ static void allocate_instrs(InstrList *list, LocArray *locs, int *next_slot)
 
 static Loc *lookup_loc(LocArray *locs, int temp);
 
-static void count_operand_use(LocArray *locs, Operand *op)
-{
+static void count_operand_use(LocArray *locs, Operand *op) {
   Loc *loc;
   if (op->kind != OP_TEMP) return;
   loc = lookup_loc(locs, op->value);
   loc->uses = loc->uses + 1;
 }
 
-static void count_instr_uses(InstrList *list, LocArray *locs)
-{
+static void count_instr_uses(InstrList *list, LocArray *locs) {
   int i = 0;
   while (i < list->len) {
     Instr *in = instr_at(list->items, i);
@@ -1136,8 +1072,7 @@ static void count_instr_uses(InstrList *list, LocArray *locs)
   }
 }
 
-static void count_function_uses(Function *fn, LocArray *locs)
-{
+static void count_function_uses(Function *fn, LocArray *locs) {
   int i = 0;
   while (i < fn->len) {
     Block *block = block_at(fn->blocks, i);
@@ -1152,8 +1087,7 @@ static void count_function_uses(Function *fn, LocArray *locs)
   }
 }
 
-static int allocate_function(Function *fn, LocArray *locs)
-{
+static int allocate_function(Function *fn, LocArray *locs) {
   int next_slot = 0;
   int i = 0;
   locs->items = 0;
@@ -1167,8 +1101,7 @@ static int allocate_function(Function *fn, LocArray *locs)
   return next_slot;
 }
 
-static Loc *lookup_loc(LocArray *locs, int temp)
-{
+static Loc *lookup_loc(LocArray *locs, int temp) {
   Loc *loc;
   if (temp < 0 || temp >= locs->cap) die("missing allocation");
   loc = loc_at(locs->items, temp);
@@ -1176,27 +1109,23 @@ static Loc *lookup_loc(LocArray *locs, int temp)
   return loc;
 }
 
-static void emit_state_init(EmitState *state)
-{
+static void emit_state_init(EmitState *state) {
   state->rax_temp = -1;
   state->omit_store_temp = -1;
 }
 
-static void emit_forget_rax(EmitState *state)
-{
+static void emit_forget_rax(EmitState *state) {
   state->rax_temp = -1;
 }
 
-static void emit_remember_rax_temp(EmitState *state, int temp)
-{
+static void emit_remember_rax_temp(EmitState *state, int temp) {
   state->rax_temp = temp;
 }
 
 static void emit_byte(FILE *out, int byte);
 static int invert_binop(int op);
 
-static void emit_named_ref(FILE *out, const char *prefix, const char *fn_name, int id)
-{
+static void emit_named_ref(FILE *out, const char *prefix, const char *fn_name, int id) {
   fputs(prefix, out);
   fputc('_', out);
   fputs(fn_name, out);
@@ -1204,15 +1133,13 @@ static void emit_named_ref(FILE *out, const char *prefix, const char *fn_name, i
   fprintf(out, "%d", id);
 }
 
-static int target_register_arg_count(void)
-{
+static int target_register_arg_count(void) {
   if (target_arch == TARGET_I386) return 0;
   if (target_arch == TARGET_AARCH64 || target_arch == TARGET_RISCV64) return 8;
   return 6;
 }
 
-static void emit_data64_le(FILE *out, unsigned long value)
-{
+static void emit_data64_le(FILE *out, unsigned long value) {
   int i = 0;
   fprintf(out, "  ");
   while (i < 8) {
@@ -1227,8 +1154,7 @@ static void emit_data64_le(FILE *out, unsigned long value)
 #include "hcc_m1_arch_aarch64.c"
 #include "hcc_m1_arch_riscv64.c"
 
-static void emit_header(FILE *out)
-{
+static void emit_header(FILE *out) {
   fprintf(out, "## hcc M1 output\n");
   if (target_arch == TARGET_I386) {
     fprintf(out, "## target: stage0-posix x86 M1\n");
@@ -1365,8 +1291,7 @@ static void emit_header(FILE *out)
   fprintf(out, "\n");
 }
 
-static int hex_digit(int value)
-{
+static int hex_digit(int value) {
   if (value == 0) return '0';
   if (value == 1) return '1';
   if (value == 2) return '2';
@@ -1385,8 +1310,7 @@ static int hex_digit(int value)
   return 'F';
 }
 
-static void emit_byte(FILE *out, int byte)
-{
+static void emit_byte(FILE *out, int byte) {
   int b = byte % 256;
   if (b < 0) b = b + 256;
   fputc('\'', out);
@@ -1395,8 +1319,7 @@ static void emit_byte(FILE *out, int byte)
   fputc('\'', out);
 }
 
-static void emit_data_item(FILE *out, DataItem *item)
-{
+static void emit_data_item(FILE *out, DataItem *item) {
   int j = 0;
   int emitted = 0;
   fprintf(out, ":%s\n", item->label);
@@ -1437,8 +1360,7 @@ static void emit_data_item(FILE *out, DataItem *item)
   fputc('\n', out);
 }
 
-static void emit_load_immediate(FILE *out, EmitState *state, long value)
-{
+static void emit_load_immediate(FILE *out, EmitState *state, long value) {
   int small;
   unsigned long u;
   int i;
@@ -1472,8 +1394,7 @@ static void emit_load_immediate(FILE *out, EmitState *state, long value)
   }
 }
 
-static void emit_load_immediate_bytes(FILE *out, EmitState *state, Operand *op)
-{
+static void emit_load_immediate_bytes(FILE *out, EmitState *state, Operand *op) {
   int bytes[8];
   int i = 0;
   unsigned long value = 0;
@@ -1532,8 +1453,7 @@ static void emit_load_immediate_bytes(FILE *out, EmitState *state, Operand *op)
   }
 }
 
-static void emit_load_location(FILE *out, EmitState *state, Loc *loc, int rsp_bias)
-{
+static void emit_load_location(FILE *out, EmitState *state, Loc *loc, int rsp_bias) {
   emit_forget_rax(state);
   if (loc->kind == LOC_STACK) {
     if (target_arch == TARGET_I386)
@@ -1557,8 +1477,7 @@ static void emit_load_location(FILE *out, EmitState *state, Loc *loc, int rsp_bi
 }
 
 static void emit_load_operand(FILE *out, EmitState *state, LocArray *locs, int rsp_bias,
-                              Operand *op)
-{
+                              Operand *op) {
   Loc *loc;
   if (op->kind == OP_IMM)
     emit_load_immediate(out, state, op->value);
@@ -1593,8 +1512,7 @@ static void emit_load_operand(FILE *out, EmitState *state, LocArray *locs, int r
   }
 }
 
-static void emit_store_temp(FILE *out, EmitState *state, LocArray *locs, int temp)
-{
+static void emit_store_temp(FILE *out, EmitState *state, LocArray *locs, int temp) {
   Loc *loc = lookup_loc(locs, temp);
   if (loc->kind == LOC_STACK) {
     if (state->omit_store_temp == temp) {
@@ -1615,8 +1533,7 @@ static void emit_store_temp(FILE *out, EmitState *state, LocArray *locs, int tem
   }
 }
 
-static void emit_address_of(FILE *out, EmitState *state, LocArray *locs, int temp)
-{
+static void emit_address_of(FILE *out, EmitState *state, LocArray *locs, int temp) {
   Loc *loc = lookup_loc(locs, temp);
   emit_forget_rax(state);
   if (loc->kind == LOC_STACK || loc->kind == LOC_OBJECT) {
@@ -1633,8 +1550,7 @@ static void emit_address_of(FILE *out, EmitState *state, LocArray *locs, int tem
   }
 }
 
-static void emit_binop(FILE *out, int op)
-{
+static void emit_binop(FILE *out, int op) {
   if (target_arch == TARGET_I386) {
     switch (op) {
     case BK_ADD:
@@ -1792,8 +1708,7 @@ static void emit_binop(FILE *out, int op)
   }
 }
 
-static long mask_for_size(int size)
-{
+static long mask_for_size(int size) {
   unsigned long wide;
   if (size <= 1) return 255;
   if (size <= 2) return 65535;
@@ -1805,8 +1720,7 @@ static long mask_for_size(int size)
   return -1;
 }
 
-static long sign_bit_for_size(int size)
-{
+static long sign_bit_for_size(int size) {
   unsigned long wide;
   if (size <= 1) return 128;
   if (size <= 2) return 32768;
@@ -1815,8 +1729,7 @@ static long sign_bit_for_size(int size)
   return (long)wide;
 }
 
-static void emit_copy_acc_to_scratch(FILE *out)
-{
+static void emit_copy_acc_to_scratch(FILE *out) {
   if (target_arch == TARGET_I386)
     fprintf(out, "  mov_ebx,eax\n");
   else if (target_arch == TARGET_AARCH64)
@@ -1827,8 +1740,7 @@ static void emit_copy_acc_to_scratch(FILE *out)
     fprintf(out, "  HCC_M_RAX_RBX\n");
 }
 
-static void emit_amd64_zext_loaded_rax(FILE *out, int size)
-{
+static void emit_amd64_zext_loaded_rax(FILE *out, int size) {
   if (size <= 1)
     fprintf(out, "  MOVEZX\n");
   else if (size <= 2)
@@ -1837,16 +1749,14 @@ static void emit_amd64_zext_loaded_rax(FILE *out, int size)
     fprintf(out, "  HCC_ZEXT32_RAX\n");
 }
 
-static void emit_i386_zext_loaded_eax(FILE *out, EmitState *state, int size)
-{
+static void emit_i386_zext_loaded_eax(FILE *out, EmitState *state, int size) {
   if (size >= 4) return;
   emit_copy_acc_to_scratch(out);
   emit_load_immediate(out, state, mask_for_size(size));
   emit_binop(out, BK_AND);
 }
 
-static void emit_amd64_sext_loaded_rax(FILE *out, int size)
-{
+static void emit_amd64_sext_loaded_rax(FILE *out, int size) {
   if (size <= 1)
     fprintf(out, "  HCC_SEXT8_RAX\n");
   else if (size <= 2)
@@ -1855,8 +1765,7 @@ static void emit_amd64_sext_loaded_rax(FILE *out, int size)
     fprintf(out, "  HCC_SEXT32_RAX\n");
 }
 
-static void emit_i386_sext_loaded_eax(FILE *out, EmitState *state, int size)
-{
+static void emit_i386_sext_loaded_eax(FILE *out, EmitState *state, int size) {
   long sign_bit;
   if (size >= 4) return;
   sign_bit = sign_bit_for_size(size);
@@ -1871,8 +1780,7 @@ static void emit_i386_sext_loaded_eax(FILE *out, EmitState *state, int size)
   emit_binop(out, BK_SUB);
 }
 
-static void emit_zext_loaded_acc(FILE *out, EmitState *state, int size)
-{
+static void emit_zext_loaded_acc(FILE *out, EmitState *state, int size) {
   if (target_arch == TARGET_I386)
     emit_i386_zext_loaded_eax(out, state, size);
   else if (target_arch == TARGET_AARCH64 || target_arch == TARGET_RISCV64) {
@@ -1888,8 +1796,7 @@ static void emit_zext_loaded_acc(FILE *out, EmitState *state, int size)
   emit_forget_rax(state);
 }
 
-static void emit_sext_loaded_acc(FILE *out, EmitState *state, int size)
-{
+static void emit_sext_loaded_acc(FILE *out, EmitState *state, int size) {
   if (target_arch == TARGET_I386)
     emit_i386_sext_loaded_eax(out, state, size);
   else if (target_arch == TARGET_AARCH64 || target_arch == TARGET_RISCV64) {
@@ -1913,8 +1820,7 @@ static void emit_sext_loaded_acc(FILE *out, EmitState *state, int size)
   emit_forget_rax(state);
 }
 
-static int invert_binop(int op)
-{
+static int invert_binop(int op) {
   switch (op) {
   case BK_EQ:
     return BK_NE;
@@ -1941,8 +1847,7 @@ static int invert_binop(int op)
   return BK_NE;
 }
 
-static void emit_compare(FILE *out, EmitState *state, LocArray *locs, Operand *a, Operand *b)
-{
+static void emit_compare(FILE *out, EmitState *state, LocArray *locs, Operand *a, Operand *b) {
   if (target_arch == TARGET_AMD64 && b->kind == OP_TEMP && b->value == state->rax_temp) {
     emit_copy_acc_to_scratch(out);
     emit_load_operand(out, state, locs, 0, a);
@@ -1962,8 +1867,7 @@ static void emit_compare(FILE *out, EmitState *state, LocArray *locs, Operand *a
     fprintf(out, "  CMP\n");
 }
 
-static const char *jump_name_for_binop(int op)
-{
+static const char *jump_name_for_binop(int op) {
   switch (op) {
   case BK_EQ:
     return "HCC_JUMP_EQ";
@@ -1990,15 +1894,13 @@ static const char *jump_name_for_binop(int op)
   return "HCC_JUMP_NE";
 }
 
-static void emit_named_label(FILE *out, const char *prefix, const char *fn_name, int id)
-{
+static void emit_named_label(FILE *out, const char *prefix, const char *fn_name, int id) {
   fputc(':', out);
   emit_named_ref(out, prefix, fn_name, id);
   fputc('\n', out);
 }
 
-static void emit_jump_named(FILE *out, const char *prefix, const char *fn_name, int id)
-{
+static void emit_jump_named(FILE *out, const char *prefix, const char *fn_name, int id) {
   int kind = 0;
   if (target_arch == TARGET_AMD64)
     kind = 1;
@@ -2022,8 +1924,7 @@ static void emit_jump_named(FILE *out, const char *prefix, const char *fn_name, 
 }
 
 static void emit_truth_jump_named(FILE *out, const char *prefix, const char *fn_name, int id,
-                                  int jump_if_true)
-{
+                                  int jump_if_true) {
   int kind = 0;
   if (target_arch == TARGET_AMD64)
     kind = 1;
@@ -2053,13 +1954,11 @@ static void emit_truth_jump_named(FILE *out, const char *prefix, const char *fn_
   fputc('\n', out);
 }
 
-static void emit_jump(FILE *out, const char *fn_name, int target)
-{
+static void emit_jump(FILE *out, const char *fn_name, int target) {
   emit_jump_named(out, "HCC_BLOCK", fn_name, target);
 }
 
-static void emit_compare_jump(FILE *out, const char *fn_name, int op, int target)
-{
+static void emit_compare_jump(FILE *out, const char *fn_name, int op, int target) {
   if (target_arch == TARGET_AARCH64) {
     aarch64_emit_compare_jump(out, fn_name, op, target);
     return;
@@ -2073,13 +1972,11 @@ static void emit_compare_jump(FILE *out, const char *fn_name, int op, int target
   fputc('\n', out);
 }
 
-static void emit_truth_jump(FILE *out, const char *fn_name, int jump_if_true, int target)
-{
+static void emit_truth_jump(FILE *out, const char *fn_name, int jump_if_true, int target) {
   emit_truth_jump_named(out, "HCC_BLOCK", fn_name, target, jump_if_true);
 }
 
-static void emit_truth_branch(FILE *out, const char *fn_name, int yes, int no, int next_id)
-{
+static void emit_truth_branch(FILE *out, const char *fn_name, int yes, int no, int next_id) {
   if (next_id == yes) {
     emit_truth_jump(out, fn_name, 0, no);
   } else if (next_id == no) {
@@ -2091,8 +1988,7 @@ static void emit_truth_branch(FILE *out, const char *fn_name, int yes, int no, i
 }
 
 static void emit_compare_branch(FILE *out, const char *fn_name, int op, int yes, int no,
-                                int next_id)
-{
+                                int next_id) {
   if (next_id == yes) {
     emit_compare_jump(out, fn_name, invert_binop(op), no);
   } else if (next_id == no) {
@@ -2103,8 +1999,7 @@ static void emit_compare_branch(FILE *out, const char *fn_name, int op, int yes,
   }
 }
 
-static int call_stack_bytes(int argc)
-{
+static int call_stack_bytes(int argc) {
   if (target_arch == TARGET_I386) return argc * 4;
   {
     int stack_args = argc - target_register_arg_count();
@@ -2113,8 +2008,7 @@ static int call_stack_bytes(int argc)
   }
 }
 
-static void emit_call_cleanup(FILE *out, int argc)
-{
+static void emit_call_cleanup(FILE *out, int argc) {
   int bytes = call_stack_bytes(argc);
   if (bytes > 0) {
     if (target_arch == TARGET_I386)
@@ -2128,8 +2022,7 @@ static void emit_call_cleanup(FILE *out, int argc)
   }
 }
 
-static void emit_argument_move(FILE *out, int index)
-{
+static void emit_argument_move(FILE *out, int index) {
   if (target_arch == TARGET_AARCH64) {
     if (index == 0) return;
     if (index == 1)
@@ -2171,8 +2064,7 @@ static void emit_argument_move(FILE *out, int index)
     die("bad argument register");
 }
 
-static void emit_arguments(FILE *out, EmitState *state, LocArray *locs, Operand *args, int argc)
-{
+static void emit_arguments(FILE *out, EmitState *state, LocArray *locs, Operand *args, int argc) {
   int i = argc - 1;
   int pushed = 0;
   if (target_arch == TARGET_I386) {
@@ -2234,8 +2126,7 @@ static void emit_arguments(FILE *out, EmitState *state, LocArray *locs, Operand 
 }
 
 static void emit_memory_load(FILE *out, EmitState *state, LocArray *locs, Instr *in, int width,
-                             int is_signed, const char *i386_op, const char *other_op)
-{
+                             int is_signed, const char *i386_op, const char *other_op) {
   if (width == 8 && target_arch == TARGET_I386) die("i386 M1 backend cannot lower 64-bit load");
   emit_load_operand(out, state, locs, 0, instr_a_ptr(in));
   if (target_arch == TARGET_I386)
@@ -2250,8 +2141,7 @@ static void emit_memory_load(FILE *out, EmitState *state, LocArray *locs, Instr 
 }
 
 static void emit_memory_store(FILE *out, EmitState *state, LocArray *locs, Instr *in, int width,
-                              const char *other_op)
-{
+                              const char *other_op) {
   if (width == 8 && target_arch == TARGET_I386) die("i386 M1 backend cannot lower 64-bit store");
   emit_load_operand(out, state, locs, 0, instr_a_ptr(in));
   emit_copy_acc_to_scratch(out);
@@ -2268,15 +2158,13 @@ static void emit_instrs(FILE *out, const char *fn_name, EmitState *state, LocArr
                         int total_slots, InstrList *list, int final_temp);
 static int binop_is_commutative(int op);
 
-static int operand_temp(Operand *op)
-{
+static int operand_temp(Operand *op) {
   if (op->kind == OP_TEMP) return op->value;
   return -1;
 }
 
 static void emit_instr(FILE *out, const char *fn_name, EmitState *state, LocArray *locs,
-                       int total_slots, Instr *in)
-{
+                       int total_slots, Instr *in) {
   int param_offset;
   int width;
   Operand *left;
@@ -2504,8 +2392,7 @@ static void emit_instr(FILE *out, const char *fn_name, EmitState *state, LocArra
   }
 }
 
-static int instr_def_temp(Instr *in)
-{
+static int instr_def_temp(Instr *in) {
   switch (in->kind) {
   case IK_PARAM:
   case IK_CONST:
@@ -2530,14 +2417,12 @@ static int instr_def_temp(Instr *in)
   return -1;
 }
 
-static int binop_is_commutative(int op)
-{
+static int binop_is_commutative(int op) {
   return op == BK_ADD || op == BK_MUL || op == BK_EQ || op == BK_NE || op == BK_AND ||
          op == BK_OR || op == BK_XOR;
 }
 
-static int instr_consumes_rax_temp(Instr *in, int temp)
-{
+static int instr_consumes_rax_temp(Instr *in, int temp) {
   Operand *op;
   switch (in->kind) {
   case IK_COPY:
@@ -2575,8 +2460,7 @@ static int instr_consumes_rax_temp(Instr *in, int temp)
 }
 
 static void emit_instrs(FILE *out, const char *fn_name, EmitState *state, LocArray *locs,
-                        int total_slots, InstrList *list, int final_temp)
-{
+                        int total_slots, InstrList *list, int final_temp) {
   int i = 0;
   while (i < list->len) {
     Instr *in = instr_at(list->items, i);
@@ -2598,13 +2482,11 @@ static void emit_instrs(FILE *out, const char *fn_name, EmitState *state, LocArr
   }
 }
 
-static void emit_block_ref(FILE *out, const char *fn_name, int id)
-{
+static void emit_block_ref(FILE *out, const char *fn_name, int id) {
   emit_named_ref(out, "HCC_BLOCK", fn_name, id);
 }
 
-static void emit_cleanup_stack(FILE *out, int total_slots)
-{
+static void emit_cleanup_stack(FILE *out, int total_slots) {
   if (total_slots > 0) {
     if (target_arch == TARGET_I386)
       fprintf(out, "  HCC_ADD_IMMEDIATE_to_esp %%%d\n", total_slots * 4);
@@ -2618,8 +2500,7 @@ static void emit_cleanup_stack(FILE *out, int total_slots)
 }
 
 static void emit_terminator(FILE *out, Function *fn, int block_index, EmitState *state,
-                            LocArray *locs, int total_slots, Block *block)
-{
+                            LocArray *locs, int total_slots, Block *block) {
   int next_id = -1;
   if (block_index + 1 < fn->len) {
     Block *next_block = block_at(fn->blocks, block_index + 1);
@@ -2653,8 +2534,7 @@ static void emit_terminator(FILE *out, Function *fn, int block_index, EmitState 
   emit_forget_rax(state);
 }
 
-static int block_first_term_temp(Block *block)
-{
+static int block_first_term_temp(Block *block) {
   if ((block->term_kind == TK_RET || block->term_kind == TK_BRANCH) &&
       block->term_op.kind == OP_TEMP) {
     return block->term_op.value;
@@ -2671,8 +2551,7 @@ static int block_first_term_temp(Block *block)
   return -1;
 }
 
-static void emit_function(FILE *out, Function *fn)
-{
+static void emit_function(FILE *out, Function *fn) {
   LocArray locs;
   EmitState state;
   int total_slots;
@@ -2715,8 +2594,7 @@ static void emit_function(FILE *out, Function *fn)
 #endif
 }
 
-int main(int argc, char **argv)
-{
+int main(int argc, char **argv) {
   FILE *in;
   FILE *out;
   char *header;
