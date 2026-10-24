@@ -896,12 +896,9 @@ static void free_data_item(DataItem *item) {
 }
 #endif
 
-static int target_name_matches(const char *name)
-{
-  if (target_arch == TARGET_AMD64)
-    return strcmp(name, "amd64") == 0 || strcmp(name, "x86_64") == 0;
-  if (target_arch == TARGET_I386)
-    return strcmp(name, "i386") == 0 || strcmp(name, "x86") == 0;
+static int target_name_matches(const char *name) {
+  if (target_arch == TARGET_AMD64) return strcmp(name, "amd64") == 0 || strcmp(name, "x86_64") == 0;
+  if (target_arch == TARGET_I386) return strcmp(name, "i386") == 0 || strcmp(name, "x86") == 0;
   if (target_arch == TARGET_AARCH64)
     return strcmp(name, "aarch64") == 0 || strcmp(name, "arm64") == 0;
   return strcmp(name, "riscv64") == 0;
@@ -924,7 +921,8 @@ static void translate_ir_module(FILE *file, FILE *out) {
       free_function(&fn);
     } else if (str_prefix_n(line, "T ", 2)) {
       if (!target_name_matches(line + 2)) die("HCCIR target does not match --target");
-    } else if (line[0] != 0) die("unexpected IR top-level line");
+    } else if (line[0] != 0)
+      die("unexpected IR top-level line");
   }
 #if !defined(__M2__)
   free(line);
