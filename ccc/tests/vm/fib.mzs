@@ -1,0 +1,23 @@
+; recursive fib via closure backpatching; exit code fib(10) = 55
+(branch :main)
+
+(:fib)                          ; arg: n at (acc 0); self at (envacc 1)
+(acc 0) (push) (const 2) (ltint) (branchifnot :else)
+(acc 0) (return 1)
+(:else)
+(acc 0) (push) (const 1) (subint) (push)
+(envacc 1) (apply 1)            ; fib(n-1)
+(push)                          ; stack: [n, r1]
+(acc 1) (push) (const 2) (subint) (push)
+(envacc 1) (apply 1)            ; fib(n-2)
+(addint)                        ; r1 + r2
+(return 1)
+
+(:main)
+(const 0) (push)                ; dummy env slot
+(closure :fib 1)
+(push) (push)                   ; stack: [clo, clo], acc = clo
+(setfield 1)                    ; clo.env1 = clo (self)
+(const 10) (push)               ; stack: [clo, 10]
+(acc 1) (apply 1)
+(stop)

@@ -970,6 +970,24 @@
           src = hccSrc;
         };
 
+        # Keep the pre-PR output namespace stable while CCC is introduced.
+        gnuHelloFromBootstrap = pname: bootstrap:
+          pkgs.callPackage ./nix/gnu-hello-minboot.nix {
+            stdenvNoCC = rawStdenvNoCC;
+            buildPlatform = pkgs.stdenv.buildPlatform;
+            hostPlatform = pkgs.stdenv.hostPlatform;
+            inherit pname bootstrap;
+          };
+
+        gnuHelloBy = {
+          host.ghc.native =
+            gnuHelloFromBootstrap "gnu-hello-host-ghc-native" minimalBootstrapBy.host.ghc.native;
+          m2.precisely.m2 =
+            gnuHelloFromBootstrap "gnu-hello-m2-precisely-m2" minimalBootstrapBy.m2.precisely.m2;
+          m2.precisely.gccm2 =
+            gnuHelloFromBootstrap "gnu-hello-m2-precisely-gccm2" minimalBootstrapBy.m2.precisely.gccm2;
+        };
+
         bootstrapBy = {
           host.ghc.native = {
             minimal = minimalBootstrapBy.host.ghc.native;
@@ -1036,6 +1054,33 @@
         hcc-mescc-tests = hccMesccTestsFor "hcc-mescc-tests" hccBy.m2.precisely.m2 "amd64";
         hcc-mescc-tests-native = hccMesccTestsFor "hcc-mescc-tests-host-ghc-native" hccBy.host.ghc.native nativeM1Target;
 
+        cccChain = pkgs.callPackage ./nix/ccc-chain.nix {
+          stdenv = pkgs.stdenv;
+          cccSrc = ./ccc;
+        };
+
+        cccAsHcc = pkgs.callPackage ./nix/ccc-as-hcc.nix {
+          stdenvNoCC = pkgs.stdenvNoCC;
+          inherit minimalBootstrap;
+          cccSrc = ./ccc;
+          hccSrc = ./hcc;
+        };
+
+        cccGoldenTests = pkgs.callPackage ./nix/ccc-golden-tests.nix {
+          inherit cccAsHcc;
+          cccSrc = ./ccc;
+          testsSrc = ./tests;
+        };
+
+        tinyccBootCcc = tinyccFromHcc "tinycc-boot-ccc-m2" cccAsHcc;
+        tinyccM1Ccc = tinyccM1FromHcc "tinycc-m1-ccc-m2" cccAsHcc;
+
+        tinyccPreprocInputs = pkgs.callPackage ./nix/tinycc-preproc-inputs.nix {
+          stdenvNoCC = pkgs.stdenvNoCC;
+          inherit (pkgs) fetchgit;
+          mesLibc = mesLibcSrc;
+        };
+
         precisely-dialect-tests = pkgs.callPackage ./nix/precisely-dialect-tests.nix {
           stdenv = pkgs.stdenv;
           precisely = preciselyGhcDebug;
@@ -1056,6 +1101,15 @@
 
           m2.mesoplanet.gcc = m2MesoplanetGcc;
 
+          ccc = {
+            chain = cccChain;
+            asHcc = cccAsHcc;
+            tinycc = tinyccBootCcc;
+            tinyccM1 = tinyccM1Ccc;
+            tinyccPreprocInputs = tinyccPreprocInputs;
+            goldenTests = cccGoldenTests;
+          };
+
           hcc = hccBy // {
             profile.host.ghc.native = hccProfileHostGhcNative;
             blynn = {
@@ -1075,6 +1129,7 @@
           gcc46Cxx = gcc46CxxBy;
           gcc10 = gcc10By;
           gccLatest = gccLatestBy;
+          gnuHello = gnuHelloBy;
           glibc = glibcBy;
           gccGlibc = gccGlibcBy;
 
@@ -1082,6 +1137,7 @@
           inherit trustRoots;
 
           tests = {
+            ccc.golden = cccGoldenTests;
             smoke.m1 = hcc-m1-smoke;
             smoke.m1-i386 = hcc-m1-smoke-i386;
             smoke.m1-aarch64 = hcc-m1-smoke-aarch64;
