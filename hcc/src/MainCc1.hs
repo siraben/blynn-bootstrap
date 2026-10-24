@@ -5,6 +5,7 @@ import DriverCommon
 import HccSystem
 import M1Ir
 import Parser
+import Target
 import TypesAst
 
 main :: IO ()
@@ -45,7 +46,7 @@ compileM1Ir args = do
         Left msg -> die (asmInput opts ++ ":" ++ msg)
         Right toks -> do
           trace "parse"
-          case mapParseError (parseProgramTarget (asmTargetBits opts) toks) of
+          case mapParseError (parseProgramTarget (hccTargetWordBits (asmTarget opts)) toks) of
             Left msg -> dieInputFile opts msg
             Right ast -> writeM1Ir opts trace ast
 
