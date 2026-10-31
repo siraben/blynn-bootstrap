@@ -45,7 +45,7 @@
           gnuMes = pkgs.fetchgit {
             url = sourcePins.GNU_MES_URL;
             rev = sourcePins.GNU_MES_REV;
-            hash = "sha256-iw1/MP0dwXOs9gyB7WhnvpCz59zveeoYy85wt0j+fWA=";
+            hash = "sha256-Az/ICAZ9TADW7eCQXqKRbFZ471DG6K9UJcIFucZVu9k=";
           };
         };
         mesLibcArch =

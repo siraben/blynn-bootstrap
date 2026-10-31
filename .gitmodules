@@ -6,7 +6,7 @@
 	url = https://github.com/blynn/compiler.git
 [submodule "upstream/janneke-tinycc"]
 	path = upstream/janneke-tinycc
-	url = https://gitlab.com/janneke/tinycc.git
+	url = https://github.com/TinyCC/tinycc.git
 [submodule "upstream/gnu-mes"]
 	path = upstream/gnu-mes
-	url = https://git.savannah.gnu.org/git/mes.git
+	url = https://gitlab.com/janneke/mes.git
