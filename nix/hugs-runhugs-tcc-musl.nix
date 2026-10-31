@@ -19,8 +19,8 @@ stdenvNoCC.mkDerivation {
   src = fetchFromGitHub {
     owner = "augustss";
     repo = "hugs98-plus-Sep2006";
-    rev = "1f7b60e05b12df00d715d535bb01c189bc1b9b3c";
-    hash = "sha256-g6/4kmdWKGDIu5PXVfP8O6Fl3v4bstXWAVkoxZiS6qo=";
+    rev = "c447d1c031895f9e1d45f7e1f57f9aa7f102cb3a";
+    hash = "sha256-VfRZl+VFdPERI229WJGi7xV6RFhbKFxun7BblEaexiM=";
   };
 
   nativeBuildInputs = [

@@ -196,18 +196,3 @@ index 9a8d796..3c1dff6 100644
                char *s = dtoab (d, 10, 1);
                if (c == 'E' || c == 'G')
                  strupr (s);
-diff --git a/lib/string/strpbrk.c b/lib/string/strpbrk.c
-index 57583ee..14000c4 100644
---- a/lib/string/strpbrk.c
-+++ b/lib/string/strpbrk.c
-@@ -26,8 +26,8 @@ strpbrk (char const *string, char const *stopset)
-   char *p = (char *) string;
-   while (*p)
-     if (strchr (stopset, *p))
--      break;
-+      return p;
-     else
-       p++;
--  return p;
-+  return 0;
- }
