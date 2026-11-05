@@ -16,3 +16,19 @@ for name in pp-smoke parse-smoke; do
 done
 "$HCC1" --m1-ir -o parse-smoke.hccir parse-smoke.i
 "$HCC_M1" parse-smoke.hccir parse-smoke.M1
+
+log() {
+  printf '%s: %s\n' "$LOG_PREFIX" "$*"
+}
+
+expect_file_contains() {
+  pattern=$1
+  file=$2
+  while IFS= read -r line; do
+    case "$line" in *"$pattern"*) return 0 ;; esac
+  done < "$file"
+  printf '%s: expected diagnostic containing: %s\n' "$file" "$pattern" >&2
+  exit 1
+}
+
+. "$TESTS_DIR/target-contract.sh"

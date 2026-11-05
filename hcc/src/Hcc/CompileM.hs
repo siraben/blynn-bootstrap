@@ -49,6 +49,7 @@ import TypesAst
 import TypesIr
 import ScopeMap
 import SymbolTable
+import Target
 
 data CompileError = CompileError String
 
@@ -69,7 +70,7 @@ data CompileState = CompileState
   , csDataItems :: [DataItem]
   , csBreakTargets :: [BlockId]
   , csContinueTargets :: [BlockId]
-  , csTargetBits :: Int
+  , csTarget :: Target
   , csCurrentFunction :: Maybe String
   }
 
@@ -127,13 +128,13 @@ initialCompileState = CompileState
   , csDataItems = []
   , csBreakTargets = []
   , csContinueTargets = []
-  , csTargetBits = 64
+  , csTarget = defaultHccTarget
   , csCurrentFunction = Nothing
   }
 
-initialCompileStateForTarget :: String -> Int -> CompileState
-initialCompileStateForTarget prefix bits =
-  initialCompileState { csDataPrefix = prefix, csTargetBits = bits }
+initialCompileStateForTarget :: String -> Target -> CompileState
+initialCompileStateForTarget prefix target =
+  initialCompileState { csDataPrefix = prefix, csTarget = target }
 
 throwC :: String -> CompileM a
 throwC msg = CompileM $ \_ -> StepErr (CompileError msg)
@@ -258,7 +259,7 @@ cacheStructMember structName fieldName info =
   in st { csStructMembers = symbolMapInsert structName members' (csStructMembers st) }
 
 targetBits :: CompileM Int
-targetBits = getC csTargetBits
+targetBits = getC (hccTargetWordBits . csTarget)
 
 targetWordSize :: CompileM Int
 targetWordSize = do
