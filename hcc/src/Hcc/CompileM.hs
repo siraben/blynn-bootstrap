@@ -172,8 +172,9 @@ freshDataLabel = do
   pure (prefix ++ "_" ++ label)
 
 addDataItem :: DataItem -> CompileM ()
-addDataItem item@(DataItem label _) =
-  modifyC $ \st -> st { csDataItems = item : filter (\(DataItem label' _) -> label' /= label) (csDataItems st) }
+-- Callers insert each freshDataLabel exactly once, never replace a definition.
+addDataItem item =
+  modifyC $ \st -> st { csDataItems = item : csDataItems st }
 
 bindVar :: String -> Temp -> CType -> CompileM ()
 bindVar name temp ty =
@@ -285,12 +286,14 @@ currentReturnType = do
         Just (CFunc retTy _) -> pure (Just retTy)
         _ -> pure Nothing
 
+-- Temps belong to one FunctionIr; block and data labels stay module-wide.
 withFunctionScope :: CompileM a -> CompileM a
 withFunctionScope action = CompileM $ \st ->
-  case unCompileM action st { csVars = scopeMapEmpty, csLabels = symbolMapEmpty, csBreakTargets = [], csContinueTargets = [] } of
+  case unCompileM action st { csNextTemp = 0, csVars = scopeMapEmpty, csLabels = symbolMapEmpty, csBreakTargets = [], csContinueTargets = [] } of
     StepErr err -> StepErr err
     StepOk x st' -> StepOk x (st'
-      { csVars = csVars st
+      { csNextTemp = csNextTemp st
+      , csVars = csVars st
       , csLabels = csLabels st
       , csBreakTargets = csBreakTargets st
       , csContinueTargets = csContinueTargets st
