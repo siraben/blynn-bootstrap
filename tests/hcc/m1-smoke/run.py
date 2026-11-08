@@ -24,6 +24,7 @@ CASES = [
     ("aggregate-correctness", 0),
     ("preprocessor-correctness", 0),
     ("lower-local-context", 0),
+    ("tcc-final-formatter", 0),
 ]
 
 
@@ -87,6 +88,10 @@ def main():
     parser.add_argument("--m2libc", required=True)
     parser.add_argument("--source-dir", default=str(pathlib.Path(__file__).parent))
     parser.add_argument("--work-dir", default=".")
+    parser.add_argument(
+        "--support-dir",
+        default=str(pathlib.Path(__file__).resolve().parents[3] / "hcc" / "support"),
+    )
     parser.add_argument("--target", choices=sorted(TARGETS), default="amd64")
     parser.add_argument("--runner", action="append", default=[])
     parser.add_argument("--no-run", action="store_true")
@@ -111,7 +116,7 @@ def main():
 
         with preprocessed.open("w") as handle:
             log(f"{name}: preprocess")
-            subprocess.run([args.hcpp, str(src)], check=True, stdout=handle)
+            subprocess.run([args.hcpp, "-I", args.support_dir, str(src)], check=True, stdout=handle)
         log(f"{name}: lower")
         run([args.hcc1, "--target", target["hcc_target"], "--m1-ir", "-o", str(hccir), str(preprocessed)])
         log(f"{name}: emit")
