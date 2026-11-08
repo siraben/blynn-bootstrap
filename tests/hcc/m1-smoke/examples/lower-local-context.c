@@ -102,6 +102,41 @@ int after_continue(void)
     return value != 1;
 }
 
+int switch_prefix(void)
+{
+    int value = 0;
+    goto before_case;
+    switch (0) {
+        int visible;
+    before_case:
+        visible = 11;
+        value = visible;
+    case 0:
+        value = value + 1;
+        break;
+    }
+    if (visible != 7 || value != 12) return 1;
+    goto no_case;
+    switch (0) {
+        int visible;
+    no_case:
+        visible = 13;
+        value = visible;
+        break;
+    }
+    if (visible != 7 || value != 13) return 2;
+    /* Without a goto the prefix must not run, even with no cases. */
+    switch (0) { value = 99; }
+    switch (0) {
+        int local;
+        value = 99;
+    case 0:
+        local = 14;
+        value = local;
+    }
+    return value != 14;
+}
+
 int main(void)
 {
     if (later_local()) return 1;
@@ -115,5 +150,6 @@ int main(void)
     if (nested_labels()) return 5;
     if (after_return(0) != 4 || after_return(1) != 6) return 6;
     if (after_break() || after_continue()) return 7;
+    if (switch_prefix()) return 8;
     return 0;
 }
