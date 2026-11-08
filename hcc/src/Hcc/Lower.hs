@@ -9,7 +9,6 @@ import CompileM
 import TypesIr
 import LowerBuiltins
 import LowerDataValues
-import LowerImplicit
 import Literal
 import LowerLiterals
 import LowerParams
@@ -254,16 +253,40 @@ requireContinueTarget = do
     Nothing -> throwC "continue outside loop"
 
 lowerSwitch :: BlockId -> BlockId -> Operand -> [Stmt] -> CompileM [BasicBlock]
-lowerSwitch dispatchId restId valueOp body = do
-  let bodyStmts = switchBodyStatements body
+lowerSwitch dispatchId restId valueOp body = case body of
+  [SBlock stmts] -> withVarScope (lowerSwitchBody dispatchId restId valueOp stmts)
+  _ -> lowerSwitchBody dispatchId restId valueOp body
+
+lowerSwitchBody :: BlockId -> BlockId -> Operand -> [Stmt] -> CompileM [BasicBlock]
+lowerSwitchBody dispatchId restId valueOp bodyStmts = do
   let clauses = collectSwitchClauses bodyStmts
   clauseIds <- freshBlocks (length clauses)
   let clausePairs = zip clauses clauseIds
   let defaultTarget = switchDefaultTarget restId clausePairs
   let switchCasePairs = switchCases clausePairs
+  let prefixTarget = case clauseIds of
+        [] -> restId
+        first:_ -> first
+  prefixBlocks <- withBreakTarget restId (lowerSwitchPrefix (switchPrefixStatements bodyStmts) prefixTarget)
   dispatchBlocks <- lowerSwitchDispatch dispatchId valueOp defaultTarget switchCasePairs
   bodyBlocks <- withBreakTarget restId (lowerSwitchClauses restId clausePairs)
-  pure (dispatchBlocks ++ bodyBlocks)
+  pure (dispatchBlocks ++ prefixBlocks ++ bodyBlocks)
+
+switchPrefixStatements :: [Stmt] -> [Stmt]
+switchPrefixStatements stmts = case stmts of
+  [] -> []
+  SCase _: _ -> []
+  SDefault: _ -> []
+  stmt:rest -> stmt : switchPrefixStatements rest
+
+-- Dispatch skips this prefix, but gotos can enter it and declarations remain
+-- in scope for the clauses. Its fallthrough is the first clause, not dispatch.
+lowerSwitchPrefix :: [Stmt] -> BlockId -> CompileM [BasicBlock]
+lowerSwitchPrefix stmts target = case stmts of
+  [] -> pure []
+  _ -> do
+    bid <- freshBlock
+    lowerStatementsFrom bid [] stmts (TJump target)
 
 lowerSwitchDispatch :: BlockId -> Operand -> BlockId -> [(Expr, BlockId)] -> CompileM [BasicBlock]
 lowerSwitchDispatch bid valueOp defaultTarget switchCasePairs = case switchCasePairs of
