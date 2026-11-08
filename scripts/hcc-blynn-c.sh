@@ -21,7 +21,7 @@ require_cmd mkdir
 
 source_dir=${HCC_BLYNN_SOURCES_DIR:-${1:-build/hcc-blynn-sources}}
 out_dir=${OUT_DIR:-${2:-build/hcc-blynn-c}}
-blynn_compiler=${BLYNN_COMPILER:-${PRECISELY_UP:-precisely_up}}
+blynn_compiler=${BLYNN_COMPILER:-${PRECISELY_UP:-crossly1}}
 objects_dir=${HCC_BLYNN_OBJECTS_DIR:-${3:-}}
 hcpp_top=${HCPP_TOP-134217728}
 hcc1_top=${HCC1_TOP-134217728}

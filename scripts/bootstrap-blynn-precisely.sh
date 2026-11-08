@@ -27,6 +27,11 @@ gen_dir=$out_dir/generated
 inn_dir=$src_dir/inn
 crossly_top=${CROSSLY_TOP-134217728}
 precisely_top=${PRECISELY_TOP-33554432}
+build_precisely_up=${BUILD_PRECISELY_UP:-0}
+case $build_precisely_up in
+  0 | 1) ;;
+  *) die "BUILD_PRECISELY_UP must be 0 or 1" ;;
+esac
 validate_top CROSSLY_TOP "$crossly_top"
 validate_top PRECISELY_TOP "$precisely_top"
 
@@ -72,6 +77,10 @@ party_step party1 multiparty party Base0 System Ast1 Map Parser1 Kiselyov Unify1
 party_step party2 party1 party1 Base1 System Ast2 Map Parser2 Kiselyov Unify1 RTS1 Typer2
 party_step crossly_up party2 party2 Base1 System Ast3 Map Parser3 Kiselyov Unify1 RTS2 Typer3
 party_step crossly1 crossly_up precisely Base2 System AstPrecisely Map1 ParserPrecisely KiselyovPrecisely Unify1 RTSPrecisely TyperPrecisely Obj Charser
-party_step precisely_up crossly1 precisely BasePrecisely System AstPrecisely Map1 ParserPrecisely KiselyovPrecisely Unify1 RTSPrecisely TyperPrecisely Obj Charser
+last_compiler=crossly1
+if [ "$build_precisely_up" = 1 ]; then
+  party_step precisely_up crossly1 precisely BasePrecisely System AstPrecisely Map1 ParserPrecisely KiselyovPrecisely Unify1 RTSPrecisely TyperPrecisely Obj Charser
+  last_compiler=precisely_up
+fi
 
-msg "precisely chain complete: $bin_dir/precisely_up"
+msg "precisely chain complete: $bin_dir/$last_compiler"

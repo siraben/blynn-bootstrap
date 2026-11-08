@@ -22,7 +22,7 @@ require_cmd rm
 
 source_dir=${HCC_BLYNN_SOURCES_DIR:-${1:-build/hcc-blynn-sources}}
 out_dir=${OUT_DIR:-${2:-build/hcc-blynn-objs}}
-blynn_compiler=${BLYNN_COMPILER:-${PRECISELY_UP:-precisely_up}}
+blynn_compiler=${BLYNN_COMPILER:-${PRECISELY_UP:-crossly1}}
 materialize_object_script=${MATERIALIZE_OBJECT_SCRIPT:-materialize-object-script}
 
 source_dir=$(abspath "$source_dir")
