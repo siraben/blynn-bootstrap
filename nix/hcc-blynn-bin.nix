@@ -4,7 +4,6 @@
   pname,
   generatedC,
   src,
-  kaem,
   bootstrapShell,
   scriptEnv,
   runtimeFile,
@@ -32,50 +31,26 @@ mkDerivation (
 
       ulimit -s unlimited
 
-      mkdir -p cbits source generated
-      cp ${src}/cbits/hcc_runtime.c cbits/hcc_runtime.c
-      cp ${src}/cbits/hcc_runtime_m2.c cbits/hcc_runtime_m2.c
-      cp ${src}/cbits/hcc_m1.c cbits/hcc_m1.c
-      cp ${src}/cbits/hcc_m1_arch_*.c cbits/
-
       ${nixLib.shellHelpers { name = "hcc-blynn-bin"; }}
 
-      cp ${generatedC}/share/${generatedC.pname}/hcpp-blynn.c hcpp-blynn.c
-      cp ${generatedC}/share/${generatedC.pname}/hcc1-blynn.c hcc1-blynn.c
-      cp ${generatedC}/share/${generatedC.pname}/hcpp-full.hs hcpp-full.hs
-      cp ${generatedC}/share/${generatedC.pname}/hcc1-full.hs hcc1-full.hs
-      log_file hcpp-blynn.c
-      log_file hcc1-blynn.c
+      log_file ${generatedC}/share/${generatedC.pname}/hcpp-blynn.c
+      log_file ${generatedC}/share/${generatedC.pname}/hcc1-blynn.c
 
-      cp hcpp-blynn.c source/hcpp-blynn.c
-      cp hcc1-blynn.c source/hcc1-blynn.c
-
-      cat > hcc-blynn-bin.kaem <<'EOF'
-      ${bootstrapShell}/bin/sh ${../scripts/hcc-blynn-bin.sh}
-      EOF
-      log_step "START portable hcc-blynn-bin script via kaem"
+      log_step "START portable hcc-blynn-bin script"
       BOOTSTRAP_LOG_NAME=hcc-blynn-bin \
       BOOTSTRAP_LIB=${../scripts/lib/bootstrap.sh} \
-      HCC_BLYNN_C_DIR=source \
+      HCC_BLYNN_C_DIR=${generatedC}/share/${generatedC.pname} \
       HCC_DIR=${src} \
       OUT_DIR=generated \
       ${scriptEnv} \
-        ${kaem}/bin/kaem --verbose --strict --file hcc-blynn-bin.kaem
-      log_step "DONE  portable hcc-blynn-bin script via kaem"
+        ${bootstrapShell}/bin/sh ${../scripts/hcc-blynn-bin.sh}
+      log_step "DONE  portable hcc-blynn-bin script"
       log_step "compiled hcpp and hcc1"
 
-      chmod u+w hcpp-blynn.c hcc1-blynn.c
-      cp generated/artifact/hcpp-blynn.patched.c hcpp-blynn.c
-      cp generated/artifact/hcc1-blynn.patched.c hcc1-blynn.c
-      cp generated/bin/hcpp hcpp
-      cp generated/bin/hcc1 hcc1
-      cp generated/bin/hcc-m1 hcc-m1
-      chmod 555 hcpp hcc1 hcc-m1
-
       (
-        export HCPP=./hcpp
-        export HCC1=./hcc1
-        export HCC_M1=./hcc-m1
+        export HCPP=$PWD/generated/bin/hcpp
+        export HCC1=$PWD/generated/bin/hcc1
+        export HCC_M1=$PWD/generated/bin/hcc-m1
         export TESTS_DIR=${../tests/hcc}
         export LOG_PREFIX=hcc-blynn-bin-smoke
         . ${../scripts/hcc-compiler-smoke.sh}
@@ -86,9 +61,9 @@ mkDerivation (
 
     installPhase = ''
       runHook preInstall
-      install -Dm555 hcpp $out/libexec/${shareName}/hcpp
-      install -Dm555 hcc1 $out/libexec/${shareName}/hcc1
-      install -Dm555 hcc-m1 $out/libexec/${shareName}/hcc-m1
+      install -Dm555 generated/bin/hcpp $out/libexec/${shareName}/hcpp
+      install -Dm555 generated/bin/hcc1 $out/libexec/${shareName}/hcc1
+      install -Dm555 generated/bin/hcc-m1 $out/libexec/${shareName}/hcc-m1
       install_stack_wrapper() {
         name="$1"
         mkdir -p "$out/bin"
@@ -102,11 +77,11 @@ mkDerivation (
       install_stack_wrapper hcpp
       install_stack_wrapper hcc1
       install_stack_wrapper hcc-m1
-      install -Dm644 hcpp-blynn.c $out/share/${shareName}/hcpp-blynn.c
-      install -Dm644 hcc1-blynn.c $out/share/${shareName}/hcc1-blynn.c
-      install -Dm644 hcpp-full.hs $out/share/${shareName}/hcpp-full.hs
-      install -Dm644 hcc1-full.hs $out/share/${shareName}/hcc1-full.hs
-      install -Dm644 ${runtimeFile} $out/share/${shareName}/hcc-runtime.c
+      install -Dm644 generated/artifact/hcpp-blynn.patched.c $out/share/${shareName}/hcpp-blynn.c
+      install -Dm644 generated/artifact/hcc1-blynn.patched.c $out/share/${shareName}/hcc1-blynn.c
+      install -Dm644 ${generatedC}/share/${generatedC.pname}/hcpp-full.hs $out/share/${shareName}/hcpp-full.hs
+      install -Dm644 ${generatedC}/share/${generatedC.pname}/hcc1-full.hs $out/share/${shareName}/hcc1-full.hs
+      install -Dm644 ${src}/${runtimeFile} $out/share/${shareName}/hcc-runtime.c
       runHook postInstall
     '';
 

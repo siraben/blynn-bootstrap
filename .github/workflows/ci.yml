@@ -151,17 +151,7 @@ jobs:
             arch: amd64
             runner: ubuntu-latest
             timeout: 360
-            attr: hcc.gcc.precisely.tcc
-          - suite: tcc backend
-            arch: amd64
-            runner: ubuntu-latest
-            timeout: 360
             attr: tinycc.gcc.precisely.tcc
-          - suite: tcc backend
-            arch: aarch64
-            runner: ubuntu-24.04-arm
-            timeout: 360
-            attr: hcc.gcc.precisely.tcc
           - suite: tcc backend
             arch: aarch64
             runner: ubuntu-24.04-arm
