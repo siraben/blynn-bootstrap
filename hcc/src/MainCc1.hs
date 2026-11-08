@@ -34,41 +34,41 @@ checkFile path = do
 
 compileM1Ir :: [String] -> IO ()
 compileM1Ir args = do
-  case assemblyArgs args of
+  case driverArgs args of
     Left msg -> die msg
     Right opts -> do
-      let trace = hccTraceIf (asmTrace opts)
-      trace ("read " ++ asmInput opts)
-      source <- hccReadFile (asmInput opts)
+      let trace = hccTraceIf (driverTrace opts)
+      trace ("read " ++ driverInput opts)
+      source <- hccReadFile (driverInput opts)
       trace "lex"
       case lexPlainSource source of
-        Left msg -> die (asmInput opts ++ ":" ++ msg)
+        Left msg -> die (driverInput opts ++ ":" ++ msg)
         Right toks -> do
           trace "parse"
-          case mapParseError (parseProgramTarget (asmTargetBits opts) toks) of
+          case mapParseError (parseProgramTarget (driverTargetBits opts) toks) of
             Left msg -> dieInputFile opts msg
             Right ast -> writeM1Ir opts trace ast
 
-dieInputFile :: AsmOptions -> String -> IO ()
-dieInputFile opts msg = die (asmInput opts ++ ":" ++ msg)
+dieInputFile :: DriverOptions -> String -> IO ()
+dieInputFile opts msg = die (driverInput opts ++ ":" ++ msg)
 
-writeM1Ir :: AsmOptions -> (String -> IO ()) -> Program -> IO ()
+writeM1Ir :: DriverOptions -> (String -> IO ()) -> Program -> IO ()
 writeM1Ir opts trace ast = do
-  samePath <- hccPathsLexicallyEqual (asmInput opts) (asmOutput opts)
+  samePath <- hccPathsLexicallyEqual (driverInput opts) (driverOutput opts)
   when samePath (die "hcc1: input and output paths coincide")
-  trace ("open " ++ asmOutput opts)
-  opened <- hccWithOpenWriteFile (asmOutput opts) $ \handle -> do
+  trace ("open " ++ driverOutput opts)
+  opened <- hccWithOpenWriteFile (driverOutput opts) $ \handle -> do
     trace "m1-ir start"
     result <- hccWithTransactionalLineWriter handle $ \writeLines ->
-      emitM1IrStreamingWithDataPrefixTarget
+      emitM1Ir
         writeLines
-        (dataLabelPrefix (asmInput opts))
-        (asmTargetBits opts)
+        (dataLabelPrefix (driverInput opts))
+        (driverTargetBits opts)
         ast
     trace "m1-ir done"
     pure result
   case opened of
-    Nothing -> die ("hcc1: cannot write " ++ asmOutput opts)
+    Nothing -> die ("hcc1: cannot write " ++ driverOutput opts)
     Just result -> case result of
       Left (CodegenError msg) -> dieInputFile opts msg
       Right _ -> pure ()
