@@ -1111,11 +1111,15 @@
             mkdir -p scripts/lib data patches
             cp ${./scripts/bootstrap-tools.sh} scripts/bootstrap-tools.sh
             cp ${./scripts/prepare-upstreams.sh} scripts/prepare-upstreams.sh
+            cp ${./scripts/bootstrap-blynn-precisely.sh} scripts/bootstrap-blynn-precisely.sh
+            cp ${./scripts/hcc-blynn-objs.sh} scripts/hcc-blynn-objs.sh
+            cp ${./scripts/hcc-blynn-c.sh} scripts/hcc-blynn-c.sh
             cp ${./scripts/lib/bootstrap.sh} scripts/lib/bootstrap.sh
             cp ${./data/bootstrap-sources.env} data/bootstrap-sources.env
             ln -s ${./patches/upstreams} patches/upstreams
             sh ${./tests/bootstrap-tools.sh} "$PWD"
             sh ${./tests/prepare-upstreams.sh} "$PWD"
+            sh ${./tests/bootstrap-blynn-precisely.sh} "$PWD"
             touch "$out"
           '';
         };
