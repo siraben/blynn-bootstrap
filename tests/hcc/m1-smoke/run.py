@@ -86,14 +86,13 @@ def main():
     parser.add_argument("--m2libc", required=True)
     parser.add_argument("--source-dir", default=str(pathlib.Path(__file__).parent))
     parser.add_argument("--work-dir", default=".")
-    parser.add_argument(
-        "--support-dir",
-        default=str(pathlib.Path(__file__).resolve().parents[3] / "hcc" / "support"),
-    )
+    parser.add_argument("--support-dir")
     parser.add_argument("--target", choices=sorted(TARGETS), default="amd64")
     parser.add_argument("--runner", action="append", default=[])
     parser.add_argument("--no-run", action="store_true")
     args = parser.parse_args()
+    if args.support_dir is None:
+        args.support_dir = str(pathlib.Path(__file__).resolve().parents[3] / "hcc" / "support")
 
     target = TARGETS[args.target]
     source_dir = pathlib.Path(args.source_dir)
