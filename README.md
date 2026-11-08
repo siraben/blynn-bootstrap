@@ -151,9 +151,13 @@ no stage rewrites generated TOP definitions. `WORDS` must be canonical decimal
 in `1024..536870912` (no signs, leading zeros, or C expressions); the program
 still needs enough heap to run. TOP counts 32-bit words per arena, not bytes.
 
-The portable compiler ladder uses `CROSSLY_TOP=134217728` for `crossly1` and
-`PRECISELY_TOP=33554432` for `precisely_up`. Like Nix, it uses `crossly1` to
-generate HCC. Set `HCPP_TOP` and `HCC1_TOP` **at C generation time** (both default
+The portable compiler ladder stops at `crossly1` (`CROSSLY_TOP=134217728`),
+which generates HCC just as in Nix. Set `BUILD_PRECISELY_UP=1` to also rebuild
+`precisely_up` (`PRECISELY_TOP=33554432`), including when running
+`scripts/bootstrap-blynn-precisely.sh` standalone. HCC stages default to
+`crossly1`; `BLYNN_COMPILER` (or the legacy `PRECISELY_UP`) explicitly selects
+another compiler. Benchmarks that call `precisely_up` still require that binary.
+Set `HCPP_TOP` and `HCC1_TOP` **at C generation time** (both default
 to `134217728`). A later binary-stage override must match the generated C or
 fails. In Nix, `hcc.blynn.c.m2.precisely.override { hcppTop = ...; hcc1Top = ...; }`
 configures generation; backend-specific sizes are also passed to this stage.
