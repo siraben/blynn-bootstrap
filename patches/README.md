@@ -7,6 +7,23 @@ by the bootstrap.
   - upstream: `https://github.com/blynn/compiler.git`
     at `a1f1c47c9bb3ff6a45a0735ced84984396560535`
   - source compatibility delta for the party -> precisely chain
+- `upstreams/blynn-compiler-rts{1,2}-vm-speed.patch` and
+  `upstreams/blynn-compiler-rts-precisely-speed.patch`
+  - same Blynn revision as above; M2-oriented hot combinator dispatch and
+    adjacent-cell pointer reuse, shared by the portable and Nix patch series
+  - provenance: `fc57d96` introduced the RTS2/crossly1 fast paths;
+    `49a8f3b` extended dispatch to RTS1 and RTSPrecisely. Neither commit records
+    isolated before/after timings. The older `eae072f:docs/hcc_memory_audit.md`
+    reports about 5% (`evac`) / 10% (`evac` + `lazy2`/`lazy3`) wall-time savings
+    for pointer hoists on M2-built HCC with byte-identical IR, not an ablation
+    of these later dispatch patches. Do not attribute those percentages to them.
+  - invariants: preserve combinator argument order, graph updates and stack/heap
+    movement; allocating paths must retain GC checks and reload moved roots.
+    RTS1/2 use M2's byte-offset pointer convention; RTSPrecisely uses explicit
+    `char *` offsets for host C compatibility. External allocations must not be
+    mistaken for arena addresses (`128 <= n < TOP`). Retain these patches;
+    removal needs repeated faithful-path timings and byte/execution parity,
+    not a host-GCC microbenchmark alone (see `docs/performance.md`).
 - `upstreams/tinycc-mescc-source.patch`
   - upstream: `https://repo.or.cz/tinycc.git` at
     `cb41cbfe717e4c00d7bb70035cda5ee5f0ff9341`
