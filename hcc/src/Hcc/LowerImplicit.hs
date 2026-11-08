@@ -13,9 +13,6 @@ registerImplicitCalls locals stmts = foldM registerImplicitCallsStmt locals stmt
 
 registerImplicitCallsStmt :: [String] -> Stmt -> CompileM [String]
 registerImplicitCallsStmt locals stmt = case stmt of
-  SDecl _ name initExpr -> do
-    maybeRegisterImplicitCallsExpr locals initExpr
-    pure (name:locals)
   SDecls decls ->
     registerImplicitCallsDecls locals decls
   SReturn expr -> maybeRegisterImplicitCallsExpr locals expr >> pure locals

@@ -69,9 +69,6 @@ lowerStatementChunks bid chunks stmts defaultTerm = case stmts of
         bodyBlocks <- withVarScope (lowerStatementChunks bid chunks body (TJump restId))
         restBlocks <- lowerStatementsFrom restId [] rest defaultTerm
         pure (bodyBlocks ++ restBlocks)
-  SDecl ty name initExpr:rest -> do
-    declInstrs <- lowerDecl ty name initExpr
-    lowerStatementChunks bid (declInstrs:chunks) rest defaultTerm
   SDecls decls:rest -> do
     declInstrs <- lowerDecls decls
     lowerStatementChunks bid (declInstrs:chunks) rest defaultTerm
@@ -124,11 +121,16 @@ lowerStatementChunks bid chunks stmts defaultTerm = case stmts of
   SIf cond yes no:rest -> do
     yesId <- freshBlock
     noId <- freshBlock
-    (restId, restBlocks) <- lowerIfRestTarget rest defaultTerm
+    restId <- lowerIfRestTarget rest defaultTerm
     let noTarget = if null no then restId else noId
+    condBlocks <- lowerConditionBlock bid instrs cond yesId noTarget
     yesBlocks <- lowerStatementsFrom yesId [] yes (TJump restId)
     noBlocks <- lowerIfNoBlocks no noId restId
-    condBlocks <- lowerConditionBlock bid instrs cond yesId noTarget
+    restBlocks <- case rest of
+      [] -> case defaultTerm of
+        TJump _ -> pure []
+        _ -> lowerStatementsFrom restId [] rest defaultTerm
+      _ -> lowerStatementsFrom restId [] rest defaultTerm
     pure (condBlocks ++ yesBlocks ++ noBlocks ++ restBlocks)
   SBreak:rest -> do
     target <- requireBreakTarget
@@ -161,32 +163,38 @@ lowerForInit initClause = case initClause of
   ForExpr expr -> lowerSideEffect expr
   ForDecls decls -> lowerDecls decls
 
-lowerIfRestTarget :: [Stmt] -> Terminator -> CompileM (BlockId, [BasicBlock])
+lowerIfRestTarget :: [Stmt] -> Terminator -> CompileM BlockId
 lowerIfRestTarget rest defaultTerm = case rest of
   [] -> case defaultTerm of
-    TJump target -> pure (target, [])
-    _ -> lowerIfJoinTarget rest defaultTerm
-  _ -> lowerIfJoinTarget rest defaultTerm
-
-lowerIfJoinTarget :: [Stmt] -> Terminator -> CompileM (BlockId, [BasicBlock])
-lowerIfJoinTarget rest defaultTerm = do
-  joinId <- freshBlock
-  blocks <- lowerStatementsFrom joinId [] rest defaultTerm
-  pure (joinId, blocks)
+    TJump target -> pure target
+    _ -> freshBlock
+  _ -> freshBlock
 
 lowerIfNoBlocks :: [Stmt] -> BlockId -> BlockId -> CompileM [BasicBlock]
 lowerIfNoBlocks no noId restId = case no of
   [] -> pure []
   _ -> lowerStatementsFrom noId [] no (TJump restId)
 
+-- A goto may enter a nested statement. Lower the suffix without an incoming
+-- edge, retaining declarations and the normal lexical and loop contexts.
 lowerUnreachableLabels :: [Stmt] -> Terminator -> CompileM [BasicBlock]
-lowerUnreachableLabels stmts defaultTerm = case stmts of
-  [] -> pure []
-  SLabel name:rest -> do
-    target <- labelBlock name
-    lowerStatementsFrom target [] rest defaultTerm
-  _:rest ->
-    lowerUnreachableLabels rest defaultTerm
+lowerUnreachableLabels stmts defaultTerm =
+  if any containsLabel stmts
+    then do
+      bid <- freshBlock
+      lowerStatementsFrom bid [] stmts defaultTerm
+    else pure []
+
+containsLabel :: Stmt -> Bool
+containsLabel stmt = case stmt of
+  SLabel _ -> True
+  SBlock body -> any containsLabel body
+  SIf _ yes no -> any containsLabel yes || any containsLabel no
+  SWhile _ body -> any containsLabel body
+  SDoWhile body _ -> any containsLabel body
+  SFor _ _ _ body -> any containsLabel body
+  SSwitch _ body -> any containsLabel body
+  _ -> False
 
 lowerLoopConditionBlocks :: Maybe Expr -> BlockId -> BlockId -> BlockId -> CompileM [BasicBlock]
 lowerLoopConditionBlocks condExpr condId bodyId restId = case condExpr of
@@ -294,7 +302,7 @@ lowerSideEffect expr = case expr of
     if isIgnoredSideEffectCall name
       then pure []
       else do
-        direct <- lookupFunction name
+        direct <- isDirectCall name
         if direct
           then lowerDirectSideEffect name args
           else lowerIndirectCallInstrs Nothing (EVar name) args
@@ -325,6 +333,13 @@ lowerResultInstrs action = do
 lowerIncDecSideEffect :: BinOp -> Expr -> CompileM [Instr]
 lowerIncDecSideEffect op target =
   lowerResultInstrs (lowerIncDec True op target)
+
+isDirectCall :: String -> CompileM Bool
+isDirectCall name = do
+  local <- lookupLocal name
+  case local of
+    Just _ -> pure False
+    Nothing -> lookupFunction name
 
 lowerDirectSideEffect :: String -> [Expr] -> CompileM [Instr]
 lowerDirectSideEffect name args = do
@@ -605,7 +620,7 @@ lowerExpr expr = case expr of
   EMember _ _ ->
     readLValueExpr expr
   ECall (EVar name) args -> do
-    direct <- lookupFunction name
+    direct <- isDirectCall name
     if direct
       then lowerDirectCallExpr name args
       else lowerIndirectCall (EVar name) args
@@ -645,12 +660,9 @@ lowerNonBuiltinVarExpr name = do
 
 lowerNonConstantVarExpr :: String -> CompileM ([Instr], Operand)
 lowerNonConstantVarExpr name = do
-  local <- lookupVarMaybe name
+  local <- lookupLocal name
   case local of
-    Just temp -> do
-      mty <- lookupVarType name
-      ty <- requireMaybeType ("unknown local type: " ++ name) mty
-      coerceScalar ty (OTemp temp)
+    Just (temp, ty) -> coerceScalar ty (OTemp temp)
     Nothing -> lowerNonLocalVarExpr name
 
 lowerNonLocalVarExpr :: String -> CompileM ([Instr], Operand)
@@ -1159,7 +1171,7 @@ lowerLValueAddress target = case target of
 
 lowerVarAddress :: String -> CompileM ([Instr], Operand)
 lowerVarAddress name = do
-  local <- lookupVarMaybe name
+  local <- lookupLocal name
   case local of
     Nothing -> do
       function <- lookupFunction name
@@ -1185,12 +1197,9 @@ lowerNonFunctionAddress target = do
 lowerLValue :: Expr -> CompileM ([Instr], LValue)
 lowerLValue target = case target of
   EVar name -> do
-    local <- lookupVarMaybe name
+    local <- lookupLocal name
     case local of
-      Just temp -> do
-        ty <- lookupVarType name
-        knownTy <- requireMaybeType ("unknown local type: " ++ name) ty
-        pure ([], LLocal temp knownTy)
+      Just (temp, ty) -> pure ([], LLocal temp ty)
       Nothing -> do
         ty <- lookupGlobalType name
         knownTy <- requireMaybeType ("unknown global type: " ++ name) ty
@@ -1443,7 +1452,7 @@ memberInfoForAggregateUncached ty field = do
   case aggregate of
     Nothing -> pure Nothing
     Just aggregateInfo -> case aggregateInfo of
-      (isUnion, fields) -> fieldOffset isUnion field 0 fields
+      (isUnion, fields) -> fieldOffset 0 isUnion field 0 fields
 
 aggregateCacheName :: CType -> Maybe String
 aggregateCacheName ty = case ty of
@@ -1454,30 +1463,31 @@ aggregateCacheName ty = case ty of
   CNamed name -> Just name
   _ -> Nothing
 
-fieldOffset :: Bool -> String -> Int -> [Field] -> CompileM (Maybe (CType, Int))
-fieldOffset isUnion field offset fields = case fields of
+fieldOffset :: Int -> Bool -> String -> Int -> [Field] -> CompileM (Maybe (CType, Int))
+fieldOffset baseOffset isUnion field offset fields = case fields of
   [] -> pure Nothing
   item:rest -> case item of
     Field ty name -> do
       align <- typeAlign ty
       let aligned = alignUp offset align
+      let memberOffset = baseOffset + unionOffset isUnion aligned
       if name == field
-        then pure (Just (ty, unionOffset isUnion aligned))
+        then pure (Just (ty, memberOffset))
         else do
           size <- typeSize ty
-          nested <- anonymousMemberInfoForName isUnion aligned ty name field
+          nested <- anonymousMemberInfoForName memberOffset ty name field
           case nested of
             Just info -> pure (Just info)
-            Nothing -> fieldOffset isUnion field (aligned + size) rest
+            Nothing -> fieldOffset baseOffset isUnion field (aligned + size) rest
 
 unionOffset :: Bool -> Int -> Int
 unionOffset isUnion aligned =
   if isUnion then 0 else aligned
 
-anonymousMemberInfoForName :: Bool -> Int -> CType -> String -> String -> CompileM (Maybe (CType, Int))
-anonymousMemberInfoForName isUnion aligned ty name field =
+anonymousMemberInfoForName :: Int -> CType -> String -> String -> CompileM (Maybe (CType, Int))
+anonymousMemberInfoForName offset ty name field =
   if name == ""
-    then anonymousMemberInfo (unionOffset isUnion aligned) ty field
+    then anonymousMemberInfo offset ty field
     else pure Nothing
 
 anonymousMemberInfo :: Int -> CType -> String -> CompileM (Maybe (CType, Int))
@@ -1486,24 +1496,7 @@ anonymousMemberInfo baseOffset ty field = do
   case aggregate of
     Nothing -> pure Nothing
     Just aggregateInfo -> case aggregateInfo of
-      (isUnion, fields) -> nestedFieldOffset baseOffset isUnion field 0 fields
-
-nestedFieldOffset :: Int -> Bool -> String -> Int -> [Field] -> CompileM (Maybe (CType, Int))
-nestedFieldOffset baseOffset isUnion field offset fields = case fields of
-  [] -> pure Nothing
-  item:rest -> case item of
-    Field fieldTy name -> do
-      align <- typeAlign fieldTy
-      let aligned = alignUp offset align
-      let memberOffset = baseOffset + unionOffset isUnion aligned
-      if name == field
-        then pure (Just (fieldTy, memberOffset))
-        else do
-          size <- typeSize fieldTy
-          nested <- anonymousMemberInfoForName False memberOffset fieldTy name field
-          case nested of
-            Just info -> pure (Just info)
-            Nothing -> nestedFieldOffset baseOffset isUnion field (aligned + size) rest
+      (isUnion, fields) -> fieldOffset baseOffset isUnion field 0 fields
 
 loadInstr :: Temp -> CType -> Operand -> CompileM Instr
 loadInstr out ty addr = do

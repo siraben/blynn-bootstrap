@@ -1,12 +1,12 @@
 module DriverCommon
-  ( AsmOptions(..)
+  ( DriverOptions(..)
   , die
   , lexPlainSource
   , spliceContinuations
   , stripComments
   , stripLineComment
   , dataLabelPrefix
-  , assemblyArgs
+  , driverArgs
   , renderDefines
   , replaceExt
   , showPos
@@ -86,22 +86,22 @@ sanitizeLabelChar :: Char -> String
 sanitizeLabelChar c =
   if isAsciiAlphaNum c then [c] else "_"
 
-data AsmOptions = AsmOptions
-  { asmInput :: String
-  , asmOutput :: String
-  , asmIncludeDirs :: [String]
-  , asmDefines :: [(String, String)]
-  , asmTargetBits :: Int
-  , asmTrace :: Bool
+data DriverOptions = DriverOptions
+  { driverInput :: String
+  , driverOutput :: String
+  , driverIncludeDirs :: [String]
+  , driverDefines :: [(String, String)]
+  , driverTargetBits :: Int
+  , driverTrace :: Bool
   }
 
-assemblyArgs :: [String] -> Either String AsmOptions
-assemblyArgs args = finish (go args Nothing Nothing [] [] 64)
+driverArgs :: [String] -> Either String DriverOptions
+driverArgs args = finish (go args Nothing Nothing [] [] 64)
   where
     finish (Left msg) = Left msg
     finish (Right (_, Nothing, _, _, _)) = Left "hcc: no input files"
     finish (Right (out, Just path, includes, defines, target)) =
-      Right (AsmOptions path (maybe (replaceExt path ".hccir") id out) (reverse includes) (reverse defines) target ("--trace" `elem` args))
+      Right (DriverOptions path (maybe (replaceExt path ".hccir") id out) (reverse includes) (reverse defines) target ("--trace" `elem` args))
 
     go [] out input includes defines target =
       Right (out, input, includes, defines, target)
@@ -127,7 +127,7 @@ assemblyArgs args = finish (go args Nothing Nothing [] [] 64)
       '-':'D':def@(_:_) ->
         go xs out input includes (parseDefine def:defines) target
       _
-        | ignoredAssemblyFlag flag ->
+        | ignoredDriverFlag flag ->
             go xs out input includes defines target
         | take 1 flag == "-" ->
             Left ("hcc: unsupported option: " ++ flag)
@@ -145,8 +145,8 @@ parseTargetBits target = case target of
   "x86" -> Just 32
   _ -> Nothing
 
-ignoredAssemblyFlag :: String -> Bool
-ignoredAssemblyFlag flag =
+ignoredDriverFlag :: String -> Bool
+ignoredDriverFlag flag =
   flag `elem` ["-c", "-pipe", "-nostdinc", "-nostdlib", "-static", "--m1-ir", "--trace"]
 
 parseDefine :: String -> (String, String)

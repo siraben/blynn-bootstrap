@@ -21,13 +21,13 @@ usage :: IO ()
 usage = hccPutStrLn "usage: hcpp [CC-ARGS...] INPUT.c"
 
 preprocessFile :: [String] -> IO ()
-preprocessFile args = case assemblyArgs ("-S":args) of
+preprocessFile args = case driverArgs args of
   Left msg -> die msg
   Right opts -> do
-    source <- readSourceWithIncludes (asmIncludeDirs opts) (asmDefines opts) (asmInput opts)
-    let sourceWithDefines = renderDefines (asmDefines opts) ++ source
+    source <- readSourceWithIncludes (driverIncludeDirs opts) (driverDefines opts) (driverInput opts)
+    let sourceWithDefines = renderDefines (driverDefines opts) ++ source
     case lexPlainSource sourceWithDefines >>= mapPreprocessError . preprocess of
-      Left msg -> die (asmInput opts ++ ":" ++ msg)
+      Left msg -> die (driverInput opts ++ ":" ++ msg)
       Right toks -> hccPutStr (foldr renderToken "\n" toks)
 
 mapPreprocessError :: Either PreprocessError a -> Either String a

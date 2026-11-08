@@ -1,6 +1,6 @@
 module M1Ir
   ( CodegenError(..)
-  , emitM1IrStreamingWithDataPrefixTarget
+  , emitM1Ir
   ) where
 
 import Base
@@ -16,18 +16,17 @@ data CodegenError = CodegenError String
 
 -- The caller buffers writes transactionally: a later lowering error must not
 -- publish the header or any previously emitted functions.
-emitM1IrStreamingWithDataPrefixTarget :: (String -> IO ()) -> String -> Int -> Program -> IO (Either CodegenError ())
-emitM1IrStreamingWithDataPrefixTarget write prefix target ast = case ast of
+emitM1Ir :: (String -> IO ()) -> String -> Int -> Program -> IO (Either CodegenError ())
+emitM1Ir write prefix target ast = case ast of
   Program decls ->
-    case mapCompileRun (runCompileM registerBuiltinStructs (initialCompileStateForTarget prefix target)) of
+    case mapCompileRun (runCompileM (do
+      registerBuiltinStructs
+      registerTopDeclsIr decls) (initialCompileStateForTarget prefix target)) of
       Left err -> pure (Left err)
-      Right (_, st0) ->
-        case registerTopDeclsIr st0 decls of
-          Left err -> pure (Left err)
-          Right (st, registeredItems) -> do
-            write "HCCIR 1"
-            emitTopItemsIr write registeredItems
-            lowerAndEmitTopDeclsIr write st decls
+      Right (registeredItems, st) -> do
+        write "HCCIR 1"
+        emitTopItemsIr write registeredItems
+        lowerAndEmitTopDeclsIr write st decls
 
 lowerAndEmitTopDeclsIr :: (String -> IO ()) -> CompileState -> [TopDecl] -> IO (Either CodegenError ())
 lowerAndEmitTopDeclsIr write st decls = case decls of
@@ -43,47 +42,21 @@ lowerAndEmitTopDeclsIr write st decls = case decls of
             lowerAndEmitTopDeclsIr write st'' rest
   _:rest -> lowerAndEmitTopDeclsIr write st rest
 
-registerTopDeclsIr :: CompileState -> [TopDecl] -> Either CodegenError (CompileState, [TopItemIr])
-registerTopDeclsIr st decls = case decls of
-  [] -> Right (st, [])
-  decl:rest ->
-    case registerTopDeclIr st decl of
-      Left err -> Left err
-      Right (st', items) ->
-        case registerTopDeclsIr st' rest of
-          Left err -> Left err
-          Right (st'', restItems) -> Right (st'', items ++ restItems)
+registerTopDeclsIr :: [TopDecl] -> CompileM [TopItemIr]
+registerTopDeclsIr decls = concat <$> mapM registerTopDeclIr decls
 
-registerTopDeclIr :: CompileState -> TopDecl -> Either CodegenError (CompileState, [TopItemIr])
-registerTopDeclIr st decl = case decl of
-  Global ty name initExpr ->
-    case mapCompileRun (runCompileM (registerTypeAggregates ty >> bindGlobal name ty >> globalData ty initExpr) st) of
-      Left err -> Left err
-      Right (values, st') -> do
-        case pendingDataItemsIr st' of
-          (pending, st'') -> Right (st'', TopData (DataItem name values) : pending)
-  Globals globals ->
-    registerGlobalsIr st globals
-  _ ->
-    case mapCompileRun (registerTopDeclShallowState st decl) of
-      Left err -> Left err
-      Right (_, st') -> Right (st', [])
-
-registerTopDeclShallowState :: CompileState -> TopDecl -> Either CompileError ((), CompileState)
-registerTopDeclShallowState st decl = case decl of
-  Function ty name params _ ->
-    runCompileM (registerFunctionDecl ty name params) st
-  Prototype ty name params ->
-    runCompileM (registerFunctionDecl ty name params) st
-  StructDecl isUnion name fields ->
-    runCompileM (registerFieldAggregates fields >> bindStruct name isUnion fields) st
-  ExternGlobals globals ->
-    runCompileM (registerExternGlobals globals) st
-  EnumConstants constants ->
-    runCompileM (mapM_ (uncurry bindConstant) constants) st
-  TypeDecl types ->
-    runCompileM (mapM_ registerTypeAggregates types) st
-  _ -> Right ((), st)
+registerTopDeclIr :: TopDecl -> CompileM [TopItemIr]
+registerTopDeclIr decl = case decl of
+  Globals globals -> registerGlobalsIr globals
+  Function ty name params _ -> registerFunctionDecl ty name params >> pure []
+  Prototype ty name params -> registerFunctionDecl ty name params >> pure []
+  StructDecl isUnion name fields -> do
+    registerFieldAggregates fields
+    bindStruct name isUnion fields
+    pure []
+  ExternGlobals globals -> registerExternGlobals globals >> pure []
+  EnumConstants constants -> mapM_ (uncurry bindConstant) constants >> pure []
+  TypeDecl types -> mapM_ registerTypeAggregates types >> pure []
 
 registerFunctionDecl :: CType -> String -> [Param] -> CompileM ()
 registerFunctionDecl ty name params = do
@@ -92,18 +65,17 @@ registerFunctionDecl ty name params = do
   bindGlobal name ty
   bindFunctionType name ty params
 
-registerGlobalsIr :: CompileState -> [(CType, String, Maybe Expr)] -> Either CodegenError (CompileState, [TopItemIr])
-registerGlobalsIr st globals = case globals of
-  [] -> Right (st, [])
-  (ty, name, initExpr):rest ->
-    case mapCompileRun (runCompileM (registerTypeAggregates ty >> bindGlobal name ty >> globalData ty initExpr) st) of
-      Left err -> Left err
-      Right (values, st') ->
-        case pendingDataItemsIr st' of
-          (pending, st'') ->
-            case registerGlobalsIr st'' rest of
-              Left err -> Left err
-              Right (stFinal, restItems) -> Right (stFinal, TopData (DataItem name values) : pending ++ restItems)
+registerGlobalsIr :: [(CType, String, Maybe Expr)] -> CompileM [TopItemIr]
+registerGlobalsIr globals = case globals of
+  [] -> pure []
+  (ty, name, initExpr):rest -> do
+    registerTypeAggregates ty
+    bindGlobal name ty
+    values <- globalData ty initExpr
+    pending <- CompileM $ \st -> case pendingDataItemsIr st of
+      (items, st') -> StepOk items st'
+    restItems <- registerGlobalsIr rest
+    pure (TopData (DataItem name values) : pending ++ restItems)
 
 pendingDataItemsIr :: CompileState -> ([TopItemIr], CompileState)
 pendingDataItemsIr st = case csDataItems st of

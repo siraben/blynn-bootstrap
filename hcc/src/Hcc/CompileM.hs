@@ -19,7 +19,7 @@ module CompileM
   , bindConstant
   , bindFunction
   , bindFunctionType
-  , lookupVarMaybe
+  , lookupLocal
   , lookupVarType
   , lookupGlobalType
   , lookupConstant
@@ -215,11 +215,11 @@ bindFunctionType name retTy params = do
     , csFunctionTypes = symbolMapInsert name (CFunc retTy (paramTypes params)) (csFunctionTypes st)
     }
 
-lookupVarMaybe :: String -> CompileM (Maybe Temp)
-lookupVarMaybe name = getC (fmap fst . scopeMapLookup name . csVars)
+lookupLocal :: String -> CompileM (Maybe (Temp, CType))
+lookupLocal name = getC (scopeMapLookup name . csVars)
 
 lookupVarType :: String -> CompileM (Maybe CType)
-lookupVarType name = getC (fmap snd . scopeMapLookup name . csVars)
+lookupVarType name = fmap (fmap snd) (lookupLocal name)
 
 lookupGlobalType :: String -> CompileM (Maybe CType)
 lookupGlobalType name = getC (symbolMapLookup name . csGlobals)

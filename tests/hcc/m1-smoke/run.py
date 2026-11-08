@@ -20,6 +20,7 @@ CASES = [
     ("integer-correctness", 0),
     ("aggregate-correctness", 0),
     ("preprocessor-correctness", 0),
+    ("lower-local-context", 0),
 ]
 
 

@@ -246,9 +246,7 @@ globalDecl :: Bool -> [(CType, String, Maybe Expr)] -> TopDecl
 globalDecl isExtern decls =
   if isExtern && all uninitialized decls
     then ExternGlobals (map externPair decls)
-    else case decls of
-      [(ty, name, initExpr)] -> Global ty name initExpr
-      _ -> Globals decls
+    else Globals decls
   where
     uninitialized (_, _, initExpr) = case initExpr of
       Nothing -> True
@@ -679,9 +677,7 @@ localPrototype ty0 = do
   needPunct ";"
 
 declStmt :: [(CType, String, Maybe Expr)] -> Stmt
-declStmt decls = case decls of
-  [(ty, name, initExpr)] -> SDecl ty name initExpr
-  _ -> SDecls decls
+declStmt = SDecls
 
 declarationItem :: CType -> Parser (CType, String, Maybe Expr)
 declarationItem ty0 = do
