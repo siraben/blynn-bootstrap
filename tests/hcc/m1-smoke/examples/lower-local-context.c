@@ -137,6 +137,20 @@ int switch_prefix(void)
     return value != 14;
 }
 
+int switch_skipped_declaration(void)
+{
+    goto entry;
+    switch (0) {
+        goto entry;
+        int visible;
+    case 0:
+    entry:
+        visible = 3;
+        break;
+    }
+    return visible != 7;
+}
+
 int main(void)
 {
     if (later_local()) return 1;
@@ -151,5 +165,6 @@ int main(void)
     if (after_return(0) != 4 || after_return(1) != 6) return 6;
     if (after_break() || after_continue()) return 7;
     if (switch_prefix()) return 8;
+    if (switch_skipped_declaration()) return 9;
     return 0;
 }
