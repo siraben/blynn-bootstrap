@@ -1,3 +1,13 @@
+/* TinyCC stage1 CString formatter, not a variadic printf replacement.
+ * Callers supply at most four long-sized slots (including any .* precision);
+ * pointers must fit in a slot. Appends to cstr and returns bytes appended,
+ * excluding the trailing NUL. Supports s (NULL becomes "(null)"), c, d/i, u,
+ * x/X (both lowercase), and %%; optional .digits/.* limits strings only.
+ * Decimal widths are skipped, one l is accepted, but neither changes output.
+ * No flags, padding, floating point, or general length modifiers are supported.
+ * TinyCC callers must use complete supported conversions and avoid LONG_MIN
+ * for signed output. cstr_realloc must provide the requested capacity.
+ */
 typedef unsigned long size_t;
 
 typedef struct CString {
