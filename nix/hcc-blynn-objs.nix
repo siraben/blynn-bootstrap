@@ -35,35 +35,27 @@ stdenvNoCC.mkDerivation (
 
       compile_m2 ${../hcc/support/materialize-object-script.c} materialize-object-script
 
-      mkdir -p source generated
-      cp ${sourceBundle}/share/hcc-blynn-sources/hcc-common-full.hs source/hcc-common-full.hs
-
       BOOTSTRAP_LOG_NAME=hcc-blynn-objs \
       BOOTSTRAP_LIB=${../scripts/lib/bootstrap.sh} \
-      HCC_BLYNN_SOURCES_DIR=source \
+      HCC_BLYNN_SOURCES_DIR=${sourceBundle}/share/hcc-blynn-sources \
       MATERIALIZE_OBJECT_SCRIPT=$PWD/materialize-object-script \
       BLYNN_COMPILER=${blynnCompiler} \
       OUT_DIR=generated \
         ${../scripts/hcc-blynn-objs.sh}
 
-      cp generated/hcc-common-full.hs hcc-common-full.hs
-      cp generated/common-object-input.hs common-object-input.hs
-      cp generated/common-objects.sh common-objects.sh
-      mkdir -p common-objects
-      cp generated/common-objects/*.ob common-objects/
-      log_file hcc-common-full.hs
-      log_file common-object-input.hs
+      log_file generated/hcc-common-full.hs
+      log_file generated/common-object-input.hs
 
       runHook postBuild
     '';
 
     installPhase = ''
       runHook preInstall
-      install -Dm644 hcc-common-full.hs $out/share/${shareName}/hcc-common-full.hs
-      install -Dm644 common-object-input.hs $out/share/${shareName}/common-object-input.hs
-      install -Dm644 common-objects.sh $out/share/${shareName}/common-objects.sh
+      install -Dm644 generated/hcc-common-full.hs $out/share/${shareName}/hcc-common-full.hs
+      install -Dm644 generated/common-object-input.hs $out/share/${shareName}/common-object-input.hs
+      install -Dm644 generated/common-objects.sh $out/share/${shareName}/common-objects.sh
       mkdir -p $out/share/${shareName}/common-objects
-      cp common-objects/*.ob $out/share/${shareName}/common-objects/
+      cp generated/common-objects/*.ob $out/share/${shareName}/common-objects/
       runHook postInstall
     '';
 

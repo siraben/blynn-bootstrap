@@ -490,7 +490,6 @@
           stdenvNoCC = rawStdenvNoCC;
           src = hccBlynnInputSrc;
           blynnSrc = blynnUpstreamSrc;
-          kaem = minimalBootstrap.stage0-posix.kaem;
           bootstrapShell = minimalShell;
         };
 
@@ -507,7 +506,6 @@
             stdenvNoCC = rawStdenvNoCC;
             inherit pname precisely commonObjects;
             sourceBundle = hccBlynnSources;
-            kaem = minimalBootstrap.stage0-posix.kaem;
             bootstrapShell = minimalShell;
             shareName = pname;
           } // lib.optionalAttrs (blynnCompiler != null) { inherit blynnCompiler; });
@@ -566,7 +564,6 @@
               inherit (cBackend) hcppTop hcc1Top;
             };
             src = hccSrc;
-            kaem = minimalBootstrap.stage0-posix.kaem;
             bootstrapShell = minimalShell;
             shareName = pname;
           } // builtins.removeAttrs cBackend [ "hcppTop" "hcc1Top" ]);
