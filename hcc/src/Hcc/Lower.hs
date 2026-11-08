@@ -174,26 +174,15 @@ lowerIfNoBlocks no noId restId = case no of
   [] -> pure []
   _ -> lowerStatementsFrom noId [] no (TJump restId)
 
--- A goto may enter a nested statement. Lower the suffix without an incoming
--- edge, retaining declarations and the normal lexical and loop contexts.
+-- A goto may enter a nested statement. Lower every nonempty suffix without
+-- an incoming edge: even label-free declarations can bind names in a later
+-- switch clause. Initializers remain disconnected, not executed.
 lowerUnreachableLabels :: [Stmt] -> Terminator -> CompileM [BasicBlock]
-lowerUnreachableLabels stmts defaultTerm =
-  if any containsLabel stmts
-    then do
-      bid <- freshBlock
-      lowerStatementsFrom bid [] stmts defaultTerm
-    else pure []
-
-containsLabel :: Stmt -> Bool
-containsLabel stmt = case stmt of
-  SLabel _ -> True
-  SBlock body -> any containsLabel body
-  SIf _ yes no -> any containsLabel yes || any containsLabel no
-  SWhile _ body -> any containsLabel body
-  SDoWhile body _ -> any containsLabel body
-  SFor _ _ _ body -> any containsLabel body
-  SSwitch _ body -> any containsLabel body
-  _ -> False
+lowerUnreachableLabels stmts defaultTerm = case stmts of
+  [] -> pure []
+  _ -> do
+    bid <- freshBlock
+    lowerStatementsFrom bid [] stmts defaultTerm
 
 lowerLoopConditionBlocks :: Maybe Expr -> BlockId -> BlockId -> BlockId -> CompileM [BasicBlock]
 lowerLoopConditionBlocks condExpr condId bodyId restId = case condExpr of
