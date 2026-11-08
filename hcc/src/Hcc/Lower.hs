@@ -45,7 +45,12 @@ coerceReturnOperand op = do
     Nothing -> pure ([], op)
 
 lowerStatementsFrom :: BlockId -> [Instr] -> [Stmt] -> Terminator -> CompileM [BasicBlock]
-lowerStatementsFrom bid instrs stmts defaultTerm = case stmts of
+lowerStatementsFrom bid instrs stmts defaultTerm =
+  lowerStatementChunks bid [instrs] stmts defaultTerm
+
+-- Chunks are newest first; flatten only when the current block is emitted.
+lowerStatementChunks :: BlockId -> [[Instr]] -> [Stmt] -> Terminator -> CompileM [BasicBlock]
+lowerStatementChunks bid chunks stmts defaultTerm = case stmts of
   [] -> pure [BasicBlock bid instrs defaultTerm]
   SReturn value:rest -> case value of
     Nothing -> do
@@ -58,23 +63,23 @@ lowerStatementsFrom bid instrs stmts defaultTerm = case stmts of
       pure (BasicBlock bid (instrs ++ retInstrs ++ coerceInstrs) (TRet (Just retOp)) : tailBlocks)
   SBlock body:rest -> do
     if null rest
-      then withVarScope (lowerStatementsFrom bid instrs body defaultTerm)
+      then withVarScope (lowerStatementChunks bid chunks body defaultTerm)
       else do
         restId <- freshBlock
-        bodyBlocks <- withVarScope (lowerStatementsFrom bid instrs body (TJump restId))
+        bodyBlocks <- withVarScope (lowerStatementChunks bid chunks body (TJump restId))
         restBlocks <- lowerStatementsFrom restId [] rest defaultTerm
         pure (bodyBlocks ++ restBlocks)
   SDecl ty name initExpr:rest -> do
     declInstrs <- lowerDecl ty name initExpr
-    lowerStatementsFrom bid (instrs ++ declInstrs) rest defaultTerm
+    lowerStatementChunks bid (declInstrs:chunks) rest defaultTerm
   SDecls decls:rest -> do
     declInstrs <- lowerDecls decls
-    lowerStatementsFrom bid (instrs ++ declInstrs) rest defaultTerm
+    lowerStatementChunks bid (declInstrs:chunks) rest defaultTerm
   STypedef:rest ->
-    lowerStatementsFrom bid instrs rest defaultTerm
+    lowerStatementChunks bid chunks rest defaultTerm
   SExpr expr:rest -> do
     exprInstrs <- lowerSideEffect expr
-    lowerStatementsFrom bid (instrs ++ exprInstrs) rest defaultTerm
+    lowerStatementChunks bid (exprInstrs:chunks) rest defaultTerm
   SWhile cond body:rest -> do
     condId <- freshBlock
     bodyId <- freshBlock
@@ -134,6 +139,8 @@ lowerStatementsFrom bid instrs stmts defaultTerm = case stmts of
     tailBlocks <- lowerUnreachableLabels rest defaultTerm
     pure (BasicBlock bid instrs (TJump target) : tailBlocks)
   stmt:_ -> throwC ("unsupported statement in lowering: " ++ renderStmtTag stmt)
+  where
+    instrs = concat (reverse chunks)
 
 lowerForLoop :: BlockId -> [Instr] -> ForInit -> Maybe Expr -> Maybe Expr -> [Stmt] -> BlockId -> CompileM [BasicBlock]
 lowerForLoop bid instrs initClause condExpr stepExpr body restId = do
