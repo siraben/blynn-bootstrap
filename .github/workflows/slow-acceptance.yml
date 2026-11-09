@@ -1,0 +1,75 @@
+name: Slow acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Additional downstream endpoint (all uses the seed compiler path)
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - gcc46.m2.precisely.m2
+          - gccLatest.m2.precisely.m2
+          - gccGlibc.m2.precisely.m2
+          - gnuHello.m2.precisely.m2
+  schedule:
+    - cron: '17 5 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: slow-acceptance-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  select:
+    name: Select downstream endpoints
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.select.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test selector
+        run: python3 tests/slow-acceptance.py
+      - name: Select targets
+        id: select
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          TARGET: ${{ inputs.target }}
+        run: |
+          set -euo pipefail
+          matrix=$(python3 scripts/slow-acceptance-matrix.py "$EVENT_NAME" "$TARGET")
+          printf 'matrix=%s\n' "$matrix" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: downstream (${{ matrix.attr }})
+    needs: select
+    # The M2 compiler and downstream minimal-bootstrap endpoints are x86_64-only.
+    runs-on: ubuntu-24.04
+    # GitHub-hosted runners allow at most six hours per job. A timeout is a failure.
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix: ${{ fromJSON(needs.select.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31.5.2
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Setup Cachix
+        uses: cachix/cachix-action@v12
+        with:
+          name: siraben
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - name: Build downstream endpoint
+        env:
+          ATTR: ${{ matrix.attr }}
+        run: |
+          set -euo pipefail
+          nix build --max-jobs 2 --cores 2 --print-build-logs --no-link ".#$ATTR"
