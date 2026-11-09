@@ -19,6 +19,11 @@ module CompileM
   , bindConstant
   , bindFunction
   , bindFunctionType
+  , NameBinding(..)
+  , resolveName
+  , resolveCallee
+  , bindingType
+  , isFunctionBinding
   , lookupVarMaybe
   , lookupVarType
   , lookupGlobalType
@@ -44,6 +49,7 @@ module CompileM
   ) where
 
 import Base
+import LowerBuiltins
 import TextUtil
 import TypesAst
 import TypesIr
@@ -101,9 +107,7 @@ instance Monad CompileM where
     StepErr err -> StepErr err
     StepOk x st' -> unCompileM (next x) st'
 
--- | Adapter for callers that still want an 'Either' boundary
--- representation: convert at the boundary, but the internal monad
--- traffic uses 'Step'.
+-- Convert to Either only at the external compilation boundary.
 runCompileM :: CompileM a -> CompileState -> Either CompileError (a, CompileState)
 runCompileM action st = case unCompileM action st of
   StepErr err -> Left err
@@ -213,6 +217,47 @@ bindFunctionType name retTy params = do
     { csFunctions = symbolSetInsert name (csFunctions st)
     , csFunctionTypes = symbolMapInsert name (CFunc retTy (paramTypes params)) (csFunctionTypes st)
     }
+
+-- Locals mask function declarations and global objects in every call context.
+data NameBinding
+  = LocalBinding Temp CType
+  | GlobalBinding CType
+  | FunctionBinding (Maybe CType)
+  | UnknownBinding
+
+resolveName :: String -> CompileM NameBinding
+resolveName name = do
+  local <- getC (scopeMapLookup name . csVars)
+  case local of
+    Just (temp, ty) -> pure (LocalBinding temp ty)
+    Nothing -> do
+      function <- lookupFunction name
+      if function
+        then FunctionBinding <$> lookupFunctionType name
+        else do
+          global <- lookupGlobalType name
+          pure (maybe UnknownBinding GlobalBinding global)
+
+-- Bootstrap C permits calls without a prototype; object bindings never become
+-- implicit functions. Type queries use resolveName without introducing names.
+resolveCallee :: String -> CompileM NameBinding
+resolveCallee name = do
+  binding <- resolveName name
+  case binding of
+    UnknownBinding | allowsImplicitFunction name -> bindFunction name >> pure (FunctionBinding Nothing)
+    _ -> pure binding
+
+bindingType :: NameBinding -> Maybe CType
+bindingType binding = case binding of
+  LocalBinding _ ty -> Just ty
+  GlobalBinding ty -> Just ty
+  FunctionBinding ty -> ty
+  UnknownBinding -> Nothing
+
+isFunctionBinding :: NameBinding -> Bool
+isFunctionBinding binding = case binding of
+  FunctionBinding _ -> True
+  _ -> False
 
 lookupVarMaybe :: String -> CompileM (Maybe Temp)
 lookupVarMaybe name = getC (fmap fst . scopeMapLookup name . csVars)

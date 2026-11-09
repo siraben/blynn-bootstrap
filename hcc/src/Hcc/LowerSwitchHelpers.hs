@@ -1,8 +1,8 @@
 module LowerSwitchHelpers
-  ( collectSwitchClauses
+  ( switchBodyStatements
+  , collectSwitchClauses
   , freshBlocks
   , switchDefaultTarget
-  , switchCases
   ) where
 
 import Base
@@ -52,9 +52,7 @@ switchDefaultTarget restId clauses = case find isDefaultClause clauses of
       Nothing -> True
       Just _ -> False
 
-switchCases :: [(SwitchClause, BlockId)] -> [(Expr, BlockId)]
-switchCases = foldr addCase []
-  where
-    addCase (SwitchClause label _, bid) rest = case label of
-      Just value -> (value, bid) : rest
-      Nothing -> rest
+switchBodyStatements :: [Stmt] -> [Stmt]
+switchBodyStatements body = case body of
+  [SBlock stmts] -> stmts
+  _ -> body

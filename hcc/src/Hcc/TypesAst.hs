@@ -66,7 +66,7 @@ data ForInit
 data Stmt
   = SDecl CType String (Maybe Expr)
   | SDecls [(CType, String, Maybe Expr)]
-  | STypedef
+  | STypeDecl [CType]
   | SReturn (Maybe Expr)
   | SExpr Expr
   | SIf Expr [Stmt] [Stmt]
@@ -110,7 +110,7 @@ renderStmtTag :: Stmt -> String
 renderStmtTag stmt = case stmt of
   SDecl _ _ _ -> "SDecl"
   SDecls _ -> "SDecls"
-  STypedef -> "STypedef"
+  STypeDecl _ -> "STypeDecl"
   SReturn _ -> "SReturn"
   SExpr _ -> "SExpr"
   SIf _ _ _ -> "SIf"
