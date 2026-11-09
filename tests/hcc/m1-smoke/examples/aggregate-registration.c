@@ -1,0 +1,32 @@
+struct Forward;
+struct Forward *forward_pointer;
+struct Forward { int value; };
+struct Changing { char n; };
+int small = sizeof(struct Changing);
+struct Changing { int n; };
+int large = sizeof(struct Changing);
+struct Outer { struct Inner { short n; } inner; union Choice { int n; char bytes[4]; } choice; };
+typedef struct Outer Outer;
+int main(void) {
+  struct Local;
+  struct Local { int n; };
+  typedef struct Local Local;
+  typedef struct Named { char c; struct Local local; } Named;
+  typedef struct TypedefOnly { int n; } Unused;
+  int bound[sizeof(struct Bound { int n; })];
+  Local local = {7};
+  Named named = {1, {9}};
+  Outer outer = {{3}, {5}};
+  if (local.n != 7 || named.local.n != 9 || outer.inner.n != 3 || outer.choice.n != 5) return 1;
+  if (sizeof(Local) != 4 || sizeof(struct Local) != 4 || sizeof(struct Forward) != 4) return 2;
+  if (sizeof(Named) != 8 || sizeof(named) != 8 || sizeof(Outer) != 8 || sizeof(outer) != 8) return 3;
+  if (sizeof(struct Inline { int a; }) != 4 || sizeof(struct Inline) != 4) return 4;
+  if (sizeof((struct Cast { int a; } *)0) != sizeof(void *)) return 5;
+  if (sizeof(struct Cast) != 4) return 6;
+  if (sizeof(struct { char c; union { char bytes[3]; short n; } u; }) != 6) return 7;
+  if (sizeof(sizeof(struct Unevaluated { int n; })) != sizeof(size_t)) return 8;
+  if (sizeof((struct Comparison { int n; } *)0 == 0) != sizeof(int)) return 9;
+  if (sizeof(struct Unevaluated) != 4 || sizeof(struct Comparison) != 4 || sizeof(struct TypedefOnly) != 4) return 10;
+  if (small != 1 || large != 4 || sizeof(struct Bound) != 4 || sizeof(bound) != 16) return 11;
+  return (char *)&named.local - (char *)&named != 4;
+}

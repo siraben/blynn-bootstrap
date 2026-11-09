@@ -10,7 +10,6 @@ import TypesIr
 import Lower
 import LowerRegisters
 import LowerBootstrap
-import LowerImplicit
 
 data CodegenError = CodegenError String
 
@@ -33,7 +32,7 @@ lowerAndEmitTopDeclsIr :: (String -> IO ()) -> CompileState -> [TopDecl] -> IO (
 lowerAndEmitTopDeclsIr write st decls = case decls of
   [] -> pure (Right ())
   Function _ name params body:rest ->
-    case mapCompileRun (runCompileM (registerImplicitCalls (map (\(Param _ paramName) -> paramName) params) body >> lowerFunction name params body) st) of
+    case mapCompileRun (runCompileM (lowerFunction name params body) st) of
       Left err -> pure (Left err)
       Right (fn, st') ->
         case pendingDataItemsIr st' of
@@ -57,7 +56,7 @@ registerTopDeclsIr st decls = case decls of
 registerTopDeclIr :: CompileState -> TopDecl -> Either CodegenError (CompileState, [TopItemIr])
 registerTopDeclIr st decl = case decl of
   Global ty name initExpr ->
-    case mapCompileRun (runCompileM (registerTypeAggregates ty >> bindGlobal name ty >> globalData ty initExpr) st) of
+    case mapCompileRun (runCompileM (registerTypeIntroductions ty >> bindGlobal name ty >> globalData ty initExpr) st) of
       Left err -> Left err
       Right (values, st') -> do
         case pendingDataItemsIr st' of
@@ -76,19 +75,19 @@ registerTopDeclShallowState st decl = case decl of
   Prototype ty name params ->
     runCompileM (registerFunctionDecl ty name params) st
   StructDecl isUnion name fields ->
-    runCompileM (registerFieldAggregates fields >> bindStruct name isUnion fields) st
+    runCompileM (registerFieldIntroductions fields >> bindStruct name isUnion fields) st
   ExternGlobals globals ->
     runCompileM (registerExternGlobals globals) st
   EnumConstants constants ->
     runCompileM (mapM_ (uncurry bindConstant) constants) st
   TypeDecl types ->
-    runCompileM (mapM_ registerTypeAggregates types) st
+    runCompileM (mapM_ registerTypeIntroductions types) st
   _ -> Right ((), st)
 
 registerFunctionDecl :: CType -> String -> [Param] -> CompileM ()
 registerFunctionDecl ty name params = do
-  registerTypeAggregates ty
-  mapM_ registerTypeAggregates (paramTypes params)
+  registerTypeIntroductions ty
+  mapM_ registerTypeIntroductions (paramTypes params)
   bindGlobal name ty
   bindFunctionType name ty params
 
@@ -96,7 +95,7 @@ registerGlobalsIr :: CompileState -> [(CType, String, Maybe Expr)] -> Either Cod
 registerGlobalsIr st globals = case globals of
   [] -> Right (st, [])
   (ty, name, initExpr):rest ->
-    case mapCompileRun (runCompileM (registerTypeAggregates ty >> bindGlobal name ty >> globalData ty initExpr) st) of
+    case mapCompileRun (runCompileM (registerTypeIntroductions ty >> bindGlobal name ty >> globalData ty initExpr) st) of
       Left err -> Left err
       Right (values, st') ->
         case pendingDataItemsIr st' of

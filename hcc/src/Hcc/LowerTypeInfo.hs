@@ -5,6 +5,7 @@ module LowerTypeInfo
   ) where
 
 import Base
+import BootstrapTypes
 import TypesAst
 import CompileM
 
@@ -12,12 +13,8 @@ aggregateFields :: CType -> CompileM (Maybe (Bool, [Field]))
 aggregateFields ty = case ty of
   CStructDef fields -> pure (Just (False, fields))
   CUnionDef fields -> pure (Just (True, fields))
-  CStructNamed name fields -> do
-    bindStruct name False fields
-    pure (Just (False, fields))
-  CUnionNamed name fields -> do
-    bindStruct name True fields
-    pure (Just (True, fields))
+  CStructNamed _ fields -> pure (Just (False, fields))
+  CUnionNamed _ fields -> pure (Just (True, fields))
   CStruct name -> lookupStruct name
   CUnion name -> lookupStruct name
   CNamed name -> lookupStruct name
@@ -37,5 +34,5 @@ isAggregateType ty = case ty of
 isPointerType :: CType -> Bool
 isPointerType ty = case ty of
   CPtr _ -> True
-  CNamed name -> name `elem` ["intptr_t", "uintptr_t"]
+  CNamed name -> isPointerLikeName name
   _ -> False

@@ -5,6 +5,7 @@ module Parser
   ) where
 
 import Base
+import BootstrapTypes
 import ConstExpr
 import Literal
 import Operators
@@ -30,29 +31,6 @@ builtinTypeEnv :: [(String, CType)] -> ScopeMap ParserBinding
 builtinTypeEnv aliases = case aliases of
   [] -> scopeMapEmpty
   (name, ty):rest -> scopeMapInsert name (ParserType ty) (builtinTypeEnv rest)
-
-builtinTypeAliases :: [(String, CType)]
-builtinTypeAliases =
-  [ ("FILE", CStruct "FILE")
-  , ("FUNCTION", CLong)
-  , ("size_t", CNamed "size_t")
-  , ("ssize_t", CNamed "ssize_t")
-  , ("time_t", CNamed "time_t")
-  , ("ptrdiff_t", CNamed "ptrdiff_t")
-  , ("intptr_t", CNamed "intptr_t")
-  , ("uintptr_t", CNamed "uintptr_t")
-  , ("int8_t", CNamed "int8_t")
-  , ("int16_t", CNamed "int16_t")
-  , ("int32_t", CNamed "int32_t")
-  , ("int64_t", CNamed "int64_t")
-  , ("uint8_t", CNamed "uint8_t")
-  , ("uint16_t", CNamed "uint16_t")
-  , ("uint32_t", CNamed "uint32_t")
-  , ("uint64_t", CNamed "uint64_t")
-  , ("va_list", CPtr CVoid)
-  , ("__builtin_va_list", CPtr CVoid)
-  , ("jmp_buf", CPtr CVoid)
-  ]
 
 lookupParserType :: String -> Parser (Maybe CType)
 lookupParserType name = do
@@ -263,11 +241,14 @@ leadingExternQualifier = pRaw $ \env toks -> Unconsumed (Ok (go toks) env toks) 
     _ -> False
 
 typedefDecl :: Parser TopDecl
-typedefDecl = do
+typedefDecl = TypeDecl <$> typedefTypes
+
+typedefTypes :: Parser [CType]
+typedefTypes = do
   ty0 <- ctype
   first <- typedefItem ty0
   rest <- typedefItemsTail ty0
-  pure (TypeDecl (map typedefType (first:rest)))
+  pure (map typedefType (first:rest))
   where
     typedefType item = case item of
       (_, ty) -> ty
@@ -538,7 +519,7 @@ stmt = do
     _ -> parseExprStmt
 
 typedefStmt :: Parser Stmt
-typedefStmt = typedefDecl >> pure STypedef
+typedefStmt = STypeDecl <$> typedefTypes
 
 parseExprStmt :: Parser Stmt
 parseExprStmt = do
@@ -658,7 +639,7 @@ parseDeclStmt = do
   ty0 <- ctype
   standalone <- eatPunct ";"
   if standalone
-    then pure (SExpr (EInt "0"))
+    then pure (STypeDecl [ty0])
     else do
       prototype <- optionalP (tryP (localPrototype ty0))
       case prototype of
