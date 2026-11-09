@@ -19,7 +19,6 @@ data Program = Program [TopDecl]
 data TopDecl
   = Function CType String [Param] [Stmt]
   | Prototype CType String [Param]
-  | Global CType String (Maybe Expr)
   | Globals [(CType, String, Maybe Expr)]
   | ExternGlobals [(CType, String)]
   | StructDecl Bool String [Field]
@@ -64,8 +63,7 @@ data ForInit
   | ForDecls [(CType, String, Maybe Expr)]
 
 data Stmt
-  = SDecl CType String (Maybe Expr)
-  | SDecls [(CType, String, Maybe Expr)]
+  = SDecls [(CType, String, Maybe Expr)]
   | STypedef
   | SReturn (Maybe Expr)
   | SExpr Expr
@@ -108,7 +106,6 @@ paramTypes = map (\(Param ty _) -> ty)
 
 renderStmtTag :: Stmt -> String
 renderStmtTag stmt = case stmt of
-  SDecl _ _ _ -> "SDecl"
   SDecls _ -> "SDecls"
   STypedef -> "STypedef"
   SReturn _ -> "SReturn"

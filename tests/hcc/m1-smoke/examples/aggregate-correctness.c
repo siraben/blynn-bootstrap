@@ -11,7 +11,22 @@ int change(struct Value value) {
 }
 int change_union(union BytesUnion value) { value.data[0] = 9; return value.data[0]; }
 void change_array(int data[1]) { data[0] = 13; }
+struct Anonymous {
+  char tag;
+  union {
+    struct { char prefix; struct { int nested; }; };
+    long alternate;
+  };
+  int end;
+};
 int main(void) {
+  struct Anonymous anonymous;
+  anonymous.tag = 1;
+  anonymous.prefix = 2;
+  anonymous.nested = 17;
+  anonymous.end = 23;
+  if (anonymous.nested != 17 || anonymous.tag != 1 || anonymous.prefix != 2 || anonymous.end != 23) return 7;
+  if ((char *)&anonymous.nested - (char *)&anonymous != sizeof(long) + sizeof(int)) return 8;
   int x = 7;
   int data[2] = {{3 + 4}, {x}};
   struct Value value = {x, &x, "ok"};

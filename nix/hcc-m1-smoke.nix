@@ -44,6 +44,7 @@ stdenvNoCC.mkDerivation (
       python3 ${../tests/hcc/m1-smoke/run.py} \
         --m2libc ${m2libc} \
         --source-dir ${../tests/hcc/m1-smoke} \
+        --support-dir ${../hcc/support} \
         --work-dir . \
         --target ${target} \
         ${runnerArgs}

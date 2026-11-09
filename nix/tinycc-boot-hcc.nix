@@ -128,14 +128,6 @@ stdenvNoCC.mkDerivation {
       log_step "DONE  $label"
     }
 
-    run_step_shell() {
-      label="$1"
-      command="$2"
-      log_step "START $label"
-      eval "$command"
-      log_step "DONE  $label"
-    }
-
     log_file() {
       file="$1"
       log_step "FILE  $file"
@@ -197,10 +189,11 @@ stdenvNoCC.mkDerivation {
     #define CONFIG_TCC_SEMLOCK 0
     EOF
 
-    run_step_shell "hcpp tcc.c > tcc-expanded.c" "hcpp \
+    log_step "START hcpp tcc.c > tcc-expanded.c"
+    hcpp \
       -I . \
-      -I \"$tcc_include_src\" \
-      -I \"$mes_include_src\" \
+      -I "$tcc_include_src" \
+      -I "$mes_include_src" \
       -D __linux__=1 \
       -D BOOTSTRAP=1 \
       -D HAVE_LONG_LONG=1 \
@@ -210,29 +203,34 @@ stdenvNoCC.mkDerivation {
       ${targetDefineArg} \
       ${riscv64NoAsmDefineArg} \
       -D inline= \
-      -D CONFIG_TCCDIR=\\\"\\\" \
-      -D CONFIG_SYSROOT=\\\"\\\" \
-      -D CONFIG_TCC_CRTPREFIX=\\\"{B}\\\" \
-      -D CONFIG_TCC_ELFINTERP=\\\"/mes/loader\\\" \
-      -D CONFIG_TCC_LIBPATHS=\\\"{B}\\\" \
-      -D CONFIG_TCC_SYSINCLUDEPATHS=\\\"$tcc_sysinclude_path\\\" \
-      -D TCC_LIBGCC=\\\"libc.a\\\" \
-      -D TCC_LIBTCC1=\\\"libtcc1.a\\\" \
+      -D CONFIG_TCCDIR=\"\" \
+      -D CONFIG_SYSROOT=\"\" \
+      -D CONFIG_TCC_CRTPREFIX=\"{B}\" \
+      -D CONFIG_TCC_ELFINTERP=\"/mes/loader\" \
+      -D CONFIG_TCC_LIBPATHS=\"{B}\" \
+      -D CONFIG_TCC_SYSINCLUDEPATHS=\"$tcc_sysinclude_path\" \
+      -D TCC_LIBGCC=\"libc.a\" \
+      -D TCC_LIBTCC1=\"libtcc1.a\" \
       -D CONFIG_TCC_LIBTCC1_MES=0 \
       -D CONFIG_TCCBOOT=1 \
       -D CONFIG_TCC_STATIC=1 \
       -D CONFIG_USE_LIBGCC=1 \
       -D TCC_MES_LIBC=1 \
-      -D TCC_VERSION=\\\"0.9.28-${version}\\\" \
+      -D TCC_VERSION=\"0.9.28-${version}\" \
       -D ONE_SOURCE=1 \
       -D CONFIG_TCC_SEMLOCK=0 \
-      tcc.c > tcc-expanded.c"
+      tcc.c > tcc-expanded.c
+    log_step "DONE  hcpp tcc.c > tcc-expanded.c"
     log_file tcc-expanded.c
 
-    run_step_shell "hcpp tcc-bootstrap-support.c > tcc-bootstrap-support.i" "hcpp ${support}/tcc-bootstrap-support.c > tcc-bootstrap-support.i"
+    log_step "START hcpp tcc-bootstrap-support.c > tcc-bootstrap-support.i"
+    hcpp ${support}/tcc-bootstrap-support.c > tcc-bootstrap-support.i
+    log_step "DONE  hcpp tcc-bootstrap-support.c > tcc-bootstrap-support.i"
     log_file tcc-bootstrap-support.i
     compile_m1 tcc-bootstrap-support.i tcc-bootstrap-support.M1
-    run_step_shell "hcpp tcc-final-overrides.c > tcc-final-overrides.i" "hcpp ${support}/tcc-final-overrides.c > tcc-final-overrides.i"
+    log_step "START hcpp tcc-final-overrides.c > tcc-final-overrides.i"
+    hcpp ${support}/tcc-final-overrides.c > tcc-final-overrides.i
+    log_step "DONE  hcpp tcc-final-overrides.c > tcc-final-overrides.i"
     log_file tcc-final-overrides.i
     compile_m1 tcc-final-overrides.i tcc-final-overrides.M1
     compile_m1 tcc-expanded.c tcc.M1
@@ -325,102 +323,47 @@ stdenvNoCC.mkDerivation {
       bootstrap_link_suffix="bootstrap-libs/libc.o bootstrap-libs/libtcc1.o bootstrap-libs/crtn.o"
     fi
 
-    run_step "tcc self-build stage2" run_target ./tcc $bootstrap_link_prefix \
-      -I . \
-      -I "$tcc_include_src" \
-      -I "$mes_include_src" \
-      -D__linux__=1 \
-      -DBOOTSTRAP=1 \
-      -DHAVE_LONG_LONG=1 \
-      -DHAVE_SETJMP=1 \
-      -DHAVE_BITFIELD=1 \
-      -DHAVE_FLOAT=1 \
-      ${tccTargetDefineArg} \
-      ${tccRiscv64NoAsmDefineArg} \
-      -Dinline= \
-      -DCONFIG_TCCDIR=\"\" \
-      -DCONFIG_SYSROOT=\"\" \
-      -DCONFIG_TCC_CRTPREFIX=\"{B}\" \
-      -DCONFIG_TCC_ELFINTERP=\"/mes/loader\" \
-      -DCONFIG_TCC_LIBPATHS=\"{B}\" \
-      -DCONFIG_TCC_SYSINCLUDEPATHS=\"$out/include\" \
-      -DTCC_LIBGCC=\"libc.a\" \
-      -DTCC_LIBTCC1=\"libtcc1.a\" \
-      -DCONFIG_TCC_LIBTCC1_MES=0 \
-      -DCONFIG_TCC_STATIC=1 \
-      -DCONFIG_USE_LIBGCC=1 \
-      -DTCC_MES_LIBC=1 \
-      -DTCC_VERSION=\"0.9.28-${version}\" \
-      -DONE_SOURCE=1 \
-      -DCONFIG_TCC_SEMLOCK=0 \
-      tcc.c \
-      $bootstrap_link_suffix \
-      -o tcc-stage2
+    self_build() {
+      compiler="$1"
+      output="$2"
+      run_target "$compiler" $bootstrap_link_prefix \
+        -I . \
+        -I "$tcc_include_src" \
+        -I "$mes_include_src" \
+        -D__linux__=1 \
+        -DBOOTSTRAP=1 \
+        -DHAVE_LONG_LONG=1 \
+        -DHAVE_SETJMP=1 \
+        -DHAVE_BITFIELD=1 \
+        -DHAVE_FLOAT=1 \
+        ${tccTargetDefineArg} \
+        ${tccRiscv64NoAsmDefineArg} \
+        -Dinline= \
+        -DCONFIG_TCCDIR=\"\" \
+        -DCONFIG_SYSROOT=\"\" \
+        -DCONFIG_TCC_CRTPREFIX=\"{B}\" \
+        -DCONFIG_TCC_ELFINTERP=\"/mes/loader\" \
+        -DCONFIG_TCC_LIBPATHS=\"{B}\" \
+        -DCONFIG_TCC_SYSINCLUDEPATHS=\"$out/include\" \
+        -DTCC_LIBGCC=\"libc.a\" \
+        -DTCC_LIBTCC1=\"libtcc1.a\" \
+        -DCONFIG_TCC_LIBTCC1_MES=0 \
+        -DCONFIG_TCC_STATIC=1 \
+        -DCONFIG_USE_LIBGCC=1 \
+        -DTCC_MES_LIBC=1 \
+        -DTCC_VERSION=\"0.9.28-${version}\" \
+        -DONE_SOURCE=1 \
+        -DCONFIG_TCC_SEMLOCK=0 \
+        tcc.c \
+        $bootstrap_link_suffix \
+        -o "$output"
+    }
 
-    run_step "tcc-stage2 self-build stage3" run_target ./tcc-stage2 $bootstrap_link_prefix \
-      -I . \
-      -I "$tcc_include_src" \
-      -I "$mes_include_src" \
-      -D__linux__=1 \
-      -DBOOTSTRAP=1 \
-      -DHAVE_LONG_LONG=1 \
-      -DHAVE_SETJMP=1 \
-      -DHAVE_BITFIELD=1 \
-      -DHAVE_FLOAT=1 \
-      ${tccTargetDefineArg} \
-      ${tccRiscv64NoAsmDefineArg} \
-      -Dinline= \
-      -DCONFIG_TCCDIR=\"\" \
-      -DCONFIG_SYSROOT=\"\" \
-      -DCONFIG_TCC_CRTPREFIX=\"{B}\" \
-      -DCONFIG_TCC_ELFINTERP=\"/mes/loader\" \
-      -DCONFIG_TCC_LIBPATHS=\"{B}\" \
-      -DCONFIG_TCC_SYSINCLUDEPATHS=\"$out/include\" \
-      -DTCC_LIBGCC=\"libc.a\" \
-      -DTCC_LIBTCC1=\"libtcc1.a\" \
-      -DCONFIG_TCC_LIBTCC1_MES=0 \
-      -DCONFIG_TCC_STATIC=1 \
-      -DCONFIG_USE_LIBGCC=1 \
-      -DTCC_MES_LIBC=1 \
-      -DTCC_VERSION=\"0.9.28-${version}\" \
-      -DONE_SOURCE=1 \
-      -DCONFIG_TCC_SEMLOCK=0 \
-      tcc.c \
-      $bootstrap_link_suffix \
-      -o tcc-stage3
+    run_step "tcc self-build stage2" self_build ./tcc tcc-stage2
+    run_step "tcc-stage2 self-build stage3" self_build ./tcc-stage2 tcc-stage3
 
     if [ "$target_is_aarch64" = 1 ]; then
-    run_step "tcc-stage3 self-build stage4" run_target ./tcc-stage3 $bootstrap_link_prefix \
-      -I . \
-      -I "$tcc_include_src" \
-      -I "$mes_include_src" \
-      -D__linux__=1 \
-      -DBOOTSTRAP=1 \
-      -DHAVE_LONG_LONG=1 \
-      -DHAVE_SETJMP=1 \
-      -DHAVE_BITFIELD=1 \
-      -DHAVE_FLOAT=1 \
-      ${tccTargetDefineArg} \
-      ${tccRiscv64NoAsmDefineArg} \
-      -Dinline= \
-      -DCONFIG_TCCDIR=\"\" \
-      -DCONFIG_SYSROOT=\"\" \
-      -DCONFIG_TCC_CRTPREFIX=\"{B}\" \
-      -DCONFIG_TCC_ELFINTERP=\"/mes/loader\" \
-      -DCONFIG_TCC_LIBPATHS=\"{B}\" \
-      -DCONFIG_TCC_SYSINCLUDEPATHS=\"$out/include\" \
-      -DTCC_LIBGCC=\"libc.a\" \
-      -DTCC_LIBTCC1=\"libtcc1.a\" \
-      -DCONFIG_TCC_LIBTCC1_MES=0 \
-      -DCONFIG_TCC_STATIC=1 \
-      -DCONFIG_USE_LIBGCC=1 \
-      -DTCC_MES_LIBC=1 \
-      -DTCC_VERSION=\"0.9.28-${version}\" \
-      -DONE_SOURCE=1 \
-      -DCONFIG_TCC_SEMLOCK=0 \
-      tcc.c \
-      $bootstrap_link_suffix \
-      -o tcc-stage4
+    run_step "tcc-stage3 self-build stage4" self_build ./tcc-stage3 tcc-stage4
 
     run_step "fixpoint check tcc-stage3 == tcc-stage4" cmp tcc-stage3 tcc-stage4
     else
@@ -508,10 +451,9 @@ stdenvNoCC.mkDerivation {
     mkdir -p $out/lib
     cp final-libs/crt1.o final-libs/crti.o final-libs/crtn.o $out/lib/
     cp final-libs/libc.a final-libs/libgetopt.a final-libs/libtcc1.a $out/lib/
-    mkdir -p out-include
-    cp -R ${mesLibc}/include/. out-include/
-    cp -R include/. out-include/
-    cp -R out-include $out/include
+    mkdir -p $out/include
+    cp -R ${mesLibc}/include/. $out/include/
+    cp -R include/. $out/include/
     fi
     runHook postInstall
   '';
