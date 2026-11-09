@@ -1,0 +1,1 @@
+#define HCC_INCLUDE_SMOKE 7
