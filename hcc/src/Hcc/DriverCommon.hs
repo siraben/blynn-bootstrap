@@ -2,9 +2,8 @@ module DriverCommon
   ( AsmOptions(..)
   , die
   , lexPlainSource
-  , spliceContinuations
-  , stripComments
-  , stripLineComment
+  , normalizeSource
+  , lexNormalizedSource
   , dataLabelPrefix
   , assemblyArgs
   , renderDefines
@@ -21,8 +20,12 @@ import TypesToken
 die :: String -> IO ()
 die msg = hccPutErrLine msg >> hccExitFailure
 
+-- Translation phases run once per physical input, before directive recognition.
 lexPlainSource :: String -> Either String [Token]
-lexPlainSource source = case lexC (stripComments (spliceContinuations source)) of
+lexPlainSource source = normalizeSource source >>= lexNormalizedSource
+
+lexNormalizedSource :: String -> Either String [Token]
+lexNormalizedSource source = case lexC source of
   Left (LexError pos msg) -> Left (showPos pos ++ ": " ++ msg)
   Right toks -> Right toks
 
@@ -35,41 +38,31 @@ spliceContinuations ('\\':c:'\n':rest) =
 spliceContinuations ('\\':'\n':rest) = spliceContinuations rest
 spliceContinuations (c:rest) = c : spliceContinuations rest
 
-stripComments :: String -> String
-stripComments = stripCommentNormal
-
-stripCommentNormal :: String -> String
-stripCommentNormal [] = []
-stripCommentNormal ('/':'/':rest) = stripLineComment rest
-stripCommentNormal ('/':'*':rest) = stripBlockComment rest
-stripCommentNormal ('"':rest) = '"' : stripStringLiteral rest
-stripCommentNormal ('\'':rest) = '\'' : stripCharLiteral rest
-stripCommentNormal (c:rest) = c : stripCommentNormal rest
-
-stripLineComment :: String -> String
-stripLineComment [] = []
-stripLineComment ('\n':rest) = '\n' : stripCommentNormal rest
-stripLineComment (_:rest) = stripLineComment rest
-
-stripBlockComment :: String -> String
-stripBlockComment [] = []
-stripBlockComment ('*':'/':rest) = ' ' : stripCommentNormal rest
-stripBlockComment ('\n':rest) = '\n' : stripBlockComment rest
-stripBlockComment (_:rest) = stripBlockComment rest
-
-stripStringLiteral :: String -> String
-stripStringLiteral = stripQuotedLiteral '"'
-
-stripCharLiteral :: String -> String
-stripCharLiteral = stripQuotedLiteral '\''
-
-stripQuotedLiteral :: Char -> String -> String
-stripQuotedLiteral _ [] = []
-stripQuotedLiteral quote ('\\':c:rest) = '\\' : c : stripQuotedLiteral quote rest
-stripQuotedLiteral quote (c:rest) =
-  if c == quote
-    then c : stripCommentNormal rest
-    else c : stripQuotedLiteral quote rest
+-- Keep comment columns/newlines as whitespace: macro adjacency and diagnostics
+-- must not depend on the length of a removed comment. Positions are post-splice.
+normalizeSource :: String -> Either String String
+normalizeSource source = normal (SrcPos 1 1) (spliceContinuations source)
+  where
+  next (SrcPos line col) c = if c == '\n' then SrcPos (line + 1) 1 else SrcPos line (col + 1)
+  normal pos text = case text of
+    [] -> Right []
+    '/':'/':rest -> ("  " ++) <$> lineComment (next (next pos '/') '/') rest
+    '/':'*':rest -> ("  " ++) <$> blockComment pos (next (next pos '/') '*') rest
+    '"':rest -> ('"':) <$> quoted '"' (next pos '"') rest
+    '\'':rest -> ('\'':) <$> quoted '\'' (next pos '\'') rest
+    c:rest -> (c:) <$> normal (next pos c) rest
+  lineComment pos text = case text of
+    [] -> Right []
+    '\n':rest -> ('\n':) <$> normal (next pos '\n') rest
+    c:rest -> (' ':) <$> lineComment (next pos c) rest
+  blockComment start pos text = case text of
+    [] -> Left (showPos start ++ ": unterminated block comment")
+    '*':'/':rest -> ("  " ++) <$> normal (next (next pos '*') '/') rest
+    c:rest -> ((if c == '\n' then '\n' else ' '):) <$> blockComment start (next pos c) rest
+  quoted quote pos text = case text of
+    [] -> Right []
+    '\\':c:rest -> ('\\':) . (c:) <$> quoted quote (next (next pos '\\') c) rest
+    c:rest -> (c:) <$> (if c == quote then normal else quoted quote) (next pos c) rest
 
 dataLabelPrefix :: String -> String
 dataLabelPrefix path =

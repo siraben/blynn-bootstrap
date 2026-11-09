@@ -1,1 +1,0 @@
-int hcc_aarch64_empty_runtime_object;

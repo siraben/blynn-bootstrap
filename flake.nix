@@ -51,11 +51,12 @@
         mesLibcArch =
           lib.attrByPath [ system ] (throw "unsupported Mes libc bootstrap platform: ${system}") {
             "x86_64-linux" = "x86_64";
+            # Mes supplies an LP64 header/source view, not the emitted target ABI.
             "aarch64-linux" = "x86_64";
-            "i686-linux" = "x86";
+            "i686-linux" = throw "unsupported i686 Mes libc bootstrap: replacements require LP64 and x86_64 setjmp";
           };
         nativeM1Target =
-          lib.attrByPath [ system ] "amd64" {
+          lib.attrByPath [ system ] (throw "unsupported native M1 platform: ${system}") {
             "aarch64-linux" = "aarch64";
             "x86_64-linux" = "amd64";
             "i686-linux" = "i386";
@@ -493,43 +494,23 @@
           bootstrapShell = minimalShell;
         };
 
-        hccBlynnObjsFromPrecisely = pname: precisely:
-          pkgs.callPackage ./nix/hcc-blynn-objs.nix {
+        hccBlynnObjs = { pname, precisely, blynnCompiler ? null }:
+          pkgs.callPackage ./nix/hcc-blynn-objs.nix ({
             stdenvNoCC = rawStdenvNoCC;
             inherit pname precisely minimalBootstrap;
             sourceBundle = hccBlynnSources;
             shareName = pname;
-          };
+          } // lib.optionalAttrs (blynnCompiler != null) { inherit blynnCompiler; });
 
-        hccBlynnObjsFromCompiler = pname: precisely: blynnCompiler:
-          pkgs.callPackage ./nix/hcc-blynn-objs.nix {
-            stdenvNoCC = rawStdenvNoCC;
-            inherit pname precisely minimalBootstrap;
-            inherit blynnCompiler;
-            sourceBundle = hccBlynnSources;
-            shareName = pname;
-          };
-
-        hccBlynnCFromPrecisely = pname: precisely: commonObjects:
-          pkgs.callPackage ./nix/hcc-blynn-c.nix {
+        hccBlynnC = { pname, precisely, commonObjects, blynnCompiler ? null }:
+          pkgs.callPackage ./nix/hcc-blynn-c.nix ({
             stdenvNoCC = rawStdenvNoCC;
             inherit pname precisely commonObjects;
             sourceBundle = hccBlynnSources;
             kaem = minimalBootstrap.stage0-posix.kaem;
             bootstrapShell = minimalShell;
             shareName = pname;
-          };
-
-        hccBlynnCFromCompiler = pname: precisely: blynnCompiler: commonObjects:
-          pkgs.callPackage ./nix/hcc-blynn-c.nix {
-            stdenvNoCC = rawStdenvNoCC;
-            inherit pname precisely commonObjects;
-            inherit blynnCompiler;
-            sourceBundle = hccBlynnSources;
-            kaem = minimalBootstrap.stage0-posix.kaem;
-            bootstrapShell = minimalShell;
-            shareName = pname;
-          };
+          } // lib.optionalAttrs (blynnCompiler != null) { inherit blynnCompiler; });
 
         preciselyBy = {
           m2.stage0 = blynnPhaseBin;
@@ -540,15 +521,38 @@
         hccM2BlynnCompiler = "${blynnUpstreamStages.crossly1}/bin/crossly1";
 
         hccBlynnCBy = {
-          ghc.precisely = hccBlynnCFromPrecisely "hcc-blynn-c-ghc-precisely" preciselyBy.ghc.debug hccBlynnObjsBy.ghc.precisely;
-          gcc.precisely = hccBlynnCFromPrecisely "hcc-blynn-c-gcc-precisely" preciselyBy.gcc.host hccBlynnObjsBy.gcc.precisely;
-          m2.precisely = hccBlynnCFromCompiler "hcc-blynn-c-m2-precisely" preciselyBy.m2.stage0 hccM2BlynnCompiler hccBlynnObjsBy.m2.precisely;
+          ghc.precisely = hccBlynnC {
+            pname = "hcc-blynn-c-ghc-precisely";
+            precisely = preciselyBy.ghc.debug;
+            commonObjects = hccBlynnObjsBy.ghc.precisely;
+          };
+          gcc.precisely = hccBlynnC {
+            pname = "hcc-blynn-c-gcc-precisely";
+            precisely = preciselyBy.gcc.host;
+            commonObjects = hccBlynnObjsBy.gcc.precisely;
+          };
+          m2.precisely = hccBlynnC {
+            pname = "hcc-blynn-c-m2-precisely";
+            precisely = preciselyBy.m2.stage0;
+            commonObjects = hccBlynnObjsBy.m2.precisely;
+            blynnCompiler = hccM2BlynnCompiler;
+          };
         };
 
         hccBlynnObjsBy = {
-          ghc.precisely = hccBlynnObjsFromPrecisely "hcc-blynn-objs-ghc-precisely" preciselyBy.ghc.debug;
-          gcc.precisely = hccBlynnObjsFromPrecisely "hcc-blynn-objs-gcc-precisely" preciselyBy.gcc.host;
-          m2.precisely = hccBlynnObjsFromCompiler "hcc-blynn-objs-m2-precisely" preciselyBy.m2.stage0 hccM2BlynnCompiler;
+          ghc.precisely = hccBlynnObjs {
+            pname = "hcc-blynn-objs-ghc-precisely";
+            precisely = preciselyBy.ghc.debug;
+          };
+          gcc.precisely = hccBlynnObjs {
+            pname = "hcc-blynn-objs-gcc-precisely";
+            precisely = preciselyBy.gcc.host;
+          };
+          m2.precisely = hccBlynnObjs {
+            pname = "hcc-blynn-objs-m2-precisely";
+            precisely = preciselyBy.m2.stage0;
+            blynnCompiler = hccM2BlynnCompiler;
+          };
         };
 
         hccFromPrecisely = {
@@ -721,9 +725,9 @@
           };
         };
 
-        tinyccFromHccForTarget = pname: hcc: target: pkgs.callPackage ./nix/tinycc-boot-hcc.nix {
+        tinyccBuild = m1ArtifactsOnly: pname: hcc: target: pkgs.callPackage ./nix/tinycc-boot-hcc.nix {
           stdenvNoCC = rawStdenvNoCC;
-          inherit pname hcc minimalBootstrap target;
+          inherit pname hcc minimalBootstrap target m1ArtifactsOnly;
           binutils = if target == "riscv64" then pkgs.pkgsCross.riscv64.buildPackages.binutils else pkgs.binutils;
           diffutils = pkgs.diffutils;
           gnugrep = pkgs.gnugrep;
@@ -733,20 +737,9 @@
           patchTool = pkgs.patch;
         };
 
+        tinyccFromHccForTarget = tinyccBuild false;
+        tinyccM1FromHccForTarget = tinyccBuild true;
         tinyccFromHcc = pname: hcc: tinyccFromHccForTarget pname hcc nativeM1Target;
-
-        tinyccM1FromHccForTarget = pname: hcc: target: pkgs.callPackage ./nix/tinycc-boot-hcc.nix {
-          stdenvNoCC = rawStdenvNoCC;
-          inherit pname hcc minimalBootstrap target;
-          binutils = if target == "riscv64" then pkgs.pkgsCross.riscv64.buildPackages.binutils else pkgs.binutils;
-          diffutils = pkgs.diffutils;
-          gnugrep = pkgs.gnugrep;
-          qemu = pkgs.qemu;
-          mesLibc = mesLibcSrc;
-          m2libc = m2libcSrc;
-          patchTool = pkgs.patch;
-          m1ArtifactsOnly = true;
-        };
 
         tinyccM1FromHcc = pname: hcc: tinyccM1FromHccForTarget pname hcc nativeM1Target;
 
@@ -1094,6 +1087,12 @@
             host.ghc.native.mescc = hcc-mescc-tests-native;
             portable.tinycc-selfhost = tinyccPortableSelfhost;
             host.ghc.native.tinycc-riscv64 = tinyccBy.riscv64.host.ghc.native;
+            host.ghc.native.reduced-allocator-aarch64 = pkgs.callPackage ./nix/tcc-reduced-allocator-test.nix {
+              stdenvNoCC = rawStdenvNoCC;
+              hcc = hccBy.host.ghc.native;
+              inherit minimalBootstrap;
+              m2libc = m2libcSrc;
+            };
             precisely.dialect = precisely-dialect-tests;
             tinyccM1.native-vs-faithful = tinyccM1Compare
               "tinycc-m1-compare-native-faithful" tinyccM1By.m2.precisely.m2;
@@ -1107,6 +1106,15 @@
         };
 
         checks = {
+          tinycc-targets = assert import ./tests/tinycc-targets.nix { inherit lib; };
+            pkgs.runCommand "tinycc-target-tests" { } ''touch "$out"'';
+          prepare-mes-libc = pkgs.runCommand "prepare-mes-libc-tests" { } ''
+            mkdir -p scripts/lib
+            cp ${./scripts/prepare-mes-libc.sh} scripts/prepare-mes-libc.sh
+            cp ${./scripts/lib/bootstrap.sh} scripts/lib/bootstrap.sh
+            sh ${./tests/prepare-mes-libc.sh} "$PWD"
+            touch "$out"
+          '';
           bootstrap-tools = pkgs.runCommand "bootstrap-tools-tests" { } ''
             mkdir -p scripts/lib data patches
             cp ${./scripts/bootstrap-tools.sh} scripts/bootstrap-tools.sh

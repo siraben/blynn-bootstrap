@@ -7,10 +7,8 @@ module SymbolTable
   , symbolMapInsert
   , symbolMapDelete
   , symbolMapMember
-  , symbolSetFromList
   , symbolSetMember
   , symbolSetInsert
-  , symbolSetDelete
   ) where
 
 import Base
@@ -43,17 +41,11 @@ symbolMapDelete k (SymbolMap t) = SymbolMap (deleteT k t)
 symbolMapMember :: String -> SymbolMap a -> Bool
 symbolMapMember k m = maybe False (const True) (symbolMapLookup k m)
 
-symbolSetFromList :: [String] -> SymbolSet
-symbolSetFromList = foldr symbolSetInsert symbolSetEmpty
-
 symbolSetMember :: String -> SymbolSet -> Bool
 symbolSetMember k (SymbolSet t) = maybe False (const True) (lookupT k t)
 
 symbolSetInsert :: String -> SymbolSet -> SymbolSet
 symbolSetInsert k (SymbolSet t) = SymbolSet (insertT k () t)
-
-symbolSetDelete :: String -> SymbolSet -> SymbolSet
-symbolSetDelete k (SymbolSet t) = SymbolSet (deleteT k t)
 
 lookupT :: String -> Tree a -> Maybe a
 lookupT k = lookupH k (hash k)

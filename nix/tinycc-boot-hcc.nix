@@ -18,6 +18,7 @@
 }:
 
 let
+  nixLib = import ./lib.nix { inherit lib; };
   version = "unstable-2025-12-03";
   rev = (import ./source-pins.nix).JANNEKE_TINYCC_REV;
   shortRev = builtins.substring 0 7 rev;
@@ -56,7 +57,7 @@ let
       buildArm64Lib = false;
       buildRiscv64Lib = true;
       needsQemu = true;
-    } else {
+    } else if target == "amd64" || target == "x86_64" then {
       hcc = "amd64";
       m1 = "amd64";
       m2 = "amd64";
@@ -72,7 +73,7 @@ let
       buildArm64Lib = false;
       buildRiscv64Lib = false;
       needsQemu = false;
-    };
+    } else throw "unsupported TinyCC HCC target: ${target}";
   targetDefineArg = "-D ${targetCfg.tccDefine}=1";
   tccTargetDefineArg = "-D${targetCfg.tccDefine}=1";
   riscv64NoAsmDefineArg = lib.optionalString targetCfg.buildRiscv64Lib "-D TCC_RISCV64_NO_ASM=1";
@@ -116,30 +117,7 @@ stdenvNoCC.mkDerivation {
 
     ulimit -s unlimited
 
-    log_step() {
-      printf 'tinycc-boot-hcc: %s\n' "$1"
-    }
-
-    run_step() {
-      label="$1"
-      shift
-      log_step "START $label"
-      "$@"
-      log_step "DONE  $label"
-    }
-
-    run_step_shell() {
-      label="$1"
-      command="$2"
-      log_step "START $label"
-      eval "$command"
-      log_step "DONE  $label"
-    }
-
-    log_file() {
-      file="$1"
-      log_step "FILE  $file"
-    }
+    ${nixLib.shellHelpers { name = "tinycc-boot-hcc"; }}
 
     m1_artifacts_only="${if m1ArtifactsOnly then "1" else "0"}"
     target_is_aarch64="${if targetCfg.buildArm64Lib then "1" else "0"}"
@@ -283,8 +261,8 @@ stdenvNoCC.mkDerivation {
     mkdir -p bootstrap-libs
     if [ "$target_is_aarch64" = 1 ]; then
     run_step "as bootstrap aarch64 crt1.s" assemble_support_object bootstrap-libs/crt1.o ${support}/tcc-aarch64-crt1.s
-    run_step "tcc bootstrap aarch64 crti.c" ./tcc -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o bootstrap-libs/crti.o ${support}/tcc-aarch64-empty.c
-    run_step "tcc bootstrap aarch64 crtn.c" ./tcc -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o bootstrap-libs/crtn.o ${support}/tcc-aarch64-empty.c
+    run_step "tcc bootstrap aarch64 crti.c" ./tcc -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o bootstrap-libs/crti.o ${support}/tcc-empty.c
+    run_step "tcc bootstrap aarch64 crtn.c" ./tcc -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o bootstrap-libs/crtn.o ${support}/tcc-empty.c
     run_step "tcc bootstrap aarch64 runtime.c" ./tcc -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o bootstrap-libs/aarch64-runtime.o ${support}/tcc-aarch64-runtime.c
     run_step "as bootstrap aarch64 syscalls.s" assemble_support_object bootstrap-libs/aarch64-syscalls.o ${support}/tcc-aarch64-syscalls.s
     run_step "tcc bootstrap support.c" ./tcc -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o bootstrap-libs/tcc-bootstrap-support.o ${support}/tcc-bootstrap-support.c
@@ -292,8 +270,8 @@ stdenvNoCC.mkDerivation {
     elif [ "$target_is_riscv64" = 1 ]; then
     run_step "as bootstrap riscv64 crt1.s" assemble_support_object bootstrap-libs/crt1.o ${support}/tcc-riscv64-crt1.s
     run_step "as bootstrap riscv64 syscalls.s" assemble_support_object bootstrap-libs/riscv64-syscalls.o ${support}/tcc-riscv64-syscalls.s
-    run_step "tcc bootstrap riscv64 crti.c" run_target ./tcc -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o bootstrap-libs/crti.o ${support}/tcc-riscv64-empty.c
-    run_step "tcc bootstrap riscv64 crtn.c" run_target ./tcc -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o bootstrap-libs/crtn.o ${support}/tcc-riscv64-empty.c
+    run_step "tcc bootstrap riscv64 crti.c" run_target ./tcc -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o bootstrap-libs/crti.o ${support}/tcc-empty.c
+    run_step "tcc bootstrap riscv64 crtn.c" run_target ./tcc -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o bootstrap-libs/crtn.o ${support}/tcc-empty.c
     run_step "tcc bootstrap riscv64 runtime.c" run_target ./tcc -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o bootstrap-libs/riscv64-runtime.o ${support}/tcc-riscv64-runtime.c
     run_step "tcc bootstrap support.c" run_target ./tcc -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o bootstrap-libs/tcc-bootstrap-support.o ${support}/tcc-bootstrap-support.c
     run_step "tcc bootstrap libgetopt.c" run_target ./tcc -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o bootstrap-libs/libgetopt.o ${mesLibc}/lib/libgetopt.c
@@ -304,9 +282,9 @@ stdenvNoCC.mkDerivation {
     run_step "tcc bootstrap libc.c" ./tcc -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o bootstrap-libs/libc.o ${mesLibc}/lib/libc.c
     fi
     if [ "$target_is_aarch64" = 1 ]; then
-    run_step "tcc bootstrap empty libtcc1.c" ./tcc -c -I "$tcc_include_src" -I "$mes_include_src" ${tccTargetDefineArg} -o bootstrap-libs/libtcc1.o ${support}/tcc-aarch64-empty.c
+    run_step "tcc bootstrap empty libtcc1.c" ./tcc -c -I "$tcc_include_src" -I "$mes_include_src" ${tccTargetDefineArg} -o bootstrap-libs/libtcc1.o ${support}/tcc-empty.c
     elif [ "$target_is_riscv64" = 1 ]; then
-    run_step "tcc bootstrap empty libtcc1.c" run_target ./tcc -c -I "$tcc_include_src" -I "$mes_include_src" ${tccTargetDefineArg} -o bootstrap-libs/libtcc1.o ${support}/tcc-riscv64-empty.c
+    run_step "tcc bootstrap empty libtcc1.c" run_target ./tcc -c -I "$tcc_include_src" -I "$mes_include_src" ${tccTargetDefineArg} -o bootstrap-libs/libtcc1.o ${support}/tcc-empty.c
     else
     run_step "tcc bootstrap libtcc1.c" ./tcc -c -I "$tcc_include_src" -I "$mes_include_src" ${tccTargetDefineArg} -o bootstrap-libs/libtcc1.o lib/libtcc1.c
     fi
@@ -430,8 +408,8 @@ stdenvNoCC.mkDerivation {
     mkdir -p final-libs
     if [ "$target_is_aarch64" = 1 ]; then
     run_step "as final aarch64 crt1.s" assemble_support_object final-libs/crt1.o ${support}/tcc-aarch64-crt1.s
-    run_step "tcc-stage3 final aarch64 crti.c" ./tcc-stage3 -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o final-libs/crti.o ${support}/tcc-aarch64-empty.c
-    run_step "tcc-stage3 final aarch64 crtn.c" ./tcc-stage3 -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o final-libs/crtn.o ${support}/tcc-aarch64-empty.c
+    run_step "tcc-stage3 final aarch64 crti.c" ./tcc-stage3 -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o final-libs/crti.o ${support}/tcc-empty.c
+    run_step "tcc-stage3 final aarch64 crtn.c" ./tcc-stage3 -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o final-libs/crtn.o ${support}/tcc-empty.c
     run_step "tcc-stage3 final aarch64 runtime.c" ./tcc-stage3 -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o final-libs/aarch64-runtime.o ${support}/tcc-aarch64-runtime.c
     run_step "as final aarch64 syscalls.s" assemble_support_object final-libs/aarch64-syscalls.o ${support}/tcc-aarch64-syscalls.s
     run_step "tcc-stage3 final support.c" ./tcc-stage3 -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o final-libs/tcc-bootstrap-support.o ${support}/tcc-bootstrap-support.c
@@ -439,8 +417,8 @@ stdenvNoCC.mkDerivation {
     elif [ "$target_is_riscv64" = 1 ]; then
     run_step "as final riscv64 crt1.s" assemble_support_object final-libs/crt1.o ${support}/tcc-riscv64-crt1.s
     run_step "as final riscv64 syscalls.s" assemble_support_object final-libs/riscv64-syscalls.o ${support}/tcc-riscv64-syscalls.s
-    run_step "tcc-stage3 final riscv64 crti.c" run_target ./tcc-stage3 -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o final-libs/crti.o ${support}/tcc-riscv64-empty.c
-    run_step "tcc-stage3 final riscv64 crtn.c" run_target ./tcc-stage3 -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o final-libs/crtn.o ${support}/tcc-riscv64-empty.c
+    run_step "tcc-stage3 final riscv64 crti.c" run_target ./tcc-stage3 -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o final-libs/crti.o ${support}/tcc-empty.c
+    run_step "tcc-stage3 final riscv64 crtn.c" run_target ./tcc-stage3 -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o final-libs/crtn.o ${support}/tcc-empty.c
     run_step "tcc-stage3 final riscv64 runtime.c" run_target ./tcc-stage3 -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o final-libs/riscv64-runtime.o ${support}/tcc-riscv64-runtime.c
     run_step "tcc-stage3 final support.c" run_target ./tcc-stage3 -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o final-libs/tcc-bootstrap-support.o ${support}/tcc-bootstrap-support.c
     run_step "tcc-stage3 final libgetopt.c" run_target ./tcc-stage3 -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o final-libs/libgetopt.o ${mesLibc}/lib/libgetopt.c
@@ -452,9 +430,9 @@ stdenvNoCC.mkDerivation {
     run_step "tcc-stage3 final libgetopt.c" ./tcc-stage3 -c -std=c11 -I "$tcc_include_src" -I "$mes_include_src" -o final-libs/libgetopt.o ${mesLibc}/lib/libgetopt.c
     fi
     if [ "$target_is_aarch64" = 1 ]; then
-    run_step "tcc-stage3 final empty libtcc1.c" ./tcc-stage3 -c -I "$tcc_include_src" -I "$mes_include_src" ${tccTargetDefineArg} -o final-libs/libtcc1.o ${support}/tcc-aarch64-empty.c
+    run_step "tcc-stage3 final empty libtcc1.c" ./tcc-stage3 -c -I "$tcc_include_src" -I "$mes_include_src" ${tccTargetDefineArg} -o final-libs/libtcc1.o ${support}/tcc-empty.c
     elif [ "$target_is_riscv64" = 1 ]; then
-    run_step "tcc-stage3 final empty libtcc1.c" run_target ./tcc-stage3 -c -I "$tcc_include_src" -I "$mes_include_src" ${tccTargetDefineArg} -o final-libs/libtcc1.o ${support}/tcc-riscv64-empty.c
+    run_step "tcc-stage3 final empty libtcc1.c" run_target ./tcc-stage3 -c -I "$tcc_include_src" -I "$mes_include_src" ${tccTargetDefineArg} -o final-libs/libtcc1.o ${support}/tcc-empty.c
     else
     run_step "tcc-stage3 final libtcc1.c" ./tcc-stage3 -c -I "$tcc_include_src" -I "$mes_include_src" ${tccTargetDefineArg} -o final-libs/libtcc1.o lib/libtcc1.c
     fi
@@ -598,14 +576,14 @@ stdenvNoCC.mkDerivation {
       -I include \
       -I ${mesLibc}/include \
       ${targetDefineArg} \
-      ${support}/tcc-aarch64-empty.c -o libtcc1.o
+      ${support}/tcc-empty.c -o libtcc1.o
     elif [ "$target_is_riscv64" = 1 ]; then
     run_target ./tcc-stage3 -c \
       -I . \
       -I include \
       -I ${mesLibc}/include \
       ${targetDefineArg} \
-      ${support}/tcc-riscv64-empty.c -o libtcc1.o
+      ${support}/tcc-empty.c -o libtcc1.o
     else
     run_target ./tcc-stage3 -c \
       -I . \
@@ -650,6 +628,9 @@ stdenvNoCC.mkDerivation {
     # Keep short-write injection separate from the real-descriptor probes.
     if [ "$target_is_aarch64" = 1 ] || [ "$target_is_riscv64" = 1 ]; then
       support_arch="${targetCfg.hcc}"
+      run_step "reduced allocator compile" run_target ./tcc-stage3 -B final-libs \
+        $check_include_flags ${../tests/hcc/tcc-reduced-allocator.c} -o reduced-allocator
+      run_step "reduced allocator execution" run_target ./reduced-allocator
       run_step "support error contract compile" run_target ./tcc-stage3 -nostdlib \
         final-libs/crt1.o $check_include_flags -I ${support} \
         ${../tests/hcc/tcc-support-contract.c} \
