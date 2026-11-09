@@ -40,14 +40,12 @@ stdenvNoCC.mkDerivation (
       echo "hcc-m1-smoke: using hcc=${hcc}"
       echo "hcc-m1-smoke: using m2libc=${m2libc}"
       echo "hcc-m1-smoke: source-dir=${../tests/hcc/m1-smoke}"
-      echo "hcc-m1-smoke: START python smoke runner"
       python3 ${../tests/hcc/m1-smoke/run.py} \
         --m2libc ${m2libc} \
         --source-dir ${../tests/hcc/m1-smoke} \
         --work-dir . \
         --target ${target} \
         ${runnerArgs}
-      echo "hcc-m1-smoke: DONE python smoke runner"
 
       runHook postBuild
     '';

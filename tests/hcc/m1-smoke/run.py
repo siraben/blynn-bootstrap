@@ -50,7 +50,6 @@ TARGETS = {
         "libc_core": "libc-core.M1",
         "elf": "ELF-aarch64.hex2",
         "base": "0x00600000",
-        "runner": [],
     },
     "riscv64": {
         "hcc_target": "riscv64",
@@ -98,7 +97,6 @@ def main():
     work_dir.mkdir(parents=True, exist_ok=True)
     log(f"running {len(CASES)} cases for {args.target}")
     for name, expected in CASES:
-        log(f"START {name}")
         src = examples_dir / f"{name}.c"
         preprocessed = work_dir / f"{name}.i"
         hccir = work_dir / f"{name}.hccir"
@@ -108,13 +106,13 @@ def main():
         exe = work_dir / name
 
         with preprocessed.open("w") as handle:
-            log(f"{name}: hcpp {src.name} -> {preprocessed.name}")
+            log(f"{name}: preprocess")
             subprocess.run([args.hcpp, str(src)], check=True, stdout=handle)
-        log(f"{name}: hcc1 --m1-ir -> {hccir.name}")
+        log(f"{name}: lower")
         run([args.hcc1, "--target", target["hcc_target"], "--m1-ir", "-o", str(hccir), str(preprocessed)])
-        log(f"{name}: hcc-m1 -> {m1.name}")
+        log(f"{name}: emit")
         run([args.hcc_m1, "--target", target["hcc_target"], str(hccir), str(m1)])
-        log(f"{name}: M1 -> {hex2.name}")
+        log(f"{name}: assemble")
         run([
             "M1",
             "--architecture", target["m1_arch"],
@@ -125,7 +123,7 @@ def main():
             "--output", str(hex2),
         ])
         end.write_text(":ELF_end\n")
-        log(f"{name}: hex2 -> {exe.name}")
+        log(f"{name}: link")
         run([
             "hex2",
             "--architecture", target["m1_arch"],
@@ -139,7 +137,6 @@ def main():
         exe.chmod(0o755)
         if args.no_run:
             log(f"{name}: assembled")
-            log(f"DONE  {name}")
             continue
         log(f"{name}: execute, expect exit {expected}")
         runner = args.runner or target["runner"]

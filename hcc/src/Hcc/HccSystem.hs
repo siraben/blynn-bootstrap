@@ -15,7 +15,6 @@ module HccSystem
   , hccPathJoin
   , hccTakeDirectory
   , hccTakeFileName
-  , hccWithHandleLineWriter
   , hccWithTransactionalLineWriter
   ) where
 
@@ -35,8 +34,6 @@ foreign import ccall "hcc_read_file" hccReadFileRaw :: IO Int
 foreign import ccall "hcc_handle_flush" hccHandleFlush :: Int -> IO ()
 foreign import ccall "hcc_obuf_new" hccObufNew :: Int -> IO Word
 foreign import ccall "hcc_obuf_free" hccObufFree :: Word -> IO ()
-foreign import ccall "hcc_obuf_clear" hccObufClear :: Word -> IO ()
-foreign import ccall "hcc_obuf_len" hccObufLen :: Word -> IO Int
 foreign import ccall "hcc_obuf_put" hccObufPut :: Word -> Char -> IO ()
 foreign import ccall "hcc_obuf_put4" hccObufPut4 :: Word -> Char -> Char -> Char -> Char -> IO ()
 foreign import ccall "hcc_obuf_put8" hccObufPut8 :: Word -> Char -> Char -> Char -> Char -> Char -> Char -> Char -> Char -> IO ()
@@ -186,17 +183,10 @@ hccWithObuf initialCap action = do
       hccObufFree out
       pure result
 
-hccWithHandleLineWriter :: Int -> ((String -> IO ()) -> IO a) -> IO a
-hccWithHandleLineWriter handle action = hccWithObuf outputChunkSize $ \out -> do
-  result <- action (hccWriteBufferedLine handle out)
-  hccObufWrite handle out
-  hccHandleFlush handle
-  pure result
-
 -- Keep bytes outside the evaluator heap until all lowering succeeds. The
 -- surrounding hccWithObuf frees the buffer after either success or failure.
 hccWithTransactionalLineWriter :: Int -> ((String -> IO ()) -> IO (Either e a)) -> IO (Either e a)
-hccWithTransactionalLineWriter handle action = hccWithObuf outputChunkSize $ \out -> do
+hccWithTransactionalLineWriter handle action = hccWithObuf initialOutputCapacity $ \out -> do
   result <- action (hccWriteTransactionLine out)
   case result of
     Left _ -> pure result
@@ -210,15 +200,6 @@ hccWriteTransactionLine out line = do
   hccWriteBufferedText out line
   hccObufPut out '\n'
 
-hccWriteBufferedLine :: Int -> Word -> String -> IO ()
-hccWriteBufferedLine handle out line = do
-  hccWriteBufferedText out line
-  hccObufPut out '\n'
-  len <- hccObufLen out
-  case len >= outputChunkSize of
-    True -> hccObufWrite handle out >> hccObufClear out
-    False -> pure ()
-
 hccWriteBufferedText :: Word -> String -> IO ()
 hccWriteBufferedText out text = case text of
   [] -> pure ()
@@ -226,5 +207,5 @@ hccWriteBufferedText out text = case text of
   c1:c2:c3:c4:rest -> hccObufPut4 out c1 c2 c3 c4 >> hccWriteBufferedText out rest
   c:rest -> hccObufPut out c >> hccWriteBufferedText out rest
 
-outputChunkSize :: Int
-outputChunkSize = 65536
+initialOutputCapacity :: Int
+initialOutputCapacity = 65536

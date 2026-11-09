@@ -15,10 +15,17 @@ repo_dir=$(repo_root_from_script_dir "$script_dir")
 require_cmd cp
 require_cmd mkdir
 require_cmd rm
+require_cmd mv
 
 src_dir=${GNU_MES_DIR:-${1:-build/upstreams/gnu-mes}}
 out_dir=${OUT_DIR:-${2:-build/mes-libc}}
+# This is the Mes source/header view, not the HCC emission target.
 arch=${MES_LIBC_ARCH:-x86_64}
+case $arch in
+  x86_64) ;;
+  x86 | i686 | i386) die "unsupported MES_LIBC_ARCH: $arch (Mes replacements require LP64 and x86_64 setjmp)" ;;
+  *) die "unsupported MES_LIBC_ARCH: $arch (use x86_64; AArch64 callers also use this header view)" ;;
+esac
 strtod=${MES_STRTOD_SOURCE:-$repo_dir/nix/sources/mes-libc/strtod.c}
 ldexp=${MES_LDEXP_SOURCE:-$repo_dir/nix/sources/mes-libc/ldexp-ldexpl.c}
 setjmp=${MES_SETJMP_SOURCE:-$repo_dir/nix/sources/mes-libc/x86_64-setjmp.c}
@@ -55,24 +62,30 @@ mes_libc=mes
 mes_system=$arch-linux
 EOF
 
-: > "$out_dir/lib/libc.c"
-count=0
 (
   cd "$out_dir"
   . ./build-aux/configure-lib.sh
+  inserted=0
+  aggregate="$out_dir/lib/libc.c.tmp"
+  trap 'rm -f "$aggregate"' EXIT HUP INT TERM
+  : > "$aggregate"
   for rel in $libc_gnu_SOURCES; do
     case $rel in
       lib/mes/abtod.c | lib/stdlib/strtod.c | lib/stdlib/strtof.c | lib/stdlib/strtold.c | lib/stub/ldexp.c)
         continue
         ;;
     esac
-    count=$((count + 1))
-    if [ "$count" -eq 101 ]; then
-      append_file "$strtod" "$out_dir/lib/libc.c"
-      append_file "$ldexp" "$out_dir/lib/libc.c"
+    # Pinned Mes put uname.c at surviving entry 101; keep that exact boundary.
+    if [ "$rel" = lib/linux/uname.c ]; then
+      [ "$inserted" -eq 0 ] || die "repeated Mes libc insertion anchor: lib/linux/uname.c"
+      append_file "$strtod" "$aggregate"
+      append_file "$ldexp" "$aggregate"
+      inserted=1
     fi
-    append_file "$out_dir/$rel" "$out_dir/lib/libc.c"
+    append_file "$out_dir/$rel" "$aggregate"
   done
+  [ "$inserted" -eq 1 ] || die "missing Mes libc insertion anchor: lib/linux/uname.c"
+  mv "$aggregate" "$out_dir/lib/libc.c"
 )
 
 cp "$out_dir/lib/linux/$arch-mes-gcc/crt1.c" "$out_dir/lib/crt1.c"

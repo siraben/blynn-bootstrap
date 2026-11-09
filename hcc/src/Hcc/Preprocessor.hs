@@ -3,6 +3,7 @@ module Preprocessor
   , preprocess
   , Macro
   , defineMacro
+  , transitionDirective
   , expandTokens
   , expandOperandText
   , evalEligibleIf
@@ -59,42 +60,55 @@ preprocess toks = go symbolMapEmpty [] (sourceFromTokens toks) id where
         go macros frames rest' (acc . (expanded ++))
       else go macros frames (drop 1 rest) acc
 
-  handleDirective macros frames sp text xs acc = case parseDirective text of
+  handleDirective macros frames sp text xs acc = do
+    let directive = parseDirective text
+    transition <- transitionDirective macros frames sp directive
+    case transition of
+      Just (macros', frames') -> go macros' frames' xs acc
+      Nothing -> case directive of
+        Directive "include" _ | ifStackActive frames ->
+          Left (PreprocessError (spanStart sp) "unresolved active #include")
+        Directive "" _ -> go macros frames xs acc
+        Directive name _ | ("#" ++ name) `elem` ignoredDirectives -> go macros frames xs acc
+        Directive name _ | all isDigitChar name -> go macros frames xs acc
+        Directive name _ ->
+          if ifStackActive frames
+          then Left (PreprocessError (spanStart sp) ("unsupported directive: #" ++ name))
+          else go macros frames xs acc
+
+-- Both passes replay macro/conditional state. Include IO and token emission
+-- remain adapter responsibilities; even inactive ifdef operands are validated.
+transitionDirective :: Macros -> [IfFrame] -> Span -> Directive -> Either PreprocessError (Maybe (Macros, [IfFrame]))
+transitionDirective macros frames sp directive =
+  let active = ifStackActive frames
+      unchanged = Right (Just (macros, frames))
+      condition name value = do
+        cond <- value
+        frames' <- case applyIfDirective frames cond of
+          Just result -> Right result
+          Nothing -> Left (PreprocessError (spanStart sp) ("#" ++ name ++ " without #if"))
+        Right (Just (macros, frames'))
+      namedCondition name invert rest = case directiveName rest of
+        Just key -> condition name (Right (IfCondition (invert (symbolMapMember key macros))))
+        Nothing -> Left (PreprocessError (spanStart sp) ("#" ++ name ++ " without macro name"))
+  in case directive of
     Directive "define" rest ->
-      if ifStackActive frames
-      then defineMacro macros sp rest >>= \macros' -> go macros' frames xs acc
-      else go macros frames xs acc
+      if active then do
+        macros' <- defineMacro macros sp rest
+        Right (Just (macros', frames))
+      else unchanged
     Directive "undef" rest ->
-      if ifStackActive frames
-      then case directiveName rest of
-        Just name -> go (symbolMapDelete name macros) frames xs acc
+      if active then case directiveName rest of
+        Just name -> Right (Just (symbolMapDelete name macros, frames))
         Nothing -> Left (PreprocessError (spanStart sp) "#undef without macro name")
-      else go macros frames xs acc
-    Directive "include" _ ->
-      if ifStackActive frames
-      then Left (PreprocessError (spanStart sp) "unresolved active #include")
-      else go macros frames xs acc
-    Directive "ifdef" rest ->
-      case directiveName rest of
-        Just name -> go macros (startIf frames (symbolMapMember name macros)) xs acc
-        Nothing -> Left (PreprocessError (spanStart sp) "#ifdef without macro name")
-    Directive "ifndef" rest ->
-      case directiveName rest of
-        Just name -> go macros (startIf frames (not (symbolMapMember name macros))) xs acc
-        Nothing -> Left (PreprocessError (spanStart sp) "#ifndef without macro name")
-    Directive "if" rest ->
-      evalEligibleIf (ifStackActive frames) macros rest >>= \cond -> go macros (startIf frames cond) xs acc
-    Directive "elif" rest ->
-      evalEligibleIf (elifEligible frames) macros rest >>= \cond -> replaceElif sp frames cond >>= \frames' -> go macros frames' xs acc
-    Directive "else" _ -> replaceElse sp frames >>= \frames' -> go macros frames' xs acc
-    Directive "endif" _ -> popIf sp frames >>= \frames' -> go macros frames' xs acc
-    Directive "" _ -> go macros frames xs acc
-    Directive name _ | ("#" ++ name) `elem` ignoredDirectives -> go macros frames xs acc
-    Directive name _ | all isDigitChar name -> go macros frames xs acc
-    Directive name _ ->
-      if ifStackActive frames
-      then Left (PreprocessError (spanStart sp) ("unsupported directive: #" ++ name))
-      else go macros frames xs acc
+      else unchanged
+    Directive "ifdef" rest -> namedCondition "ifdef" id rest
+    Directive "ifndef" rest -> namedCondition "ifndef" not rest
+    Directive "if" rest -> condition "if" (IfCondition <$> evalEligibleIf active macros rest)
+    Directive "elif" rest -> condition "elif" (ElifCondition <$> evalEligibleIf (elifEligible frames) macros rest)
+    Directive "else" _ -> condition "else" (Right ElseCondition)
+    Directive "endif" _ -> condition "endif" (Right EndifCondition)
+    _ -> Right Nothing
 
 -- Ineligible groups still affect nesting, but their expressions are not parsed
 -- or macro-expanded (and may contain otherwise invalid expressions).
@@ -109,26 +123,6 @@ evalEligibleIf eligible macros text =
 
 ignoredDirectives :: [String]
 ignoredDirectives = ["#line", "#pragma"]
-
-startIf :: [IfFrame] -> Bool -> [IfFrame]
-startIf frames cond = case applyIfDirective frames (IfCondition cond) of
-  Just frames' -> frames'
-  Nothing -> frames
-
-replaceElse :: Span -> [IfFrame] -> Either PreprocessError [IfFrame]
-replaceElse sp frames = case applyIfDirective frames ElseCondition of
-  Nothing -> Left (PreprocessError (spanStart sp) "#else without #if")
-  Just frames' -> Right frames'
-
-replaceElif :: Span -> [IfFrame] -> Bool -> Either PreprocessError [IfFrame]
-replaceElif sp frames cond = case applyIfDirective frames (ElifCondition cond) of
-  Nothing -> Left (PreprocessError (spanStart sp) "#elif without #if")
-  Just frames' -> Right frames'
-
-popIf :: Span -> [IfFrame] -> Either PreprocessError [IfFrame]
-popIf sp frames = case applyIfDirective frames EndifCondition of
-  Nothing -> Left (PreprocessError (spanStart sp) "#endif without #if")
-  Just frames' -> Right frames'
 
 defineMacro :: Macros -> Span -> String -> Either PreprocessError Macros
 defineMacro macros sp text = do

@@ -8,6 +8,8 @@
   bootstrapShell,
   scriptEnv,
   runtimeFile,
+  coreutils,
+  gnugrep,
   shareName ? pname,
   nativeBuildInputs ? [ ],
   m2Arch ? null,
@@ -73,6 +75,8 @@ mkDerivation (
       chmod 555 hcpp hcc1 hcc-m1
 
       (
+        # Behavioral fixtures need mktemp/grep, not host tools for compilation.
+        export PATH=${lib.makeBinPath [ coreutils gnugrep ]}:$PATH
         export HCPP=./hcpp
         export HCC1=./hcc1
         export HCC_M1=./hcc-m1

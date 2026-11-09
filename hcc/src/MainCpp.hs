@@ -26,7 +26,7 @@ preprocessFile args = case assemblyArgs ("-S":args) of
   Right opts -> do
     source <- readSourceWithIncludes (asmIncludeDirs opts) (asmDefines opts) (asmInput opts)
     let sourceWithDefines = renderDefines (asmDefines opts) ++ source
-    case lexPlainSource sourceWithDefines >>= mapPreprocessError . preprocess of
+    case lexNormalizedSource sourceWithDefines >>= mapPreprocessError . preprocess of
       Left msg -> die (asmInput opts ++ ":" ++ msg)
       Right toks -> hccPutStr (foldr renderToken "\n" toks)
 

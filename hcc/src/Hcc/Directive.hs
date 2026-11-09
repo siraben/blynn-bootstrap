@@ -2,9 +2,6 @@ module Directive
   ( Directive(..)
   , parseDirective
   , directiveName
-  , directiveNameFromLine
-  , directiveArgument
-  , directiveRest
   , isDirectiveChar
   ) where
 
@@ -25,21 +22,6 @@ directiveName :: String -> Maybe String
 directiveName text = case dropSpaces text of
   c:_ | isIdentStart c -> Just (takeWhile isIdentChar (dropSpaces text))
   _ -> Nothing
-
-directiveNameFromLine :: String -> Maybe String
-directiveNameFromLine line = case parseDirective line of
-  Directive "" _ -> Nothing
-  Directive name _ -> Just name
-
-directiveArgument :: String -> String -> Maybe String
-directiveArgument directive line = case parseDirective line of
-  Directive name rest | name == directive -> directiveName rest
-  _ -> Nothing
-
-directiveRest :: String -> String -> String
-directiveRest directive line = case parseDirective line of
-  Directive name rest | name == directive -> rest
-  _ -> ""
 
 isDirectiveChar :: Char -> Bool
 isDirectiveChar c = isAsciiAlphaNum c || c == '_'

@@ -13,9 +13,8 @@ import SymbolTable
 import TextUtil
 import TypesToken
 
--- The include walk and the final token pass share macro parsing, expansion,
--- conditional arithmetic and eligibility. Header definitions flow back to the
--- includer; inactive definitions never enter the environment.
+-- The include walk replays the shared macro/conditional transitions, retaining
+-- directives for the token pass. Header definitions flow back to the includer.
 readSourceWithIncludes :: [String] -> [(String, String)] -> String -> IO String
 readSourceWithIncludes includeDirs defines path = do
   initial <- requirePP (foldM addDefine symbolMapEmpty defines)
@@ -35,57 +34,43 @@ readSourceWithIncludes includeDirs defines path = do
           source <- hccReadFile key
           -- Translation phases 2 and 3 precede directive recognition, including
           -- continued macro definitions and comments containing apparent #ifs.
-          expandLines key depth once macros [] (lines (stripComments (spliceContinuations source)))
+          normalized <- case normalizeSource source of
+            Left msg -> die (key ++ ":" ++ msg) >> pure ""
+            Right text -> pure text
+          expandLines key depth once macros [] 1 (lines normalized)
 
-  expandLines key depth once macros frames ls = case ls of
+  expandLines key depth once macros frames lineNumber ls = case ls of
     [] ->
       if null frames then pure (id, once, macros)
       else die ("hcpp: unterminated conditional in " ++ key) >> pure (id, once, macros)
     line:rest -> do
-      (expanded, once', macros', frames') <- expandLine key depth once macros frames line
-      (tailText, once'', macros'') <- expandLines key depth once' macros' frames' rest
+      (expanded, once', macros', frames') <- expandLine key depth once macros frames lineNumber line
+      (tailText, once'', macros'') <- expandLines key depth once' macros' frames' (lineNumber + 1) rest
       pure (expanded . tailText, once'', macros'')
 
-  expandLine key depth once macros frames line =
+  expandLine key depth once macros frames lineNumber line = do
     let active = ifStackActive frames
         keep = (line++) . ('\n':)
-        condition directive = do
-          frames' <- case applyIfDirective frames directive of
-            Just result -> pure result
-            Nothing -> die ("hcpp: unmatched conditional in " ++ key) >> pure frames
-          pure (keep, once, macros, frames')
-    in case parseDirective line of
-      Directive "ifdef" rest -> condition (IfCondition (maybe False (`symbolMapMember` macros) (directiveName rest)))
-      Directive "ifndef" rest -> condition (IfCondition (maybe False (not . (`symbolMapMember` macros)) (directiveName rest)))
-      Directive "if" rest -> do
-        value <- requirePP (evalEligibleIf active macros rest)
-        condition (IfCondition value)
-      Directive "elif" rest -> do
-        value <- requirePP (evalEligibleIf (elifEligible frames) macros rest)
-        condition (ElifCondition value)
-      Directive "else" _ -> condition ElseCondition
-      Directive "endif" _ -> condition EndifCondition
-      Directive "define" rest | active -> do
-        macros' <- requirePP (defineMacro macros sp rest)
-        pure (keep, once, macros', frames)
-      Directive "undef" rest | active ->
-        case directiveName rest of
-          Just name -> pure (keep, once, symbolMapDelete name macros, frames)
-          Nothing -> die "hcpp: #undef without macro name" >> pure (keep, once, macros, frames)
-      Directive "pragma" rest | active && trim rest == "once" ->
-        pure (keep, symbolSetInsert key once, macros, frames)
-      Directive "include" rest | active -> do
-        request <- requirePP (includeRequest macros rest)
-        case request of
-          Nothing -> die "hcpp: invalid active #include operand" >> pure (keep, once, macros, frames)
-          Just name -> do
-            found <- findInclude (hccTakeDirectory key) name
-            case found of
-              Nothing -> die ("hcpp: cannot find include file " ++ show name) >> pure (keep, once, macros, frames)
-              Just file -> do
-                (expanded, once', macros') <- expandFile (depth + 1) once macros file
-                pure (expanded, once', macros', frames)
-      _ -> pure (keep, once, macros, frames)
+        directive = parseDirective line
+        lineSpan = Span (SrcPos lineNumber 1) (SrcPos lineNumber 1)
+    transition <- requirePP (transitionDirective macros frames lineSpan directive)
+    case transition of
+      Just (macros', frames') -> pure (keep, once, macros', frames')
+      Nothing -> case directive of
+        Directive "pragma" rest | active && trim rest == "once" ->
+          pure (keep, symbolSetInsert key once, macros, frames)
+        Directive "include" rest | active -> do
+          request <- requirePP (includeRequest macros rest)
+          case request of
+            Nothing -> die "hcpp: invalid active #include operand" >> pure (keep, once, macros, frames)
+            Just name -> do
+              found <- findInclude (hccTakeDirectory key) name
+              case found of
+                Nothing -> die ("hcpp: cannot find include file " ++ show name) >> pure (keep, once, macros, frames)
+                Just file -> do
+                  (expanded, once', macros') <- expandFile (depth + 1) once macros file
+                  pure (expanded, once', macros', frames)
+        _ -> pure (keep, once, macros, frames)
 
   findInclude currentDir name = do
     let candidates = hccPathJoin currentDir name : map (`hccPathJoin` name) includeDirs

@@ -16,3 +16,5 @@ for name in pp-smoke parse-smoke; do
 done
 "$HCC1" --m1-ir -o parse-smoke.hccir parse-smoke.i
 "$HCC_M1" parse-smoke.hccir parse-smoke.M1
+
+( . "$TESTS_DIR/frontend-regressions.sh" )

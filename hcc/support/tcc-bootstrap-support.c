@@ -139,7 +139,6 @@ union hcc_double_bits {
   double d;
 };
 
-/* Reinterpret an IEEE-754 bit pattern as a double without calling libc. */
 static double hcc_double_from_bits(unsigned long bits) {
   union hcc_double_bits out;
   out.u = bits;
@@ -178,7 +177,6 @@ double strtod(char *nptr, char **endptr) {
   return hcc_double_from_scaled_uint64((unsigned long)value, 0);
 }
 
-/* strtof shares the limited strtod implementation and narrows the result. */
 float strtof(char *nptr, char **endptr) {
   return (float)strtod(nptr, endptr);
 }
