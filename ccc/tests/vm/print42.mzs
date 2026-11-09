@@ -1,0 +1,5 @@
+; print "42\n" to stdout, exit 0
+(const 1) (push) (const '4') (push) (ccall 2 write_byte)
+(const 1) (push) (const '2') (push) (ccall 2 write_byte)
+(const 1) (push) (const 10) (push) (ccall 2 write_byte)
+(const 0) (stop)
