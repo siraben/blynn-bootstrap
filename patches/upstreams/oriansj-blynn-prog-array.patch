@@ -1,0 +1,150 @@
+diff --git a/crossly.hs b/crossly.hs
+--- a/crossly.hs
++++ b/crossly.hs
+@@ -1544,10 +1544,10 @@
+       then (longDistanceCall ++) . (';':) . lazyn . (((if isPure then "_I, _K" else aa "_K") ++ "); }\n") ++) . ffiDefine (n - 1) xt
+       else lazyn . (((if isPure then "_NUM, " ++ longDistanceCall else aa $ "app(_NUM, " ++ longDistanceCall ++ ")") ++ "); }\n") ++) . ffiDefine (n - 1) xt
+ 
+-genMain n = "int main(int argc,char**argv){env_argc=argc;env_argv=argv;open_files();init_prog();rts_reduce(" ++ showInt n ");return 0;}\n"
++genMain n = "int main(int argc,char**argv){env_argc=argc;env_argv=argv;open_files();rts_reduce(" ++ showInt n ");return 0;}\n"
+ 
+-progLine p r = "  prog[" ++ showInt (fst p) "] = " ++ showInt (snd p) (";\n"++r);
+-progBody mem = foldr ((.) . progLine) id (zipWith (,) [0 .. ] mem)
++progLine p r = "  " ++ showInt p (",\n"++r);
++progBody mem = foldr ((.) . progLine) id mem
+ 
+ data Target = Host | Wasm
+ 
+@@ -1586,10 +1586,9 @@
+     $ enumTop tgt
+     . enumComs
+     . ("\nvoid *malloc(unsigned long);\n" ++)
+-    . ("\nunsigned *prog;\nvoid init_prog() \n{\n" ++)
+-    . ("  prog = malloc(" ++) . showInt (length mem) . ("* sizeof(unsigned));\n"++)
++    . ("\nunsigned prog[] = {\n" ++)
+     . progBody mem
+-    . ("}\nunsigned prog_size="++) . showInt (length mem) . (";\n"++)
++    . ("};\nunsigned prog_size="++) . showInt (length mem) . (";\n"++)
+     . targetFuns tgt
+     . preamble
+     . (concatMap ffiDeclare ffis ++)
+diff --git a/marginally.hs b/marginally.hs
+--- a/marginally.hs
++++ b/marginally.hs
+@@ -1318,10 +1318,10 @@
+ optiComb lambs = ($[]) . snd $ foldl optiComb' ([], id) lambs;
+ 
+ -- Code generation.
+-genMain n = "int main(int argc,char**argv){env_argc=argc;env_argv=argv;open_files();init_prog();rts_init();rts_reduce(" ++ showInt n ");return 0;}\n";
++genMain n = "int main(int argc,char**argv){env_argc=argc;env_argv=argv;open_files();rts_init();rts_reduce(" ++ showInt n ");return 0;}\n";
+ 
+-progLine p r = "  prog[" ++ showInt (fst p) "] = " ++ showInt (snd p) (";\n"++r);
+-progBody mem = foldr (.) id (map progLine (zipWith (,) (upFrom 0) mem ));
++progLine p r = "  " ++ showInt p (",\n"++r);
++progBody mem = foldr (.) id (map progLine mem);
+ 
+ compile s = case untangle s of
+   { Left err -> err
+@@ -1330,10 +1330,9 @@
+     . foldr (.) id (map (\(s, _) -> ("// CONSTANT _"++) . (s++) . (" "++) . (showInt (comEnum s))
+       . ("\n#define _"++) . (s++) . (" "++) . (showInt (comEnum s)) . ('\n':)) comdefs)
+     . ("\nvoid *malloc(unsigned long);\n" ++)
+-    . ("\nunsigned *prog;\nvoid init_prog() \n{\n" ++)
+-    . ("  prog = malloc(" ++) . showInt (length mem) . ("* sizeof(unsigned));\n"++)
++    . ("\nunsigned prog[] = {\n" ++)
+     . progBody mem
+-    . ("}\nunsigned prog_size="++) . showInt (length mem) . (";\n"++)
++    . ("};\nunsigned prog_size="++) . showInt (length mem) . (";\n"++)
+     . (preamble++)
+     . (concatMap ffiDeclare ffis ++)
+     . ("void foreign(unsigned n) {\nif (FALSE) {}\n" ++)
+diff --git a/methodically.hs b/methodically.hs
+--- a/methodically.hs
++++ b/methodically.hs
+@@ -1351,10 +1351,10 @@
+       then (longDistanceCall ++) . (';':) . lazyn . (((if isPure then "_I, _K" else aa "_K") ++ "); }\n") ++) . ffiDefine (n - 1) xt
+       else lazyn . (((if isPure then "_NUM, " ++ longDistanceCall else aa $ "app(_NUM, " ++ longDistanceCall ++ ")") ++ "); }\n") ++) . ffiDefine (n - 1) xt
+ 
+-genMain n = "int main(int argc,char**argv){env_argc=argc;env_argv=argv;open_files();init_prog();rts_init();rts_reduce(" ++ showInt n ");return 0;}\n"
++genMain n = "int main(int argc,char**argv){env_argc=argc;env_argv=argv;open_files();rts_init();rts_reduce(" ++ showInt n ");return 0;}\n"
+ 
+-progLine p r = "  prog[" ++ showInt (fst p) "] = " ++ showInt (snd p) (";\n"++r);
+-progBody mem = foldr (.) id (map progLine (zipWith (,) (upFrom 0) mem ));
++progLine p r = "  " ++ showInt p (",\n"++r);
++progBody mem = foldr (.) id (map progLine mem);
+ 
+ compile s = case untangle s of
+   Left err -> err
+@@ -1364,10 +1364,9 @@
+     . foldr (.) id (map (\(s, _) -> ("// CONSTANT _"++) . (s++) . (" "++) . (showInt (comEnum s))
+       . ("\n#define _"++) . (s++) . (" "++) . (showInt (comEnum s)) . ('\n':)) comdefs)
+     . ("\nvoid *malloc(unsigned long);\n" ++)
+-    . ("\nunsigned *prog;\nvoid init_prog() \n{\n" ++)
+-    . ("  prog = malloc(" ++) . showInt (length mem) . ("* sizeof(unsigned));\n"++)
++    . ("\nunsigned prog[] = {\n" ++)
+     . progBody mem
+-    . ("}\nunsigned prog_size="++) . showInt (length mem) . (";\n"++)
++    . ("};\nunsigned prog_size="++) . showInt (length mem) . (";\n"++)
+     . (libc++)
+     . (preamble++)
+     . (concatMap ffiDeclare ffis ++)
+diff --git a/precisely.hs b/precisely.hs
+--- a/precisely.hs
++++ b/precisely.hs
+@@ -1661,10 +1661,10 @@
+       then (longDistanceCall ++) . (';':) . lazyn . (((if isPure then "_I, _K" else aa "_K") ++ "); }\n") ++) . ffiDefine (n - 1) xt
+       else lazyn . (((if isPure then "_NUM, " ++ longDistanceCall else aa $ "app(_NUM, " ++ longDistanceCall ++ ")") ++ "); }\n") ++) . ffiDefine (n - 1) xt
+ 
+-genMain n = "int main(int argc,char**argv){env_argc=argc;env_argv=argv;init_prog();rts_reduce(" ++ showInt n ");return 0;}\n"
++genMain n = "int main(int argc,char**argv){env_argc=argc;env_argv=argv;rts_reduce(" ++ showInt n ");return 0;}\n"
+ 
+-progLine p r = "  prog[" ++ showInt (fst p) "] = " ++ showInt (snd p) (";\n"++r);
+-progBody mem = foldr (.) id (map progLine (zipWith (,) [0..] mem ));
++progLine p r = "  " ++ showInt p (",\n"++r);
++progBody mem = foldr (.) id (map progLine mem);
+ 
+ data Target = Host | Wasm
+ 
+@@ -1697,10 +1697,9 @@
+     $ enumTop tgt
+     . enumComs
+     . ("\nvoid *malloc(unsigned long);\n" ++)
+-    . ("\nunsigned *prog;\nvoid init_prog() \n{\n" ++)
+-    . ("  prog = malloc(" ++) . showInt (length mem) . ("* sizeof(unsigned));\n"++)
++    . ("\nunsigned prog[] = {\n" ++)
+     . progBody mem
+-    . ("}\nunsigned prog_size="++) . showInt (length mem) . (";\n"++)
++    . ("};\nunsigned prog_size="++) . showInt (length mem) . (";\n"++)
+     . targetFuns tgt
+     . preamble
+     . (concatMap ffiDeclare ffis ++)
+diff --git a/virtually.hs b/virtually.hs
+--- a/virtually.hs
++++ b/virtually.hs
+@@ -1097,10 +1097,10 @@
+   };
+ optiComb lambs = ($[]) . snd $ foldl optiComb' ([], id) lambs;
+ 
+-genMain n = "int main(int argc,char**argv){env_argc=argc;env_argv=argv;open_files();init_prog();rts_init();rts_reduce(" ++ showInt n ");return 0;}\n";
++genMain n = "int main(int argc,char**argv){env_argc=argc;env_argv=argv;open_files();rts_init();rts_reduce(" ++ showInt n ");return 0;}\n";
+ 
+-progLine p r = "  prog[" ++ showInt (fst p) "] = " ++ showInt (snd p) (";\n"++r);
+-progBody mem = foldr (.) id (map progLine (zipWith (,) (upFrom 0) mem ));
++progLine p r = "  " ++ showInt p (",\n"++r);
++progBody mem = foldr (.) id (map progLine mem);
+ 
+ compile s = case untangle s of
+   { Left err -> err
+@@ -1109,10 +1109,9 @@
+     . foldr (.) id (map (\(s, _) -> ("// CONSTANT _"++) . (s++) . (" "++) . (showInt (comEnum s))
+       . ("\n#define _"++) . (s++) . (" "++) . (showInt (comEnum s)) . ('\n':)) comdefs)
+     . ("\nvoid *malloc(unsigned long);\n" ++)
+-    . ("\nunsigned *prog;\nvoid init_prog() \n{\n" ++)
+-    . ("  prog = malloc(" ++) . showInt (length mem) . ("* sizeof(unsigned));\n"++)
++    . ("\nunsigned prog[] = {\n" ++)
+     . progBody mem
+-    . ("}\nunsigned prog_size="++) . showInt (length mem) . (";\n"++)
++    . ("};\nunsigned prog_size="++) . showInt (length mem) . (";\n"++)
+     . (preamble++)
+     . (concatMap ffiDeclare ffis ++)
+     . ("void foreign(unsigned n) {\nif (FALSE) {}\n" ++)
