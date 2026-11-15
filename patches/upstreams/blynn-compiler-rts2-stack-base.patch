@@ -1,0 +1,42 @@
+diff --git a/inn/RTS2.hs b/inn/RTS2.hs
+--- a/inn/RTS2.hs
++++ b/inn/RTS2.hs
+@@ -116,12 +116,18 @@
+   return z;
+ }
+ 
++static u stack_base() {
++  u room = TOP / 8 * 3;
++  if (room < hp) room = hp;
++  if (room > TOP - hp) return TOP;
++  return hp + room;
++}
++
+ static void gc() {
+   hp = 128;
+   u di = hp;
+-  sp = altmem + (TOP - 1) * sizeof(u);
+   for(u *r = root; *r; r = r + sizeof(u)) *r = evac(*r);
+-  *sp = evac(*spTop);
++  u top = evac(*spTop);
+   while (di < hp) {
+     u *pd = altmem + di * sizeof(u);
+     u x = evac(*pd);
+@@ -134,6 +140,8 @@
+     }
+     di = di + 1;
+   }
++  sp = altmem + (stack_base() - 1) * sizeof(u);
++  *sp = top;
+   spTop = sp;
+   u *tmp = mem;
+   mem = altmem;
+@@ -387,7 +395,7 @@
+   mem = malloc(TOP * sizeof(u)); altmem = malloc(TOP * sizeof(u));
+   hp = 128;
+   for (u i = 0; i < prog_size; i = i + 1) { u *p = mem + hp * sizeof(u); *p = prog[i]; hp = hp + 1; }
+-  spTop = mem + (TOP - 1) * sizeof(u);
++  spTop = mem + (stack_base() - 1) * sizeof(u);
+ }
+ |]++)
+   . rtsReduce opts

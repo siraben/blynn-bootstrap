@@ -10,18 +10,20 @@ diff --git a/inn/RTS2.hs b/inn/RTS2.hs
  |]
  
  libcWasm = [r|
-@@ -113,3 +113,6 @@
+@@ -123,6 +123,9 @@
+   return hp + room;
+ }
+ 
 +void errchar(int);
 +void errexit();
 +
  static void gc() {
    hp = 128;
    u di = hp;
-@@ -146,6 +149,20 @@
+@@ -146,6 +149,19 @@
    u *tmp = mem;
    mem = altmem;
    altmem = tmp;
-+  u top = *sp;
 +  u *lim = mem + (hp + 8) * sizeof(u);
 +  u *end = sp;
 +  while (top >= 128) {
