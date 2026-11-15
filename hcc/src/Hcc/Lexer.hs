@@ -21,18 +21,27 @@ lexC :: String -> Either LexError [Token]
 lexC source = go (LexState source (SrcPos 1 1) True) [] where
   go st acc = case lsInput st of
     [] -> Right (reverse acc)
+    '/':'/':_ -> go (skipLineComment st) acc
+    '/':'*':_ -> skipBlockComment st >>= \st' -> go st' acc
     c:cs
       | lexerIsSpace c -> go (advanceSpace c st { lsInput = cs }) acc
-      | isDirectiveStart st c -> lexDirective st >>= \(tok, st') -> go st' (tok:acc)
-      | startsLineComment (lsInput st) -> go (skipLineComment st) acc
-      | startsBlockComment (lsInput st) -> skipBlockComment st >>= \st' -> go st' acc
-      | isIdentStart c -> let (tok, st') = lexIdent st in go st' (tok:acc)
-      | isDigitChar c -> lexNumber st >>= \(tok, st') -> go st' (tok:acc)
-      | c == '\'' -> lexQuoted '\'' TokChar st >>= \(tok, st') -> go st' (tok:acc)
-      | c == '"' -> lexQuoted '"' TokString st >>= \(tok, st') -> go st' (tok:acc)
+      | isDirectiveStart st c -> lexDirective st >>= emit acc
+      | isIdentStart c -> emit acc (lexIdent st)
+      | isDigitChar c -> lexNumber st >>= emit acc
+      | c == '\'' -> lexQuoted '\'' TokChar st >>= emit acc
+      | c == '"' -> lexQuoted '"' TokString st >>= emit acc
       | otherwise -> case lexPunct st of
-          Just (tok, st') -> go st' (tok:acc)
+          Just result -> emit acc result
           Nothing -> Left (LexError (lsPos st) ("unexpected character: " ++ [c]))
+
+  -- An unevaluated position refers to the lexer state that it comes from.
+  -- That state refers to the remaining input and to each earlier state.
+  emit acc (tok@(Token (Span start end) _), st') =
+    evalPos start (evalPos end (go st' (tok:acc)))
+
+-- Blynn has no seq. A comparison evaluates the line and the column.
+evalPos :: SrcPos -> a -> a
+evalPos (SrcPos line col) value = if line <= col then value else value
 
 isDirectiveStart :: LexState -> Char -> Bool
 isDirectiveStart st c = lsBol st && c == '#'
@@ -43,18 +52,14 @@ lexDirective st = Right (Token (Span start end) (TokDirective text), st') where
   (text, st') = takeUntilNewline st
   end = lsPos st'
 
+-- The text of a line holds no newline: the end position needs no update
+-- for each character.
 takeUntilNewline :: LexState -> (String, LexState)
-takeUntilNewline st = go st [] where
-  go cur acc = case lsInput cur of
-    [] -> (reverse acc, cur)
-    '\n':cs -> (reverse acc, advance '\n' cur { lsInput = cs })
-    c:cs -> go (advance c cur { lsInput = cs }) (c:acc)
-
-startsLineComment :: String -> Bool
-startsLineComment = prefixOf "//"
-
-startsBlockComment :: String -> Bool
-startsBlockComment = prefixOf "/*"
+takeUntilNewline st = go (lsInput st) [] where
+  go input acc = case input of
+    [] -> let text = reverse acc in (text, advancePunct text st { lsInput = [] })
+    '\n':cs -> (reverse acc, advanceSpace '\n' st { lsInput = cs })
+    c:cs -> go cs (c:acc)
 
 skipLineComment :: LexState -> LexState
 skipLineComment st = snd (takeUntilNewline st)
