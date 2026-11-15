@@ -7,6 +7,7 @@ blynn-compiler-rts-precisely-reserve.patch
 blynn-compiler-signed-division.patch
 blynn-compiler-cbor-negative.patch
 blynn-compiler-rts-precisely-range.patch
+blynn-compiler-rts-precisely-nursery.patch
 blynn-compiler-rts-precisely-evac-loop.patch
 blynn-compiler-rts2-num64-gc.patch
 blynn-compiler-top.patch
