@@ -350,13 +350,6 @@ lowerIncDecSideEffect :: BinOp -> Expr -> CompileM [Instr]
 lowerIncDecSideEffect op target =
   lowerResultInstrs (lowerIncDec True op target)
 
-isDirectCall :: String -> CompileM Bool
-isDirectCall name = do
-  local <- lookupLocal name
-  case local of
-    Just _ -> pure False
-    Nothing -> lookupFunction name
-
 lowerDirectSideEffect :: String -> [Expr] -> CompileM [Instr]
 lowerDirectSideEffect name args = do
   (argInstrs, argOps) <- lowerCallArgs args
