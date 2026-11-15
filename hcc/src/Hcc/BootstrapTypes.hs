@@ -7,6 +7,7 @@ module BootstrapTypes
   ) where
 
 import Base
+import SymbolTable
 import TypesAst
 
 -- Width zero means target word size. Seeding and pointer compatibility are
@@ -60,7 +61,11 @@ bootstrapIntegers =
   ]
 
 bootstrapInteger :: String -> Maybe BootstrapInteger
-bootstrapInteger name = find (\entry -> bootstrapName entry == name) bootstrapIntegers
+bootstrapInteger name = symbolMapLookup name bootstrapIntegerMap
+
+bootstrapIntegerMap :: SymbolMap BootstrapInteger
+bootstrapIntegerMap = foldr insertEntry symbolMapEmpty bootstrapIntegers where
+  insertEntry entry = symbolMapInsert (bootstrapName entry) entry
 
 builtinTypeAliases :: [(String, CType)]
 builtinTypeAliases =
