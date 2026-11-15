@@ -11,6 +11,7 @@ import Literal
 import Operators
 import ParseLite
 import ScopeMap
+import SymbolTable
 import TypesAst
 import TypesToken
 
@@ -1102,7 +1103,7 @@ unary = do
     TokFloat s -> advanceToken >> pure (EFloat s)
     TokChar s -> advanceToken >> pure (EChar s)
     TokString _ -> EString <$> stringLiteral
-    TokIdent s | s `elem` builtinTypeNames ->
+    TokIdent s | symbolSetMember s builtinTypeWords ->
       failAt tok "a type name is not an expression"
     TokIdent s -> do
       advanceToken
@@ -1262,8 +1263,17 @@ hexDigitChar value
 
 startsType :: Token -> Bool
 startsType tok = case tokenKind tok of
-  TokIdent name -> name `elem` (builtinTypeNames ++ storageAndTypeQualifiers ++ ["typedef"])
+  TokIdent name -> symbolSetMember name declarationWords
   _ -> False
+
+declarationWords :: SymbolSet
+declarationWords = wordSet (builtinTypeNames ++ storageAndTypeQualifiers ++ ["typedef"])
+
+builtinTypeWords :: SymbolSet
+builtinTypeWords = wordSet builtinTypeNames
+
+wordSet :: [String] -> SymbolSet
+wordSet = foldr symbolSetInsert symbolSetEmpty
 
 builtinTypeNames :: [String]
 builtinTypeNames =
@@ -1296,13 +1306,10 @@ identifierStartsDeclaration :: Parser Bool
 identifierStartsDeclaration = pRaw $ \env toks -> Unconsumed (Ok (go env toks) env toks) where
   go env toks = case toks of
     Token _ (TokIdent name):_
-      | startsTypeName name -> True
+      | symbolSetMember name declarationWords -> True
       | parserEnvHasType name env -> True
       | otherwise -> False
     _ -> False
-
-  startsTypeName name =
-    name `elem` (builtinTypeNames ++ storageAndTypeQualifiers ++ ["typedef"])
 
 isKnownTypeNameP :: String -> Parser Bool
 isKnownTypeNameP name = do
