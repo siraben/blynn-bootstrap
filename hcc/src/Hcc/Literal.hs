@@ -116,21 +116,24 @@ integerLiteralBytes text =
     Just bytes -> Right bytes
     Nothing -> Left "integer literal exceeds supported 64-bit range"
 
--- Check in nine bytes before reading the eight-byte value, so overflow
--- cannot turn an invalid literal into a valid truncated value.
+-- A prefix below 2^26 stays in an Int: one more base-16 digit keeps it under
+-- 2^31, which every host Int holds. Longer values continue in a nine-byte
+-- word; its top byte detects overflow before any truncation.
 readBaseBytesChecked :: Int -> String -> Maybe [Int]
-readBaseBytesChecked base text =
-  if fits (replicate 9 0) text then Just (value (replicate 8 0) text) else Nothing
-  where
-  step bytes c = byteWordAddSmallCarry (digitValue c) (byteWordMulSmall base bytes)
-  fits bytes remaining = case remaining of
-    [] -> True
-    c:rest -> if digitValue c >= base then True else
-      let next = step bytes c
-      in last next == 0 && fits next rest
-  value bytes remaining = case remaining of
-    [] -> bytes
-    c:rest -> if digitValue c >= base then bytes else value (step bytes c) rest
+readBaseBytesChecked base = small 0 where
+  small acc text = case text of
+    [] -> Just (intBytes 8 acc)
+    c:rest ->
+      if digitValue c >= base then Just (intBytes 8 acc)
+      else if acc < 67108864 then small (acc * base + digitValue c) rest
+      else wide (intBytes 9 acc) text
+  wide bytes text = case text of
+    [] -> Just (take 8 bytes)
+    c:rest ->
+      if digitValue c >= base then Just (take 8 bytes)
+      else
+        let next = byteWordAddSmallCarry (digitValue c) (byteWordMulSmall base bytes)
+        in if last next == 0 then wide next rest else Nothing
 
 digitValue :: Char -> Int
 digitValue c
@@ -291,9 +294,9 @@ constantLiteralRanked longSize preprocessing text bytes =
   in choose candidates
 
 fitsWidth :: Int -> Bool -> [Int] -> Bool
-fitsWidth size unsigned bytes =
-  let limit = replicate (size - 1) 255 ++ [if unsigned then 255 else 127] ++ replicate (8 - size) 0
-  in constWordCompare bytes limit <= 0
+fitsWidth size unsigned bytes = case drop (size - 1) bytes of
+  top:above -> (unsigned || top < 128) && all (== 0) above
+  [] -> False
 
 -- An invalid literal must not turn into a small (apparently valid) array
 -- extent.
