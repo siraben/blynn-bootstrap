@@ -1072,8 +1072,10 @@ expression minPrec = do
 
 binop :: String -> Maybe (Int, Assoc)
 binop op = case op of
-  ","   -> Just (0, LeftAssoc)
-  "="   -> Just (1, RightAssoc)
+  [c] -> case c of
+    ',' -> Just (0, LeftAssoc)
+    '=' -> Just (1, RightAssoc)
+    _ -> binopArith op
   "+="  -> Just (1, RightAssoc)
   "-="  -> Just (1, RightAssoc)
   "*="  -> Just (1, RightAssoc)
