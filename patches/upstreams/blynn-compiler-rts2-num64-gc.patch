@@ -1,0 +1,29 @@
+diff --git a/inn/RTS2.hs b/inn/RTS2.hs
+--- a/inn/RTS2.hs
++++ b/inn/RTS2.hs
+@@ -104,6 +104,15 @@
+   *pa = x;
+   pa = altmem + (z + 1) * sizeof(u);
+   *pa = y;
++  if (x == _NUM64) {
++    hp += 2;
++    pn = mem + (n + 2) * sizeof(u);
++    pa = altmem + (z + 2) * sizeof(u);
++    *pa = *pn;
++    pn = mem + (n + 3) * sizeof(u);
++    pa = altmem + (z + 3) * sizeof(u);
++    *pa = *pn;
++  }
+   return z;
+ }
+ 
+@@ -118,7 +127,8 @@
+     u x = evac(*pd);
+     *pd = x;
+     di = di + 1;
+-    if (x != _NUM) {
++    if (x == _NUM64) di = di + 2;
++    else if (x != _NUM) {
+       pd = altmem + di * sizeof(u);
+       *pd = evac(*pd);
+     }
