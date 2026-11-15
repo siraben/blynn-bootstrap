@@ -119,6 +119,14 @@ stdenvNoCC.mkDerivation {
 
     ${nixLib.shellHelpers { name = "tinycc-boot-hcc"; }}
 
+    run_step() {
+      label="$1"
+      shift
+      log_step "START $label"
+      "$@"
+      log_step "DONE  $label"
+    }
+
     m1_artifacts_only="${if m1ArtifactsOnly then "1" else "0"}"
     target_is_aarch64="${if targetCfg.buildArm64Lib then "1" else "0"}"
     target_is_riscv64="${if targetCfg.buildRiscv64Lib then "1" else "0"}"
