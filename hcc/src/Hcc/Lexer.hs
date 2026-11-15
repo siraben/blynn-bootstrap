@@ -34,12 +34,11 @@ lexC source = go (LexState source (SrcPos 1 1) True) [] where
           Just result -> emit acc result
           Nothing -> Left (LexError (lsPos st) ("unexpected character: " ++ [c]))
 
-  -- An unevaluated position refers to the lexer state that it comes from.
-  -- That state refers to the remaining input and to each earlier state.
   emit acc (tok@(Token (Span start end) _), st') =
     evalPos start (evalPos end (go st' (tok:acc)))
 
--- Blynn has no seq. A comparison evaluates the line and the column.
+-- Blynn has no seq. A comparison evaluates the line and the column, so a
+-- token does not keep the lexer state alive.
 evalPos :: SrcPos -> a -> a
 evalPos (SrcPos line col) value = if line <= col then value else value
 
@@ -52,8 +51,6 @@ lexDirective st = Right (Token (Span start end) (TokDirective text), st') where
   (text, st') = takeUntilNewline st
   end = lsPos st'
 
--- The text of a line holds no newline: the end position needs no update
--- for each character.
 takeUntilNewline :: LexState -> (String, LexState)
 takeUntilNewline st = go (lsInput st) [] where
   go input acc = case input of
@@ -217,56 +214,55 @@ validCharBody body = case body of
 
 lexPunct :: LexState -> Maybe (Token, LexState)
 lexPunct st = case lsInput st of
-  '<':'<':'=':rest -> punct "<<=" rest
-  '>':'>':'=':rest -> punct ">>=" rest
-  '.':'.':'.':rest -> punct "..." rest
-  '+':'+':rest -> punct "++" rest
-  '-':'-':rest -> punct "--" rest
-  '-':'>':rest -> punct "->" rest
-  '+':'=':rest -> punct "+=" rest
-  '-':'=':rest -> punct "-=" rest
-  '*':'=':rest -> punct "*=" rest
-  '/':'=':rest -> punct "/=" rest
-  '%':'=':rest -> punct "%=" rest
-  '&':'=':rest -> punct "&=" rest
-  '|':'=':rest -> punct "|=" rest
-  '^':'=':rest -> punct "^=" rest
-  '=':'=':rest -> punct "==" rest
-  '!':'=':rest -> punct "!=" rest
-  '<':'=':rest -> punct "<=" rest
-  '>':'=':rest -> punct ">=" rest
-  '&':'&':rest -> punct "&&" rest
-  '|':'|':rest -> punct "||" rest
-  '<':'<':rest -> punct "<<" rest
-  '>':'>':rest -> punct ">>" rest
-  '#':'#':rest -> punct "##" rest
-  '{':rest -> punct "{" rest
-  '}':rest -> punct "}" rest
-  '[':rest -> punct "[" rest
-  ']':rest -> punct "]" rest
-  '(':rest -> punct "(" rest
-  ')':rest -> punct ")" rest
-  '.':rest -> punct "." rest
-  '&':rest -> punct "&" rest
-  '*':rest -> punct "*" rest
-  '+':rest -> punct "+" rest
-  '-':rest -> punct "-" rest
-  '~':rest -> punct "~" rest
-  '!':rest -> punct "!" rest
-  '/':rest -> punct "/" rest
-  '%':rest -> punct "%" rest
-  '<':rest -> punct "<" rest
-  '>':rest -> punct ">" rest
-  '^':rest -> punct "^" rest
-  '|':rest -> punct "|" rest
-  '?':rest -> punct "?" rest
-  ':':rest -> punct ":" rest
-  ';':rest -> punct ";" rest
-  '=':rest -> punct "=" rest
-  ',':rest -> punct "," rest
-  '#':rest -> punct "#" rest
-  _ -> Nothing
+  [] -> Nothing
+  c:rest -> case c of
+    '(' -> punct "(" rest
+    ')' -> punct ")" rest
+    ',' -> punct "," rest
+    ';' -> punct ";" rest
+    '{' -> punct "{" rest
+    '}' -> punct "}" rest
+    '[' -> punct "[" rest
+    ']' -> punct "]" rest
+    '=' -> orAssign "=" "==" rest
+    '*' -> orAssign "*" "*=" rest
+    '-' -> case rest of
+      '-':more -> punct "--" more
+      '>':more -> punct "->" more
+      _ -> orAssign "-" "-=" rest
+    '.' -> case rest of
+      '.':'.':more -> punct "..." more
+      _ -> punct "." rest
+    '&' -> case rest of
+      '&':more -> punct "&&" more
+      _ -> orAssign "&" "&=" rest
+    '!' -> orAssign "!" "!=" rest
+    '+' -> case rest of
+      '+':more -> punct "++" more
+      _ -> orAssign "+" "+=" rest
+    '<' -> case rest of
+      '<':more -> orAssign "<<" "<<=" more
+      _ -> orAssign "<" "<=" rest
+    '>' -> case rest of
+      '>':more -> orAssign ">>" ">>=" more
+      _ -> orAssign ">" ">=" rest
+    '|' -> case rest of
+      '|':more -> punct "||" more
+      _ -> orAssign "|" "|=" rest
+    ':' -> punct ":" rest
+    '?' -> punct "?" rest
+    '/' -> orAssign "/" "/=" rest
+    '%' -> orAssign "%" "%=" rest
+    '^' -> orAssign "^" "^=" rest
+    '~' -> punct "~" rest
+    '#' -> case rest of
+      '#':more -> punct "##" more
+      _ -> punct "#" rest
+    _ -> Nothing
   where
+    orAssign text assign rest = case rest of
+      '=':more -> punct assign more
+      _ -> punct text rest
     punct text rest =
       let st' = advancePunct text st { lsInput = rest }
       in Just (Token (Span (lsPos st) (lsPos st')) (TokPunct text), st')
