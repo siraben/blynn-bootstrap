@@ -149,7 +149,12 @@ last stage.
 Blynn's `top WORDS` option emits a decimal TOP enum directly from source;
 no stage rewrites generated TOP definitions. `WORDS` must be canonical decimal
 in `1024..536870912` (no signs, leading zeros, or C expressions); the program
-still needs enough heap to run. TOP counts 32-bit words per arena, not bytes.
+still needs enough heap to run. TOP counts graph words per heap region, not
+bytes. A graph word has 4 bytes with host GCC and 8 bytes with M2 on amd64.
+The stages before `crossly1` allocate two regions. `crossly1` output (HCC and
+`precisely_up`) reserves three regions in one block: two survivor regions and
+a nursery. Only the live graph (twice during a collection) and the used part
+of the nursery become resident.
 
 The portable compiler ladder stops at `crossly1` (`CROSSLY_TOP=134217728`),
 which generates HCC just as in Nix. Set `BUILD_PRECISELY_UP=1` to also rebuild
