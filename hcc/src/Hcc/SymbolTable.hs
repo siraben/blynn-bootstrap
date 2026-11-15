@@ -132,6 +132,6 @@ cmpString [] [] = Eq
 cmpString [] _ = Lt
 cmpString _ [] = Gt
 cmpString (a:as) (b:bs)
+  | a == b = cmpString as bs
   | a < b = Lt
-  | a > b = Gt
-  | otherwise = cmpString as bs
+  | otherwise = Gt
