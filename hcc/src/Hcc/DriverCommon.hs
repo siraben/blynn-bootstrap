@@ -41,28 +41,33 @@ spliceContinuations text = case text of
 -- Keep comment columns/newlines as whitespace: macro adjacency and diagnostics
 -- must not depend on the length of a removed comment. Positions are post-splice.
 normalizeSource :: String -> Either String String
-normalizeSource source = normal (SrcPos 1 1) (spliceContinuations source)
+normalizeSource source = normal [] (spliceContinuations source)
   where
-  next (SrcPos line col) c = if c == '\n' then SrcPos (line + 1) 1 else SrcPos line (col + 1)
-  normal pos text = case text of
-    [] -> Right []
-    '/':'/':rest -> ("  " ++) <$> lineComment (next (next pos '/') '/') rest
-    '/':'*':rest -> ("  " ++) <$> blockComment pos (next (next pos '/') '*') rest
-    '"':rest -> ('"':) <$> quoted '"' (next pos '"') rest
-    '\'':rest -> ('\'':) <$> quoted '\'' (next pos '\'') rest
-    c:rest -> (c:) <$> normal (next pos c) rest
-  lineComment pos text = case text of
-    [] -> Right []
-    '\n':rest -> ('\n':) <$> normal (next pos '\n') rest
-    c:rest -> (' ':) <$> lineComment (next pos c) rest
-  blockComment start pos text = case text of
-    [] -> Left (showPos start ++ ": unterminated block comment")
-    '*':'/':rest -> ("  " ++) <$> normal (next (next pos '*') '/') rest
-    c:rest -> ((if c == '\n' then '\n' else ' '):) <$> blockComment start (next pos c) rest
-  quoted quote pos text = case text of
-    [] -> Right []
-    '\\':c:rest -> ('\\':) . (c:) <$> quoted quote (next (next pos '\\') c) rest
-    c:rest -> (c:) <$> (if c == quote then normal else quoted quote) (next pos c) rest
+  normal out text = case text of
+    [] -> Right (reverse out)
+    -- A comment or a quoted text starts with '/', '"' or '\''. These are
+    -- after ' ' and before '0': most characters need no more comparisons.
+    c:rest | '0' <= c || c <= ' ' -> normal (c:out) rest
+    '/':'/':rest -> lineComment (' ':' ':out) rest
+    '/':'*':rest -> blockComment out (' ':' ':out) rest
+    '"':rest -> quoted '"' ('"':out) rest
+    '\'':rest -> quoted '\'' ('\'':out) rest
+    c:rest -> normal (c:out) rest
+  lineComment out text = case text of
+    [] -> Right (reverse out)
+    '\n':rest -> normal ('\n':out) rest
+    _:rest -> lineComment (' ':out) rest
+  blockComment start out text = case text of
+    [] -> Left (showPos (posAfter start) ++ ": unterminated block comment")
+    '*':'/':rest -> normal (' ':' ':out) rest
+    '\n':rest -> blockComment start ('\n':out) rest
+    _:rest -> blockComment start (' ':out) rest
+  quoted quote out text = case text of
+    [] -> Right (reverse out)
+    '\\':c:rest -> quoted quote (c:'\\':out) rest
+    c:rest -> (if c == quote then normal else quoted quote) (c:out) rest
+  posAfter out =
+    SrcPos (1 + length (filter (== '\n') out)) (1 + length (takeWhile (/= '\n') out))
 
 dataLabelPrefix :: String -> String
 dataLabelPrefix path =
