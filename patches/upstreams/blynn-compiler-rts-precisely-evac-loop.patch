@@ -44,7 +44,7 @@ diff --git a/inn/RTSPrecisely.hs b/inn/RTSPrecisely.hs
 +    if (x == REDUCING) {
 +      r = hp;
 +      hp += 2;
-+      px = (u*)((char*)altmem + r * sizeof(u));
++      px = (u*)((char*)mem + r * sizeof(u));
 +      *px = _I;
 +      px = (u*)((char*)px + sizeof(u));
 +      *px = r;
@@ -84,7 +84,7 @@ diff --git a/inn/RTSPrecisely.hs b/inn/RTSPrecisely.hs
 -      y = evac(y);
 -      if (*pn == FORWARD) {
 -        u w = *pn1;
--        u *altw = (u*)((char*)altmem + w * sizeof(u));
+-        u *altw = (u*)((char*)mem + w * sizeof(u));
 -        *altw = _I;
 -        u *altw1 = (u*)((char*)altw + sizeof(u));
 -        *altw1 = y;

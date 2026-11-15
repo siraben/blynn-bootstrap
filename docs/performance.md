@@ -42,6 +42,11 @@ trigger for the GCC-built debug path. Matching `tinycc.*` targets are
 available. Lower thresholds trade more collection work for less allocation
 slack; a smaller heap can also run out of space on larger inputs.
 
+`hcpp` and `hcc1` allocate in a nursery of at most
+`HCC_RTS_ADAPTIVE_MAJOR_WORDS` words and copy the live graph between two
+survivor regions. Peak RSS is about `(2 * live + nursery) * word size`, so
+separate the live graph from the nursery when comparing memory numbers.
+
 Compare output bytes as well as timings, and alternate repeated baseline
 and candidate runs. Use `tests.tinyccM1.native-vs-faithful` for GHC/M2
 output parity. Historical measurements and experiments are in Git history,

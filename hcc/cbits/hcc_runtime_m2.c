@@ -21,8 +21,11 @@ static unsigned obuf_cap[HCC_MAX_OBUFS];
 static int obuf_used[HCC_MAX_OBUFS];
 
 void *hcc_rts_alloc(unsigned long size) {
-  void *out = malloc(size);
-  if (!out) {
+  /* M2libc malloc rejects a block above 1 GiB. Linux brk returns the old
+     break on failure, so compare the new break with the requested end. */
+  char *out = _malloc_brk(size);
+  char *end = brk(0);
+  if (!out || end - out < size) {
     fputs("hcc runtime: out of memory\n", stderr);
     exit(1);
   }

@@ -1,0 +1,183 @@
+diff --git a/inn/RTSPrecisely.hs b/inn/RTSPrecisely.hs
+--- a/inn/RTSPrecisely.hs
++++ b/inn/RTSPrecisely.hs
+@@ -242,16 +242,16 @@
+ static void *rts_alloc(unsigned long n) { return malloc(n); }
+ #endif
+ enum { FORWARD = 127, REDUCING = 126 };
+-static u *mem, *altmem, *sp, *spTop, hp;
++enum { NURSERY = TOP + TOP, ARENA = NURSERY + TOP };
++static u *mem, *sp, *spTop, hp, gcto;
+ #ifndef HCC_RTS_ADAPTIVE_MAJOR_WORDS
+ #define HCC_RTS_ADAPTIVE_MAJOR_WORDS 83886080
+ #endif
+-static u major_base;
+ #ifdef HCC_RTS_STATS
+ static u rts_gc_count, rts_major_gc_count;
+ static u rts_peak_hp, rts_peak_live, rts_peak_stack, rts_peak_scratch;
+-static void rts_note_hp() { if (hp > rts_peak_hp) rts_peak_hp = hp; }
+-static void rts_note_live() { if (hp > rts_peak_live) rts_peak_live = hp; }
++static void rts_note_hp() { if (hp - NURSERY > rts_peak_hp) rts_peak_hp = hp - NURSERY; }
++static void rts_note_live(u live) { if (live > rts_peak_live) rts_peak_live = live; }
+ static void rts_note_stack(u used) { if (used > rts_peak_stack) rts_peak_stack = used; }
+ static void rts_note_scratch() {
+   u used = (u)(((char*)scratchpadend - (char*)scratchpad) / sizeof(u));
+@@ -264,7 +264,7 @@
+     rts_peak_stack, rts_peak_scratch, TOP, HCC_RTS_ADAPTIVE_MAJOR_WORDS, PROGSZ, ROOTSZ);
+ }
+ #define RTS_NOTE_HP rts_note_hp()
+-#define RTS_NOTE_LIVE rts_note_live()
++#define RTS_NOTE_LIVE rts_note_live(hp - to)
+ #define RTS_NOTE_STACK rts_note_stack(usage)
+ #define RTS_NOTE_SCRATCH rts_note_scratch()
+ #else
+@@ -275,7 +275,7 @@
+ static void rts_report_stats() {}
+ #endif
+ #ifdef HCC_RTS_USE_EXTERNAL_ALLOC
+-enum { ADDR_RANGE = TOP - 128 };
++enum { ADDR_RANGE = ARENA - 128 };
+ #define IS_ADDR_N ((n - 128) < ADDR_RANGE)
+ #define IS_ADDR_X ((x - 128) < ADDR_RANGE)
+ #else
+@@ -319,7 +319,7 @@
+       y = evac(y);
+       if (*pn == FORWARD) {
+         u w = *pn1;
+-        u *altw = (u*)((char*)altmem + w * sizeof(u));
++        u *altw = (u*)((char*)mem + w * sizeof(u));
+         *altw = _I;
+         u *altw1 = (u*)((char*)altw + sizeof(u));
+         *altw1 = y;
+@@ -334,7 +334,7 @@
+   hp += 2;
+   *pn = FORWARD;
+   *pn1 = z;
+-  u *altz = (u*)((char*)altmem + z * sizeof(u));
++  u *altz = (u*)((char*)mem + z * sizeof(u));
+   *altz = x;
+   u *altz1 = (u*)((char*)altz + sizeof(u));
+   *altz1 = y;
+@@ -350,40 +350,44 @@
+   return z;
+ }
+ 
++static void open_nursery(u room) {
++  if (room > HCC_RTS_ADAPTIVE_MAJOR_WORDS) room = HCC_RTS_ADAPTIVE_MAJOR_WORDS;
++  hp = ARENA - room;
++}
++
+ static u gc() {
+ #ifdef HCC_RTS_STATS
+   rts_gc_count = rts_gc_count + 1;
+   rts_major_gc_count = rts_major_gc_count + 1;
+ #endif
+-  hp = 128;
++  u to = gcto;
++  gcto = TOP + 128 - to;
++  hp = to;
+   u di = hp;
+-  sp = (u*)((char*)altmem + (TOP - 1) * sizeof(u));
+   for(u *r = root; r != rootend; r = (u*)((char*)r + sizeof(u))) *r = evac(*r);
+-  *sp = evac(*spTop);
++  u top = evac(*spTop);
+   while (di < hp) {
+-    u *p = (u*)((char*)altmem + di * sizeof(u));
++    u *p = (u*)((char*)mem + di * sizeof(u));
+     u x = evac(*p);
+     *p = x;
+     di = di + 1;
+     if (x == _NUM64) di += 2;
+     else if (x != _NUM) {
+-      p = (u*)((char*)altmem + di * sizeof(u));
++      p = (u*)((char*)mem + di * sizeof(u));
+       *p = evac(*p);
+     }
+     di = di + 1;
+   }
+-  spTop = sp;
+-  u *tmp = mem;
+-  mem = altmem;
+-  altmem = tmp;
+-  major_base = hp;
++  RTS_NOTE_LIVE;
++  open_nursery(to + TOP - 128 - hp);
++  sp = spTop;
++  *sp = top;
+   u usage = 0;
+   while(1) {
+     u x = *sp;
+     if (IS_ADDR_X) { u *p = (u*)((char*)mem + x * sizeof(u)); sp = (u*)((char*)sp - sizeof(u)); *sp = *p; } else {
+-      RTS_NOTE_LIVE;
+       RTS_NOTE_STACK;
+-      return usage + hp + 8 >= TOP;
++      return usage + hp + 8 >= ARENA;
+     }
+     usage = usage + 1;
+   }
+@@ -527,11 +531,8 @@
+ 
+ -- Spine descent must preserve the allocation reserve established at entry.
+ -- Cache its boundary, and refresh it whenever GC moves the graph.
++-- The nursery ends at the stack, so this one test also bounds allocation.
+ giantSwitch opts = ([r|
+-  if (hp - major_base >= HCC_RTS_ADAPTIVE_MAJOR_WORDS) {
+-    RTS_NOTE_HP;
+-    if (gc()) return 3;
+-  }
+   u *lim = (u*)((char*)mem + (hp + 8) * sizeof(u));
+   if (lim > sp) {
+     RTS_NOTE_HP;
+@@ -559,31 +560,27 @@
+ rtsInit opts
+   | "warts" `elem` opts = ([r|void rts_init() {
+   mem = (u*) HEAP_BASE;
+-  altmem = (u*)((char*)mem + (TOP - 128) * sizeof(u));
+   { u *p = (u*)((char*)mem + 127 * sizeof(u)); hp = 128 + *p; }
+-  spTop = (u*)((char*)mem + (TOP - 1) * sizeof(u));
++  gcto = TOP;
++  open_nursery(TOP - hp);
++  spTop = (u*)((char*)mem + (ARENA - 1) * sizeof(u));
+   for (rootend = root; *rootend; rootend = (u*)((char*)rootend + sizeof(u)));
+   global = rootend;
+   *global = _K;
+   rootend = (u*)((char*)rootend + sizeof(u));
+   vmroot = rootend;
+-  scratchpadend = scratchpad = (u*)((char*)altmem + TOP * sizeof(u));
++  scratchpadend = scratchpad = (u*)((char*)mem + ARENA * sizeof(u));
+ }
+ |]++)
+   | otherwise = ([r|void rts_init() {
+   static u done; if (done) return; done = 1;
+   root = root8;
+   rootend = (u*)((char*)root8 + ROOTSZ * sizeof(u));
+-  mem = rts_alloc(TOP * sizeof(u));
++  mem = rts_alloc(ARENA * sizeof(u));
+   if (mem == 0) {
+     fputs("precisely RTS: malloc mem failed\n", stderr);
+     exit(1);
+   }
+-  altmem = rts_alloc(TOP * sizeof(u));
+-  if (altmem == 0) {
+-    fputs("precisely RTS: malloc altmem failed\n", stderr);
+-    exit(1);
+-  }
+   scratchpad = rts_alloc(1048576 * sizeof(u));
+   if (scratchpad == 0) {
+     fputs("precisely RTS: malloc scratchpad failed\n", stderr);
+@@ -612,12 +609,13 @@
+     *q = n;
+     hp = hp + 1;
+   } while (hp - 128 < PROGSZ);
+-  spTop = (u*)((char*)mem + (TOP - 1) * sizeof(u));
++  gcto = TOP;
++  open_nursery(TOP - hp);
++  spTop = (u*)((char*)mem + (ARENA - 1) * sizeof(u));
+   global = rootend;
+   *global = _K;
+   rootend = (u*)((char*)rootend + sizeof(u));
+   vmroot = rootend;
+-  major_base = hp;
+ }
+ |]++)
+ 
