@@ -51,11 +51,12 @@ lookupT :: String -> Tree a -> Maybe a
 lookupT k = lookupH k (hash k)
 
 lookupH :: String -> Int -> Tree a -> Maybe a
-lookupH _ _ E = Nothing
-lookupH k kh (N _ x xh v l r) = case cmpHash k kh x xh of
-  Lt -> lookupH k kh l
-  Eq -> v
-  Gt -> lookupH k kh r
+lookupH k kh t = case t of
+  E -> Nothing
+  N _ x xh v l r -> case cmpHash k kh x xh of
+    Lt -> lookupH k kh l
+    Eq -> v
+    Gt -> lookupH k kh r
 
 insertT :: String -> a -> Tree a -> Tree a
 insertT k v = alterT k (Just v)
@@ -111,10 +112,12 @@ balR x xh v l r = case r of
   _ -> N B x xh v l r
 
 hash :: String -> Int
-hash = go 5381 where
-  go h [] = h
-  go h (c:cs) = case ((h * 33) + fromEnum c) `mod` 2147483647 of
-    h' -> go h' cs
+hash = hashFrom 5381
+
+hashFrom :: Int -> String -> Int
+hashFrom h s = case s of
+  [] -> h
+  c:cs -> hashFrom (((h * 33) + fromEnum c) `mod` 2147483647) cs
 
 cmpHash :: String -> Int -> String -> Int -> Cmp
 cmpHash l lh r rh
@@ -128,10 +131,10 @@ data Cmp
   | Gt
 
 cmpString :: String -> String -> Cmp
-cmpString [] [] = Eq
-cmpString [] _ = Lt
-cmpString _ [] = Gt
-cmpString (a:as) (b:bs)
-  | a == b = cmpString as bs
-  | a < b = Lt
-  | otherwise = Gt
+cmpString l r = case l of
+  [] -> case r of
+    [] -> Eq
+    _ -> Lt
+  a:as -> case r of
+    [] -> Gt
+    b:bs -> if a == b then cmpString as bs else if a <= b then Lt else Gt
