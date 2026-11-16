@@ -1,3 +1,5 @@
+unsigned long wide_constant(void) { return 0x123456789abcdefUL; }
+
 int main() {
   unsigned short us = 65535;
   signed short ss = -1;
@@ -19,5 +21,7 @@ int main() {
   if (sll != -2) return 9;
   if (ull != 9) return 10;
   if (yes != 1) return 11;
+  if ((wide_constant() & 0xffff) != 0xcdef) return 14;
+  if (sizeof(long) == 8 && ((wide_constant() >> 16) >> 16) != 0x1234567) return 15;
   return 0;
 }
