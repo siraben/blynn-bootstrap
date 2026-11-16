@@ -24,17 +24,34 @@ by the bootstrap.
     mistaken for arena addresses (`128 <= n < TOP`). Retain these patches;
     removal needs repeated faithful-path timings and byte/execution parity,
     not a host-GCC microbenchmark alone (see `docs/performance.md`).
-- `upstreams/blynn-compiler-rts-precisely-{evac-loop,exit-status}.patch`
-  - same Blynn revision as above; stack safety and failure status of the
+- `upstreams/blynn-compiler-rts-precisely-{nursery,evac-loop,exit-status}.patch`
+  - same Blynn revision as above; memory use and failure status of the
     runtime in `precisely_up`, `hcpp` and `hcc1`
-  - invariants: the collector follows an indirection chain in a loop and
-    keeps the to-space layout. `run()` returns 1 at the end of the program;
-    each other result ends the process with status 1.
-- `upstreams/blynn-compiler-rts2-{num64-gc,heap-full}.patch`
+  - invariants: one block holds two survivor regions and a nursery of `TOP`
+    words each, and the stack grows down from the end of the block. The
+    nursery is not larger than the free room of the survivor region. The
+    collector follows an indirection chain in a loop and keeps the to-space
+    layout. `run()` returns 1 at the end of the program; each other result
+    ends the process with status 1.
+- `upstreams/blynn-compiler-rts2-{num64-gc,stack-base,heap-full}.patch`
   - same Blynn revision as above; the runtime in `crossly1`
   - invariants: the collector copies and skips the two payload words of a
-    `NUM64` cell. The stack is the left spine of the root. A spine that does
-    not fit above the graph ends the process with `heap full` and status 1.
+    `NUM64` cell. After a collection the stack base is `TOP / 8 * 3` words
+    above the live graph, or one graph length if that is larger; the stack
+    is the left spine of the root and is not deeper than half of the graph.
+    A spine that does not fit above the graph ends the process with
+    `heap full` and status 1.
+- `upstreams/blynn-compiler-rts-spine.patch` and
+  `upstreams/oriansj-blynn-{vm-dispatch,run-loop}.patch`
+  - speed only: the order of the combinator tests in `vm.c` and in the
+    runtimes of `marginally` and `methodically`, and an inner loop for the
+    spine in the runtimes of `marginally` up to `party2`
+  - invariants: the tests compare one value with different constants, so
+    their order does not change the result. The generated files change up
+    to `party2.c`; `crossly_up.c` and each later file stay byte-identical.
+- `upstreams/oriansj-blynn-prog-array.patch`
+  - the oriansj compilers emit the program image as an array initializer,
+    not as one assignment for each word; the image contents are the same
 - `upstreams/tinycc-mescc-source.patch`
   - upstream: `https://repo.or.cz/tinycc.git` at
     `cb41cbfe717e4c00d7bb70035cda5ee5f0ff9341`
