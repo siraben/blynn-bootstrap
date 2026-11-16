@@ -154,7 +154,9 @@ bytes. A graph word has 4 bytes with host GCC and 8 bytes with M2 on amd64.
 The stages before `crossly1` allocate two regions. `crossly1` output (HCC and
 `precisely_up`) reserves three regions in one block: two survivor regions and
 a nursery. Only the live graph (twice during a collection) and the used part
-of the nursery become resident.
+of the nursery become resident. With too little heap, a stage before
+`crossly1` collects without end; `crossly1` and its output stop with
+`heap full` and status 1.
 
 The portable compiler ladder stops at `crossly1` (`CROSSLY_TOP=134217728`),
 which generates HCC just as in Nix. Set `BUILD_PRECISELY_UP=1` to also rebuild

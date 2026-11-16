@@ -44,10 +44,11 @@ slack; a smaller heap can also run out of space on larger inputs.
 
 `hcpp` and `hcc1` allocate in a nursery of at most
 `HCC_RTS_ADAPTIVE_MAJOR_WORDS` words and copy the live graph between two
-survivor regions. Peak RSS is about `(2 * live + nursery) * word size`, so
-separate the live graph from the nursery when comparing memory numbers.
+survivor regions. Peak RSS is about `(2 * live + nursery) * word size` plus
+the touched C stack, so separate these parts when comparing memory numbers.
 
 Compare output bytes as well as timings, and alternate repeated baseline
-and candidate runs. Use `tests.tinyccM1.native-vs-faithful` for GHC/M2
+and candidate runs. Wall time of an M2 build varies between runs; pin a run
+to one core and count instructions to compare small changes. Use `tests.tinyccM1.native-vs-faithful` for GHC/M2
 output parity. Historical measurements and experiments are in Git history,
 not performance guarantees for the current tree.
