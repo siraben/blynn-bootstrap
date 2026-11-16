@@ -1,0 +1,99 @@
+diff --git a/inn/RTSPrecisely.hs b/inn/RTSPrecisely.hs
+--- a/inn/RTSPrecisely.hs
++++ b/inn/RTSPrecisely.hs
+@@ -283,6 +283,68 @@
+ #define IS_ADDR_N isAddr(n)
+ #define IS_ADDR_X isAddr(x)
+ #endif
++static u evac(u n);
++
++static u evac_chain(u n) {
++  u head = n;
++  u r;
++  u x;
++  u *px;
++  u *pn = (u*)((char*)mem + n * sizeof(u));
++  u *pn1 = (u*)((char*)pn + sizeof(u));
++  while (1) {
++    *pn = REDUCING;
++    n = *pn1;
++    if (!IS_ADDR_N) {
++      r = n;
++      break;
++    }
++    pn = (u*)((char*)mem + n * sizeof(u));
++    pn1 = (u*)((char*)pn + sizeof(u));
++    x = *pn;
++    while (IS_ADDR_X) {
++      px = (u*)((char*)mem + x * sizeof(u));
++      if (*px != _T) break;
++      *pn = *pn1;
++      px = (u*)((char*)px + sizeof(u));
++      *pn1 = *px;
++      x = *pn;
++    }
++    if (IS_ADDR_X) {
++      px = (u*)((char*)mem + x * sizeof(u));
++      if (*px == _K) {
++        px = (u*)((char*)px + sizeof(u));
++        *pn1 = *px;
++        *pn = _I;
++        x = _I;
++      }
++    }
++    if (x == REDUCING) {
++      r = hp;
++      hp += 2;
++      px = (u*)((char*)altmem + r * sizeof(u));
++      *px = _I;
++      px = (u*)((char*)px + sizeof(u));
++      *px = r;
++      break;
++    }
++    if (x != _I) {
++      r = evac(n);
++      break;
++    }
++  }
++  n = head;
++  while (IS_ADDR_N) {
++    pn = (u*)((char*)mem + n * sizeof(u));
++    if (*pn != REDUCING) break;
++    pn1 = (u*)((char*)pn + sizeof(u));
++    n = *pn1;
++    *pn = FORWARD;
++    *pn1 = r;
++  }
++  return r;
++}
++
+ static u evac(u n) {
+   if (!IS_ADDR_N) return n;
+   u *pn = (u*)((char*)mem + n * sizeof(u));
+@@ -309,25 +371,7 @@
+   u y = *pn1;
+   switch(x) {
+     case FORWARD: return y;
+-    case REDUCING:
+-      *pn = FORWARD;
+-      *pn1 = hp;
+-      hp += 2;
+-      return *pn1;
+-    case _I:
+-      *pn = REDUCING;
+-      y = evac(y);
+-      if (*pn == FORWARD) {
+-        u w = *pn1;
+-        u *altw = (u*)((char*)altmem + w * sizeof(u));
+-        *altw = _I;
+-        u *altw1 = (u*)((char*)altw + sizeof(u));
+-        *altw1 = y;
+-      } else {
+-        *pn = FORWARD;
+-        *pn1 = y;
+-      }
+-      return *pn1;
++    case _I: return evac_chain(n);
+     default: break;
+   }
+   u z = hp;
