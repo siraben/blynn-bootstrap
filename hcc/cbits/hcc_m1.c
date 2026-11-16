@@ -119,13 +119,17 @@ static void set_label_namespace(const char *path) {
   int i = 0;
   int out = 0;
   int start = 0;
+  int c;
   while (path[i]) {
     if (path[i] == '/') start = i + 1;
     i = i + 1;
   }
   i = start;
-  while (path[i] && out < 120) {
-    if (is_label_char((unsigned char)path[i]))
+  /* M2-Planet makes a bitwise AND for &&, thus each operand is 0 or 1. It
+     also gives a wrong value for a cast of path[i] in a call argument. */
+  while (path[i] != 0 && out < 120) {
+    c = path[i];
+    if (is_label_char(c))
       riscv64_label_namespace_buf[out] = path[i];
     else
       riscv64_label_namespace_buf[out] = '_';
@@ -444,12 +448,9 @@ static Operand *block_term_b_ptr(Block *block) {
 
 enum { INPUT_CHUNK = 65536 };
 
-/* Read the complete input with the system calls and check each result: they
-   report an error with each C library. M2libc fopen takes the size from an
-   unchecked lseek and fills its buffer with one unchecked read. The ferror
-   of Mes libc always gives 0. Allocate with malloc only: in the M2 build
-   xrealloc moves the break, thus it must start after the last M2libc
-   allocation. */
+/* M2libc fopen and the ferror of Mes libc do not report a read error, thus
+   read with the system calls. Allocate with malloc only: in the M2 build
+   xrealloc moves the break and must start after the last M2libc allocation. */
 static Input *open_input(char *path) {
   Input *in;
   char *data;
@@ -769,8 +770,6 @@ static void parse_ir_term(Block *block, char *line) {
   char *tok = need_token(&cursor);
   if (str_eq(tok, "R")) {
     block->term_kind = TK_RET;
-    /* An operand can have more than one token. Find the end of the line
-       here, and let parse_ir_operand take each token. */
     while (*cursor == ' ' || *cursor == '\t') cursor = cursor + 1;
     if (*cursor != 0) {
       parse_ir_operand(&cursor, block_term_op_ptr(block));
