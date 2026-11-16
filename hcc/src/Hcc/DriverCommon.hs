@@ -30,13 +30,13 @@ lexNormalizedSource source = case lexC source of
   Right toks -> Right toks
 
 spliceContinuations :: String -> String
-spliceContinuations [] = []
-spliceContinuations ('\\':c:'\n':rest) =
-  if fromEnum c == 13
-    then spliceContinuations rest
-    else '\\' : c : '\n' : spliceContinuations rest
-spliceContinuations ('\\':'\n':rest) = spliceContinuations rest
-spliceContinuations (c:rest) = c : spliceContinuations rest
+spliceContinuations text = case text of
+  [] -> []
+  '\\':rest -> case rest of
+    '\n':more -> spliceContinuations more
+    '\x0d':'\n':more -> spliceContinuations more
+    _ -> '\\' : spliceContinuations rest
+  c:rest -> c : spliceContinuations rest
 
 -- Keep comment columns/newlines as whitespace: macro adjacency and diagnostics
 -- must not depend on the length of a removed comment. Positions are post-splice.
