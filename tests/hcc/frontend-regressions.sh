@@ -264,4 +264,9 @@ excess elements in struct initializer|struct { int a; } s = {1, 2};
 string initializer is longer than its array|char s[2] = "abc";
 address initializer is larger than its object|int y; short x = (short)&y;
 EOF
+
+# A failed read must not become an empty translation unit.
+reject "$HCPP" 'cannot read' "$work"
+reject "$HCC1" 'cannot read' "$work"
+reject "$HCC_M1" 'input read error' "$work/read-error.M1" "$work"
 printf 'frontend-regressions: passed\n'

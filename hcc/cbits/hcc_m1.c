@@ -10,6 +10,10 @@ int m1_checked_write(int fd, char *data, unsigned count);
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+/* M2-Mesoplanet reads an include of an inactive branch too. Keep these two
+   after stdio.h: M2libc has them at that point. */
+#include <fcntl.h>
+#include <unistd.h>
 #if defined(__M2__)
 #undef write
 int m1_checked_write(int fd, char *data, unsigned count) {
@@ -99,6 +103,7 @@ typedef struct DataItem DataItem;
 typedef struct Loc Loc;
 typedef struct LocArray LocArray;
 typedef struct EmitState EmitState;
+typedef struct Input Input;
 
 enum { TARGET_AMD64 = 1, TARGET_I386 = 2, TARGET_AARCH64 = 3, TARGET_RISCV64 = 4 };
 
@@ -211,6 +216,12 @@ struct Loc {
 struct LocArray {
   Loc *items;
   int cap;
+};
+
+struct Input {
+  char *data;
+  unsigned len;
+  unsigned pos;
 };
 
 struct EmitState {
@@ -431,15 +442,58 @@ static Operand *block_term_b_ptr(Block *block) {
 #endif
 }
 
-static int read_line(FILE *file, char *buf, int cap) {
+enum { INPUT_CHUNK = 65536 };
+
+/* Read the complete input with the system calls and check each result: they
+   report an error with each C library. M2libc fopen takes the size from an
+   unchecked lseek and fills its buffer with one unchecked read. The ferror
+   of Mes libc always gives 0. Allocate with malloc only: in the M2 build
+   xrealloc moves the break, thus it must start after the last M2libc
+   allocation. */
+static Input *open_input(char *path) {
+  Input *in;
+  char *data;
+  char *next;
+  unsigned cap = INPUT_CHUNK;
+  unsigned len = 0;
+  int count;
+  int fd = open(path, 0, 0);
+  if (fd < 0) return 0;
+  data = malloc(cap);
+  if (!data) die("out of memory");
+  while (1) {
+    if (cap - len < INPUT_CHUNK) {
+      next = malloc(cap + cap);
+      if (!next) die("out of memory");
+      memcpy(next, data, len);
+      free(data);
+      data = next;
+      cap = cap + cap;
+    }
+    count = read(fd, data + len, INPUT_CHUNK);
+    if (count <= 0) break;
+    len = len + count;
+  }
+  close(fd);
+  if (count < 0) die("input read error");
+  in = malloc(sizeof(Input));
+  if (!in) die("out of memory");
+  in->data = data;
+  in->len = len;
+  in->pos = 0;
+  return in;
+}
+
+static int read_line(Input *file, char *buf, int cap) {
   int len = 0;
   int c;
   while (1) {
-    c = fgetc(file);
-    if (c < 0) {
+    if (file->pos >= file->len) {
       if (len == 0) return 0;
       break;
     }
+    c = file->data[file->pos] & 255;
+    file->pos = file->pos + 1;
     if (c == '\n') break;
     if (c != '\r') {
       if (len + 1 >= cap) die("input line too long");
@@ -554,7 +608,7 @@ static void append_zero_data_values(DataItem *item, int count) {
   }
 }
 
-static void expect_line(FILE *file, char *line, const char *expected) {
+static void expect_line(Input *file, char *line, const char *expected) {
   if (!read_line(file, line, LINE_CAP)) die("unexpected eof");
   if (strcmp(line, expected)) die("unexpected section marker");
 }
@@ -604,9 +658,9 @@ static void parse_ir_prefixed_operand(char *line, const char *prefix, Operand *o
 
 /* The parser borrows one line buffer. Consume or copy every token before
    reading again or descending recursively; no cursor survives descent. */
-static void parse_ir_instrs_until_end(FILE *file, char *line, InstrList *list);
+static void parse_ir_instrs_until_end(Input *file, char *line, InstrList *list);
 
-static void parse_ir_instr_line(FILE *file, char *line, Instr *instr) {
+static void parse_ir_instr_line(Input *file, char *line, Instr *instr) {
   char *cursor = line;
   char *tok;
   int i;
@@ -699,7 +753,7 @@ static void parse_ir_instr_line(FILE *file, char *line, Instr *instr) {
   }
 }
 
-static void parse_ir_instrs_until_end(FILE *file, char *line, InstrList *list) {
+static void parse_ir_instrs_until_end(Input *file, char *line, InstrList *list) {
   Instr instr;
   memset(list, 0, sizeof(InstrList));
   while (read_line(file, line, LINE_CAP)) {
@@ -742,7 +796,7 @@ static void parse_ir_term(Block *block, char *line) {
   }
 }
 
-static void parse_ir_block(FILE *file, char *line, Block *block) {
+static void parse_ir_block(Input *file, char *line, Block *block) {
   char *cursor = line;
   char *tok;
   Instr instr;
@@ -762,7 +816,7 @@ static void parse_ir_block(FILE *file, char *line, Block *block) {
   die("unexpected eof in IR block");
 }
 
-static void parse_ir_function(FILE *file, char *line, Function *fn) {
+static void parse_ir_function(Input *file, char *line, Function *fn) {
   char *cursor = line;
   char *tok;
   Block block;
@@ -778,7 +832,7 @@ static void parse_ir_function(FILE *file, char *line, Function *fn) {
   die("unexpected eof in IR function");
 }
 
-static void parse_ir_data_item(FILE *file, char *line, DataItem *item) {
+static void parse_ir_data_item(Input *file, char *line, DataItem *item) {
   char *cursor = line;
   char *tok;
   memset(item, 0, sizeof(DataItem));
@@ -886,7 +940,7 @@ static void free_data_item(DataItem *item) {
 }
 #endif
 
-static void translate_ir_module(FILE *file, FILE *out, char *line) {
+static void translate_ir_module(Input *file, FILE *out, char *line) {
   DataItem item;
   Function fn;
   emit_header(out);
@@ -2580,7 +2634,7 @@ static void emit_function(FILE *out, Function *fn) {
 }
 
 int main(int argc, char **argv) {
-  FILE *in;
+  Input *in;
   FILE *out;
   char *line;
   int argi;
@@ -2603,7 +2657,7 @@ int main(int argc, char **argv) {
     fputs("usage: hcc-m1 [--target amd64|i386|aarch64|riscv64] INPUT.hccir OUTPUT.M1\n", stderr);
     return 2;
   }
-  in = fopen(argv[argi], "r");
+  in = open_input(argv[argi]);
   if (!in) die("cannot open input");
   set_label_namespace(argv[argi + 1]);
   out = fopen(argv[argi + 1], "w");
@@ -2614,8 +2668,9 @@ int main(int argc, char **argv) {
   translate_ir_module(in, out, line);
 #if !defined(__M2__)
   free(line);
+  free(in->data);
+  free(in);
 #endif
-  fclose(in);
 #if defined(__M2__)
   /* M2 fflush returns a byte count; m1_checked_write fails on any error. */
   fflush(out);

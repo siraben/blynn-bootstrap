@@ -1,3 +1,4 @@
+#include <fcntl.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -12,6 +13,7 @@
 
 #define HCC_MAX_HANDLES 256
 #define HCC_MAX_OBUFS 256
+#define HCC_READ_CHUNK 65536
 
 static char *buffer;
 static size_t buffer_len;
@@ -106,19 +108,23 @@ static void set_result(const char *text) {
   result_len = len;
 }
 
+/* The ferror of Mes libc always gives 0, thus read with the system call. */
 int hcc_read_file(void) {
-  FILE *file = fopen(current_buffer(), "rb");
-  if (!file) return 0;
+  int fd = open(current_buffer(), O_RDONLY);
+  if (fd < 0) return 0;
   result_len = 0;
-  ensure_chars(&result, &result_cap, 1);
-  int c = fgetc(file);
-  while (c != EOF) {
-    ensure_chars(&result, &result_cap, result_len + 2);
-    result[result_len++] = (char)c;
-    c = fgetc(file);
+  for (;;) {
+    ensure_chars(&result, &result_cap, result_len + HCC_READ_CHUNK + 1);
+    ssize_t count = read(fd, result + result_len, HCC_READ_CHUNK);
+    if (count < 0) {
+      close(fd);
+      return 0;
+    }
+    if (count == 0) break;
+    result_len += (size_t)count;
   }
   result[result_len] = 0;
-  fclose(file);
+  close(fd);
   return 1;
 }
 
