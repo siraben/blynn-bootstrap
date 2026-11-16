@@ -24,6 +24,17 @@ by the bootstrap.
     mistaken for arena addresses (`128 <= n < TOP`). Retain these patches;
     removal needs repeated faithful-path timings and byte/execution parity,
     not a host-GCC microbenchmark alone (see `docs/performance.md`).
+- `upstreams/blynn-compiler-rts-precisely-{evac-loop,exit-status}.patch`
+  - same Blynn revision as above; stack safety and failure status of the
+    runtime in `precisely_up`, `hcpp` and `hcc1`
+  - invariants: the collector follows an indirection chain in a loop and
+    keeps the to-space layout. `run()` returns 1 at the end of the program;
+    each other result ends the process with status 1.
+- `upstreams/blynn-compiler-rts2-{num64-gc,heap-full}.patch`
+  - same Blynn revision as above; the runtime in `crossly1`
+  - invariants: the collector copies and skips the two payload words of a
+    `NUM64` cell. The stack is the left spine of the root. A spine that does
+    not fit above the graph ends the process with `heap full` and status 1.
 - `upstreams/tinycc-mescc-source.patch`
   - upstream: `https://repo.or.cz/tinycc.git` at
     `cb41cbfe717e4c00d7bb70035cda5ee5f0ff9341`

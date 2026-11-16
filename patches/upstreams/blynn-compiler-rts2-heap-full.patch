@@ -1,0 +1,40 @@
+diff --git a/inn/RTS2.hs b/inn/RTS2.hs
+--- a/inn/RTS2.hs
++++ b/inn/RTS2.hs
+@@ -31,7 +31,7 @@
+   return nextCh;
+ }
+ void errchar(int c) { fputc(c, stderr); }
+-void errexit() { fputc('\n', stderr); }
++void errexit() { fputc('\n', stderr); exit(1); }
+ |]
+ 
+ libcWasm = [r|
+@@ -113,3 +113,6 @@
++void errchar(int);
++void errexit();
++
+ static void gc() {
+   hp = 128;
+   u di = hp;
+@@ -146,6 +149,20 @@
+   u *tmp = mem;
+   mem = altmem;
+   altmem = tmp;
++  u top = *sp;
++  u *lim = mem + (hp + 8) * sizeof(u);
++  u *end = sp;
++  while (top >= 128) {
++    u *p = mem + top * sizeof(u);
++    top = *p;
++    end = end - sizeof(u);
++    if (end < lim) {
++      char *s = "heap full";
++      while (s[0]) { errchar(s[0]); s = s + 1; }
++      errexit();
++      return;
++    }
++  }
+ }
+ 
+ static inline u app(u f, u x) {
