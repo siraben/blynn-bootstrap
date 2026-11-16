@@ -7,15 +7,11 @@ import Base
 import Literal
 import TypesIr
 
-intConstOperand :: String -> Operand
-intConstOperand text = case parseIntBytes text of
-  Just bytes -> OImmBytes bytes
-  Nothing -> OImm (parseInt text)
-
-parseIntBytes :: String -> Maybe [Int]
-parseIntBytes text =
-  let bytes = naturalLiteralBytes (stripIntSuffix text)
-  in if exceedsSignedInt bytes then Just bytes else Nothing
+intConstOperand :: String -> Either String Operand
+intConstOperand text = fmap operand (integerLiteralBytes text) where
+  operand bytes =
+    if exceedsSignedInt bytes then OImmBytes bytes
+    else OImm (foldr (\byte acc -> byte + 256 * acc) 0 bytes)
 
 exceedsSignedInt :: [Int] -> Bool
 exceedsSignedInt bytes = case bytes of

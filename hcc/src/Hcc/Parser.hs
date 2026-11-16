@@ -1069,6 +1069,8 @@ unary = do
     TokFloat s -> advanceToken >> pure (EFloat s)
     TokChar s -> advanceToken >> pure (EChar s)
     TokString _ -> EString <$> stringLiteral
+    TokIdent s | s `elem` builtinTypeNames ->
+      failAt tok "a type name is not an expression"
     TokIdent s -> do
       advanceToken
       constant <- lookupParserConstant s

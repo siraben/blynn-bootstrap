@@ -539,10 +539,12 @@ lowerAggregateElementScalarWrite addr fieldTy expr = do
 
 lowerExpr :: Expr -> CompileM ([Instr], Operand)
 lowerExpr expr = case expr of
-  EInt text ->
-    pure ([], intConstOperand text)
-  EFloat text ->
-    pure ([], OImmBytes (floatLiteralBytes (floatLiteralSize text) text))
+  EInt text -> case intConstOperand text of
+    Left msg -> throwC msg
+    Right op -> pure ([], op)
+  EFloat text -> case floatLiteralBytes (floatLiteralSize text) text of
+    Left msg -> throwC msg
+    Right bytes -> pure ([], OImmBytes bytes)
   EChar text ->
     pure ([], OImm (charValue text))
   EString text -> do
@@ -2013,7 +2015,9 @@ castConstant ty value = case ty of
 scalarFloatData :: CType -> String -> CompileM [DataValue]
 scalarFloatData ty text = do
   size <- typeSize ty
-  pure (map DByte (floatLiteralBytes size text))
+  case floatLiteralBytes size text of
+    Left msg -> throwC msg
+    Right bytes -> pure (map DByte bytes)
 
 padDataTarget :: Int -> [DataValue] -> CompileM [DataValue]
 padDataTarget size values = do
