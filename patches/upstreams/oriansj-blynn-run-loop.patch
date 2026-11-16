@@ -1,0 +1,162 @@
+--- a/virtually.hs
++++ b/virtually.hs
+@@ -1450,22 +1450,38 @@
+ char getargchar(int n, int k) { char *tmp = env_argv[n]; return tmp[k]; }
+ |];
+ 
++dispatchOrder = ["B","I","C","S","K","R","T","NUM","CONS","V","Q","EQ","LE","ADD","MUL","F","DIV","MOD","Y","SUB"];
++
++findComb name = maybe undefined id $ find ((name ==) . fst) comdefs;
++
++dispatchDefs = map findComb dispatchOrder
++  ++ filter (\p -> not $ elem (fst p) dispatchOrder) comdefs;
++
+ runFun = ([r|void run() {
+   unsigned x;
++  unsigned* lim;
+   while(TRUE)
+   {
+-    if (mem + (hp * CELL_SIZE) > sp - (8 * CELL_SIZE)) 
++    lim = mem + ((hp + 8) * CELL_SIZE);
++    if (lim > sp)
+     {
+       gc();
++      lim = mem + ((hp + 8) * CELL_SIZE);
+     }
+     x = sp[0];
+-    if (isAddr(x)) 
++    while (x >= 128)
+     {
+       sp = sp - CELL_SIZE;
+       sp[0] = mem[x];
++      if (lim > sp)
++      {
++        gc();
++        lim = mem + ((hp + 8) * CELL_SIZE);
++      }
++      x = sp[0];
+     }
+ |]++)
+-  . foldr (.) id (genComb <$> comdefs)
++  . foldr (.) id (zipWith genComb ("  " : map (\_ -> "  else ") dispatchDefs) dispatchDefs)
+   . ([r|
+   }
+ }
+@@ -1525,10 +1541,10 @@
+   ; A x y -> ("app("++) . genArg m x . (',':) . genArg m y . (')':)
+   };
+ genArgs m as = foldl1 (.) $ map (\a -> (","++) . genArg m a) as;
+-genComb (s, (args, body)) = let
++genComb kw (s, (args, body)) = let
+   { argc = ('(':) . showInt (length args)
+   ; m = zip args $ upFrom 1
+-  } in ("  else if (x == _"++) . (s++) . (')':) . (case body of
++  } in (kw++) . ("if (x == _"++) . (s++) . (')':) . (case body of
+   { A (A x y) z -> (" { lazy3"++) . argc . genArgs m [x, y, z] . ("); }"++)
+   ; A x y -> (" { lazy2"++) . argc . genArgs m [x, y] . ("); }"++)
+   ; E (StrCon s) -> (" { "++) . (s++) . (" }"++)
+--- a/marginally.hs
++++ b/marginally.hs
+@@ -1665,22 +1665,38 @@
+ char getargchar(int n, int k) { char *tmp = env_argv[n]; return tmp[k]; }
+ |];
+ 
++dispatchOrder = ["B","I","C","S","K","R","T","NUM","CONS","V","Q","EQ","LE","ADD","MUL","F","DIV","MOD","Y","SUB"];
++
++findComb name = maybe undefined id $ find ((name ==) . fst) comdefs;
++
++dispatchDefs = map findComb dispatchOrder
++  ++ filter (\p -> not $ elem (fst p) dispatchOrder) comdefs;
++
+ runFun = ([r|void run() {
+   unsigned x;
++  unsigned* lim;
+   while(TRUE)
+   {
+-    if (mem + (hp * CELL_SIZE) > sp - (8 * CELL_SIZE)) 
++    lim = mem + ((hp + 8) * CELL_SIZE);
++    if (lim > sp)
+     {
+       gc();
++      lim = mem + ((hp + 8) * CELL_SIZE);
+     }
+     x = sp[0];
+-    if (isAddr(x)) 
++    while (x >= 128)
+     {
+       sp = sp - CELL_SIZE;
+       sp[0] = mem[x];
++      if (lim > sp)
++      {
++        gc();
++        lim = mem + ((hp + 8) * CELL_SIZE);
++      }
++      x = sp[0];
+     }
+ |]++)
+-  . foldr (.) id (genComb <$> comdefs)
++  . foldr (.) id (zipWith genComb ("  " : map (\_ -> "  else ") dispatchDefs) dispatchDefs)
+   . ([r|
+   }
+ }
+@@ -1740,10 +1756,10 @@
+   ; A x y -> ("app("++) . genArg m x . (',':) . genArg m y . (')':)
+   };
+ genArgs m as = foldl1 (.) $ map (\a -> (","++) . genArg m a) as;
+-genComb (s, (args, body)) = let
++genComb kw (s, (args, body)) = let
+   { argc = ('(':) . showInt (length args)
+   ; m = zip args $ upFrom 1
+-  } in ("  else if (x == _"++) . (s++) . (')':) . (case body of
++  } in (kw++) . ("if (x == _"++) . (s++) . (')':) . (case body of
+   { A (A x y) z -> (" { lazy3"++) . argc . genArgs m [x, y, z] . ("); }"++)
+   ; A x y -> (" { lazy2"++) . argc . genArgs m [x, y] . ("); }"++)
+   ; E (StrCon s) -> (" { "++) . (s++) . (" }"++)
+--- a/methodically.hs
++++ b/methodically.hs
+@@ -1611,20 +1611,29 @@
+ 
+ runFun = ([r|void run() {
+   unsigned x;
++  unsigned* lim;
+   while(TRUE)
+   {
+-    if (mem + (hp * CELL_SIZE) > sp - (8 * CELL_SIZE))
++    lim = mem + ((hp + 8) * CELL_SIZE);
++    if (lim > sp)
+     {
+       gc();
++      lim = mem + ((hp + 8) * CELL_SIZE);
+     }
+     x = sp[0];
+-    if (isAddr(x))
++    while (x >= 128)
+     {
+       sp = sp - CELL_SIZE;
+       sp[0] = mem[x];
++      if (lim > sp)
++      {
++        gc();
++        lim = mem + ((hp + 8) * CELL_SIZE);
++      }
++      x = sp[0];
+     }
+ |]++)
+-  . foldr (.) id (genComb <$> dispatchDefs)
++  . foldr (.) id (zipWith genComb ("  " : map (\_ -> "  else ") dispatchDefs) dispatchDefs)
+   . ([r|
+   }
+ }
+@@ -1685,10 +1694,10 @@
+   E (StrCon s) -> (s++)
+   A x y -> ("app("++) . genArg m x . (',':) . genArg m y . (')':)
+ genArgs m as = foldl1 (.) $ map (\a -> (","++) . genArg m a) as
+-genComb (s, (args, body)) = let
++genComb kw (s, (args, body)) = let
+   argc = ('(':) . showInt (length args)
+   m = zip args $ upFrom 1
+-  in ("  else if (x == _"++) . (s++) . (')':) . (case body of
++  in (kw++) . ("if (x == _"++) . (s++) . (')':) . (case body of
+     A (A x y) z -> (" { lazy3"++) . argc . genArgs m [x, y, z] . ("); }"++)
+     A x y -> (" { lazy2"++) . argc . genArgs m [x, y] . ("); }"++)
+     E (StrCon s) -> (" { "++) . (s++) . (" }"++)
