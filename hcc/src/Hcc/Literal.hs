@@ -4,12 +4,11 @@ module Literal
   , bitOrInt
   , bitXorInt
   , intLiteralIsUnsigned
-  , parseInt
   , stripIntSuffix
   , floatLiteralBytes
   , floatLiteralSize
   , stripFloatSuffix
-  , naturalLiteralBytes
+  , integerLiteralBytes
   , intBytes
   , charValue
   , stringBytes
@@ -63,15 +62,6 @@ intLiteralIsUnsigned text = case text of
   [] -> False
   c:rest -> c `elem` "uU" || intLiteralIsUnsigned rest
 
-parseInt :: String -> Int
-parseInt text =
-  let clean = stripIntSuffix text
-  in case clean of
-    '0':'x':xs -> readHexFrom 0 xs
-    '0':'X':xs -> readHexFrom 0 xs
-    '0':xs -> readOctalFrom 0 xs
-    _ -> readDecimalPrefixFrom 0 clean
-
 stripIntSuffix :: String -> String
 stripIntSuffix text = reverse (dropWhile isIntSuffix (reverse text))
 
@@ -84,15 +74,25 @@ floatLiteralSize text
   | endsWithFloatSuffix "lL" text = 16
   | otherwise = 8
 
-floatLiteralBytes :: Int -> String -> [Int]
+-- HCC holds a floating value as a signed integer. A literal with a nonzero
+-- fraction, an exponent, or a hexadecimal form has no such value.
+floatLiteralBytes :: Int -> String -> Either String [Int]
 floatLiteralBytes size text =
-  take size (floatLiteralByteWord text)
+  let clean = stripFloatSuffix text
+      width = if size < 8 then size else 8
+      range = if size < 8 then "32-bit" else "64-bit"
+      outside = Left ("floating literal exceeds supported " ++ range ++ " range: " ++ text)
+  in if not (integerFraction (dropWhile isDecimalDigit clean))
+       then Left ("unsupported non-integer floating literal: " ++ text)
+       else case readBaseBytesChecked 10 clean of
+         Just bytes -> if fitsWidth width False bytes then Right (take size bytes) else outside
+         Nothing -> outside
 
-floatLiteralByteWord :: String -> [Int]
-floatLiteralByteWord text = case stripFloatSuffix text of
-  '0':'x':rest -> readBaseBytes 16 rest
-  '0':'X':rest -> readBaseBytes 16 rest
-  rest -> readBaseBytes 10 rest
+integerFraction :: String -> Bool
+integerFraction fraction = case fraction of
+  [] -> True
+  '.':rest -> all (== '0') rest
+  _ -> False
 
 stripFloatSuffix :: String -> String
 stripFloatSuffix text = reverse (dropWhile isFloatLiteralSuffix (reverse text))
@@ -105,44 +105,32 @@ endsWithFloatSuffix suffixes text = case reverse text of
   c:_ -> c `elem` suffixes
   [] -> False
 
-readDecimalPrefixFrom :: Int -> String -> Int
-readDecimalPrefixFrom acc xs = case xs of
-  c:rest ->
-    if isDecimalDigit c
-      then readDecimalPrefixFrom (acc * 10 + decimalDigit c) rest
-      else acc
-  [] -> acc
+integerLiteralBytes :: String -> Either String [Int]
+integerLiteralBytes text =
+  let word = case stripIntSuffix text of
+        '0':'x':xs -> readBaseBytesChecked 16 xs
+        '0':'X':xs -> readBaseBytesChecked 16 xs
+        '0':xs -> readBaseBytesChecked 8 xs
+        clean -> readBaseBytesChecked 10 clean
+  in case word of
+    Just bytes -> Right bytes
+    Nothing -> Left "integer literal exceeds supported 64-bit range"
 
-readOctalFrom :: Int -> String -> Int
-readOctalFrom n xs = case xs of
-  [] -> n
-  c:rest ->
-    if isOctalDigit c
-      then readOctalFrom (n * 8 + decimalDigit c) rest
-      else n
-
-readHexFrom :: Int -> String -> Int
-readHexFrom n xs = case xs of
-  [] -> n
-  c:rest -> readHexFrom (n * 16 + hexDigit c) rest
-
-naturalLiteralBytes :: String -> [Int]
-naturalLiteralBytes text = case text of
-  '0':'x':xs -> readBaseBytes 16 xs
-  '0':'X':xs -> readBaseBytes 16 xs
-  '0':xs -> readBaseBytes 8 xs
-  _ -> readBaseBytes 10 text
-
-readBaseBytes :: Int -> String -> [Int]
-readBaseBytes base = readBaseBytesFrom base zeroByteWord
-
-readBaseBytesFrom :: Int -> [Int] -> String -> [Int]
-readBaseBytesFrom base bytes text = case text of
-  [] -> bytes
-  c:rest ->
-    if digitValue c < base
-      then readBaseBytesFrom base (byteWordMulAdd base (digitValue c) bytes) rest
-      else bytes
+-- Check in nine bytes before reading the eight-byte value, so overflow
+-- cannot turn an invalid literal into a valid truncated value.
+readBaseBytesChecked :: Int -> String -> Maybe [Int]
+readBaseBytesChecked base text =
+  if fits (replicate 9 0) text then Just (value (replicate 8 0) text) else Nothing
+  where
+  step bytes c = byteWordAddSmallCarry (digitValue c) (byteWordMulSmall base bytes)
+  fits bytes remaining = case remaining of
+    [] -> True
+    c:rest -> if digitValue c >= base then True else
+      let next = step bytes c
+      in last next == 0 && fits next rest
+  value bytes remaining = case remaining of
+    [] -> bytes
+    c:rest -> if digitValue c >= base then bytes else value (step bytes c) rest
 
 digitValue :: Char -> Int
 digitValue c
@@ -150,12 +138,6 @@ digitValue c
   | c >= 'a' && c <= 'f' = 10 + fromEnum c - fromEnum 'a'
   | c >= 'A' && c <= 'F' = 10 + fromEnum c - fromEnum 'A'
   | otherwise = 99
-
-zeroByteWord :: [Int]
-zeroByteWord = [0,0,0,0,0,0,0,0]
-
-byteWordMulAdd :: Int -> Int -> [Int] -> [Int]
-byteWordMulAdd base digit bytes = take 8 (byteWordAddSmallCarry digit (byteWordMulSmall base bytes))
 
 byteWordMulSmall :: Int -> [Int] -> [Int]
 byteWordMulSmall factor = byteWordMulSmallCarry factor 0
@@ -183,9 +165,14 @@ intBytesFrom n = (n `mod` 256) : intBytesFrom (n `div` 256)
 charValue :: String -> Int
 charValue text = case text of
   '\'':'\\':rest ->
-    fst (decodeEscape (dropClosingQuote rest))
-  ['\'', c, '\''] -> fromEnum c
+    signedByte (fst (decodeEscape (dropClosingQuote rest)))
+  ['\'', c, '\''] -> signedByte (fromEnum c)
   _ -> 0
+
+signedByte :: Int -> Int
+signedByte value =
+  let byte = value `mod` 256
+  in if byte >= 128 then byte - 256 else byte
 
 stringBytes :: String -> [Int]
 stringBytes text = stringBytesFrom (stripTrailingQuote (stripLeadingQuote text))
@@ -287,10 +274,9 @@ data Constant = Constant Int Bool [Int]
 -- Rank (int=1, long=2, long long=3) matters even when two types have the
 -- same width. Share candidate selection between byte folding and runtime
 -- type inference rather than recovering a type from width or suffix alone.
-constantLiteralRanked :: Int -> Bool -> String -> (Int, Constant)
-constantLiteralRanked longSize preprocessing text =
-  let bytes = naturalLiteralBytes (stripIntSuffix text)
-      unsigned = intLiteralIsUnsigned text
+constantLiteralRanked :: Int -> Bool -> String -> [Int] -> (Int, Constant)
+constantLiteralRanked longSize preprocessing text bytes =
+  let unsigned = intLiteralIsUnsigned text
       longs = length (filter (`elem` "lL") text)
       nonDecimal = case text of { '0':_:_ -> True; _ -> False }
       sizes = if preprocessing then [(3, 8)] else if longs >= 2 then [(3, 8)]
@@ -301,32 +287,23 @@ constantLiteralRanked longSize preprocessing text =
       choose remaining = case remaining of
         [] -> (3, Constant 8 True bytes)
         (rank, size, u):rest ->
-          let limit = replicate (size - 1) 255 ++ [if u then 255 else 127] ++ replicate (8 - size) 0
-          in if constWordCompare bytes limit <= 0 then (rank, Constant size u (take size bytes)) else choose rest
+          if fitsWidth size u bytes then (rank, Constant size u (take size bytes)) else choose rest
   in choose candidates
 
--- Check before the legacy byte reader's eight-byte truncation. An invalid
--- literal must not turn into a small (apparently valid) array extent.
+fitsWidth :: Int -> Bool -> [Int] -> Bool
+fitsWidth size unsigned bytes =
+  let limit = replicate (size - 1) 255 ++ [if unsigned then 255 else 127] ++ replicate (8 - size) 0
+  in constWordCompare bytes limit <= 0
+
+-- An invalid literal must not turn into a small (apparently valid) array
+-- extent.
 constantLiteralChecked :: Int -> Bool -> String -> Either String Constant
 constantLiteralChecked longSize preprocessing text =
   fmap snd (constantLiteralRankedChecked longSize preprocessing text)
 
 constantLiteralRankedChecked :: Int -> Bool -> String -> Either String (Int, Constant)
 constantLiteralRankedChecked longSize preprocessing text =
-  let clean = stripIntSuffix text
-      (base, digits) = case clean of
-        '0':'x':rest -> (16, rest)
-        '0':'X':rest -> (16, rest)
-        '0':rest -> (8, rest)
-        _ -> (10, clean)
-      fits bytes remaining = case remaining of
-        [] -> True
-        c:rest -> if digitValue c >= base then True else
-          let next = byteWordAddSmallCarry (digitValue c) (byteWordMulSmall base bytes)
-          in last next == 0 && fits next rest
-  in if fits (replicate 9 0) digits
-     then Right (constantLiteralRanked longSize preprocessing text)
-     else Left "integer literal exceeds supported 64-bit range"
+  fmap (constantLiteralRanked longSize preprocessing text) (integerLiteralBytes text)
 
 constantConvert :: Int -> Bool -> Constant -> Constant
 constantConvert = constConvert

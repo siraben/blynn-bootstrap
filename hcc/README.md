@@ -31,3 +31,18 @@ i386, AArch64, and RISC-V64, with different bootstrap coverage; see the
 HCC implements the C subset needed for this bootstrap, not a complete C
 implementation. It has no host `cc` passthrough. The sources in `support/`
 include a limited TinyCC stage1 runtime; they are not a general libc.
+
+## Known limits
+
+HCC rejects most constructs that it does not implement. The items below are
+accepted and differ from a complete C implementation.
+
+- A floating value is a signed integer with the size of its type. A literal
+  with a nonzero fraction or an exponent is an error.
+- A bit-field is a member of its declared type. The width has no effect.
+- The i386 backend has no 64-bit integer operations. `hcc-m1` rejects them.
+- `hcpp` predefines no macro, thus `#if __STDC__` is false. `__LINE__` has
+  the value 0 in `hcc1`, and `__FILE__` is an error.
+- A position in an `hcpp` or `hcc1` message refers to the text after include
+  expansion.
+- A tool that fails can leave an incomplete output file.

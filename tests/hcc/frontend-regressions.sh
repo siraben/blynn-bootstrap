@@ -230,4 +230,16 @@ grep -F 'int continued = 7' "$work/input.i" >/dev/null
 # Removing a long comment must retain the following token's column.
 printf 'int x; /* comment */ @\n' > "$work/column.c"
 reject "$HCC1" ':1:22: unexpected character: @' "$work/column.c"
+# HCC rejects a construct that it cannot represent. A value must not lose
+# bits, and an initializer must not go past its object.
+while IFS='|' read -r expected source; do
+  printf '%s\n' "$source" > "$work/unsupported.i"
+  reject "$HCC1" "$expected" "$work/unsupported.i" --m1-ir -o "$work/unsupported.hccir"
+done <<'EOF'
+integer literal exceeds supported 64-bit range|long x; void f(void) { x = 99999999999999999999999; }
+unsupported non-integer floating literal: 1.5|double x = 1.5;
+floating literal exceeds supported 32-bit range|float x = 2147483648.0;
+floating literal exceeds supported 64-bit range|double x = 9223372036854775808.0;
+a type name is not an expression|int x = int;
+EOF
 printf 'frontend-regressions: passed\n'
