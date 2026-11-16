@@ -14,3 +14,4 @@ blynn-compiler-rts2-stack-base.patch
 blynn-compiler-top.patch
 blynn-compiler-rts-precisely-exit-status.patch
 blynn-compiler-rts2-heap-full.patch
+blynn-compiler-rts-spine.patch
