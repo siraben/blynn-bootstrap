@@ -1,6 +1,7 @@
 module Lower
   ( lowerFunction
   , globalData
+  , completeArrayType
   ) where
 
 import Base
@@ -361,7 +362,8 @@ lowerDecls decls = do
   pure (concat lowered)
 
 lowerDecl :: CType -> String -> Maybe Expr -> CompileM [Instr]
-lowerDecl ty name initExpr = do
+lowerDecl declTy name initExpr = do
+  let ty = completeArrayType declTy initExpr
   registerTypeIntroductions ty
   aggregateStorage <- isAggregateTypeM ty
   temp <- freshTemp
@@ -369,6 +371,15 @@ lowerDecl ty name initExpr = do
   if aggregateStorage
     then lowerAggregateDecl ty temp initExpr
     else lowerScalarDecl ty temp initExpr
+
+-- The initializer gives the element count of an array without a bound.
+completeArrayType :: CType -> Maybe Expr -> CType
+completeArrayType ty initExpr = case ty of
+  CArray inner Nothing -> case initExpr of
+    Just (EInitList exprs) -> CArray inner (Just (EInt (show (length exprs))))
+    Just (EString text) -> CArray inner (Just (EInt (show (length (stringBytes text)))))
+    _ -> ty
+  _ -> ty
 
 lowerAggregateDecl :: CType -> Temp -> Maybe Expr -> CompileM [Instr]
 lowerAggregateDecl ty temp initExpr = do
@@ -462,7 +473,11 @@ lowerAggregateInitWrites dst ty initExpr = case initExpr of
 
 lowerAggregateInitList :: Operand -> CType -> [Expr] -> CompileM [Instr]
 lowerAggregateInitList dst ty exprs = case ty of
-  CArray inner _ -> lowerArrayInitWrites dst inner 0 exprs
+  CArray inner count -> do
+    bound <- arrayBoundSize count
+    if length exprs > bound
+      then throwC "excess elements in array initializer"
+      else lowerArrayInitWrites dst inner 0 exprs
   _ -> do
     aggregate <- aggregateFields ty
     case aggregate of
@@ -472,12 +487,12 @@ lowerAggregateInitList dst ty exprs = case ty of
       _ -> pure []
 
 lowerUnionInitWrites :: Operand -> [Field] -> [Expr] -> CompileM [Instr]
-lowerUnionInitWrites dst fields exprs = case fields of
+lowerUnionInitWrites dst fields exprs = case exprs of
   [] -> pure []
-  field:_ -> case field of
-    Field fieldTy _ -> case exprs of
-      expr:_ -> lowerAggregateElementWrite dst 0 fieldTy expr
-      [] -> pure []
+  [expr] -> case fields of
+    Field fieldTy _:_ -> lowerAggregateElementWrite dst 0 fieldTy expr
+    [] -> throwC "excess elements in union initializer"
+  _ -> throwC "excess elements in union initializer"
 
 lowerArrayInitWrites :: Operand -> CType -> Int -> [Expr] -> CompileM [Instr]
 lowerArrayInitWrites dst inner index exprs = case exprs of
@@ -490,7 +505,9 @@ lowerArrayInitWrites dst inner index exprs = case exprs of
 
 lowerStructInitWrites :: Operand -> Int -> [Field] -> [Expr] -> CompileM [Instr]
 lowerStructInitWrites dst offset fields exprs = case fields of
-  [] -> pure []
+  [] -> case exprs of
+    [] -> pure []
+    _ -> throwC "excess elements in struct initializer"
   field:fieldRest -> case exprs of
     [] -> pure []
     expr:exprRest -> case field of
@@ -599,9 +616,7 @@ lowerExpr expr = case expr of
     pure ([IConst temp size], OTemp temp)
   ESizeofExpr value -> do
     registerExprIntroductions expr
-    mty <- exprType value
-    ty <- requireMaybeType "sizeof expression has unknown type" mty
-    size <- typeSize ty
+    size <- sizeofExprSize value
     temp <- freshTemp
     pure ([IConst temp size], OTemp temp)
   ECond cond yes no -> do
@@ -1230,6 +1245,15 @@ lowerLValue target = case target of
     pure (baseInstrs ++ addrInstrs, LAddress addrOp fieldTy)
   _ -> throwC ("unsupported lvalue: " ++ renderExprTag target)
 
+-- A string literal operand keeps its array type.
+sizeofExprSize :: Expr -> CompileM Int
+sizeofExprSize value = case value of
+  EString text -> pure (length (stringBytes text))
+  _ -> do
+    mty <- exprType value
+    ty <- requireMaybeType "sizeof expression has unknown type" mty
+    typeSize ty
+
 requireMaybeType :: String -> Maybe CType -> CompileM CType
 requireMaybeType msg mty = case mty of
   Just ty -> pure ty
@@ -1391,16 +1415,16 @@ isFunctionNameMacro name =
 
 addExprResultType :: Maybe CType -> Maybe CType -> CType -> Maybe CType
 addExprResultType leftTy rightTy arithmeticTy = case pointerElementType leftTy of
-  Just _ -> leftTy
+  Just inner -> Just (CPtr inner)
   Nothing -> case pointerElementType rightTy of
-    Just _ -> rightTy
+    Just inner -> Just (CPtr inner)
     Nothing -> Just arithmeticTy
 
 subExprResultType :: Maybe CType -> Maybe CType -> CType -> Maybe CType
 subExprResultType leftTy rightTy arithmeticTy = case pointerElementType leftTy of
-  Just _ -> case pointerElementType rightTy of
+  Just inner -> case pointerElementType rightTy of
     Just _ -> Just CLong
-    Nothing -> leftTy
+    Nothing -> Just (CPtr inner)
   Nothing -> Just arithmeticTy
 
 memberInfo :: Maybe CType -> String -> CompileM (CType, Int)
@@ -1789,25 +1813,8 @@ alignUp offset align =
 globalData :: CType -> Maybe Expr -> CompileM [DataValue]
 globalData ty initExpr = do
   values <- globalDataValue ty initExpr
-  size <- initializedSize ty values initExpr
+  size <- typeSize ty
   padDataTarget size values
-
-initializedSize :: CType -> [DataValue] -> Maybe Expr -> CompileM Int
-initializedSize ty values initExpr = case ty of
-  CArray inner count -> case count of
-    Nothing -> initializedUnboundedArraySize inner values initExpr
-    Just _ -> typeSize ty
-  _ -> typeSize ty
-
-initializedUnboundedArraySize :: CType -> [DataValue] -> Maybe Expr -> CompileM Int
-initializedUnboundedArraySize inner values initExpr = case initExpr of
-  Just expr -> case expr of
-    EInitList _ -> dataSizeTarget values
-    EString _ -> case inner of
-      CChar -> dataSizeTarget values
-      _ -> typeSize (CArray inner Nothing)
-    _ -> typeSize (CArray inner Nothing)
-  Nothing -> typeSize (CArray inner Nothing)
 
 globalDataValue :: CType -> Maybe Expr -> CompileM [DataValue]
 globalDataValue ty initExpr = case initExpr of
@@ -1876,7 +1883,9 @@ globalArrayInitData inner count exprs = do
       n <- arrayBoundSize (Just bound)
       elemSize <- typeSize inner
       size <- checkedArraySize elemSize n
-      padDataTarget size items
+      if length exprs > n
+        then throwC "excess elements in array initializer"
+        else padDataTarget size items
 
 globalAggregateInitData :: CType -> [Expr] -> CompileM [DataValue]
 globalAggregateInitData ty exprs = do
@@ -1885,13 +1894,21 @@ globalAggregateInitData ty exprs = do
     Just aggregateInfo -> case aggregateInfo of
       (False, fields) -> globalStructData fields exprs
       (True, fields) -> globalUnionData fields exprs
-    Nothing -> zeroDataForType ty
+    Nothing -> case exprs of
+      [] -> zeroDataForType ty
+      _ -> throwC "excess elements in scalar initializer"
 
 globalStringData :: CType -> String -> CompileM [DataValue]
 globalStringData ty text = case ty of
   CArray CChar count -> do
     size <- stringDataSize count text
-    padDataTarget size (map DByte (stringBytes text))
+    let bytes = stringBytes text
+    -- An array with the length of the text has no terminator.
+    if length bytes == size + 1
+      then pure (map DByte (take size bytes))
+      else if length bytes > size
+        then throwC "string initializer is longer than its array"
+        else padDataTarget size (map DByte bytes)
   _ -> if isPointerType ty
     then do
       dataLabel <- freshDataLabel
@@ -1935,7 +1952,9 @@ globalStructData fields exprs = do
 
 structFields :: Int -> [Field] -> [Expr] -> CompileM ([DataValue], Int)
 structFields offset remaining values = case remaining of
-  [] -> pure ([], offset)
+  [] -> case values of
+    [] -> pure ([], offset)
+    _ -> throwC "excess elements in struct initializer"
   field:rest -> case field of
     Field fieldTy _ -> do
       align <- typeAlign fieldTy
@@ -1950,15 +1969,15 @@ structFields offset remaining values = case remaining of
       pure (zeroData (aligned - offset) ++ paddedField ++ restData, end)
 
 globalUnionData :: [Field] -> [Expr] -> CompileM [DataValue]
-globalUnionData fields exprs = case fields of
+globalUnionData fields exprs = case exprs of
   [] -> zeroUnionData fields
-  field:_ -> case exprs of
-    [] -> zeroUnionData fields
-    expr:_ -> case field of
-      Field fieldTy _ -> do
-        item <- globalDataValue fieldTy (Just expr)
-        size <- unionSizeFromFields fields
-        padDataTarget size item
+  [expr] -> case fields of
+    Field fieldTy _:_ -> do
+      item <- globalDataValue fieldTy (Just expr)
+      size <- unionSizeFromFields fields
+      padDataTarget size item
+    [] -> throwC "excess elements in union initializer"
+  _ -> throwC "excess elements in union initializer"
 
 zeroUnionData :: [Field] -> CompileM [DataValue]
 zeroUnionData fields = do
@@ -2022,24 +2041,17 @@ scalarFloatData ty text = do
 padDataTarget :: Int -> [DataValue] -> CompileM [DataValue]
 padDataTarget size values = do
   used <- dataSizeTarget values
-  if used >= size
-    then takeDataTarget size values
+  if used > size
+    then throwC (if dataHasAddress values
+      then "address initializer is larger than its object"
+      else "initializer is larger than its object")
     else pure (values ++ zeroData (size - used))
 
-takeDataTarget :: Int -> [DataValue] -> CompileM [DataValue]
-takeDataTarget size values =
-  if size <= 0 then pure [] else case values of
-    [] -> pure []
-    DByte byte:rest -> do
-      tailValues <- takeDataTarget (size - 1) rest
-      pure (DByte byte : tailValues)
-    DAddress label:rest -> do
-      word <- targetWordSize
-      if size >= word
-        then do
-          tailValues <- takeDataTarget (size - word) rest
-          pure (DAddress label : tailValues)
-        else pure (zeroData size)
+dataHasAddress :: [DataValue] -> Bool
+dataHasAddress values = case values of
+  [] -> False
+  DAddress _:_ -> True
+  _:rest -> dataHasAddress rest
 
 dataSizeTarget :: [DataValue] -> CompileM Int
 dataSizeTarget values = case values of
@@ -2072,10 +2084,8 @@ constExprTyped introductions live expr = case expr of
     typeSize ty >>= sizeConstant
   ESizeofExpr value -> do
     if introductions then registerExprIntroductions expr else pure ()
-    mty <- exprType value
-    ty <- requireMaybeType "sizeof expression has unknown type" mty
     -- sizeof never folds its operand's value (including casts and comma).
-    typeSize ty >>= sizeConstant
+    sizeofExprSize value >>= sizeConstant
   EUnary "&" (EPtrMember (ECast (CPtr ty) (EInt "0")) field) -> do
     if introductions then registerTypeIntroductions ty else pure ()
     info <- memberInfo (Just (CPtr ty)) field
@@ -2131,7 +2141,7 @@ sizeConstant n = do
 
 arrayBoundSize :: Maybe Expr -> CompileM Int
 arrayBoundSize bound = case bound of
-  Nothing -> pure 1
+  Nothing -> pure 0
   Just expr -> do
     value <- constExprTyped False True expr
     case constantToIntChecked value of

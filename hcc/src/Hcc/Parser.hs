@@ -711,7 +711,7 @@ ctype = do
       _ -> failAt tok "expected type"
 
 typeName :: Parser CType
-typeName = ctype >>= pointerStars
+typeName = ctype >>= pointerStars >>= arraySuffixes
 
 signedBaseType :: Parser CType
 signedBaseType = do

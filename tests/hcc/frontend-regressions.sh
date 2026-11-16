@@ -254,5 +254,9 @@ unsupported non-integer floating literal: 1.5|double x = 1.5;
 floating literal exceeds supported 32-bit range|float x = 2147483648.0;
 floating literal exceeds supported 64-bit range|double x = 9223372036854775808.0;
 a type name is not an expression|int x = int;
+excess elements in array initializer|int a[2] = {1, 2, 3};
+excess elements in struct initializer|struct { int a; } s = {1, 2};
+string initializer is longer than its array|char s[2] = "abc";
+address initializer is larger than its object|int y; short x = (short)&y;
 EOF
 printf 'frontend-regressions: passed\n'
