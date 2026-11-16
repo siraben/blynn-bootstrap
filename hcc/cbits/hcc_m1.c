@@ -769,9 +769,10 @@ static void parse_ir_term(Block *block, char *line) {
   char *tok = need_token(&cursor);
   if (str_eq(tok, "R")) {
     block->term_kind = TK_RET;
-    tok = next_token(&cursor);
-    if (tok) {
-      cursor = tok;
+    /* An operand can have more than one token. Find the end of the line
+       here, and let parse_ir_operand take each token. */
+    while (*cursor == ' ' || *cursor == '\t') cursor = cursor + 1;
+    if (*cursor != 0) {
       parse_ir_operand(&cursor, block_term_op_ptr(block));
     } else {
       block->term_op.kind = 0;
