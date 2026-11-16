@@ -14,6 +14,7 @@ module CompileM
   , freshDataLabel
   , addDataItem
   , bindVar
+  , bindScopedGlobal
   , bindStruct
   , bindGlobal
   , bindConstant
@@ -24,9 +25,6 @@ module CompileM
   , resolveCallee
   , bindingType
   , isFunctionBinding
-  , lookupVarMaybe
-  , lookupLocal
-  , lookupVarType
   , lookupGlobalType
   , lookupConstant
   , lookupFunction
@@ -64,7 +62,7 @@ data CompileState = CompileState
   , csNextBlock :: Int
   , csNextLabel :: Int
   , csDataPrefix :: String
-  , csVars :: ScopeMap (Temp, CType)
+  , csVars :: ScopeMap NameBinding
   , csStructs :: SymbolMap (Bool, [Field])
   , csStructSizes :: SymbolMap Int
   , csStructMembers :: SymbolMap (SymbolMap (CType, Int))
@@ -183,7 +181,12 @@ addDataItem item =
 
 bindVar :: String -> Temp -> CType -> CompileM ()
 bindVar name temp ty =
-  modifyC $ \st -> st { csVars = scopeMapInsert name (temp, ty) (csVars st) }
+  modifyC $ \st -> st { csVars = scopeMapInsert name (LocalBinding temp ty) (csVars st) }
+
+bindScopedGlobal :: String -> String -> CType -> CompileM ()
+bindScopedGlobal name label ty = do
+  rejectReservedSymbol "global" name
+  modifyC $ \st -> st { csVars = scopeMapInsert name (GlobalBinding label ty) (csVars st) }
 
 bindStruct :: String -> Bool -> [Field] -> CompileM ()
 bindStruct name isUnion fields =
@@ -223,7 +226,7 @@ bindFunctionType name retTy params = do
 -- Locals mask function declarations and global objects in every call context.
 data NameBinding
   = LocalBinding Temp CType
-  | GlobalBinding CType
+  | GlobalBinding String CType
   | FunctionBinding (Maybe CType)
   | UnknownBinding
 
@@ -231,14 +234,14 @@ resolveName :: String -> CompileM NameBinding
 resolveName name = do
   local <- getC (scopeMapLookup name . csVars)
   case local of
-    Just (temp, ty) -> pure (LocalBinding temp ty)
+    Just binding -> pure binding
     Nothing -> do
       function <- lookupFunction name
       if function
         then FunctionBinding <$> lookupFunctionType name
         else do
           global <- lookupGlobalType name
-          pure (maybe UnknownBinding GlobalBinding global)
+          pure (maybe UnknownBinding (GlobalBinding name) global)
 
 -- Bootstrap C permits calls without a prototype; object bindings never become
 -- implicit functions. Type queries use resolveName without introducing names.
@@ -252,7 +255,7 @@ resolveCallee name = do
 bindingType :: NameBinding -> Maybe CType
 bindingType binding = case binding of
   LocalBinding _ ty -> Just ty
-  GlobalBinding ty -> Just ty
+  GlobalBinding _ ty -> Just ty
   FunctionBinding ty -> ty
   UnknownBinding -> Nothing
 
@@ -260,15 +263,6 @@ isFunctionBinding :: NameBinding -> Bool
 isFunctionBinding binding = case binding of
   FunctionBinding _ -> True
   _ -> False
-
-lookupVarMaybe :: String -> CompileM (Maybe Temp)
-lookupVarMaybe name = getC (fmap fst . scopeMapLookup name . csVars)
-
-lookupLocal :: String -> CompileM (Maybe (Temp, CType))
-lookupLocal name = getC (scopeMapLookup name . csVars)
-
-lookupVarType :: String -> CompileM (Maybe CType)
-lookupVarType name = fmap (fmap snd) (lookupLocal name)
 
 lookupGlobalType :: String -> CompileM (Maybe CType)
 lookupGlobalType name = getC (symbolMapLookup name . csGlobals)

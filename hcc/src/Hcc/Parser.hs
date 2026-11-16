@@ -191,8 +191,9 @@ topDeclNoTypedef = do
 
 topDeclNoStruct :: Parser TopDecl
 topDeclNoStruct = do
-  isExtern <- leadingExternQualifier
-  ty0 <- ctype
+  externBefore <- leadingStorageClass "extern"
+  (after, ty0) <- ctypeTrailing
+  let isExtern = externBefore || "extern" `elem` after
   standalone <- eatPunct ";"
   if standalone
     then pure (TypeDecl [ty0])
@@ -226,16 +227,21 @@ globalDecl isExtern decls =
     then ExternGlobals (map externPair decls)
     else Globals decls
   where
-    uninitialized (_, _, initExpr) = case initExpr of
-      Nothing -> True
-      Just _ -> False
-    externPair (ty, name, _) = (ty, name)
 
-leadingExternQualifier :: Parser Bool
-leadingExternQualifier = pRaw $ \env toks -> Unconsumed (Ok (go toks) env toks) where
+uninitialized :: (CType, String, Maybe Expr) -> Bool
+uninitialized (_, _, initExpr) = case initExpr of
+  Nothing -> True
+  Just _ -> False
+
+externPair :: (CType, String, Maybe Expr) -> (CType, String)
+externPair (ty, name, _) = (ty, name)
+
+leadingStorageClass :: String -> Parser Bool
+leadingStorageClass keyword = pRaw $ \env toks -> Unconsumed (Ok (go toks) env toks) where
   go ts = case ts of
-    Token _ (TokIdent "extern"):_ -> True
-    Token _ (TokIdent name):rest | name `elem` storageAndTypeQualifiers -> go rest
+    Token _ (TokIdent name):rest
+      | name == keyword -> True
+      | name `elem` storageAndTypeQualifiers -> go rest
     _ -> False
 
 typedefDecl :: Parser TopDecl
@@ -624,7 +630,12 @@ stmtAsBlock = withParserScope (do
 
 parseDeclStmt :: Parser Stmt
 parseDeclStmt = do
-  ty0 <- ctype
+  start <- peek
+  staticBefore <- leadingStorageClass "static"
+  externBefore <- leadingStorageClass "extern"
+  (after, ty0) <- ctypeTrailing
+  let isStatic = staticBefore || "static" `elem` after
+  let isExtern = externBefore || "extern" `elem` after
   standalone <- eatPunct ";"
   if standalone
     then pure (STypeDecl [ty0])
@@ -635,7 +646,14 @@ parseDeclStmt = do
         Nothing -> do
           first <- declarationItem ty0
           rest <- declarationItemsTail ty0
-          pure (declStmt (first:rest))
+          let decls = first:rest
+          if isStatic
+            then pure (SStaticDecls decls)
+            else if not isExtern
+              then pure (declStmt decls)
+              else if all uninitialized decls
+                then pure (SExternDecls (map externPair decls))
+                else failAt start "a block-scope extern declaration has an initializer"
 
 localPrototype :: CType -> Parser ()
 localPrototype ty0 = do
@@ -670,11 +688,14 @@ declarationItemsTail ty0 = do
       pure (item:rest)
 
 ctype :: Parser CType
-ctype = do
+ctype = snd <$> ctypeTrailing
+
+ctypeTrailing :: Parser ([String], CType)
+ctypeTrailing = do
   skipQualifiers
   ty <- baseType
-  skipQualifiers
-  pure ty
+  after <- qualifierNames
+  pure (after, ty)
   where
   baseType = do
     tok <- peek
@@ -873,16 +894,23 @@ ignorableEnumExprTail tok = case tokenKind tok of
   _ -> False
 
 skipQualifiers :: Parser ()
-skipQualifiers = do
+skipQualifiers = qualifierNames >> pure ()
+
+qualifierNames :: Parser [String]
+qualifierNames = do
   tok <- peekMaybe
   case fmap tokenKind tok of
     Just (TokIdent name) | name `elem` unsupportedQualifiers ->
       peek >>= \t -> failAt t (name ++ " is not supported")
-    Just (TokIdent name) | name `elem` storageAndTypeQualifiers ->
-      advanceToken >> skipQualifiers
+    Just (TokIdent "typedef") ->
+      peek >>= \t -> failAt t "typedef is not the first specifier"
+    Just (TokIdent name) | name `elem` storageAndTypeQualifiers -> do
+      advanceToken
+      rest <- qualifierNames
+      pure (name:rest)
     Just (TokIdent name) | name `elem` ["__attribute__", "__extension__"] ->
-      skipAttributes >> skipQualifiers
-    _ -> pure ()
+      skipAttributes >> qualifierNames
+    _ -> pure []
 
 skipAttributes :: Parser ()
 skipAttributes = do
@@ -928,7 +956,6 @@ declaratorShape ident = do
   skipAttributes
   pure (direct . stars, name)
 
--- The opening parenthesis is consumed.
 groupedShape :: Parser String -> Parser (CType -> CType, String)
 groupedShape ident = do
   (inner, name) <- declaratorShape ident

@@ -81,6 +81,12 @@ lowerStatementChunks bid chunks stmts defaultTerm = case stmts of
   SDecls decls:rest -> do
     declInstrs <- lowerDecls decls
     lowerStatementChunks bid (declInstrs:chunks) rest defaultTerm
+  SStaticDecls decls:rest -> do
+    mapM_ lowerStaticDecl decls
+    lowerStatementChunks bid chunks rest defaultTerm
+  SExternDecls decls:rest -> do
+    mapM_ (\(ty, name) -> registerTypeIntroductions ty >> bindScopedGlobal name name ty) decls
+    lowerStatementChunks bid chunks rest defaultTerm
   STypeDecl types:rest -> do
     mapM_ registerTypeIntroductions types
     lowerStatementChunks bid chunks rest defaultTerm
@@ -318,7 +324,7 @@ lowerSideEffect expr = case expr of
     binding <- resolveName name
     case binding of
       LocalBinding _ _ -> lowerIndirectCallInstrs Nothing (EVar name) args
-      GlobalBinding _ -> lowerIndirectCallInstrs Nothing (EVar name) args
+      GlobalBinding _ _ -> lowerIndirectCallInstrs Nothing (EVar name) args
       _ | name == "asm" ->
         if noOpInlineAsmArgs args then pure [] else throwC "unsupported inline assembly"
       _ | isIgnoredSideEffectCall name -> mapM_ registerDiscardedExprIntroductions args >> pure []
@@ -371,6 +377,17 @@ lowerDecl declTy name initExpr = do
   if aggregateStorage
     then lowerAggregateDecl ty temp initExpr
     else lowerScalarDecl ty temp initExpr
+
+-- A static local is a data item with a private label. Its initializer is a
+-- constant, so no instruction is necessary.
+lowerStaticDecl :: (CType, String, Maybe Expr) -> CompileM ()
+lowerStaticDecl (declTy, name, initExpr) = do
+  let ty = completeArrayType declTy initExpr
+  registerTypeIntroductions ty
+  label <- freshDataLabel
+  bindScopedGlobal name label ty
+  values <- globalData ty initExpr
+  addDataItem (DataItem label values)
 
 -- The initializer gives the element count of an array without a bound.
 completeArrayType :: CType -> Maybe Expr -> CType
@@ -671,7 +688,7 @@ lowerVarExpr name = do
   binding <- resolveName name
   case binding of
     LocalBinding temp ty -> coerceScalar ty (OTemp temp)
-    GlobalBinding ty -> lowerTypedGlobalVarExpr name ty
+    GlobalBinding label ty -> lowerTypedGlobalVarExpr label ty
     FunctionBinding _ -> pure ([], OFunction name)
     UnknownBinding ->
       if isFunctionNameMacro name
@@ -1210,13 +1227,11 @@ lowerNonFunctionAddress target = do
 lowerLValue :: Expr -> CompileM ([Instr], LValue)
 lowerLValue target = case target of
   EVar name -> do
-    local <- lookupLocal name
-    case local of
-      Just (temp, ty) -> pure ([], LLocal temp ty)
-      Nothing -> do
-        ty <- lookupGlobalType name
-        knownTy <- requireMaybeType ("unknown global type: " ++ name) ty
-        pure ([], LAddress (OGlobal name) knownTy)
+    binding <- resolveName name
+    case binding of
+      LocalBinding temp ty -> pure ([], LLocal temp ty)
+      GlobalBinding label ty -> pure ([], LAddress (OGlobal label) ty)
+      _ -> throwC ("not an object: " ++ name)
   EUnary "*" ptr -> do
     (instrs, op) <- lowerExpr ptr
     ty <- exprType target
@@ -2066,8 +2081,12 @@ dataSizeTarget values = case values of
 
 globalAddressData :: String -> CompileM [DataValue]
 globalAddressData name = do
-  function <- lookupFunction name
-  pure [DAddress (if function then "FUNCTION_" ++ name else name)]
+  binding <- resolveName name
+  case binding of
+    LocalBinding _ _ -> throwC ("constant initializer has the address of local " ++ name)
+    GlobalBinding label _ -> pure [DAddress label]
+    FunctionBinding _ -> pure [DAddress ("FUNCTION_" ++ name)]
+    UnknownBinding -> throwC ("unknown identifier: " ++ name)
 
 -- Preserve target widths and signedness until the final storage conversion.
 -- Layout queries fold bounds without introducing definitions or function names.
