@@ -4,6 +4,7 @@
 
 #define HCC_MAX_HANDLES 256
 #define HCC_MAX_OBUFS 256
+#define HCC_READ_CHUNK 65536
 
 static char *buffer;
 static unsigned buffer_len;
@@ -149,20 +150,22 @@ static void set_result(char *text) {
   result_len = len;
 }
 
+/* M2libc fopen takes the size from an unchecked lseek and fills its buffer
+   with one unchecked read. Use the syscalls and check each result. */
 int hcc_read_file(void) {
-  FILE *file = fopen(current_buffer(), "r");
-  if (!file) return 0;
+  int fd = open(current_buffer(), 0, 0);
+  int count;
+  if (fd < 0) return 0;
   result_len = 0;
-  ensure_chars(&result, &result_cap, 1);
-  int c = fgetc(file);
-  while (c != EOF) {
-    ensure_chars(&result, &result_cap, result_len + 2);
-    result[result_len] = c;
-    result_len = result_len + 1;
-    c = fgetc(file);
+  while (1) {
+    ensure_chars(&result, &result_cap, result_len + HCC_READ_CHUNK + 1);
+    count = read(fd, result + result_len, HCC_READ_CHUNK);
+    if (count <= 0) break;
+    result_len = result_len + count;
   }
+  close(fd);
+  if (count < 0) return 0;
   result[result_len] = 0;
-  fclose(file);
   return 1;
 }
 
@@ -359,9 +362,12 @@ void hcc_canonicalize(void) {
   set_result(current_buffer());
 }
 
+/* A directory opens, but a read from it fails. */
 int hcc_does_file_exist(void) {
-  FILE *file = fopen(current_buffer(), "r");
-  if (!file) return 0;
-  fclose(file);
-  return 1;
+  int fd = open(current_buffer(), 0, 0);
+  int count;
+  if (fd < 0) return 0;
+  count = read(fd, current_buffer(), 0);
+  close(fd);
+  return count == 0;
 }
