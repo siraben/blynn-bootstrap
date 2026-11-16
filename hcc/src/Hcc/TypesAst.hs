@@ -64,6 +64,8 @@ data ForInit
 
 data Stmt
   = SDecls [(CType, String, Maybe Expr)]
+  | SStaticDecls [(CType, String, Maybe Expr)]
+  | SExternDecls [(CType, String)]
   | STypeDecl [CType]
   | SReturn (Maybe Expr)
   | SExpr Expr
@@ -107,6 +109,8 @@ paramTypes = map (\(Param ty _) -> ty)
 renderStmtTag :: Stmt -> String
 renderStmtTag stmt = case stmt of
   SDecls _ -> "SDecls"
+  SStaticDecls _ -> "SStaticDecls"
+  SExternDecls _ -> "SExternDecls"
   STypeDecl _ -> "STypeDecl"
   SReturn _ -> "SReturn"
   SExpr _ -> "SExpr"
