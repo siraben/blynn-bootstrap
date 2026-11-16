@@ -70,7 +70,8 @@ readSourceWithIncludes includeDirs defines path = do
                 Just file -> do
                   (expanded, once', macros') <- expandFile (depth + 1) once macros file
                   pure (expanded, once', macros', frames)
-        _ -> pure (keep, once, macros, frames)
+        -- The token pass skips an inactive line. Keep only its line number.
+        _ -> pure (if active then keep else ('\n':), once, macros, frames)
 
   findInclude currentDir name = do
     let candidates = hccPathJoin currentDir name : map (`hccPathJoin` name) includeDirs

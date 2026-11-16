@@ -227,9 +227,22 @@ grep -F '"(x) x"' "$work/input.i" >/dev/null
 grep -F 'int x = 7' "$work/input.i" >/dev/null
 grep -F 'int continued = 7' "$work/input.i" >/dev/null
 
+# A backslash-newline pair is a continuation before an empty line and after
+# another backslash.
+printf '#define EMPTY_NEXT 8 \\\n\nint empty_next = EMPTY_NEXT;\nchar *bs = "a\\\\\\\nb";\n' > "$work/splice.c"
+"$HCPP" "$work/splice.c" > "$work/splice.i"
+grep -F 'int empty_next = 8' "$work/splice.i" >/dev/null
+grep -F '"a\\b"' "$work/splice.i" >/dev/null
+
 # Removing a long comment must retain the following token's column.
 printf 'int x; /* comment */ @\n' > "$work/column.c"
 reject "$HCC1" ':1:22: unexpected character: @' "$work/column.c"
+
+# Inactive ordinary text need not form valid tokens.
+printf '#if 0\nit'"'"'s @ "open\n#endif\nint y;\n' > "$work/skipped.c"
+"$HCPP" "$work/skipped.c" > "$work/skipped.i"
+grep -F 'int y' "$work/skipped.i" >/dev/null
+
 # HCC rejects a construct that it cannot represent. A value must not lose
 # bits, and an initializer must not go past its object.
 while IFS='|' read -r expected source; do
