@@ -57,6 +57,13 @@ registerTopDeclIr decl = case decl of
   EnumConstants constants -> mapM_ (uncurry bindConstant) constants >> pure []
   TypeDecl types -> mapM_ registerTypeIntroductions types >> pure []
 
+registerGlobal :: CType -> String -> Maybe Expr -> CompileM [DataValue]
+registerGlobal declTy name initExpr = do
+  let ty = completeArrayType declTy initExpr
+  registerTypeIntroductions ty
+  bindGlobal name ty
+  globalData ty initExpr
+
 registerFunctionDecl :: CType -> String -> [Param] -> CompileM ()
 registerFunctionDecl ty name params = do
   registerTypeIntroductions ty
@@ -68,9 +75,7 @@ registerGlobalsIr :: [(CType, String, Maybe Expr)] -> CompileM [TopItemIr]
 registerGlobalsIr globals = case globals of
   [] -> pure []
   (ty, name, initExpr):rest -> do
-    registerTypeIntroductions ty
-    bindGlobal name ty
-    values <- globalData ty initExpr
+    values <- registerGlobal ty name initExpr
     pending <- CompileM $ \st -> case pendingDataItemsIr st of
       (items, st') -> StepOk items st'
     restItems <- registerGlobalsIr rest
