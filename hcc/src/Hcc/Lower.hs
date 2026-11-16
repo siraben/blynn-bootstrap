@@ -378,8 +378,6 @@ lowerDecl declTy name initExpr = do
     then lowerAggregateDecl ty temp initExpr
     else lowerScalarDecl ty temp initExpr
 
--- A static local is a data item with a private label. Its initializer is a
--- constant, so no instruction is necessary.
 lowerStaticDecl :: (CType, String, Maybe Expr) -> CompileM ()
 lowerStaticDecl (declTy, name, initExpr) = do
   let ty = completeArrayType declTy initExpr
@@ -389,7 +387,6 @@ lowerStaticDecl (declTy, name, initExpr) = do
   values <- globalData ty initExpr
   addDataItem (DataItem label values)
 
--- The initializer gives the element count of an array without a bound.
 completeArrayType :: CType -> Maybe Expr -> CType
 completeArrayType ty initExpr = case ty of
   CArray inner Nothing -> case initExpr of
@@ -568,8 +565,8 @@ lowerAggregateElementScalarWrite addr fieldTy (EInitList [expr]) =
 lowerAggregateElementScalarWrite addr fieldTy expr = do
   (exprInstrs, op) <- lowerExpr expr
   (coerceInstrs, coerceOp) <- coerceScalar fieldTy op
-  store <- storeInstr fieldTy addr coerceOp
-  pure (exprInstrs ++ coerceInstrs ++ [store])
+  store <- storeScalar fieldTy addr coerceOp
+  pure (exprInstrs ++ coerceInstrs ++ store)
 
 lowerExpr :: Expr -> CompileM ([Instr], Operand)
 lowerExpr expr = case expr of
@@ -1044,9 +1041,7 @@ writeLValue lvalue value = case lvalue of
     aggregateStorage <- isAggregateTypeM ty
     if aggregateStorage
       then copyObject addr value ty
-      else do
-        store <- storeInstr ty addr value
-        pure [store]
+      else storeScalar ty addr value
 
 lValueType :: LValue -> CompileM CType
 lValueType lvalue = case lvalue of
@@ -1058,9 +1053,11 @@ coerceMaybeScalar mty op = case mty of
   Just ty -> coerceScalar ty op
   Nothing -> pure ([], op)
 
+-- A float value is a signed integer of four bytes, as it is in memory.
 coerceScalar :: CType -> Operand -> CompileM ([Instr], Operand)
 coerceScalar ty op = case ty of
   CBool -> coerceBool op
+  CFloat -> coerceScalar CInt op
   _ -> do
     integer <- isIntegerTypeM ty
     if not integer
@@ -1211,6 +1208,8 @@ lowerVarAddress name = do
     then pure ([], OFunction name)
     else lowerNonFunctionAddress (EVar name)
 
+-- A scalar local has a slot of eight bytes, but a long double has 16 bytes.
+-- A write of 16 bytes through its address would go into the next slot.
 lowerNonFunctionAddress :: Expr -> CompileM ([Instr], Operand)
 lowerNonFunctionAddress target = do
   (instrs, lvalue) <- lowerLValue target
@@ -1221,8 +1220,12 @@ lowerNonFunctionAddress target = do
       if aggregateStorage
         then pure (instrs, OTemp temp)
         else do
-          out <- freshTemp
-          pure (instrs ++ [IAddrOf out temp], OTemp out)
+          size <- typeSize ty
+          if size > 8
+            then throwC "unsupported address of a long double local"
+            else do
+              out <- freshTemp
+              pure (instrs ++ [IAddrOf out temp], OTemp out)
 
 lowerLValue :: Expr -> CompileM ([Instr], LValue)
 lowerLValue target = case target of
@@ -1260,7 +1263,6 @@ lowerLValue target = case target of
     pure (baseInstrs ++ addrInstrs, LAddress addrOp fieldTy)
   _ -> throwC ("unsupported lvalue: " ++ renderExprTag target)
 
--- A string literal operand keeps its array type.
 sizeofExprSize :: Expr -> CompileM Int
 sizeofExprSize value = case value of
   EString text -> pure (length (stringBytes text))
@@ -1522,7 +1524,7 @@ anonymousMemberInfo baseOffset ty field = do
 loadInstr :: Temp -> CType -> Operand -> CompileM Instr
 loadInstr out ty addr = do
   size <- typeSize ty
-  let signed = isSignedIntegerType ty
+  let signed = isSignedIntegerType ty || isFloatingType ty
   pure (if size <= 1
         then (if signed then ILoadS8 else ILoad8) out addr
         else if size <= 2
@@ -1698,6 +1700,15 @@ floatLiteralType text =
     4 -> CFloat
     16 -> CLongDouble
     _ -> CDouble
+
+-- A long double has eight value bytes. The store sets the other bytes to
+-- zero, thus a zero value is zero in all bytes of the object.
+storeScalar :: CType -> Operand -> Operand -> CompileM [Instr]
+storeScalar ty addr value = do
+  size <- typeSize ty
+  store <- storeInstr ty addr value
+  pad <- zeroObjectBytes addr 8 (size - 8)
+  pure (store : pad)
 
 storeInstr :: CType -> Operand -> Operand -> CompileM Instr
 storeInstr ty addr value = do

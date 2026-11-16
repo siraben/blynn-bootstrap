@@ -21,6 +21,7 @@ CASES = [
     ("block-scope-storage", 0),
     ("parser-ordinary-scope", 0),
     ("callee-resolution", 0),
+    ("floating-values", 0),
     ("aggregate-registration", 0),
     ("bootstrap-aliases", 0),
     ("integer-correctness", 0),
@@ -106,8 +107,10 @@ def main():
     m2libc = pathlib.Path(args.m2libc)
 
     work_dir.mkdir(parents=True, exist_ok=True)
-    log(f"running {len(CASES)} cases for {args.target}")
-    for name, expected in CASES:
+    # The i386 backend does not implement the 64-bit store this case needs.
+    cases = CASES + ([("long-double-store", 0)] if args.target != "i386" else [])
+    log(f"running {len(cases)} cases for {args.target}")
+    for name, expected in cases:
         src = examples_dir / f"{name}.c"
         preprocessed = work_dir / f"{name}.i"
         hccir = work_dir / f"{name}.hccir"
