@@ -311,19 +311,13 @@ fieldDeclarators ty0 = do
 
 fieldDeclarator :: CType -> Parser Field
 fieldDeclarator ty0 = do
+  ty <- pointerStars ty0
   grouped <- eatPunct "("
   if grouped
     then do
-      ty <- pointerStars ty0
-      name <- optionalIdent
-      needPunct ")"
-      fnTail <- eatPunct "("
-      fnParams <- if fnTail then parameters else pure []
-      let fnTy = if fnTail then functionSuffixType ty fnParams else CPtr ty
-      ty' <- arraySuffixes fnTy
-      pure (Field ty' name)
+      (shape, name) <- groupedShape optionalIdent
+      pure (Field (shape ty) name)
     else do
-      ty <- pointerStars ty0
       name <- optionalIdent
       bitfield <- eatPunct ":"
       ty' <- if bitfield
@@ -382,17 +376,13 @@ parameter = do
 
 parameterDeclarator :: CType -> Parser (CType, String)
 parameterDeclarator ty0 = do
+  ty <- pointerStars ty0
   grouped <- eatPunct "("
   if grouped
     then do
-      ty <- pointerStars ty0
-      name <- optionalIdent
-      needPunct ")"
-      fnTail <- eatPunct "("
-      fnParams <- if fnTail then parameters else pure []
-      pure (if fnTail then functionSuffixType ty fnParams else CPtr ty, name)
+      (shape, name) <- groupedShape optionalIdent
+      pure (shape ty, name)
     else do
-      ty <- pointerStars ty0
       name <- optionalIdent
       fnTail <- eatPunct "("
       fnParams <- if fnTail then parameters else pure []
@@ -920,38 +910,41 @@ skipOptionalBalancedParens = do
 
 declarator :: CType -> Parser (CType, String)
 declarator ty0 = do
-  ty <- pointerStars ty0
-  directDeclarator ty
+  (shape, name) <- declaratorShape needIdent
+  pure (shape ty0, name)
 
-directDeclarator :: CType -> Parser (CType, String)
-directDeclarator ty = do
+-- A declarator maps the specifier type to the declared type. A suffix binds
+-- tighter than a pointer, and a parenthesized declarator applies last.
+declaratorShape :: Parser String -> Parser (CType -> CType, String)
+declaratorShape ident = do
+  stars <- pointerShape
   grouped <- eatPunct "("
-  if grouped
-    then do
-      (innerTy, name) <- declarator ty
-      needPunct ")"
-      ty' <- groupedDeclaratorSuffixes innerTy
-      skipAttributes
-      pure (ty', name)
+  (direct, name) <- if grouped
+    then groupedShape ident
     else do
-      name <- needIdent
-      ty' <- arraySuffixes ty
-      skipAttributes
-      pure (ty', name)
+      name <- ident
+      suffix <- arrayShape
+      pure (suffix, name)
+  skipAttributes
+  pure (direct . stars, name)
 
-groupedDeclaratorSuffixes :: CType -> Parser CType
-groupedDeclaratorSuffixes ty = do
+-- The opening parenthesis is consumed.
+groupedShape :: Parser String -> Parser (CType -> CType, String)
+groupedShape ident = do
+  (inner, name) <- declaratorShape ident
+  needPunct ")"
+  suffix <- groupedSuffixShape
+  pure (inner . suffix, name)
+
+groupedSuffixShape :: Parser (CType -> CType)
+groupedSuffixShape = do
   open <- eatPunct "("
   if open
     then do
       params <- parameters
-      groupedDeclaratorSuffixes (functionSuffixType ty params)
-    else arraySuffixes ty
-
-functionSuffixType :: CType -> [Param] -> CType
-functionSuffixType ty params = case ty of
-  CPtr inner -> CPtr (CFunc inner (paramTypes params))
-  _ -> CFunc ty (paramTypes params)
+      rest <- groupedSuffixShape
+      pure (\ty -> CFunc (rest ty) (paramTypes params))
+    else arrayShape
 
 optionalFunctionSuffix :: CType -> Parser CType
 optionalFunctionSuffix ty = do
@@ -961,14 +954,24 @@ optionalFunctionSuffix ty = do
     else pure ty
 
 pointerStars :: CType -> Parser CType
-pointerStars ty = do
+pointerStars ty = (\shape -> shape ty) <$> pointerShape
+
+pointerShape :: Parser (CType -> CType)
+pointerShape = do
   star <- eatPunct "*"
   if star
-    then skipQualifiers >> pointerStars (CPtr ty)
-    else pure ty
+    then do
+      skipQualifiers
+      rest <- pointerShape
+      pure (rest . CPtr)
+    else pure id
 
 arraySuffixes :: CType -> Parser CType
-arraySuffixes ty = do
+arraySuffixes ty = (\shape -> shape ty) <$> arrayShape
+
+-- The first bound is the outermost dimension.
+arrayShape :: Parser (CType -> CType)
+arrayShape = do
   open <- eatPunct "["
   if open
     then do
@@ -979,8 +982,9 @@ arraySuffixes ty = do
         _ -> pure ()
       boundExpr <- optionalP expr
       needPunct "]"
-      arraySuffixes (CArray ty boundExpr)
-    else pure ty
+      rest <- arrayShape
+      pure (\ty -> CArray (rest ty) boundExpr)
+    else pure id
 
 expr :: Parser Expr
 expr = expression 0

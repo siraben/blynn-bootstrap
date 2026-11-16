@@ -17,6 +17,7 @@ CASES = [
     ("conditional-aggregate-copy", 0),
     ("sizeof-member-array-bound", 0),
     ("array-initializer-size", 0),
+    ("declarator-shapes", 0),
     ("parser-ordinary-scope", 0),
     ("callee-resolution", 0),
     ("aggregate-registration", 0),
