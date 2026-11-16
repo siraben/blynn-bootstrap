@@ -253,6 +253,7 @@ integer literal exceeds supported 64-bit range|long x; void f(void) { x = 999999
 unsupported non-integer floating literal: 1.5|double x = 1.5;
 floating literal exceeds supported 32-bit range|float x = 2147483648.0;
 floating literal exceeds supported 64-bit range|double x = 9223372036854775808.0;
+unsupported address of a long double local|void g(void *p); int f(void) { long double x; g(&x); return 0; }
 constant initializer has the address of local local|int main(void) { int local = 1; static int *p = &local; return *p; }
 a block-scope extern declaration has an initializer|int main(void) { extern int x = 1; return x; }
 typedef is not the first specifier|int typedef T;
