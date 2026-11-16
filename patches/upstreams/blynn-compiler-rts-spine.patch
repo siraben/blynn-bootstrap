@@ -1,0 +1,52 @@
+--- a/party.hs
++++ b/party.hs
+@@ -1648,10 +1648,20 @@
+ |]
+ 
+ runFun = ([r|static void run() {
++  u x;
++  u *lim;
+   while(1) {
+-    if (mem + hp * sizeof(u) > sp - 8 * sizeof(u)) gc();
+-    u x = *sp;
+-    if (isAddr(x)) { u *p = mem + x * sizeof(u); sp = sp - sizeof(u); *sp = *p; } else switch(x) {
++    lim = mem + (hp + 8) * sizeof(u);
++    if (lim > sp) { gc(); lim = mem + (hp + 8) * sizeof(u); }
++    x = *sp;
++    while (x >= 128) {
++      u *p = mem + x * sizeof(u);
++      sp = sp - sizeof(u);
++      *sp = *p;
++      if (lim > sp) { gc(); lim = mem + (hp + 8) * sizeof(u); }
++      x = *sp;
++    }
++    switch(x) {
+ |]++)
+   . foldr (.) id (genComb <$> comdefs)
+   . ([r|
+--- a/inn/RTS.hs
++++ b/inn/RTS.hs
+@@ -264,10 +264,20 @@
+ comName i = maybe undefined id $ lookup i $ zip [1..] (fst <$> comdefs)
+ 
+ runFun = ([r|static void run() {
++  u x;
++  u *lim;
+   while(1) {
+-    if (mem + hp * sizeof(u) > sp - 8 * sizeof(u)) gc();
+-    u x = *sp;
+-    if (isAddr(x)) { u *p = mem + x * sizeof(u); sp = sp - sizeof(u); *sp = *p; } else switch(x) {
++    lim = mem + (hp + 8) * sizeof(u);
++    if (lim > sp) { gc(); lim = mem + (hp + 8) * sizeof(u); }
++    x = *sp;
++    while (x >= 128) {
++      u *p = mem + x * sizeof(u);
++      sp = sp - sizeof(u);
++      *sp = *p;
++      if (lim > sp) { gc(); lim = mem + (hp + 8) * sizeof(u); }
++      x = *sp;
++    }
++    switch(x) {
+ |]++)
+   . foldr (.) id (genComb <$> comdefs)
+   . ([r|
