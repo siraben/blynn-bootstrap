@@ -945,6 +945,10 @@ static void translate_ir_module(Input *file, FILE *out, char *line) {
   Function fn;
   emit_header(out);
   while (read_line(file, line, LINE_CAP)) {
+#if defined(__M2__)
+    /* Parsed items and emission scratch die together; keep the line buffer. */
+    long item_heap = hcc_heap_cur;
+#endif
     if (str_prefix_n(line, "D ", 2)) {
       parse_ir_data_item(file, line, &item);
       emit_data_item(out, &item);
@@ -955,6 +959,9 @@ static void translate_ir_module(Input *file, FILE *out, char *line) {
       free_function(&fn);
     } else if (line[0] != 0)
       die("unexpected IR top-level line");
+#if defined(__M2__)
+    hcc_heap_cur = item_heap;
+#endif
   }
 }
 
