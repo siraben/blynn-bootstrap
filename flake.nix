@@ -1012,7 +1012,10 @@
         hcc-m1-smoke-aarch64 = hccM1SmokeFor "hcc-m1-smoke-aarch64" hccBy.m2.precisely.m2 "aarch64";
         hcc-m1-smoke-riscv64 = hccM1SmokeFor "hcc-m1-smoke-riscv64" hccBy.m2.precisely.m2 "riscv64";
         hcc-m1-smoke-native = hccM1SmokeFor "hcc-m1-smoke-host-ghc-native" hccBy.host.ghc.native nativeM1Target;
-        hcc-m1-smoke-native-aarch64 = hccM1SmokeFor "hcc-m1-smoke-host-ghc-native-aarch64" hccBy.host.ghc.native "aarch64";
+        # On ARM the native suite already executes these same AArch64 fixtures.
+        hcc-m1-smoke-native-aarch64 = if system == "aarch64-linux"
+          then hcc-m1-smoke-native
+          else hccM1SmokeFor "hcc-m1-smoke-host-ghc-native-aarch64" hccBy.host.ghc.native "aarch64";
         hcc-m1-smoke-native-i386 = hccM1SmokeFor "hcc-m1-smoke-host-ghc-native-i386" hccBy.host.ghc.native "i386";
         hcc-m1-smoke-native-riscv64 = hccM1SmokeFor "hcc-m1-smoke-host-ghc-native-riscv64" hccBy.host.ghc.native "riscv64";
 
@@ -1031,6 +1034,47 @@
           precisely = preciselyGhcDebug;
           src = hccSrc;
           blynnSrc = blynnUpstreamSrc;
+        };
+        # Host support, not the architecture emitted by HCC. Keep this metadata
+        # outside derivations so selection never forces an unsupported toolchain.
+        linuxTest = drv: {
+          inherit drv;
+          systems = [ "x86_64-linux" "aarch64-linux" ];
+          gating = true;
+        };
+        x86Test = drv: (linuxTest drv) // { systems = [ "x86_64-linux" ]; };
+        testRegistry = {
+          # These amd64/i386 fixtures execute directly, with no cross runner.
+          "smoke.m1" = x86Test hcc-m1-smoke;
+          "smoke.m1-i386" = x86Test hcc-m1-smoke-i386;
+          # AArch64 runs natively or through QEMU; RISC-V always uses QEMU.
+          "smoke.m1-aarch64" = linuxTest hcc-m1-smoke-aarch64;
+          "smoke.m1-riscv64" = linuxTest hcc-m1-smoke-riscv64;
+          mescc = x86Test hcc-mescc-tests;
+          "host.ghc.native.smoke.m1" = linuxTest hcc-m1-smoke-native;
+          # i386 executes directly; unlike AArch64/RISC-V it has no QEMU runner.
+          "host.ghc.native.smoke.m1-i386" = x86Test hcc-m1-smoke-native-i386;
+          "host.ghc.native.smoke.m1-aarch64" = linuxTest hcc-m1-smoke-native-aarch64;
+          "host.ghc.native.smoke.m1-riscv64" = linuxTest hcc-m1-smoke-native-riscv64;
+          "host.ghc.native.mescc" = linuxTest hcc-mescc-tests-native;
+          "portable.tinycc-selfhost" = x86Test tinyccPortableSelfhost;
+          "host.ghc.native.tinycc-riscv64" = linuxTest tinyccBy.riscv64.host.ghc.native;
+            "host.ghc.native.reduced-allocator-aarch64" = linuxTest (pkgs.callPackage ./nix/tcc-reduced-allocator-test.nix {
+              stdenvNoCC = rawStdenvNoCC;
+              hcc = hccBy.host.ghc.native;
+              inherit minimalBootstrap;
+              m2libc = m2libcSrc;
+            });
+          "precisely.dialect" = linuxTest precisely-dialect-tests;
+          # Both compare artifacts only, using HCC built for the current host.
+          "tinyccM1.native-vs-faithful" = linuxTest (tinyccM1Compare
+            "tinycc-m1-compare-native-faithful" tinyccM1By.m2.precisely.m2);
+          "tinyccM1.native-vs-blynn-gcc" = linuxTest (tinyccM1Compare
+            "tinycc-m1-compare-native-blynn-gcc" tinyccM1By.m2.precisely.gcc);
+        };
+        testChecks = import ./nix/test-checks.nix {
+          inherit lib system;
+          registry = testRegistry;
         };
         packageTree = {
           default = blynnPhaseBin;
@@ -1071,38 +1115,24 @@
           bootstrap = bootstrapBy;
           inherit trustRoots;
 
-          tests = {
-            smoke.m1 = hcc-m1-smoke;
-            smoke.m1-i386 = hcc-m1-smoke-i386;
-            smoke.m1-aarch64 = hcc-m1-smoke-aarch64;
-            smoke.m1-riscv64 = hcc-m1-smoke-riscv64;
-            host.ghc.native.smoke.m1 = hcc-m1-smoke-native;
-            host.ghc.native.smoke.m1-i386 = hcc-m1-smoke-native-i386;
-            host.ghc.native.smoke.m1-aarch64 = hcc-m1-smoke-native-aarch64;
-            host.ghc.native.smoke.m1-riscv64 = hcc-m1-smoke-native-riscv64;
-            mescc = hcc-mescc-tests;
-            host.ghc.native.mescc = hcc-mescc-tests-native;
-            portable.tinycc-selfhost = tinyccPortableSelfhost;
-            host.ghc.native.tinycc-riscv64 = tinyccBy.riscv64.host.ghc.native;
-            host.ghc.native.reduced-allocator-aarch64 = pkgs.callPackage ./nix/tcc-reduced-allocator-test.nix {
-              stdenvNoCC = rawStdenvNoCC;
-              hcc = hccBy.host.ghc.native;
-              inherit minimalBootstrap;
-              m2libc = m2libcSrc;
-            };
-            precisely.dialect = precisely-dialect-tests;
-            tinyccM1.native-vs-faithful = tinyccM1Compare
-              "tinycc-m1-compare-native-faithful" tinyccM1By.m2.precisely.m2;
-            tinyccM1.native-vs-blynn-gcc = tinyccM1Compare
-              "tinycc-m1-compare-native-blynn-gcc" tinyccM1By.m2.precisely.gcc;
-          };
+          # Preserve every remaining legacy tests.* target.
+          tests = lib.foldl' lib.recursiveUpdate { }
+            (lib.mapAttrsToList (name: test:
+              lib.setAttrByPath (lib.splitString "." name) test.drv
+            ) testRegistry);
         };
       in {
         packages = {
           default = packageTree.default;
         };
 
-        checks = {
+        checks = testChecks // {
+          check-platform-policy = assert import ./tests/check-platform-policy.nix {
+            inherit lib system;
+            publicChecks = { inherit (self.checks.${system}) bootstrap-tools; };
+            checks = testChecks;
+            tests = packageTree.tests;
+          }; pkgs.runCommand "check-platform-policy" { } ''touch "$out"'';
           tinycc-targets = assert import ./tests/tinycc-targets.nix { inherit lib; };
             pkgs.runCommand "tinycc-target-tests" { } ''touch "$out"'';
           prepare-mes-libc = pkgs.runCommand "prepare-mes-libc-tests" { } ''
