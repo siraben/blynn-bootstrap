@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <meta name="description" content="Boot a riscv64 Alpine checkpoint shell in the browser with TinyCC ready to use.">
+  <title>Portable TinyCC Alpine Bootstrap Demo</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="site.css">
+</head>
+<body>
+  <main class="app-shell">
+    <section class="console-pane" aria-label="JSLinux console">
+      <div class="console-header">
+        <div>
+          <h1>Portable TinyCC Checkpoint Shell</h1>
+          <p>riscv64 JSLinux booting Alpine Linux with TinyCC already available. Run <code>bootstrap</code> to reproduce the Blynn/HCC checkpoint inside the VM.</p>
+        </div>
+        <div class="console-actions">
+          <a class="button" id="reboot_link" href="index.html">Reboot</a>
+          <a class="button" id="hcc_shell_link" href="?url=blynn-riscv64.cfg&cpu=riscv64&mem=768&cols=80&rows=28&font_size=13&net_url=">HCC Checkpoint (@root_image_size_mb@ MB)</a>
+          <a class="button" id="tinycc_shell_link" href="?url=blynn-riscv64.cfg&cpu=riscv64&mem=768&cols=80&rows=28&font_size=13&net_url=">TinyCC Checkpoint (@root_image_size_mb@ MB)</a>
+          <a class="button" id="full_rebuild_link" href="?url=blynn-riscv64.cfg&cpu=riscv64&mem=1536&cols=80&rows=28&font_size=13&net_url=">Full Rebuild (@root_image_size_mb@ MB)</a>
+          <a class="button" href="blynn-riscv64.cfg">Config</a>
+        </div>
+      </div>
+
+      <div id="term_wrap">
+        <div id="term_container"></div>
+        <span id="vm_controls">
+          <textarea id="term_paste" cols="10" rows="1" autocorrect="off" spellcheck="false" aria-label="Paste text to send to the terminal">Paste Here</textarea>
+          <label class="file-import">
+            Upload
+            <input type="file" id="files" multiple aria-label="Upload files into the VM" onchange="on_update_files(this.files)">
+          </label>
+          <progress id="net_progress" aria-label="Network transfer progress"></progress>
+        </span>
+      </div>
+
+      <noscript>
+        <p class="noscript-msg">This demo boots a riscv64 Linux VM entirely in your browser and needs JavaScript and WebAssembly enabled to run. The runbook on the right still describes the bootstrap steps.</p>
+      </noscript>
+    </section>
+
+    <aside class="runbook" aria-label="Demo runbook">
+      <section>
+        <h2>Milestones</h2>
+        <ol>
+          <li>Kernel starts with normal Linux boot messages on <code>console=hvc0</code>, then runs <code>init=/init</code>.</li>
+          <li><code>/init</code> prepares Alpine, materializes the TinyCC checkpoint into <code>/work/blynn</code>, and drops to a shell.</li>
+          <li><code>blynn-tcc</code> is available immediately from the Nix-built TinyCC checkpoint.</li>
+          <li>Run <code>bootstrap</code> to verify the Nix-built riscv64 HCC checkpoint, then reproduce the TinyCC self-host checkpoint inside the VM.</li>
+          <li>For the full proof run, use <code>bootstrap --from-seed</code> to rebuild stage0-posix, Blynn, HCC, and TinyCC from the seed path.</li>
+          <li>After either build, the shell has the bootstrapped compiler as <code>blynn-tcc</code> and prints its SHA256 hash.</li>
+        </ol>
+      </section>
+
+      <section>
+        <h2>Shell Check</h2>
+        <pre><code>printf '#include &lt;stdio.h&gt;
+int main(void){ puts("tcc works"); return 0; }
+' &gt;/tmp/tcc-smoke.c
+bootstrap --help
+blynn-tcc -dumpversion
+cat /work/blynn/tinycc-boot-hcc/tcc.sha256</code></pre>
+      </section>
+
+      <section>
+        <h2>Mirrored Assets</h2>
+        <p>The page serves the VM runtime and Nix-built split disk image from this GitHub Pages origin so the browser can boot without cross-origin failures.</p>
+        <ul>
+          <li><a href="https://bellard.org/jslinux/">JSLinux riscv64 runtime source</a></li>
+          <li><a href="https://hacktivis.me/jslinux/">hacktivis JSLinux inspiration</a></li>
+          <li><a href="NOTICE.md">asset notice</a></li>
+        </ul>
+      </section>
+    </aside>
+  </main>
+
+  <script>
+    function terminalMetrics() {
+      const consolePane = document.querySelector(".console-pane");
+      const narrow = window.matchMedia("(max-width: 700px)").matches;
+      const fontSize = narrow ? 12 : 14;
+      const charWidth = fontSize * 0.62;
+      const terminalWidth = (consolePane ? consolePane.clientWidth : window.innerWidth) - (narrow ? 16 : 32) - 15;
+      const cols = Math.max(44, Math.min(100, Math.floor(terminalWidth / charWidth)));
+      const rows = narrow ? 28 : 32;
+      return { cols, rows, fontSize };
+    }
+
+    function vmQuery(memory, cacheBust = false) {
+      const { cols, rows, fontSize } = terminalMetrics();
+      const params = new URLSearchParams({
+        url: "blynn-riscv64.cfg",
+        cpu: "riscv64",
+        mem: String(memory),
+        cols: String(cols),
+        rows: String(rows),
+        font_size: String(fontSize),
+        net_url: "",
+      });
+      if (cacheBust) {
+        params.set("nav", Date.now().toString(36));
+      }
+      return `?${params.toString()}`;
+    }
+
+    function normalizeVmQuery() {
+      if (!window.location.search) {
+        window.history.replaceState(null, "", vmQuery(768));
+        return;
+      }
+
+      const params = new URLSearchParams(window.location.search);
+      const { cols, rows, fontSize } = terminalMetrics();
+      const requestedCols = Number(params.get("cols") || 0);
+      let changed = false;
+
+      if (!params.has("url") || params.get("url") === "blynn-x86_64.cfg") {
+        params.set("url", "blynn-riscv64.cfg");
+        changed = true;
+      }
+      if (!params.has("cpu") || params.get("cpu") === "x86_64" || params.get("cpu") === "x86") {
+        params.set("cpu", "riscv64");
+        changed = true;
+      }
+      if (!params.has("mem")) {
+        params.set("mem", "768");
+        changed = true;
+      }
+      if (!requestedCols || requestedCols > cols) {
+        params.set("cols", String(cols));
+        changed = true;
+      }
+      if (!params.has("rows")) {
+        params.set("rows", String(rows));
+        changed = true;
+      }
+      if (!params.has("font_size")) {
+        params.set("font_size", String(fontSize));
+        changed = true;
+      }
+      if (!params.has("net_url")) {
+        params.set("net_url", "");
+        changed = true;
+      }
+
+      if (changed) {
+        window.history.replaceState(null, "", `?${params.toString()}`);
+      }
+    }
+
+    const hccShellLink = document.getElementById("hcc_shell_link");
+    const tinyccShellLink = document.getElementById("tinycc_shell_link");
+    const fullRebuildLink = document.getElementById("full_rebuild_link");
+    const rebootLink = document.getElementById("reboot_link");
+    hccShellLink.href = vmQuery(768, true);
+    tinyccShellLink.href = vmQuery(768, true);
+    fullRebuildLink.href = vmQuery(1536, true);
+    rebootLink.href = vmQuery(768, true);
+
+    normalizeVmQuery();
+  </script>
+  <script src="term.js"></script>
+  <script src="jslinux.js"></script>
+  <script>
+    // jslinux.js wires term_wrap.onclick to a resize handler that reads a
+    // #term_bar element this page doesn't have, throwing a TypeError on every
+    // click. Drop it — term.js already focuses the terminal on mouseup.
+    const termWrap = document.getElementById("term_wrap");
+    if (termWrap) {
+      termWrap.onclick = null;
+    }
+  </script>
+</body>
+</html>
