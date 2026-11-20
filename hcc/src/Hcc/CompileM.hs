@@ -52,7 +52,6 @@ import LowerBuiltins
 import TextUtil
 import TypesAst
 import TypesIr
-import ScopeMap
 import SymbolTable
 
 data CompileError = CompileError String
@@ -62,7 +61,7 @@ data CompileState = CompileState
   , csNextBlock :: Int
   , csNextLabel :: Int
   , csDataPrefix :: String
-  , csVars :: ScopeMap NameBinding
+  , csVars :: SymbolMap NameBinding
   , csStructs :: SymbolMap (Bool, [Field])
   , csStructSizes :: SymbolMap Int
   , csStructMembers :: SymbolMap (SymbolMap (CType, Int))
@@ -118,7 +117,7 @@ initialCompileState = CompileState
   , csNextBlock = 0
   , csNextLabel = 0
   , csDataPrefix = "HCC_DATA"
-  , csVars = scopeMapEmpty
+  , csVars = symbolMapEmpty
   , csStructs = symbolMapEmpty
   , csStructSizes = symbolMapEmpty
   , csStructMembers = symbolMapEmpty
@@ -181,12 +180,12 @@ addDataItem item =
 
 bindVar :: String -> Temp -> CType -> CompileM ()
 bindVar name temp ty =
-  modifyC $ \st -> st { csVars = scopeMapInsert name (LocalBinding temp ty) (csVars st) }
+  modifyC $ \st -> st { csVars = symbolMapInsert name (LocalBinding temp ty) (csVars st) }
 
 bindScopedGlobal :: String -> String -> CType -> CompileM ()
 bindScopedGlobal name label ty = do
   rejectReservedSymbol "global" name
-  modifyC $ \st -> st { csVars = scopeMapInsert name (GlobalBinding label ty) (csVars st) }
+  modifyC $ \st -> st { csVars = symbolMapInsert name (GlobalBinding label ty) (csVars st) }
 
 bindStruct :: String -> Bool -> [Field] -> CompileM ()
 bindStruct name isUnion fields =
@@ -232,7 +231,7 @@ data NameBinding
 
 resolveName :: String -> CompileM NameBinding
 resolveName name = do
-  local <- getC (scopeMapLookup name . csVars)
+  local <- getC (symbolMapLookup name . csVars)
   case local of
     Just binding -> pure binding
     Nothing -> do
@@ -332,7 +331,7 @@ currentReturnType = do
 -- Temps belong to one FunctionIr; block and data labels stay module-wide.
 withFunctionScope :: CompileM a -> CompileM a
 withFunctionScope action = CompileM $ \st ->
-  case unCompileM action st { csNextTemp = 0, csVars = scopeMapEmpty, csLabels = symbolMapEmpty, csBreakTargets = [], csContinueTargets = [] } of
+  case unCompileM action st { csNextTemp = 0, csVars = symbolMapEmpty, csLabels = symbolMapEmpty, csBreakTargets = [], csContinueTargets = [] } of
     StepErr err -> StepErr err
     StepOk x st' -> StepOk x (st'
       { csNextTemp = csNextTemp st
@@ -343,10 +342,12 @@ withFunctionScope action = CompileM $ \st ->
       })
 
 withVarScope :: CompileM a -> CompileM a
+-- The persistent map includes all visible locals. Restore its old root on
+-- exit; the other lowering state (temps, data items, etc.) must survive.
 withVarScope action = CompileM $ \st ->
-  case unCompileM action st { csVars = scopeMapEnter (csVars st) } of
+  case unCompileM action st of
     StepErr err -> StepErr err
-    StepOk x st' -> StepOk x (st' { csVars = scopeMapLeave (csVars st') })
+    StepOk x st' -> StepOk x (st' { csVars = csVars st })
 
 withLoopTargets :: BlockId -> BlockId -> CompileM a -> CompileM a
 withLoopTargets breakTarget continueTarget action = CompileM $ \st ->
