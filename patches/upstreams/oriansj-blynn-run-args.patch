@@ -1,0 +1,36 @@
+--- a/virtually.hs
++++ b/virtually.hs
+@@ -1244,3 +1244,3 @@
+ K x y = "_I" x
+-I x = "sp[1] = arg(1); sp = sp + CELL_SIZE;"
++I x = "sp[1] = mem[sp[1] + 1]; sp = sp + CELL_SIZE;"
+ CONS x y z w = w x y
+@@ -1538,3 +1538,3 @@
+ genArg m a = case a of
+-  { V s -> ("arg("++) . (maybe undefined showInt $ lookup s m) . (')':)
++  { V s -> ("mem[sp["++) . (maybe undefined showInt $ lookup s m) . ("] + 1]"++)
+   ; E (StrCon s) -> (s++)
+--- a/marginally.hs
++++ b/marginally.hs
+@@ -1458,3 +1458,3 @@
+ K x y = "_I" x
+-I x = "sp[1] = arg(1); sp = sp + CELL_SIZE;"
++I x = "sp[1] = mem[sp[1] + 1]; sp = sp + CELL_SIZE;"
+ CONS x y z w = w x y
+@@ -1753,3 +1753,3 @@
+ genArg m a = case a of
+-  { V s -> ("arg("++) . (maybe undefined showInt $ lookup s m) . (')':)
++  { V s -> ("mem[sp["++) . (maybe undefined showInt $ lookup s m) . ("] + 1]"++)
+   ; E (StrCon s) -> (s++)
+--- a/methodically.hs
++++ b/methodically.hs
+@@ -1392,3 +1392,3 @@
+ K x y = "_I" x
+-I x = "sp[1] = arg(1); sp = sp + CELL_SIZE;"
++I x = "sp[1] = mem[sp[1] + 1]; sp = sp + CELL_SIZE;"
+ CONS x y z w = w x y
+@@ -1692,3 +1692,3 @@
+ genArg m a = case a of
+-  V s -> ("arg("++) . (maybe undefined showInt $ lookup s m) . (')':)
++  V s -> ("mem[sp["++) . (maybe undefined showInt $ lookup s m) . ("] + 1]"++)
+   E (StrCon s) -> (s++)

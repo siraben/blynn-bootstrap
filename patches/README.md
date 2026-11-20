@@ -49,6 +49,11 @@ by the bootstrap.
   - invariants: the tests compare one value with different constants, so
     their order does not change the result. The generated files change up
     to `party2.c`; `crossly_up.c` and each later file stay byte-identical.
+- `upstreams/oriansj-blynn-{vm-args,run-args}.patch`
+  - the VM reads fixed-position arguments directly in common reductions. The
+    `virtually`, `marginally`, and `methodically` generators emit the same
+    indexed read instead of a call to `arg(n)` for a combinator variable.
+    No new combinator tags, allocation rules, or GC points are involved.
 - `upstreams/oriansj-blynn-prog-array.patch`
   - the oriansj compilers emit the program image as an array initializer,
     not as one assignment for each word; the image contents are the same
