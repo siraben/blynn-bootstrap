@@ -9,8 +9,6 @@ module TypesIr
   , DataValue(..)
   , DataItem(..)
   , FunctionIr(..)
-  , TopItemIr(..)
-  , ModuleIr(..)
   ) where
 
 import Base
@@ -86,14 +84,9 @@ data BasicBlock = BasicBlock BlockId [Instr] Terminator
 
 data DataValue
   = DByte Int
+  | DZero Int
   | DAddress String
 
 data DataItem = DataItem String [DataValue]
 
 data FunctionIr = FunctionIr String [BasicBlock]
-
-data TopItemIr
-  = TopData DataItem
-  | TopFunction FunctionIr
-
-data ModuleIr = ModuleIr [TopItemIr]

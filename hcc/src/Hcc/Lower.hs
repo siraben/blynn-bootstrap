@@ -1848,7 +1848,7 @@ globalDataValue ty initExpr = case initExpr of
   Just expr -> globalDataExpr ty expr
 
 zeroData :: Int -> [DataValue]
-zeroData n = if n <= 0 then [] else DByte 0 : zeroData (n - 1)
+zeroData n = if n <= 0 then [] else [DZero n]
 
 zeroDataForType :: CType -> CompileM [DataValue]
 zeroDataForType ty = do
@@ -2066,7 +2066,8 @@ scalarFloatData ty text = do
 
 padDataTarget :: Int -> [DataValue] -> CompileM [DataValue]
 padDataTarget size values = do
-  used <- dataSizeTarget values
+  word <- targetWordSize
+  let used = dataSizeTarget word values
   if used > size
     then throwC (if dataHasAddress values
       then "address initializer is larger than its object"
@@ -2079,16 +2080,12 @@ dataHasAddress values = case values of
   DAddress _:_ -> True
   _:rest -> dataHasAddress rest
 
-dataSizeTarget :: [DataValue] -> CompileM Int
-dataSizeTarget values = case values of
-  [] -> pure 0
-  DByte _:rest -> do
-    n <- dataSizeTarget rest
-    pure (n + 1)
-  DAddress _:rest -> do
-    word <- targetWordSize
-    n <- dataSizeTarget rest
-    pure (n + word)
+dataSizeTarget :: Int -> [DataValue] -> Int
+dataSizeTarget word = foldr addSize 0 where
+  addSize value n = case value of
+    DByte _ -> 1 + n
+    DZero count -> count + n
+    DAddress _ -> word + n
 
 globalAddressData :: String -> CompileM [DataValue]
 globalAddressData name = do
