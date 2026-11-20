@@ -110,7 +110,10 @@ static int riscv64_arg_reg(int index) {
 
 static void riscv64_emit_mov_reg(FILE *out, int dst, int src) {
   if (dst == src) return;
-  fprintf(out, "  %s %s mv\n", riscv64_rd(dst), riscv64_rs1(src));
+  if (dst == 11 && src == 10)
+    fprintf(out, "  HCC_MV_A1_A0\n");
+  else
+    fprintf(out, "  %s %s mv\n", riscv64_rd(dst), riscv64_rs1(src));
 }
 
 static void riscv64_emit_add_imm_reg(FILE *out, int dst, int src, int imm) {
@@ -294,6 +297,8 @@ static void riscv64_emit_header(FILE *out) {
   fprintf(out, "DEFINE rem 33600002\n");
   fprintf(out, "DEFINE ecall 73000000\n");
   fprintf(out, "DEFINE mv 13000000\n");
+  fprintf(out, "DEFINE HCC_MV_A1_A0 93050500\n");
+  fprintf(out, "DEFINE HCC_SEXT_A0 1B050500\n");
   fprintf(out, "DEFINE beqz 63000000\n");
   fprintf(out, "DEFINE bnez 63100000\n");
   fprintf(out, "DEFINE ret 67800000\n");

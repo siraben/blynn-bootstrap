@@ -1668,7 +1668,7 @@ static void emit_copy_acc_to_scratch(FILE *out) {
   else if (target_arch == TARGET_AARCH64)
     fprintf(out, "  SET_X1_FROM_X0\n");
   else if (target_arch == TARGET_RISCV64)
-    fprintf(out, "  rd_a1 rs1_a0 mv\n");
+    fprintf(out, "  HCC_MV_A1_A0\n");
   else
     fprintf(out, "  HCC_M_RAX_RBX\n");
 }
@@ -1741,7 +1741,7 @@ static void emit_sext_loaded_acc(FILE *out, EmitState *state, int size) {
       if (target_arch == TARGET_AARCH64)
         fprintf(out, "  SXTW_X0_W0\n");
       else
-        fprintf(out, "  rd_a0 rs1_a0 addiw\n");
+        fprintf(out, "  HCC_SEXT_A0\n");
     } else if (size < 8) {
       sign_bit = sign_bit_for_size(size);
       emit_copy_acc_to_scratch(out);
