@@ -1721,7 +1721,7 @@ static void emit_zext_loaded_acc(FILE *out, EmitState *state, int size) {
       if (target_arch == TARGET_AARCH64)
         fprintf(out, "  UXTW_X0_W0\n");
       else
-        fprintf(out, "  rd_a0 rs1_a0 !32 slli\n  rd_a0 rs1_a0 !32 srli\n");
+        fprintf(out, "  HCC_ZEXT_A0\n");
     } else if (size < 8) {
       emit_copy_acc_to_scratch(out);
       emit_load_immediate(out, state, mask_for_size(size));

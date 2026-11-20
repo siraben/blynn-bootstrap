@@ -299,6 +299,8 @@ static void riscv64_emit_header(FILE *out) {
   fprintf(out, "DEFINE mv 13000000\n");
   fprintf(out, "DEFINE HCC_MV_A1_A0 93050500\n");
   fprintf(out, "DEFINE HCC_SEXT_A0 1B050500\n");
+  /* slli a0,a0,32; srli a0,a0,32 (also works without an external defs file). */
+  fprintf(out, "DEFINE HCC_ZEXT_A0 1315050213550502\n");
   fprintf(out, "DEFINE beqz 63000000\n");
   fprintf(out, "DEFINE bnez 63100000\n");
   fprintf(out, "DEFINE ret 67800000\n");
