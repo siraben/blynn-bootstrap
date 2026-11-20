@@ -1062,7 +1062,12 @@ static void emit_remember_rax_temp(EmitState *state, int temp) {
   state->rax_temp = temp;
 }
 
-static void emit_byte(FILE *out, int byte);
+static void emit_hex_pair(FILE *out, int byte) {
+  const char *digits = "0123456789ABCDEF";
+  fputc(digits[(byte & 255) >> 4], out);
+  fputc(digits[byte & 15], out);
+}
+
 static int invert_binop(int op);
 
 static void emit_named_ref(FILE *out, const char *prefix, const char *fn_name, int id) {
@@ -1081,14 +1086,13 @@ static int target_register_arg_count(void) {
 
 static void emit_data64_le(FILE *out, unsigned long value) {
   int i = 0;
-  fprintf(out, "  ");
+  fputs("  '", out);
   while (i < 8) {
-    if (i) fputc(' ', out);
-    emit_byte(out, (int)(value & 255));
+    emit_hex_pair(out, (int)(value & 255));
     value = value >> 8;
     i = i + 1;
   }
-  fputc('\n', out);
+  fputs("'\n", out);
 }
 
 #include "hcc_m1_arch_aarch64.c"
@@ -1229,12 +1233,6 @@ static void emit_header(FILE *out) {
   fprintf(out, "DEFINE HCC_UDIV_rax_by_rbx_into_rax 48F7F3\n");
   fprintf(out, "DEFINE HCC_CALL_rax FFD0\n");
   fprintf(out, "\n");
-}
-
-static void emit_hex_pair(FILE *out, int byte) {
-  const char *digits = "0123456789ABCDEF";
-  fputc(digits[(byte & 255) >> 4], out);
-  fputc(digits[byte & 15], out);
 }
 
 static void emit_byte(FILE *out, int byte) {
@@ -1434,7 +1432,7 @@ static void emit_load_operand(FILE *out, EmitState *state, LocArray *locs, int r
       fprintf(out, "  mov_eax, &FUNCTION_%s\n", op->name);
     else if (target_arch == TARGET_AARCH64) {
       aarch64_emit_load_literal_prefix(out, 0);
-      fprintf(out, "  &FUNCTION_%s '00' '00' '00' '00'\n", op->name);
+      fprintf(out, "  &FUNCTION_%s '00000000'\n", op->name);
     } else if (target_arch == TARGET_RISCV64)
       riscv64_emit_load_function_label(out, 10, op->name);
     else
@@ -2275,7 +2273,7 @@ static void emit_instr(FILE *out, const char *fn_name, EmitState *state, LocArra
     emit_arguments(out, state, locs, in->args, in->argc);
     if (target_arch == TARGET_AARCH64) {
       aarch64_emit_load_literal_prefix(out, 16);
-      fprintf(out, "  &FUNCTION_%s '00' '00' '00' '00'\n", in->name);
+      fprintf(out, "  &FUNCTION_%s '00000000'\n", in->name);
       fprintf(out, "  BLR_X16\n");
     } else if (target_arch == TARGET_RISCV64) {
       riscv64_emit_load_function_label(out, 7, in->name);
