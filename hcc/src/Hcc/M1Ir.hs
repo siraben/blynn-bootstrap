@@ -24,7 +24,7 @@ emitM1Ir write prefix target ast = case ast of
       Left err -> pure (Left err)
       Right (registeredItems, st) -> do
         write "HCCIR 1"
-        emitTopItemsIr write registeredItems
+        mapM_ (emitDataItemIr write) registeredItems
         lowerAndEmitTopDeclsIr write st decls
 
 lowerAndEmitTopDeclsIr :: (String -> IO ()) -> CompileState -> [TopDecl] -> IO (Either CodegenError ())
@@ -37,14 +37,14 @@ lowerAndEmitTopDeclsIr write st decls = case decls of
         case pendingDataItemsIr st' of
           (pending, st'') -> do
             emitFunctionIr write fn
-            emitTopItemsIr write pending
+            mapM_ (emitDataItemIr write) pending
             lowerAndEmitTopDeclsIr write st'' rest
   _:rest -> lowerAndEmitTopDeclsIr write st rest
 
-registerTopDeclsIr :: [TopDecl] -> CompileM [TopItemIr]
+registerTopDeclsIr :: [TopDecl] -> CompileM [DataItem]
 registerTopDeclsIr decls = concat <$> mapM registerTopDeclIr decls
 
-registerTopDeclIr :: TopDecl -> CompileM [TopItemIr]
+registerTopDeclIr :: TopDecl -> CompileM [DataItem]
 registerTopDeclIr decl = case decl of
   Globals globals -> registerGlobalsIr globals
   Function ty name params _ -> registerFunctionDecl ty name params >> pure []
@@ -71,7 +71,7 @@ registerFunctionDecl ty name params = do
   bindGlobal name ty
   bindFunctionType name ty params
 
-registerGlobalsIr :: [(CType, String, Maybe Expr)] -> CompileM [TopItemIr]
+registerGlobalsIr :: [(CType, String, Maybe Expr)] -> CompileM [DataItem]
 registerGlobalsIr globals = case globals of
   [] -> pure []
   (ty, name, initExpr):rest -> do
@@ -79,20 +79,12 @@ registerGlobalsIr globals = case globals of
     pending <- CompileM $ \st -> case pendingDataItemsIr st of
       (items, st') -> StepOk items st'
     restItems <- registerGlobalsIr rest
-    pure (TopData (DataItem name values) : pending ++ restItems)
+    pure (DataItem name values : pending ++ restItems)
 
-pendingDataItemsIr :: CompileState -> ([TopItemIr], CompileState)
+pendingDataItemsIr :: CompileState -> ([DataItem], CompileState)
 pendingDataItemsIr st = case csDataItems st of
   [] -> ([], st)
-  items -> (map TopData (reverse items), st { csDataItems = [] })
-
-emitTopItemsIr :: (String -> IO ()) -> [TopItemIr] -> IO ()
-emitTopItemsIr write = mapM_ (emitTopItemIr write)
-
-emitTopItemIr :: (String -> IO ()) -> TopItemIr -> IO ()
-emitTopItemIr write item = case item of
-  TopData dataItem -> emitDataItemIr write dataItem
-  TopFunction fn -> emitFunctionIr write fn
+  items -> (reverse items, st { csDataItems = [] })
 
 emitDataItemIr :: (String -> IO ()) -> DataItem -> IO ()
 emitDataItemIr write item = case item of
@@ -102,28 +94,16 @@ emitDataItemIr write item = case item of
     write "E"
 
 emitDataValuesIr :: (String -> IO ()) -> [DataValue] -> IO ()
-emitDataValuesIr write values = case values of
-  [] -> pure ()
-  DByte 0:_ ->
-    case zeroRun values of
-      (count, rest) -> do
-        write ("z " ++ show count)
-        emitDataValuesIr write rest
-  value:rest -> do
-    write (dataValueIrLine value)
-    emitDataValuesIr write rest
-
-dataValueIrLine :: DataValue -> String
-dataValueIrLine value = case value of
-  DByte byte -> "b " ++ show byte
-  DAddress label -> "a " ++ label
-
-zeroRun :: [DataValue] -> (Int, [DataValue])
-zeroRun values = case values of
-  DByte 0:rest ->
-    case zeroRun rest of
-      (count, tailValues) -> (count + 1, tailValues)
-  _ -> (0, values)
+-- Coalesce explicit zero bytes and sized padding into the same wire record.
+emitDataValuesIr write = go 0 where
+  flush zeros = when (zeros /= 0) (write ("z " ++ show zeros))
+  go zeros values = case values of
+    [] -> flush zeros
+    value:rest -> case value of
+      DByte 0 -> go (zeros + 1) rest
+      DZero count -> go (zeros + count) rest
+      DByte byte -> flush zeros >> write ("b " ++ show byte) >> go 0 rest
+      DAddress label -> flush zeros >> write ("a " ++ label) >> go 0 rest
 
 emitFunctionIr :: (String -> IO ()) -> FunctionIr -> IO ()
 emitFunctionIr write fn = case fn of
