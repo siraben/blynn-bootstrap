@@ -232,8 +232,12 @@ static void riscv64_emit_load_store_from(FILE *out, int is_load, int size, int i
     fprintf(out, "  rd_a0 %s !%d %s\n", riscv64_rs1(base), offset, op);
     return;
   }
-  if (!is_load && offset == 0) {
-    fprintf(out, "  %s %s %s\n", riscv64_rs1(base), riscv64_rs2(src), op);
+  if (!is_load && offset >= -2048 && offset <= 2047) {
+    /* M1 @N places a numeric immediate in the split S-format field. */
+    if (offset == 0)
+      fprintf(out, "  %s %s %s\n", riscv64_rs1(base), riscv64_rs2(src), op);
+    else
+      fprintf(out, "  %s %s @%d %s\n", riscv64_rs1(base), riscv64_rs2(src), offset, op);
     return;
   }
   riscv64_emit_load_literal(out, 5, (unsigned long)offset);
