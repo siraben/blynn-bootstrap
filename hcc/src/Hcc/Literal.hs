@@ -4,7 +4,6 @@ module Literal
   , bitOrInt
   , bitXorInt
   , intLiteralIsUnsigned
-  , stripIntSuffix
   , floatLiteralBytes
   , floatLiteralSize
   , stripFloatSuffix
@@ -62,12 +61,6 @@ intLiteralIsUnsigned text = case text of
   [] -> False
   c:rest -> c `elem` "uU" || intLiteralIsUnsigned rest
 
-stripIntSuffix :: String -> String
-stripIntSuffix text = reverse (dropWhile isIntSuffix (reverse text))
-
-isIntSuffix :: Char -> Bool
-isIntSuffix c = c `elem` "uUlL"
-
 floatLiteralSize :: String -> Int
 floatLiteralSize text
   | endsWithFloatSuffix "fF" text = 4
@@ -107,7 +100,8 @@ endsWithFloatSuffix suffixes text = case reverse text of
 
 integerLiteralBytes :: String -> Either String [Int]
 integerLiteralBytes text =
-  let word = case stripIntSuffix text of
+  -- The digit reader stops at the first non-digit, including any U/L suffix.
+  let word = case text of
         '0':'x':xs -> readBaseBytesChecked 16 xs
         '0':'X':xs -> readBaseBytesChecked 16 xs
         '0':xs -> readBaseBytesChecked 8 xs
