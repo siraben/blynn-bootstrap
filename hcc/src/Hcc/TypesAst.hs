@@ -86,7 +86,7 @@ data Expr
   = EInt String
   | EFloat String
   | EChar String
-  | EString String
+  | EString [Int] -- decoded bytes, including the final NUL
   | EVar String
   | ECall Expr [Expr]
   | EIndex Expr Expr

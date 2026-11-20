@@ -4,6 +4,8 @@ struct Pair {
     char tag[4];
 };
 char gtext[] = "hello";
+/* No token-internal terminator or cross-token hex/octal escape. */
+char joined[] = "\x41" "B" "\0" "\1" "2";
 int gints[] = {1, 2, 3};
 struct Pair gpairs[] = {{1, "a"}, {2, "b"}, {3, "c"}};
 int gafter = 77;
@@ -31,5 +33,7 @@ int main(void) {
     if (computed[0] + computed[1] + computed[2] != 8) return 5;
     if (sizeof("abc") != 4 || sizeof(fixed + 1) != sizeof(int *)) return 6;
     if (gexact[2] != 'c' || gguard != 55) return 7;
+    if (sizeof(joined) != 6 || joined[0] != 'A' || joined[1] != 'B' || joined[2] != 0 ||
+        joined[3] != 1 || joined[4] != '2' || joined[5] != 0) return 8;
     return 0;
 }

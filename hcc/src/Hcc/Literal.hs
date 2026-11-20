@@ -11,7 +11,7 @@ module Literal
   , integerLiteralBytes
   , intBytes
   , charValue
-  , stringBytes
+  , stringLiteralBytes
   , isDecimalDigit
   , isOctalDigit
   , isHexDigit
@@ -177,18 +177,17 @@ signedByte value =
   let byte = value `mod` 256
   in if byte >= 128 then byte - 256 else byte
 
-stringBytes :: String -> [Int]
-stringBytes text = stringBytesFrom (stripTrailingQuote (stripLeadingQuote text))
-
-stringBytesFrom :: String -> [Int]
-stringBytesFrom chars = case chars of
-  [] -> [0]
-  '\\':rest ->
-    let decoded = decodeEscape rest
-        value = fst decoded
-        tailChars = snd decoded
-    in value : stringBytesFrom tailChars
-  c:rest -> fromEnum c : stringBytesFrom rest
+-- Decode each token separately (a hex escape cannot consume digits in the
+-- next token), but terminate the concatenated literal only once.
+stringLiteralBytes :: [String] -> [Int]
+stringLiteralBytes = foldr appendLiteral [0] where
+  appendLiteral text tailBytes = decode (drop 1 text) where
+    decode chars = case chars of
+      [] -> tailBytes
+      ['"'] -> tailBytes
+      '\\':rest -> case decodeEscape rest of
+        (value, more) -> value `mod` 256 : decode more
+      c:rest -> fromEnum c `mod` 256 : decode rest
 
 dropClosingQuote :: String -> String
 dropClosingQuote text = case reverse text of
@@ -259,14 +258,6 @@ hexDigit c
   | c >= 'a' && c <= 'f' = 10 + fromEnum c - fromEnum 'a'
   | c >= 'A' && c <= 'F' = 10 + fromEnum c - fromEnum 'A'
   | otherwise = 0
-
-stripLeadingQuote :: String -> String
-stripLeadingQuote text = case text of
-  c:rest -> if fromEnum c == 34 then rest else text
-  [] -> []
-
-stripTrailingQuote :: String -> String
-stripTrailingQuote text = reverse (stripLeadingQuote (reverse text))
 
 -- Byte-backed target integers. Neither the native host's Int width nor the
 -- seed compiler's Int width is the target arithmetic contract. Width is in

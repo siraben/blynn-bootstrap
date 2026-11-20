@@ -345,7 +345,7 @@ lowerSideEffect expr = case expr of
 
 noOpInlineAsmArgs :: [Expr] -> Bool
 noOpInlineAsmArgs args = case args of
-  [EString text] -> stringBytes text == [110, 111, 112, 0]
+  [EString bytes] -> bytes == [110, 111, 112, 0]
   _ -> False
 
 lowerResultInstrs :: CompileM ([Instr], Operand) -> CompileM [Instr]
@@ -391,7 +391,7 @@ completeArrayType :: CType -> Maybe Expr -> CType
 completeArrayType ty initExpr = case ty of
   CArray inner Nothing -> case initExpr of
     Just (EInitList exprs) -> CArray inner (Just (EInt (show (length exprs))))
-    Just (EString text) -> CArray inner (Just (EInt (show (length (stringBytes text)))))
+    Just (EString bytes) -> CArray inner (Just (EInt (show (length bytes))))
     _ -> ty
   _ -> ty
 
@@ -578,9 +578,9 @@ lowerExpr expr = case expr of
     Right bytes -> pure ([], OImmBytes bytes)
   EChar text ->
     pure ([], OImm (charValue text))
-  EString text -> do
+  EString bytes -> do
     dataLabel <- freshDataLabel
-    addDataItem (DataItem dataLabel (map DByte (stringBytes text)))
+    addDataItem (DataItem dataLabel (map DByte bytes))
     pure ([], OGlobal dataLabel)
   EVar name -> lowerVarExpr name
   EUnary "+" x -> do
@@ -702,7 +702,7 @@ lowerFunctionNameMacro :: CompileM ([Instr], Operand)
 lowerFunctionNameMacro = do
   mname <- currentFunctionName
   case mname of
-    Just name -> lowerExpr (EString name)
+    Just name -> lowerExpr (EString (map fromEnum name ++ [0]))
     Nothing -> pure ([], OImm 0)
 
 lowerTypedGlobalVarExpr :: String -> CType -> CompileM ([Instr], Operand)
@@ -1265,7 +1265,7 @@ lowerLValue target = case target of
 
 sizeofExprSize :: Expr -> CompileM Int
 sizeofExprSize value = case value of
-  EString text -> pure (length (stringBytes text))
+  EString bytes -> pure (length bytes)
   _ -> do
     mty <- exprType value
     ty <- requireMaybeType "sizeof expression has unknown type" mty
@@ -1858,7 +1858,7 @@ zeroDataForType ty = do
 globalDataExpr :: CType -> Expr -> CompileM [DataValue]
 globalDataExpr ty expr = case expr of
   EInitList exprs -> globalInitListData ty exprs
-  EString text -> globalStringData ty text
+  EString bytes -> globalStringData ty bytes
   EInt _ -> scalarConstantData ty expr
   EFloat text -> scalarFloatData ty text
   EChar _ -> scalarConstantData ty expr
@@ -1924,11 +1924,10 @@ globalAggregateInitData ty exprs = do
       [] -> zeroDataForType ty
       _ -> throwC "excess elements in scalar initializer"
 
-globalStringData :: CType -> String -> CompileM [DataValue]
-globalStringData ty text = case ty of
+globalStringData :: CType -> [Int] -> CompileM [DataValue]
+globalStringData ty bytes = case ty of
   CArray CChar count -> do
-    size <- stringDataSize count text
-    let bytes = stringBytes text
+    size <- stringDataSize count bytes
     -- An array with the length of the text has no terminator.
     if length bytes == size + 1
       then pure (map DByte (take size bytes))
@@ -1938,13 +1937,13 @@ globalStringData ty text = case ty of
   _ -> if isPointerType ty
     then do
       dataLabel <- freshDataLabel
-      addDataItem (DataItem dataLabel (map DByte (stringBytes text)))
+      addDataItem (DataItem dataLabel (map DByte bytes))
       pure [DAddress dataLabel]
-    else scalarConstantData ty (EString text)
+    else scalarConstantData ty (EString bytes)
 
-stringDataSize :: Maybe Expr -> String -> CompileM Int
-stringDataSize count text = case count of
-  Nothing -> pure (length (stringBytes text))
+stringDataSize :: Maybe Expr -> [Int] -> CompileM Int
+stringDataSize count bytes = case count of
+  Nothing -> pure (length bytes)
   Just bound -> arrayBoundSize (Just bound)
 
 globalAddressExprData :: CType -> Expr -> CompileM [DataValue]
