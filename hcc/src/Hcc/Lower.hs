@@ -215,7 +215,7 @@ lowerConditionBlock bid instrs cond trueId falseId = case cond of
   EUnary "!" value ->
     lowerConditionBlock bid instrs value falseId trueId
   EBinary op left right ->
-    if isBranchComparisonOpString op
+    if isComparisonOpString op
       then do
         (condInstrs, iop, leftOp, rightOp) <- lowerBranchComparison op left right
         pure [BasicBlock bid (instrs ++ condInstrs) (TBranchCmp iop leftOp rightOp trueId falseId)]
@@ -228,15 +228,18 @@ lowerValueConditionBlock bid instrs cond trueId falseId = do
   (condInstrs, condOp) <- lowerExpr cond
   pure [BasicBlock bid (instrs ++ condInstrs) (TBranch condOp trueId falseId)]
 
-isBranchComparisonOpString :: String -> Bool
-isBranchComparisonOpString op =
+isComparisonOpString :: String -> Bool
+isComparisonOpString op =
   op `elem` ["==", "!=", "<", "<=", ">", ">="]
 
 lowerBranchComparison :: String -> Expr -> Expr -> CompileM ([Instr], BinOp, Operand, Operand)
 lowerBranchComparison op a b = do
-  (instrs, ao, bo) <- lowerComparisonOperands a b
-  iop <- if op == "==" then pure IEq else if op == "!=" then pure INe else comparisonOp op a b
-  pure (instrs, iop, ao, bo)
+  (ai, ao) <- lowerExpr a
+  (bi, bo) <- lowerExpr b
+  commonTy <- comparisonOperandType a b
+  (ac, ao') <- coerceScalar commonTy ao
+  (bc, bo') <- coerceScalar commonTy bo
+  pure (ai ++ bi ++ ac ++ bc, comparisonOp op commonTy, ao', bo')
 
 requireBreakTarget :: CompileM BlockId
 requireBreakTarget = do
@@ -728,7 +731,7 @@ lowerBinaryExpr op a b
             | isUnsignedType commonTy = if op == "/" then IUDiv else IUMod
             | op == "/" = IDiv
             | otherwise = IMod
-      lowerPlainBinOperands iop a b ai ao bi bo
+      lowerPlainBinOperands iop commonTy ai ao bi bo
   | otherwise = case lowerBinOp op of
       Just iop ->
         if op == "<<"
@@ -736,25 +739,11 @@ lowerBinaryExpr op a b
           else lowerPlainBin iop a b
       Nothing -> throwC ("unsupported binary operator in lowering: " ++ op)
 
-isComparisonOpString :: String -> Bool
-isComparisonOpString op =
-  op `elem` ["<", "<=", ">", ">="]
-
 lowerComparisonExpr :: String -> Expr -> Expr -> CompileM ([Instr], Operand)
 lowerComparisonExpr op a b = do
-  (instrs, ao, bo) <- lowerComparisonOperands a b
+  (instrs, iop, ao, bo) <- lowerBranchComparison op a b
   out <- freshTemp
-  iop <- comparisonOp op a b
   pure (instrs ++ [IBin out iop ao bo], OTemp out)
-
-lowerComparisonOperands :: Expr -> Expr -> CompileM ([Instr], Operand, Operand)
-lowerComparisonOperands a b = do
-  (ai, ao) <- lowerExpr a
-  (bi, bo) <- lowerExpr b
-  commonTy <- comparisonOperandType a b
-  (acoerceInstrs, acoerceOp) <- coerceBinOperand commonTy a ao
-  (bcoerceInstrs, bcoerceOp) <- coerceBinOperand commonTy b bo
-  pure (ai ++ bi ++ acoerceInstrs ++ bcoerceInstrs, acoerceOp, bcoerceOp)
 
 lowerDirectCallExpr :: String -> [Expr] -> CompileM ([Instr], Operand)
 lowerDirectCallExpr name args = do
@@ -848,7 +837,9 @@ lowerAddExpr a b = do
     Just elemTy -> lowerPointerOffset IAdd (ai ++ bi) ao bo elemTy
     Nothing -> case pointerElementType bty of
       Just elemTy -> lowerPointerOffset IAdd (ai ++ bi) bo ao elemTy
-      Nothing -> lowerPlainBinOperands IAdd a b ai ao bi bo
+      Nothing -> do
+        commonTy <- arithmeticTypeFromOperands a aty b bty
+        lowerPlainBinOperands IAdd commonTy ai ao bi bo
 
 lowerSubExpr :: Expr -> Expr -> CompileM ([Instr], Operand)
 lowerSubExpr a b = do
@@ -860,7 +851,9 @@ lowerSubExpr a b = do
     Just elemTy -> case pointerElementType bty of
       Just _ -> lowerPointerDiff (ai ++ bi) ao bo elemTy
       Nothing -> lowerPointerOffset ISub (ai ++ bi) ao bo elemTy
-    Nothing -> lowerPlainBinOperands ISub a b ai ao bi bo
+    Nothing -> do
+      commonTy <- arithmeticTypeFromOperands a aty b bty
+      lowerPlainBinOperands ISub commonTy ai ao bi bo
 
 lowerPointerDiff :: [Instr] -> Operand -> Operand -> CType -> CompileM ([Instr], Operand)
 lowerPointerDiff instrs ao bo elemTy = do
@@ -890,38 +883,16 @@ lowerPlainBin :: BinOp -> Expr -> Expr -> CompileM ([Instr], Operand)
 lowerPlainBin op a b = do
   (ai, ao) <- lowerExpr a
   (bi, bo) <- lowerExpr b
-  lowerPlainBinOperands op a b ai ao bi bo
+  commonTy <- usualArithmeticType a b
+  lowerPlainBinOperands op commonTy ai ao bi bo
 
-lowerPlainBinOperands :: BinOp -> Expr -> Expr -> [Instr] -> Operand -> [Instr] -> Operand -> CompileM ([Instr], Operand)
-lowerPlainBinOperands op a b ai ao bi bo = do
-  commonTy <- if isComparisonBinOp op then comparisonOperandType a b else usualArithmeticType a b
-  (acoerceInstrs, acoerceOp) <- coerceBinOperand commonTy a ao
-  (bcoerceInstrs, bcoerceOp) <- coerceBinOperand commonTy b bo
+lowerPlainBinOperands :: BinOp -> CType -> [Instr] -> Operand -> [Instr] -> Operand -> CompileM ([Instr], Operand)
+lowerPlainBinOperands op commonTy ai ao bi bo = do
+  (ac, ao') <- coerceScalar commonTy ao
+  (bc, bo') <- coerceScalar commonTy bo
   out <- freshTemp
-  (coerceInstrs, coerceOp) <-
-    if isComparisonBinOp op
-    then pure ([], OTemp out)
-    else coerceScalar commonTy (OTemp out)
-  pure ( ai ++ bi ++ acoerceInstrs ++ bcoerceInstrs ++
-         [IBin out op acoerceOp bcoerceOp] ++ coerceInstrs
-       , coerceOp)
-
-coerceBinOperand :: CType -> Expr -> Operand -> CompileM ([Instr], Operand)
-coerceBinOperand commonTy _ op = coerceScalar commonTy op
-
-isComparisonBinOp :: BinOp -> Bool
-isComparisonBinOp op = case op of
-  IEq -> True
-  INe -> True
-  ILt -> True
-  ILe -> True
-  IGt -> True
-  IGe -> True
-  IULt -> True
-  IULe -> True
-  IUGt -> True
-  IUGe -> True
-  _ -> False
+  (rc, result) <- coerceScalar commonTy (OTemp out)
+  pure (ai ++ bi ++ ac ++ bc ++ [IBin out op ao' bo'] ++ rc, result)
 
 pointerElementType :: Maybe CType -> Maybe CType
 pointerElementType mty = case mty of
@@ -1350,7 +1321,7 @@ exprType expr = case expr of
   EBinary "&&" _ _ -> pure (Just CInt)
   EBinary "||" _ _ -> pure (Just CInt)
   EBinary op left right -> do
-    if isComparisonOpString op || op `elem` ["==", "!="]
+    if isComparisonOpString op
       then pure (Just CInt)
       else do
         leftTy <- exprType left
@@ -2189,20 +2160,14 @@ comparisonOperandType a b = do
       Just inner -> pure (CPtr inner)
       Nothing -> arithmeticTypeFromOperands a aty b bty
 
-comparisonOp :: String -> Expr -> Expr -> CompileM BinOp
-comparisonOp op a b = do
-  commonTy <- comparisonOperandType a b
-  let unsigned = isUnsignedType commonTy
-  pure (case (unsigned, op) of
-    (False, "<") -> ILt
-    (False, "<=") -> ILe
-    (False, ">") -> IGt
-    (False, ">=") -> IGe
-    (True, "<") -> IULt
-    (True, "<=") -> IULe
-    (True, ">") -> IUGt
-    (True, ">=") -> IUGe
-    _ -> IEq)
+comparisonOp :: String -> CType -> BinOp
+comparisonOp op ty = case op of
+  "!=" -> INe
+  "<" -> if isUnsignedType ty then IULt else ILt
+  "<=" -> if isUnsignedType ty then IULe else ILe
+  ">" -> if isUnsignedType ty then IUGt else IGt
+  ">=" -> if isUnsignedType ty then IUGe else IGe
+  _ -> IEq
 
 isUnsignedType :: CType -> Bool
 isUnsignedType ty = case ty of
