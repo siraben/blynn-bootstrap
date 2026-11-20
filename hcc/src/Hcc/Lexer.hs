@@ -1,6 +1,7 @@
 module Lexer
   ( LexError(..)
   , lexC
+  , lexMacroBody
   ) where
 
 import Base
@@ -18,7 +19,14 @@ data LexState = LexState
 data NumberClass = NumberInt | NumberFloat
 
 lexC :: String -> Either LexError [Token]
-lexC source = go (LexState source (SrcPos 1 1) True) [] where
+lexC = lexFrom True
+
+-- A leading # in a replacement list is punctuation, not a directive.
+lexMacroBody :: String -> Either LexError [Token]
+lexMacroBody = lexFrom False
+
+lexFrom :: Bool -> String -> Either LexError [Token]
+lexFrom bol source = go (LexState source (SrcPos 1 1) bol) [] where
   go st acc = case lsInput st of
     [] -> Right (reverse acc)
     ' ':cs -> spaces 1 cs where
