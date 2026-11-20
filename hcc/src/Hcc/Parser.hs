@@ -1223,11 +1223,11 @@ arguments = do
       needPunct ")"
       pure (first:rest)
 
-stringLiteral :: Parser String
+stringLiteral :: Parser [Int]
 stringLiteral = do
   first <- needString
   rest <- manyP needString
-  pure (joinStrings (first:rest))
+  pure (stringLiteralBytes (first:rest))
 
 needString :: Parser String
 needString = do
@@ -1235,31 +1235,6 @@ needString = do
   case tokenKind tok of
     TokString s -> advanceToken >> pure s
     _ -> failAt tok "expected string literal"
-
-joinStrings :: [String] -> String
-joinStrings strings =
-  let bodyBytes = concatMap literalContentBytes strings
-  in "\"" ++ concatMap hexEscape bodyBytes ++ "\""
-
-literalContentBytes :: String -> [Int]
-literalContentBytes text = dropLast (stringBytes text)
-
-dropLast :: [a] -> [a]
-dropLast xs = case xs of
-  [] -> []
-  [_] -> []
-  x:rest -> x : dropLast rest
-
-hexEscape :: Int -> String
-hexEscape value = "\\x" ++ hexPair value
-
-hexPair :: Int -> String
-hexPair value = [hexDigitChar (value `div` 16 `mod` 16), hexDigitChar (value `mod` 16)]
-
-hexDigitChar :: Int -> Char
-hexDigitChar value
-  | value < 10 = toEnum (fromEnum '0' + value)
-  | otherwise = toEnum (fromEnum 'a' + value - 10)
 
 startsType :: Token -> Bool
 startsType tok = case tokenKind tok of
