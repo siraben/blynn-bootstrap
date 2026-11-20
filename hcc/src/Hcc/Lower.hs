@@ -1340,16 +1340,6 @@ exprType expr = case expr of
     knownBaseTy <- requireMaybeType "member base has unknown type" baseTy
     info <- memberInfoMaybe (Just (CPtr knownBaseTy)) field
     pure (fmap fst info)
-  EBinary "+" left right -> do
-    leftTy <- exprType left
-    rightTy <- exprType right
-    arithmeticTy <- usualArithmeticType left right
-    pure (addExprResultType leftTy rightTy arithmeticTy)
-  EBinary "-" left right -> do
-    leftTy <- exprType left
-    rightTy <- exprType right
-    arithmeticTy <- usualArithmeticType left right
-    pure (subExprResultType leftTy rightTy arithmeticTy)
   EBinary "<<" left _ -> do
     leftTy <- exprType left
     promoteMaybeIntegerType leftTy
@@ -1365,17 +1355,11 @@ exprType expr = case expr of
       else do
         leftTy <- exprType left
         rightTy <- exprType right
-        arithmeticTy <- usualArithmeticType left right
+        arithmeticTy <- arithmeticTypeFromOperands left leftTy right rightTy
         pure (case op of
-          "*" -> Just arithmeticTy
-          "/" -> Just arithmeticTy
-          "%" -> Just arithmeticTy
-          "&" -> Just arithmeticTy
-          "|" -> Just arithmeticTy
-          "^" -> Just arithmeticTy
-          _ -> case (leftTy, rightTy) of
-            (Just _, Just _) -> Just arithmeticTy
-            _ -> Nothing)
+          "+" -> addExprResultType leftTy rightTy arithmeticTy
+          "-" -> subExprResultType leftTy rightTy arithmeticTy
+          _ -> Just arithmeticTy)
   ECond _ yes no -> conditionalType yes no
   EAssign lhs _ -> exprType lhs
   ECompoundAssign _ lhs _ -> exprType lhs
@@ -1403,7 +1387,7 @@ conditionalType yes no = do
       bi <- isIntegerTypeM b
       if (ai || isFloatingType a) && (bi || isFloatingType b)
         then do
-          ty <- usualArithmeticType yes no
+          ty <- arithmeticTypeFromOperands yes yesTy no noTy
           pure (Just ty)
         else case pointerElementType yesTy of
           Just inner -> pure (Just (CPtr inner))
@@ -1576,6 +1560,14 @@ usualArithmeticType left right = do
   rightTy0 <- promotedExprType right
   usualArithmeticTypes leftTy0 rightTy0
 
+-- These callers already queried both operands. Re-querying their ASTs here
+-- doubles the recursive type walks at each nested arithmetic operator.
+arithmeticTypeFromOperands :: Expr -> Maybe CType -> Expr -> Maybe CType -> CompileM CType
+arithmeticTypeFromOperands left leftTy right rightTy = do
+  a <- promoteOperandType left leftTy
+  b <- promoteOperandType right rightTy
+  usualArithmeticTypes a b
+
 usualArithmeticTypes :: CType -> CType -> CompileM CType
 usualArithmeticTypes leftTy0 rightTy0 =
   if isFloatingType leftTy0 || isFloatingType rightTy0
@@ -1686,13 +1678,12 @@ integerLiteralType text = do
       _ -> if unsigned then CUnsignedLongLong else CLongLong)
 
 promotedExprType :: Expr -> CompileM CType
-promotedExprType expr = case expr of
-  EFloat text ->
-    pure (floatLiteralType text)
-  _ -> do
-    mty <- exprType expr
-    ty <- requireMaybeType ("expression has unknown type: " ++ renderExprTag expr) mty
-    promoteIntegerType ty
+promotedExprType expr = exprType expr >>= promoteOperandType expr
+
+promoteOperandType :: Expr -> Maybe CType -> CompileM CType
+promoteOperandType expr mty = do
+  ty <- requireMaybeType ("expression has unknown type: " ++ renderExprTag expr) mty
+  promoteIntegerType ty
 
 floatLiteralType :: String -> CType
 floatLiteralType text =
@@ -2196,7 +2187,7 @@ comparisonOperandType a b = do
     Just inner -> pure (CPtr inner)
     Nothing -> case pointerElementType bty of
       Just inner -> pure (CPtr inner)
-      Nothing -> usualArithmeticType a b
+      Nothing -> arithmeticTypeFromOperands a aty b bty
 
 comparisonOp :: String -> Expr -> Expr -> CompileM BinOp
 comparisonOp op a b = do
