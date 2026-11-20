@@ -21,6 +21,12 @@ lexC :: String -> Either LexError [Token]
 lexC source = go (LexState source (SrcPos 1 1) True) [] where
   go st acc = case lsInput st of
     [] -> Right (reverse acc)
+    ' ':cs -> spaces 1 cs where
+      -- Comments become spaces during normalization; retain their columns
+      -- without building a position and a lexer state for every space.
+      spaces width rest = case rest of
+        ' ':more -> spaces (width + 1) more
+        _ -> go st { lsInput = rest, lsPos = addColumns width (lsPos st) } acc
     '/':'/':_ -> go (skipLineComment st) acc
     '/':'*':_ -> skipBlockComment st >>= \st' -> go st' acc
     c:cs
