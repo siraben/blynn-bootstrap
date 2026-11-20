@@ -184,10 +184,9 @@ splitCommas = go 0 [] [] where
     c:xs -> go depth (c:current) acc xs
 
 lexReplacement :: Span -> String -> Either PreprocessError [Token]
-lexReplacement sp text = case lexC ("__hcc_macro_dummy " ++ dropSpaces text) of
+lexReplacement sp text = case lexMacroBody (dropSpaces text) of
   Left (LexError _ msg) -> Left (PreprocessError (spanStart sp) msg)
-  Right (_:toks) -> Right toks
-  Right [] -> Right []
+  Right toks -> Right toks
 
 expandMacro :: Macros -> PPToken -> [PPToken] -> Either PreprocessError MacroStep
 expandMacro macros tok rest = case tok of
