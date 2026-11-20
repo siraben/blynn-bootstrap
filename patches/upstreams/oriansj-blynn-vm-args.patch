@@ -1,0 +1,42 @@
+--- a/vm.c
++++ b/vm.c
+@@ -348,0 +349,5 @@
++#define ARG1 mem[sp[1] + 1]
++#define ARG2 mem[sp[2] + 1]
++#define ARG3 mem[sp[3] + 1]
++#define ARG4 mem[sp[4] + 1]
++
+@@ -480 +485 @@
+-			sp[1] = arg(1);
++			sp[1] = ARG1;
+@@ -487,2 +492,2 @@
+-			if(rts_c) lazy3(3, arg(1), arg(3), arg(2));
+-			else lazy(3, app(arg(1), arg(3)), arg(2));
++			if(rts_c) lazy3(3, ARG1, ARG3, ARG2);
++			else lazy(3, app(ARG1, ARG3), ARG2);
+@@ -494 +499 @@
+-			lazy(2, 'I', arg(1));
++			lazy(2, 'I', ARG1);
+@@ -500 +505 @@
+-			lazy(2, arg(2), arg(1));
++			lazy(2, ARG2, ARG1);
+@@ -506,2 +511,2 @@
+-			if(rts_c) lazy3(3, arg(1), arg(3), app(arg(2), arg(3)));
+-			else lazy(3, app(arg(1), arg(3)), app(arg(2), arg(3)));
++			if(rts_c) lazy3(3, ARG1, ARG3, app(ARG2, ARG3));
++			else lazy(3, app(ARG1, ARG3), app(ARG2, ARG3));
+@@ -513,2 +518,2 @@
+-			if(rts_c) lazy3(3, arg(2), arg(3), arg(1));
+-			else lazy(3, app(arg(2), arg(3)), arg(1));
++			if(rts_c) lazy3(3, ARG2, ARG3, ARG1);
++			else lazy(3, app(ARG2, ARG3), ARG1);
+@@ -518,2 +523,2 @@
+-			if(rts_c) lazy3(3, arg(3), arg(1), arg(2));
+-			else lazy(3, app(arg(3),arg(1)), arg(2));
++			if(rts_c) lazy3(3, ARG3, ARG1, ARG2);
++			else lazy(3, app(ARG3,ARG1), ARG2);
+@@ -525,2 +530,2 @@
+-			if(rts_c) lazy3(4, arg(4), arg(1), arg(2));
+-			else lazy(4, app(arg(4), arg(1)), arg(2));
++			if(rts_c) lazy3(4, ARG4, ARG1, ARG2);
++			else lazy(4, app(ARG4, ARG1), ARG2);
