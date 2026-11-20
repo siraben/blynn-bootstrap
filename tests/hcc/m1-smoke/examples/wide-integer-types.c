@@ -23,5 +23,7 @@ int main() {
   if (yes != 1) return 11;
   if ((wide_constant() & 0xffff) != 0xcdef) return 14;
   if (sizeof(long) == 8 && ((wide_constant() >> 16) >> 16) != 0x1234567) return 15;
+  if ((long)(int)wide_constant() != -1985229329L) return 16;
+  if ((unsigned long)(unsigned int)wide_constant() != 0x89abcdefUL) return 17;
   return 0;
 }

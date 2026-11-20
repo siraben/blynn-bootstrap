@@ -1733,8 +1733,11 @@ static void emit_zext_loaded_acc(FILE *out, EmitState *state, int size) {
   if (target_arch == TARGET_I386)
     emit_i386_zext_loaded_eax(out, state, size);
   else if (target_arch == TARGET_AARCH64 || target_arch == TARGET_RISCV64) {
-    if (target_arch == TARGET_AARCH64 && size == 4) {
-      fprintf(out, "  UXTW_X0_W0\n");
+    if (size == 4) {
+      if (target_arch == TARGET_AARCH64)
+        fprintf(out, "  UXTW_X0_W0\n");
+      else
+        fprintf(out, "  rd_a0 rs1_a0 !32 slli\n  rd_a0 rs1_a0 !32 srli\n");
     } else if (size < 8) {
       emit_copy_acc_to_scratch(out);
       emit_load_immediate(out, state, mask_for_size(size));
@@ -1750,8 +1753,11 @@ static void emit_sext_loaded_acc(FILE *out, EmitState *state, int size) {
     emit_i386_sext_loaded_eax(out, state, size);
   else if (target_arch == TARGET_AARCH64 || target_arch == TARGET_RISCV64) {
     long sign_bit;
-    if (target_arch == TARGET_AARCH64 && size == 4) {
-      fprintf(out, "  SXTW_X0_W0\n");
+    if (size == 4) {
+      if (target_arch == TARGET_AARCH64)
+        fprintf(out, "  SXTW_X0_W0\n");
+      else
+        fprintf(out, "  rd_a0 rs1_a0 addiw\n");
     } else if (size < 8) {
       sign_bit = sign_bit_for_size(size);
       emit_copy_acc_to_scratch(out);
