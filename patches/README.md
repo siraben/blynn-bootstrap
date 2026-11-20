@@ -42,15 +42,19 @@ by the bootstrap.
     A spine that does not fit above the graph ends the process with
     `heap full` and status 1.
 - `upstreams/blynn-compiler-rts-spine.patch` and
-  `upstreams/oriansj-blynn-{vm-dispatch,run-loop}.patch`
-  - speed only: the order of the combinator tests in `vm.c` and in the
+  `upstreams/oriansj-blynn-run-loop.patch`
+  - speed only: the order of the combinator tests in the
     runtimes of `marginally` and `methodically`, and an inner loop for the
     spine in the runtimes of `marginally` up to `party2`
   - invariants: the tests compare one value with different constants, so
     their order does not change the result. The generated files change up
     to `party2.c`; `crossly_up.c` and each later file stay byte-identical.
-- `upstreams/oriansj-blynn-{vm-args,run-args}.patch`
-  - the VM reads fixed-position arguments directly in common reductions. The
+- [`blynn/vm.c`](../blynn/vm.c) is the VM used by both bootstrap paths. It is
+  vendored from OriansJ's `blynn-compiler` at `9e46a8da1df90032f1d270a49a6ef5d0cc909658`,
+  with the spine loop, dispatch ordering and direct argument reads from `ff3c836`.
+  Edit this file directly; the remaining patches apply to compiler sources.
+- `upstreams/oriansj-blynn-run-args.patch`
+  - The
     `virtually`, `marginally`, and `methodically` generators emit the same
     indexed read instead of a call to `arg(n)` for a combinator variable.
     No new combinator tags, allocation rules, or GC points are involved.

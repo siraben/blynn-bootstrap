@@ -93,7 +93,7 @@ msg "pack bootstrap blobs"
 "$bin_dir/pack_blobs" -f "$src_dir/blob/singularity.source" -o "$gen_dir/singularity_blob"
 
 msg "compile vm"
-link_source vm.c
+link_external_tree vm.c "$script_dir/../blynn/vm.c"
 (
   cd "$work_dir"
   compile_m2 vm.c "$bin_dir/vm"
