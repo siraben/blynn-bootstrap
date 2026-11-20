@@ -1,13 +1,10 @@
 static void aarch64_emit_insn_bytes(FILE *out, int b0, int b1, int b2, int b3) {
-  fprintf(out, "  ");
-  emit_byte(out, b0);
-  fputc(' ', out);
-  emit_byte(out, b1);
-  fputc(' ', out);
-  emit_byte(out, b2);
-  fputc(' ', out);
-  emit_byte(out, b3);
-  fputc('\n', out);
+  fputs("  '", out);
+  emit_hex_pair(out, b0);
+  emit_hex_pair(out, b1);
+  emit_hex_pair(out, b2);
+  emit_hex_pair(out, b3);
+  fputs("'\n", out);
 }
 
 static void aarch64_emit_mov_reg(FILE *out, int dst, int src) {
@@ -60,7 +57,7 @@ static void aarch64_emit_data64(FILE *out, unsigned long value) {
 
 static void aarch64_emit_load_label(FILE *out, int reg, const char *label) {
   aarch64_emit_load_literal_prefix(out, reg);
-  fprintf(out, "  &%s '00' '00' '00' '00'\n", label);
+  fprintf(out, "  &%s '00000000'\n", label);
 }
 
 static void aarch64_emit_load_label_parts(FILE *out, int reg, const char *prefix,
@@ -68,7 +65,7 @@ static void aarch64_emit_load_label_parts(FILE *out, int reg, const char *prefix
   aarch64_emit_load_literal_prefix(out, reg);
   fprintf(out, "  &");
   emit_named_ref(out, prefix, fn_name, id);
-  fprintf(out, " '00' '00' '00' '00'\n");
+  fprintf(out, " '00000000'\n");
 }
 
 static void aarch64_emit_load_store(FILE *out, int is_load, int size, int is_signed, int base,
