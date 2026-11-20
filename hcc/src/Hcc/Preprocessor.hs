@@ -41,24 +41,28 @@ data PPToken = PPToken [String] Bool Token
 -- Keep it until a surviving rescan suffix can receive it.
 data Expansion = Expansion [PPToken] Bool
 
+-- A macro replaces input to rescan; it does not emit a token directly.
+data MacroStep = KeepToken | Rescan [PPToken] Bool
+
 -- Empty paste operands remain placemarkers until every ## has been handled.
 -- Removing them early can both lose separation and paste an unrelated token.
 data MacroPiece = TokenPiece PPToken | EmptyPiece Bool
 
 preprocess :: [Token] -> Either PreprocessError [Token]
-preprocess toks = go symbolMapEmpty [] (sourceFromTokens toks) id where
+preprocess toks = go symbolMapEmpty [] (sourceFromTokens toks) [] where
   go macros frames rest acc = case rest of
     [] ->
       if null frames
-      then Right (map plainToken (acc []))
+      then Right (reverse acc)
       else Left (PreprocessError (SrcPos 1 1) "unterminated conditional directive")
     PPToken _ _ (Token sp (TokDirective text)):xs -> handleDirective macros frames sp text xs acc
-    _ ->
-      if ifStackActive frames
-      then do
-        (expanded, rest', _) <- expandNextSource macros rest
-        go macros frames rest' (acc . (expanded ++))
-      else go macros frames (drop 1 rest) acc
+    tok@(PPToken _ _ plain):xs ->
+      if ifStackActive frames then do
+        step <- expandMacro macros tok xs
+        case step of
+          KeepToken -> go macros frames xs (plain:acc)
+          Rescan source _ -> go macros frames source acc
+      else go macros frames xs acc
 
   handleDirective macros frames sp text xs acc = do
     let directive = parseDirective text
@@ -185,10 +189,9 @@ lexReplacement sp text = case lexC ("__hcc_macro_dummy " ++ dropSpaces text) of
   Right (_:toks) -> Right toks
   Right [] -> Right []
 
-expandNextSource :: Macros -> [PPToken] -> Either PreprocessError ([PPToken], [PPToken], Bool)
-expandNextSource macros toks = case toks of
-  [] -> Right ([], [], False)
-  original@(PPToken hidden space (Token sp (TokIdent name))):rest
+expandMacro :: Macros -> PPToken -> [PPToken] -> Either PreprocessError MacroStep
+expandMacro macros tok rest = case tok of
+  PPToken hidden space (Token sp (TokIdent name))
     | not (name `elem` hidden), Just macro <- symbolMapLookup name macros ->
         case macro of
           ObjectMacro _ body ->
@@ -202,16 +205,18 @@ expandNextSource macros toks = case toks of
               -- Only names hidden at both ends constrain the replacement.
               let inherited = name : intersect hidden closeHidden
               rescanReplacement space (Expansion (map (hideToken inherited) replaced) trailing) rest'
-            _ -> Right ([original], rest, False)
-  tok:rest -> Right ([tok], rest, False)
+            _ -> Right KeepToken
+  _ -> Right KeepToken
 
 expandSource :: Macros -> [PPToken] -> Either PreprocessError Expansion
-expandSource macros toks = go toks False id where
+expandSource macros toks = go toks False [] where
   go rest trailing acc = case rest of
-    [] -> Right (Expansion (acc []) trailing)
-    _ -> do
-      (expanded, rest', trailing') <- expandNextSource macros rest
-      go rest' (trailing || trailing') (acc . (expanded ++))
+    [] -> Right (Expansion (reverse acc) trailing)
+    tok:xs -> do
+      step <- expandMacro macros tok xs
+      case step of
+        KeepToken -> go xs trailing (tok:acc)
+        Rescan source pending -> go source (trailing || pending) acc
 
 expandTokens :: Macros -> [Token] -> Either PreprocessError [Token]
 expandTokens macros toks = do
@@ -403,13 +408,13 @@ leadingSpace space toks = case toks of
 -- Transfer separation after the replacement to its suffix, or retain it if
 -- this is the end of an argument prescan. An empty invocation's own leading
 -- space also survives, without inserting space around nonempty replacements.
-rescanReplacement :: Bool -> Expansion -> [PPToken] -> Either PreprocessError ([PPToken], [PPToken], Bool)
+rescanReplacement :: Bool -> Expansion -> [PPToken] -> Either PreprocessError MacroStep
 rescanReplacement space (Expansion replacement trailing) rest =
   let pending = trailing || (null replacement && space)
       -- The body's original leading space was set before substitution. The
       -- first survivor can now carry additional separation from empty pieces.
       source = addLeadingSpace space replacement ++ addLeadingSpace pending rest
-  in Right ([], source, pending && null rest)
+  in Right (Rescan source (pending && null rest))
 
 addLeadingSpace :: Bool -> [PPToken] -> [PPToken]
 addLeadingSpace space toks = case toks of
