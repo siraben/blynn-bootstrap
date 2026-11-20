@@ -21,6 +21,24 @@ not time the initial stage0 build or downloads. With a Nix daemon, GNU
 `time`'s CPU and RSS fields describe the client, not the builder; use direct
 compiler or builder runs for those metrics.
 
+### Direct argument reads, sized zero fills, and streaming M1 data
+
+On `compute` (amd64), the 44 timed derivations for `tinycc.m2.precisely.m2`
+were rebuilt in master/stack/stack/master order. Wall seconds:
+
+| Revision | Blynn + its source prep | HCC construction | Mes prep | TinyCC bootstrap | Total |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `61798ce` | 473.12 | 118.72 | 1.26 | 123.62 | 716.72 |
+| `e7a9fbf` | 455.93 | 118.95 | 1.01 | 122.72 | 698.61 |
+| `e7a9fbf` | 456.79 | 118.91 | 1.12 | 122.21 | 699.03 |
+| `61798ce` | 472.36 | 118.45 | 1.02 | 123.02 | 714.85 |
+
+The stack saved 16.97 s on average (2.37%). Most of the difference was in
+Blynn, not in the final TinyCC build. These are stack measurements, not
+individual commit speedups. In a separate amd64 output comparison, streaming
+M1 data reduced `tcc.M1` from 5,468,207 to 4,568,702 bytes without changing
+the linked executable.
+
 ## HCC memory and runtime
 
 ```sh
