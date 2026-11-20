@@ -305,16 +305,6 @@ static char *xstrdup(const char *text) {
   return out;
 }
 
-static void copy_bytes(void *dst, void *src, int count) {
-  char *d = dst;
-  char *s = src;
-  int i = 0;
-  while (i < count) {
-    d[i] = s[i];
-    i = i + 1;
-  }
-}
-
 static Instr *instr_at(Instr *items, int index) {
   return (Instr *)((char *)items + sizeof(Instr) * index);
 }
@@ -542,7 +532,9 @@ static int str_prefix_n(const char *a, const char *b, int count) {
   return strncmp(a, b, count) == 0;
 }
 
-static void append_instr(InstrList *list, Instr *instr) {
+/* Parse into the new slot before growing this list again. Nested conditional
+   instructions grow their own lists, never their parent's. */
+static Instr *append_instr(InstrList *list) {
   if (list->len >= list->cap) {
     if (list->cap)
       list->cap = list->cap * 2;
@@ -550,11 +542,11 @@ static void append_instr(InstrList *list, Instr *instr) {
       list->cap = 16;
     list->items = xrealloc(list->items, sizeof(Instr) * list->cap);
   }
-  copy_bytes(instr_at(list->items, list->len), instr, sizeof(Instr));
   list->len = list->len + 1;
+  return instr_at(list->items, list->len - 1);
 }
 
-static void append_block(Function *fn, Block *block) {
+static Block *append_block(Function *fn) {
   if (fn->len >= fn->cap) {
     if (fn->cap)
       fn->cap = fn->cap * 2;
@@ -562,8 +554,8 @@ static void append_block(Function *fn, Block *block) {
       fn->cap = 16;
     fn->blocks = xrealloc(fn->blocks, sizeof(Block) * fn->cap);
   }
-  copy_bytes(block_at(fn->blocks, fn->len), block, sizeof(Block));
   fn->len = fn->len + 1;
+  return block_at(fn->blocks, fn->len - 1);
 }
 
 static void expect_line(Input *file, char *line, const char *expected) {
@@ -712,12 +704,10 @@ static void parse_ir_instr_line(Input *file, char *line, Instr *instr) {
 }
 
 static void parse_ir_instrs_until_end(Input *file, char *line, InstrList *list) {
-  Instr instr;
   memset(list, 0, sizeof(InstrList));
   while (read_line(file, line, LINE_CAP)) {
     if (str_eq(line, "]")) return;
-    parse_ir_instr_line(file, line, &instr);
-    append_instr(list, &instr);
+    parse_ir_instr_line(file, line, append_instr(list));
   }
   die("unexpected eof in IR nested instructions");
 }
@@ -756,7 +746,6 @@ static void parse_ir_term(Block *block, char *line) {
 static void parse_ir_block(Input *file, char *line, Block *block) {
   char *cursor = line;
   char *tok;
-  Instr instr;
   memset(block, 0, sizeof(Block));
   tok = need_token(&cursor);
   if (strcmp(tok, "L")) die("expected IR block");
@@ -767,8 +756,7 @@ static void parse_ir_block(Input *file, char *line, Block *block) {
       parse_ir_term(block, line);
       return;
     }
-    parse_ir_instr_line(file, line, &instr);
-    append_instr(block_instrs_ptr(block), &instr);
+    parse_ir_instr_line(file, line, append_instr(block_instrs_ptr(block)));
   }
   die("unexpected eof in IR block");
 }
@@ -776,15 +764,13 @@ static void parse_ir_block(Input *file, char *line, Block *block) {
 static void parse_ir_function(Input *file, char *line, Function *fn) {
   char *cursor = line;
   char *tok;
-  Block block;
   memset(fn, 0, sizeof(Function));
   tok = need_token(&cursor);
   if (strcmp(tok, "F")) die("expected IR function");
   fn->name = xstrdup(need_token(&cursor));
   while (read_line(file, line, LINE_CAP)) {
     if (str_eq(line, "E")) return;
-    parse_ir_block(file, line, &block);
-    append_block(fn, &block);
+    parse_ir_block(file, line, append_block(fn));
   }
   die("unexpected eof in IR function");
 }
