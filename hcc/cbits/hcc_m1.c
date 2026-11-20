@@ -98,8 +98,6 @@ typedef struct Instr Instr;
 typedef struct InstrList InstrList;
 typedef struct Block Block;
 typedef struct Function Function;
-typedef struct DataValue DataValue;
-typedef struct DataItem DataItem;
 typedef struct Loc Loc;
 typedef struct LocArray LocArray;
 typedef struct EmitState EmitState;
@@ -193,19 +191,6 @@ struct Block {
 struct Function {
   char *name;
   Block *blocks;
-  int len;
-  int cap;
-};
-
-struct DataValue {
-  int kind;
-  int byte;
-  char *label;
-};
-
-struct DataItem {
-  char *label;
-  DataValue *values;
   int len;
   int cap;
 };
@@ -336,10 +321,6 @@ static Instr *instr_at(Instr *items, int index) {
 
 static Block *block_at(Block *items, int index) {
   return (Block *)((char *)items + sizeof(Block) * index);
-}
-
-static DataValue *data_value_at(DataValue *items, int index) {
-  return (DataValue *)((char *)items + sizeof(DataValue) * index);
 }
 
 static Operand *operand_at(Operand *items, int index) {
@@ -585,30 +566,6 @@ static void append_block(Function *fn, Block *block) {
   fn->len = fn->len + 1;
 }
 
-static void append_data_value(DataItem *item, DataValue *value) {
-  if (item->len >= item->cap) {
-    if (item->cap)
-      item->cap = item->cap * 2;
-    else
-      item->cap = 32;
-    item->values = xrealloc(item->values, sizeof(DataValue) * item->cap);
-  }
-  copy_bytes(data_value_at(item->values, item->len), value, sizeof(DataValue));
-  item->len = item->len + 1;
-}
-
-static void append_zero_data_values(DataItem *item, int count) {
-  DataValue value;
-  if (count < 0) die("negative zero data run");
-  memset(&value, 0, sizeof(value));
-  value.kind = 1;
-  value.byte = 0;
-  while (count > 0) {
-    append_data_value(item, &value);
-    count = count - 1;
-  }
-}
-
 static void expect_line(Input *file, char *line, const char *expected) {
   if (!read_line(file, line, LINE_CAP)) die("unexpected eof");
   if (strcmp(line, expected)) die("unexpected section marker");
@@ -832,40 +789,8 @@ static void parse_ir_function(Input *file, char *line, Function *fn) {
   die("unexpected eof in IR function");
 }
 
-static void parse_ir_data_item(Input *file, char *line, DataItem *item) {
-  char *cursor = line;
-  char *tok;
-  memset(item, 0, sizeof(DataItem));
-  tok = need_token(&cursor);
-  if (strcmp(tok, "D")) die_token("expected IR data item", tok);
-  item->label = xstrdup(need_token(&cursor));
-  while (read_line(file, line, LINE_CAP)) {
-    DataValue value;
-    if (str_eq(line, "E")) return;
-    cursor = line;
-    tok = need_token(&cursor);
-    if (str_eq(tok, "z")) {
-      append_zero_data_values(item, parse_int_token(&cursor));
-      continue;
-    }
-    memset(&value, 0, sizeof(value));
-    if (str_eq(tok, "b")) {
-      value.kind = 1;
-      value.byte = parse_int_token(&cursor);
-    } else if (str_eq(tok, "a")) {
-      value.kind = 2;
-      value.label = xstrdup(need_token(&cursor));
-    } else {
-      die("unknown IR data value");
-    }
-    append_data_value(item, &value);
-  }
-  die("unexpected eof in IR data");
-}
-
-static void emit_byte(FILE *out, int byte);
 static void emit_header(FILE *out);
-static void emit_data_item(FILE *out, DataItem *item);
+static void translate_ir_data_item(Input *file, FILE *out, char *line);
 static void emit_function(FILE *out, Function *fn);
 
 #if !defined(__M2__)
@@ -920,28 +845,13 @@ static void free_function(Function *fn) {
   }
   if (fn->blocks) free(fn->blocks);
 }
-
-static void free_data_item(DataItem *item) {
-  int i = 0;
-  if (item->label) free(item->label);
-  while (i < item->len) {
-    DataValue *value = data_value_at(item->values, i);
-    if (value->label) free(value->label);
-    i = i + 1;
-  }
-  if (item->values) free(item->values);
-}
 #else
 static void free_function(Function *fn) {
   (void)fn;
 }
-static void free_data_item(DataItem *item) {
-  (void)item;
-}
 #endif
 
 static void translate_ir_module(Input *file, FILE *out, char *line) {
-  DataItem item;
   Function fn;
   emit_header(out);
   while (read_line(file, line, LINE_CAP)) {
@@ -950,9 +860,7 @@ static void translate_ir_module(Input *file, FILE *out, char *line) {
     long item_heap = hcc_heap_cur;
 #endif
     if (str_prefix_n(line, "D ", 2)) {
-      parse_ir_data_item(file, line, &item);
-      emit_data_item(out, &item);
-      free_data_item(&item);
+      translate_ir_data_item(file, out, line);
     } else if (str_prefix_n(line, "F ", 2)) {
       parse_ir_function(file, line, &fn);
       emit_function(out, &fn);
@@ -1337,73 +1245,68 @@ static void emit_header(FILE *out) {
   fprintf(out, "\n");
 }
 
-static int hex_digit(int value) {
-  if (value == 0) return '0';
-  if (value == 1) return '1';
-  if (value == 2) return '2';
-  if (value == 3) return '3';
-  if (value == 4) return '4';
-  if (value == 5) return '5';
-  if (value == 6) return '6';
-  if (value == 7) return '7';
-  if (value == 8) return '8';
-  if (value == 9) return '9';
-  if (value == 10) return 'A';
-  if (value == 11) return 'B';
-  if (value == 12) return 'C';
-  if (value == 13) return 'D';
-  if (value == 14) return 'E';
-  return 'F';
+static void emit_hex_pair(FILE *out, int byte) {
+  const char *digits = "0123456789ABCDEF";
+  fputc(digits[(byte & 255) >> 4], out);
+  fputc(digits[byte & 15], out);
 }
 
 static void emit_byte(FILE *out, int byte) {
-  int b = byte % 256;
-  if (b < 0) b = b + 256;
   fputc('\'', out);
-  fputc(hex_digit(b / 16), out);
-  fputc(hex_digit(b % 16), out);
+  emit_hex_pair(out, byte);
   fputc('\'', out);
 }
 
-static void emit_data_item(FILE *out, DataItem *item) {
-  int j = 0;
-  int emitted = 0;
-  fprintf(out, ":%s\n", item->label);
-  while (j < item->len) {
-    int count = 0;
-    fprintf(out, "  ");
-    while (j < item->len && count < 16) {
-      DataValue *v = data_value_at(item->values, j);
-      if (count) fputc(' ', out);
-      if (v->kind == 1) {
-        emit_byte(out, v->byte);
-      } else {
-        if (target_arch == TARGET_I386)
-          fprintf(out, "&%s", v->label);
-        else
-          fprintf(out, "&%s '00' '00' '00' '00'", v->label);
+/* Data needs no function-style allocation pass. Forward zero runs to M1
+   and group adjacent bytes into bounded verbatim hex strings. */
+static void translate_ir_data_item(Input *file, FILE *out, char *line) {
+  char *cursor = line;
+  char *tok = need_token(&cursor);
+  int row = 0;
+  /* Addresses add 4 or 8 bytes, so byte records alone determine alignment. */
+  unsigned byte_count = 0;
+  if (strcmp(tok, "D")) die_token("expected IR data item", tok);
+  fprintf(out, ":%s\n", need_token(&cursor));
+  while (read_line(file, line, LINE_CAP)) {
+    int end = str_eq(line, "E");
+    int is_byte;
+    cursor = line;
+    tok = need_token(&cursor);
+    is_byte = str_eq(tok, "b");
+    if (row != 0 && (!is_byte || row == 32)) {
+      fputs("'\n", out);
+      row = 0;
+    }
+    if (end) {
+      if ((target_arch == TARGET_AARCH64 || target_arch == TARGET_RISCV64) && byte_count % 4 != 0)
+        fprintf(out, "  <%d\n", (int)(4 - byte_count % 4));
+      fputc('\n', out);
+      return;
+    }
+    if (is_byte) {
+      if (row == 0) fputs("  '", out);
+      emit_hex_pair(out, parse_int_token(&cursor));
+      row = row + 1;
+      byte_count = byte_count + 1;
+    } else if (str_eq(tok, "z")) {
+      int count = parse_int_token(&cursor);
+      if (count < 0) die("negative zero data run");
+      byte_count = byte_count + count;
+      /* M1 expands each <N token into a single 2*N character string. */
+      while (count > 65536) {
+        fputs("  <65536\n", out);
+        count = count - 65536;
       }
-      count = count + 1;
-      j = j + 1;
-      if (v->kind == 1)
-        emitted = emitted + 1;
-      else if (target_arch == TARGET_I386)
-        emitted = emitted + 4;
-      else
-        emitted = emitted + 8;
+      if (count > 0) fprintf(out, "  <%d\n", count);
+    } else if (str_eq(tok, "a")) {
+      fprintf(out, "  &%s", need_token(&cursor));
+      if (target_arch != TARGET_I386) fputs(" '00000000'", out);
+      fputc('\n', out);
+    } else {
+      die("unknown IR data value");
     }
-    fputc('\n', out);
   }
-  if ((target_arch == TARGET_AARCH64 || target_arch == TARGET_RISCV64) && emitted % 4 != 0) {
-    fprintf(out, "  ");
-    while (emitted % 4 != 0) {
-      emit_byte(out, 0);
-      emitted = emitted + 1;
-      if (emitted % 4 != 0) fputc(' ', out);
-    }
-    fputc('\n', out);
-  }
-  fputc('\n', out);
+  die("unexpected eof in IR data");
 }
 
 static void emit_load_immediate(FILE *out, EmitState *state, long value) {
