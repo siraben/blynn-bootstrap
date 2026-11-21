@@ -14,6 +14,7 @@
   button { font: inherit; padding: .4rem .75rem; }
   main { box-sizing: border-box; height: 75dvh; min-height: 13rem; padding: .65rem; border: 1px solid #303b48; border-radius: .5rem; background: #0a0e14; }
   #terminal { height: 100%; }
+  #monitor { display: flex; flex-wrap: wrap; gap: .4rem 1rem; margin-bottom: .75rem; color: #9caec1; font-variant-numeric: tabular-nums; }
   p { color: #9caec1; }
 </style>
 </head>
@@ -23,9 +24,15 @@
   <span id="status" role="status">Starting…</span>
   <button id="start" disabled>Run bootstrap</button>
 </header>
+<div id="monitor" aria-label="Guest CPU and I/O monitor">
+  <span id="cpu" title="Guest CPU utilization from /proc/stat, not host CPU">Guest CPU: —</span>
+  <span id="disk" title="Virtual block-device I/O; excludes tmpfs and the host mount">Block I/O: —</span>
+  <span id="tty" title="Bytes sent from the guest to this console">Console out: —</span>
+</div>
 <main><div id="terminal" aria-label="Interactive AArch64 Linux console"></div></main>
 <p id="mode-help">Type <code>bootstrap</code> to rebuild TinyCC from the HCC-built checkpoint.</p>
 <p><a href="./">TinyCC checkpoint</a> · <a href="?stage0">AArch64 stage0 seed</a></p>
+<footer>Linux in this browser is powered by <a href="https://unkernel.dev/">unkernel</a> (<a href="https://github.com/pithings/unkernel">source</a>).</footer>
 <script src="./xterm/lib/xterm.js"></script>
 <script src="./fit/lib/addon-fit.js"></script>
 <script type="module" src="./demo.mjs"></script>

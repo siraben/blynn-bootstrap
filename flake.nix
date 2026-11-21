@@ -1067,6 +1067,9 @@
           };
           unkernel-blynn-demo = pkgs.callPackage ./nix/unkernel-demo.nix {
             tinycc = tinyccBy.aarch64.host.ghc.native;
+            oriansj = blynnSrc;
+            blynn = blynnUpstreamSrc;
+            mesLibc = mesLibcSrc;
           };
 
           tinyccMusl = tinyccMuslBy;
