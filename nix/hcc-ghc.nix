@@ -40,6 +40,7 @@ let
   ghcCFlags = lib.concatStringsSep " " (
     map (flag: "-optc${flag}") (
       [
+        "-DHCC_GHC_RTS"
         "-O0"
         "-U_FORTIFY_SOURCE"
       ]

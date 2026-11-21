@@ -13,7 +13,7 @@ main = do
   args <- hccArgs
   case args of
     [] -> die "hcc1: no input files"
-    ["--help"] -> usage >> hccExitSuccess
+    ["--help"] -> usage
     "--check":files -> checkFiles files
     _ -> compileM1Ir args
   hccExitSuccess

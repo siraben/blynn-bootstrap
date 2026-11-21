@@ -13,7 +13,7 @@ main = do
   args <- hccArgs
   case args of
     [] -> die "hcpp: no input files"
-    ["--help"] -> usage >> hccExitSuccess
+    ["--help"] -> usage
     _ -> preprocessFile args
   hccExitSuccess
 
