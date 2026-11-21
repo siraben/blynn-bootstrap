@@ -1,5 +1,12 @@
-{ runCommand, fetchurl, tinycc }:
+{ runCommand, fetchurl, fetchgit, tinycc }:
 let
+  pins = import ./source-pins.nix;
+  stage0 = fetchgit {
+    url = pins.STAGE0_POSIX_URL;
+    rev = pins.STAGE0_POSIX_REV;
+    fetchSubmodules = true;
+    hash = "sha256-7ttlkYWAsVZuQpmxDrcxvnpIkaeGYEFmUY7PdmBtNOI=";
+  };
   sdk = fetchurl {
     url = "https://registry.npmjs.org/unkernel/-/unkernel-0.2.0-261119-040e142.tgz";
     hash = "sha256-ABZC9IHZTf1EH8KJsAWTmAbhmLBtarKyf/Tk4H184WE=";
@@ -26,4 +33,9 @@ runCommand "unkernel-blynn-demo" { } ''
   cp ${tinycc}/bin/tcc-hcc-stage1 guest/
   cp ${../demo/unkernel/bootstrap.sh} guest/bootstrap.sh
   tar --sort=name --mtime=@1 --owner=0 --group=0 --numeric-owner -czf "$out/checkpoint.tar.gz" -C guest .
+  mkdir seed
+  cp -R ${stage0}/{AArch64,M2libc,M2-Planet,M2-Mesoplanet,mescc-tools,aarch64.answers,after.kaem} seed/
+  install -Dm555 ${stage0}/bootstrap-seeds/POSIX/AArch64/hex0-seed seed/hex0-seed
+  cp ${../demo/unkernel/stage0.sh} seed/stage0.sh
+  tar --sort=name --mtime=@1 --owner=0 --group=0 --numeric-owner -czf "$out/stage0.tar.gz" -C seed .
 ''

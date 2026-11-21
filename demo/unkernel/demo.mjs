@@ -10,29 +10,40 @@ terminal.open(container);
 fit.fit();
 new ResizeObserver(() => fit.fit()).observe(container);
 
+const fromSeed = new URLSearchParams(location.search).has('stage0');
+const archive = fromSeed ? 'stage0.tar.gz' : 'checkpoint.tar.gz';
+const command = fromSeed ? 'bootstrap-stage0' : 'bootstrap';
+const prepare = fromSeed
+  ? 'mkdir /seed; tar -xzf /mnt/payload/stage0.tar.gz -C /seed; chmod -R u+w /seed; chmod +x /seed/stage0.sh; ln -s /seed/stage0.sh /bin/bootstrap-stage0'
+  : 'mkdir /bootstrap; tar -xzf /mnt/payload/checkpoint.tar.gz -C /bootstrap; chmod +x /bootstrap/bootstrap.sh; ln -s /bootstrap/bootstrap.sh /bin/bootstrap';
+if (fromSeed) {
+  start.textContent = 'Build stage0 tools';
+  document.querySelector('#mode-help').textContent = 'Type bootstrap-stage0 to build and verify the six stage0 tools from the AArch64 hex0 seed.';
+}
+
 let vm;
 let ready = false;
 terminal.onData(data => { if (ready) vm.write(data); });
 terminal.onResize(({ cols, rows }) => vm?.resize(cols, rows));
 start.onclick = () => {
   terminal.focus();
-  vm.write('bootstrap\r');
+  vm.write(`${command}\r`);
 };
 
 try {
-  terminal.writeln('Loading the TinyCC checkpoint…');
-  const response = await fetch('./checkpoint.tar.gz');
-  if (!response.ok) throw new Error(`Checkpoint download failed: ${response.status}`);
-  const checkpoint = new Uint8Array(await response.arrayBuffer());
+  terminal.writeln(`Loading ${archive}…`);
+  const response = await fetch(`./${archive}`);
+  if (!response.ok) throw new Error(`${archive} download failed: ${response.status}`);
+  const payload = new Uint8Array(await response.arrayBuffer());
   const boot = performance.now();
   vm = await createKernel({
     memoryMiB: 256,
     consoleSize: { cols: terminal.cols, rows: terminal.rows },
-    mounts: { '/mnt/checkpoint': { 'checkpoint.tar.gz': checkpoint } },
+    mounts: { '/mnt/payload': { [archive]: payload } },
     onOutput: bytes => terminal.write(bytes),
   });
   vm.resize(terminal.cols, terminal.rows);
-  const setup = await vm.exec('sh', ['-ec', 'test "$(uname -m)" = aarch64; mkdir /bootstrap; tar -xzf /mnt/checkpoint/checkpoint.tar.gz -C /bootstrap; chmod +x /bootstrap/bootstrap.sh; ln -s /bootstrap/bootstrap.sh /bin/bootstrap']);
+  const setup = await vm.exec('sh', ['-ec', `test "$(uname -m)" = aarch64; ${prepare}`]);
   if (setup.exitCode !== 0) throw new Error(setup.stderr.trim() || `Guest setup failed: ${setup.exitCode}`);
   status.textContent = `AArch64 · ${((performance.now() - boot) / 1000).toFixed(2)} s to ready`;
   ready = true;
