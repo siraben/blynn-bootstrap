@@ -1,6 +1,6 @@
 #!/bin/sh
 set -eu
-root=$(CDPATH= cd "$(dirname "$0")" && pwd)
+root=$(CDPATH= cd "$(dirname "$(readlink -f "$0")")" && pwd)
 cd "$root/source"
 tcc_include_src="$PWD/include"
 mes_include_src="$root/mes-include"
