@@ -725,7 +725,12 @@
         tinyccBuild = m1ArtifactsOnly: pname: hcc: target: pkgs.callPackage ./nix/tinycc-boot-hcc.nix {
           stdenvNoCC = rawStdenvNoCC;
           inherit pname hcc minimalBootstrap target m1ArtifactsOnly;
-          binutils = if target == "riscv64" then pkgs.pkgsCross.riscv64.buildPackages.binutils else pkgs.binutils;
+          buildSystem = system;
+          installReplay = pname == "tinycc-boot-hcc-host-ghc-native-aarch64";
+          binutils =
+            if target == "riscv64" then pkgs.pkgsCross.riscv64.buildPackages.binutils
+            else if target == "aarch64" && system != "aarch64-linux" then pkgs.pkgsCross.aarch64-multiplatform.buildPackages.binutils
+            else pkgs.binutils;
           diffutils = pkgs.diffutils;
           gnugrep = pkgs.gnugrep;
           qemu = pkgs.qemu;
@@ -742,6 +747,8 @@
 
         tinyccBy = {
           host.ghc.native = tinyccFromHcc "tinycc-boot-hcc-host-ghc-native" hccBy.host.ghc.native;
+          aarch64.host.ghc.native =
+            tinyccFromHccForTarget "tinycc-boot-hcc-host-ghc-native-aarch64" hccBy.host.ghc.native "aarch64";
           riscv64.host.ghc.native =
             tinyccFromHccForTarget "tinycc-boot-hcc-host-ghc-native-riscv64" hccBy.host.ghc.native "riscv64";
           ghc.precisely.gcc = tinyccFromHcc "tinycc-boot-hcc-ghc-precisely-gcc" hccBy.ghc.precisely.gcc;
@@ -1057,6 +1064,9 @@
 
           tinycc = tinyccBy // {
             m1 = tinyccM1By;
+          };
+          unkernel-blynn-demo = pkgs.callPackage ./nix/unkernel-demo.nix {
+            tinycc = tinyccBy.aarch64.host.ghc.native;
           };
 
           tinyccMusl = tinyccMuslBy;
