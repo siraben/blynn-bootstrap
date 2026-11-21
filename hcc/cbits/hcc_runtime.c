@@ -145,7 +145,10 @@ void hcc_stderr_char(int c) {
 void hcc_exit_success(void) {
   if (fflush(stdout) != 0) output_failure();
   if (fclose(stdout) != 0) output_failure();
+  /* Return through GHC main so the RTS writes statistics and profiles. */
+#ifndef HCC_GHC_RTS
   exit(0);
+#endif
 }
 
 void hcc_exit_failure(void) {
