@@ -27,9 +27,4 @@ scopeMapInsert key value (ScopeMap current parents) =
   ScopeMap (symbolMapInsert key value current) parents
 
 scopeMapLookup :: String -> ScopeMap a -> Maybe a
-scopeMapLookup key (ScopeMap current parents) = lookupScopes (current:parents)
-  where
-    lookupScopes [] = Nothing
-    lookupScopes (scope:rest) = case symbolMapLookup key scope of
-      Just value -> Just value
-      Nothing -> lookupScopes rest
+scopeMapLookup key (ScopeMap current parents) = symbolMapLookupFirst key (current:parents)
