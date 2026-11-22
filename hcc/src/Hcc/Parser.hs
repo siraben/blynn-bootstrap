@@ -21,7 +21,11 @@ data ParseError = ParseError SrcPos String
 -- Tags and members are deliberately not entered here.
 data ParserBinding = ParserType CType | ParserConstant Constant | ParserOrdinary
 
-data ParserEnv = ParserEnv (ScopeMap ParserBinding) [(String, Constant)] Int
+data ParserEnv = ParserEnv
+  { parserBindings :: ScopeMap ParserBinding
+  , visibleConstants :: [(String, Constant)]
+  , parserBits :: Int
+  }
 
 type Parser a = P ParserEnv Token ParseError a
 
@@ -72,26 +76,16 @@ bindParserConstant :: String -> Constant -> Parser ()
 bindParserConstant name value = bindParserName name (ParserConstant value)
 
 parserConstants :: Parser [(String, Constant)]
-parserConstants = do
-  env <- pEnv
-  pure (case env of
-    ParserEnv _ constants _ -> constants)
+parserConstants = visibleConstants <$> pEnv
 
 parserTargetBits :: Parser Int
-parserTargetBits = do
-  env <- pEnv
-  pure (case env of
-    ParserEnv _ _ bits -> bits)
+parserTargetBits = parserBits <$> pEnv
 
 enterParserScope :: ParserEnv -> ParserEnv
-enterParserScope env = case env of
-  ParserEnv bindings constants bits -> ParserEnv (scopeMapEnter bindings) constants bits
-
-leaveParserScope :: ParserEnv -> ParserEnv -> ParserEnv
-leaveParserScope outer _inner = outer
+enterParserScope env = env { parserBindings = scopeMapEnter (parserBindings env) }
 
 withParserScope :: Parser a -> Parser a
-withParserScope = pLocalEnv enterParserScope leaveParserScope
+withParserScope = pLocalEnv enterParserScope const
 
 manyP :: Parser a -> Parser [a]
 manyP = pMany
@@ -1236,11 +1230,6 @@ needString = do
     TokString s -> advanceToken >> pure s
     _ -> failAt tok "expected string literal"
 
-startsType :: Token -> Bool
-startsType tok = case tokenKind tok of
-  TokIdent name -> symbolSetMember name declarationWords
-  _ -> False
-
 declarationWords :: SymbolSet
 declarationWords = wordSet (builtinTypeNames ++ storageAndTypeQualifiers ++ ["typedef"])
 
@@ -1267,31 +1256,18 @@ unsupportedQualifiers =
   ["_Thread_local", "__thread", "_Alignas", "_Generic"]
 
 tokenStartsType :: Token -> Parser Bool
-tokenStartsType tok = case tokenKind tok of
-  TokIdent name | startsType tok -> pure True
-                | otherwise -> isKnownTypeNameP name
-  _ -> pure False
+tokenStartsType tok = (\env -> tokenStartsTypeInEnv env tok) <$> pEnv
 
 tokenStartsTypeInEnv :: ParserEnv -> Token -> Bool
 tokenStartsTypeInEnv env tok = case tokenKind tok of
-  TokIdent name -> startsType tok || parserEnvHasType name env
+  TokIdent name -> symbolSetMember name declarationWords || parserEnvHasType name env
   _ -> False
 
 identifierStartsDeclaration :: Parser Bool
 identifierStartsDeclaration = pRaw $ \env toks -> Unconsumed (Ok (go env toks) env toks) where
   go env toks = case toks of
-    Token _ (TokIdent name):_
-      | symbolSetMember name declarationWords -> True
-      | parserEnvHasType name env -> True
-      | otherwise -> False
-    _ -> False
-
-isKnownTypeNameP :: String -> Parser Bool
-isKnownTypeNameP name = do
-  known <- lookupParserType name
-  pure (case known of
-    Just _ -> True
-    Nothing -> False)
+    tok:_ -> tokenStartsTypeInEnv env tok
+    [] -> False
 
 parserEnvHasType :: String -> ParserEnv -> Bool
 parserEnvHasType name env = case env of
