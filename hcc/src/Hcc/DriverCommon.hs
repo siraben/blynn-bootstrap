@@ -41,32 +41,8 @@ spliceContinuations text = case text of
 -- Keep comment columns/newlines as whitespace: macro adjacency and diagnostics
 -- must not depend on the length of a removed comment. Positions are post-splice.
 normalizeSource :: String -> Either String String
-normalizeSource source
-  | unchanged source = Right source
-  | otherwise = normal [] (spliceContinuations source)
+normalizeSource source = normal [] (spliceContinuations source)
   where
-  -- Expanded input usually has neither splices nor comments. Return its
-  -- existing list rather than splicing, accumulating and reversing a copy.
-  unchanged text = case text of
-    [] -> True
-    '\\':'\n':_ -> False
-    '\\':'\x0d':'\n':_ -> False
-    c:rest | '0' <= c || c <= ' ' -> unchanged rest
-    '/':'/':_ -> False
-    '/':'*':_ -> False
-    '"':rest -> unchangedQuote '"' rest
-    '\'':rest -> unchangedQuote '\'' rest
-    _ : rest -> unchanged rest
-  unchangedQuote quote text = case text of
-    [] -> True
-    '\\':rest -> case rest of
-      '\\':'\n':_ -> False
-      '\\':'\x0d':'\n':_ -> False
-      '\n':_ -> False
-      '\x0d':_ -> False
-      _:more -> unchangedQuote quote more
-      [] -> True
-    c:rest -> if c == quote then unchanged rest else unchangedQuote quote rest
   normal out text = case text of
     [] -> Right (reverse out)
     -- A comment or a quoted text starts with '/', '"' or '\''. These are
