@@ -15,11 +15,12 @@ main = do
     [] -> die "hcc1: no input files"
     ["--help"] -> usage
     "--check":files -> checkFiles files
-    _ -> compileM1Ir args
+    "--from-hcpp":rest -> compileM1Ir True rest
+    _ -> compileM1Ir False args
   hccExitSuccess
 
 usage :: IO ()
-usage = hccPutStrLn "usage: hcc1 [--m1-ir] [-o FILE] INPUT.i\n       hcc1 --check FILE..."
+usage = hccPutStrLn "usage: hcc1 [--from-hcpp] [--m1-ir] [-o FILE] INPUT.i\n       hcc1 --check FILE..."
 
 checkFiles :: [String] -> IO ()
 checkFiles [] = die "hcc1: no input files"
@@ -32,8 +33,8 @@ checkFile path = do
     Left msg -> die (path ++ ":" ++ msg)
     Right _ -> pure ()
 
-compileM1Ir :: [String] -> IO ()
-compileM1Ir args = do
+compileM1Ir :: Bool -> [String] -> IO ()
+compileM1Ir fromHcpp args = do
   case driverArgs args of
     Left msg -> die msg
     Right opts -> do
@@ -41,7 +42,8 @@ compileM1Ir args = do
       trace ("read " ++ driverInput opts)
       source <- hccReadFile (driverInput opts)
       trace "lex"
-      case lexPlainSource source of
+      -- hcpp emits normalized token spellings separated by spaces.
+      case (if fromHcpp then lexNormalizedSource else lexPlainSource) source of
         Left msg -> die (driverInput opts ++ ":" ++ msg)
         Right toks -> do
           trace "parse"
