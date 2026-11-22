@@ -4,7 +4,6 @@ module SymbolTable
   , symbolMapEmpty
   , symbolSetEmpty
   , symbolMapLookup
-  , symbolMapLookupFirst
   , symbolMapInsert
   , symbolMapDelete
   , symbolMapMember
@@ -32,16 +31,6 @@ symbolSetEmpty = SymbolSet E
 
 symbolMapLookup :: String -> SymbolMap a -> Maybe a
 symbolMapLookup k (SymbolMap t) = lookupT k t
-
--- A miss in a nested scope probes the parent with the same spelling.
--- Share the query hash across probes without enlarging tokens or AST nodes.
-symbolMapLookupFirst :: String -> [SymbolMap a] -> Maybe a
-symbolMapLookupFirst key = go (hash key) where
-  go kh maps = case maps of
-    [] -> Nothing
-    SymbolMap t:rest -> case lookupH key kh t of
-      Just value -> Just value
-      Nothing -> go kh rest
 
 symbolMapInsert :: String -> a -> SymbolMap a -> SymbolMap a
 symbolMapInsert k v (SymbolMap t) = SymbolMap (insertT k v t)
