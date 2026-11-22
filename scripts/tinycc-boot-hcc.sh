@@ -101,7 +101,7 @@ compile_m1() {
   output=$2
   base=${output%.M1}
   msg "hcc1 --m1-ir $input"
-  hcc1 --target "$hcc_target" --m1-ir -o "$base.hccir" "$input"
+  hcc1 --from-hcpp --target "$hcc_target" --m1-ir -o "$base.hccir" "$input"
   msg "hcc-m1 $base.hccir"
   hcc-m1 --target "$hcc_target" "$base.hccir" "$output"
 }
