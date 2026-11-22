@@ -10,6 +10,10 @@ stage0 seeds -> M2-Planet -> Blynn -> HCC -> TinyCC -> GCC
 HCC has three programs: `hcpp` preprocesses C, `hcc1` emits textual IR, and
 `hcc-m1` translates that IR to assembly for stage0's `M1` and `hex2`.
 
+[Try the AArch64 unkernel demo](https://siraben.github.io/blynn-bootstrap/) to
+rebuild TinyCC in your browser. See the [demo guide](demo/unkernel/README.md)
+for the checkpoint, seed path and local build instructions.
+
 ## Build with Nix
 
 On x86_64 Linux:

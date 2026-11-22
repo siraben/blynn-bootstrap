@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Blynn · AArch64 on unkernel</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="./xterm/css/xterm.css">
+<style>
+  :root { color-scheme: dark; font: 15px system-ui; background: #0d1117; color: #e6edf3; }
+  body { margin: 0 auto; max-width: 76rem; padding: 1rem; }
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; margin-bottom: .75rem; }
+  h1 { font-size: 1.05rem; margin: 0 auto 0 0; }
+  #status { color: #9caec1; }
+  button { font: inherit; padding: .4rem .75rem; }
+  main { box-sizing: border-box; height: 75dvh; min-height: 13rem; padding: .65rem; border: 1px solid #303b48; border-radius: .5rem; background: #0a0e14; }
+  #terminal { height: 100%; }
+  #monitor { display: flex; flex-wrap: wrap; gap: .4rem 1rem; margin-bottom: .75rem; color: #9caec1; font-variant-numeric: tabular-nums; }
+  p { color: #9caec1; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Blynn · AArch64 on unkernel</h1>
+  <span id="status" role="status">Starting…</span>
+  <button id="start" disabled>Run bootstrap</button>
+</header>
+<div id="monitor" aria-label="Guest CPU and I/O monitor">
+  <span id="cpu" title="Guest CPU utilization from /proc/stat, not host CPU">Guest CPU: —</span>
+  <span id="disk" title="Virtual block-device I/O; excludes tmpfs and the host mount">Block I/O: —</span>
+  <span id="tty" title="Bytes sent from the guest to this console">Console out: —</span>
+</div>
+<main><div id="terminal" aria-label="Interactive AArch64 Linux console"></div></main>
+<p id="mode-help">Type <code>bootstrap</code> to rebuild TinyCC from the HCC-built checkpoint.</p>
+<p><a href="./">TinyCC checkpoint</a> · <a href="?stage0">AArch64 stage0 seed</a></p>
+<footer>Linux in this browser is powered by <a href="https://unkernel.dev/">unkernel</a> (<a href="https://github.com/pithings/unkernel">source</a>).</footer>
+<script src="./xterm/lib/xterm.js"></script>
+<script src="./fit/lib/addon-fit.js"></script>
+<script type="module" src="./demo.mjs"></script>
+</body>
+</html>
