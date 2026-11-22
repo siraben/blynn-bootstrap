@@ -17,7 +17,7 @@ const prepare = fromSeed
   ? 'mkdir /seed; tar -xzf /mnt/payload/stage0.tar.gz -C /seed; chmod -R u+w /seed; chmod +x /seed/stage0.sh /seed/from-seed.sh; ln -s /seed/stage0.sh /bin/bootstrap-stage0; ln -s /seed/from-seed.sh /bin/bootstrap-from-seed'
   : 'mkdir /bootstrap; tar -xzf /mnt/payload/checkpoint.tar.gz -C /bootstrap; chmod +x /bootstrap/bootstrap.sh; ln -s /bootstrap/bootstrap.sh /bin/bootstrap';
 if (fromSeed) {
-  start.textContent = 'Bootstrap from seed';
+  start.textContent = 'Bootstrap from seed (experimental)';
   document.querySelector('#mode-help').textContent = 'Run bootstrap-from-seed for hex0 → stage0 → Blynn → HCC → TinyCC, or bootstrap-stage0 for just the verified tools.';
 }
 
