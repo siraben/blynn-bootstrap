@@ -112,14 +112,12 @@ balR x xh v l r = case r of
   _ -> N B x xh v l r
 
 hash :: String -> Int
--- The tree needs an ordering, not a collision-resistant hash. A bounded
--- prefix distinguishes common keys without walking every query to its end.
--- cmpHash compares the complete spelling on ties (including short names).
-hash s = case s of
-  a:b:c:_ -> (fromEnum a * 256 + fromEnum b) * 256 + fromEnum c
-  a:b:_ -> (fromEnum a * 256 + fromEnum b) * 256
-  a:_ -> fromEnum a * 65536
-  [] -> 0
+hash = hashFrom 5381
+
+hashFrom :: Int -> String -> Int
+hashFrom h s = case s of
+  [] -> h
+  c:cs -> hashFrom (((h * 33) + fromEnum c) `mod` 2147483647) cs
 
 cmpHash :: String -> Int -> String -> Int -> Cmp
 cmpHash l lh r rh
