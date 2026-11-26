@@ -25,6 +25,7 @@ CASES = [
     ("aggregate-registration", 0),
     ("bootstrap-aliases", 0),
     ("integer-correctness", 0),
+    ("switch-conversions", 0),
     ("aggregate-correctness", 0),
     ("preprocessor-correctness", 0),
     ("lower-local-context", 0),
