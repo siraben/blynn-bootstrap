@@ -128,6 +128,7 @@ static void aarch64_emit_header(FILE *out) {
   fprintf(out, "\n");
   fprintf(out, "DEFINE BR_X16 00021fd6\n");
   fprintf(out, "DEFINE BLR_X16 00023fd6\n");
+  fprintf(out, "DEFINE BLR_X9 20013fd6\n");
   fprintf(out, "DEFINE RETURN c0035fd6\n");
   fprintf(out, "DEFINE SKIP_64_DATA 03000014\n");
   fprintf(out, "DEFINE HCC_CBZ_X0_PAST_BR 400000b4\n");
@@ -153,7 +154,7 @@ static void aarch64_emit_header(FILE *out) {
   fprintf(out, "DEFINE SET_X4_FROM_X0 e40300aa\n");
   fprintf(out, "DEFINE SET_X5_FROM_X0 e50300aa\n");
   fprintf(out, "DEFINE SET_X6_FROM_X0 e60300aa\n");
-  fprintf(out, "DEFINE SET_X16_FROM_X0 f00300aa\n");
+  fprintf(out, "DEFINE SET_X9_FROM_X0 e90300aa\n");
   fprintf(out, "DEFINE ADD_X0_X1_X0 2000008b\n");
   fprintf(out, "DEFINE SUB_X0_X1_X0 200000cb\n");
   fprintf(out, "DEFINE MUL_X0_X1_X0 207c009b\n");

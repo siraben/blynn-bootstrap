@@ -2288,9 +2288,10 @@ static void emit_instr(FILE *out, const char *fn_name, EmitState *state, LocArra
   case IK_CALLI:
     if (target_arch == TARGET_AARCH64) {
       emit_load_operand(out, state, locs, 0, instr_callee_ptr(in));
-      fprintf(out, "  SET_X16_FROM_X0\n");
+      /* Large argument loads use x16; M2libc reserves x17 as its base pointer. */
+      fprintf(out, "  SET_X9_FROM_X0\n");
       emit_arguments(out, state, locs, in->args, in->argc);
-      fprintf(out, "  BLR_X16\n");
+      fprintf(out, "  BLR_X9\n");
     } else if (target_arch == TARGET_RISCV64) {
       emit_load_operand(out, state, locs, 0, instr_callee_ptr(in));
       riscv64_emit_mov_reg(out, 7, 10);
