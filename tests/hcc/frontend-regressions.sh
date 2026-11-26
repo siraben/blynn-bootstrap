@@ -142,6 +142,19 @@ return (sizeof(exit(0)), 0) / ((exit, 0));
 return sizeof((exit, exit(0)));
 EOF
 
+# The fixed prototype converts arguments for direct/discarded and indirect/value calls.
+cat > "$work/typed-calls.i" <<'EOF'
+int f(_Bool x);
+int main(void) {
+  int (*pointer)(_Bool) = f;
+  f(256);
+  return (*pointer)(256);
+}
+EOF
+"$HCC1" --m1-ir -o "$work/typed-calls.hccir" "$work/typed-calls.i"
+grep -Eq '^19 - f 1 I1$' "$work/typed-calls.hccir"
+grep -Eq '^20 [0-9]+ T[0-9]+ 1 I1$' "$work/typed-calls.hccir"
+
 # Neither later sizeof boundaries nor speculative type queries predeclare calls.
 while IFS= read -r body; do
   printf 'int main(void) { %s }\n' "$body" > "$work/order.i"
