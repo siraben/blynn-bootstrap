@@ -3,7 +3,6 @@ module LowerRegisters
   , registerExternGlobals
   , registerExprIntroductions
   , registerDiscardedExprIntroductions
-  , registerFieldIntroductions
   ) where
 
 import Base
@@ -14,9 +13,6 @@ registerExternGlobals :: [(CType, String)] -> CompileM ()
 registerExternGlobals = mapM_ $ \(ty, name) -> do
     registerTypeIntroductions ty
     bindGlobal name ty
-
-registerFieldIntroductions :: [Field] -> CompileM ()
-registerFieldIntroductions = registerFieldIntroductionsIn False
 
 registerFieldIntroductionsIn :: Bool -> [Field] -> CompileM ()
 registerFieldIntroductionsIn unevaluated = mapM_ $ \(Field ty _) -> registerTypeIntroductionsIn unevaluated ty

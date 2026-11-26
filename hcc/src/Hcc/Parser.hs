@@ -25,12 +25,15 @@ data ParserEnv = ParserEnv
   { parserBindings :: ScopeMap ParserBinding
   , visibleConstants :: [(String, Constant)]
   , parserBits :: Int
+  , parserTags :: ScopeMap (Bool, String)
+  , parserScopeDepth :: Int
+  , parserNextTag :: Int
   }
 
 type Parser a = P ParserEnv Token ParseError a
 
 initialParserEnv :: Int -> ParserEnv
-initialParserEnv bits = ParserEnv (builtinTypeEnv builtinTypeAliases) [] bits
+initialParserEnv bits = ParserEnv (builtinTypeEnv builtinTypeAliases) [] bits scopeMapEmpty 0 0
 
 builtinTypeEnv :: [(String, CType)] -> ScopeMap ParserBinding
 builtinTypeEnv aliases = case aliases of
@@ -39,11 +42,7 @@ builtinTypeEnv aliases = case aliases of
 
 lookupParserType :: String -> Parser (Maybe CType)
 lookupParserType name = do
-  env <- pEnv
-  pure (case env of
-    ParserEnv bindings _ _ -> case scopeMapLookup name bindings of
-      Just (ParserType ty) -> Just ty
-      _ -> Nothing)
+  parserEnvType name <$> pEnv
 
 bindParserType :: String -> CType -> Parser ()
 bindParserType name ty = bindParserName name (ParserType ty)
@@ -54,23 +53,22 @@ bindParserOrdinary name = bindParserName name ParserOrdinary
 bindParserName :: String -> ParserBinding -> Parser ()
 bindParserName name binding = when (name /= "") (do
   env <- pEnv
-  case env of
-    ParserEnv bindings constants bits ->
-      let remaining = case scopeMapLookup name bindings of
-            Just (ParserConstant _) -> filter (\(key, _) -> key /= name) constants
-            _ -> constants
-          constants' = case binding of
-            ParserConstant value -> (name, value):remaining
-            _ -> remaining
-      in pSetEnv (ParserEnv (scopeMapInsert name binding bindings) constants' bits))
+  let bindings = parserBindings env
+  let constants = visibleConstants env
+  let remaining = case scopeMapLookup name bindings of
+        Just (ParserConstant _) -> filter (\(key, _) -> key /= name) constants
+        _ -> constants
+  let constants' = case binding of
+        ParserConstant value -> (name, value):remaining
+        _ -> remaining
+  pSetEnv (env { parserBindings = scopeMapInsert name binding bindings, visibleConstants = constants' }))
 
 lookupParserConstant :: String -> Parser (Maybe Constant)
 lookupParserConstant name = do
   env <- pEnv
-  pure (case env of
-    ParserEnv bindings _ _ -> case scopeMapLookup name bindings of
-      Just (ParserConstant value) -> Just value
-      _ -> Nothing)
+  pure (case scopeMapLookup name (parserBindings env) of
+    Just (ParserConstant value) -> Just value
+    _ -> Nothing)
 
 bindParserConstant :: String -> Constant -> Parser ()
 bindParserConstant name value = bindParserName name (ParserConstant value)
@@ -82,10 +80,17 @@ parserTargetBits :: Parser Int
 parserTargetBits = parserBits <$> pEnv
 
 enterParserScope :: ParserEnv -> ParserEnv
-enterParserScope env = env { parserBindings = scopeMapEnter (parserBindings env) }
+enterParserScope env = env
+  { parserBindings = scopeMapEnter (parserBindings env)
+  , parserTags = scopeMapEnter (parserTags env)
+  , parserScopeDepth = parserScopeDepth env + 1
+  }
+
+keepTagCounter :: ParserEnv -> ParserEnv -> ParserEnv
+keepTagCounter env inner = env { parserNextTag = parserNextTag inner }
 
 withParserScope :: Parser a -> Parser a
-withParserScope = pLocalEnv enterParserScope const
+withParserScope = pLocalEnv enterParserScope keepTagCounter
 
 manyP :: Parser a -> Parser [a]
 manyP = pMany
@@ -95,9 +100,6 @@ manyUntil = pManyUntil
 
 optionalP :: Parser a -> Parser (Maybe a)
 optionalP = pOptional
-
-tryP :: Parser a -> Parser a
-tryP = pTry
 
 parseProgram :: [Token] -> Either ParseError Program
 parseProgram = parseProgramTarget 64
@@ -181,11 +183,6 @@ topDeclNonEmpty = do
 
 topDeclNoTypedef :: Parser TopDecl
 topDeclNoTypedef = do
-  structDecl <- optionalP (tryP standaloneAggregateDecl)
-  maybe topDeclNoStruct pure structDecl
-
-topDeclNoStruct :: Parser TopDecl
-topDeclNoStruct = do
   externBefore <- leadingStorageClass "extern"
   (after, ty0) <- ctypeTrailing
   let isExtern = externBefore || "extern" `elem` after
@@ -201,7 +198,7 @@ topDeclNoStruct = do
           isPrototype <- eatPunct ";"
           decl <- if isPrototype
             then pure (Prototype retTy name params')
-            else pLocalEnv (const scope) const (do
+            else pLocalEnv (keepTagCounter scope) keepTagCounter (do
               mapM_ checkDefinitionParameter params
               Function retTy name params' <$> compound)
           bindParserOrdinary name
@@ -269,27 +266,6 @@ bindTypedef :: (String, CType) -> Parser ()
 bindTypedef item = case item of
   ("", _) -> pure ()
   (name, ty) -> bindParserType name ty
-
-standaloneAggregateDecl :: Parser TopDecl
-standaloneAggregateDecl = do
-  isUnion <- aggregateKeyword
-  tag <- optionalIdent
-  fields <- aggregateBody
-  needPunct ";"
-  pure (StructDecl isUnion tag fields)
-
-aggregateKeyword :: Parser Bool
-aggregateKeyword = do
-  tok <- peek
-  case tokenKind tok of
-    TokIdent "struct" -> advanceToken >> pure False
-    TokIdent "union" -> advanceToken >> pure True
-    _ -> failAt tok "expected aggregate declaration"
-
-aggregateBody :: Parser [Field]
-aggregateBody = do
-  needPunct "{"
-  concat <$> manyUntil (eatPunct "}") fieldDecl
 
 fieldDecl :: Parser [Field]
 fieldDecl = do
@@ -571,11 +547,14 @@ parseDeclStmt = do
   if standalone
     then pure (STypeDecl [ty0])
     else do
-      prototype <- optionalP (tryP (localPrototype ty0))
-      case prototype of
-        Just _ -> pure (SExpr (EInt "0"))
-        Nothing -> do
-          first <- declarationItem ty0
+      (ty, name) <- declarator ty0
+      case ty of
+        CFunc _ _ -> do
+          bindParserOrdinary name
+          needPunct ";"
+          pure (SPrototype ty name)
+        _ -> do
+          first <- declarationInitializer ty name
           rest <- declarationItemsTail ty0
           let decls = first:rest
           if isStatic
@@ -586,20 +565,16 @@ parseDeclStmt = do
                 then pure (SExternDecls (map externPair decls))
                 else failAt start "a block-scope extern declaration has an initializer"
 
-localPrototype :: CType -> Parser ()
-localPrototype _ty = do
-  (layers, name) <- declaratorLayers RequiredName False
-  case layers of
-    FunctionLayer _ _ : _ -> bindParserOrdinary name >> needPunct ";"
-    _ -> peek >>= \tok -> failAt tok ("expected function declarator: " ++ name)
-
 declStmt :: [(CType, String, Maybe Expr)] -> Stmt
 declStmt = SDecls
 
 declarationItem :: CType -> Parser (CType, String, Maybe Expr)
 declarationItem ty0 = do
   (ty, name) <- declarator ty0
-  skipAttributes
+  declarationInitializer ty name
+
+declarationInitializer :: CType -> String -> Parser (CType, String, Maybe Expr)
+declarationInitializer ty name = do
   bindParserOrdinary name
   initExpr <- optionalP (eatPunct "=" >> initializerExpr)
   pure (ty, name, initExpr)
@@ -638,8 +613,8 @@ ctypeTrailing = do
       TokIdent "long" -> advanceToken >> longBaseType
       TokIdent "float" -> advanceToken >> pure CFloat
       TokIdent "double" -> advanceToken >> pure CDouble
-      TokIdent "struct" -> aggregateType CStruct CStructNamed CStructDef
-      TokIdent "union" -> aggregateType CUnion CUnionNamed CUnionDef
+      TokIdent "struct" -> aggregateType False CStruct CStructNamed CStructDef
+      TokIdent "union" -> aggregateType True CUnion CUnionNamed CUnionDef
       TokIdent "enum" -> enumType
       TokIdent name -> do
         advanceToken
@@ -719,16 +694,37 @@ optionalLongLongTail = do
     Just (TokIdent "int") -> advanceToken >> pure CLongLong
     _ -> pure CLongLong
 
-aggregateType :: (String -> CType) -> (String -> [Field] -> CType) -> ([Field] -> CType) -> Parser CType
-aggregateType mkType mkNamed mkInline = do
+aggregateType :: Bool -> (String -> CType) -> (String -> [Field] -> CType) -> ([Field] -> CType) -> Parser CType
+aggregateType isUnion mkType mkNamed mkInline = do
+  tok <- peek
   advanceToken
   name <- optionalIdent
   hasBody <- eatPunct "{"
+  forward <- fmap tokenKind <$> peekMaybe
+  let declaresHere = hasBody || case forward of
+        Just (TokPunct ";") -> True
+        _ -> False
+  key <- if name == "" then pure name else resolveAggregateTag tok declaresHere isUnion name
   if hasBody
     then do
       fields <- aggregateBodyAfterOpen
-      pure (if name == "" then mkInline fields else mkNamed name fields)
-    else pure (mkType name)
+      pure (if name == "" then mkInline fields else mkNamed key fields)
+    else pure (mkType key)
+
+-- Lowering and its layout caches see the declaration identity, not the
+-- spelling. Keep file-scope keys compatible with bootstrap FILE aliases.
+resolveAggregateTag :: Token -> Bool -> Bool -> String -> Parser String
+resolveAggregateTag tok declaresHere isUnion name = do
+  env <- pEnv
+  let tags = parserTags env
+  let existing = if declaresHere then scopeMapLookupCurrent name tags else scopeMapLookup name tags
+  case existing of
+    Just (kind, key) -> if kind == isUnion then pure key else failAt tok ("tag kind mismatch: " ++ name)
+    Nothing -> do
+      let counter = parserNextTag env
+      let key = if parserScopeDepth env == 0 then name else name ++ "#" ++ show counter
+      pSetEnv (env { parserTags = scopeMapInsert name (isUnion, key) tags, parserNextTag = counter + 1 })
+      pure key
 
 aggregateBodyAfterOpen :: Parser [Field]
 aggregateBodyAfterOpen = concat <$> manyUntil (eatPunct "}") fieldDecl
@@ -1222,10 +1218,14 @@ identifierStartsDeclaration = pRaw $ \env toks -> Unconsumed (Ok (go env toks) e
     [] -> False
 
 parserEnvHasType :: String -> ParserEnv -> Bool
-parserEnvHasType name env = case env of
-  ParserEnv bindings _ _ -> case scopeMapLookup name bindings of
-    Just (ParserType _) -> True
-    _ -> False
+parserEnvHasType name env = case parserEnvType name env of
+  Just _ -> True
+  Nothing -> False
+
+parserEnvType :: String -> ParserEnv -> Maybe CType
+parserEnvType name env = case scopeMapLookup name (parserBindings env) of
+  Just (ParserType ty) -> Just ty
+  _ -> Nothing
 
 skipBalanced :: String -> String -> Parser ()
 skipBalanced open close = go (1 :: Int) where

@@ -49,10 +49,6 @@ registerTopDeclIr decl = case decl of
   Globals globals -> registerGlobalsIr globals
   Function ty name params _ -> registerFunctionDecl ty name params >> pure []
   Prototype ty name params -> registerFunctionDecl ty name params >> pure []
-  StructDecl isUnion name fields -> do
-    registerFieldIntroductions fields
-    bindStruct name isUnion fields
-    pure []
   ExternGlobals globals -> registerExternGlobals globals >> pure []
   EnumConstants constants -> mapM_ (uncurry bindConstant) constants >> pure []
   TypeDecl types -> mapM_ registerTypeIntroductions types >> pure []

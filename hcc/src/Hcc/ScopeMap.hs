@@ -5,6 +5,7 @@ module ScopeMap
   , scopeMapLeave
   , scopeMapInsert
   , scopeMapLookup
+  , scopeMapLookupCurrent
   ) where
 
 import Base
@@ -25,6 +26,9 @@ scopeMapLeave (ScopeMap _ (parent:parents)) = ScopeMap parent parents
 scopeMapInsert :: String -> a -> ScopeMap a -> ScopeMap a
 scopeMapInsert key value (ScopeMap current parents) =
   ScopeMap (symbolMapInsert key value current) parents
+
+scopeMapLookupCurrent :: String -> ScopeMap a -> Maybe a
+scopeMapLookupCurrent key (ScopeMap current _) = symbolMapLookup key current
 
 scopeMapLookup :: String -> ScopeMap a -> Maybe a
 scopeMapLookup key (ScopeMap current parents) = lookupScopes (current:parents)

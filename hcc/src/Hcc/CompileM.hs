@@ -15,6 +15,7 @@ module CompileM
   , addDataItem
   , bindVar
   , bindScopedGlobal
+  , bindScopedFunction
   , bindStruct
   , bindGlobal
   , bindConstant
@@ -190,6 +191,11 @@ bindScopedGlobal :: String -> String -> CType -> CompileM ()
 bindScopedGlobal name label ty = do
   rejectReservedSymbol "global" name
   modifyC $ \st -> st { csVars = symbolMapInsert name (GlobalBinding label ty) (csVars st) }
+
+bindScopedFunction :: String -> CType -> CompileM ()
+bindScopedFunction name ty = do
+  rejectReservedSymbol "function" name
+  modifyC $ \st -> st { csVars = symbolMapInsert name (FunctionBinding (Just ty)) (csVars st) }
 
 bindStruct :: String -> Bool -> [Field] -> CompileM ()
 bindStruct name isUnion fields =
