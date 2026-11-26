@@ -238,6 +238,19 @@ grep -F '"a\\b"' "$work/splice.i" >/dev/null
 printf 'int x; /* comment */ @\n' > "$work/column.c"
 reject "$HCC1" ':1:22: unexpected character: @' "$work/column.c"
 
+# A block comment cannot terminate a preprocessing directive.
+cat > "$work/comment-if.c" <<'EOF'
+#if 0 /* explanation
+*/ || 1
+int selected_branch;
+#else
+int wrong_branch;
+#endif
+EOF
+"$HCPP" "$work/comment-if.c" > "$work/comment-if.i"
+grep -q 'selected_branch' "$work/comment-if.i"
+if grep -q 'wrong_branch' "$work/comment-if.i"; then exit 1; fi
+
 # Inactive ordinary text need not form valid tokens.
 printf '#if 0\nit'"'"'s @ "open\n#endif\nint y;\n' > "$work/skipped.c"
 "$HCPP" "$work/skipped.c" > "$work/skipped.i"
