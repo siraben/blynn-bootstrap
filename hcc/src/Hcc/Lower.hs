@@ -321,14 +321,13 @@ lowerSideEffect expr = case expr of
   ECall (EVar name) args -> do
     binding <- resolveName name
     case binding of
-      LocalBinding _ _ -> lowerIndirectCallInstrs Nothing (EVar name) args
-      GlobalBinding _ _ -> lowerIndirectCallInstrs Nothing (EVar name) args
+      LocalBinding _ _ -> lowerCallWithBinding Nothing name binding args
+      GlobalBinding _ _ -> lowerCallWithBinding Nothing name binding args
       _ | name == "asm" ->
         if noOpInlineAsmArgs args then pure [] else throwC "unsupported inline assembly"
       _ | isIgnoredSideEffectCall name -> mapM_ registerDiscardedExprIntroductions args >> pure []
-      _ -> resolveCallee name >> lowerDirectSideEffect name args
-  ECall callee args -> do
-    lowerIndirectCallInstrs Nothing callee args
+      _ -> lowerCall Nothing (EVar name) args
+  ECall callee args -> lowerCall Nothing callee args
   EAssign lhs rhs ->
     lowerResultInstrs (lowerAssignment lhs rhs)
   ECompoundAssign op lhs rhs ->
@@ -354,11 +353,6 @@ lowerResultInstrs action = do
 lowerIncDecSideEffect :: BinOp -> Expr -> CompileM [Instr]
 lowerIncDecSideEffect op target =
   lowerResultInstrs (lowerIncDec True op target)
-
-lowerDirectSideEffect :: String -> [Expr] -> CompileM [Instr]
-lowerDirectSideEffect name args = do
-  (argInstrs, argOps) <- lowerCallArgs args
-  pure (argInstrs ++ [ICall Nothing name argOps])
 
 lowerDecls :: [(CType, String, Maybe Expr)] -> CompileM [Instr]
 lowerDecls decls = do
@@ -661,13 +655,10 @@ lowerExpr expr = case expr of
     readLValueExpr expr
   EMember _ _ ->
     readLValueExpr expr
-  ECall (EVar name) args -> do
-    direct <- isFunctionBinding <$> resolveCallee name
-    if direct
-      then lowerDirectCallExpr name args
-      else lowerIndirectCall (EVar name) args
   ECall callee args -> do
-    lowerIndirectCall callee args
+    out <- freshTemp
+    instrs <- lowerCall (Just out) callee args
+    pure (instrs, OTemp out)
   EAssign lhs rhs ->
     lowerAssignment lhs rhs
   ECompoundAssign op lhs rhs ->
@@ -740,48 +731,77 @@ lowerComparisonExpr op a b = do
   out <- freshTemp
   pure (instrs ++ [IBin out iop ao bo], OTemp out)
 
-lowerDirectCallExpr :: String -> [Expr] -> CompileM ([Instr], Operand)
-lowerDirectCallExpr name args = do
-  (argInstrs, argOps) <- lowerCallArgs args
-  out <- freshTemp
-  pure (argInstrs ++ [ICall (Just out) name argOps], OTemp out)
+data CallTarget = DirectCall String | IndirectCall Operand
 
-lowerCallArgs :: [Expr] -> CompileM ([Instr], [Operand])
-lowerCallArgs args = do
-  lowered <- mapM lowerCallArg args
+lowerCall :: Maybe Temp -> Expr -> [Expr] -> CompileM [Instr]
+lowerCall result callee args = case callee of
+  EVar name -> resolveCallee name >>= \binding -> lowerCallWithBinding result name binding args
+  _ -> lowerComputedCall result callee args
+
+lowerCallWithBinding :: Maybe Temp -> String -> NameBinding -> [Expr] -> CompileM [Instr]
+lowerCallWithBinding result name binding args = case binding of
+  FunctionBinding ty -> emitTypedCall result (DirectCall name) ty args
+  _ -> lowerComputedCall result (EVar name) args
+
+lowerComputedCall :: Maybe Temp -> Expr -> [Expr] -> CompileM [Instr]
+lowerComputedCall result callee args = do
+  (setup, ptr) <- lowerExpr callee
+  ty <- exprType callee
+  call <- emitTypedCall result (IndirectCall ptr) ty args
+  pure (setup ++ call)
+
+emitTypedCall :: Maybe Temp -> CallTarget -> Maybe CType -> [Expr] -> CompileM [Instr]
+emitTypedCall result target ty args = do
+  let signature = ty >>= functionSignature
+  let fixed = maybe [] snd signature
+  (argInstrs, argOps) <- lowerCallArgs fixed args
+  let call = case target of
+        DirectCall name -> ICall result name argOps
+        IndirectCall ptr -> ICallIndirect result ptr argOps
+  converted <- case (result, signature) of
+    (Just out, Just (ret, _)) -> do
+      (instrs, op) <- coerceScalar ret (OTemp out)
+      pure (if null instrs then [] else instrs ++ [ICopy out op])
+    _ -> pure []
+  pure (argInstrs ++ [call] ++ converted)
+
+-- Extra arguments still follow the bootstrap convention for variadic and
+-- unprototyped calls. Only a known fixed prefix supplies conversions.
+lowerCallArgs :: [CType] -> [Expr] -> CompileM ([Instr], [Operand])
+lowerCallArgs fixed args = do
+  lowered <- go fixed args
   pure (concatMap fst lowered, map snd lowered)
+  where
+    go tys exprs = case exprs of
+      [] -> pure []
+      arg:rest -> case tys of
+        [] -> mapM (lowerCallArg Nothing) exprs
+        ty:more -> do
+          lowered <- lowerCallArg (Just ty) arg
+          remaining <- go more rest
+          pure (lowered:remaining)
 
 -- The internal convention passes aggregate addresses, not platform ABI
 -- aggregate registers/stack slots. Snapshot each struct/union argument as
 -- it is evaluated: the callee may mutate this copy, never the source object.
 -- Arrays still decay to pointers and must not be copied.
-lowerCallArg :: Expr -> CompileM ([Instr], Operand)
-lowerCallArg expr = do
-  (instrs, op) <- lowerExpr expr
+lowerCallArg :: Maybe CType -> Expr -> CompileM ([Instr], Operand)
+lowerCallArg param expr = do
+  (instrs, raw) <- lowerExpr expr
+  (coercions, op) <- coerceMaybeScalar param raw
+  let setup = instrs ++ coercions
   mty <- exprType expr
   case mty of
-    Nothing -> pure (instrs, op)
+    Nothing -> pure (setup, op)
     Just ty -> do
       aggregate <- aggregateFields ty
       case aggregate of
-        Nothing -> pure (instrs, op)
+        Nothing -> pure (setup, op)
         Just _ -> do
           size <- typeSize ty
           temp <- freshTemp
           copies <- copyObject (OTemp temp) op ty
-          pure (instrs ++ [IAlloca temp size] ++ copies, OTemp temp)
-
-lowerIndirectCallInstrs :: Maybe Temp -> Expr -> [Expr] -> CompileM [Instr]
-lowerIndirectCallInstrs result callee args = do
-  (calleeInstrs, calleeOp) <- lowerExpr callee
-  (argInstrs, argOps) <- lowerCallArgs args
-  pure (calleeInstrs ++ argInstrs ++ [ICallIndirect result calleeOp argOps])
-
-lowerIndirectCall :: Expr -> [Expr] -> CompileM ([Instr], Operand)
-lowerIndirectCall callee args = do
-  out <- freshTemp
-  instrs <- lowerIndirectCallInstrs (Just out) callee args
-  pure (instrs, OTemp out)
+          pure (setup ++ [IAlloca temp size] ++ copies, OTemp temp)
 
 lowerShortCircuit :: Bool -> Expr -> Expr -> CompileM ([Instr], Operand)
 lowerShortCircuit isAnd left right = do
@@ -1374,9 +1394,12 @@ promoteMaybeIntegerType mty = case mty of
     pure (Just promoted)
 
 functionResultType :: CType -> Maybe CType
-functionResultType ty = case ty of
-  CFunc ret _ -> Just ret
-  CPtr inner -> functionResultType inner
+functionResultType ty = fst <$> functionSignature ty
+
+functionSignature :: CType -> Maybe (CType, [CType])
+functionSignature ty = case ty of
+  CFunc ret params -> Just (ret, params)
+  CPtr inner -> functionSignature inner
   _ -> Nothing
 
 isFunctionNameMacro :: String -> Bool
