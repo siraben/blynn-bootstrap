@@ -21,7 +21,6 @@ data TopDecl
   | Prototype CType String [Param]
   | Globals [(CType, String, Maybe Expr)]
   | ExternGlobals [(CType, String)]
-  | StructDecl Bool String [Field]
   | EnumConstants [(String, Int)]
   | TypeDecl [CType]
 
@@ -66,6 +65,7 @@ data Stmt
   = SDecls [(CType, String, Maybe Expr)]
   | SStaticDecls [(CType, String, Maybe Expr)]
   | SExternDecls [(CType, String)]
+  | SPrototype CType String
   | STypeDecl [CType]
   | SReturn (Maybe Expr)
   | SExpr Expr
@@ -111,6 +111,7 @@ renderStmtTag stmt = case stmt of
   SDecls _ -> "SDecls"
   SStaticDecls _ -> "SStaticDecls"
   SExternDecls _ -> "SExternDecls"
+  SPrototype _ _ -> "SPrototype"
   STypeDecl _ -> "STypeDecl"
   SReturn _ -> "SReturn"
   SExpr _ -> "SExpr"

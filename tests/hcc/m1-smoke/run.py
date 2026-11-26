@@ -9,6 +9,7 @@ CASES = [
     ("short-circuit", 42),
     ("local-aggregate", 3),
     ("scoped-typedef-enum", 0),
+    ("scoped-bindings", 0),
     ("bootstrap-qsort-pointer", 0),
     ("wide-integer-types", 0),
     ("address-written-scalar", 0),

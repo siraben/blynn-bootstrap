@@ -91,6 +91,10 @@ lowerStatementChunks bid chunks stmts defaultTerm = case stmts of
   SExternDecls decls:rest -> do
     mapM_ (\(ty, name) -> registerTypeIntroductions ty >> bindScopedGlobal name name ty) decls
     lowerStatementChunks bid chunks rest defaultTerm
+  SPrototype ty name:rest -> do
+    registerTypeIntroductions ty
+    bindScopedFunction name ty
+    lowerStatementChunks bid chunks rest defaultTerm
   STypeDecl types:rest -> do
     mapM_ registerTypeIntroductions types
     lowerStatementChunks bid chunks rest defaultTerm

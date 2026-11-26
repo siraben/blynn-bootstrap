@@ -21,11 +21,14 @@ int main(void) {
   if (sizeof(Local) != 4 || sizeof(struct Local) != 4 || sizeof(struct Forward) != 4) return 2;
   if (sizeof(Named) != 8 || sizeof(named) != 8 || sizeof(Outer) != 8 || sizeof(outer) != 8) return 3;
   if (sizeof(struct Inline { int a; }) != 4 || sizeof(struct Inline) != 4) return 4;
-  if (sizeof((struct Cast { int a; } *)0) != sizeof(void *)) return 5;
+  int cast_size = sizeof((struct Cast { int a; } *)0);
+  if (cast_size != sizeof(void *)) return 5;
   if (sizeof(struct Cast) != 4) return 6;
   if (sizeof(struct { char c; union { char bytes[3]; short n; } u; }) != 6) return 7;
-  if (sizeof(sizeof(struct Unevaluated { int n; })) != sizeof(size_t)) return 8;
-  if (sizeof((struct Comparison { int n; } *)0 == 0) != sizeof(int)) return 9;
+  int unevaluated_size = sizeof(sizeof(struct Unevaluated { int n; }));
+  int comparison_size = sizeof((struct Comparison { int n; } *)0 == 0);
+  if (unevaluated_size != sizeof(size_t)) return 8;
+  if (comparison_size != sizeof(int)) return 9;
   if (sizeof(struct Unevaluated) != 4 || sizeof(struct Comparison) != 4 || sizeof(struct TypedefOnly) != 4) return 10;
   if (small != 1 || large != 4 || sizeof(struct Bound) != 4 || sizeof(bound) != 16) return 11;
   return (char *)&named.local - (char *)&named != 4;
