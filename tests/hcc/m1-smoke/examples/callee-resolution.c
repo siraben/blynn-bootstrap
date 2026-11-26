@@ -72,5 +72,10 @@ int main(void) {
   int (*fail)(int) = _exit;
   if (!finish || !fail) return 12;
   if (count != 5) return 11;
+  /* Reduced from zlib 1.3.2 zutil.h's ZALLOC macro, used by inflate.c:
+     https://github.com/madler/zlib/blob/v1.3.2/zutil.h#L252-L253 */
+  struct callbacks { int (*next)(void); } callbacks = { next };
+  count = 0;
+  if ((*callbacks.next)() != 1 || count != 1) return 16;
   return 0;
 }

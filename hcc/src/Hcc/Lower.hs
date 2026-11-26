@@ -1001,6 +1001,8 @@ readLValue lvalue = case lvalue of
     coerceScalar ty (OTemp temp)
   LAddress addr ty -> case ty of
     CArray _ _ -> pure ([], addr)
+    -- Dereferencing a function pointer designates the function, not data at its address.
+    CFunc _ _ -> pure ([], addr)
     _ -> do
       aggregateStorage <- isAggregateTypeM ty
       if aggregateStorage
