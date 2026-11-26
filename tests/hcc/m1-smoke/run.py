@@ -111,6 +111,8 @@ def main():
     work_dir.mkdir(parents=True, exist_ok=True)
     # The i386 backend does not implement the 64-bit store this case needs.
     cases = CASES + ([("long-double-store", 0)] if args.target != "i386" else [])
+    if args.target == "aarch64":
+        cases += [("aarch64-large-frame-indirect", 0)]
     log(f"running {len(cases)} cases for {args.target}")
     for name, expected in cases:
         src = examples_dir / f"{name}.c"
