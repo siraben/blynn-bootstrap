@@ -39,6 +39,24 @@ done
 printf '#else\n' > "$work/unmatched.c"
 reject "$HCPP" '#else without #if' "$work/unmatched.c"
 
+# Keep tokens buffered across a header with no directives, and apply a
+# header's macro changes only to tokens that follow the corresponding directive.
+printf '(\n  4\n)\n' > "$work/argument.h"
+cat > "$work/include-stream.c" <<'EOF'
+#define APPLY(x) ((x) + BASE)
+int before = APPLY
+#include "argument.h"
+;
+#undef BASE
+#define BASE 7
+int after = APPLY(
+  5
+);
+EOF
+"$HCPP" -DBASE=3 "$work/include-stream.c" > "$work/include-stream.i"
+tr -d ' \n' < "$work/include-stream.i" > "$work/include-stream.flat"
+grep -Fxq 'intbefore=((4)+3);intafter=((5)+7);' "$work/include-stream.flat"
+
 printf '#include 42\n' > "$work/include.c"
 reject "$HCPP" 'invalid active #include operand' "$work/include.c"
 printf '#include "recursive.h"\n' > "$work/recursive.h"

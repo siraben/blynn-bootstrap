@@ -4,7 +4,6 @@ import Base
 import DriverCommon
 import HccSystem
 import IncludeExpand
-import Preprocessor
 import TypesToken
 
 main :: IO ()
@@ -24,15 +23,8 @@ preprocessFile :: [String] -> IO ()
 preprocessFile args = case driverArgs args of
   Left msg -> die msg
   Right opts -> do
-    source <- readSourceWithIncludes (driverIncludeDirs opts) (driverDefines opts) (driverInput opts)
-    let sourceWithDefines = renderDefines (driverDefines opts) ++ source
-    case lexNormalizedSource sourceWithDefines >>= mapPreprocessError . preprocess of
-      Left msg -> die (driverInput opts ++ ":" ++ msg)
-      Right toks -> hccPutStr (foldr renderToken "\n" toks)
-
-mapPreprocessError :: Either PreprocessError a -> Either String a
-mapPreprocessError (Left (PreprocessError pos msg)) = Left (showPos pos ++ ": " ++ msg)
-mapPreprocessError (Right toks) = Right toks
+    toks <- preprocessFileTokens (driverIncludeDirs opts) (driverDefines opts) (driverInput opts)
+    hccPutStr (foldr renderToken "\n" toks)
 
 renderToken :: Token -> String -> String
 renderToken (Token _ kind) rest = tokenText kind ++ ' ' : rest

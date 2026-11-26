@@ -6,7 +6,6 @@ module DriverCommon
   , lexNormalizedSource
   , dataLabelPrefix
   , driverArgs
-  , renderDefines
   , replaceExt
   , showPos
   ) where
@@ -156,19 +155,6 @@ unescapeDefineValue :: String -> String
 unescapeDefineValue [] = []
 unescapeDefineValue ('\\':'"':rest) = '"' : unescapeDefineValue rest
 unescapeDefineValue (c:rest) = c : unescapeDefineValue rest
-
-renderDefines :: [(String, String)] -> String
-renderDefines defs = go defs ""
-  where
-    go rest = case rest of
-      [] -> id
-      (name, value):rest' ->
-        ("#define "++)
-        . (name++)
-        . (' ':)
-        . (value++)
-        . ('\n':)
-        . go rest'
 
 replaceExt :: String -> String -> String
 -- Like a compiler's -c default, write in the working directory, not beside
