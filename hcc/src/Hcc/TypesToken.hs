@@ -21,7 +21,6 @@ data TokenKind
   | TokChar String
   | TokString String
   | TokPunct String
-  | TokDirective String
 
 tokenText :: TokenKind -> String
 tokenText (TokIdent s) = s
@@ -30,4 +29,3 @@ tokenText (TokFloat s) = s
 tokenText (TokChar s) = s
 tokenText (TokString s) = s
 tokenText (TokPunct s) = s
-tokenText (TokDirective s) = s

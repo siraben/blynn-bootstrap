@@ -1,13 +1,10 @@
 module Preprocessor
   ( PreprocessError(..)
-  , preprocess
   , Macro
   , defineMacro
   , transitionDirective
   , expandTokens
   , expandOperandText
-  , evalEligibleIf
-  , elifEligible
   ) where
 
 import Base
@@ -48,40 +45,8 @@ data MacroStep = KeepToken | Rescan [PPToken] Bool
 -- Removing them early can both lose separation and paste an unrelated token.
 data MacroPiece = TokenPiece PPToken | EmptyPiece Bool
 
-preprocess :: [Token] -> Either PreprocessError [Token]
-preprocess toks = go symbolMapEmpty [] (sourceFromTokens toks) [] where
-  go macros frames rest acc = case rest of
-    [] ->
-      if null frames
-      then Right (reverse acc)
-      else Left (PreprocessError (SrcPos 1 1) "unterminated conditional directive")
-    PPToken _ _ (Token sp (TokDirective text)):xs -> handleDirective macros frames sp text xs acc
-    tok@(PPToken _ _ plain):xs ->
-      if ifStackActive frames then do
-        step <- expandMacro macros tok xs
-        case step of
-          KeepToken -> go macros frames xs (plain:acc)
-          Rescan source _ -> go macros frames source acc
-      else go macros frames xs acc
-
-  handleDirective macros frames sp text xs acc = do
-    let directive = parseDirective text
-    transition <- transitionDirective macros frames sp directive
-    case transition of
-      Just (macros', frames') -> go macros' frames' xs acc
-      Nothing -> case directive of
-        Directive "include" _ | ifStackActive frames ->
-          Left (PreprocessError (spanStart sp) "unresolved active #include")
-        Directive "" _ -> go macros frames xs acc
-        Directive name _ | ("#" ++ name) `elem` ignoredDirectives -> go macros frames xs acc
-        Directive name _ | all isDigitChar name -> go macros frames xs acc
-        Directive name _ ->
-          if ifStackActive frames
-          then Left (PreprocessError (spanStart sp) ("unsupported directive: #" ++ name))
-          else go macros frames xs acc
-
--- Both passes replay macro/conditional state. Include IO and token emission
--- remain adapter responsibilities; even inactive ifdef operands are validated.
+-- The include walk owns traversal; this is the state transition for macro
+-- and conditional directives. Even inactive ifdef operands are validated.
 transitionDirective :: Macros -> [IfFrame] -> Span -> Directive -> Either PreprocessError (Maybe (Macros, [IfFrame]))
 transitionDirective macros frames sp directive =
   let active = ifStackActive frames
@@ -124,9 +89,6 @@ elifEligible frames = case frames of
 evalEligibleIf :: Bool -> Macros -> String -> Either PreprocessError Bool
 evalEligibleIf eligible macros text =
   if eligible then evalIf macros text else Right False
-
-ignoredDirectives :: [String]
-ignoredDirectives = ["#line", "#pragma"]
 
 defineMacro :: Macros -> Span -> String -> Either PreprocessError Macros
 defineMacro macros sp text = do
@@ -184,7 +146,7 @@ splitCommas = go 0 [] [] where
     c:xs -> go depth (c:current) acc xs
 
 lexReplacement :: Span -> String -> Either PreprocessError [Token]
-lexReplacement sp text = case lexMacroBody (dropSpaces text) of
+lexReplacement sp text = case lexC (dropSpaces text) of
   Left (LexError _ msg) -> Left (PreprocessError (spanStart sp) msg)
   Right toks -> Right toks
 

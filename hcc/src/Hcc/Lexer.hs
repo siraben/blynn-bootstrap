@@ -1,7 +1,7 @@
 module Lexer
   ( LexError(..)
   , lexC
-  , lexMacroBody
+  , lexCAt
   ) where
 
 import Base
@@ -13,20 +13,15 @@ data LexError = LexError SrcPos String
 data LexState = LexState
   { lsInput :: String
   , lsPos :: SrcPos
-  , lsBol :: Bool
   }
 
 data NumberClass = NumberInt | NumberFloat
 
 lexC :: String -> Either LexError [Token]
-lexC = lexFrom True
+lexC = lexCAt 1
 
--- A leading # in a replacement list is punctuation, not a directive.
-lexMacroBody :: String -> Either LexError [Token]
-lexMacroBody = lexFrom False
-
-lexFrom :: Bool -> String -> Either LexError [Token]
-lexFrom bol source = go (LexState source (SrcPos 1 1) bol) [] where
+lexCAt :: Int -> String -> Either LexError [Token]
+lexCAt line source = go (LexState source (SrcPos line 1)) [] where
   go st acc = case lsInput st of
     [] -> Right (reverse acc)
     ' ':cs -> spaces 1 cs where
@@ -38,8 +33,7 @@ lexFrom bol source = go (LexState source (SrcPos 1 1) bol) [] where
     '/':'/':_ -> go (skipLineComment st) acc
     '/':'*':_ -> skipBlockComment st >>= \st' -> go st' acc
     c:cs
-      | lexerIsSpace c -> go (advanceSpace c st { lsInput = cs }) acc
-      | isDirectiveStart st c -> lexDirective st >>= emit acc
+      | isSpaceChar c -> go (advance c st { lsInput = cs }) acc
       | isIdentStart c -> emit acc (lexIdent st)
       | isDigitChar c -> lexNumber st >>= emit acc
       | c == '\'' -> lexQuoted '\'' TokChar st >>= emit acc
@@ -56,29 +50,15 @@ lexFrom bol source = go (LexState source (SrcPos 1 1) bol) [] where
 evalPos :: SrcPos -> a -> a
 evalPos (SrcPos line col) value = if line <= col then value else value
 
-isDirectiveStart :: LexState -> Char -> Bool
-isDirectiveStart st c = lsBol st && c == '#'
-
-lexDirective :: LexState -> Either LexError (Token, LexState)
-lexDirective st = Right (Token (Span start end) (TokDirective text), st') where
-  start = lsPos st
-  (text, st') = takeUntilNewline st
-  end = lsPos st'
-
-takeUntilNewline :: LexState -> (String, LexState)
-takeUntilNewline st = go (lsInput st) [] where
-  go input acc = case input of
-    [] -> let text = reverse acc in (text, advancePunct text st { lsInput = [] })
-    '\n':cs -> (reverse acc, advanceSpace '\n' st { lsInput = cs })
-    c:cs -> go cs (c:acc)
-
 skipLineComment :: LexState -> LexState
-skipLineComment st = snd (takeUntilNewline st)
+skipLineComment st = case dropWhile (/= '\n') (lsInput st) of
+  [] -> st { lsInput = [] }
+  _:rest -> advance '\n' (st { lsInput = rest })
 
 skipBlockComment :: LexState -> Either LexError LexState
 skipBlockComment st = case go (advanceMany "/*" st { lsInput = drop 2 (lsInput st) }) of
   Left err -> Left err
-  Right st' -> Right st' { lsBol = lsBol st }
+  Right st' -> Right st'
   where
     start = lsPos st
     go cur = case lsInput cur of
@@ -297,31 +277,18 @@ advanceMany :: String -> LexState -> LexState
 advanceMany s st = foldl (flip advance) st s
 
 advancePunct :: String -> LexState -> LexState
-advancePunct text st = st { lsPos = addColumns (length text) (lsPos st), lsBol = False }
+advancePunct text st = st { lsPos = addColumns (length text) (lsPos st) }
 
 addColumns :: Int -> SrcPos -> SrcPos
 addColumns count pos = case pos of
   SrcPos line col -> SrcPos line (col + count)
 
 advance :: Char -> LexState -> LexState
-advance c st = st { lsPos = nextPos c (lsPos st), lsBol = nextBol c (lsBol st) }
-
-advanceSpace :: Char -> LexState -> LexState
-advanceSpace c st = st { lsPos = nextPos c (lsPos st), lsBol = c == '\n' || lsBol st }
+advance c st = st { lsPos = nextPos c (lsPos st) }
 
 nextPos :: Char -> SrcPos -> SrcPos
 nextPos c (SrcPos line col) =
   if c == '\n' then SrcPos (line + 1) 1 else SrcPos line (col + 1)
-
-nextBol :: Char -> Bool -> Bool
-nextBol c bol =
-  c == '\n' || lexerIsSpaceNoNewline c && bol
-
-lexerIsSpace :: Char -> Bool
-lexerIsSpace = isSpaceChar
-
-lexerIsSpaceNoNewline :: Char -> Bool
-lexerIsSpaceNoNewline c = isSpaceChar c && c /= '\n'
 
 isHexDigit :: Char -> Bool
 isHexDigit c = isDigitChar c || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
