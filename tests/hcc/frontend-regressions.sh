@@ -251,6 +251,13 @@ EOF
 grep -q 'selected_branch' "$work/comment-if.i"
 if grep -q 'wrong_branch' "$work/comment-if.i"; then exit 1; fi
 
+cat > "$work/object-paste.c" <<'EOF'
+#define N 1 ## 2
+int n = N;
+EOF
+"$HCPP" "$work/object-paste.c" > "$work/object-paste.i"
+grep -Eq 'int n *= *12 *;' "$work/object-paste.i"
+
 # Inactive ordinary text need not form valid tokens.
 printf '#if 0\nit'"'"'s @ "open\n#endif\nint y;\n' > "$work/skipped.c"
 "$HCPP" "$work/skipped.c" > "$work/skipped.i"

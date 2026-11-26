@@ -193,8 +193,9 @@ expandMacro macros tok rest = case tok of
   PPToken hidden space (Token sp (TokIdent name))
     | not (name `elem` hidden), Just macro <- symbolMapLookup name macros ->
         case macro of
-          ObjectMacro _ body ->
-            rescanReplacement space (Expansion (map (hideToken (name:hidden)) (leadingSpace space (replacementTokens sp body))) False) rest
+          ObjectMacro _ body -> do
+            Expansion replaced trailing <- substituteMacroBody sp symbolMapEmpty (leadingSpace space (replacementTokens sp body))
+            rescanReplacement space (Expansion (map (hideToken (name:hidden)) replaced) trailing) rest
           FunctionMacro _ params variadic body -> case rest of
             PPToken _ _ (Token _ (TokPunct "(")):afterOpen -> do
               (args, commas, closeHidden, rest') <- collectInvocationArgs sp afterOpen
