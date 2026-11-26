@@ -60,7 +60,7 @@ normalizeSource source = normal [] (spliceContinuations source)
   blockComment start out text = case text of
     [] -> Left (showPos (posAfter start) ++ ": unterminated block comment")
     '*':'/':rest -> normal (' ':' ':out) rest
-    '\n':rest -> blockComment start ('\n':out) rest
+    -- A block comment is whitespace even across physical lines.
     _:rest -> blockComment start (' ':out) rest
   quoted quote out text = case text of
     [] -> Right (reverse out)
