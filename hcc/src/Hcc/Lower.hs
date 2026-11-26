@@ -36,7 +36,12 @@ lowerParams index params = case params of
     temp <- freshTemp
     bindVar name temp ty
     instrs <- lowerParams (index + 1) rest
-    pure (IParam temp index:instrs)
+    -- Capture all incoming registers before emitting any conversions.
+    case ty of
+      CBool -> do
+        (convert, value) <- coerceBool (OTemp temp)
+        pure (IParam temp index : instrs ++ convert ++ [ICopy temp value])
+      _ -> pure (IParam temp index:instrs)
 
 defaultReturnTerm :: CompileM Terminator
 defaultReturnTerm = do
