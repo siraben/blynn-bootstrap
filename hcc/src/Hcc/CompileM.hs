@@ -41,7 +41,9 @@ module CompileM
   , withFunctionScope
   , withVarScope
   , withLoopTargets
-  , withBreakTarget
+  , withSwitch
+  , currentSwitchType
+  , addSwitchLabel
   , currentBreakTarget
   , currentContinueTarget
   , labelBlock
@@ -73,6 +75,7 @@ data CompileState = CompileState
   , csDataItems :: [DataItem]
   , csBreakTargets :: [BlockId]
   , csContinueTargets :: [BlockId]
+  , csSwitch :: Maybe (CType, [(Maybe ([Instr], Operand), BlockId)])
   , csTargetBits :: Int
   , csCurrentFunction :: Maybe String
   }
@@ -129,6 +132,7 @@ initialCompileState = CompileState
   , csDataItems = []
   , csBreakTargets = []
   , csContinueTargets = []
+  , csSwitch = Nothing
   , csTargetBits = 64
   , csCurrentFunction = Nothing
   }
@@ -361,11 +365,24 @@ withLoopTargets breakTarget continueTarget action = CompileM $ \st ->
       , csContinueTargets = csContinueTargets st
       })
 
-withBreakTarget :: BlockId -> CompileM a -> CompileM a
-withBreakTarget breakTarget action = CompileM $ \st ->
-  case unCompileM action st { csBreakTargets = breakTarget : csBreakTargets st } of
+withSwitch :: CType -> BlockId -> CompileM a -> CompileM (a, [(Maybe ([Instr], Operand), BlockId)])
+withSwitch ty breakTarget action = CompileM $ \st ->
+  case unCompileM action st { csBreakTargets = breakTarget : csBreakTargets st, csSwitch = Just (ty, []) } of
     StepErr err -> StepErr err
-    StepOk x st' -> StepOk x (st' { csBreakTargets = csBreakTargets st })
+    StepOk x st' ->
+      let labels = maybe [] (reverse . snd) (csSwitch st')
+      in StepOk (x, labels) (st' { csBreakTargets = csBreakTargets st, csSwitch = csSwitch st })
+
+currentSwitchType :: CompileM CType
+currentSwitchType = do
+  current <- getC csSwitch
+  case current of
+    Nothing -> throwC "case or default outside switch"
+    Just (ty, _) -> pure ty
+
+addSwitchLabel :: Maybe ([Instr], Operand) -> BlockId -> CompileM ()
+addSwitchLabel value bid = modifyC $ \st ->
+  st { csSwitch = fmap (\(ty, labels) -> (ty, (value, bid):labels)) (csSwitch st) }
 
 currentBreakTarget :: CompileM (Maybe BlockId)
 currentBreakTarget = getC (listHead . csBreakTargets)

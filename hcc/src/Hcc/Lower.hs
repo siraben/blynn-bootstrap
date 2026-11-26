@@ -13,7 +13,6 @@ import LowerBuiltins
 import LowerRegisters
 import Literal
 import LowerLiterals
-import LowerSwitchHelpers
 import TypesLower
 import LowerTypeInfo
 
@@ -133,6 +132,20 @@ lowerStatementChunks bid chunks stmts defaultTerm = case stmts of
     switchBlocks <- withVarScope (lowerSwitch dispatchId restId switchTy convertedValue body)
     restBlocks <- lowerStatementsFrom restId [] rest defaultTerm
     pure (BasicBlock bid (instrs ++ valueInstrs ++ convertInstrs) (TJump dispatchId) : switchBlocks ++ restBlocks)
+  SCase value:rest -> do
+    switchTy <- currentSwitchType
+    (valueInstrs, valueOp) <- lowerExpr value
+    (convertInstrs, convertedValue) <- coerceScalar switchTy valueOp
+    target <- freshBlock
+    addSwitchLabel (Just (valueInstrs ++ convertInstrs, convertedValue)) target
+    blocks <- lowerStatementsFrom target [] rest defaultTerm
+    pure (BasicBlock bid instrs (TJump target) : blocks)
+  SDefault:rest -> do
+    _ <- currentSwitchType
+    target <- freshBlock
+    addSwitchLabel Nothing target
+    blocks <- lowerStatementsFrom target [] rest defaultTerm
+    pure (BasicBlock bid instrs (TJump target) : blocks)
   SGoto name:rest -> do
     target <- labelBlock name
     tailBlocks <- lowerUnreachableLabels rest defaultTerm
@@ -164,7 +177,6 @@ lowerStatementChunks bid chunks stmts defaultTerm = case stmts of
     target <- requireContinueTarget
     tailBlocks <- lowerUnreachableLabels rest defaultTerm
     pure (BasicBlock bid instrs (TJump target) : tailBlocks)
-  stmt:_ -> throwC ("unsupported statement in lowering: " ++ renderStmtTag stmt)
   where
     instrs = concat (reverse chunks)
 
@@ -263,39 +275,28 @@ requireContinueTarget = do
     Nothing -> throwC "continue outside loop"
 
 lowerSwitch :: BlockId -> BlockId -> CType -> Operand -> [Stmt] -> CompileM [BasicBlock]
-lowerSwitch dispatchId restId switchTy valueOp body = case body of
-  [SBlock stmts] -> withVarScope (lowerSwitchBody dispatchId restId switchTy valueOp stmts)
-  _ -> lowerSwitchBody dispatchId restId switchTy valueOp body
+lowerSwitch dispatchId restId switchTy valueOp body = do
+  -- The body entry has no edge from dispatch. Only a case, default, or
+  -- explicit goto may enter it; lexical fallthrough is lowered normally.
+  bodyId <- freshBlock
+  (bodyBlocks, labels) <- withSwitch switchTy restId (lowerStatementsFrom bodyId [] body (TJump restId))
+  let split = splitSwitchLabels labels
+  defaultTarget <- case snd split of
+    [] -> pure restId
+    [target] -> pure target
+    _ -> throwC "multiple default labels in switch"
+  dispatchBlocks <- lowerSwitchDispatch dispatchId valueOp defaultTarget (fst split)
+  pure (dispatchBlocks ++ bodyBlocks)
 
-lowerSwitchBody :: BlockId -> BlockId -> CType -> Operand -> [Stmt] -> CompileM [BasicBlock]
-lowerSwitchBody dispatchId restId switchTy valueOp bodyStmts = do
-  let clauses = collectSwitchClauses bodyStmts
-  clauseIds <- freshBlocks (length clauses)
-  let clausePairs = zip clauses clauseIds
-  let defaultTarget = switchDefaultTarget restId clausePairs
-  let prefixTarget = case clauseIds of
-        [] -> restId
-        first:_ -> first
-  prefixBlocks <- withBreakTarget restId (lowerSwitchPrefix (switchPrefixStatements bodyStmts) prefixTarget)
-  (loweredCases, bodyBlocks) <- withBreakTarget restId (lowerSwitchClauses restId switchTy clausePairs)
-  dispatchBlocks <- lowerSwitchDispatch dispatchId valueOp defaultTarget loweredCases
-  pure (dispatchBlocks ++ prefixBlocks ++ bodyBlocks)
+splitSwitchLabels :: [(Maybe ([Instr], Operand), BlockId)] -> ([([Instr], Operand, BlockId)], [BlockId])
+splitSwitchLabels = splitSwitchLabelsInto [] []
 
-switchPrefixStatements :: [Stmt] -> [Stmt]
-switchPrefixStatements stmts = case stmts of
-  [] -> []
-  SCase _: _ -> []
-  SDefault: _ -> []
-  stmt:rest -> stmt : switchPrefixStatements rest
-
--- Dispatch skips this prefix, but gotos can enter it and declarations remain
--- in scope for the clauses. Its fallthrough is the first clause, not dispatch.
-lowerSwitchPrefix :: [Stmt] -> BlockId -> CompileM [BasicBlock]
-lowerSwitchPrefix stmts target = case stmts of
-  [] -> pure []
-  _ -> do
-    bid <- freshBlock
-    lowerStatementsFrom bid [] stmts (TJump target)
+splitSwitchLabelsInto :: [([Instr], Operand, BlockId)] -> [BlockId] -> [(Maybe ([Instr], Operand), BlockId)] -> ([([Instr], Operand, BlockId)], [BlockId])
+splitSwitchLabelsInto checks fallback remaining = case remaining of
+  [] -> (reverse checks, reverse fallback)
+  entry:rest -> case fst entry of
+    Nothing -> splitSwitchLabelsInto checks (snd entry:fallback) rest
+    Just lowered -> splitSwitchLabelsInto ((fst lowered, snd lowered, snd entry):checks) fallback rest
 
 lowerSwitchDispatch :: BlockId -> Operand -> BlockId -> [([Instr], Operand, BlockId)] -> CompileM [BasicBlock]
 lowerSwitchDispatch bid valueOp defaultTarget switchCasePairs = case switchCasePairs of
@@ -310,25 +311,6 @@ lowerSwitchDispatch bid valueOp defaultTarget switchCasePairs = case switchCaseP
       _ -> do
         restBlocks <- lowerSwitchDispatch nextId valueOp defaultTarget tailCases
         pure (block:restBlocks)
-
-lowerSwitchClauses :: BlockId -> CType -> [(SwitchClause, BlockId)] -> CompileM ([([Instr], Operand, BlockId)], [BasicBlock])
-lowerSwitchClauses restId switchTy clauses = case clauses of
-  [] -> pure ([], [])
-  pair:rest -> case pair of
-    (SwitchClause label body, bid) -> do
-      loweredCases <- case label of
-        Nothing -> pure []
-        Just expr -> do
-          (caseInstrs, caseOp) <- lowerExpr expr
-          -- Convert each case to the promoted type of the controlling expression.
-          (convertInstrs, convertedCase) <- coerceScalar switchTy caseOp
-          pure [(caseInstrs ++ convertInstrs, convertedCase, bid)]
-      let fallthrough = case rest of
-            [] -> restId
-            (_, nextId):_ -> nextId
-      bodyBlocks <- lowerStatementsFrom bid [] body (TJump fallthrough)
-      (restCases, restBlocks) <- lowerSwitchClauses restId switchTy rest
-      pure (loweredCases ++ restCases, bodyBlocks ++ restBlocks)
 
 lowerSideEffect :: Expr -> CompileM [Instr]
 lowerSideEffect expr = case expr of

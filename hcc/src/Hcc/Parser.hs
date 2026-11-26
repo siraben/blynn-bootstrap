@@ -615,13 +615,16 @@ stmtAsBlock = withParserScope (do
   tok <- peek
   case tokenKind tok of
     TokPunct "{" -> (:[]) . SBlock <$> compound
-    _ -> do
-      first <- stmt
-      case first of
-        SLabel _ -> do
-          body <- stmt
-          pure [first, body]
-        _ -> pure [first])
+    _ -> labelledStatement)
+
+labelledStatement :: Parser [Stmt]
+labelledStatement = do
+  first <- stmt
+  case first of
+    SLabel _ -> (first:) <$> labelledStatement
+    SCase _ -> (first:) <$> labelledStatement
+    SDefault -> (first:) <$> labelledStatement
+    _ -> pure [first]
 
 parseDeclStmt :: Parser Stmt
 parseDeclStmt = do

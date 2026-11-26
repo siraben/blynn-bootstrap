@@ -19,7 +19,6 @@ hcc:src/Hcc/TypesLower.hs
 hcc:src/Hcc/LowerBootstrap.hs
 hcc:src/Hcc/LowerLiterals.hs
 hcc:src/Hcc/LowerRegisters.hs
-hcc:src/Hcc/LowerSwitchHelpers.hs
 hcc:src/Hcc/LowerTypeInfo.hs
 hcc:src/Hcc/Lower.hs
 hcc:src/Hcc/M1Ir.hs
