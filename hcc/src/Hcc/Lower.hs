@@ -121,11 +121,13 @@ lowerStatementChunks bid chunks stmts defaultTerm = case stmts of
     pure (loopBlocks ++ restBlocks)
   SSwitch value body:rest -> do
     (valueInstrs, valueOp) <- lowerExpr value
+    switchTy <- promotedExprType value
+    (convertInstrs, convertedValue) <- coerceScalar switchTy valueOp
     dispatchId <- freshBlock
     restId <- freshBlock
-    switchBlocks <- withVarScope (lowerSwitch dispatchId restId valueOp body)
+    switchBlocks <- withVarScope (lowerSwitch dispatchId restId switchTy convertedValue body)
     restBlocks <- lowerStatementsFrom restId [] rest defaultTerm
-    pure (BasicBlock bid (instrs ++ valueInstrs) (TJump dispatchId) : switchBlocks ++ restBlocks)
+    pure (BasicBlock bid (instrs ++ valueInstrs ++ convertInstrs) (TJump dispatchId) : switchBlocks ++ restBlocks)
   SGoto name:rest -> do
     target <- labelBlock name
     tailBlocks <- lowerUnreachableLabels rest defaultTerm
@@ -255,13 +257,13 @@ requireContinueTarget = do
     Just bid -> pure bid
     Nothing -> throwC "continue outside loop"
 
-lowerSwitch :: BlockId -> BlockId -> Operand -> [Stmt] -> CompileM [BasicBlock]
-lowerSwitch dispatchId restId valueOp body = case body of
-  [SBlock stmts] -> withVarScope (lowerSwitchBody dispatchId restId valueOp stmts)
-  _ -> lowerSwitchBody dispatchId restId valueOp body
+lowerSwitch :: BlockId -> BlockId -> CType -> Operand -> [Stmt] -> CompileM [BasicBlock]
+lowerSwitch dispatchId restId switchTy valueOp body = case body of
+  [SBlock stmts] -> withVarScope (lowerSwitchBody dispatchId restId switchTy valueOp stmts)
+  _ -> lowerSwitchBody dispatchId restId switchTy valueOp body
 
-lowerSwitchBody :: BlockId -> BlockId -> Operand -> [Stmt] -> CompileM [BasicBlock]
-lowerSwitchBody dispatchId restId valueOp bodyStmts = do
+lowerSwitchBody :: BlockId -> BlockId -> CType -> Operand -> [Stmt] -> CompileM [BasicBlock]
+lowerSwitchBody dispatchId restId switchTy valueOp bodyStmts = do
   let clauses = collectSwitchClauses bodyStmts
   clauseIds <- freshBlocks (length clauses)
   let clausePairs = zip clauses clauseIds
@@ -270,7 +272,7 @@ lowerSwitchBody dispatchId restId valueOp bodyStmts = do
         [] -> restId
         first:_ -> first
   prefixBlocks <- withBreakTarget restId (lowerSwitchPrefix (switchPrefixStatements bodyStmts) prefixTarget)
-  (loweredCases, bodyBlocks) <- withBreakTarget restId (lowerSwitchClauses restId clausePairs)
+  (loweredCases, bodyBlocks) <- withBreakTarget restId (lowerSwitchClauses restId switchTy clausePairs)
   dispatchBlocks <- lowerSwitchDispatch dispatchId valueOp defaultTarget loweredCases
   pure (dispatchBlocks ++ prefixBlocks ++ bodyBlocks)
 
@@ -304,8 +306,8 @@ lowerSwitchDispatch bid valueOp defaultTarget switchCasePairs = case switchCaseP
         restBlocks <- lowerSwitchDispatch nextId valueOp defaultTarget tailCases
         pure (block:restBlocks)
 
-lowerSwitchClauses :: BlockId -> [(SwitchClause, BlockId)] -> CompileM ([([Instr], Operand, BlockId)], [BasicBlock])
-lowerSwitchClauses restId clauses = case clauses of
+lowerSwitchClauses :: BlockId -> CType -> [(SwitchClause, BlockId)] -> CompileM ([([Instr], Operand, BlockId)], [BasicBlock])
+lowerSwitchClauses restId switchTy clauses = case clauses of
   [] -> pure ([], [])
   pair:rest -> case pair of
     (SwitchClause label body, bid) -> do
@@ -313,12 +315,14 @@ lowerSwitchClauses restId clauses = case clauses of
         Nothing -> pure []
         Just expr -> do
           (caseInstrs, caseOp) <- lowerExpr expr
-          pure [(caseInstrs, caseOp, bid)]
+          -- Convert each case to the promoted type of the controlling expression.
+          (convertInstrs, convertedCase) <- coerceScalar switchTy caseOp
+          pure [(caseInstrs ++ convertInstrs, convertedCase, bid)]
       let fallthrough = case rest of
             [] -> restId
             (_, nextId):_ -> nextId
       bodyBlocks <- lowerStatementsFrom bid [] body (TJump fallthrough)
-      (restCases, restBlocks) <- lowerSwitchClauses restId rest
+      (restCases, restBlocks) <- lowerSwitchClauses restId switchTy rest
       pure (loweredCases ++ restCases, bodyBlocks ++ restBlocks)
 
 lowerSideEffect :: Expr -> CompileM [Instr]
@@ -1275,6 +1279,7 @@ exprType expr = case expr of
     binding <- resolveName name
     pure (case binding of
       UnknownBinding | isFunctionNameMacro name -> Just (CPtr CChar)
+      UnknownBinding -> fmap (const CInt) (builtinConstant name)
       _ -> bindingType binding)
   ECast ty _ -> pure (Just ty)
   EUnary "+" value -> do
