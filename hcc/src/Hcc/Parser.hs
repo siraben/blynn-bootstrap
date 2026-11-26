@@ -193,28 +193,24 @@ topDeclNoStruct = do
   if standalone
     then pure (TypeDecl [ty0])
     else do
-      (ty, name) <- declarator ty0
-      ifM (eatPunct "(")
-        (do
-          decl <- withParserScope (do
-            params <- parametersInScope
-            skipAttributes
-            -- Do not overwrite a parameter-scope enumerator with the function
-            -- name. Recursive references already parse as EVar; the function's
-            -- file-scope binding is installed after leaving parameter scope.
-            isPrototype <- eatPunct ";"
-            if isPrototype
-              then pure (Prototype ty name (adjustParameters params))
-              else do
-                mapM_ checkDefinitionParameter params
-                Function ty name (adjustParameters params) <$> compound)
+      (layers, name) <- declaratorLayers RequiredName False
+      case layers of
+        FunctionLayer params scope:rest -> do
+          let retTy = applyLayers rest ty0
+          let params' = adjustParameters params
+          isPrototype <- eatPunct ";"
+          decl <- if isPrototype
+            then pure (Prototype retTy name params')
+            else pLocalEnv (const scope) const (do
+              mapM_ checkDefinitionParameter params
+              Function retTy name params' <$> compound)
           bindParserOrdinary name
-          pure decl)
-        (do
+          pure decl
+        _ -> do
           bindParserOrdinary name
           initExpr <- optionalP (eatPunct "=" >> initializerExpr)
           rest <- declarationItemsTail ty0
-          pure (globalDecl isExtern ((ty, name, initExpr):rest)))
+          pure (globalDecl isExtern ((applyLayers layers ty0, name, initExpr):rest))
 
 globalDecl :: Bool -> [(CType, String, Maybe Expr)] -> TopDecl
 globalDecl isExtern decls =
@@ -255,10 +251,8 @@ typedefTypes = do
 typedefItem :: CType -> Parser (String, CType)
 typedefItem ty0 = do
   (ty, name) <- declarator ty0
-  ty' <- optionalFunctionSuffix ty
-  skipAttributes
-  bindTypedef (name, ty')
-  pure (name, ty')
+  bindTypedef (name, ty)
+  pure (name, ty)
 
 typedefItemsTail :: CType -> Parser [(String, CType)]
 typedefItemsTail ty0 = do
@@ -312,22 +306,10 @@ fieldDeclarators ty0 = do
 
 fieldDeclarator :: CType -> Parser Field
 fieldDeclarator ty0 = do
-  ty <- pointerStars ty0
-  grouped <- eatPunct "("
-  if grouped
-    then do
-      (shape, name) <- groupedShape optionalIdent
-      pure (Field (shape ty) name)
-    else do
-      name <- optionalIdent
-      bitfield <- eatPunct ":"
-      ty' <- if bitfield
-        then assignExpr >> pure ty
-        else arraySuffixes ty
-      pure (Field ty' name)
-
-parameters :: Parser [Param]
-parameters = adjustParameters <$> withParserScope parametersInScope
+  (layers, name) <- declaratorLayers OptionalName False
+  bitfield <- eatPunct ":"
+  when bitfield (assignExpr >> pure ())
+  pure (Field (applyLayers layers ty0) name)
 
 -- A definition keeps this scope through its body; other function declarators
 -- discard prototype-scope names at the end of the parameter list.
@@ -377,41 +359,8 @@ parameter = do
 
 parameterDeclarator :: CType -> Parser (CType, String)
 parameterDeclarator ty0 = do
-  ty <- pointerStars ty0
-  grouped <- eatPunct "("
-  if grouped
-    then do
-      (shape, name) <- groupedShape optionalIdent
-      pure (shape ty, name)
-    else do
-      name <- optionalIdent
-      fnTail <- eatPunct "("
-      fnParams <- if fnTail then parameters else pure []
-      let tyWithFunction = if fnTail then CPtr (CFunc ty (paramTypes fnParams)) else ty
-      ty' <- parameterArraySuffix tyWithFunction
-      pure (ty', name)
-
--- Only the outermost array derivation of a parameter may have qualifiers or
--- static. Parse the whole bound before binding its name, just like an ordinary
--- declarator. Qualifiers are erased as elsewhere in this parser.
-parameterArraySuffix :: CType -> Parser CType
-parameterArraySuffix ty = do
-  open <- eatPunct "["
-  if not open
-    then pure ty
-    else do
-      staticFirst <- eatIdent "static"
-      skipParameterArrayQualifiers
-      isStatic <- if staticFirst then pure True else eatIdent "static"
-      tok <- peek
-      case tokenKind tok of
-        TokIdent name | name `elem` ["static", "const", "volatile", "restrict"] ->
-          failAt tok "expected array parameter bound"
-        _ -> pure ()
-      bound <- if isStatic then Just <$> assignExpr else optionalP assignExpr
-      needPunct "]"
-      inner <- parameterArrayInner ty
-      pure (CArray inner bound)
+  (layers, name) <- declaratorLayers OptionalName True
+  pure (applyLayers layers ty0, name)
 
 skipParameterArrayQualifiers :: Parser ()
 skipParameterArrayQualifiers = do
@@ -420,22 +369,6 @@ skipParameterArrayQualifiers = do
     Just (TokIdent name) | name `elem` ["const", "volatile", "restrict"] ->
       advanceToken >> skipParameterArrayQualifiers
     _ -> pure ()
-
-parameterArrayInner :: CType -> Parser CType
-parameterArrayInner ty = do
-  open <- eatPunct "["
-  if not open
-    then pure ty
-    else do
-      tok <- peek
-      case tokenKind tok of
-        TokIdent name | name `elem` ["static", "const", "volatile", "restrict"] ->
-          failAt tok "array parameter modifiers require the outermost dimension"
-        _ -> pure ()
-      bound <- optionalP assignExpr
-      needPunct "]"
-      inner <- parameterArrayInner ty
-      pure (CArray inner bound)
 
 -- Keep bounds until we know whether this is a prototype or definition. Only
 -- the outermost array is adjusted; inner dimensions remain the pointed-to type.
@@ -654,14 +587,11 @@ parseDeclStmt = do
                 else failAt start "a block-scope extern declaration has an initializer"
 
 localPrototype :: CType -> Parser ()
-localPrototype ty0 = do
-  _ty <- pointerStars ty0
-  name <- needIdent
-  needPunct "("
-  _params <- parameters
-  skipAttributes
-  bindParserOrdinary name
-  needPunct ";"
+localPrototype _ty = do
+  (layers, name) <- declaratorLayers RequiredName False
+  case layers of
+    FunctionLayer _ _ : _ -> bindParserOrdinary name >> needPunct ";"
+    _ -> peek >>= \tok -> failAt tok ("expected function declarator: " ++ name)
 
 declStmt :: [(CType, String, Maybe Expr)] -> Stmt
 declStmt = SDecls
@@ -720,7 +650,10 @@ ctypeTrailing = do
       _ -> failAt tok "expected type"
 
 typeName :: Parser CType
-typeName = ctype >>= pointerStars >>= arraySuffixes
+typeName = do
+  ty <- ctype
+  (layers, _) <- declaratorLayers NoName False
+  pure (applyLayers layers ty)
 
 signedBaseType :: Parser CType
 signedBaseType = do
@@ -934,82 +867,98 @@ skipOptionalBalancedParens = do
   open <- eatPunct "("
   when open (skipBalanced "(" ")")
 
+data DeclName = RequiredName | OptionalName | NoName
+
+-- Layers run from the identifier outward: f() is a function, (*f)() is
+-- a pointer. Keep the parameter scope of each function layer until we know
+-- which layer, if any, belongs to a definition.
+data DeclLayer = PointerLayer | ArrayLayer (Maybe Expr) | FunctionLayer [Param] ParserEnv
+
+applyLayers :: [DeclLayer] -> CType -> CType
+applyLayers layers base = case layers of
+  [] -> base
+  layer:rest -> case layer of
+    PointerLayer -> CPtr (applyLayers rest base)
+    ArrayLayer bound -> CArray (applyLayers rest base) bound
+    FunctionLayer params _ -> CFunc (applyLayers rest base) (paramTypes (adjustParameters params))
+
 declarator :: CType -> Parser (CType, String)
-declarator ty0 = do
-  (shape, name) <- declaratorShape needIdent
-  pure (shape ty0, name)
+declarator ty = do
+  (layers, name) <- declaratorLayers RequiredName False
+  pure (applyLayers layers ty, name)
 
--- A declarator maps the specifier type to the declared type. A suffix binds
--- tighter than a pointer, and a parenthesized declarator applies last.
-declaratorShape :: Parser String -> Parser (CType -> CType, String)
-declaratorShape ident = do
-  stars <- pointerShape
-  grouped <- eatPunct "("
-  (direct, name) <- if grouped
-    then groupedShape ident
+declaratorLayers :: DeclName -> Bool -> Parser ([DeclLayer], String)
+declaratorLayers mode parameterMode = do
+  pointers <- manyP (needPunct "*" >> skipQualifiers >> pure PointerLayer)
+  open <- eatPunct "("
+  (inner, name) <- if open
+    then declaratorParen mode parameterMode
     else do
-      name <- ident
-      suffix <- arrayShape
-      pure (suffix, name)
+      name <- case mode of
+        RequiredName -> needIdent
+        OptionalName -> optionalIdent
+        NoName -> pure ""
+      pure ([], name)
+  suffix <- declaratorSuffixes parameterMode (null inner)
   skipAttributes
-  pure (direct . stars, name)
+  pure (inner ++ suffix ++ pointers, name)
 
-groupedShape :: Parser String -> Parser (CType -> CType, String)
-groupedShape ident = do
-  (inner, name) <- declaratorShape ident
-  needPunct ")"
-  suffix <- groupedSuffixShape
-  pure (inner . suffix, name)
-
-groupedSuffixShape :: Parser (CType -> CType)
-groupedSuffixShape = do
-  open <- eatPunct "("
-  if open
+declaratorParen :: DeclName -> Bool -> Parser ([DeclLayer], String)
+declaratorParen mode parameterMode = do
+  tok <- peek
+  typeStart <- tokenStartsType tok
+  let abstractFunction = case mode of
+        RequiredName -> False
+        _ -> case tokenKind tok of
+          TokPunct ")" -> True
+          _ -> typeStart
+  if abstractFunction
     then do
-      params <- parameters
-      rest <- groupedSuffixShape
-      pure (\ty -> CFunc (rest ty) (paramTypes params))
-    else arrayShape
+      layer <- functionLayer
+      pure ([layer], "")
+    else do
+      inner <- declaratorLayers mode parameterMode
+      needPunct ")"
+      pure inner
 
-optionalFunctionSuffix :: CType -> Parser CType
-optionalFunctionSuffix ty = do
-  open <- eatPunct "("
-  if open
-    then CFunc ty . paramTypes <$> parameters
-    else pure ty
+functionLayer :: Parser DeclLayer
+functionLayer = withParserScope (do
+  params <- parametersInScope
+  scope <- pEnv
+  pure (FunctionLayer params scope))
 
-pointerStars :: CType -> Parser CType
-pointerStars ty = (\shape -> shape ty) <$> pointerShape
+declaratorSuffixes :: Bool -> Bool -> Parser [DeclLayer]
+declaratorSuffixes parameterMode first = do
+  tok <- peekMaybe
+  case fmap tokenKind tok of
+    Just (TokPunct "(") -> do
+      advanceToken
+      layer <- functionLayer
+      rest <- declaratorSuffixes parameterMode False
+      pure (layer:rest)
+    Just (TokPunct "[") -> do
+      advanceToken
+      bound <- declaratorArrayBound parameterMode first
+      rest <- declaratorSuffixes parameterMode False
+      pure (ArrayLayer bound:rest)
+    _ -> pure []
 
-pointerShape :: Parser (CType -> CType)
-pointerShape = do
-  star <- eatPunct "*"
-  if star
+declaratorArrayBound :: Bool -> Bool -> Parser (Maybe Expr)
+declaratorArrayBound parameterMode first = do
+  staticBound <- if parameterMode && first
     then do
-      skipQualifiers
-      rest <- pointerShape
-      pure (rest . CPtr)
-    else pure id
-
-arraySuffixes :: CType -> Parser CType
-arraySuffixes ty = (\shape -> shape ty) <$> arrayShape
-
--- The first bound is the outermost dimension.
-arrayShape :: Parser (CType -> CType)
-arrayShape = do
-  open <- eatPunct "["
-  if open
-    then do
-      tok <- peek
-      case tokenKind tok of
-        TokIdent name | name `elem` ["static", "const", "volatile", "restrict"] ->
-          failAt tok "array modifiers require a parameter declarator"
-        _ -> pure ()
-      boundExpr <- optionalP expr
-      needPunct "]"
-      rest <- arrayShape
-      pure (\ty -> CArray (rest ty) boundExpr)
-    else pure id
+      before <- eatIdent "static"
+      skipParameterArrayQualifiers
+      if before then pure True else eatIdent "static"
+    else pure False
+  tok <- peek
+  case tokenKind tok of
+    TokIdent name | name `elem` ["static", "const", "volatile", "restrict"] ->
+      failAt tok (if parameterMode then "array parameter modifiers require the outermost dimension" else "array modifiers require a parameter declarator")
+    _ -> pure ()
+  bound <- if staticBound then Just <$> assignExpr else optionalP assignExpr
+  needPunct "]"
+  pure bound
 
 expr :: Parser Expr
 expr = expression 0
@@ -1288,11 +1237,6 @@ skipBalanced open close = go (1 :: Int) where
           TokPunct p | p == open -> advanceToken >> go (depth + 1)
           TokPunct p | p == close -> advanceToken >> go (depth - 1)
           _ -> advanceToken >> go depth
-
-ifM :: Parser Bool -> Parser a -> Parser a -> Parser a
-ifM test yes no = do
-  b <- test
-  if b then yes else no
 
 eatPunct :: String -> Parser Bool
 eatPunct s = pRaw $ \env toks -> case toks of

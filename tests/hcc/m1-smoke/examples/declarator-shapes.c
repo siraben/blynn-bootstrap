@@ -28,6 +28,12 @@ static unary pick(int index) {
     return table[index];
 }
 
+/* SQLite's memdbDlSym uses this form without a typedef. */
+static int (*pick_raw(int index))(int);
+static int (*pick_raw(int index))(int) {
+    return table[index];
+}
+
 int main(void) {
     int cube[3][4][5];
     int (*(*choose)(int))(int) = pick;
@@ -45,5 +51,10 @@ int main(void) {
     row = grid;
     if ((*row)[2] != 3 || row[1][1] != 5) return 11;
     if (choose(0)(1) != 2) return 12;
+    /* Reduced from SQLite 3.51.2, src/os_unix.c's osGeteuid macro:
+       https://github.com/sqlite/sqlite/blob/version-3.51.2/src/os_unix.c */
+    if (((int (*)(int)) table[1])(4) != 6) return 13;
+    if (sizeof(int (*)[3]) != sizeof(void *)) return 14;
+    if (pick_raw(1)(4) != 6) return 15;
     return 0;
 }
