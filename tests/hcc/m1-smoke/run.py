@@ -26,6 +26,7 @@ CASES = [
     ("bootstrap-aliases", 0),
     ("integer-correctness", 0),
     ("switch-conversions", 0),
+    ("bool-parameter", 0),
     ("aggregate-correctness", 0),
     ("preprocessor-correctness", 0),
     ("lower-local-context", 0),
