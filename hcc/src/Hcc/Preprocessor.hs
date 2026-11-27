@@ -156,13 +156,14 @@ expandMacro macros tok rest = case tok of
     | not (name `elem` hidden), Just macro <- symbolMapLookup name macros ->
         case macro of
           ObjectMacro _ body -> do
-            Expansion replaced trailing <- substituteMacroBody sp symbolMapEmpty (leadingSpace space (replacementTokens sp body))
+            Expansion replaced trailing <- substituteMacroBody Nothing symbolMapEmpty (leadingSpace space (replacementTokens sp body))
             rescanReplacement space (Expansion (map (hideToken (name:hidden)) replaced) trailing) rest
           FunctionMacro _ params variadic body -> case rest of
             PPToken _ _ (Token _ (TokPunct "(")):afterOpen -> do
               (args, commas, closeHidden, rest') <- collectInvocationArgs sp afterOpen
               bound <- bindMacroArgs macros sp params variadic args commas
-              Expansion replaced trailing <- substituteMacroBody sp bound (leadingSpace space (replacementTokens sp body))
+              let omitted = if length args == length params then variadic else Nothing
+              Expansion replaced trailing <- substituteMacroBody omitted bound (leadingSpace space (replacementTokens sp body))
               -- The closing parenthesis may come from a different expansion.
               -- Only names hidden at both ends constrain the replacement.
               let inherited = name : intersect hidden closeHidden
@@ -236,8 +237,8 @@ joinVariadicArgs args commas = case args of
     comma:more -> comma : joinVariadicArgs rest more
     [] -> []
 
-substituteMacroBody :: Span -> MacroArgs -> [PPToken] -> Either PreprocessError Expansion
-substituteMacroBody _ args body = go body [] where
+substituteMacroBody :: Maybe String -> MacroArgs -> [PPToken] -> Either PreprocessError Expansion
+substituteMacroBody omitted args body = go body [] where
   go rest acc = case rest of
     [] -> Right (removePlacemarkers (reverse acc))
     PPToken _ space (Token _ (TokPunct "#")):PPToken _ _ (Token argSp (TokIdent name)):xs
@@ -258,7 +259,9 @@ substituteMacroBody _ args body = go body [] where
   pasteWithPrevious pasteSp previous xs before = do
     (next, rest') <- nextPasteOperand xs
     case (previous, next) of
-      ([TokenPiece (PPToken _ space (Token _ (TokPunct ",")))], [EmptyPiece _]) -> go rest' (EmptyPiece space:before)
+      -- GNU comma elision applies only when this variadic argument was omitted.
+      ([TokenPiece (PPToken _ space (Token _ (TokPunct ",")))], [EmptyPiece _])
+        | omittedOperand xs -> go rest' (EmptyPiece space:before)
       ([comma@(TokenPiece (PPToken _ _ (Token _ (TokPunct ","))))], _) -> go rest' (reverse next ++ comma:before)
       (_, []) -> go rest' (reverse previous ++ before)
       ([], _) -> go rest' (reverse next ++ before)
@@ -267,6 +270,10 @@ substituteMacroBody _ args body = go body [] where
           pasted <- pastePieces pasteSp prev n
           go rest' (reverse ns ++ pasted:prefix ++ before)
         [] -> go rest' (reverse next ++ before)
+
+  omittedOperand xs = case xs of
+    PPToken _ _ (Token _ (TokIdent name)):_ -> Just name == omitted
+    _ -> False
 
   nextPasteOperand xs = case xs of
     PPToken _ space (Token _ (TokIdent name)):rest
