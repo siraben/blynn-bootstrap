@@ -39,6 +39,9 @@ int adjacent = HEADER_VALUE;
 #define LEAD(x) x b
 #define TRAIL(x) a x
 #define PASTE(x) a x##x
+#define COMMA(x, ...) x, ## __VA_ARGS__
+#define VS(...) #__VA_ARGS__
+#define VEXPAND(...) VS(__VA_ARGS__)
 int same(char *a, char *b) {
   while (*a && *a == *b) { ++a; ++b; }
   return *a == *b;
@@ -49,5 +52,8 @@ int main(void) {
   if (!same(S(a+b), "a+b") || !same(S(a + b), "a + b")) return 3;
   if (!same(EXPAND(a+LEAD()), "a+ b")) return 4;
   if (!same(EXPAND(TRAIL()b), "a b")) return 5;
-  return !same(EXPAND(PASTE()b), "a b");
+  if (!same(EXPAND(PASTE()b), "a b")) return 6;
+  if (!same(VEXPAND(COMMA(a)), "a")) return 7;
+  if (!same(VEXPAND(COMMA(a,)), "a,")) return 8;
+  return !same(VEXPAND(COMMA(a, b)), "a, b");
 }
