@@ -236,7 +236,7 @@
             description = "Blynn bootstrap virtual machine";
             buildScript = ''
               mkdir -p M2libc
-              cp ${blynnFile "vm.c"} vm.c
+              cp ${./blynn/vm.c} vm.c
               cp ${blynnFile "gcc_req.h"} gcc_req.h
               cp ${blynnFile "M2libc/bootstrappable.h"} M2libc/bootstrappable.h
               cp ${blynnFile "M2libc/bootstrappable.c"} M2libc/bootstrappable.c
