@@ -200,7 +200,8 @@ topDeclNoTypedef = do
             then pure (Prototype retTy name params')
             else pLocalEnv (keepTagCounter scope) keepTagCounter (do
               mapM_ checkDefinitionParameter params
-              Function retTy name params' <$> compound)
+              -- The outer body and the definition's parameters share a scope.
+              Function retTy name params' <$> compoundInScope)
           bindParserOrdinary name
           pure decl
         _ -> do
@@ -385,7 +386,10 @@ simpleParameterBound value = case value of
   _ -> False
 
 compound :: Parser [Stmt]
-compound = needPunct "{" >> withParserScope (manyUntil (eatPunct "}") stmt)
+compound = withParserScope compoundInScope
+
+compoundInScope :: Parser [Stmt]
+compoundInScope = needPunct "{" >> manyUntil (eatPunct "}") stmt
 
 stmt :: Parser Stmt
 stmt = do

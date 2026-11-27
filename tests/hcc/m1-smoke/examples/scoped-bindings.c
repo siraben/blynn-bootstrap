@@ -10,7 +10,16 @@ static int other(int value) {
   return value + 5;
 }
 
+static int complete_parameter_tag(struct Item *item) {
+  struct Item {
+    char value;
+  } local = {7};
+  item = &local;
+  return sizeof(*item) == 1 && item->value == 7;
+}
+
 int main(void) {
+  if (!complete_parameter_tag(0)) return 5;
   struct Record outer = {42};
   int (*convert)(int) = other;
   {
